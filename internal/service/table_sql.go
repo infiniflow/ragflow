@@ -79,8 +79,7 @@ var tableColumns = map[string]bool{
 }
 
 // tableFunctions are the calls a table query may make. json_extract_string and
-// json_extract_isnull are the forms the prompt asks for; the OceanBase
-// executor rewrites them into that engine's native pair.
+// json_extract_isnull are the forms the Infinity prompt asks for.
 var tableFunctions = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true, "total": true,
 	"group_concat": true, "stddev": true, "variance": true,
@@ -130,9 +129,6 @@ type tableSQLPolicy struct {
 	// quote is how this engine writes a quoted name, and so how a checked
 	// statement is emitted.
 	quote rune
-	// kbCondition restricts a table shared by several knowledge bases. It is
-	// empty for Infinity, whose table name already names the knowledge base.
-	kbCondition string
 	// docIDs is the non-empty set of publishing documents the answer may read.
 	docIDs   []string
 	dataKeys map[string]bool
@@ -184,25 +180,17 @@ func newTableSQL(docEngine engine.DocEngine, chat *entity.Chat, kbs []*entity.Kn
 
 	policy := tableSQLPolicy{
 		tableName: ragflowTableName(chat.TenantID, kbs, docEngine),
-		quote:     '`',
+		quote:     '"',
 		docIDs:    append([]string(nil), allowedDocIDs...),
 		dataKeys:  make(map[string]bool, len(fieldMap)),
 	}
-	if engineName == "infinity" {
-		policy.quote = '"'
-		// The knowledge base is only in range because the table names it.
-		// ragflowTableName falls back to the tenant's shared table when the
-		// identifier does not read as one, and a shared table is not a range.
-		if want := fmt.Sprintf("ragflow_%s_%s", chat.TenantID, kbs[0].ID); policy.tableName != want {
-			return nil, fmt.Errorf("table %q does not name knowledge base %s", policy.tableName, kbs[0].ID)
-		}
-	} else {
-		kbCondition, err := tableComparison("kb_id", kbs[0].ID)
-		if err != nil {
-			return nil, err
-		}
-		policy.kbCondition = kbCondition
+	// The knowledge base is only in range because the table names it.
+	// ragflowTableName can fall back to the tenant table for an invalid ID,
+	// which must not be admitted as a structured table query range.
+	if want := fmt.Sprintf("ragflow_%s_%s", chat.TenantID, kbs[0].ID); policy.tableName != want {
+		return nil, fmt.Errorf("table %q does not name knowledge base %s", policy.tableName, kbs[0].ID)
 	}
+
 	if !tableNameRe.MatchString(policy.tableName) {
 		return nil, fmt.Errorf("table %q is not a readable identifier", policy.tableName)
 	}
@@ -290,9 +278,6 @@ func (p *tableSQLPolicy) rewrite(shape *utility.SQLStatementShape) (*tableSQLSta
 		limit = int(min(n, uint64(tableSQLMaxRows)))
 	}
 	conditions := make([]string, 0, 5)
-	if p.kbCondition != "" {
-		conditions = append(conditions, p.kbCondition)
-	}
 	docCondition, err := p.docIDCondition()
 	if err != nil {
 		return nil, err
@@ -526,11 +511,8 @@ func restrictToRequestedDocs(publishing, requested []string) []string {
 }
 
 // SupportsStructuredTableSQL reports whether the active engine can answer a
-// query against the columns a derived profile describes. The profile names
-// columns by the JSON key they are stored under, which only an engine whose SQL
-// prompt extracts from a JSON column can read back; Elasticsearch, OpenSearch
-// and SereneDB address physical fields, so handing them a JSON field map would
-// generate a query nothing can answer.
+// query against published table rows. Infinity provides both the JSON column
+// extraction and the row marker required by the query policy.
 func SupportsStructuredTableSQL(engineName string) bool {
-	return engineName == string(engine.EngineInfinity) || engine.IsOceanBaseFamily(engineName)
+	return engineName == string(engine.EngineInfinity)
 }

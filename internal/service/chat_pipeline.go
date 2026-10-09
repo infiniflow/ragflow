@@ -3710,11 +3710,7 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 // orchestrator entry point is s.useSQL at async_chat.go:319.
 // -----------------------------------------------------------------------
 
-// SQL retrieval system + user prompts, dispatched by engine type.
-// Mirrors dialog_service.py:1031-1105. The Go port previously used a
-// single engine-agnostic prompt, which made Infinity/OceanBase queries
-// fail because the LLM didn't know to use json_extract_string. These
-// constants restore parity with Python's three-way engine dispatch.
+// SQL retrieval prompts for Infinity table rows.
 
 // infinitySQLSysPrompt is for Infinity's JSON 'chunk_data' column.
 // References docnm (no _kwd suffix) per the Python prompt at
@@ -3753,45 +3749,9 @@ Fields (EXACT case): %s
 Question: %s
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.`
 
-// oceanbaseSQLSysPrompt is identical to Infinity's but uses docnm_kwd
-// (the _kwd suffix is the OceanBase convention). Mirrors
-// dialog_service.py:1064-1081.
-const oceanbaseSQLSysPrompt = `You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
-
-JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
-Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
-NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
-
-Each column is listed as "key (name)": the key is how the column is stored and
-the name is what it means. Put the key, exactly as given, inside '$.'. A name
-never goes in the query; give it to an extracted column with AS instead.
-
-RULES:
-1. Use EXACT field names (case-sensitive) from the list below
-2. For SELECT: include doc_id, docnm_kwd, and json_extract_string() for requested fields
-3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
-4. Add AS alias for extracted field names
-5. DO NOT select 'content' field
-6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
-   - Question asks to "show me" or "display" specific columns
-   - Question mentions "not null" or "excluding null"
-   - Add NULL check for count specific column
-   - DO NOT add NULL check for COUNT(*) queries (COUNT(*) counts all rows including nulls)
-7. Output ONLY the SQL, no explanations`
-
-// oceanbaseSQLUserPromptTemplate — same shape as Infinity, docnm_kwd in
-// the trailing sentence. Mirrors dialog_service.py:1082-1088.
-const oceanbaseSQLUserPromptTemplate = `Table: %s
-Fields (EXACT case): %s
-%s
-Question: %s
-Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.`
-
 // infinityMissingColumnsRepairPromptTemplate — 5 %s args:
 // table_name, JSON field bullets, question, previous_sql,
 // expected_doc_name_column. Mirrors dialog_service.py:1132-1143.
-// OceanBase shares this template (line 1130 dispatch) with
-// expected_doc_name_column="docnm_kwd" instead of "docnm".
 const infinityMissingColumnsRepairPromptTemplate = `Table name: %s;
 JSON fields available in 'chunk_data' column (use exact names):
 %s
@@ -3807,8 +3767,7 @@ Return ONLY SQL.`
 
 // infinityExecutionErrorRepairPromptTemplate — 4 %s args:
 // table_name, JSON field bullets, question, error. Mirrors
-// dialog_service.py:1168-1181. Used for both Infinity and OceanBase
-// (line 1165 dispatch).
+// dialog_service.py:1168-1181.
 const infinityExecutionErrorRepairPromptTemplate = `
 Table name: %s;
 JSON fields available in 'chunk_data' column (use these exact names in json_extract_string):
@@ -3866,8 +3825,7 @@ func (s *ChatPipelineService) useSQL(
 	// at dialog_service.py:934.
 	common.Debug("SQL retrieval: question", zap.String("question", question))
 
-	// Build engine-specific prompts. Mirrors the three-way dispatch
-	// at dialog_service.py:1031-1105.
+	// Build the prompts for Infinity table rows.
 	sysPrompt, userPrompt, overrideSQL := buildSQLPrompts(engineName, tableName, question, fieldMap)
 
 	// Step 1: generate SQL. If the question is a "how many rows in the
@@ -3984,7 +3942,6 @@ func ragflowTableName(tenantID string, kbs []*entity.Knowledgebase, docEngine en
 		}
 		return fmt.Sprintf("ragflow_%s_%s", tenantID, kbs[0].ID)
 	}
-	// OceanBase and SeekDB use the tenant table; the query policy adds kb_id.
 	return "ragflow_" + tenantID
 }
 
@@ -4002,9 +3959,7 @@ func isValidUUID(s string) bool {
 
 // generateSQL calls the chat model to produce a SQL SELECT.
 // sysPrompt and userPrompt are pre-built by buildSQLPrompts and already
-// carry engine-specific instructions (json_extract_string for Infinity/
-// OceanBase). Thin wrapper over
-// chatForSQL.
+// carry instructions for querying Infinity JSON fields.
 func generateSQL(
 	ctx context.Context,
 	chatModel *modelModule.ChatModel,
@@ -4019,7 +3974,7 @@ func generateSQL(
 // table/spreadsheet/excel" questions, matching Python's
 // row_count_override at dialog_service.py:1034 and 1063.
 //
-// engineName is Infinity, OceanBase or SeekDB, checked by the query range.
+// The query range only admits Infinity.
 //
 // Field names are sorted alphabetically for stable test output and
 // to match the order-independent iteration of Python's dict.
@@ -4040,18 +3995,7 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	case "oceanbase", "seekdb":
-		sysPrompt = oceanbaseSQLSysPrompt
-		userPrompt = fmt.Sprintf(
-			oceanbaseSQLUserPromptTemplate,
-			tableName,
-			strings.Join(names, ", "),
-			bullets,
-			question,
-		)
-		if isRowCountQuestion(question) {
-			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
-		}
+
 	}
 	return
 }
@@ -4088,7 +4032,7 @@ func isRowCountQuestion(q string) bool {
 
 // expectedDocNameColumn returns the column name the engine uses for
 // the document name in source-citation joins. "docnm" for Infinity
-// (no _kwd suffix), "docnm_kwd" for OceanBase / ES / OS / default.
+// (no _kwd suffix), and "docnm_kwd" for other engine result formats.
 // Mirrors dialog_service.py:965.
 func expectedDocNameColumn(engineName string) string {
 	if engineName == "infinity" {

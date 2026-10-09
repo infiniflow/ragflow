@@ -1273,16 +1273,16 @@ func (d *sqlRepairDriver) ChatWithMessages(_ context.Context, _ string, messages
 
 func TestUseSQLCitationRepairUsesExecutedStatement(t *testing.T) {
 	driver := &sqlRepairDriver{responses: []string{
-		"select weight_int from ragflow_tenant1 where weight_int = 1",
-		"select weight_int from ragflow_tenant1 where weight_int = 2",
-		"select doc_id, docnm_kwd, weight_int from ragflow_tenant1 where weight_int = 2",
+		"select weight_int from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where weight_int = 1",
+		"select weight_int from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where weight_int = 2",
+		"select doc_id, docnm, weight_int from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where weight_int = 2",
 	}}
-	docEngine := &sqlFakeEngine{engineType: "oceanbase", runSQL: func(_ context.Context, _ string, sql string, _ []string) ([]map[string]any, error) {
+	docEngine := &sqlFakeEngine{engineType: "infinity", runSQL: func(_ context.Context, _ string, sql string, _ []string) ([]map[string]any, error) {
 		if strings.Contains(sql, "weight_int = 1") {
 			return nil, fmt.Errorf("initial query failed")
 		}
-		if strings.Contains(sql, "docnm_kwd") {
-			return []map[string]any{{"doc_id": "doc-one", "docnm_kwd": "sheet", "weight_int": 2}}, nil
+		if strings.Contains(sql, "docnm") {
+			return []map[string]any{{"doc_id": "doc-one", "docnm": "sheet", "weight_int": 2}}, nil
 		}
 		return []map[string]any{{"weight_int": 2}}, nil
 	}}
@@ -1334,14 +1334,14 @@ func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs
 // TestFetchAggregateChunks_SingleKBSuccess verifies the secondary fetch
 // path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
-	chunksSQL := "select doc_id, docnm_kwd from ragflow_tenant1 where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' and doc_id IN ('d1', 'd2') and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
+	chunksSQL := "select doc_id, docnm from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where doc_id IN ('d1', 'd2') and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
 	sqlEngine := &sqlFakeEngine{
-		engineType: "oceanbase",
+		engineType: "infinity",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
-				{"doc_id": "d1", "docnm_kwd": "Doc1"},
-				{"doc_id": "d2", "docnm_kwd": "Doc2"},
-				{"doc_id": "d1", "docnm_kwd": "Doc1"},
+				{"doc_id": "d1", "docnm": "Doc1"},
+				{"doc_id": "d2", "docnm": "Doc2"},
+				{"doc_id": "d1", "docnm": "Doc1"},
 			},
 		},
 	}
@@ -1350,7 +1350,7 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 		t.Context(),
 		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
 		"weight_int = 1",
-		"docnm_kwd",
+		"docnm",
 		[]string{"kb_a"},
 	)
 	if len(chunks) != 3 {
@@ -1378,13 +1378,13 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 // TestFetchAggregateChunks_NoWhereClause verifies the no-WHERE early
 // return (matches Python's aggregate fallback at L1365).
 func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
-	sqlEngine := &sqlFakeEngine{engineType: "oceanbase"}
+	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
 		t.Context(),
 		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
 		"",
-		"docnm_kwd",
+		"docnm",
 		[]string{"kb_a"},
 	)
 	if chunks != nil || docAggs != nil {
@@ -1395,7 +1395,7 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 // TestFetchAggregateChunks_RunSQLError verifies graceful failure.
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{
-		engineType: "oceanbase",
+		engineType: "infinity",
 		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
 			return nil, fmt.Errorf("engine boom")
 		},
@@ -1405,7 +1405,7 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 		t.Context(),
 		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
 		"weight_int = 1",
-		"docnm_kwd",
+		"docnm",
 		[]string{"kb_a"},
 	)
 	if chunks != nil || docAggs != nil {
@@ -1503,12 +1503,12 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	rows := []map[string]interface{}{
 		{"count": 42.0, "label": "total"},
 	}
-	chunksSQL := "select doc_id, docnm_kwd from ragflow_tenant1 where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' and doc_id = 'd1' and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
+	chunksSQL := "select doc_id, docnm from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where doc_id = 'd1' and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
 	sqlEngine := &sqlFakeEngine{
-		engineType: "oceanbase",
+		engineType: "infinity",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
-				{"doc_id": "d1", "docnm_kwd": "Doc1"},
+				{"doc_id": "d1", "docnm": "Doc1"},
 			},
 		},
 	}
@@ -1520,7 +1520,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 		&tableSQLStatement{aggregating: true, where: "weight_int = 1"},
 		rows,
 		"",
-		"elasticsearch",
+		"infinity",
 		kbs,
 		true,
 	)

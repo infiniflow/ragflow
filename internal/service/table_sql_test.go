@@ -69,39 +69,22 @@ func newTestInfinityQuery(t *testing.T, docIDs []string) *tableSQL {
 	return query
 }
 
-func newTestOceanBaseQuery(t *testing.T, docIDs []string) *tableSQL {
-	t.Helper()
-	if docIDs == nil {
-		docIDs = []string{"doc-one"}
-	}
-	chat := &entity.Chat{TenantID: "tenant1"}
-	kbs := []*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}}
-	query, err := newTableSQL(&sqlFakeEngine{engineType: "oceanbase"}, chat, kbs, docIDs, testTableFieldMap())
-	if err != nil {
-		t.Fatalf("newTableSQL: %v", err)
-	}
-	if query == nil {
-		t.Fatal("newTableSQL returned no range")
-	}
-	return query
-}
-
 func TestTableSQLRefusesWholeRowProjection(t *testing.T) {
-	query := newTestOceanBaseQuery(t, nil)
-	for _, selectList := range []string{"*", "doc_id, *", "all * weight_int", "distinct * weight_int", "chunk_data", "chunk_data as payload", "ragflow_tenant1.chunk_data", "cast(chunk_data as text)", "concat(chunk_data, '')"} {
-		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1"); err == nil {
+	query := newTestInfinityQuery(t, nil)
+	for _, selectList := range []string{"*", "doc_id, *", "all * weight_int", "distinct * weight_int", "chunk_data", "chunk_data as payload", "ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0.chunk_data", "cast(chunk_data as text)", "concat(chunk_data, '')"} {
+		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0"); err == nil {
 			t.Errorf("accepted full row projection: %s", selectList)
 		}
 	}
 	for _, selectList := range []string{"count(*) as total", "weight_int * 2 as doubled", "null * 2 as empty", "(weight_int + 1) * (rank_flt + 2) as score", "sum(weight_int * 2) as total", "json_extract_string(chunk_data, " + testRegionPath() + ") as region"} {
-		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1"); err != nil {
+		if _, err := query.policy.check("select " + selectList + " from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0"); err != nil {
 			t.Errorf("rejected bounded expression %s: %v", selectList, err)
 		}
 	}
 }
 
 func TestTableSQLBoundsReturnedRows(t *testing.T) {
-	query := newTestOceanBaseQuery(t, nil)
+	query := newTestInfinityQuery(t, nil)
 	for _, tc := range []struct{ suffix, want string }{
 		{"", "limit 100"},
 		{" limit 5", "limit 5"},
@@ -109,7 +92,7 @@ func TestTableSQLBoundsReturnedRows(t *testing.T) {
 		{" limit 1000000 offset 7", "limit 1000 offset 7"},
 	} {
 		t.Run(tc.suffix, func(t *testing.T) {
-			statement, err := query.policy.check("select doc_id from ragflow_tenant1" + tc.suffix)
+			statement, err := query.policy.check("select doc_id from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0" + tc.suffix)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -119,11 +102,11 @@ func TestTableSQLBoundsReturnedRows(t *testing.T) {
 		})
 	}
 	for _, limit := range []string{"-1", "1.5", "1 + 2", "'100'", "20, 1000000"} {
-		if _, err := query.policy.check("select doc_id from ragflow_tenant1 limit " + limit); err == nil {
+		if _, err := query.policy.check("select doc_id from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 limit " + limit); err == nil {
 			t.Errorf("accepted a limit that bypasses the integer bound: %s", limit)
 		}
 	}
-	statement, err := query.policy.check("select count(*) as total from ragflow_tenant1")
+	statement, err := query.policy.check("select count(*) as total from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,16 +116,15 @@ func TestTableSQLBoundsReturnedRows(t *testing.T) {
 }
 
 func TestTableSQLRewriteCarriesTheWholeRange(t *testing.T) {
-	query := newTestOceanBaseQuery(t, []string{"doc-one", "doc-two"})
+	query := newTestInfinityQuery(t, []string{"doc-one", "doc-two"})
 	statement, err := query.policy.check("select doc_id, json_extract_string(chunk_data, " +
-		testRegionPath() + ") from ragflow_tenant1 where weight_int = 1 or rank_flt = 2")
+		testRegionPath() + ") from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 where weight_int = 1 or rank_flt = 2")
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
 	want := "select doc_id, json_extract_string ( chunk_data, '$." + testRegionKey + "' ) " +
-		"from ragflow_tenant1 " +
-		"where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' " +
-		"and doc_id in ('doc-one', 'doc-two') " +
+		"from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0 " +
+		"where doc_id in ('doc-one', 'doc-two') " +
 		"and available_int = 1 and table_row_int = 1 " +
 		"and (weight_int = 1 or rank_flt = 2) limit 100"
 	if !strings.EqualFold(statement.text, want) {
@@ -209,15 +191,15 @@ func TestTableSQLRefusesAnythingOutsideOneTable(t *testing.T) {
 }
 
 func TestSupportsStructuredTableSQL(t *testing.T) {
-	supported := []string{string(engine.EngineInfinity), string(engine.EngineOceanBase), string(engine.EngineSeekDB)}
+	supported := []string{string(engine.EngineInfinity)}
 	for _, name := range supported {
 		if !SupportsStructuredTableSQL(name) {
 			t.Errorf("%q should support the JSON column query path", name)
 		}
 	}
-	for _, name := range []string{"elasticsearch", "opensearch", "serenedb", ""} {
+	for _, name := range []string{"oceanbase", "seekdb", "elasticsearch", "opensearch", "serenedb", ""} {
 		if SupportsStructuredTableSQL(name) {
-			t.Errorf("%q addresses physical fields and must not receive a JSON field map", name)
+			t.Errorf("%q must not enter structured table SQL", name)
 		}
 	}
 }
@@ -266,15 +248,15 @@ func TestTableSQLAggregatingFlag(t *testing.T) {
 	}
 }
 
-func TestTableSQLQuotedAliasKeepsItsEngineStyle(t *testing.T) {
-	ocean := newTestOceanBaseQuery(t, nil)
-	statement, err := ocean.policy.check("select json_extract_string(chunk_data, " + testRegionPath() +
-		") as \"地区\" from ragflow_tenant1")
+func TestTableSQLQuotedAliasUsesInfinityStyle(t *testing.T) {
+	query := newTestInfinityQuery(t, nil)
+	statement, err := query.policy.check("select json_extract_string(chunk_data, " + testRegionPath() +
+		") as \"地区\" from ragflow_tenant1_0f1e2d3c4b5a69788796a5b4c3d2e1f0")
 	if err != nil {
 		t.Fatalf("check: %v", err)
 	}
-	if !strings.Contains(statement.text, "`地区`") {
-		t.Errorf("OceanBase reads quoted names with backticks: %q", statement.text)
+	if !strings.Contains(statement.text, "\"地区\"") {
+		t.Errorf("Infinity reads quoted names with double quotes: %q", statement.text)
 	}
 }
 
@@ -433,5 +415,17 @@ func TestNewTableSQLAcceptsAGeneratedInfinityTableName(t *testing.T) {
 	}
 	if len(want) <= 64 {
 		t.Fatalf("the fixture no longer exceeds the id bound: %d characters", len(want))
+	}
+}
+
+func TestTableSQLSkipsOceanBaseFamily(t *testing.T) {
+	for _, name := range []string{"oceanbase", "seekdb"} {
+		query, err := newTableSQL(&sqlFakeEngine{engineType: name},
+			&entity.Chat{TenantID: "tenant1"},
+			[]*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}},
+			[]string{"doc-one"}, testTableFieldMap())
+		if err != nil || query != nil {
+			t.Errorf("%s: query=%v err=%v, want ordinary retrieval", name, query, err)
+		}
 	}
 }
