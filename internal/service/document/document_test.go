@@ -3372,15 +3372,13 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
-	chunkMethod := "manual"
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := t.Context()
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID: &pipelineID,
-		ParserID:   &chunkMethod,
 		ParseType:  &parseType,
-	}, map[string]bool{"pipeline_id": true, "parser_id": true, "parse_type": true})
+	}, map[string]bool{"pipeline_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -3462,50 +3460,34 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	}
 }
 
-// TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID reproduces
-// the comment-3 bug: parse_type=2 (pipeline) with a dirty req.ParserID must
-// still resolve to pipeline mode so parser_config is cleaned against the
-// canvas DSL (fallback when the canvas is absent), not the builtin DSL.
-//
-// With the bug, req.ParserID != nil flipped isCanvas=false inside the
-// parser_config block, so the config was rebuilt against the builtin "manual"
-// DSL and unknown fields were dropped. After the fix, the canvas load fails
-// (no such pipeline in the test DB) and the original config is persisted as-is.
-func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T) {
+// TestUpdateDatasetDocumentParseTypePipelineRejectsParserID locks in the new
+// explicit contract: parse_type=2 (Pipeline) must not carry a parser_id. The
+// previous lenient behavior silently ignored the contradictory id; now it is
+// rejected so a malformed request can never pick the wrong mode.
+func TestUpdateDatasetDocumentParseTypePipelineRejectsParserID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	parseType := 2
-	// Dirty parser_id that the builtin branch would otherwise use to load a
-	// builtin DSL and strip unknown fields.
 	parserID := "manual"
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineID,
-		ParserConfig: map[string]any{
-			"nonexistent_field": "value",
-		},
-	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true, "parser_config": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true})
+	if err == nil {
+		t.Fatal("expected error rejecting parser_id in Pipeline mode")
 	}
-	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
-		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if resp.ParserID != "naive" {
-		t.Fatalf("parser_id = %q, want original naive (parser_id must not apply in pipeline mode)", resp.ParserID)
-	}
-	// Pipeline mode with an absent canvas must fall back to persisting the
-	// original config verbatim. If the builtin path ran instead, the unknown
-	// field would have been stripped during DSL cleaning.
-	if v, ok := resp.ParserConfig["nonexistent_field"]; !ok || v != "value" {
-		t.Fatalf("parser_config = %v, want nonexistent_field=value preserved (canvas fallback)", resp.ParserConfig)
+	if err.Error() != "parser_id must not be set when parse_type is Pipeline" {
+		t.Fatalf("err = %q", err.Error())
 	}
 }
 

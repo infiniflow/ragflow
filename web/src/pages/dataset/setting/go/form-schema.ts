@@ -46,5 +46,12 @@ export const formSchema = z
         code: 'custom',
       });
     }
+    if (data.parse_type === ParseType.BuiltIn && !data.parser_id?.trim()) {
+      ctx.addIssue({
+        path: ['parser_id'],
+        message: t('common.pleaseSelect'),
+        code: 'custom',
+      });
+    }
     addParserConfigIssues(data.parser_config, ctx, t);
   });
