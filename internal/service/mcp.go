@@ -117,13 +117,13 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
 	}
 
-	exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, req.Name, tenantID)
+	name, err := common.UniqueName(req.Name, mcpServerNameLimit, func(candidate string) (bool, error) {
+		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated MCP server name")
-	}
+	req.Name = name
 
 	if req.URL == "" {
 		return nil, common.CodeDataError, errors.New("invalid url")
@@ -412,12 +412,14 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
 	}
-	if serverNameProvided && serverName != server.Name {
-		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, serverName, tenantID)
+	if serverNameProvided {
+		available, err := common.NameAvailable(server.Name, serverName, func(candidate string) (bool, error) {
+			return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+		})
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		if exists {
+		if !available {
 			return nil, common.CodeDataError, errors.New("duplicated MCP server name")
 		}
 	}
@@ -776,19 +778,9 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 }
 
 func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID string) (string, error) {
-	name := base
-	counter := 0
-	for {
-		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, name, tenantID)
-		if err != nil {
-			return "", err
-		}
-		if !exists {
-			return name, nil
-		}
-		name = fmt.Sprintf("%s_%d", base, counter)
-		counter++
-	}
+	return common.UniqueName(base, mcpServerNameLimit, func(candidate string) (bool, error) {
+		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+	})
 }
 
 // TestServerRequest previews unsaved connection settings. A masked token is
