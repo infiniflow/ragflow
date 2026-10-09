@@ -32,6 +32,7 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/permission"
@@ -442,11 +443,14 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 		svc:   &nlp.RetrievalService{},
 		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
 	}
-	_, err = adapter.Search(t.Context(), db, RetrievalRequest{
-		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "member",
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	ctx := runtime.WithState(t.Context(), state)
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
 	})
 	if !errors.Is(err, permission.ErrPermissionDenied) {
-		t.Fatalf("Search error = %v, want dataset use permission denial", err)
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
 	}
 }
 

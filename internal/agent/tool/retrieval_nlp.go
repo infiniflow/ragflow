@@ -203,11 +203,11 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if len(datasets.tenantIDs) != 1 {
 		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
 	}
-	userID := strings.TrimSpace(req.UserID)
-	if userID == "" {
-		if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
-			userID, _ = state.Sys["user_id"].(string)
-		}
+	// Dataset authorization must use the caller identity established by the
+	// agent run, not req.UserID, which is a configurable per-user memory filter.
+	userID := ""
+	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
+		userID, _ = state.Sys["user_id"].(string)
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)
