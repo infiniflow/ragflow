@@ -423,6 +423,7 @@ export default {
       reRankModelWaring: 'يستغرق نموذج إعادة التصنيف وقتًا طويلاً للغاية.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'يستخدم لإنشاء بيانات التعريف التلقائية والكلمات الرئيسية التلقائية والأسئلة التلقائية. سيؤثر أداء النموذج على جودة التوليد.',
       globalIndexModel: 'نموذج الفهرسة',

@@ -590,6 +590,7 @@ export default {
         'Le modèle de réordonnancement est très consommateur de temps.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       titleDescription:
         'Modifiez ici la configuration de votre base de connaissances, notamment la méthode de découpage.',
       imageTableContextWindow: 'Fenêtre de contexte image & tableau',

@@ -210,6 +210,7 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Janela de contexto de imagem e tabela',
       imageTableContextWindowTip:
         'Captura N tokens de texto acima e abaixo da imagem e da tabela para fornecer um contexto de fundo mais rico.',

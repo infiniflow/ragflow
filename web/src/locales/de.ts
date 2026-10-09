@@ -433,6 +433,7 @@ Beispiel: Eine 1 KB Nachricht mit 1024-dim Einbettung verwendet ~9 KB. Das Stand
       reRankModelWaring: 'Das Rerank-Modell ist sehr zeitaufwendig.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'Wird verwendet, um Auto-Metadaten, Auto-Schlüsselwörter und Auto-Fragen zu generieren. Die Modellleistung beeinflusst die Generierungsqualität.',
       globalIndexModel: 'Indizierungsmodell',

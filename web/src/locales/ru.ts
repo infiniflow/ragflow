@@ -447,6 +447,7 @@ export default {
       reRankModelWaring: 'Rerank модель очень требовательна ко времени.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Seed — начальное значение псевдослучайного алгоритма для воспроизводимости результата при повторных запусках.',
       datasetDescription: 'Опишите ваш датасет',

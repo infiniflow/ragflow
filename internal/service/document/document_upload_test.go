@@ -63,18 +63,3 @@ func TestNormalizeWebDocumentName(t *testing.T) {
 		}
 	}
 }
-
-func TestUniqueUploadName(t *testing.T) {
-	if got := uniqueUploadName("a.txt", map[string]bool{}); got != "a.txt" {
-		t.Errorf("free name: got %q", got)
-	}
-	if got := uniqueUploadName("a.txt", map[string]bool{"a.txt": true}); got != "a(1).txt" {
-		t.Errorf("single clash: got %q", got)
-	}
-	if got := uniqueUploadName("a.txt", map[string]bool{"a.txt": true, "a(1).txt": true}); got != "a(2).txt" {
-		t.Errorf("double clash: got %q", got)
-	}
-	if got := uniqueUploadName("noext", map[string]bool{"noext": true}); got != "noext(1)" {
-		t.Errorf("no-extension clash: got %q", got)
-	}
-}

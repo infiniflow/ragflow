@@ -404,6 +404,21 @@ func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentI
 	return files, nil
 }
 
+// NameExists reports whether a file or folder with the given name already
+// exists under parentID for the tenant, comparing names case-insensitively.
+// excludeID, when non-empty, omits that entry from the check so moving or
+// renaming an entry does not collide with itself.
+func (dao *FileDAO) NameExists(ctx context.Context, db *gorm.DB, name, parentID, tenantID, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.File{}).
+		Where("LOWER(name) = LOWER(?) AND parent_id = ? AND tenant_id = ?", name, parentID, tenantID)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var count int64
+	err := q.Count(&count).Error
+	return count > 0, err
+}
+
 // Delete deletes a file by ID (hard delete)
 func (dao *FileDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
 	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.File{}).Error

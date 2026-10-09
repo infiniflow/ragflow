@@ -619,6 +619,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Il seme è il punto di partenza per un algoritmo pseudo-casuale che garantisce la riproducibilità dello stesso output in esecuzioni diverse.',
       datasetDescription: 'Descrivi il tuo dataset',

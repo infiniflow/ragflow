@@ -428,6 +428,7 @@ export default {
       reRankModelWaring: 'Моделът за преподреждане е много времеемък.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       globalIndexModelTip:
         'Използва се за генериране на авто-метаданни, авто-ключови думи и авто-въпроси. Производителността на модела влияе на качеството на генерирането.',
       globalIndexModel: 'Индексиращ модел',

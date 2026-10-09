@@ -22,6 +22,8 @@ import (
 	"strings"
 
 	"github.com/ledongthuc/pdf"
+
+	"ragflow/internal/utility"
 )
 
 // maxPDFPageCount is the largest page count PlainText will accept. A corrupt
@@ -36,7 +38,7 @@ const maxPDFPageCount = 1_000_000
 // plain_text strategy keeps working under !cgo builds without native
 // libraries. The returned items carry the keys text/doc_type_kwd/page_number
 // so the parser package can wrap them with pdfItemsToResult unchanged.
-func PlainText(data []byte) ([]map[string]any, int, error) {
+func PlainText(data []byte, pages [][]int) ([]map[string]any, int, error) {
 	if len(data) == 0 {
 		return nil, 0, nil
 	}
@@ -60,6 +62,9 @@ func PlainText(data []byte) ([]map[string]any, int, error) {
 	}
 	items := make([]map[string]any, 0, pageCount)
 	for pageNum := 1; pageNum <= pageCount; pageNum++ {
+		if !utility.PDFPageInRanges(pages, pageNum) {
+			continue
+		}
 		p := pdfReader.Page(pageNum)
 		if p.V.IsNull() {
 			continue
