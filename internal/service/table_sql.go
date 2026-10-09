@@ -79,7 +79,7 @@ var tableColumns = map[string]bool{
 }
 
 // tableFunctions are the calls a table query may make. json_extract_string and
-// json_extract_isnull are the forms the Infinity prompt asks for.
+// json_extract_isnull are the forms the table prompt asks for.
 var tableFunctions = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true, "total": true,
 	"group_concat": true, "stddev": true, "variance": true,
@@ -126,6 +126,8 @@ var tableOperators = map[string]bool{
 // tableSQLPolicy is the range one answer may read.
 type tableSQLPolicy struct {
 	tableName string
+	// ES shares the tenant index across knowledge bases.
+	kbCondition string
 	// quote is how this engine writes a quoted name, and so how a checked
 	// statement is emitted.
 	quote rune
@@ -184,13 +186,20 @@ func newTableSQL(docEngine engine.DocEngine, chat *entity.Chat, kbs []*entity.Kn
 		docIDs:    append([]string(nil), allowedDocIDs...),
 		dataKeys:  make(map[string]bool, len(fieldMap)),
 	}
-	// The knowledge base is only in range because the table names it.
+	// Infinity encodes the knowledge base in its table name.
 	// ragflowTableName can fall back to the tenant table for an invalid ID,
 	// which must not be admitted as a structured table query range.
-	if want := fmt.Sprintf("ragflow_%s_%s", chat.TenantID, kbs[0].ID); policy.tableName != want {
+	if want := fmt.Sprintf("ragflow_%s_%s", chat.TenantID, kbs[0].ID); engineName == string(engine.EngineInfinity) && policy.tableName != want {
 		return nil, fmt.Errorf("table %q does not name knowledge base %s", policy.tableName, kbs[0].ID)
 	}
 
+	if engineName == string(engine.EngineElasticsearch) {
+		kbCondition, err := tableComparison("kb_id", kbs[0].ID)
+		if err != nil {
+			return nil, err
+		}
+		policy.kbCondition = kbCondition
+	}
 	if !tableNameRe.MatchString(policy.tableName) {
 		return nil, fmt.Errorf("table %q is not a readable identifier", policy.tableName)
 	}
@@ -278,6 +287,9 @@ func (p *tableSQLPolicy) rewrite(shape *utility.SQLStatementShape) (*tableSQLSta
 		limit = int(min(n, uint64(tableSQLMaxRows)))
 	}
 	conditions := make([]string, 0, 5)
+	if p.kbCondition != "" {
+		conditions = append(conditions, p.kbCondition)
+	}
 	docCondition, err := p.docIDCondition()
 	if err != nil {
 		return nil, err
@@ -511,8 +523,8 @@ func restrictToRequestedDocs(publishing, requested []string) []string {
 }
 
 // SupportsStructuredTableSQL reports whether the active engine can answer a
-// query against published table rows. Infinity provides both the JSON column
-// extraction and the row marker required by the query policy.
+// query against published table rows with JSON column extraction and a row
+// marker. Infinity and Elasticsearch provide this query path.
 func SupportsStructuredTableSQL(engineName string) bool {
-	return engineName == string(engine.EngineInfinity)
+	return engineName == string(engine.EngineInfinity) || engineName == string(engine.EngineElasticsearch)
 }

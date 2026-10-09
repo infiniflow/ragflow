@@ -3704,18 +3704,13 @@ func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 	return ExtractVisibleAnswer(text)
 }
 
-// -----------------------------------------------------------------------
-// Moved from sql_fallback.go (2026-06-12). SQL retrieval system, repair
-// helpers, and Python parity helpers. Kept in async_chat.go because the
-// orchestrator entry point is s.useSQL at async_chat.go:319.
-// -----------------------------------------------------------------------
+// SQL retrieval prompts for structured table rows.
 
-// SQL retrieval prompts for Infinity table rows.
-
-// infinitySQLSysPrompt is for Infinity's JSON 'chunk_data' column.
+// tableSQLSysPrompt describes the shared JSON field expressions. The engine
+// adapts them at execution, and the prompt builder selects its source column.
 // References docnm (no _kwd suffix) per the Python prompt at
 // dialog_service.py:1035-1052.
-const infinitySQLSysPrompt = `You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
+const tableSQLSysPrompt = `You are a Database Administrator. Write SQL for a table with JSON 'chunk_data' column.
 
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
 Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
@@ -3740,19 +3735,19 @@ RULES:
 8. For partial text search, use LIKE with wildcards: '%value%' (e.g. WHERE json_extract_string(chunk_data, '$.name') LIKE '%Alice%')
 9. Output ONLY the SQL, no explanations`
 
-// infinitySQLUserPromptTemplate has 4 %s placeholders:
+// tableSQLUserPromptTemplate has 4 %s placeholders:
 // table_name, comma-joined field names, bullet list of field names,
 // question. Mirrors dialog_service.py:1053-1059.
-const infinitySQLUserPromptTemplate = `Table: %s
+const tableSQLUserPromptTemplate = `Table: %s
 Fields (EXACT case): %s
 %s
 Question: %s
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm for data queries. Only SQL.`
 
-// infinityMissingColumnsRepairPromptTemplate — 5 %s args:
+// tableMissingColumnsRepairPromptTemplate — 5 %s args:
 // table_name, JSON field bullets, question, previous_sql,
 // expected_doc_name_column. Mirrors dialog_service.py:1132-1143.
-const infinityMissingColumnsRepairPromptTemplate = `Table name: %s;
+const tableMissingColumnsRepairPromptTemplate = `Table name: %s;
 JSON fields available in 'chunk_data' column (use exact names):
 %s
 
@@ -3765,10 +3760,10 @@ Rewrite SQL to keep the same query intent and include doc_id and %s in the SELEC
 For extracted JSON fields, use json_extract_string(chunk_data, '$.field_name').
 Return ONLY SQL.`
 
-// infinityExecutionErrorRepairPromptTemplate — 4 %s args:
+// tableExecutionErrorRepairPromptTemplate — 4 %s args:
 // table_name, JSON field bullets, question, error. Mirrors
 // dialog_service.py:1168-1181.
-const infinityExecutionErrorRepairPromptTemplate = `
+const tableExecutionErrorRepairPromptTemplate = `
 Table name: %s;
 JSON fields available in 'chunk_data' column (use these exact names in json_extract_string):
 %s
@@ -3825,7 +3820,7 @@ func (s *ChatPipelineService) useSQL(
 	// at dialog_service.py:934.
 	common.Debug("SQL retrieval: question", zap.String("question", question))
 
-	// Build the prompts for Infinity table rows.
+	// Build the prompts for structured table rows.
 	sysPrompt, userPrompt, overrideSQL := buildSQLPrompts(engineName, tableName, question, fieldMap)
 
 	// Step 1: generate SQL. If the question is a "how many rows in the
@@ -3974,7 +3969,7 @@ func generateSQL(
 // table/spreadsheet/excel" questions, matching Python's
 // row_count_override at dialog_service.py:1034 and 1063.
 //
-// The query range only admits Infinity.
+// The query range admits Infinity and Elasticsearch.
 //
 // Field names are sorted alphabetically for stable test output and
 // to match the order-independent iteration of Python's dict.
@@ -3983,15 +3978,14 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 	bullets := tableFieldBullets(fieldMap)
 
 	switch engineName {
-	case "infinity":
-		sysPrompt = infinitySQLSysPrompt
-		userPrompt = fmt.Sprintf(
-			infinitySQLUserPromptTemplate,
-			tableName,
-			strings.Join(names, ", "),
-			bullets,
-			question,
-		)
+	case "infinity", "elasticsearch":
+		sysPrompt = tableSQLSysPrompt
+		userTemplate := tableSQLUserPromptTemplate
+		if engineName == "elasticsearch" {
+			sysPrompt = strings.ReplaceAll(sysPrompt, "docnm", "docnm_kwd")
+			userTemplate = strings.ReplaceAll(userTemplate, "docnm", "docnm_kwd")
+		}
+		userPrompt = fmt.Sprintf(userTemplate, tableName, strings.Join(names, ", "), bullets, question)
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
@@ -4073,13 +4067,13 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 
 // buildMissingColumnsRepairPrompt asks for sources without changing JSON extraction.
 func buildMissingColumnsRepairPrompt(tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	return fmt.Sprintf(infinityMissingColumnsRepairPromptTemplate, tableName,
+	return fmt.Sprintf(tableMissingColumnsRepairPromptTemplate, tableName,
 		tableFieldBullets(fieldMap), question, prevSQL, expectedCol)
 }
 
 // buildExecutionErrorRepairPrompt preserves the structured column syntax.
 func buildExecutionErrorRepairPrompt(tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	return fmt.Sprintf(infinityExecutionErrorRepairPromptTemplate, tableName,
+	return fmt.Sprintf(tableExecutionErrorRepairPromptTemplate, tableName,
 		tableFieldBullets(fieldMap), question, errMsg)
 }
 

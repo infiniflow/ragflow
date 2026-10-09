@@ -2927,3 +2927,69 @@ func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
 		})
 	}
 }
+
+func TestUseSQLElasticsearchRepairsStayInRange(t *testing.T) {
+	driver := &sqlRepairDriver{responses: []string{
+		"select weight_int from ragflow_tenant1 where weight_int = 1",
+		"select weight_int from ragflow_tenant1 where weight_int = 2",
+		"select doc_id, docnm_kwd, weight_int from ragflow_tenant1 where weight_int = 2",
+	}}
+	calls := 0
+	docEngine := &sqlFakeEngine{engineType: "elasticsearch", runSQL: func(_ context.Context, _ string, sql string, _ []string) ([]map[string]any, error) {
+		calls++
+		for _, scope := range []string{"kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0'", "doc_id = 'doc-one'", "table_row_int = 1", "available_int = 1"} {
+			if !strings.Contains(sql, scope) {
+				t.Errorf("query lost %s: %s", scope, sql)
+			}
+		}
+		if strings.Contains(sql, "weight_int = 1") {
+			return nil, fmt.Errorf("initial query failed")
+		}
+		if strings.Contains(sql, "docnm_kwd") {
+			return []map[string]any{{"doc_id": "doc-one", "docnm_kwd": "sheet", "weight_int": 2}}, nil
+		}
+		return []map[string]any{{"weight_int": 2}}, nil
+	}}
+	query := newTestTableQuery(t, docEngine, []string{"doc-one"})
+	answer, err := (&ChatPipelineService{}).useSQL(t.Context(), &entity.Chat{TenantID: "tenant1"},
+		[]*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}}, "show weights",
+		&modelModule.ChatModel{ModelDriver: driver}, query, true)
+	if err != nil || answer == nil || calls != 3 {
+		t.Fatalf("answer=%v err=%v calls=%d", answer, err, calls)
+	}
+	if !strings.Contains(driver.lastPrompt, "weight_int = 2") || strings.Contains(driver.lastPrompt, "weight_int = 1") {
+		t.Fatalf("repair used failed statement: %s", driver.lastPrompt)
+	}
+	refs := answer["reference"].(map[string]interface{})
+	if len(refs["chunks"].([]map[string]interface{})) != 1 {
+		t.Fatalf("missing source citation: %v", refs)
+	}
+}
+
+func TestUseSQLElasticsearchCountSkipsModel(t *testing.T) {
+	driver := &sqlRepairDriver{}
+	calls := 0
+	docEngine := &sqlFakeEngine{engineType: "elasticsearch", runSQL: func(_ context.Context, _ string, sql string, _ []string) ([]map[string]any, error) {
+		calls++
+		if !strings.Contains(strings.ReplaceAll(strings.ToLower(sql), " ", ""), "count(*)") || !strings.Contains(sql, "table_row_int = 1") || !strings.Contains(sql, "kb_id = '") {
+			t.Fatalf("count lost scope: %s", sql)
+		}
+		return []map[string]any{{"rows": 4}}, nil
+	}}
+	query := newTestTableQuery(t, docEngine, []string{"doc-one"})
+	answer, err := (&ChatPipelineService{}).useSQL(t.Context(), &entity.Chat{TenantID: "tenant1"},
+		[]*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}}, "how many rows in this table",
+		&modelModule.ChatModel{ModelDriver: driver}, query, true)
+	if err != nil || answer == nil || answer["answer"] != "4" || calls != 1 || driver.lastPrompt != "" {
+		t.Fatalf("answer=%v err=%v calls=%d model prompt=%s", answer, err, calls, driver.lastPrompt)
+	}
+}
+
+func TestElasticsearchTablePromptsUseStoredColumnKeys(t *testing.T) {
+	fields := testTableFieldMap()
+	fields["c_"+strings.Repeat("d", 64)] = "display docnm 50%"
+	sys, user, _ := buildSQLPrompts("elasticsearch", "ragflow_tenant1", "show amounts", fields)
+	if !strings.Contains(sys, "docnm_kwd") || !strings.Contains(user, "docnm_kwd") || !strings.Contains(user, "display docnm 50%") {
+		t.Fatalf("ES prompts changed columns or labels: %s %s", sys, user)
+	}
+}

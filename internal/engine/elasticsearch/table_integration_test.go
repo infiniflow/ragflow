@@ -5,6 +5,7 @@ package elasticsearch_test
 import (
 	"context"
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -22,7 +23,8 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-func TestTableColumnModeRoundTrip(t *testing.T) {
+func newTableTestEngine(t *testing.T, ctx context.Context) *es.Engine {
+	t.Helper()
 	if common.GetEnv(common.EnvESTest) != "1" {
 		t.Skip("set ES_TEST=1 for real Elasticsearch")
 	}
@@ -41,13 +43,18 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 	if password == "" {
 		password = "infini_rag_flow"
 	}
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
-	defer cancel()
 	e, err := es.NewEngine(ctx, config.ElasticsearchConfig{Hosts: hosts, Username: user, Password: password})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer e.Close()
+	t.Cleanup(func() { e.Close() })
+	return e
+}
+
+func TestTableColumnModeRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	e := newTableTestEngine(t, ctx)
 	for _, format := range []string{"csv", "xlsx"} {
 		for _, mode := range []string{"auto", "manual", "metadata-only"} {
 			t.Run(format+"/"+mode, func(t *testing.T) {
@@ -161,6 +168,11 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 				if data[entity.TableDataKey("金额")] != "secretword" || fmt.Sprint(stored["table_row_int"]) != "1" {
 					t.Fatalf("structured row = %#v", stored)
 				}
+				query := fmt.Sprintf("SELECT doc_id, docnm_kwd, json_extract_string(chunk_data, '$.%s') AS amount FROM %s WHERE kb_id = '%s' AND doc_id = '%s' AND available_int = 1 AND table_row_int = 1 AND json_extract_string(chunk_data, '$.%s') = 'secretword' LIMIT 100", entity.TableDataKey("金额"), base, kb, doc, entity.TableDataKey("金额"))
+				rows, err := e.RunSQL(ctx, base, query, []string{kb}, "json")
+				if err != nil || len(rows) != 1 || rows[0]["amount"] != "secretword" {
+					t.Fatalf("column mode SQL rows=%v err=%v", rows, err)
+				}
 				if mode == "auto" && (!strings.Contains(body, "secretword") || len(data) != 4) {
 					t.Fatalf("auto body=%q data=%#v", body, data)
 				}
@@ -239,5 +251,87 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestTableColumnSQLRoundTrip(t *testing.T) {
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
+	defer cancel()
+	e := newTableTestEngine(t, ctx)
+	base := fmt.Sprintf("ragflow_column_sql_%d", time.Now().UnixNano())
+	const kb = "one"
+	if err := e.CreateChunkStore(ctx, base, kb, 2, "table"); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := e.DropChunkStore(cleanup, base, ""); err != nil {
+			t.Error(err)
+		}
+	}()
+	amount, region, long := entity.TableDataKey("金额"), entity.TableDataKey("地区"), entity.TableDataKey("长文本")
+	makeRow := func(id, doc, kb string, available, marker int, data map[string]any) map[string]interface{} {
+		return map[string]interface{}{"id": id, "doc_id": doc, "kb_id": kb, "docnm_kwd": "sheet.csv", "content_with_weight": id, "available_int": available, "table_row_int": marker, "chunk_data": data}
+	}
+	rows := []map[string]interface{}{
+		makeRow("r1", "published", kb, 1, 1, map[string]any{amount: "100", region: "North % `price`  中文", long: strings.Repeat("长", 300)}),
+		makeRow("r2", "published", kb, 1, 1, map[string]any{amount: "20", region: "South"}),
+		makeRow("r3", "published", kb, 1, 1, map[string]any{amount: "0.5", region: "South"}),
+		makeRow("null", "published", kb, 1, 1, map[string]any{region: "South"}),
+		makeRow("bad", "bad", kb, 1, 1, map[string]any{amount: "bad"}),
+		makeRow("disabled", "published", kb, 0, 1, map[string]any{amount: "9999"}),
+		makeRow("otherdoc", "other", kb, 1, 1, map[string]any{amount: "9999"}),
+		makeRow("prose", "published", kb, 1, 0, map[string]any{amount: "9999"}),
+	}
+	if _, err := e.InsertChunks(ctx, rows, base, kb); err != nil {
+		t.Fatal(err)
+	}
+	// ES InsertChunks owns kb_id, so a second write creates the other KB's rows.
+	if _, err := e.InsertChunks(ctx, []map[string]interface{}{makeRow("otherkb", "published", "two", 1, 1, map[string]any{amount: "9999"})}, base, "two"); err != nil {
+		t.Fatal(err)
+	}
+	scope := " FROM " + base + " WHERE kb_id = 'one' AND doc_id = 'published' AND available_int = 1 AND table_row_int = 1"
+	extraction := func(key string) string { return "json_extract_string(chunk_data, '$." + key + "')" }
+	run := func(query string) []map[string]interface{} {
+		result, err := e.RunSQL(ctx, base, query, []string{kb}, "json")
+		if err != nil {
+			t.Fatalf("SQL %s: %v", query, err)
+		}
+		return result
+	}
+	counts := run("SELECT COUNT(*) AS n" + scope + " LIMIT 100")
+	if len(counts) != 1 || fmt.Sprint(counts[0]["n"]) != "4" {
+		t.Fatalf("scoped count=%v", counts)
+	}
+	totals := run("SELECT SUM(CAST(" + extraction(amount) + " AS DOUBLE)) AS total, AVG(CAST(" + extraction(amount) + " AS DOUBLE)) AS average" + scope + " LIMIT 100")
+	if len(totals) != 1 || math.Abs(totals[0]["total"].(float64)-120.5) > 1e-9 || math.Abs(totals[0]["average"].(float64)-120.5/3) > 1e-9 {
+		t.Fatalf("scoped totals=%v", totals)
+	}
+	exact := run("SELECT doc_id, docnm_kwd, " + extraction(region) + " AS region" + scope + " AND " + extraction(region) + " = 'North % `price`  中文' LIMIT 100")
+	if len(exact) != 1 || exact[0]["region"] != "North % `price`  中文" || exact[0]["doc_id"] != "published" {
+		t.Fatalf("exact query=%v", exact)
+	}
+	values := run("SELECT " + extraction(long) + " AS value" + scope + " AND " + extraction(long) + " = '" + strings.Repeat("长", 300) + "' LIMIT 100")
+	if len(values) != 1 || values[0]["value"] != strings.Repeat("长", 300) {
+		t.Fatalf("long text query=%v", values)
+	}
+	nonNull := run("SELECT COUNT(*) AS n" + scope + " AND json_extract_isnull(chunk_data, '$." + amount + "') == false LIMIT 100")
+	if len(nonNull) != 1 || fmt.Sprint(nonNull[0]["n"]) != "3" {
+		t.Fatalf("non-null count=%v", nonNull)
+	}
+	if _, err := e.RunSQL(ctx, base, "SELECT SUM(CAST("+extraction(amount)+" AS DOUBLE)) AS total FROM "+base+" WHERE kb_id = 'one' AND doc_id = 'bad' AND table_row_int = 1 LIMIT 100", []string{kb}, "json"); err == nil {
+		t.Fatal("invalid numeric value silently accepted")
+	}
+	bulk := make([]map[string]interface{}, 260)
+	for i := range bulk {
+		bulk[i] = makeRow(fmt.Sprintf("bulk-%d", i), "bulk", kb, 1, 1, map[string]any{amount: fmt.Sprint(i)})
+	}
+	if _, err := e.InsertChunks(ctx, bulk, base, kb); err != nil {
+		t.Fatal(err)
+	}
+	pages := run("SELECT " + extraction(amount) + " AS value FROM " + base + " WHERE kb_id = 'one' AND doc_id = 'bulk' AND available_int = 1 AND table_row_int = 1 ORDER BY CAST(" + extraction(amount) + " AS INTEGER) LIMIT 260")
+	if len(pages) != 260 || pages[0]["value"] != "0" || pages[259]["value"] != "259" {
+		t.Fatalf("paged result count=%d", len(pages))
 	}
 }

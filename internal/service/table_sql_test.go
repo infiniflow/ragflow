@@ -191,13 +191,13 @@ func TestTableSQLRefusesAnythingOutsideOneTable(t *testing.T) {
 }
 
 func TestSupportsStructuredTableSQL(t *testing.T) {
-	supported := []string{string(engine.EngineInfinity)}
+	supported := []string{string(engine.EngineInfinity), string(engine.EngineElasticsearch)}
 	for _, name := range supported {
 		if !SupportsStructuredTableSQL(name) {
 			t.Errorf("%q should support the JSON column query path", name)
 		}
 	}
-	for _, name := range []string{"oceanbase", "seekdb", "elasticsearch", "opensearch", "serenedb", ""} {
+	for _, name := range []string{"oceanbase", "seekdb", "opensearch", "serenedb", ""} {
 		if SupportsStructuredTableSQL(name) {
 			t.Errorf("%q must not enter structured table SQL", name)
 		}
@@ -300,7 +300,7 @@ func TestTableSQLRangeIsBuiltOrRefused(t *testing.T) {
 	})
 
 	t.Run("unsupported engine", func(t *testing.T) {
-		query, err := newTableSQL(&sqlFakeEngine{engineType: "elasticsearch"}, chat, []*entity.Knowledgebase{kb}, nil, testTableFieldMap())
+		query, err := newTableSQL(&sqlFakeEngine{engineType: "opensearch"}, chat, []*entity.Knowledgebase{kb}, nil, testTableFieldMap())
 		if err != nil || query != nil {
 			t.Errorf("query = %v, err = %v, want no range and no error", query, err)
 		}
@@ -426,6 +426,23 @@ func TestTableSQLSkipsOceanBaseFamily(t *testing.T) {
 			[]string{"doc-one"}, testTableFieldMap())
 		if err != nil || query != nil {
 			t.Errorf("%s: query=%v err=%v, want ordinary retrieval", name, query, err)
+		}
+	}
+}
+
+func TestTableSQLElasticsearchRestrictsSharedIndex(t *testing.T) {
+	query, err := newTableSQL(&sqlFakeEngine{engineType: "elasticsearch"}, &entity.Chat{TenantID: "tenant1"},
+		[]*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}}, []string{"doc-one"}, testTableFieldMap())
+	if err != nil || query == nil {
+		t.Fatalf("query=%v err=%v", query, err)
+	}
+	statement, err := query.policy.check("select count(*) as n from ragflow_tenant1 where weight_int=1 or rank_flt=2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, required := range []string{"kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0'", "doc_id = 'doc-one'", "available_int = 1", "table_row_int = 1", "(weight_int = 1 or rank_flt = 2)"} {
+		if !strings.Contains(statement.text, required) {
+			t.Errorf("scope missing %s: %s", required, statement.text)
 		}
 	}
 }
