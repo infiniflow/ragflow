@@ -149,11 +149,6 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
-### macOS
-
-- `MACOS`
-  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
-
 ### User Registration
 
 - `ENABLE_REGISTER`

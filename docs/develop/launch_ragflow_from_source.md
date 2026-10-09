@@ -13,7 +13,7 @@ sidebar_custom_props: {
 Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
 
 :::note macOS
-This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to build and run the Go `linux/amd64` image.
+This source-build procedure is for Ubuntu 24.04 x86_64. macOS is temporarily not supported by the Go backend, so use a Linux x86_64 host to build and run the Go services.
 :::
 
 The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout analysis, OCR, and table recognition.
@@ -115,7 +115,7 @@ The change made with `sysctl -w` is temporary. To preserve it after a reboot, ad
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
-docker compose --env-file docker/.env -f docker/docker-compose-base.yml ps
+docker ps
 ```
 
 The base Compose file also defines an unprofiled Redis service. Starting every service with `up -d` can make Redis and Kvrocks compete for host port 6379; the explicit service list above starts Kvrocks for the Go backend. Compose may print a warning that `REDIS_PORT` is unset because the unused Redis service is still parsed.

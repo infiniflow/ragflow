@@ -517,27 +517,11 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		return nil, err
 	}
-	if len(tenants) == 0 {
-		return nil, fmt.Errorf("user has no accessible tenants")
-	}
-
-	// Find the tenant that owns this dataset
-	var targetTenantID string
-	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
-		if err == nil && kb != nil {
-			targetTenantID = tenant.TenantID
-			break
-		}
-	}
-	if targetTenantID == "" {
-		return nil, fmt.Errorf("user does not have access to this dataset")
-	}
+	targetTenantID := kb.TenantID
 
 	// Verify the document belongs to the dataset, mirroring Python's get_chunk
 	// (DocumentService.query(id=document_id, kb_id=dataset_id)).
@@ -696,6 +680,17 @@ func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID strin
 	return s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 }
 
+func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string) (*entity.Knowledgebase, error) {
+	if !s.accessible(ctx, datasetID, userID) {
+		return nil, fmt.Errorf("user does not have access to this dataset")
+	}
+	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
+	if err != nil || kb == nil {
+		return nil, fmt.Errorf("knowledge base not found")
+	}
+	return kb, nil
+}
+
 func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) ([]*entity.Document, error) {
 	if s.getDocumentsByIDsFunc != nil {
 		return s.getDocumentsByIDsFunc(docIDs)
@@ -781,15 +776,6 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("doc_id is required")
 	}
 
-	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-	if len(tenants) == 0 {
-		return nil, fmt.Errorf("user has no accessible tenants")
-	}
-
 	// Get document to find its tenant
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
@@ -800,23 +786,11 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("document not found")
 	}
 
-	// Get knowledge base to find tenant
-	kb, err := s.kbDAO.GetByID(ctx, dao.DB, doc.KbID)
-	if err != nil || kb == nil {
-		return nil, fmt.Errorf("knowledge base not found")
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	if err != nil {
+		return nil, err
 	}
-
-	// Find which tenant this document belongs to
-	var targetTenantID string
-	for _, tenant := range tenants {
-		if tenant.TenantID == kb.TenantID {
-			targetTenantID = tenant.TenantID
-			break
-		}
-	}
-	if targetTenantID == "" {
-		return nil, fmt.Errorf("user does not have access to this document")
-	}
+	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
@@ -1028,27 +1002,11 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("req is null")
 	}
 
-	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user tenants: %w", err)
+		return err
 	}
-	if len(tenants) == 0 {
-		return fmt.Errorf("user has no accessible tenants")
-	}
-
-	// Find the tenant that owns this dataset
-	var targetTenantID string
-	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
-		if err == nil && kb != nil {
-			targetTenantID = tenant.TenantID
-			break
-		}
-	}
-	if targetTenantID == "" {
-		return fmt.Errorf("user does not have access to this dataset")
-	}
+	targetTenantID := kb.TenantID
 
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, documentID)
@@ -1086,27 +1044,11 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return fmt.Errorf("chunk_id is required")
 	}
 
-	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
 	if err != nil {
-		return fmt.Errorf("failed to get user tenants: %w", err)
+		return err
 	}
-	if len(tenants) == 0 {
-		return fmt.Errorf("user has no accessible tenants")
-	}
-
-	// Find the tenant that owns this dataset
-	var targetTenantID string
-	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
-		if err == nil && kb != nil {
-			targetTenantID = tenant.TenantID
-			break
-		}
-	}
-	if targetTenantID == "" {
-		return fmt.Errorf("user does not have access to this dataset")
-	}
+	targetTenantID := kb.TenantID
 
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
@@ -1191,6 +1133,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		d["position_int"] = req.Positions
 	}
 
+	if req.TagKwd != nil {
+		d["tag_kwd"] = req.TagKwd
+	}
+
 	// Tag features
 	if req.TagFeas != nil {
 		tagFeas, err := validateTagFeatures(req.TagFeas)
@@ -1273,15 +1219,6 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("doc_id is required")
 	}
 
-	// Get user's tenants
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-	if len(tenants) == 0 {
-		return 0, fmt.Errorf("user has no accessible tenants")
-	}
-
 	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
@@ -1289,18 +1226,11 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("document not found")
 	}
 
-	// Find the tenant that owns this document
-	var targetTenantID string
-	for _, tenant := range tenants {
-		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, doc.KbID, tenant.TenantID)
-		if err == nil && kb != nil {
-			targetTenantID = tenant.TenantID
-			break
-		}
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	if err != nil {
+		return 0, err
 	}
-	if targetTenantID == "" {
-		return 0, fmt.Errorf("user does not have access to this document")
-	}
+	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
@@ -1418,6 +1348,13 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"docnm_kwd":            docName,
 		"doc_id":               req.DocumentID,
 	}
+	if req.TagKwd != nil {
+		// Mirror Python chunk_api.py: `tag_kwd` is only persisted when the
+		// caller actually supplied it. Omitting the field when absent avoids
+		// a Go/Python behavioural divergence on chunks that were not tagged
+		// at write time. See issue #20138.
+		chunkData["tag_kwd"] = req.TagKwd
+	}
 	if tagFeas != nil {
 		chunkData["tag_feas"] = tagFeas
 	}
@@ -1484,6 +1421,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		"dataset_id":         req.DatasetID,
 		"create_timestamp":   chunkData["create_timestamp_flt"],
 		"create_time":        chunkData["create_time"],
+	}
+	if tagKwd, ok := chunkData["tag_kwd"]; ok {
+		renamedChunk["tag_kwd"] = tagKwd
 	}
 	if imgID, ok := chunkData["img_id"]; ok {
 		renamedChunk["image_id"] = imgID

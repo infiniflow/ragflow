@@ -56,15 +56,14 @@ func parseWebhookSinceTS(raw string) (float64, bool) {
 }
 
 // pollWebhookTrace advances one webhook trace polling step.
+// Missing data ends polling for a selected run without implying execution success.
 func pollWebhookTrace(raw string, sinceTS float64, webhookID string) (webhookTracePoll, error) {
 	empty := newWebhookTracePoll(nil, sinceTS, false)
-	if strings.TrimSpace(raw) == "" {
-		return empty, nil
-	}
-
 	var store webhookTraceStore
-	if err := json.Unmarshal([]byte(raw), &store); err != nil {
-		return webhookTracePoll{}, fmt.Errorf("decode webhook trace: %w", err)
+	if strings.TrimSpace(raw) != "" {
+		if err := json.Unmarshal([]byte(raw), &store); err != nil {
+			return webhookTracePoll{}, fmt.Errorf("decode webhook trace: %w", err)
+		}
 	}
 	if webhookID == "" {
 		startKey, startTS, ok := nextWebhookTraceRun(store.Webhooks, sinceTS)

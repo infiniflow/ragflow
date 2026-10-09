@@ -50,6 +50,8 @@ func TestBuildByName_CanvasComponentNames(t *testing.T) {
 		{name: "KeenableSearch", wantToolName: "keenable_search"},
 		{name: "QueritContents", wantToolName: "querit_contents"},
 		{name: "QueritSearch", wantToolName: "querit_search"},
+		{name: "Search1APICrawl", wantToolName: "search1api_crawl"},
+		{name: "Search1APISearch", wantToolName: "search1api_search"},
 		{name: "SofyaSearch", wantToolName: "sofya_search"},
 		{name: "TavilyExtract", wantToolName: "tavily_extract"},
 		{name: "TavilySearch", wantToolName: "tavily_search"},
@@ -164,7 +166,7 @@ func TestBuildAll_AllRegisteredTools(t *testing.T) {
 		"duckduckgo", "email", "exesql", "execute_sql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "searxng", "sofya",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
@@ -228,7 +230,7 @@ func TestToolRegistry_SchemasAreComplete(t *testing.T) {
 		"duckduckgo", "email", "execute_sql", "exesql", "github", "google",
 		"google_scholar", "google_scholar_search", "jin10", "keenable", "pubmed", "qweather",
 		"querit", "querit_contents", "querit_search",
-		"retrieval", "search_my_dataset", "search_my_dateset", "searxng", "sofya",
+		"retrieval", "search_my_dataset", "search_my_dateset", "search1api", "search1api_crawl", "searxng", "sofya",
 		"tavily", "tavily_extract", "tushare", "web_crawler", "wencai", "wikipedia", "wikipedia_search",
 		"yahoo_finance",
 	}
