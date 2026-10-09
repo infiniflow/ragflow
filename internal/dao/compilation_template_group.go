@@ -82,7 +82,7 @@ func (dao *CompilationTemplateGroupDAO) GetSaved(ctx context.Context, db *gorm.D
 // tenant, excluding excludeID. Mirrors Python name_exists().
 func (dao *CompilationTemplateGroupDAO) NameExists(ctx context.Context, db *gorm.DB, tenantID, name, excludeID string) (bool, error) {
 	q := db.WithContext(ctx).Model(&entity.CompilationTemplateGroup{}).
-		Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, string(entity.StatusValid))
+		Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND status = ?", tenantID, name, string(entity.StatusValid))
 	if excludeID != "" {
 		q = q.Where("id <> ?", excludeID)
 	}

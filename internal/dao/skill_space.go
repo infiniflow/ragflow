@@ -56,7 +56,7 @@ func (dao *SkillSpaceDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenant
 // GetByTenantAndName retrieves a skills space by tenant ID and name (active only)
 func (dao *SkillSpaceDAO) GetByTenantAndName(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ? AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND LOWER(name) = LOWER(?) AND status = ?", tenantID, name, entity.SpaceStatusActive).First(&space).Error
 	if err != nil {
 		return nil, err
 	}
@@ -66,7 +66,7 @@ func (dao *SkillSpaceDAO) GetByTenantAndName(ctx context.Context, db *gorm.DB, t
 // GetByTenantAndNameAnyStatus retrieves a skills space by tenant ID and name regardless of status
 func (dao *SkillSpaceDAO) GetByTenantAndNameAnyStatus(ctx context.Context, db *gorm.DB, tenantID, name string) (*entity.SkillSpace, error) {
 	var space entity.SkillSpace
-	err := db.WithContext(ctx).Where("tenant_id = ? AND name = ?", tenantID, name).First(&space).Error
+	err := db.WithContext(ctx).Where("tenant_id = ? AND LOWER(name) = LOWER(?)", tenantID, name).First(&space).Error
 	if err != nil {
 		return nil, err
 	}

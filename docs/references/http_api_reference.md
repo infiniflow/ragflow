@@ -583,6 +583,7 @@ curl --request POST \
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
+  If the name is already taken, the dataset is created with a numbered suffix such as `test_1(1)`, `test_1(2)`, and so on.
 
 - `"avatar"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
@@ -2679,6 +2680,7 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*
   The name of the chat assistant.
+  If a chat assistant with the same name already exists, the new one gets a numbered suffix such as `new_chat_1(1)`.
 - `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
@@ -2787,7 +2789,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "duplicated chat name"
+    "message": "`name` is required"
 }
 ```
 
@@ -5325,6 +5327,7 @@ curl --request POST \
 
 - `title`: (*Body parameter*), `string`, *Required*
   The title of the agent.
+  If an agent with the same title already exists, the new one gets a numbered suffix such as `Test Agent(1)`.
 - `description`: (*Body parameter*), `string`
   The description of the agent. Defaults to `None`.
 - `dsl`: (*Body parameter*), `object`, *Required*
@@ -5346,8 +5349,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Agent with title test already exists."
+    "code": 101,
+    "message": "no DSL data in request"
 }
 ```
 
@@ -5412,7 +5415,16 @@ Success:
 }
 ```
 
-Failure:
+Failure (duplicate title):
+
+```json
+{
+    "code": 102,
+    "message": "Test Agent already exists."
+}
+```
+
+Failure (permission denied):
 
 ```json
 {
@@ -6849,7 +6861,7 @@ curl --request POST \
 ##### Request parameters
 
 - `"name"`: (*Body parameter*), `string`, *Required*
-  The name of the file or folder to create.
+  The name of the file or folder to create. If the name is already taken in the parent folder, the new entry gets a numbered suffix such as `New Folder(1)`.
 - `"parent_id"`: (*Body parameter*), `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
 - `"type"`: (*Body parameter*), `string`
@@ -6879,8 +6891,8 @@ Failure:
 
 ```json
 {
-    "code": 409,
-    "message": "Duplicated folder name in the same folder."
+    "code": 400,
+    "message": "Folder name cannot contain \"/\""
 }
 ```
 
@@ -7300,6 +7312,15 @@ or
 {
     "code": 400,
     "message": "The extension of file can't be changed"
+}
+```
+
+or
+
+```json
+{
+    "code": 400,
+    "message": "duplicated file name in the same folder"
 }
 ```
 

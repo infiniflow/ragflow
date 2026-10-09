@@ -3,15 +3,9 @@ import { AgentListItemType } from '@/interfaces/database/agent';
 import {
   buildParserOptionValue,
   parseParserOptionValue,
+  ParserOptionKind,
   useParserOptions,
 } from '@/hooks/use-parser-options';
-
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) =>
-      key === 'knowledgeConfiguration.builtInSuffix' ? ' (built in)' : key,
-  }),
-}));
 
 jest.mock('@/hooks/use-agent-request', () => ({
   useFetchBuiltinPipelines: jest.fn(),
@@ -34,21 +28,21 @@ beforeEach(() => {
 
 describe('parser option value encoding', () => {
   it('prefixes builtin and pipeline ids distinctly', () => {
-    expect(buildParserOptionValue('builtin', 'general')).toBe(
+    expect(buildParserOptionValue(ParserOptionKind.BuiltIn, 'general')).toBe(
       'builtin:general',
     );
-    expect(buildParserOptionValue('pipeline', 'abc123')).toBe(
+    expect(buildParserOptionValue(ParserOptionKind.Pipeline, 'abc123')).toBe(
       'pipeline:abc123',
     );
   });
 
   it('round-trips builtin and pipeline values', () => {
     expect(parseParserOptionValue('builtin:general')).toEqual({
-      kind: 'builtin',
+      kind: ParserOptionKind.BuiltIn,
       rawId: 'general',
     });
     expect(parseParserOptionValue('pipeline:abc123')).toEqual({
-      kind: 'pipeline',
+      kind: ParserOptionKind.Pipeline,
       rawId: 'abc123',
     });
   });
@@ -56,18 +50,25 @@ describe('parser option value encoding', () => {
   it('keeps builtin and pipeline ids with the same bare value distinct', () => {
     // A short builtin id and a pipeline id that happens to share the bare value
     // must not collide once prefixed.
-    const builtin = buildParserOptionValue('builtin', 'general');
-    const pipeline = buildParserOptionValue('pipeline', 'general');
+    const builtin = buildParserOptionValue(ParserOptionKind.BuiltIn, 'general');
+    const pipeline = buildParserOptionValue(
+      ParserOptionKind.Pipeline,
+      'general',
+    );
     expect(builtin).not.toBe(pipeline);
-    expect(parseParserOptionValue(builtin)?.kind).toBe('builtin');
-    expect(parseParserOptionValue(pipeline)?.kind).toBe('pipeline');
+    expect(parseParserOptionValue(builtin)?.kind).toBe(
+      ParserOptionKind.BuiltIn,
+    );
+    expect(parseParserOptionValue(pipeline)?.kind).toBe(
+      ParserOptionKind.Pipeline,
+    );
   });
 
   it('handles ids that themselves contain a colon', () => {
-    const value = buildParserOptionValue('pipeline', 'a:b:c');
+    const value = buildParserOptionValue(ParserOptionKind.Pipeline, 'a:b:c');
     expect(value).toBe('pipeline:a:b:c');
     expect(parseParserOptionValue(value)).toEqual({
-      kind: 'pipeline',
+      kind: ParserOptionKind.Pipeline,
       rawId: 'a:b:c',
     });
   });
@@ -81,7 +82,7 @@ describe('parser option value encoding', () => {
 });
 
 describe('useParserOptions merged list', () => {
-  it('puts pipeline options first, then builtin options with the suffix', () => {
+  it('puts pipeline options first, then builtin options with plain labels', () => {
     agentRequest.useFetchBuiltinPipelines.mockReturnValue({
       options: [
         { label: 'General', value: 'general' },
@@ -107,16 +108,17 @@ describe('useParserOptions merged list', () => {
     expect(opts[0]).toEqual({
       value: 'pipeline:pipe-1',
       label: 'My Flow',
-      kind: 'pipeline',
+      kind: ParserOptionKind.Pipeline,
     });
     expect(opts[1].value).toBe('pipeline:pipe-2');
-    // Builtin appended below with the " (built in)" suffix.
+    // Builtin appended below; the label stays plain and the "built in" tag is
+    // rendered by the select component based on `kind`.
     expect(opts[2]).toEqual({
       value: 'builtin:general',
-      label: 'General (built in)',
-      kind: 'builtin',
+      label: 'General',
+      kind: ParserOptionKind.BuiltIn,
     });
-    expect(opts[3].label).toBe('Book (built in)');
+    expect(opts[3].label).toBe('Book');
   });
 
   it('excludes compilation template groups from pipeline options', () => {
@@ -136,7 +138,7 @@ describe('useParserOptions merged list', () => {
 
     const { result } = renderHook(() => useParserOptions());
     const pipelineOpts = result.current.options.filter(
-      (o) => o.kind === 'pipeline',
+      (o) => o.kind === ParserOptionKind.Pipeline,
     );
     expect(pipelineOpts).toHaveLength(1);
     expect(pipelineOpts[0].value).toBe('pipeline:pipe-1');
