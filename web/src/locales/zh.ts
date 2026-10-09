@@ -605,6 +605,7 @@ export default {
     },
     knowledgeConfiguration: {
       builtInSuffix: '（内置）',
+      builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
       randomSeedTip:

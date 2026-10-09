@@ -14,15 +14,17 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
+import { useAgentsWithBuiltin } from './use-agents-with-builtin';
 import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
+import { AgentListItemType } from '@/interfaces/database/agent';
 import { pick } from 'lodash';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
+import { BuiltinPipelineCard } from './builtin-pipeline-card';
 import { CompilationTemplateCard } from './compilation-template-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
@@ -48,7 +50,8 @@ export default function Agents() {
     setFilterValue,
     handleFilterSubmit,
     checkValue,
-  } = useFetchAgentListByPage();
+    builtinItems,
+  } = useAgentsWithBuiltin();
 
   const { navigateToAgentTemplates } = useNavigatePage();
   const navigate = useNavigate();
@@ -185,6 +188,8 @@ export default function Agents() {
                     onClick={handleEditCompilation(x.id)}
                     onDelete={handleDeleteCompilation}
                   />
+                ) : x.type === AgentListItemType.BuiltinPipeline ? (
+                  <BuiltinPipelineCard key={x.id} data={x} />
                 ) : (
                   <AgentCard
                     key={x.id}
@@ -192,6 +197,20 @@ export default function Agents() {
                     showAgentRenameModal={showAgentRenameModal}
                   />
                 ),
+              )}
+
+              {builtinItems.length > 0 && (
+                <section className="mt-6" data-testid="builtin-pipeline-section">
+                  {data.length > 0 && (
+                    <div className="border-t border-line-divider my-2" />
+                  )}
+                  <h2 className="text-sm font-medium text-text-secondary mb-3">
+                    {t('knowledgeConfiguration.builtInPipelines')}
+                  </h2>
+                  {builtinItems.map((b) => (
+                    <BuiltinPipelineCard key={b.id} data={b} />
+                  ))}
+                </section>
               )}
             </CardContainer>
 
