@@ -8,7 +8,7 @@ import {
 import { useTranslate } from '@/hooks/common-hooks';
 import { cn } from '@/lib/utils';
 import { useFormContext } from 'react-hook-form';
-import { EmbeddingSelect } from '../embedding-select';
+import { EmbeddingSelect } from './embedding-select';
 import { useHasParsedDocument } from './hooks';
 
 interface IProps {
