@@ -359,8 +359,8 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 	condition["kb_id"] = datasetID
 
 	// Case 1: Single document update (when condition["id"] is a string)
-	if chunkID, ok := condition["id"].(string); ok {
-		return e.updateSingleChunk(ctx, fullIndexName, chunkID, newValue)
+	if _, ok := condition["id"].(string); ok {
+		return e.updateSingleChunk(ctx, fullIndexName, condition, newValue)
 	}
 
 	// Case 2: Multi-document update via UpdateByQuery
@@ -513,173 +513,138 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 	return mapped
 }
 
-// updateSingleChunk handles single document update
-func (e *Engine) updateSingleChunk(ctx context.Context, indexName, chunkID string, newValue map[string]interface{}) error {
-	common.Debug("ElasticsearchConnection.updateSingleChunk called", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
-
-	// First find the document by id field to get the actual _id
-	searchReq := map[string]interface{}{
-		"query": map[string]interface{}{
-			"term": map[string]interface{}{"id": chunkID},
-		},
+// updateSingleChunk preserves dataset/document scope during lookup and mutation.
+// The update script rechecks the scope atomically before changing any field:
+// https://www.elastic.co/docs/reference/elasticsearch/rest-apis/update-document
+func (e *Engine) updateSingleChunk(ctx context.Context, indexName string, condition, newValue map[string]interface{}) error {
+	chunkID, _ := condition["id"].(string)
+	scope := make(map[string]string)
+	filters := make([]map[string]interface{}, 0, 3)
+	for _, field := range []string{"id", "kb_id", "doc_id"} {
+		value, present := condition[field]
+		if !present && field == "doc_id" {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok || text == "" {
+			return fmt.Errorf("single chunk update requires a non-empty %s", field)
+		}
+		scope[field] = text
+		filters = append(filters, map[string]interface{}{"term": map[string]interface{}{field: text}})
 	}
-
+	searchReq := map[string]interface{}{
+		"query": map[string]interface{}{"bool": map[string]interface{}{"filter": filters}},
+	}
 	body, err := json.Marshal(searchReq)
 	if err != nil {
 		return fmt.Errorf("failed to marshal search request: %w", err)
 	}
-
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
 		e.client.Search.WithIndex(indexName),
 		e.client.Search.WithBody(bytes.NewReader(body)),
 	)
 	if err != nil {
+		closeESBody(res)
 		return fmt.Errorf("failed to search for chunk: %w", err)
 	}
-	defer res.Body.Close()
-
+	defer closeESBody(res)
 	if res.IsError() {
 		return fmt.Errorf("failed to search for chunk: %s", res.Status())
 	}
-
-	var searchResult map[string]interface{}
+	var searchResult struct {
+		Hits struct {
+			Hits []struct {
+				ID string `json:"_id"`
+			} `json:"hits"`
+		} `json:"hits"`
+	}
 	if err := json.NewDecoder(res.Body).Decode(&searchResult); err != nil {
 		return fmt.Errorf("failed to parse search response: %w", err)
 	}
-
-	hits, ok := searchResult["hits"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
-	}
-
-	hitList, ok := hits["hits"].([]interface{})
-	if !ok || len(hitList) == 0 {
-		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
-	}
-
-	firstHit, ok := hitList[0].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
-	}
-
-	actualID, ok := firstHit["_id"].(string)
-	if !ok {
+	if len(searchResult.Hits.Hits) == 0 || searchResult.Hits.Hits[0].ID == "" {
 		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
 	}
 
 	doc := copyFields(newValue)
 	delete(doc, "id")
-
-	removeValue, _ := doc["remove"]
+	removeValue := doc["remove"]
 	delete(doc, "remove")
-	removeField, _ := removeValue.(string)
-	removeDict, _ := removeValue.(map[string]interface{})
-
-	// Remove *_feas fields
-	var feasFields []string
-	for k := range doc {
-		if strings.HasSuffix(k, "feas") {
-			feasFields = append(feasFields, k)
+	removeFields := make([]string, 0)
+	for field := range doc {
+		if strings.HasSuffix(field, "feas") {
+			removeFields = append(removeFields, field)
 		}
 	}
-	for _, k := range feasFields {
-		scriptBody := map[string]interface{}{
-			"script": map[string]interface{}{
-				"source": fmt.Sprintf("ctx._source.remove(\"%s\");", k),
+	if field, ok := removeValue.(string); ok && field != "" {
+		removeFields = append(removeFields, field)
+	}
+	removeValues, _ := removeValue.(map[string]interface{})
+	if removeValues == nil {
+		removeValues = make(map[string]interface{})
+	}
+	if len(doc) == 0 && len(removeFields) == 0 && len(removeValues) == 0 {
+		return nil
+	}
+	if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
+		doc["tag_feas"] = raw
+	}
+	script := `
+        for (def entry : params.scope.entrySet()) {
+            def value = ctx._source[entry.getKey()];
+            boolean matches = value instanceof List
+                ? value.contains(entry.getValue()) : value == entry.getValue();
+            if (!matches) { ctx.op = 'noop'; return; }
+        }
+        for (def field : params.remove_fields) { ctx._source.remove(field); }
+        for (def entry : params.remove_values.entrySet()) {
+            def values = ctx._source[entry.getKey()];
+            if (values != null) {
+                int i = values.indexOf(entry.getValue());
+                if (i >= 0) { values.remove(i); }
+            }
+        }
+        ctx._source.putAll(params.doc);
+    `
+	updateBody := map[string]interface{}{
+		"script": map[string]interface{}{
+			"lang": "painless", "source": script,
+			"params": map[string]interface{}{
+				"scope": scope, "doc": doc,
+				"remove_fields": removeFields, "remove_values": removeValues,
 			},
-		}
-		body, _ = json.Marshal(scriptBody)
-		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
-		}
-		res, err = req.Do(ctx, e.client)
-		if err != nil {
-			common.Warn("Failed to remove feas field", zap.String("field", k), zap.Error(err))
-		}
-		closeESBody(res)
+		},
 	}
-
-	// Remove specific field if removeField is set
-	if removeField != "" {
-		scriptBody := map[string]interface{}{
-			"script": map[string]interface{}{
-				"source": fmt.Sprintf("ctx._source.remove('%s');", removeField),
-			},
-		}
-		body, _ = json.Marshal(scriptBody)
-		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
-		}
-		res, err = req.Do(ctx, e.client)
-		if err != nil {
-			common.Warn("Failed to remove field", zap.String("field", removeField), zap.Error(err))
-		}
-		closeESBody(res)
+	body, err = json.Marshal(updateBody)
+	if err != nil {
+		return fmt.Errorf("failed to marshal update body: %w", err)
 	}
-
-	// Remove specific values from array fields (removeDict)
-	if removeDict != nil {
-		scripts := []string{}
-		params := make(map[string]interface{})
-		for kk, vv := range removeDict {
-			scripts = append(scripts,
-				fmt.Sprintf("if (ctx._source.containsKey('%s') && ctx._source.%s != null) { int i = ctx._source.%s.indexOf(params.p_%s); if (i >= 0) { ctx._source.%s.remove(i); }}",
-					kk, kk, kk, kk, kk))
-			params[fmt.Sprintf("p_%s", kk)] = vv
-		}
-		if scripts != nil {
-			scriptBody := map[string]interface{}{
-				"script": map[string]interface{}{
-					"source": strings.Join(scripts, ""),
-					"params": params,
-				},
-			}
-			body, _ = json.Marshal(scriptBody)
-			req := esapi.UpdateRequest{
-				Index:      indexName,
-				DocumentID: actualID,
-				Body:       bytes.NewReader(body),
-			}
-			res, err = req.Do(ctx, e.client)
-			if err != nil {
-				common.Warn("Failed to remove dict fields", zap.Error(err))
-			}
-			closeESBody(res)
-		}
+	req := esapi.UpdateRequest{
+		Index: indexName, DocumentID: searchResult.Hits.Hits[0].ID,
+		Body: bytes.NewReader(body), Refresh: "wait_for",
 	}
-
-	// Update document fields if any remain
-	if len(doc) > 0 {
-		if raw, ok := formatOrderedTagFeas(doc["tag_feas"]); ok {
-			doc["tag_feas"] = raw
-		}
-		updateBody := map[string]interface{}{"doc": doc}
-		body, _ := json.Marshal(updateBody)
-		req := esapi.UpdateRequest{
-			Index:      indexName,
-			DocumentID: actualID,
-			Body:       bytes.NewReader(body),
-			Refresh:    "wait_for",
-		}
-		res, err := req.Do(ctx, e.client)
-		if err != nil {
-			return fmt.Errorf("failed to update document: %w", err)
-		}
-		defer res.Body.Close()
-		if res.IsError() {
-			if res.StatusCode == http.StatusNotFound {
-				return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
-			}
-			return fmt.Errorf("elasticsearch update error: %s", res.Status())
-		}
+	updateRes, err := req.Do(ctx, e.client)
+	if err != nil {
+		closeESBody(updateRes)
+		return fmt.Errorf("failed to update document: %w", err)
 	}
-
-	common.Debug("ElasticsearchConnection.updateSingleChunk completed", zap.String("indexName", indexName), zap.String("chunkID", chunkID))
+	defer closeESBody(updateRes)
+	if updateRes.IsError() {
+		if updateRes.StatusCode == http.StatusNotFound {
+			return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+		}
+		return fmt.Errorf("elasticsearch update error: %s", updateRes.Status())
+	}
+	var result struct {
+		Result string `json:"result"`
+	}
+	if err := json.NewDecoder(updateRes.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to parse update response: %w", err)
+	}
+	// This script returns noop only when the final scope check fails.
+	if result.Result == "noop" {
+		return fmt.Errorf("%w: %s", types.ErrDocumentNotFound, chunkID)
+	}
 	return nil
 }
 
