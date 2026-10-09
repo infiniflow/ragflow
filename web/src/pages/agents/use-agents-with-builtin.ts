@@ -43,7 +43,12 @@ export function useAgentsWithBuiltin() {
       builtinData?.canvas ?? [],
       agentList.debouncedSearchString,
     ).map(toBuiltinListItem);
-  }, [rawCategory, canvasCategoryIds, builtinData, agentList.debouncedSearchString]);
+  }, [
+    rawCategory,
+    canvasCategoryIds,
+    builtinData,
+    agentList.debouncedSearchString,
+  ]);
 
   return {
     ...agentList,

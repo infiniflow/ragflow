@@ -4,7 +4,10 @@ import {
   toBuiltinListItem,
 } from './builtin-pipeline-list';
 import { AgentCategory } from '@/constants/agent';
-import { AgentListItemType, IBuiltinPipeline } from '@/interfaces/database/agent';
+import {
+  AgentListItemType,
+  IBuiltinPipeline,
+} from '@/interfaces/database/agent';
 
 const sample: IBuiltinPipeline[] = [
   {

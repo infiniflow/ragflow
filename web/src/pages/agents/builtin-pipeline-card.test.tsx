@@ -17,7 +17,10 @@ const mockCopy = jest.fn();
 // Mutable so a test can flip the copying state before rendering.
 var copyState = { copying: false };
 jest.mock('./use-copy-builtin-pipeline', () => ({
-  useCopyBuiltinPipeline: () => ({ copy: mockCopy, copying: copyState.copying }),
+  useCopyBuiltinPipeline: () => ({
+    copy: mockCopy,
+    copying: copyState.copying,
+  }),
 }));
 
 const baseData: any = {

@@ -15,7 +15,12 @@ jest.mock('@/hooks/use-agent-request', () => ({
 const agentRequest = require('@/hooks/use-agent-request');
 
 const builtinCatalog = [
-  { id: 'general', title: 'General', description: 'Default', filename: 'a.json' },
+  {
+    id: 'general',
+    title: 'General',
+    description: 'Default',
+    filename: 'a.json',
+  },
   { id: 'book', title: 'Book', description: 'Long doc', filename: 'b.json' },
 ];
 
@@ -112,7 +117,9 @@ describe('useAgentsWithBuiltin', () => {
       debouncedSearchString: '',
       // canvasCategory may carry structured filters instead of plain ids.
       filterValue: {
-        canvasCategory: [{ operator: 'or', values: [AgentCategory.DataflowCanvas] }],
+        canvasCategory: [
+          { operator: 'or', values: [AgentCategory.DataflowCanvas] },
+        ],
       },
       pagination: { current: 1, pageSize: 10, total: 1 },
     });

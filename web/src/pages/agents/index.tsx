@@ -200,7 +200,10 @@ export default function Agents() {
               )}
 
               {builtinItems.length > 0 && (
-                <section className="mt-6" data-testid="builtin-pipeline-section">
+                <section
+                  className="mt-6"
+                  data-testid="builtin-pipeline-section"
+                >
                   {data.length > 0 && (
                     <div className="border-t border-line-divider my-2" />
                   )}
