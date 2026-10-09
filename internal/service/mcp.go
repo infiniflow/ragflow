@@ -166,7 +166,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		ServerType:  server.ServerType,
 		Description: server.Description,
 		Variables:   MCPVariablesForResponse(server.Variables),
-		Headers:     server.Headers,
+		Headers:     MCPHeadersForResponse(server.Headers),
 	}, common.CodeSuccess, nil
 }
 
@@ -237,10 +237,43 @@ func MCPVariablesForResponse(values entity.JSONMap) entity.JSONMap {
 	for key, value := range values {
 		result[key] = value
 	}
-	if token, ok := result["authorization_token"].(string); ok && token != "" {
-		result["authorization_token"] = maskedMCPSecret
+	if value, exists := result["authorization_token"]; exists {
+		if token, ok := jsonValueString(value); ok && token != "" {
+			result["authorization_token"] = maskedMCPSecret
+		}
 	}
 	return result
+}
+
+// MCPHeadersForResponse masks all nonempty header values because custom headers
+// can carry credentials under arbitrary names.
+func MCPHeadersForResponse(values entity.JSONMap) entity.JSONMap {
+	result := entity.JSONMap{}
+	for key, value := range values {
+		if text, ok := value.(string); ok && text != "" {
+			value = maskedMCPSecret
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func restoreMCPMaskedCredentials(server *entity.MCPServer, url string, headers, variables entity.JSONMap) error {
+	if variables["authorization_token"] == maskedMCPSecret {
+		if url != server.URL {
+			return fmt.Errorf("%w: provide explicit credentials when changing the MCP URL", ErrMCPInvalidURL)
+		}
+		variables["authorization_token"] = server.Variables["authorization_token"]
+	}
+	for key, value := range headers {
+		if value == maskedMCPSecret {
+			if url != server.URL {
+				return fmt.Errorf("%w: provide explicit headers when changing the MCP URL", ErrMCPInvalidURL)
+			}
+			headers[key] = server.Headers[key]
+		}
+	}
+	return nil
 }
 
 // jsonValueString renders the scalar JSON values that can occur in an MCP
@@ -404,7 +437,7 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	headers := server.Headers
+	headers := MCPHeadersForResponse(server.Headers)
 	if raw, ok := req["headers"]; ok {
 		headers = safeJSONMap(raw)
 	}
@@ -412,15 +445,15 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 		headers = entity.JSONMap{}
 	}
 
-	variables := server.Variables
+	variables := MCPVariablesForResponse(server.Variables)
 	if raw, ok := req["variables"]; ok {
 		variables = safeJSONMap(raw)
 	}
 	if variables == nil {
 		variables = entity.JSONMap{}
 	}
-	if value, ok := variables["authorization_token"].(string); ok && value == maskedMCPSecret {
-		variables["authorization_token"] = server.Variables["authorization_token"]
+	if err := restoreMCPMaskedCredentials(server, serverURL, headers, variables); err != nil {
+		return nil, common.CodeDataError, err
 	}
 	existingTools := server.Variables["tools"]
 	delete(variables, "tools")
@@ -776,15 +809,22 @@ func (s *MCPService) TestServer(ctx context.Context, tenantID, mcpID string, req
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
 	}
-	if req.Variables["authorization_token"] == maskedMCPSecret {
+	hasMask := req.Variables["authorization_token"] == maskedMCPSecret
+	for _, value := range req.Headers {
+		hasMask = hasMask || value == maskedMCPSecret
+	}
+	if hasMask {
 		server, _, err := s.GetMCPServer(ctx, tenantID, mcpID)
 		if err != nil {
 			return nil, err
 		}
 		preview := *req
 		preview.Variables = maps.Clone(req.Variables)
+		preview.Headers = maps.Clone(req.Headers)
 		req = &preview
-		req.Variables["authorization_token"] = server.Variables["authorization_token"]
+		if err := restoreMCPMaskedCredentials(server, req.URL, req.Headers, req.Variables); err != nil {
+			return nil, err
+		}
 	}
 
 	// Run the SSRF guard up front so URL-shape failures (disallowed

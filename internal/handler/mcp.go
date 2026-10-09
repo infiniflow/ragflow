@@ -391,7 +391,7 @@ func newMCPServerResponse(server *entity.MCPServer) *mcpServerResponse {
 		ServerType:  server.ServerType,
 		Description: server.Description,
 		Variables:   map[string]interface{}(service.MCPVariablesForResponse(server.Variables)),
-		Headers:     map[string]interface{}(server.Headers),
+		Headers:     map[string]interface{}(service.MCPHeadersForResponse(server.Headers)),
 		CreateTime:  server.CreateTime,
 		CreateDate:  formatMCPServerDate(server.CreateDate),
 		UpdateTime:  server.UpdateTime,
