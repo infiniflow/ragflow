@@ -1097,10 +1097,12 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Find the tenant that owns this dataset
 	var targetTenantID string
+	var targetKB *entity.Knowledgebase
 	for _, tenant := range tenants {
 		kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, req.DatasetID, tenant.TenantID)
 		if err == nil && kb != nil {
 			targetTenantID = tenant.TenantID
+			targetKB = kb
 			break
 		}
 	}
@@ -1137,17 +1139,13 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// Build update dict
 	d := make(map[string]interface{})
 
-	// Content - use new value or existing
+	existingContent, ok := existing["content_with_weight"].(string)
+	if !ok {
+		existingContent, _ = existing["content"].(string)
+	}
+	d["content_with_weight"] = existingContent
 	if req.Content != nil {
 		d["content_with_weight"] = *req.Content
-	} else {
-		if v, ok := existing["content_with_weight"].(string); ok {
-			d["content_with_weight"] = v
-		} else if v, ok := existing["content"].(string); ok {
-			d["content_with_weight"] = v
-		} else {
-			d["content_with_weight"] = ""
-		}
 	}
 
 	// Tokenize content
@@ -1165,16 +1163,10 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 
 	// Questions
+	questions := existing["question_kwd"]
 	if req.Questions != nil {
-		// Filter out empty questions and trim
-		filteredQuestions := []string{}
-		for _, q := range req.Questions {
-			q = strings.TrimSpace(q)
-			if q != "" {
-				filteredQuestions = append(filteredQuestions, q)
-			}
-		}
-		d["question_kwd"] = filteredQuestions
+		questions = filterTrimmedStrings(req.Questions)
+		d["question_kwd"] = questions
 	}
 
 	// Available
@@ -1198,6 +1190,30 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			return updateChunkError{code: common.CodeArgumentError, message: "`tag_feas` " + err.Error()}
 		}
 		d["tag_feas"] = tagFeas
+	}
+
+	embeddingText := buildChunkEmbeddingText(contentStr, questions)
+	if embeddingText != buildChunkEmbeddingText(existingContent, existing["question_kwd"]) {
+		embeddingModel, err := s.getEmbeddingModel(ctx, targetKB.TenantID, targetKB.EmbdID)
+		if err != nil {
+			return fmt.Errorf("get embedding model: %w", err)
+		}
+		docName := ""
+		if doc.Name != nil {
+			docName = *doc.Name
+		}
+		embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{docName, embeddingText}}, &models.EmbeddingConfig{Dimension: 0}, nil)
+		if err != nil {
+			return fmt.Errorf("encode chunk embedding: %w", err)
+		}
+		if len(embeddings) != 2 {
+			return fmt.Errorf("unexpected embedding count: %d", len(embeddings))
+		}
+		mergedVec, err := mergeChunkEmbeddings(embeddings[0].Embedding, embeddings[1].Embedding)
+		if err != nil {
+			return err
+		}
+		d[fmt.Sprintf("q_%d_vec", len(mergedVec))] = mergedVec
 	}
 
 	// Image (Python: chunk_api.update_chunk). The image is stored before the
@@ -1617,6 +1633,25 @@ func parseImageUpdateMode(raw *string) (string, error) {
 	default:
 		return "", fmt.Errorf("`image_update_mode` must be one of: append, replace, remove")
 	}
+}
+
+func buildChunkEmbeddingText(content string, questions interface{}) string {
+	var values []string
+	switch typed := questions.(type) {
+	case []string:
+		values = typed
+	case []interface{}:
+		for _, value := range typed {
+			if question, ok := value.(string); ok {
+				values = append(values, question)
+			}
+		}
+	}
+	filtered := filterTrimmedStrings(values)
+	if len(filtered) > 0 {
+		return strings.Join(filtered, "\n")
+	}
+	return content
 }
 
 func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
