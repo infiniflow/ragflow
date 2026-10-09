@@ -48,10 +48,9 @@ beforeEach(() => {
 
 describe('BuiltinPipelineSection', () => {
   it('renders the section with cards in the "All" view', () => {
-    render(
-      <BuiltinPipelineSection rawCategory={undefined} searchString="" />,
-      { wrapper },
-    );
+    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
+      wrapper,
+    });
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(
       screen.getByText('knowledgeConfiguration.builtInPipelines'),
@@ -69,7 +68,9 @@ describe('BuiltinPipelineSection', () => {
     );
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(screen.getAllByTestId('copy-builtin-pipeline')).toHaveLength(1);
-    expect(container.querySelector('[data-testid="builtin-badge"]')).toBeTruthy();
+    expect(
+      container.querySelector('[data-testid="builtin-badge"]'),
+    ).toBeTruthy();
   });
 
   it('hides the section in the pure Agent view', () => {
@@ -103,10 +104,9 @@ describe('BuiltinPipelineSection', () => {
       data: { canvas: [], total: 0 },
       loading: false,
     });
-    render(
-      <BuiltinPipelineSection rawCategory={undefined} searchString="" />,
-      { wrapper },
-    );
+    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
+      wrapper,
+    });
     expect(
       screen.queryByTestId('builtin-pipeline-section'),
     ).not.toBeInTheDocument();
@@ -135,10 +135,9 @@ describe('BuiltinPipelineSection', () => {
   });
 
   it('triggers the copy mutation when a card copy button is clicked', () => {
-    render(
-      <BuiltinPipelineSection rawCategory={undefined} searchString="" />,
-      { wrapper },
-    );
+    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
+      wrapper,
+    });
     fireEvent.click(screen.getAllByTestId('copy-builtin-pipeline')[0]);
     expect(mockCopy).toHaveBeenCalledTimes(1);
     expect(mockCopy.mock.calls[0][0]).toEqual({
