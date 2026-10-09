@@ -1,6 +1,4 @@
-import { BuiltinPipelineItem } from '@/components/builtin-pipeline-form-field';
-import { DataFlowSelect } from '@/components/data-pipeline-select';
-import { ParseTypeItem } from '@/components/parse-type-form-field';
+import { ParserSelect } from '@/components/parser-select';
 import PipelineOperatorTabs from '@/components/pipeline-operator-tabs';
 import { Button, ButtonLoading } from '@/components/ui/button';
 import {
@@ -11,9 +9,19 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
-import { Form } from '@/components/ui/form';
-import { FormLayout } from '@/constants/form';
+import {
+  Form,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
+import {
+  buildParserOptionValue,
+  ParserOptionKind,
+} from '@/hooks/use-parser-options';
+import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   useActiveTab,
   usePipelineOperatorNodes,
@@ -58,6 +66,8 @@ export default function DatasetSetting() {
       connectors: [],
     },
   });
+
+  const handleParserSelect = useParserSelectHandler(form);
 
   const {
     knowledgeDetails,
@@ -214,18 +224,44 @@ export default function DatasetSetting() {
                   <div className="text-base font-medium text-text-primary">
                     {t('knowledgeConfiguration.dataPipeline')}
                   </div>
-                  <ParseTypeItem line={1} name="parse_type" />
-                  {parseType === ParseType.BuiltIn && (
-                    <BuiltinPipelineItem line={1} name="parser_id" />
-                  )}
-                  {parseType === ParseType.Pipeline && (
-                    <DataFlowSelect
-                      isMult={false}
-                      showToDataPipeline={true}
-                      formFieldName="pipeline_id"
-                      layout={FormLayout.Horizontal}
-                    />
-                  )}
+                  <FormItem className="items-center space-y-0">
+                    <div className="flex items-center gap-1">
+                      <FormLabel className="text-sm text-text-secondary whitespace-wrap w-1/4">
+                        {t('knowledgeConfiguration.parseType')}
+                      </FormLabel>
+                      <div className="text-muted-foreground w-3/4">
+                        <FormField
+                          control={form.control}
+                          name={
+                            parseType === ParseType.BuiltIn
+                              ? 'parser_id'
+                              : 'pipeline_id'
+                          }
+                          render={() => (
+                            <FormItem className="space-y-1">
+                              <ParserSelect
+                                value={
+                                  parseType === ParseType.BuiltIn
+                                    ? buildParserOptionValue(
+                                        ParserOptionKind.BuiltIn,
+                                        builtinPipelineId ?? '',
+                                      )
+                                    : pipelineId
+                                      ? buildParserOptionValue(
+                                          ParserOptionKind.Pipeline,
+                                          pipelineId,
+                                        )
+                                      : undefined
+                                }
+                                onChange={handleParserSelect}
+                              />
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </div>
+                  </FormItem>
                   {showOperatorTabs && (
                     <PipelineOperatorTabs
                       nodes={operatorNodes}

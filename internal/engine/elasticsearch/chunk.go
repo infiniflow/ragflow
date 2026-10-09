@@ -709,34 +709,34 @@ func conditionTermsList(value interface{}) ([]interface{}, bool) {
 	return out, true
 }
 
-// mustNotExistsClauses renders the `must_not` exclusions a condition carries.
-// The only form RAGFlow produces is must_not={"exists": <field>} (e.g.
-// hybrid_search excluding compiled products); any other shape yields nothing.
+// mustNotExistsClauses renders field and existence exclusions.
 func mustNotExistsClauses(value interface{}) []map[string]interface{} {
 	exclusions, ok := value.(map[string]interface{})
 	if !ok {
 		return nil
 	}
-	clauses := make([]map[string]interface{}, 0, len(exclusions))
-	for field, value := range exclusions {
-		if field != "exists" {
-			continue
-		}
-		clauses = append(clauses, map[string]interface{}{
-			"exists": map[string]interface{}{"field": value},
-		})
+	if field, ok := exclusions["exists"]; ok && len(exclusions) == 1 {
+		return []map[string]interface{}{{"exists": map[string]interface{}{"field": field}}}
 	}
-	return clauses
+	if query := buildBoolQueryFromConditionRaw(exclusions, nil, false, false); query != nil {
+		return []map[string]interface{}{query}
+	}
+	return nil
 }
 
 // updateChunksByQuery handles multi-document update
 func (e *Engine) updateChunksByQuery(ctx context.Context, indexName string, condition map[string]interface{}, newValue map[string]interface{}) error {
 	common.Debug("ElasticsearchConnection.updateChunksByQuery called", zap.String("indexName", indexName))
+	condition = types.CompilationFilter(condition)
 
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	var mustNotClauses []map[string]interface{}
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			mustClauses = append(mustClauses, buildBoolQueryFromConditionRaw(map[string]interface{}{k: v}, nil, false, false))
+			continue
+		}
 		if k == "exists" {
 			mustClauses = append(mustClauses, map[string]interface{}{
 				"exists": map[string]interface{}{"field": v},
@@ -1010,6 +1010,7 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		return 0, nil
 	}
 
+	condition = types.CompilationFilter(condition)
 	// Build bool query from condition
 	var mustClauses []map[string]interface{}
 	var filterClauses []map[string]interface{}
@@ -1045,6 +1046,10 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 
 	// Add all other conditions as filters/must/must_not
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			filterClauses = append(filterClauses, buildBoolQueryFromConditionRaw(map[string]interface{}{k: v}, nil, false, false))
+			continue
+		}
 		if k == "id" || k == "kb_id" {
 			continue // Already handled above
 		}
@@ -1169,7 +1174,8 @@ type SearchResponse struct {
 	Aggregations map[string]interface{} `json:"aggregations"`
 }
 
-// Search executes search with unified types.SearchRequest
+// Search executes a unified search across the requested indices. Ordinary
+// searches fail when any index request fails, without returning partial results.
 func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	types.LogSearchRequest("Elasticsearch", req)
 
@@ -1454,8 +1460,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		for _, indexName := range req.IndexNames {
 			searchChunks, indexTotal, esErr := e.searchOneIndex(ctx, indexName, payload)
 			if esErr != nil {
-				common.Warn("Elasticsearch query failed", zap.String("index", indexName), zap.Error(esErr))
-				continue
+				return nil, fmt.Errorf("elasticsearch: search index %q: %w", indexName, esErr)
 			}
 			if hybrid {
 				// A window the backend could not fill is a candidate shortfall
@@ -1504,6 +1509,216 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	}, nil
 }
 
+// esIndexNameForTenant maps one tenant id to its physical ES index. Regexp
+// search deliberately has no multi-tenant mode.
+func esIndexNameForTenant(tenantID string) (string, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return "", fmt.Errorf("tenant id cannot be empty")
+	}
+	if strings.Contains(tenantID, ",") {
+		return "", fmt.Errorf("regexp search supports exactly one tenant")
+	}
+	return "ragflow_" + tenantID, nil
+}
+
+// SearchByRegexp executes a regex-match-only search over chunk content. It
+// reuses the same scope-filter builder and response converter as Search but
+// emits a Lucene `regexp` query on the chunk content field instead of text /
+// dense match expressions. This backs the agent's grep_chunks tool.
+//
+// The caller is responsible for translating a user regex into Lucene syntax;
+// patterns using unsupported constructs should be detected and handled by the
+// caller (fallback to broad recall + in-memory filtering).
+func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
+	if req == nil {
+		return nil, fmt.Errorf("regexp search request cannot be nil")
+	}
+	// Map the engine-agnostic tenant to this engine's physical index. ES
+	// stores one index per tenant (ragflow_<tenant>).
+	indexName, err := esIndexNameForTenant(req.TenantID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(req.Pattern) == "" {
+		return nil, fmt.Errorf("regexp pattern cannot be empty")
+	}
+
+	const maxRegexpResults = 30
+	maxResults := maxRegexpResults
+	if req.ReturnAll {
+		maxResults = 10000
+	}
+
+	// Build the scope filter (kb_id terms + available_int + explicit filters).
+	boolQuery := buildBoolQueryFromCondition(req.Filter, req.KbIDs, false, false)
+
+	// Attach the regexp query as a must clause on the chunk content field.
+	// Two critical ES keyword-regexp behaviours:
+	//  1. ES regexp matches the WHOLE field value, not a substring. To emulate
+	//     "contains" (what grep_chunks and the old in-memory RE2 did), wrap the
+	//     pattern as ".*(pattern).*" — a bare "何进" would only match a chunk
+	//     whose content is exactly "何进" (yielding 0 hits).
+	//  2. Set case_insensitive explicitly so the public grep contract remains
+	//     case-insensitive for Latin text; it has no effect on CJK characters.
+	regexpPattern := ".*(" + req.Pattern + ").*"
+	regexpClause := map[string]interface{}{
+		"regexp": map[string]interface{}{
+			"content_with_weight": map[string]interface{}{
+				"value":            regexpPattern,
+				"flags":            "NONE",
+				"case_insensitive": true,
+			},
+		},
+	}
+
+	if boolQuery == nil {
+		boolQuery = map[string]interface{}{}
+	}
+	if boolMap, ok := boolQuery["bool"].(map[string]interface{}); ok {
+		if must, ok := boolMap["must"].([]interface{}); ok {
+			boolMap["must"] = append(must, regexpClause)
+		} else {
+			boolMap["must"] = []interface{}{regexpClause}
+		}
+	} else {
+		boolQuery = map[string]interface{}{
+			"bool": map[string]interface{}{
+				"must": []interface{}{regexpClause},
+			},
+		}
+	}
+
+	// Regexp search is intentionally a first-page operation. Callers that need
+	// deep reading use chunk anchors rather than offset pagination.
+	queryBody := map[string]interface{}{
+		"query": boolQuery,
+		"size":  maxResults,
+		"from":  0,
+	}
+
+	// When an explicit sort is requested (e.g. a document's reading order), push
+	// it down so the capped first page is deterministic.
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		if sortClause := parseOrderByExpr(req.Sort); len(sortClause) > 0 {
+			queryBody["sort"] = sortClause
+		}
+	}
+
+	// Narrow the returned _source to the requested fields when given. The regexp
+	// matches content_with_weight, so callers must keep it in SelectFields or the
+	// hits will carry no content.
+	if len(req.SelectFields) > 0 {
+		queryBody["_source"] = req.SelectFields
+	}
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(queryBody); err != nil {
+		return nil, fmt.Errorf("error encoding regexp query: %w", err)
+	}
+
+	payload := append([]byte(nil), buf.Bytes()...)
+
+	res, err := e.client.Search(
+		e.client.Search.WithContext(ctx),
+		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithBody(bytes.NewReader(payload)),
+		e.client.Search.WithTrackTotalHits(true),
+	)
+	if err != nil {
+		common.Warn("Elasticsearch regexp query failed", zap.String("index", indexName), zap.Error(err))
+		return nil, err
+	}
+
+	if res.IsError() {
+		bodyBytes, _ := io.ReadAll(res.Body)
+		res.Body.Close()
+		common.Warn("Elasticsearch regexp error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
+		return nil, fmt.Errorf("elasticsearch regexp error on index %q: %s", indexName, strings.TrimSpace(string(bodyBytes)))
+	}
+
+	var esResp SearchResponse
+	decodeErr := json.NewDecoder(res.Body).Decode(&esResp)
+	res.Body.Close()
+	if decodeErr != nil {
+		common.Warn("Elasticsearch regexp failed to parse response", zap.String("index", indexName), zap.Error(decodeErr))
+		return nil, fmt.Errorf("elasticsearch regexp parse error on index %q: %w", indexName, decodeErr)
+	}
+
+	allResults := convertESResponse(&esResp, "")
+	totalHits := esResp.Hits.Total.Value
+	if req.Sort != nil && len(req.Sort.Fields) > 0 {
+		allResults = sortByFields(allResults, req.Sort)
+	} else {
+		// Regexp matches have no meaningful relevance score. Preserve ES's
+		// returned order when no explicit deterministic sort was requested.
+	}
+	if len(allResults) > maxResults {
+		allResults = allResults[:maxResults]
+	}
+
+	return &types.SearchResult{
+		Chunks: allResults,
+		Total:  totalHits,
+	}, nil
+}
+
+// sortByFields orders chunks by the given OrderByExpr fields ascending. It is
+// used for deterministic ordering of regexp results. Numeric fields sort
+// numerically, string fields lexicographically.
+func sortByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) []map[string]interface{} {
+	if expr == nil || len(expr.Fields) == 0 {
+		return chunks
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		for _, field := range expr.Fields {
+			vi, oki := chunks[i][field.Field]
+			vj, okj := chunks[j][field.Field]
+			if !oki || !okj {
+				// Missing field sorts before a present one.
+				if !oki && !okj {
+					continue
+				}
+				return !oki
+			}
+			// Compare the two values and derive a stable equality key. The raw
+			// interface{} equality test below would panic on uncomparable types
+			// ([]interface{}, map from ES source), so the equality check always
+			// runs on string forms instead.
+			var less bool
+			var keyI, keyJ string
+			if fi, ei := toFloat64(vi); ei {
+				if fj, ej := toFloat64(vj); ej {
+					less = fi < fj
+				} else {
+					less = false // numeric before non-numeric
+				}
+				keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
+			} else {
+				si, siOk := vi.(string)
+				sj, sjOk := vj.(string)
+				if siOk && sjOk {
+					less = si < sj
+					keyI, keyJ = si, sj
+				} else {
+					keyI, keyJ = fmt.Sprintf("%v", vi), fmt.Sprintf("%v", vj)
+					less = keyI < keyJ
+				}
+			}
+			if keyI != keyJ {
+				if field.Type == types.SortDesc {
+					return !less
+				}
+				return less
+			}
+		}
+		return false
+	})
+	return chunks
+}
+
+// searchOneIndex sends an ordinary search with a fresh request body. A valid
+// missing-index response is empty; other request and response failures propagate.
 func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload []byte) ([]map[string]interface{}, int64, error) {
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
@@ -1518,7 +1733,22 @@ func (e *Engine) searchOneIndex(ctx context.Context, indexName string, payload [
 	defer res.Body.Close()
 
 	if res.IsError() {
-		bodyBytes, _ := io.ReadAll(res.Body)
+		bodyBytes, readErr := io.ReadAll(res.Body)
+		if readErr != nil {
+			return nil, 0, fmt.Errorf("read elasticsearch error response: %w", readErr)
+		}
+		if res.StatusCode == http.StatusNotFound {
+			var failure struct {
+				Error struct {
+					Type string `json:"type"`
+				} `json:"error"`
+			}
+			// A tenant without indexed documents has no physical index yet.
+			// Preserve that empty result without hiding unrelated 404 errors.
+			if json.Unmarshal(bodyBytes, &failure) == nil && failure.Error.Type == "index_not_found_exception" {
+				return nil, 0, nil
+			}
+		}
 		common.Warn("Elasticsearch error response", zap.String("index", indexName), zap.String("body", string(bodyBytes)))
 		return nil, 0, fmt.Errorf("elasticsearch error response: %s", string(bodyBytes))
 	}
@@ -1913,6 +2143,10 @@ func memoryMessageStatusBool(value interface{}) bool {
 // Skill indexes use status, regular chunk indexes use kb_id, and memory
 // message indexes use memory_id plus message-specific storage fields.
 func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
+	return buildBoolQueryFromConditionRaw(types.CompilationFilter(filter), kbIDs, isSkillIndex, isMemoryIndex)
+}
+
+func buildBoolQueryFromConditionRaw(filter map[string]interface{}, kbIDs []string, isSkillIndex, isMemoryIndex bool) map[string]interface{} {
 	var mustClauses []interface{}
 	var mustNotClauses []interface{}
 	var filterClauses []interface{}
@@ -1943,6 +2177,20 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 	}
 
 	for k, v := range filter {
+		if k == "and" || k == "or" {
+			var children []interface{}
+			for _, child := range types.FilterClauses(v) {
+				children = append(children, buildBoolQueryFromConditionRaw(child, nil, false, isMemoryIndex))
+			}
+			if len(children) > 0 {
+				clause := map[string]interface{}{"filter": children}
+				if k == "or" {
+					clause = map[string]interface{}{"should": children, "minimum_should_match": 1}
+				}
+				filterClauses = append(filterClauses, map[string]interface{}{"bool": clause})
+			}
+			continue
+		}
 		if isMemoryIndex {
 			k = mapMemoryMessageESField(k, false)
 		}
@@ -1990,11 +2238,13 @@ func buildBoolQueryFromCondition(filter map[string]interface{}, kbIDs []string, 
 			continue
 		}
 		if k == "must_not" {
-			if condition, ok := v.(map[string]interface{}); ok {
-				if field, ok := condition["exists"].(string); ok && field != "" {
-					mustNotClauses = append(mustNotClauses, map[string]interface{}{"exists": map[string]interface{}{"field": field}})
-				}
+			for _, clause := range mustNotExistsClauses(v) {
+				mustNotClauses = append(mustNotClauses, clause)
 			}
+			continue
+		}
+		if k == "exists" {
+			filterClauses = append(filterClauses, map[string]interface{}{"exists": map[string]interface{}{"field": v}})
 			continue
 		}
 		if k == "knowledge_graph_kwd" {

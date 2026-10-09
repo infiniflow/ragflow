@@ -120,6 +120,8 @@ export enum Operator {
   KeenableSearch = 'KeenableSearch',
   YouComSearch = 'YouComSearch',
   SofyaSearch = 'SofyaSearch',
+  Search1APISearch = 'Search1APISearch',
+  Search1APICrawl = 'Search1APICrawl',
   DocGenerator = 'DocGenerator',
   Browser = 'Browser',
   Placeholder = 'Placeholder',

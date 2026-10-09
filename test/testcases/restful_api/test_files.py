@@ -62,3 +62,40 @@ def test_files_list_create_folder_and_upload_to_root(rest_client, tmp_path):
     finally:
         if created_ids:
             rest_client.delete("/files", json={"ids": created_ids})
+
+
+@pytest.mark.p2
+def test_files_folder_create_fallback_and_rename_duplicate(rest_client):
+    created_ids: list[str] = []
+    suffix = uuid.uuid4().hex[:12]
+    folder_name = f"rf_dup_folder_{suffix}"
+
+    try:
+        first = _assert_ok(rest_client.post("/files", json={"name": folder_name, "type": "folder"}))
+        created_ids.append(first["id"])
+        assert first["name"] == folder_name, first
+
+        # A duplicate create falls back to a numbered name instead of failing.
+        second = _assert_ok(rest_client.post("/files", json={"name": folder_name, "type": "folder"}))
+        created_ids.append(second["id"])
+        assert second["name"] == f"{folder_name}(1)", second
+
+        # Renaming onto another entry's name is rejected.
+        duplicate_rename = rest_client.post(
+            "/files/move",
+            json={"src_file_ids": [second["id"]], "new_name": folder_name},
+        )
+        assert duplicate_rename.status_code == 200, duplicate_rename.text
+        duplicate_rename_payload = duplicate_rename.json()
+        assert duplicate_rename_payload["code"] != 0, duplicate_rename_payload
+        assert "duplicated file name" in duplicate_rename_payload["message"], duplicate_rename_payload
+
+        # A case-only rename of the same entry is allowed.
+        case_only_rename = rest_client.post(
+            "/files/move",
+            json={"src_file_ids": [second["id"]], "new_name": second["name"].upper()},
+        )
+        assert _assert_ok(case_only_rename) is True, case_only_rename.text
+    finally:
+        if created_ids:
+            rest_client.delete("/files", json={"ids": created_ids})

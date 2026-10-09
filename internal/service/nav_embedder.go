@@ -21,8 +21,6 @@ import (
 	"fmt"
 	modelModule "ragflow/internal/entity/models"
 	"strings"
-
-	"ragflow/internal/entity"
 )
 
 // NavEmbedder is the production implementation of nlp.NavEmbedder. It resolves
@@ -30,15 +28,15 @@ import (
 // dataset-nav index stores q_<dim>_vec as float). It lives in the service
 // package (not nlp) so it can import model_service without an import cycle.
 type NavEmbedder struct {
-	modelSvc *ModelProviderService
+	modelFactory *ModelFactory
 	// embdModelName is the composite embedding model name (e.g.
 	// "embedding_model@..." ). Empty falls back to resolving the tenant default.
 	embdModelName string
 }
 
 // NewNavEmbedder builds the production embedder used by NavService.
-func NewNavEmbedder(modelSvc *ModelProviderService, embdModelName string) *NavEmbedder {
-	return &NavEmbedder{modelSvc: modelSvc, embdModelName: embdModelName}
+func NewNavEmbedder(modelFactory *ModelFactory, embdModelName string) *NavEmbedder {
+	return &NavEmbedder{modelFactory: modelFactory, embdModelName: embdModelName}
 }
 
 // Encode embeds texts as DOCUMENTS for the tenant and returns float32 vectors.
@@ -56,23 +54,20 @@ func (e *NavEmbedder) EncodeQueries(ctx context.Context, tenantID string, texts 
 }
 
 func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []string, query bool) ([][]float32, error) {
-	if e.modelSvc == nil {
-		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
+	if e.modelFactory == nil {
+		return nil, fmt.Errorf("datasetnav: model factory not initialized")
 	}
 	name := e.embdModelName
 	var model *modelModule.EmbeddingModel
+	access := ModelAccess{TenantID: tenantID}
+	var err error
 	if name == "" {
-		target, err := e.modelSvc.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
-		}
-		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+		model, err = e.modelFactory.NewDefaultEmbeddingModel(ctx, access)
 	} else {
-		target, err := e.modelSvc.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, name)
-		if err != nil {
-			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
-		}
-		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+		model, err = e.modelFactory.NewEmbeddingModel(ctx, access, name)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 	}
 	nonEmpty := make([]string, 0, len(texts))
 	for _, t := range texts {

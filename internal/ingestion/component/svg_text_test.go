@@ -179,7 +179,7 @@ func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
 	}
 	t.Cleanup(func() { resolveTenantModelByType = original })
 	textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>`)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "shape.SVG", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), true)
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "shape.SVG", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), true, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,11 +201,11 @@ func TestMaybeDispatchImageRejectsInvalidSVG(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
 		setups["image"]["parse_method"] = method
-		_, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "broken.svg", []byte(`<svg><text>a</svg>`), nil, setups, false)
+		_, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "broken.svg", []byte(`<svg><text>a</svg>`), nil, setups, false, "")
 		if !handled || err == nil || !strings.Contains(err.Error(), "parser: decode SVG") {
 			t.Fatalf("method %q: handled = %v, error = %v, want SVG decode error", method, handled, err)
 		}
-		_, _, err = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "empty.svg", nil, nil, setups, false)
+		_, _, err = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "empty.svg", nil, nil, setups, false, "")
 		if err == nil || !strings.Contains(err.Error(), "size limits") {
 			t.Fatalf("method %q: error = %v, want size limit error", method, err)
 		}
