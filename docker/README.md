@@ -67,7 +67,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `DB_TYPE`
   The business metadata database type. Defaults to `mysql`. Set it to `oceanbase` when connecting to OceanBase through its MySQL-compatible protocol.
 - `COMPOSE_PROFILES`
-  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},ragflow-go,clickhouse`.
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
 - `METADATA_DB_PROFILE`
   Defaults to `mysql`, preserving the in-cluster MySQL service.
 
