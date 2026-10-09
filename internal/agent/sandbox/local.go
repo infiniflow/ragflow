@@ -297,10 +297,11 @@ func (p *LocalProvider) ExecuteCode(
 	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 	cmd.Dir = instanceDir
 	cmd.Env = childEnv
-	// pdeath_signal + process group so the subprocess dies
-	// with the parent. On Linux this is SysProcAttr.Pdeathsig;
 	// Setpgid puts the child in its own process group, which
-	// lets us kill the whole group on timeout.
+	// lets us kill the whole group on timeout. On Linux and
+	// FreeBSD the child also gets SIGTERM if the parent dies
+	// (Pdeathsig); other platforms have no equivalent, so there
+	// a child can outlive an unexpected parent exit.
 	cmd.SysProcAttr = localSysProcAttr()
 	// Apply rlimits via pre-start. Go's os/exec does not expose
 	// rlimit directly, so we do it after fork via the parent's
