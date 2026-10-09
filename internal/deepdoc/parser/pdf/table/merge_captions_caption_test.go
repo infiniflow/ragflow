@@ -550,3 +550,65 @@ func TestMergeCaptions_TableFallbackSurvivesPageGuard(t *testing.T) {
 	}
 	t.Errorf("table caption text deleted instead of preserved on the fallback figure: %v", textsOf(result))
 }
+
+// TestMergeCaptions_FigureCaptionPositionMerged locks the highlight geometry:
+// a caption merged into a figure carries its TEXT into the figure's chunk, so
+// its box must be merged into the figure's Positions too — otherwise the UI
+// highlights the figure region only and the caption line is never highlighted
+// with the image. Positions[0] must stay the figure's own box (reading-order
+// sorting and the proximity searches use it).
+func TestMergeCaptions_FigureCaptionPositionMerged(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "revenue chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Figure 1: revenue by quarter", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged into the figure's positions: %+v", got.Positions)
+	}
+	if got.Positions[0].Top != 300 || got.Positions[0].Bottom != 500 {
+		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
+	}
+	found := false
+	for _, p := range got.Positions {
+		if p.Top == 510 && p.Bottom == 525 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
+	}
+}
+
+// TestMergeCaptions_CrossPageFallbackDoesNotClaimPage pins the guard on the
+// above: a table caption rescued by the page-blind fallback can land on a
+// figure pages away. Its text is still preserved, but its box must NOT be
+// merged into the figure's positions — Position pages drive the section's page
+// set, its render/eviction window and its crop plan, so claiming a page the
+// figure does not occupy would corrupt all three.
+func TestMergeCaptions_CrossPageFallbackDoesNotClaimPage(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "far chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Table 9: yearly totals", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	for _, s := range result {
+		if s.LayoutType != pdf.LayoutTypeFigure {
+			continue
+		}
+		if len(s.Positions) != 1 {
+			t.Errorf("cross-page caption must not extend the figure's positions: %+v", s.Positions)
+		}
+		if !strings.Contains(s.Text, "yearly totals") {
+			t.Errorf("caption text must still be preserved: %q", s.Text)
+		}
+	}
+}

@@ -16,6 +16,11 @@ import (
 type captionText struct {
 	top  float64
 	text string
+	// pos is the caption box itself. Merging a caption into a target moves its
+	// TEXT into the target's chunk, so the target's highlight geometry has to
+	// move with it — otherwise the UI highlights the figure region only and the
+	// caption line is never highlighted with the image it belongs to.
+	pos []pdf.Position
 }
 
 // captionSep returns the separator inserted before a caption whose text is
@@ -72,7 +77,7 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 			if len(s.Positions) > 0 {
 				top = s.Positions[0].Top
 			}
-			byTarget[target] = append(byTarget[target], captionText{top: top, text: s.Text})
+			byTarget[target] = append(byTarget[target], captionText{top: top, text: s.Text, pos: s.Positions})
 			captions = append(captions, i)
 			continue
 		}
@@ -108,6 +113,7 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		// section (which carries an image, not a table). Figure captions are
 		// out of this PR's scope, so preserve their pre-existing behavior.
 		appendRawCaptions(&sections[idx], texts)
+		extendCaptionPositions(&sections[idx], entries)
 	}
 	// Remove caption sections in reverse order.
 	n := len(sections)
@@ -382,6 +388,50 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 	} else {
 		target.Text = b.String()
 	}
+}
+
+// extendCaptionPositions appends the attached captions' boxes to the target's
+// own, so the target chunk's highlight geometry covers the caption as well as
+// the figure region it was merged into. The chunk TEXT already contains the
+// caption (appendRawCaptions); without this the caption is never highlighted
+// with its image.
+//
+// Only captions that sit on a page the target already occupies are merged. A
+// cross-page attachment (the table-caption fallback can land on a figure pages
+// away) must not make the target claim a page it does not occupy: Position
+// pages drive the section's page set, its render/eviction window and its
+// crop plan. A caption with no page metadata at all carries no page claim and
+// is safe to merge.
+//
+// Appending (not prepending) keeps Positions[0] as the primary box, which
+// reading-order sorting and the proximity searches elsewhere depend on.
+func extendCaptionPositions(target *pdf.Section, entries []captionText) {
+	for _, e := range entries {
+		for _, p := range e.pos {
+			if !sharesPageWith(p, target.Positions) {
+				continue
+			}
+			target.Positions = append(target.Positions, p)
+		}
+	}
+}
+
+// sharesPageWith reports whether p shares a page with any of have, or claims no
+// page at all (in which case merging it cannot alter have's page set).
+func sharesPageWith(p pdf.Position, have []pdf.Position) bool {
+	if len(p.PageNumbers) == 0 {
+		return true
+	}
+	for _, h := range have {
+		for _, a := range h.PageNumbers {
+			for _, b := range p.PageNumbers {
+				if a == b {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // injectCaption concatenates the given caption texts (already grouped per
