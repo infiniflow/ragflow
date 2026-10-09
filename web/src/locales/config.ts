@@ -57,7 +57,7 @@ const resources = {
 const updateDocumentLocale = (lng: string) => {
   document.documentElement.lang = lng;
   document.documentElement.dir = 'ltr';
-  dayjs.locale(lng === 'zh' ? 'zh-cn' : lng);
+  dayjs.locale(lng === LanguageAbbreviation.Zh ? 'zh-cn' : lng);
 };
 
 i18n

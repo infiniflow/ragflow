@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   TimelineContent,
   TimelineHeader,
@@ -60,6 +61,8 @@ const ToolTimelineItem = ({
   sendLoading: boolean;
   isShare?: boolean;
 }) => {
+  const { t: translateUi } = useTranslation();
+
   if (!tools || tools.length === 0 || !Array.isArray(tools)) return null;
   const blackList = ['add_memory', 'gen_citations'];
   const filteredTools = tools.filter(
@@ -171,7 +174,9 @@ const ToolTimelineItem = ({
                             'border-background  -end-1 -top-1 size-2 rounded-full bg-state--success',
                           )}
                         >
-                          <span className="sr-only">Online</span>
+                          <span className="sr-only">
+                            {translateUi('ui.online')}
+                          </span>
                         </span>
                       </div>
                     </AccordionTrigger>

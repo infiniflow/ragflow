@@ -116,7 +116,7 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
     <Command>
       <CommandInput placeholder={t('flow.typeCommandORsearch')} />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{t('ui.noResultsFound', { keyPrefix: '' })}</CommandEmpty>
         {Menus.map((x) => (
           <CommandGroup heading={x.label} key={x.label}>
             {x.list.map((y) => (
@@ -138,6 +138,8 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
 }
 
 export function MCPCommand({ onChange, value }: ToolCommandProps) {
+  const { t: translateUi } = useTranslation();
+
   const { data } = useListMcpServer();
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
@@ -146,9 +148,11 @@ export function MCPCommand({ onChange, value }: ToolCommandProps) {
 
   return (
     <Command>
-      <CommandInput placeholder="Type a command or search..." />
+      <CommandInput
+        placeholder={translateUi('ui.typeACommandOrSearchInProgress')}
+      />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{translateUi('ui.noResultsFound')}</CommandEmpty>
         {data.mcp_servers.map((item) => {
           const isSelected = currentValue.includes(item.id);
 

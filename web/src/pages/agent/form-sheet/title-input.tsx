@@ -49,7 +49,11 @@ export function TitleInput({ node }: TitleInputProps) {
   }, [isEditingMode]);
 
   if (isMcp) {
-    return <div className="flex-1 text-base">MCP Config</div>;
+    return (
+      <div className="flex-1 text-base">
+        {t('ui.mcpConfig', { keyPrefix: '' })}
+      </div>
+    );
   }
 
   return (

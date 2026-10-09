@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /**
  * RawMarkdownEditor — raw markdown editing using Monaco Editor.
  * Theme follows the app's Nimbalyst theme system.
@@ -63,6 +64,8 @@ export default function RawMarkdownEditor({
   onToggleSource,
   language = 'markdown',
 }: Props & { showSource?: boolean }): JSX.Element {
+  const { t: translateUi } = useTranslation();
+
   const { theme } = useTheme();
   const editorRef = useRef<monacoEditor.IStandaloneCodeEditor | null>(null);
   const monacoRef = useRef<typeof import('monaco-editor') | null>(null);
@@ -118,10 +121,10 @@ export default function RawMarkdownEditor({
           type="button"
           onClick={onToggleSource}
           className="nim-mode-btn inline-flex items-center justify-center gap-1 px-2.5 py-1 text-xs font-medium border border-accent-primary rounded bg-accent-primary-5 text-accent-primary hover:bg-accent-primary-10 transition-colors"
-          title="WYSIWYG"
+          title={translateUi('ui.wysiwyg')}
         >
           <Eye className="size-3.5" />
-          WYSIWYG
+          {translateUi('ui.wysiwyg')}
         </button>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>

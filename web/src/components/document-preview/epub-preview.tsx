@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -26,6 +27,8 @@ import { useEpubBook } from './use-epub-book';
 type EpubPreviewerProps = { className?: string; url: string };
 
 export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
+  const { t: translateUi } = useTranslation();
+
   const isDark = useIsDarkTheme();
   const [blob, setBlob] = useState<Blob | null>(null);
   const [loading, setLoading] = useState(false);
@@ -94,7 +97,7 @@ export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
     >
       {tocOpen && (
         <aside className="w-60 shrink-0 h-full overflow-auto border-r border-border-normal bg-bg-card p-2">
-          <nav aria-label="Table of contents">
+          <nav aria-label={translateUi('ui.tableOfContents')}>
             {toc.map((item) => (
               <button
                 key={item.href}
@@ -124,14 +127,14 @@ export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
         <div ref={containerRef} className="w-full h-full bg-bg-base"></div>
 
         <button
-          aria-label="Previous page"
+          aria-label={translateUi('ui.previousPage')}
           onClick={prevPage}
           className="absolute bottom-4 left-4 z-10 flex size-8 items-center justify-center rounded-md border border-border-normal bg-bg-component text-text-secondary hover:text-text-primary"
         >
           <ChevronLeft className="size-4"></ChevronLeft>
         </button>
         <button
-          aria-label="Next page"
+          aria-label={translateUi('ui.nextPage')}
           onClick={nextPage}
           className="absolute bottom-4 right-4 z-10 flex size-8 items-center justify-center rounded-md border border-border-normal bg-bg-component text-text-secondary hover:text-text-primary"
         >
@@ -147,7 +150,7 @@ export const EpubPreviewer = ({ className, url }: EpubPreviewerProps) => {
 
       {!loading && !rendering && (loadError || parseError) && (
         <div className="absolute inset-0 z-20 flex items-center justify-center text-text-secondary text-sm">
-          Failed to load file
+          {translateUi('ui.failedToLoadFile')}
         </div>
       )}
     </div>

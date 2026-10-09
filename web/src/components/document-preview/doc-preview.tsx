@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -160,6 +161,8 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
   className,
   url,
 }) => {
+  const { t: translateUi } = useTranslation();
+
   const editor = useDocxEditor({ initialFileName: 'document.docx' });
   const { importDocxFile, status, totalPages } = editor;
   // importDocxFile is recreated whenever the library's internal state changes
@@ -280,7 +283,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
             disabled={loading || !!error || zoomScale <= minZoom}
             className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-opacity"
             onClick={handleZoomOut}
-            aria-label="Zoom out"
+            aria-label={translateUi('ui.zoomOut')}
           >
             <ZoomOut className="w-4 h-4" />
           </button>
@@ -292,7 +295,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
             disabled={loading || !!error || zoomScale >= maxZoom}
             className="p-1 rounded hover:bg-gray-100 disabled:opacity-30 transition-opacity"
             onClick={handleZoomIn}
-            aria-label="Zoom in"
+            aria-label={translateUi('ui.zoomIn')}
           >
             <ZoomIn className="w-4 h-4" />
           </button>
@@ -314,7 +317,7 @@ export const DocPreviewer: React.FC<DocPreviewerProps> = ({
           <div className="flex items-center justify-center h-full p-8">
             <div className="border border-dashed border-border-normal rounded-xl p-8 max-w-2xl text-center">
               <p className="text-2xl font-bold mb-4">
-                Preview is not available for this Word document
+                {translateUi('ui.previewIsNotAvailableForThisWordDocument')}
               </p>
               <p className="italic text-sm text-muted-foreground leading-relaxed">
                 @extend-ai/react-docx supports modern <code>.docx</code> files

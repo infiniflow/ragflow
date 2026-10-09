@@ -153,11 +153,11 @@ export function SessionChat({ session }: SessionChatProps) {
           >
             {sessionLoading ? (
               <div className="flex items-center justify-center h-full">
-                Loading...
+                {t('ui.loadingInProgress', { keyPrefix: '' })}
               </div>
             ) : derivedMessages.length === 0 ? (
               <div className="flex items-center justify-center h-full text-text-secondary">
-                No messages in this session
+                {t('ui.noMessagesInThisSession', { keyPrefix: '' })}
               </div>
             ) : (
               <div className="w-full pr-5">

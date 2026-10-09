@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -34,6 +35,8 @@ export function EmbedContainer({
   handleReset,
   hideReset = false,
 }: EmbedContainerProps) {
+  const { t: translateUi } = useTranslation();
+
   const appConf = useFetchAppConf();
 
   return (
@@ -63,7 +66,9 @@ export function EmbedContainer({
             >
               <div className="flex gap-1 items-center">
                 <RefreshCcw size={14} />
-                <span className="hidden text-lg md:inline-block">Reset</span>
+                <span className="hidden text-lg md:inline-block">
+                  {translateUi('ui.reset')}
+                </span>
               </div>
             </Button>
           )}

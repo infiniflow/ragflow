@@ -67,7 +67,7 @@ const FeedbackDialog = ({
     <Dialog open={visible} onOpenChange={hideModal}>
       <DialogContent className="sm:max-w-[425px]">
         <DialogHeader>
-          <DialogTitle>Feedback</DialogTitle>
+          <DialogTitle>{t('ui.feedback', { keyPrefix: '' })}</DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form
