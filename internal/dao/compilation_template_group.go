@@ -52,25 +52,6 @@ func (dao *CompilationTemplateGroupDAO) ListSaved(ctx context.Context, db *gorm.
 	return groups, nil
 }
 
-// ListOwnedSaved returns only the tenant's own valid groups, mirroring the
-// Python list_saved() query (cls.model.tenant_id == tenant_id). The merged
-// /agents list uses this for tenant-owned canvas groups.
-func (dao *CompilationTemplateGroupDAO) ListOwnedSaved(ctx context.Context, db *gorm.DB, tenantID, keywords, scope string, terms []OrderTerm) ([]*entity.CompilationTemplateGroup, error) {
-	q := db.WithContext(ctx).
-		Where("tenant_id = ? AND status = ?", tenantID, string(entity.StatusValid))
-	if keywords != "" {
-		q = q.Where("name LIKE ?", "%"+keywords+"%")
-	}
-	if scope != "" {
-		q = q.Where("scope = ?", scope)
-	}
-	var groups []*entity.CompilationTemplateGroup
-	if err := q.Order(compilationTemplateGroupOrderClause(terms)).Find(&groups).Error; err != nil {
-		return nil, err
-	}
-	return groups, nil
-}
-
 // CountSavedByTenant counts the tenant's own valid groups, mirroring the
 // group_count query in Python get_owner_filter / get_category_filter.
 func (dao *CompilationTemplateGroupDAO) CountSavedByTenant(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
