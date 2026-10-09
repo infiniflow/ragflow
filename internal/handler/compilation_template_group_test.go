@@ -66,6 +66,10 @@ func newCompilationTemplateGroupHandlerRouter() *gin.Engine {
 		c.Set("user", &entity.User{ID: "user-1"})
 		h.Save(c)
 	})
+	r.PUT("/api/v1/compilation-template-groups/:group_id", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-1"})
+		h.Update(c)
+	})
 	return r
 }
 
@@ -111,5 +115,53 @@ func TestCompilationTemplateGroupHandlerSaveDedupesDuplicateName(t *testing.T) {
 	}
 	if got := second.Data["name"]; got != "Group A(1)" {
 		t.Fatalf("second group name = %v, want %q", got, "Group A(1)")
+	}
+}
+
+func putCompilationTemplateGroup(t *testing.T, r *gin.Engine, id, body string) groupSaveResponse {
+	t.Helper()
+	resp := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPut, "/api/v1/compilation-template-groups/"+id, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(resp, req)
+
+	var parsed groupSaveResponse
+	if err := json.Unmarshal(resp.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("unmarshal response: %v body=%s", err, resp.Body.String())
+	}
+	return parsed
+}
+
+// After a name fallback the group and its single template share the group name,
+// so an update carrying the template name (what the client submits) is accepted;
+// reusing another group's name is still rejected.
+func TestCompilationTemplateGroupHandlerUpdateAllowsTemplateName(t *testing.T) {
+	setupGroupHandlerDB(t)
+	r := newCompilationTemplateGroupHandlerRouter()
+	body := `{"name":"Group A","templates":[{"name":"tpl","kind":"text","config":{}}]}`
+
+	if first := postCompilationTemplateGroup(t, r, body); first.Code != int(common.CodeSuccess) {
+		t.Fatalf("first save code = %d, message = %q", first.Code, first.Message)
+	}
+	second := postCompilationTemplateGroup(t, r, body)
+	if second.Code != int(common.CodeSuccess) {
+		t.Fatalf("second save code = %d, message = %q", second.Code, second.Message)
+	}
+	id, _ := second.Data["id"].(string)
+	if id == "" {
+		t.Fatalf("second save returned no id: %#v", second.Data)
+	}
+
+	updated := putCompilationTemplateGroup(t, r, id, `{"name":"Group A(1)","templates":[{"name":"Group A(1)","kind":"text","config":{}}]}`)
+	if updated.Code != int(common.CodeSuccess) {
+		t.Fatalf("update code = %d, message = %q", updated.Code, updated.Message)
+	}
+	if got := updated.Data["name"]; got != "Group A(1)" {
+		t.Fatalf("updated group name = %v, want %q", got, "Group A(1)")
+	}
+
+	conflict := putCompilationTemplateGroup(t, r, id, `{"name":"Group A","templates":[{"name":"Group A","kind":"text","config":{}}]}`)
+	if conflict.Code != int(common.CodeDataError) {
+		t.Fatalf("conflicting update code = %d, want %d", conflict.Code, int(common.CodeDataError))
 	}
 }

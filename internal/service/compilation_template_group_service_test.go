@@ -277,3 +277,56 @@ func TestReconcileChildrenRejectsRenameOntoUnchangedLegacyName(t *testing.T) {
 		t.Fatalf("UpdateGroup error = %v, want duplicate-name error", err)
 	}
 }
+
+// A single-template group mirrors the fallback group name onto its child, so the
+// client-submitted template name (which it also sends as the group name) does not
+// collide with a sibling group on update.
+func TestCreateGroupSingleTemplateSharesFallbackName(t *testing.T) {
+	setupCompilationGroupTestDB(t)
+	svc := NewCompilationTemplateGroupService()
+	ctx := t.Context()
+
+	first := seedCompilationGroup(t, svc, "tenant-1", "Group A", "tpl")
+	if first.Templates[0].Name != "Group A" {
+		t.Fatalf("first template name = %q, want %q", first.Templates[0].Name, "Group A")
+	}
+
+	second := seedCompilationGroup(t, svc, "tenant-1", "Group A", "tpl")
+	if second.Name != "Group A(1)" {
+		t.Fatalf("second group name = %q, want %q", second.Name, "Group A(1)")
+	}
+	if second.Templates[0].Name != "Group A(1)" {
+		t.Fatalf("second template name = %q, want %q", second.Templates[0].Name, "Group A(1)")
+	}
+
+	updated, err := svc.UpdateGroup(ctx, "tenant-1", second.ID, &GroupRequest{
+		Name: "Group A(1)",
+		Templates: []*GroupTemplate{
+			{ID: second.Templates[0].ID, Name: "Group A(1)", Kind: "text", Config: entity.JSONMap{}},
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpdateGroup after fallback: %v", err)
+	}
+	if updated.Name != "Group A(1)" {
+		t.Fatalf("updated group name = %q, want %q", updated.Name, "Group A(1)")
+	}
+	if updated.Templates[0].Name != "Group A(1)" {
+		t.Fatalf("updated template name = %q, want %q", updated.Templates[0].Name, "Group A(1)")
+	}
+}
+
+// Multi-template groups keep their own per-group deduped child names; only a
+// single-template group mirrors the group name.
+func TestCreateGroupMultiTemplateKeepsChildNames(t *testing.T) {
+	setupCompilationGroupTestDB(t)
+	svc := NewCompilationTemplateGroupService()
+
+	group := seedCompilationGroup(t, svc, "tenant-1", "Group A", "A", "B")
+	if group.Templates[0].Name != "A" {
+		t.Fatalf("first template name = %q, want %q", group.Templates[0].Name, "A")
+	}
+	if group.Templates[1].Name != "B" {
+		t.Fatalf("second template name = %q, want %q", group.Templates[1].Name, "B")
+	}
+}

@@ -145,7 +145,7 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 		if cerr := s.groupDAO.Create(ctx, tx, group); cerr != nil {
 			return cerr
 		}
-		return s.insertChildren(ctx, tx, tenantID, groupID, req.Templates)
+		return s.insertChildren(ctx, tx, tenantID, groupID, groupName, req.Templates)
 	}); err != nil {
 		return nil, err
 	}
@@ -373,15 +373,24 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 	return nil
 }
 
-// insertChildren inserts new child templates, falling back to a numbered name
-// when a requested name already exists in the group.
-func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate) error {
+// insertChildren inserts new child templates. A group that holds a single
+// template mirrors the resolved group name onto that template so the two never
+// diverge after the group name falls back to "name(N)"; otherwise a requested
+// name already used in the group falls back to a numbered suffix.
+func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID, groupName string, templates []*GroupTemplate) error {
 	for _, child := range templates {
-		name, err := common.UniqueName(strings.TrimSpace(child.Name), maxTemplateNameLen, func(candidate string) (bool, error) {
-			return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
-		})
-		if err != nil {
-			return err
+		// The client submits the template name as the group name, so a single
+		// child must share the (possibly deduped) group name or the update
+		// endpoint would reject it as a duplicate group name.
+		name := groupName
+		if len(templates) != 1 {
+			var err error
+			name, err = common.UniqueName(strings.TrimSpace(child.Name), maxTemplateNameLen, func(candidate string) (bool, error) {
+				return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
+			})
+			if err != nil {
+				return err
+			}
 		}
 		desc := child.Description
 		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
