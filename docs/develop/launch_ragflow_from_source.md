@@ -115,7 +115,7 @@ The change made with `sysctl -w` is temporary. To preserve it after a reboot, ad
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
-docker compose --env-file docker/.env -f docker/docker-compose-base.yml ps
+docker ps
 ```
 
 The base Compose file also defines an unprofiled Redis service. Starting every service with `up -d` can make Redis and Kvrocks compete for host port 6379; the explicit service list above starts Kvrocks for the Go backend. Compose may print a warning that `REDIS_PORT` is unset because the unused Redis service is still parsed.

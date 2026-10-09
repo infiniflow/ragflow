@@ -51,7 +51,7 @@ For local image builds, use the [Go image build guide](../docs/develop/build_doc
 Verify the deployment with:
 
 ```bash
-docker compose -f docker-compose.yml ps
+docker ps
 docker logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
