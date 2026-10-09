@@ -372,9 +372,6 @@ func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID str
 func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
 }
-func (f *fakeDocumentService) ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	return nil, nil
-}
 func (f *fakeDocumentService) ProbeTableColumns(ctx context.Context, filename string, data []byte) (*document.TableProbeResult, error) {
 	return f.tableProbeResult, f.tableProbeErr
 }

@@ -81,7 +81,6 @@ type documentServiceIface interface {
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
-	ReparseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
 	ProbeTableColumns(ctx context.Context, filename string, data []byte) (*document.TableProbeResult, error)
 	ProbeDocumentTableColumns(ctx context.Context, datasetID, documentID string) (*document.TableProbeResult, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
@@ -1621,10 +1620,6 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 
 type StartParseDocumentsRequest struct {
 	DocumentIDs []string `json:"document_ids" binding:"required"`
-	// Reparse discards the documents' previous results before starting a new
-	// run. Saving a configuration change never re-parses by itself, so a client
-	// that changed column roles has to ask for this explicitly.
-	Reparse bool `json:"reparse"`
 }
 
 func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
@@ -1657,11 +1652,7 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 		return
 	}
 
-	startParse := h.documentService.IngestDocuments
-	if req.Reparse {
-		startParse = h.documentService.ReparseDocuments
-	}
-	parseResult, err := startParse(ctx, datasetID, userID, req.DocumentIDs)
+	parseResult, err := h.documentService.IngestDocuments(ctx, datasetID, userID, req.DocumentIDs)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return
