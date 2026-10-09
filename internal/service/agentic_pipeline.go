@@ -66,6 +66,10 @@ func (s *ChatPipelineService) agenticRag(
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
+	// Wire the document-metadata resolver the metadata_search tool needs. The
+	// eino agentic_rag package must not import service (service imports it), so
+	// the concrete *service.MetadataService is injected here, per turn.
+	agentic_rag.SetMetadataService(NewMetadataService())
 	// agent_mode selects the template id for this run (validated non-empty by
 	// AsyncChat before dispatch). Resolved per-run so conf/agentic_rag.yaml
 	// edits take effect without restart.

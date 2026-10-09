@@ -665,7 +665,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
-      builtInSuffix: ' (built in)',
+      builtInSuffix: 'Built in',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
       randomSeedTip:
@@ -1170,14 +1170,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
-      failoverModels: 'Failover models',
-      failoverModelsTip:
-        'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
-      failoverModelsPrimaryLabel: 'Primary model',
-      failoverModelsNoPrimary: 'Tenant default',
-      failoverModelsEmpty:
-        'No fallback model. Add at least one so a provider failure can be survived.',
-      failoverModelsAdd: 'Add a fallback model',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -2948,6 +2940,23 @@ Best for: Documents with flowing, contextually connected content — such as boo
       sofyaSearchDepthBasic: 'Page content',
       sofyaSearchDepthSnippets: 'Snippets only',
       sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        'A web and news search component powered by Search1API. It covers search services such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News and Reuters. As an agent tool, the agent can pick the channel and search service for each call. An API Key is required.',
+      search1APIChannelTip:
+        'Web searches the general web; News searches news sources. As an agent tool, the agent can switch the channel for each call.',
+      search1APIChannelGeneral: 'Web',
+      search1APIChannelNews: 'News',
+      search1APIService: 'Search service',
+      search1APIServiceTip:
+        'The default search service for the selected channel. As an agent tool, the agent can pick another service the channel supports for each call.',
+      search1APIApiKeyTip: 'Required. Create an API Key at app.s1.dev.',
+      search1APICrawl: 'Search1API crawl',
+      search1APICrawlDescription:
+        'Read a web page with Search1API and return its title and full content. An API Key is required.',
+      search1APICrawlUrl: 'URL',
+      search1APICrawlUrlTip:
+        'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',

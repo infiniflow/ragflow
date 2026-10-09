@@ -707,7 +707,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"md_with_weight", "content_with_weight"},
+		SelectFields: []string{"id", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"type_kwd":      []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
@@ -715,14 +715,24 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 			"available_int": 1,
 		},
 	})
-	if err != nil || result == nil || len(result.Chunks) == 0 {
+	if err != nil {
+		common.Warn("failed to read current Wiki page content", zap.Error(err))
 		return ""
 	}
-	content := pageContentValue(result.Chunks[0]["md_with_weight"])
-	if content == "" {
-		content = pageContentValue(result.Chunks[0]["content_with_weight"])
+	if result == nil || len(result.Chunks) == 0 {
+		return ""
 	}
-	return content
+	row := result.Chunks[0]
+	if content := enginetypes.WikiPageContent(row); content != "" {
+		return content
+	}
+	raw, err := docEngine.GetChunk(ctx, wikiIndexName(tenantID), pageContentValue(row["id"]), []string{datasetID})
+	if err != nil {
+		common.Warn("failed to read stored Wiki page content", zap.Error(err))
+		return ""
+	}
+	stored, _ := raw.(map[string]interface{})
+	return enginetypes.WikiPageContent(stored)
 }
 
 func pageContentValue(value interface{}) string {

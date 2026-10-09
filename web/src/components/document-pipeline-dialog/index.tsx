@@ -31,7 +31,10 @@ import { IChangeParserRequestBody } from '@/interfaces/request/document';
 import { useCallback } from 'react';
 import { FieldErrors, useFormState, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { buildParserOptionValue } from '@/hooks/use-parser-options';
+import {
+  buildParserOptionValue,
+  ParserOptionKind,
+} from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   IDocumentPipelineDialogProps,
@@ -128,10 +131,13 @@ export function DocumentPipelineDialog({
                   <ParserSelect
                     value={
                       parseType === ParseType.BuiltIn
-                        ? buildParserOptionValue('builtin', selectedParserId)
+                        ? buildParserOptionValue(
+                            ParserOptionKind.BuiltIn,
+                            selectedParserId,
+                          )
                         : selectedPipelineId
                           ? buildParserOptionValue(
-                              'pipeline',
+                              ParserOptionKind.Pipeline,
                               selectedPipelineId,
                             )
                           : undefined
