@@ -37,8 +37,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
-	"ragflow/internal/service/document"
 	dataset "ragflow/internal/service/dataset"
+	"ragflow/internal/service/document"
 )
 
 func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
@@ -2383,6 +2383,10 @@ func TestUploadDocumentsRefusesRetiredFlatKeys(t *testing.T) {
 	if code := body["code"]; code != float64(common.CodeArgumentError) {
 		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
 	}
+	data, _ := body["data"].(map[string]interface{})
+	if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+		t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
+	}
 	message, _ := body["message"].(string)
 	if !strings.Contains(message, "TableChunker") {
 		t.Errorf("message does not name the replacement shape: %q", message)
@@ -2404,6 +2408,10 @@ func TestUploadDocumentsRefusesInvalidColumnValues(t *testing.T) {
 			body := decodeResponseBody(t, resp)
 			if code := body["code"]; code != float64(common.CodeArgumentError) {
 				t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+			}
+			data, _ := body["data"].(map[string]interface{})
+			if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+				t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
 			}
 			if fake.uploadOverride != nil {
 				t.Errorf("a refused upload still reached the service: %v", fake.uploadOverride)
@@ -2440,5 +2448,38 @@ func TestProbeTableColumnsReportsStableBusinessCodes(t *testing.T) {
 	data, _ := body["data"].(map[string]any)
 	if data["error"] != document.TableProbeUnsupportedFormat {
 		t.Errorf("data = %v, want the business code", body["data"])
+	}
+}
+
+// A parser_config rejection the column contract produced answers with its
+// documented business code, so a client reads a table rejection the same way
+// whichever endpoint raised it. The validator's other rejections, such as the
+// parser_config size limit, keep the generic shape.
+func TestUpdateDatasetDocumentHandler_TableConfigRejectionCarriesBusinessCode(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/datasets/ds-1/documents/doc-1",
+		`{"parser_config":{"table_column_mode":"manual"}}`)
+	c.Params = gin.Params{
+		{Key: "dataset_id", Value: "ds-1"},
+		{Key: "document_id", Value: "doc-1"},
+	}
+	h.UpdateDatasetDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want the JSON error envelope", w.Code)
+	}
+	body := decodeResponseBody(t, w.Result())
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	data, _ := body["data"].(map[string]interface{})
+	if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+		t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
 	}
 }

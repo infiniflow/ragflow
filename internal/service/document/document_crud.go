@@ -335,8 +335,12 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	// with it: nothing can re-derive it afterwards, and leaving it would keep the
 	// columns of a deleted document readable. This runs before the row is deleted
 	// because revoking reads the record it removes.
+	//
+	// Best effort: the field map and the SQL range are already gated on live
+	// documents, so a revoke that cannot take the metadata lock leaves a record
+	// nothing queries rather than a reason to refuse deleting the file.
 	if err := s.revokeTableProfile(ctx, docID); err != nil {
-		return err
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: revoked derived table state for %s: %v", docID, err))
 	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err

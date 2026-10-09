@@ -13,9 +13,9 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
-	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 // keepDatasetOrderTerms narrows the requested terms to the columns the dataset
@@ -226,9 +226,24 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	return dropped
 }
 
+// TableConfigError marks a parser_config rejection the table column contract
+// produced, so a transport can answer with its documented business code rather
+// than a generic argument error. Rejections this validator does not own — the
+// parser_config size limit, for one — stay plain errors and keep the generic
+// shape.
+type TableConfigError struct{ Message string }
+
+func (e *TableConfigError) Error() string { return e.Message }
+
+// IsTableConfigError reports whether err came from the table column contract.
+func IsTableConfigError(err error) bool {
+	var target *TableConfigError
+	return errors.As(err, &target)
+}
+
 func validateTableColumnConfig(parserConfig map[string]any) error {
 	if retired := pipelinepkg.CheckRetiredTableColumnKeys(parserConfig); len(retired) > 0 {
-		return fmt.Errorf("parser_config key %q must be configured on a TableChunker node", retired[0])
+		return &TableConfigError{Message: fmt.Sprintf("parser_config key %q must be configured on a TableChunker node", retired[0])}
 	}
 	for key, value := range parserConfig {
 
@@ -237,12 +252,12 @@ func validateTableColumnConfig(parserConfig map[string]any) error {
 		}
 		params, ok := value.(map[string]interface{})
 		if !ok {
-			return fmt.Errorf("parser_config[%q] must be an object of component parameters", key)
+			return &TableConfigError{Message: fmt.Sprintf("parser_config[%q] must be an object of component parameters", key)}
 		}
 		// Only the column fields are checked here; the node's other parameters
 		// belong to their own components and are filtered against the DSL.
 		if _, _, err := schema.ValidateTableColumnFields(params); err != nil {
-			return fmt.Errorf("parser_config[%q]: %w", key, err)
+			return &TableConfigError{Message: fmt.Sprintf("parser_config[%q]: %v", key, err)}
 		}
 	}
 	return nil

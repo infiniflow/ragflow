@@ -61,6 +61,11 @@ const (
 	TableProbeParseFailed       = "TABLE_PARSE_FAILED"
 	TableProbeLimit             = "TABLE_PROBE_LIMIT"
 	TableProbeTimeout           = "TABLE_PROBE_TIMEOUT"
+	// TableConfigInvalid marks a rejection the column contract itself produced: a
+	// retired flat key, an unknown mode or role, a node key that is not usable.
+	// It is answered with CodeArgumentError, so a client reads a table rejection
+	// the same way wherever it was raised.
+	TableConfigInvalid = "INVALID_TABLE_CONFIG"
 )
 
 // TableProbeError carries a code plus a human-readable reason.
