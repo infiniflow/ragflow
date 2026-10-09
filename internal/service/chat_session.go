@@ -556,6 +556,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	if len(session.Reference) > 0 && references == nil {
 		return nil, common.CodeDataError, errors.New("invalid session reference")
 	}
+	found := false
 	for i, msg := range messages {
 		if msgID != stringValue(msg["id"]) {
 			continue
@@ -572,7 +573,11 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 			end++
 		}
 		messages = append(messages[:i], messages[end:]...)
+		found = true
 		break
+	}
+	if !found {
+		return nil, common.CodeDataError, errors.New("message not found")
 	}
 
 	messageRaw, err := json.Marshal(messages)
@@ -586,6 +591,9 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
 		"history_update": dao.ConversationHistoryUpdate{DeleteMessageID: msgID},
 	}); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("message not found")
+		}
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
@@ -1396,7 +1404,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if session != nil && !failed {
 					// Store with <think>thinking content</think>
 					content := fullAnswer.String()
-					if content == "" {
+					if content == "" || result.AnswerIsAuthoritative {
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)

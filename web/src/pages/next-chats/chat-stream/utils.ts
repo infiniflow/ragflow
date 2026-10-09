@@ -26,6 +26,7 @@ export function buildQuestionAndPlaceholder(message: IMessage): IMessage[] {
     {
       ...message,
       id: buildMessageUuid(message),
+      awaitingServerId: true,
     },
     {
       role: MessageType.Assistant,
