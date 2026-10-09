@@ -99,17 +99,17 @@ func TestServerInputValidation(t *testing.T) {
 	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }
@@ -171,6 +171,133 @@ func TestJSONMapStringValuesRendersScalarVariables(t *testing.T) {
 	}
 	if headerValues := jsonMapHeaderValues(values); len(headerValues) != 1 || headerValues["text"] != "value" {
 		t.Errorf("jsonMapHeaderValues = %#v, want string headers only", headerValues)
+	}
+}
+
+func TestMCPVariablesForResponseRedactsAuthorizationToken(t *testing.T) {
+	stored := entity.JSONMap{"authorization_token": "ragflow-secret", "region": "us"}
+	got := MCPVariablesForResponse(stored)
+	if got["authorization_token"] != maskedMCPSecret || got["region"] != "us" {
+		t.Fatalf("response variables = %#v", got)
+	}
+	if stored["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("stored variables were mutated: %#v", stored)
+	}
+}
+
+func TestMCPResponseMasksScalarTokensAndHeaders(t *testing.T) {
+	for _, token := range []any{"secret", json.Number("123"), float64(123), true, nil} {
+		if got := MCPVariablesForResponse(entity.JSONMap{"authorization_token": token}); got["authorization_token"] != maskedMCPSecret {
+			t.Errorf("token %v was not masked", token)
+		}
+	}
+	headers := entity.JSONMap{"Authorization": "Bearer secret", "X-Custom": "custom-secret", "Empty": ""}
+	got := MCPHeadersForResponse(headers)
+	if got["Authorization"] != maskedMCPSecret || got["X-Custom"] != maskedMCPSecret || got["Empty"] != "" || headers["Authorization"] != "Bearer secret" {
+		t.Fatalf("header masking mutated or exposed credentials: %#v", got)
+	}
+}
+
+func TestMCPManagedTokenLifecycle(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushServiceDB(t, db)
+	if err := db.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	server, captured := newMCPDiscoveryTestServer(t)
+	defer server.Close()
+	withMCPDiscoveryOverrides(t, server)
+	s := NewMCPService()
+	created, code, err := s.CreateMCPServer(t.Context(), "tenant-1", CreateMCPServerRequest{
+		Name: "managed-auth", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
+		Headers:   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
+		Variables: json.RawMessage(`{"authorization_token":"ragflow-secret"}`),
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("create: code=%d err=%v", code, err)
+	}
+	if created.URL != server.URL || created.Variables["authorization_token"] != maskedMCPSecret {
+		t.Fatalf("create response exposed authentication: %#v", created)
+	}
+	if created.Headers["Authorization"] != maskedMCPSecret {
+		t.Fatal("create response exposed headers")
+	}
+	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", nil, "", 0, 0, "create_time", false)
+	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
+		t.Fatalf("list: result=%#v err=%v", listed, err)
+	}
+	testReq := &TestServerRequest{URL: server.URL, ServerType: mcpServerTypeStreamableHTTP, Headers: map[string]any(created.Headers), Variables: map[string]any{"authorization_token": maskedMCPSecret}}
+	beforeRejected := len(captured())
+	testReq.URL = server.URL + "/other"
+	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+		t.Fatal("preview reused credentials for a different URL")
+	}
+	testReq.Variables["authorization_token"] = "replacement"
+	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err == nil {
+		t.Fatal("preview reused masked headers for a different URL")
+	}
+	testReq.Variables["authorization_token"] = maskedMCPSecret
+	testReq.URL = server.URL
+	for _, extra := range []UpdateMCPServerRequest{
+		{},
+		{"variables": json.RawMessage(`{"authorization_token":"********"}`)},
+		{"variables": json.RawMessage(`{"authorization_token":"replacement"}`), "headers": json.RawMessage(`{"Authorization":"********"}`)},
+	} {
+		extra["url"] = json.RawMessage(fmt.Sprintf("%q", server.URL+"/other"))
+		if _, _, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, extra); err == nil {
+			t.Fatal("update reused credentials for a different URL")
+		}
+	}
+	if len(captured()) != beforeRejected {
+		t.Fatal("rejected endpoint changes made outbound requests")
+	}
+	if _, err := s.TestServer(t.Context(), "other-tenant", created.ID, testReq); err == nil {
+		t.Fatal("masked preview resolved another tenant's credential")
+	}
+	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err != nil {
+		t.Fatalf("masked preview: %v", err)
+	}
+	if testReq.Variables["authorization_token"] != maskedMCPSecret || testReq.Headers["Authorization"] != maskedMCPSecret {
+		t.Fatal("preview mutated the client payload")
+	}
+	updated, code, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL)),
+		"variables": json.RawMessage(`{"authorization_token":"********"}`),
+		"headers":   json.RawMessage(`{"Authorization":"********"}`),
+	})
+	if err != nil || code != common.CodeSuccess || updated.URL != server.URL || updated.Variables["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("masked update: result=%#v code=%d err=%v", updated, code, err)
+	}
+	stored, _, err := s.GetMCPServer(t.Context(), "tenant-1", created.ID)
+	if err != nil || stored.URL != server.URL || stored.Variables["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("reload: result=%#v err=%v", stored, err)
+	}
+	if stored.Headers["Authorization"] != "Bearer ${authorization_token}" {
+		t.Fatal("masked update overwrote stored headers")
+	}
+	for _, headers := range captured() {
+		if headers.Get("Authorization") != "Bearer ragflow-secret" {
+			t.Fatalf("authentication not preserved: %#v", headers)
+		}
+	}
+	exported, _, err := s.ExportMCPServer(t.Context(), "tenant-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(exported)
+	if err != nil || !strings.Contains(string(payload), "ragflow-secret") {
+		t.Fatalf("explicit credential export: payload=%s err=%v", payload, err)
+	}
+	updated, code, err = s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL+"/other")),
+		"variables": json.RawMessage(`{"authorization_token":"replacement"}`),
+		"headers":   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
+	})
+	if err != nil || code != common.CodeSuccess || updated.URL != server.URL+"/other" {
+		t.Fatalf("explicit credentials must allow endpoint changes: code=%d err=%v", code, err)
 	}
 }
 
