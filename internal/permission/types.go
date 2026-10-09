@@ -78,13 +78,14 @@ const (
 	OperationUse    Operation = "use"
 )
 
-// TenantRequirement describes the minimum tenant role required by a check.
+// TenantRequirement describes the tenant role required by a check.
 type TenantRequirement string
 
 const (
-	TenantMember TenantRequirement = "member"
-	TenantAdmin  TenantRequirement = "admin"
-	TenantOwner  TenantRequirement = "owner"
+	TenantMember       TenantRequirement = "member"
+	TenantNormalMember TenantRequirement = "normal_member"
+	TenantAdmin        TenantRequirement = "admin"
+	TenantOwner        TenantRequirement = "owner"
 )
 
 // TenantRole is the normalized role in a user-tenant membership.

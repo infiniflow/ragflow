@@ -1115,8 +1115,11 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 			docEngine:   engine,
 			kbDAO:       dao.NewKnowledgebaseDAO(),
 			documentDAO: dao.NewDocumentDAO(),
-			accessibleFunc: func(datasetIDArg, userIDArg string) bool {
-				return datasetIDArg == datasetID && userIDArg == userID
+			checkDatasetAccessFunc: func(datasetIDArg, userIDArg string) error {
+				if datasetIDArg != datasetID || userIDArg != userID {
+					return permission.ErrPermissionDenied
+				}
+				return nil
 			},
 			getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 				return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil

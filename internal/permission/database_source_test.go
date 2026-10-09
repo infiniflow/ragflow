@@ -63,6 +63,16 @@ func TestDatabaseCheckerAuthorizesDatasetFromPersistedRows(t *testing.T) {
 	if err := checker.CheckResource(context.Background(), subject, ref, OperationRead); err != nil {
 		t.Errorf("CheckResource(%+v) error = %v, want nil", ref, err)
 	}
+	adminMembership := entity.UserTenant{
+		ID: "admin-membership", UserID: "admin-1", TenantID: dataset.TenantID,
+		Role: string(RoleAdmin), Status: &valid,
+	}
+	if err := db.Create(&adminMembership).Error; err != nil {
+		t.Fatalf("create admin membership: %v", err)
+	}
+	if err := checker.CheckResource(context.Background(), Subject{UserID: adminMembership.UserID}, ref, OperationRead); !errors.Is(err, ErrPermissionDenied) {
+		t.Errorf("CheckResource(admin member) error = %v, want %v", err, ErrPermissionDenied)
+	}
 
 	access, err := checker.ResolveAccess(context.Background(), subject, ref)
 	if err != nil {

@@ -316,7 +316,7 @@ func (e *evaluation) resolveResource(ctx context.Context, subject Subject, resou
 	case VisibilityPrivate:
 		return Access{}, ErrPermissionDenied
 	case VisibilityTenant:
-		if err := e.checkTenant(ctx, subject, resource.TenantID, TenantMember); err != nil {
+		if err := e.checkTenant(ctx, subject, resource.TenantID, TenantNormalMember); err != nil {
 			if errors.Is(err, ErrMembershipNotFound) {
 				return Access{}, ErrPermissionDenied
 			}
@@ -328,7 +328,7 @@ func (e *evaluation) resolveResource(ctx context.Context, subject Subject, resou
 			return resourceAccess(resource, AccessSourceShared), nil
 		}
 		for _, tenantID := range resource.SharedWithTenantIDs {
-			if err := e.checkTenant(ctx, subject, tenantID, TenantMember); err != nil {
+			if err := e.checkTenant(ctx, subject, tenantID, TenantNormalMember); err != nil {
 				if errors.Is(err, ErrMembershipNotFound) {
 					continue
 				}
@@ -445,7 +445,7 @@ func validOperation(operation Operation) bool {
 
 func validTenantRequirement(requirement TenantRequirement) bool {
 	switch requirement {
-	case TenantMember, TenantAdmin, TenantOwner:
+	case TenantMember, TenantNormalMember, TenantAdmin, TenantOwner:
 		return true
 	default:
 		return false
@@ -459,6 +459,8 @@ func membershipSatisfies(membership *Membership, requirement TenantRequirement) 
 	switch requirement {
 	case TenantMember:
 		return membership.Role == RoleOwner || membership.Role == RoleAdmin || membership.Role == RoleNormal
+	case TenantNormalMember:
+		return membership.Role == RoleNormal
 	case TenantAdmin:
 		return membership.Role == RoleOwner || membership.Role == RoleAdmin
 	case TenantOwner:

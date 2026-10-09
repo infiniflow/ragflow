@@ -999,7 +999,7 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationUpdate); err != nil {
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, kb.ID, permission.OperationUpdate); err != nil {
 		respondPermissionError(c, err, false)
 		return
 	}
@@ -1202,6 +1202,10 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 	res, err := h.documentService.DownloadDocument(ctx, datasetID, docID)
 
 	if err != nil {
+		if errors.Is(err, document.ErrDocumentNotFound) {
+			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			return
+		}
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}

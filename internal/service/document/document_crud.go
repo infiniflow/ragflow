@@ -58,7 +58,7 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 	}
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("document not found")
+		return nil, ErrDocumentNotFound
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
