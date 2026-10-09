@@ -139,7 +139,6 @@ func (c *TableChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 // tableProfile is the column configuration one TableChunker node applies to
 // the spreadsheet rows it emits, resolved once per run.
 type tableProfile struct {
-	nodeID string
 	mode   string
 	roles  map[string]string
 	manual bool
@@ -188,7 +187,6 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 	}
 
 	profile := tableProfile{
-		nodeID: runtime.ComponentNodeID(ctx),
 		mode:   c.param.ColumnMode,
 		roles:  c.param.ColumnRoles,
 		manual: c.param.ColumnMode == entity.TableModeManual,
@@ -385,7 +383,6 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 		doc.ChunkData = data
 		doc.TableRowInt = 1
 		doc.TableRowSource = &schema.TableRowSource{
-			NodeID:     profile.nodeID,
 			SheetIndex: *item.SheetIndex,
 			SourceRow:  sourceRow,
 			Mode:       profile.mode,

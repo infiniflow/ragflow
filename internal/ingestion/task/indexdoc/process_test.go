@@ -606,7 +606,6 @@ func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
 func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
 	first := tableRowChunk(t, entity.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
 	other := tableRowChunk(t, entity.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
-	other["table_row_source"].(map[string]any)["node_id"] = "TableChunker:Other"
 	if _, err := ProcessChunksForPipeline([]map[string]any{first, other}, "doc-1", "table.csv", time.Now()); err == nil {
 		t.Fatal("conflicting roles for the same source row were indexed")
 	}

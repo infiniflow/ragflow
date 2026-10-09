@@ -137,15 +137,12 @@ type ChunkDoc struct {
 	Extra          map[string]json.RawMessage `json:"-"`
 }
 
-// TableRowSource records which TableChunker node emitted a spreadsheet row
-// chunk, which sheet row it came from, and which column roles were in force
-// for it. Row identity has to outlive body-text filtering: two source rows can
-// render identical text, and a re-parse with changed roles must still land on
+// TableRowSource records which sheet row a spreadsheet chunk came from
+// and which column roles were in force for it. Row identity has to outlive
+// body-text filtering: two source rows can render identical text, and a re-parse with changed roles must still land on
 // the same chunk. It is pipeline-only bookkeeping — indexdoc reads it at the
 // index boundary and drops it, so it never becomes a chunk-store column.
 type TableRowSource struct {
-	// NodeID is the DSL node id of the TableChunker that produced the row.
-	NodeID string `json:"node_id"`
 	// SheetIndex is the 1-based sheet index the row came from.
 	SheetIndex int `json:"sheet_index"`
 	// SourceRow is the 1-based spreadsheet row number of the data row.

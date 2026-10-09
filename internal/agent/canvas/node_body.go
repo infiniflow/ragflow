@@ -245,7 +245,6 @@ func realComponentBodyWithOptions(cpnID, componentClass, displayName string, com
 		// Bind the node id into the fraction reporter so the component's
 		// runtime.ReportComponentFraction calls are attributed to this node
 		// without the component knowing its own cpnID.
-		cctx = runtime.BindComponentNodeID(cctx, cpnID)
 		cctx = runtime.BindComponentFraction(cctx, cpnID)
 
 		var out map[string]any

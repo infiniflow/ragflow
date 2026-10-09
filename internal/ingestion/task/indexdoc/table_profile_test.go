@@ -25,7 +25,6 @@ func tableRowChunk(t *testing.T, mode string, declared map[string]string, header
 		ChunkData:   data,
 		TableRowInt: 1,
 		TableRowSource: &schema.TableRowSource{
-			NodeID:     "TableChunker:FastFoxesJump",
 			SheetIndex: 1,
 			SourceRow:  2,
 			Mode:       mode,
