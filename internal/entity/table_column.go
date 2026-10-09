@@ -158,6 +158,9 @@ func ValidateTableRoles(v any) (map[string]string, error) {
 			return nil, fmt.Errorf("column_roles[%q] has an invalid role %q: allowed roles are %s",
 				key, role, strings.Join([]string{TableRoleIndexing, TableRoleMetadata, TableRoleBoth}, ", "))
 		}
+		if key == TableProfileMetadataField && role != TableRoleIndexing {
+			return nil, fmt.Errorf("column_roles[%q] cannot contribute metadata: the key is reserved", key)
+		}
 		roles[key] = role
 	}
 	return roles, nil

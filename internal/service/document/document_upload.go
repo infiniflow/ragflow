@@ -155,7 +155,9 @@ func (s *DocumentService) UploadLocalDocuments(ctx context.Context, kb *entity.K
 		}
 
 		parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, filetype, merged)
-		parserConfig, err = applyColumnOverride(parserConfig, parserConfigOverride)
+		if extension := strings.ToLower(filepath.Ext(filename)); extension == ".csv" || extension == ".xlsx" {
+			parserConfig, err = applyColumnOverride(parserConfig, parserConfigOverride)
+		}
 		if err != nil {
 			// The blob is already stored; a refused override must not leave it
 			// without a document row, as every later upload of the same name

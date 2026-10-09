@@ -1134,6 +1134,49 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	}
 }
 
+func TestUploadLocalDocumentsColumnOverrideSkipsNonSpreadsheet(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	blobs := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(blobs)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+	pipelineID := "pipe-mixed"
+	kb := &entity.Knowledgebase{ID: "kb-mixed", TenantID: "tenant-1", Name: "mixed", ParserID: "table", PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{"TableChunker:Rows": map[string]any{"column_mode": "auto"}},
+	}
+	if err := db.Create(kb).Error; err != nil {
+		t.Fatal(err)
+	}
+	files := []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "rows.csv", []byte("name\nAlice\n")),
+		makeTestFileHeader(t, "file", "rows.xlsx", []byte("spreadsheet content")),
+		makeTestFileHeader(t, "file", "report.pdf", []byte("pdf content")),
+		makeTestFileHeader(t, "file", "report.docx", []byte("document content")),
+	}
+	docs, errs := testDocumentService(t).UploadLocalDocuments(t.Context(), kb, "user-1", files, "", map[string]any{
+		"TableChunker:Rows": map[string]any{"column_mode": "manual"},
+	})
+	if len(errs) != 0 || len(docs) != 4 {
+		t.Fatalf("mixed upload: docs=%v errors=%v", docs, errs)
+	}
+	for _, doc := range docs {
+		want := "auto"
+		if doc["name"] == "rows.csv" || doc["name"] == "rows.xlsx" {
+			want = "manual"
+		}
+		cfg := doc["parser_config"].(map[string]any)
+		node := cfg["TableChunker:Rows"].(map[string]any)
+		if node["column_mode"] != want {
+			t.Errorf("%s: column mode=%v, want %s", doc["name"], node["column_mode"], want)
+		}
+		if _, err := blobs.Get(t.Context(), kb.ID, doc["location"].(string)); err != nil {
+			t.Errorf("upload blob missing: %v", err)
+		}
+	}
+}
+
 func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1168,7 +1211,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		KbID:         kb.ID,
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
-		Name:         sptr("deck.pptx"),
+		Name:         sptr("deck.csv"),
 		Status:       sptr("1"),
 	}).Error; err != nil {
 		t.Fatalf("insert existing doc: %v", err)
@@ -1176,7 +1219,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 
 	ctx := t.Context()
 	svc := testDocumentService(t)
-	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
+	fh := makeTestFileHeader(t, "file", "deck.csv", []byte("abc"))
 	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
 		"TableChunker:FastFoxesJump": map[string]interface{}{"column_mode": "manual"},
 	})
@@ -1187,11 +1230,11 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("expected 1 uploaded doc, got %d", len(got))
 	}
 	doc := got[0]
-	if doc["name"] != "deck(1).pptx" {
-		t.Fatalf("name=%v, want deck(1).pptx", doc["name"])
+	if doc["name"] != "deck(1).csv" {
+		t.Fatalf("name=%v, want deck(1).csv", doc["name"])
 	}
-	if doc["location"] != "nested/path/deck(1).pptx" {
-		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
+	if doc["location"] != "nested/path/deck(1).csv" {
+		t.Fatalf("location=%v, want nested/path/deck(1).csv", doc["location"])
 	}
 	if doc["parser_id"] != "" {
 		t.Fatalf("parser_id=%v, want empty (canvas pipeline mode)", doc["parser_id"])
@@ -1216,7 +1259,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("a flat column key was written: %v", cfg)
 	}
 
-	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")
+	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).csv")
 	if err != nil {
 		t.Fatalf("blob not stored: %v", err)
 	}

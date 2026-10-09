@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/engine"
@@ -37,6 +38,11 @@ import (
 // base with more rows than fit the budget is not truncated into a partial
 // answer: the caller falls back to ordinary retrieval instead.
 const tableSQLBudgetBytes = 64 << 10
+
+const (
+	tableSQLDefaultRows = 100
+	tableSQLMaxRows     = 1000
+)
 
 // jsonPathRe matches a JSONPath that addresses one indexed table column. The
 // key is a hash of a header (entity.TableDataKey), so a path either names a column a
@@ -265,6 +271,17 @@ func (p *tableSQLPolicy) check(sqlText string) (*tableSQLStatement, error) {
 // out into the injected conditions.
 func (p *tableSQLPolicy) rewrite(shape *utility.SQLStatementShape) (*tableSQLStatement, error) {
 	clauses := shape.Clauses
+	limit := tableSQLDefaultRows
+	if len(clauses.Limit) > 0 {
+		if len(clauses.Limit) != 1 || clauses.Limit[0].Kind != utility.SQLNumber {
+			return nil, errors.New("LIMIT must be a non-negative integer")
+		}
+		n, err := strconv.ParseUint(clauses.Limit[0].Text, 10, 64)
+		if err != nil {
+			return nil, errors.New("LIMIT must be a non-negative integer")
+		}
+		limit = int(min(n, uint64(tableSQLMaxRows)))
+	}
 	conditions := make([]string, 0, 5)
 	if p.kbCondition != "" {
 		conditions = append(conditions, p.kbCondition)
@@ -287,11 +304,15 @@ func (p *tableSQLPolicy) rewrite(shape *utility.SQLStatementShape) (*tableSQLSta
 		tokens  []utility.SQLToken
 	}{
 		{"group by", clauses.GroupBy}, {"having", clauses.Having}, {"order by", clauses.OrderBy},
-		{"limit", clauses.Limit}, {"offset", clauses.Offset},
 	} {
 		if rendered := utility.SQLRender(clause.tokens, p.quote); rendered != "" {
 			parts = append(parts, clause.keyword+" "+rendered)
 		}
+	}
+	// LIMIT applies after aggregation, so counts and sums still read the full range.
+	parts = append(parts, "limit "+strconv.Itoa(limit))
+	if offset := utility.SQLRender(clauses.Offset, p.quote); offset != "" {
+		parts = append(parts, "offset "+offset)
 	}
 
 	statement := &tableSQLStatement{

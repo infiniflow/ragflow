@@ -86,6 +86,38 @@ func newTestOceanBaseQuery(t *testing.T, docIDs []string) *tableSQL {
 	return query
 }
 
+func TestTableSQLBoundsReturnedRows(t *testing.T) {
+	query := newTestOceanBaseQuery(t, nil)
+	for _, tc := range []struct{ suffix, want string }{
+		{"", "limit 100"},
+		{" limit 5", "limit 5"},
+		{" limit 1000000", "limit 1000"},
+		{" limit 1000000 offset 7", "limit 1000 offset 7"},
+	} {
+		t.Run(tc.suffix, func(t *testing.T) {
+			statement, err := query.policy.check("select doc_id from ragflow_tenant1" + tc.suffix)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.HasSuffix(statement.text, tc.want) {
+				t.Fatalf("query is not bounded: %s; want suffix %s", statement.text, tc.want)
+			}
+		})
+	}
+	for _, limit := range []string{"-1", "1.5", "1 + 2", "'100'", "20, 1000000"} {
+		if _, err := query.policy.check("select doc_id from ragflow_tenant1 limit " + limit); err == nil {
+			t.Errorf("accepted a limit that bypasses the integer bound: %s", limit)
+		}
+	}
+	statement, err := query.policy.check("select count(*) as total from ragflow_tenant1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(statement.text, "from (") || !strings.HasSuffix(statement.text, "limit 100") {
+		t.Fatalf("aggregate must cover the complete range and bound only returned rows: %s", statement.text)
+	}
+}
+
 func TestTableSQLRewriteCarriesTheWholeRange(t *testing.T) {
 	query := newTestOceanBaseQuery(t, []string{"doc-one", "doc-two"})
 	statement, err := query.policy.check("select doc_id, json_extract_string(chunk_data, " +
@@ -98,7 +130,7 @@ func TestTableSQLRewriteCarriesTheWholeRange(t *testing.T) {
 		"where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' " +
 		"and doc_id in ('doc-one', 'doc-two') " +
 		"and available_int = 1 and table_row_int = 1 " +
-		"and (weight_int = 1 or rank_flt = 2)"
+		"and (weight_int = 1 or rank_flt = 2) limit 100"
 	if !strings.EqualFold(statement.text, want) {
 		t.Errorf("statement =\n  %q\nwant\n  %q", statement.text, want)
 	}

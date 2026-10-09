@@ -5,6 +5,17 @@ import (
 	"testing"
 )
 
+func TestValidateTableRolesReservesProfileKey(t *testing.T) {
+	for _, role := range []string{TableRoleMetadata, TableRoleBoth} {
+		if _, err := ValidateTableRoles(map[string]any{"_table_profile": role}); err == nil {
+			t.Errorf("role %q accepted a column that overwrites the system profile", role)
+		}
+	}
+	if _, err := ValidateTableRoles(map[string]any{"_table_profile": TableRoleIndexing}); err != nil {
+		t.Fatalf("body-only column must remain usable: %v", err)
+	}
+}
+
 func TestNormalizeHeader(t *testing.T) {
 	cases := []struct {
 		name string

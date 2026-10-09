@@ -3746,48 +3746,6 @@ Fields (EXACT case): %s
 Question: %s
 Write SQL using json_extract_string() with exact field names. Include doc_id, docnm_kwd for data queries. Only SQL.`
 
-// esSQLSysPrompt is for Elasticsearch / OpenSearch / default engines
-// where fields are direct columns (no JSON extraction). Mirrors
-// dialog_service.py:1092-1100.
-const esSQLSysPrompt = `You are a Database Administrator. Write SQL queries.
-
-RULES:
-1. Use EXACT field names from the schema below (e.g., product_tks, not product)
-2. Quote field names starting with digit: "123_field"
-3. Add IS NOT NULL in WHERE clause when:
-   - Question asks to "show me" or "display" specific columns
-4. Include doc_id/docnm in non-aggregate statement
-5. Output ONLY the SQL, no explanations`
-
-// esSQLUserPromptTemplate — 3 %s placeholders: table_name, bullet
-// list with types, question. Mirrors dialog_service.py:1101-1105.
-const esSQLUserPromptTemplate = `Table: %s
-Available fields:
-%s
-Question: %s
-Write SQL using exact field names above. Include doc_id, docnm_kwd for data queries. Only SQL.`
-
-// SQL retrieval repair prompts, split into TWO flows × TWO engine
-// families, mirroring dialog_service.py:repair_table_for_missing_source_columns
-// (lines 1129-1156) and the execution-error retry at lines 1164-1205.
-//
-// The previous single-template repair was generic and could not tell
-// the LLM to keep using json_extract_string on Infinity, which led
-// to fragile repairs. Per-engine prompts make the syntax intent
-// explicit on the repair path too.
-//
-// Flow A (missing-source-columns): the SQL executed successfully but
-// the result set is missing doc_id / docnm* columns. We call the LLM
-// to rewrite the SQL with those columns added.
-// Flow B (execution-error): the SQL failed to execute at all
-// (syntax error, unknown column, etc.). We call the LLM with the
-// error message and ask for a corrected SQL.
-//
-// Engine family A (Infinity / OceanBase): data lives in a JSON
-// 'chunk_data' column, so JSON-extraction syntax must be preserved.
-// Engine family B (Elasticsearch / OpenSearch / default): fields
-// are direct columns.
-
 // infinityMissingColumnsRepairPromptTemplate — 5 %s args:
 // table_name, JSON field bullets, question, previous_sql,
 // expected_doc_name_column. Mirrors dialog_service.py:1132-1143.
@@ -3804,21 +3762,6 @@ Previous SQL:
 The previous SQL result is missing required source columns for citations.
 Rewrite SQL to keep the same query intent and include doc_id and %s in the SELECT list.
 For extracted JSON fields, use json_extract_string(chunk_data, '$.field_name').
-Return ONLY SQL.`
-
-// esMissingColumnsRepairPromptTemplate — 4 %s args: table_name,
-// ES field bullets (with types), question, previous_sql. Mirrors
-// dialog_service.py:1145-1155.
-const esMissingColumnsRepairPromptTemplate = `Table name: %s
-Available fields:
-%s
-
-Question: %s
-Previous SQL:
-%s
-
-The previous SQL result is missing required source columns for citations.
-Rewrite SQL to keep the same query intent and include doc_id and docnm_kwd in the SELECT list.
 Return ONLY SQL.`
 
 // infinityExecutionErrorRepairPromptTemplate — 4 %s args:
@@ -3838,24 +3781,6 @@ The SQL error you provided last time is as follows:
 %s
 
 Please correct the error and write SQL again using json_extract_string(chunk_data, '$.field_name') syntax with the correct field names. Only SQL, no explanations.`
-
-// esExecutionErrorRepairPromptTemplate — 4 %s args: table_name,
-// ES field bullets (with types), question, error. Mirrors
-// dialog_service.py:1184-1198.
-const esExecutionErrorRepairPromptTemplate = `
-Table name: %s;
-Table of database fields are as follows (use the field names directly in SQL):
-%s
-
-Question are as follows:
-%s
-Please write the SQL using the exact field names above, only SQL, without any other explanations or text.
-
-
-The SQL error you provided last time is as follows:
-%s
-
-Please correct the error and write SQL again using the exact field names above, only SQL, without any other explanations or text.`
 
 // useSQL answers one question from the indexed table rows. It asks the chat
 // model for a statement, repairs it once if the engine rejected it or if the
@@ -3931,7 +3856,7 @@ func (s *ChatPipelineService) useSQL(
 		common.Debug("SQL retrieval: initial execution failed, attempting repair",
 			zap.String("sql", sqlText), zap.Error(execErr))
 		repaired, repairErr := repairSQLForExecutionError(
-			ctx, chatModel, sysPrompt, tableName, question, execErr.Error(), engineName, fieldMap,
+			ctx, chatModel, sysPrompt, tableName, question, execErr.Error(), fieldMap,
 		)
 		if repairErr != nil {
 			common.Warn("SQL retrieval: repair failed", zap.Error(repairErr))
@@ -3958,10 +3883,10 @@ func (s *ChatPipelineService) useSQL(
 	// (matches Python's `returning best-effort answer` log at line 1221).
 	if quote && !statement.aggregating && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
-			zap.String("sql", sqlText))
+			zap.String("sql", statement.text))
 		expectedCol := expectedDocNameColumn(engineName)
 		repaired, repairErr := repairSQLForMissingColumns(
-			ctx, chatModel, sysPrompt, tableName, question, sqlText, expectedCol, engineName, fieldMap,
+			ctx, chatModel, sysPrompt, tableName, question, statement.text, expectedCol, fieldMap,
 		)
 		if repairErr == nil && repaired != "" {
 			repairedRows, repairedStatement, repairedErr := query.run(ctx, repaired)
@@ -3972,7 +3897,7 @@ func (s *ChatPipelineService) useSQL(
 			case len(repairedRows) > 0 && hasSourceColumns(repairedRows):
 				common.Debug("SQL retrieval: missing-columns repair succeeded",
 					zap.String("sql", repaired))
-				rows, statement, sqlText = repairedRows, repairedStatement, repairedStatement.text
+				rows, statement = repairedRows, repairedStatement
 			default:
 				common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
 					zap.String("sql", repaired))
@@ -4018,7 +3943,7 @@ func ragflowTableName(tenantID string, kbs []*entity.Knowledgebase, docEngine en
 		}
 		return fmt.Sprintf("ragflow_%s_%s", tenantID, kbs[0].ID)
 	}
-	// Elasticsearch / OpenSearch / default: single index, kb_id in WHERE.
+	// OceanBase and SeekDB use the tenant table; the query policy adds kb_id.
 	return "ragflow_" + tenantID
 }
 
@@ -4037,7 +3962,7 @@ func isValidUUID(s string) bool {
 // generateSQL calls the chat model to produce a SQL SELECT.
 // sysPrompt and userPrompt are pre-built by buildSQLPrompts and already
 // carry engine-specific instructions (json_extract_string for Infinity/
-// OceanBase, direct column access for ES/OS). Thin wrapper over
+// OceanBase). Thin wrapper over
 // chatForSQL.
 func generateSQL(
 	ctx context.Context,
@@ -4053,9 +3978,7 @@ func generateSQL(
 // table/spreadsheet/excel" questions, matching Python's
 // row_count_override at dialog_service.py:1034 and 1063.
 //
-// engineName comes from docEngine.GetType() and is one of:
-// "infinity", "oceanbase", "elasticsearch", "opensearch", or any
-// other value (treated as the ES/OS default).
+// engineName is Infinity, OceanBase or SeekDB, checked by the query range.
 //
 // Field names are sorted alphabetically for stable test output and
 // to match the order-independent iteration of Python's dict.
@@ -4088,15 +4011,6 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		if isRowCountQuestion(question) {
 			overrideSQL = fmt.Sprintf("SELECT COUNT(*) AS rows FROM %s", tableName)
 		}
-	default:
-		// Elasticsearch / OpenSearch / unknown — direct column access.
-		sysPrompt = esSQLSysPrompt
-		userPrompt = fmt.Sprintf(
-			esSQLUserPromptTemplate,
-			tableName,
-			bullets,
-			question,
-		)
 	}
 	return
 }
@@ -4172,49 +4086,16 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 	return names
 }
 
-// buildMissingColumnsRepairPrompt returns the engine-specific user
-// prompt for the missing-source-columns repair flow. The Infinity
-// and OceanBase branches share the JSON-column template; ES and
-// OpenSearch share the direct-column template. expectedCol is
-// "docnm" for Infinity or "docnm_kwd" for everything else.
-func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
-	bullets := tableFieldBullets(fieldMap)
-	if isJSONEngine {
-		return fmt.Sprintf(
-			infinityMissingColumnsRepairPromptTemplate,
-			tableName,
-			bullets,
-			question, prevSQL, expectedCol,
-		)
-	}
-	return fmt.Sprintf(
-		esMissingColumnsRepairPromptTemplate,
-		tableName,
-		bullets,
-		question, prevSQL,
-	)
+// buildMissingColumnsRepairPrompt asks for sources without changing JSON extraction.
+func buildMissingColumnsRepairPrompt(tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
+	return fmt.Sprintf(infinityMissingColumnsRepairPromptTemplate, tableName,
+		tableFieldBullets(fieldMap), question, prevSQL, expectedCol)
 }
 
-// buildExecutionErrorRepairPrompt returns the engine-specific user
-// prompt for the execution-error repair flow.
-func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
-	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
-	bullets := tableFieldBullets(fieldMap)
-	if isJSONEngine {
-		return fmt.Sprintf(
-			infinityExecutionErrorRepairPromptTemplate,
-			tableName,
-			bullets,
-			question, errMsg,
-		)
-	}
-	return fmt.Sprintf(
-		esExecutionErrorRepairPromptTemplate,
-		tableName,
-		bullets,
-		question, errMsg,
-	)
+// buildExecutionErrorRepairPrompt preserves the structured column syntax.
+func buildExecutionErrorRepairPrompt(tableName, question, errMsg string, fieldMap map[string]interface{}) string {
+	return fmt.Sprintf(infinityExecutionErrorRepairPromptTemplate, tableName,
+		tableFieldBullets(fieldMap), question, errMsg)
 }
 
 // chatForSQL is the shared chat-model invocation for SQL generation
@@ -4255,16 +4136,15 @@ func chatForSQL(
 }
 
 // repairSQLForExecutionError calls the LLM to fix SQL that the engine
-// refused to execute (syntax error, unknown column, etc.). Engine-
-// specific user prompt keeps the right syntax (json_extract_string
-// on Infinity, direct field access on ES).
+// refused to execute (syntax error, unknown column, etc.).
+// The repair preserves json_extract_string for structured columns.
 func repairSQLForExecutionError(
 	ctx context.Context,
 	chatModel *modelModule.ChatModel,
-	sysPrompt, tableName, question, errMsg, engineName string,
+	sysPrompt, tableName, question, errMsg string,
 	fieldMap map[string]interface{},
 ) (string, error) {
-	userPrompt := buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg, fieldMap)
+	userPrompt := buildExecutionErrorRepairPrompt(tableName, question, errMsg, fieldMap)
 	return chatForSQL(ctx, chatModel, sysPrompt, userPrompt, "sql repair")
 }
 
@@ -4275,10 +4155,10 @@ func repairSQLForExecutionError(
 func repairSQLForMissingColumns(
 	ctx context.Context,
 	chatModel *modelModule.ChatModel,
-	sysPrompt, tableName, question, prevSQL, expectedCol, engineName string,
+	sysPrompt, tableName, question, prevSQL, expectedCol string,
 	fieldMap map[string]interface{},
 ) (string, error) {
-	userPrompt := buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol, fieldMap)
+	userPrompt := buildMissingColumnsRepairPrompt(tableName, question, prevSQL, expectedCol, fieldMap)
 	return chatForSQL(ctx, chatModel, sysPrompt, userPrompt, "sql missing-columns repair")
 }
 

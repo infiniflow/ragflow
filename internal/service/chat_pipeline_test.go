@@ -1178,6 +1178,52 @@ func TestExpectedDocNameColumn(t *testing.T) {
 // engine. It embeds engine.DocEngine to satisfy the interface (the
 // embedded methods will panic if accidentally called, which is the
 // intended loud-failure mode).
+type sqlRepairDriver struct {
+	modelModule.ModelDriver
+	responses  []string
+	lastPrompt string
+}
+
+func (d *sqlRepairDriver) ChatWithMessages(_ context.Context, _ string, messages []modelModule.Message, _ *modelModule.APIConfig, _ *modelModule.ChatConfig, _ *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	d.lastPrompt, _ = messages[len(messages)-1].Content.(string)
+	if len(d.responses) == 0 {
+		return nil, fmt.Errorf("unexpected model call")
+	}
+	answer := d.responses[0]
+	d.responses = d.responses[1:]
+	return &modelModule.ChatResponse{Answer: &answer}, nil
+}
+
+func TestUseSQLCitationRepairUsesExecutedStatement(t *testing.T) {
+	driver := &sqlRepairDriver{responses: []string{
+		"select weight_int from ragflow_tenant1 where weight_int = 1",
+		"select weight_int from ragflow_tenant1 where weight_int = 2",
+		"select doc_id, docnm_kwd, weight_int from ragflow_tenant1 where weight_int = 2",
+	}}
+	docEngine := &sqlFakeEngine{engineType: "oceanbase", runSQL: func(_ context.Context, _ string, sql string, _ []string) ([]map[string]any, error) {
+		if strings.Contains(sql, "weight_int = 1") {
+			return nil, fmt.Errorf("initial query failed")
+		}
+		if strings.Contains(sql, "docnm_kwd") {
+			return []map[string]any{{"doc_id": "doc-one", "docnm_kwd": "sheet", "weight_int": 2}}, nil
+		}
+		return []map[string]any{{"weight_int": 2}}, nil
+	}}
+	query := newTestTableQuery(t, docEngine, []string{"doc-one"})
+	answer, err := (&ChatPipelineService{}).useSQL(t.Context(), &entity.Chat{TenantID: "tenant1"},
+		[]*entity.Knowledgebase{{ID: "0f1e2d3c4b5a69788796a5b4c3d2e1f0"}}, "show weights",
+		&modelModule.ChatModel{ModelDriver: driver}, query, true)
+	if err != nil || answer == nil {
+		t.Fatalf("SQL answer=%v err=%v", answer, err)
+	}
+	if !strings.Contains(driver.lastPrompt, "weight_int = 2") || strings.Contains(driver.lastPrompt, "weight_int = 1") {
+		t.Fatalf("citation repair was given a failed statement: %s", driver.lastPrompt)
+	}
+	if !strings.Contains(driver.lastPrompt, "table_row_int = 1") {
+		t.Fatalf("repair lost the executed query scope: %s", driver.lastPrompt)
+	}
+}
+
 type sqlFakeEngine struct {
 	engine.DocEngine
 	engineType string
