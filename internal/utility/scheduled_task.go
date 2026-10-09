@@ -75,6 +75,13 @@ func (t *ScheduledTask) Start() {
 	}(stop)
 }
 
+// RunOnce executes the job once immediately, with the same panic recovery and
+// overlap guard as a scheduled tick. It is meant for a warm-up run right before
+// Start, so the first execution is not delayed by a full interval.
+func (t *ScheduledTask) RunOnce() {
+	t.runSafely()
+}
+
 // runSafely executes the job with panic recovery and prevents overlap
 func (t *ScheduledTask) runSafely() {
 	// Attempt to set the flag

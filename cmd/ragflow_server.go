@@ -863,6 +863,12 @@ func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 // startHeartbeat initializes and starts the heartbeat reporter to the admin server.
 // It is shared by API, ingestion, and syncer server modes.
 // The caller must defer the returned *utility.ScheduledTask's Stop() method.
+//
+// The ticker only fires after a full interval, which would keep the admin gate
+// (login answers code 109 until IsAdminAvailable) closed for up to one
+// heartBeatInterval after the admin server is actually reachable. Fire the job
+// once up front so the first beat lands immediately; the ticker then keeps the
+// normal cadence.
 func startHeartbeat(serverType common.ServerType, serverID string, port int, heartBeatInterval time.Duration) *utility.ScheduledTask {
 	localIP, err := utility.GetLocalIP()
 	if err != nil {
@@ -887,6 +893,7 @@ func startHeartbeat(serverType common.ServerType, serverID string, port int, hea
 			local.SetAdminStatus(1, err.Error())
 		}
 	})
+	heartbeatReporter.RunOnce()
 	heartbeatReporter.Start()
 	return heartbeatReporter
 }
