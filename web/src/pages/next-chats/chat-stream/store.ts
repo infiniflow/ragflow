@@ -253,9 +253,13 @@ export const useChatStreamStore = create<ChatStreamState>()(
             if (
               answer.id &&
               question?.role === MessageType.User &&
-              question.id !== answer.id
+              (question.id !== answer.id || question.awaitingServerId)
             ) {
-              messages[messages.length - 1] = { ...question, id: answer.id };
+              messages[messages.length - 1] = {
+                ...question,
+                id: answer.id,
+                awaitingServerId: false,
+              };
             }
             messages.push(buildAssistantMessageFromAnswer(answer));
             return {

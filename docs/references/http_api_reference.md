@@ -3892,6 +3892,7 @@ curl --request POST \
 ##### Request Parameters
 
 - `"question"`: (*Body Parameter*), `string`
+  The user question.
 - `"stream"`: (*Body Parameter*), `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
