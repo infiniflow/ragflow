@@ -185,7 +185,14 @@ describe('clearSensitiveFields', () => {
     expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
   });
 
-  it.each(['Search1APISearch', 'Search1APICrawl'])(
+  it.each([
+    'Search1APISearch',
+    'Search1APICrawl',
+    'search1apisearch',
+    'search1apicrawl',
+    'search1api',
+    'search1api_crawl',
+  ])(
     'clears a %s key from a canvas node and from a tool record',
     (operator) => {
       const dsl = {
