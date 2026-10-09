@@ -191,6 +191,8 @@ const (
 	EnvInfinityURI                       = "INFINITY_URI"
 	EnvDoclingServerURL                  = "DOCLING_SERVER_URL"
 	EnvDoclingAPIKey                     = "DOCLING_API_KEY"
+	EnvDoclingDoOCR                      = "DOCLING_DO_OCR"
+	EnvDoclingPDFBackend                 = "DOCLING_PDF_BACKEND"
 	EnvMineruAPIServer                   = "MINERU_APISERVER"
 	EnvMineruAPIKey                      = "MINERU_API_KEY"
 	EnvMineruBackend                     = "MINERU_BACKEND"
