@@ -309,8 +309,8 @@ services:
       test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
       interval: 1s
       timeout: 2s
-      retries: 30
-      start_period: 1s
+      retries: 60
+      start_period: 30s
     restart: unless-stopped
 
 
