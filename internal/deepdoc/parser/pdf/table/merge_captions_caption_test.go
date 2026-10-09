@@ -711,3 +711,31 @@ func TestMergeCaptions_TableCaptionPositionMerged(t *testing.T) {
 		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
 	}
 }
+
+// TestMergeCaptions_MergedCaptionKeepsOnlySharedPages locks the page trimming
+// on the highlight merge: a caption box that itself spans pages must not make
+// the target claim a page it does not occupy. Position pages drive the
+// section's page set, its render/eviction window and its crop plan, so merging
+// a {0,5} caption box into a page-0 figure would corrupt all three.
+func TestMergeCaptions_MergedCaptionKeepsOnlySharedPages(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "spread chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Figure 5: spread", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0, 5}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged: %+v", got.Positions)
+	}
+	if pn := got.Positions[1].PageNumbers; len(pn) != 1 || pn[0] != 0 {
+		t.Errorf("merged caption must keep only the pages the figure occupies, got %v", pn)
+	}
+	if pn := got.Positions[0].PageNumbers; len(pn) != 1 || pn[0] != 0 {
+		t.Errorf("primary box changed: %v", pn)
+	}
+}

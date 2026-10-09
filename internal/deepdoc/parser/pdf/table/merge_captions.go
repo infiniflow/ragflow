@@ -409,42 +409,58 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 // caption box routinely sits a couple of points ABOVE the table box rather
 // than overlapping it, so this bites tables too.
 //
-// Only captions that sit on a page the target already occupies are merged. A
-// cross-page attachment (the table-caption fallback can land on a figure pages
-// away) must not make the target claim a page it does not occupy: Position
-// pages drive the section's page set, its render/eviction window and its
-// crop plan. A caption with no page metadata at all carries no page claim and
-// is safe to merge.
+// Only the pages the target itself occupies are merged. A cross-page
+// attachment (the table-caption fallback can land on a figure pages away), or
+// a caption box that itself spans pages, must not make the target claim a page
+// it does not occupy: Position pages drive the section's page set, its
+// render/eviction window and its crop plan. So a caption position is trimmed
+// to the pages it shares with the target, and dropped when it shares none. A
+// caption with no page metadata at all carries no page claim and is merged
+// as-is.
+//
+// Eligibility is anchored to the target's ORIGINAL pages, so a caption merged
+// earlier in the loop cannot widen what a later one is allowed to claim.
 //
 // Appending (not prepending) keeps Positions[0] as the primary box, which
 // reading-order sorting and the proximity searches elsewhere depend on.
 func extendCaptionPositions(target *pdf.Section, entries []captionText) {
+	base := make([]pdf.Position, len(target.Positions))
+	copy(base, target.Positions)
 	for _, e := range entries {
 		for _, p := range e.pos {
-			if !sharesPageWith(p, target.Positions) {
-				continue
+			shared, constrained := sharedPageNumbers(p, base)
+			if constrained {
+				if len(shared) == 0 {
+					continue
+				}
+				p.PageNumbers = shared
 			}
 			target.Positions = append(target.Positions, p)
 		}
 	}
 }
 
-// sharesPageWith reports whether p shares a page with any of have, or claims no
-// page at all (in which case merging it cannot alter have's page set).
-func sharesPageWith(p pdf.Position, have []pdf.Position) bool {
+// sharedPageNumbers returns the page numbers p and have have in common.
+// constrained is false when p carries no page numbers at all — there is then
+// nothing to intersect and the position is safe to merge unchanged.
+func sharedPageNumbers(p pdf.Position, have []pdf.Position) (shared []int, constrained bool) {
 	if len(p.PageNumbers) == 0 {
-		return true
+		return nil, false
 	}
-	for _, h := range have {
-		for _, a := range h.PageNumbers {
-			for _, b := range p.PageNumbers {
+	seen := make(map[int]struct{}, len(p.PageNumbers))
+	for _, b := range p.PageNumbers {
+		for _, h := range have {
+			for _, a := range h.PageNumbers {
 				if a == b {
-					return true
+					if _, dup := seen[b]; !dup {
+						seen[b] = struct{}{}
+						shared = append(shared, b)
+					}
 				}
 			}
 		}
 	}
-	return false
+	return shared, true
 }
 
 // injectCaption concatenates the given caption texts (already grouped per
