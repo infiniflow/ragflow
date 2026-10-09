@@ -105,14 +105,16 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		}
 		if sections[idx].LayoutType == pdf.LayoutTypeTable {
 			injectCaption(&sections[idx], texts)
-			continue
+		} else {
+			// Non-table target (figure): keep the historical raw-text
+			// concatenation. The <caption> element is table-specific; wrapping a
+			// figure section's text in it would emit meaningless HTML in a figure
+			// section (which carries an image, not a table). Figure captions are
+			// out of this PR's scope, so preserve their pre-existing behavior.
+			appendRawCaptions(&sections[idx], texts)
 		}
-		// Non-table target (figure): keep the historical raw-text
-		// concatenation. The <caption> element is table-specific; wrapping a
-		// figure section's text in it would emit meaningless HTML in a figure
-		// section (which carries an image, not a table). Figure captions are
-		// out of this PR's scope, so preserve their pre-existing behavior.
-		appendRawCaptions(&sections[idx], texts)
+		// Either way the caption's text now lives in this section's chunk, so its
+		// boxes have to move with it (see extendCaptionPositions).
 		extendCaptionPositions(&sections[idx], entries)
 	}
 	// Remove caption sections in reverse order.
@@ -170,7 +172,7 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 // page metadata is kept as a candidate in both modes, so a caller that must not
 // lose text (the table-caption fallback) cannot be defeated by missing metadata
 // — see occupiesPage.
-func nearestFigureIn(sections, figures []pdf.Section, caption pdf.Section, requirePage bool) int {
+func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bool) int {
 	if len(caption.Positions) == 0 {
 		return -1
 	}
@@ -183,13 +185,33 @@ func nearestFigureIn(sections, figures []pdf.Section, caption pdf.Section, requi
 	cp := caption.Positions[0]
 	ccx := (cp.Left + cp.Right) / 2
 	ccy := (cp.Top + cp.Bottom) / 2
-	bestIdx, bestDist := -1, 1e9
-	for i, t := range figures {
-		if len(t.Positions) == 0 {
+
+	// Candidates are ranked in two tiers so a figure recorded on the caption's
+	// own page always beats a page-less one: tier 0 is occupied-by-capPage,
+	// tier 1 is "no page metadata". A figure known to sit on a DIFFERENT page is
+	// skipped outright. Keeping tier 1 means a figure whose caller never set
+	// PageNumbers can still take a caption the table fallback must not drop;
+	// ordering the tiers means it cannot outbid a figure we can actually place.
+	//
+	// The section index is tracked directly. The previous shape searched a
+	// filtered figures copy and then mapped the hit back by comparing position
+	// boxes, which silently returned the first section with an equal box: with
+	// two figures on different pages sharing a box — exactly the situation this
+	// page filter exists to resolve, since page-local coordinates repeat per
+	// page — the caption was still attached to the wrong page's figure.
+	bestIdx, bestDist, bestTier := -1, 1e9, 2
+	for i, t := range sections {
+		if t.LayoutType != pdf.LayoutTypeFigure || len(t.Positions) == 0 {
 			continue
 		}
+		tier := 0
 		if capKnown {
-			if onPage, hasPages := occupiesPage(t, capPage); hasPages && !onPage {
+			switch onPage, hasPages := occupiesPage(t, capPage); {
+			case !hasPages:
+				tier = 1
+			case onPage:
+				tier = 0
+			default:
 				continue
 			}
 		}
@@ -197,25 +219,14 @@ func nearestFigureIn(sections, figures []pdf.Section, caption pdf.Section, requi
 		cx := (tp.Left + tp.Right) / 2
 		cy := (tp.Top + tp.Bottom) / 2
 		dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
-		if dist < bestDist {
-			bestDist, bestIdx = dist, i
+		if tier < bestTier || (tier == bestTier && dist < bestDist) {
+			bestTier, bestDist, bestIdx = tier, dist, i
 		}
 	}
 	if bestIdx < 0 || bestDist >= maxCaptionGap {
 		return -1
 	}
-	f := figures[bestIdx]
-	for i, s := range sections {
-		if s.LayoutType != pdf.LayoutTypeFigure || len(s.Positions) == 0 {
-			continue
-		}
-		sp, fp := s.Positions[0], f.Positions[0]
-		if sp.Left == fp.Left && sp.Right == fp.Right &&
-			sp.Top == fp.Top && sp.Bottom == fp.Bottom {
-			return i
-		}
-	}
-	return -1
+	return bestIdx
 }
 
 // findNearestParent finds the nearest figure (for figure captions) or table
@@ -264,11 +275,11 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, figures []pd
 		// either, so it retries without the page filter and takes the nearest
 		// figure anywhere, mirroring Python's nearest(figures), which has no page
 		// scope at all: there, placement is best-effort but preservation is not.
-		if idx := nearestFigureIn(sections, figures, caption, true); idx >= 0 {
+		if idx := nearestFigureIn(sections, caption, true); idx >= 0 {
 			return idx
 		}
 		if captionType == pdf.LayoutTypeTable {
-			if idx := nearestFigureIn(sections, figures, caption, false); idx >= 0 {
+			if idx := nearestFigureIn(sections, caption, false); idx >= 0 {
 				return idx
 			}
 		}
@@ -392,9 +403,11 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 
 // extendCaptionPositions appends the attached captions' boxes to the target's
 // own, so the target chunk's highlight geometry covers the caption as well as
-// the figure region it was merged into. The chunk TEXT already contains the
-// caption (appendRawCaptions); without this the caption is never highlighted
-// with its image.
+// the table or figure region it was merged into. The chunk TEXT already
+// contains the caption (appendRawCaptions / injectCaption); without this the
+// caption is never highlighted with the parent it belongs to. A table's
+// caption box routinely sits a couple of points ABOVE the table box rather
+// than overlapping it, so this bites tables too.
 //
 // Only captions that sit on a page the target already occupies are merged. A
 // cross-page attachment (the table-caption fallback can land on a figure pages

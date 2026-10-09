@@ -612,3 +612,102 @@ func TestMergeCaptions_CrossPageFallbackDoesNotClaimPage(t *testing.T) {
 		}
 	}
 }
+
+// TestMergeCaptions_IdenticalBoxOtherPageNotChosen locks the page identity of
+// the figure the caption lands on. Two figures on DIFFERENT pages can share a
+// page-local box (page-local coordinates repeat per page — the very reason the
+// page filter exists). The search used to map its hit back to a section by
+// comparing position boxes alone, which returned the earliest section with an
+// equal box: the caption was then attached to the other page's figure.
+func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
+	shared := func(pg int) []pdf.Position {
+		return []pdf.Position{{PageNumbers: []int{pg}, Left: 100, Right: 400, Top: 200, Bottom: 400}}
+	}
+	sections := []pdf.Section{
+		{Text: "page zero chart", LayoutType: pdf.LayoutTypeFigure, Image: "i0", Positions: shared(0)},
+		{Text: "page two chart", LayoutType: pdf.LayoutTypeFigure, Image: "i2", Positions: shared(2)},
+		{Text: "Figure 7: numbers", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 100, Right: 400, Top: 410, Bottom: 425}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	var zero, two bool
+	for _, s := range result {
+		has := strings.Contains(s.Text, "numbers")
+		switch s.Positions[0].PageNumbers[0] {
+		case 0:
+			zero = has
+		case 2:
+			two = has
+		}
+	}
+	if !two {
+		t.Errorf("caption did not attach to the page-2 figure; sections = %v", textsOf(result))
+	}
+	if zero {
+		t.Errorf("caption attached to the page-0 figure that merely shares a box: %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_SamePageFigureBeatsPageLessNearer locks the candidate
+// ordering: a figure with no page metadata stays eligible so that a caption the
+// table fallback must not drop can still land somewhere, but it must never
+// outbid a figure we can actually place on the caption's page.
+func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
+	sections := []pdf.Section{
+		// page-less figure, much CLOSER to the caption than the same-page one:
+		// dist² 56 against the same-page figure's 6006, so distance alone would
+		// pick it.
+		{Text: "page-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "np",
+			Positions: []pdf.Position{{Left: 100, Right: 400, Top: 500, Bottom: 540}}},
+		{Text: "same-page chart", LayoutType: pdf.LayoutTypeFigure, Image: "sp",
+			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 100, Right: 400, Top: 400, Bottom: 500}}},
+		{Text: "Figure 3: detail", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 100, Right: 400, Top: 520, Bottom: 535}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	for _, s := range result {
+		if !strings.Contains(s.Text, "detail") {
+			continue
+		}
+		if !strings.Contains(s.Text, "same-page chart") {
+			t.Errorf("closer page-less figure outbid the caption's own-page figure: %v", textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_TableCaptionPositionMerged is the table half of the
+// highlight-geometry fix: injectCaption puts the caption text inside the
+// table's HTML, but a table's caption box routinely sits a few points ABOVE the
+// table box rather than overlapping it, so without merging the boxes the UI
+// highlights the table and never the caption line above it.
+func TestMergeCaptions_TableCaptionPositionMerged(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 113, Right: 484, Top: 161, Bottom: 236}}},
+		{Text: "Table 1: results", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 210, Right: 385, Top: 138, Bottom: 149}}},
+	}
+	result := MergeCaptions(sections, nil)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if !strings.Contains(got.Text, "<caption>") {
+		t.Fatalf("caption not injected into the table HTML: %q", got.Text)
+	}
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged into the table's positions: %+v", got.Positions)
+	}
+	if got.Positions[0].Top != 161 || got.Positions[0].Bottom != 236 {
+		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
+	}
+	found := false
+	for _, p := range got.Positions {
+		if p.Top == 138 && p.Bottom == 149 {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
+	}
+}
