@@ -239,7 +239,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 #### ⚙️ Docker 구성 및 조정
 
-Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 제한과 macOS 요구 사항은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
+Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 지원(참고: macOS는 현재 지원되지 않음, Linux x86_64 호스트 사용 권장)은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
 
 문서 엔진 전환, 구성 변경 후 서비스 재시작, 기존 데이터 보존 또는 삭제 작업도 위 Docker 구성 가이드를 따르세요.
 

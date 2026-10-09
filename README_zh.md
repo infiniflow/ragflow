@@ -205,7 +205,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 3. 切换到 Go 版发布标签并使用 Docker Compose 启动服务器：
 
-   > ⚠️ **提示：** `v1.0.0-rc1` 及之后的发布标签使用 Go 实现。详细平台和 macOS 要求请参阅[Go Docker 镜像构建与平台支持说明](./docs/develop/build_docker_image.mdx)。
+   > ⚠️ **提示：** `v1.0.0-rc1` 及之后的发布标签使用 Go 实现。平台支持说明（注意：macOS 暂不受 Go 后端支持，请使用 Linux x86_64 主机）请参阅[Go Docker 镜像构建指南](./docs/develop/build_docker_image.mdx)。
 
    进入仓库中的 Docker 部署目录。
 
@@ -262,7 +262,7 @@ Docker 部署无需在宿主机安装 Go。使用 Self-Managed 容器 Sandbox �
 
 #### ⚙️ Docker 配置与调整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 存储缓存和 Checkpoint，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台限制和 macOS 运行要求请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。源码构建 Docker 镜像请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，使用 Kvrocks 存储缓存和 Checkpoint，并使用 NATS JetStream 作为消息队列。镜像、端口、密码、文档引擎及模型镜像源请按[Docker 配置说明](./docker/README.md)修改；平台支持（注意：macOS 暂不受支持）请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。源码构建 Docker 镜像请参阅[Go Docker 镜像构建与平台支持指南](./docs/develop/build_docker_image.mdx)。
 
 切换文档引擎、修改配置后重启服务，以及保留或清理已有数据的操作，也请按照上述 Docker 配置文档执行。
 

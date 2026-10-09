@@ -211,7 +211,7 @@ export function SavedModeCard({
             resetOptions={{ keepDirtyValues: true }}
           />
 
-          {providerName !== LLMFactory.OpenAiAPICompatible && (
+          {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
             <div className="pt-3">
               <VerifyButton
                 onVerify={handleVerify}
@@ -219,7 +219,7 @@ export function SavedModeCard({
                 formRef={formRef}
               />
             </div>
-          )}
+          )} */}
 
           {open && (
             <div className="pt-3">
