@@ -395,3 +395,29 @@ func TestRestrictToRequestedDocs(t *testing.T) {
 		})
 	}
 }
+
+// A generated table name is longer than an id: Infinity builds
+// "ragflow_<tenant>_<dataset>" and both halves are 32-character generated ids,
+// 73 characters in all. The range has to accept the name the engine builds, or
+// the chat path never reaches SQL on Infinity.
+func TestNewTableSQLAcceptsAGeneratedInfinityTableName(t *testing.T) {
+	tenant := strings.Repeat("a1", 16) // 32 characters, as GenerateUUID produces
+	kbID := strings.Repeat("b2", 16)
+
+	query, err := newTableSQL(&sqlFakeEngine{engineType: "infinity"},
+		&entity.Chat{TenantID: tenant},
+		[]*entity.Knowledgebase{{ID: kbID}}, []string{"doc-one"}, testTableFieldMap())
+	if err != nil {
+		t.Fatalf("newTableSQL: %v", err)
+	}
+	if query == nil {
+		t.Fatal("newTableSQL returned no range for a generated table name")
+	}
+	want := "ragflow_" + tenant + "_" + kbID
+	if query.policy.tableName != want {
+		t.Errorf("table = %q, want %q", query.policy.tableName, want)
+	}
+	if len(want) <= 64 {
+		t.Fatalf("the fixture no longer exceeds the id bound: %d characters", len(want))
+	}
+}

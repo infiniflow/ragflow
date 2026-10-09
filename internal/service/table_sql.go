@@ -49,10 +49,17 @@ const (
 // document published or was invented.
 var jsonPathRe = regexp.MustCompile(`^\$\.(c_[0-9a-f]{64})$`)
 
-// tableIdentifierRe is the shape of a document, knowledge base or table name
-// this process generated. Anything else is refused rather than written into a
+// tableIdentifierRe is the shape of a document or knowledge base id this
+// process generated. Anything else is refused rather than written into a
 // statement.
 var tableIdentifierRe = regexp.MustCompile(`^[0-9A-Za-z_-]{1,64}$`)
+
+// tableNameRe is the shape of a table name this process generated, which is
+// longer than one id: Infinity names its table "{baseName}_{datasetID}" and
+// both halves are generated ids ("ragflow_" + 32 + "_" + 32 = 73 characters).
+// The character class is what keeps a name out of a statement — the bound is a
+// sanity cap, and it is sized for the name the engine actually builds.
+var tableNameRe = regexp.MustCompile(`^[0-9A-Za-z_-]{1,128}$`)
 
 // tableColumns are the physical columns a table query may name. It lists both
 // the Elasticsearch-shaped names and the Infinity names that
@@ -196,7 +203,7 @@ func newTableSQL(docEngine engine.DocEngine, chat *entity.Chat, kbs []*entity.Kn
 		}
 		policy.kbCondition = kbCondition
 	}
-	if !tableIdentifierRe.MatchString(policy.tableName) {
+	if !tableNameRe.MatchString(policy.tableName) {
 		return nil, fmt.Errorf("table %q is not a readable identifier", policy.tableName)
 	}
 	for dataKey := range fieldMap {

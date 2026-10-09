@@ -1022,6 +1022,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("document does not belong to this dataset")
 	}
 
+	switched := 0
 	for _, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
@@ -1032,18 +1033,22 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			"id":            cid,
 			"available_int": availableInt,
 		}, indexName, datasetID); err != nil {
-			return err
+			break
+		}
+		switched++
+	}
+	if switched > 0 {
+		// Revoking is a consequence of the switch, not a step of it: the ids
+		// above are already flipped, so the derived state goes last. A loop that
+		// stopped early still changed the index, so it revokes too, and the Wiki
+		// mark and the revoke must not skip each other — the engine's error is
+		// what the caller sees unless the revoke failed first.
+		s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
+		if revokeErr := s.revokeTableProfile(ctx, documentID); revokeErr != nil && err == nil {
+			err = revokeErr
 		}
 	}
-	// Revoking is a consequence of the switch, not a step of it: every id above
-	// is already flipped, so the derived state goes last and a failed revoke
-	// cannot leave half the ids unswitched.
-	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
-	if err := s.revokeTableProfile(ctx, documentID); err != nil {
-		return err
-	}
-
-	return nil
+	return err
 }
 
 func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
@@ -1210,13 +1215,14 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// not skip the Wiki refresh for a content/availability change in the same
 	// request. The request still answers with the removal error (the Python
 	// reference does the same); the stored object is an orphan by then.
+	// The index edit committed above, so every follow-up is a consequence of it
+	// and none may skip another: the Wiki mark, the derived-state revoke and the
+	// image cleanup all run, and the first failure the request reports is the
+	// revoke's unless the image cleanup failed.
+	var revokeErr error
 	if req.Content != nil || req.Available != nil {
-		// The index edit committed above. The Wiki refresh is bookkeeping about
-		// that edit, so it lands before the derived-state revoke, which may fail.
 		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
-		if err := s.revokeTableProfile(ctx, req.DocumentID); err != nil {
-			return err
-		}
+		revokeErr = s.revokeTableProfile(ctx, req.DocumentID)
 	}
 	if removeImageAfterUpdate {
 		if err = s.removeChunkImage(ctx, req.DatasetID, req.ChunkID); err != nil {
@@ -1225,6 +1231,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 				zap.String("chunk_id", req.ChunkID))
 			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 		}
+	}
+	if revokeErr != nil {
+		return revokeErr
 	}
 
 	return nil
@@ -1829,9 +1838,19 @@ func releaseChunkImageLock(key string) {
 	}
 }
 
+// revokeTableProfileBudget sizes the derived-state revoke that follows a chunk
+// mutation. The mutation is what the request asked for and it is already
+// committed, so the revoke runs on a detached context with its own budget: the
+// metadata lock it takes polls for an acquisition budget of its own, and a
+// request cancelled in the interval would otherwise skip the revoke and leave
+// columns published for rows the index no longer answers for.
+const revokeTableProfileBudget = 20 * time.Second
+
 func (s *ChunkService) revokeTableProfile(ctx context.Context, docID string) error {
+	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTableProfileBudget)
+	defer cancel()
 	if s.revokeTableProfileFunc != nil {
-		return s.revokeTableProfileFunc(ctx, docID)
+		return s.revokeTableProfileFunc(revokeCtx, docID)
 	}
-	return document.NewDocumentService().RevokeTableProfile(ctx, docID)
+	return document.NewDocumentService().RevokeTableProfile(revokeCtx, docID)
 }

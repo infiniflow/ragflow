@@ -2791,3 +2791,134 @@ func TestChunkMutationBookkeepingSurvivesRevokeFailure(t *testing.T) {
 		}
 	})
 }
+
+// partialSwitchEngine commits availability changes until failAt, which is the
+// state a mid-loop engine error leaves behind.
+type partialSwitchEngine struct {
+	parseTestDocEngine
+	updates int
+	failAt  int
+}
+
+func (e *partialSwitchEngine) UpdateChunks(_ context.Context, _, _ map[string]interface{}, _, _ string) error {
+	e.updates++
+	if e.updates >= e.failAt {
+		return errors.New("engine unavailable")
+	}
+	return nil
+}
+
+// cancelOnMutationEngine cancels the request context the moment the index write
+// commits, which is the interval a chunk mutation and its revoke straddle.
+type cancelOnMutationEngine struct {
+	parseTestDocEngine
+	cancel context.CancelFunc
+}
+
+func (e *cancelOnMutationEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
+	return map[string]interface{}{"doc_id": "doc-a", "content_with_weight": "old"}, nil
+}
+
+func (e *cancelOnMutationEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
+	e.cancel()
+	return nil
+}
+
+// A switch that stopped early still changed the index, so the derived state it
+// describes has to go with it.
+func TestSwitchChunksRevokesWhenTheEngineFailsMidLoop(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	engine := &partialSwitchEngine{failAt: 2}
+	svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO(), userTenantDAO: dao.NewUserTenantDAO()}
+	wiki, revoked := 0, 0
+	svc.markWikiDirtyFunc = func(string, string, string, []string) { wiki++ }
+	svc.revokeTableProfileFunc = func(context.Context, string) error { revoked++; return nil }
+
+	err := svc.SwitchChunks(t.Context(), "user-1", "kb-1", "doc-a", 0, []string{"chunk-1", "chunk-2", "chunk-3"})
+	if err == nil {
+		t.Fatal("the engine error was not reported")
+	}
+	if engine.updates != 2 {
+		t.Errorf("updates = %d, want the loop to stop at the failure", engine.updates)
+	}
+	if revoked != 1 {
+		t.Error("a partially switched document kept its published columns")
+	}
+	if wiki != 1 {
+		t.Errorf("wiki marked %d time(s), want 1", wiki)
+	}
+}
+
+// The revoke runs after the index change committed, so a request cancelled in
+// the interval must not skip it.
+func TestChunkRevokeUsesAFreshContextAfterTheMutationCommits(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+
+	reqCtx, cancel := context.WithCancel(t.Context())
+	svc := &ChunkService{
+		docEngine:     &cancelOnMutationEngine{cancel: cancel},
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	svc.markWikiDirtyFunc = func(string, string, string, []string) {}
+	svc.revokeTableProfileFunc = func(revokeCtx context.Context, _ string) error {
+		if reqCtx.Err() == nil {
+			t.Error("the fixture did not cancel the request")
+		}
+		if revokeCtx.Err() != nil {
+			t.Errorf("the revoke inherited the cancelled request: %v", revokeCtx.Err())
+		}
+		if _, ok := revokeCtx.Deadline(); !ok {
+			t.Error("the revoke has no budget of its own")
+		}
+		return nil
+	}
+
+	content := "edited"
+	if err := svc.UpdateChunk(reqCtx, &service.UpdateChunkRequest{
+		DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1", Content: &content,
+	}, "user-1"); err != nil {
+		t.Fatalf("UpdateChunk: %v", err)
+	}
+}
+
+// The index no longer references the image once the edit committed, so a failed
+// revoke must not leave the object behind.
+func TestUpdateChunkRemovesTheImageWhenTheRevokeFails(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-a", "kb-1")
+	svc := &ChunkService{
+		docEngine:     &updateChunkTestEngine{existingChunk: map[string]interface{}{"doc_id": "doc-a", "content_with_weight": "old"}},
+		kbDAO:         dao.NewKnowledgebaseDAO(),
+		userTenantDAO: dao.NewUserTenantDAO(),
+	}
+	images := 0
+	svc.removeChunkImageFunc = func(string, string) error { images++; return nil }
+	svc.markWikiDirtyFunc = func(string, string, string, []string) {}
+	revokeFailure := errors.New("metadata lock unavailable")
+	svc.revokeTableProfileFunc = func(context.Context, string) error { return revokeFailure }
+
+	content := "edited"
+	removeMode := imageUpdateModeRemove
+	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+		DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1",
+		Content: &content, ImageUpdateMode: &removeMode,
+	}, "user-1")
+	if !errors.Is(err, revokeFailure) {
+		t.Errorf("error = %v, want the revoke failure reported", err)
+	}
+	if images != 1 {
+		t.Errorf("image removals = %d, want the orphaned object removed", images)
+	}
+}
