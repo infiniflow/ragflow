@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -99,6 +100,86 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 	}
 	if len(rows) != 0 {
 		t.Fatalf("edited row remains in table SQL: %#v", rows)
+	}
+}
+
+func TestTableSQLPreservesValuesAndStatistics(t *testing.T) {
+	uri := os.Getenv("RAGFLOW_TEST_INFINITY_URI")
+	if uri == "" {
+		t.Skip("requires real Infinity")
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+	defer cancel()
+	e, err := NewEngine(ctx, config.InfinityConfig{URI: uri, PostgresPort: 5432, DBName: "default_db"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.Close()
+	base := fmt.Sprintf("ragflow_sql_values_%d", time.Now().UnixNano())
+	defer e.DropChunkStore(context.Background(), base, "test")
+	if err := e.CreateChunkStore(ctx, base, "test", 2, "table"); err != nil {
+		t.Fatal(err)
+	}
+	records := []map[string]interface{}{}
+	for i, values := range []map[string]interface{}{
+		{"amount": "100", "region": "A", "value": "A|B"},
+		{"amount": "20", "region": "B", "value": "A\nB"},
+		{"amount": "0.5", "region": "B", "value": ""},
+		{"region": "B"},
+		{"amount": "bad", "region": "bad"},
+		{"value": "null", "amount": "null"},
+		{"value": nil, "amount": nil},
+		{"value": "  中文  "},
+		{"amount": ""},
+		{"amount": "1e400"},
+		{"amount": "NaN"},
+		{"amount": "2147483648"},
+	} {
+		records = append(records, map[string]interface{}{"id": fmt.Sprint(i), "doc_id": "doc", "content_with_weight": "row", "table_row_int": 1, "chunk_data": values})
+	}
+	if _, err := e.InsertChunks(ctx, records, base, "test"); err != nil {
+		t.Fatal(err)
+	}
+	table := base + "_test"
+	for _, tc := range []struct {
+		name, query string
+		want        []map[string]interface{}
+		wantError   bool
+	}{
+		{"pipe", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='0'", []map[string]interface{}{{"value": "A|B"}}, false},
+		{"newline", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='1'", []map[string]interface{}{{"value": "A\nB"}}, false},
+		{"empty", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='2'", []map[string]interface{}{{"value": ""}}, false},
+		{"missing", "SELECT json_extract_string(chunk_data,'$.amount') AS value FROM " + table + " WHERE id='3'", []map[string]interface{}{{"value": nil}}, false},
+		{"literal_null", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='5'", []map[string]interface{}{{"value": "null"}}, false},
+		{"json_null", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='6'", []map[string]interface{}{{"value": nil}}, false},
+		{"spaces", "SELECT json_extract_string(chunk_data,'$.value') AS value FROM " + table + " WHERE id='7'", []map[string]interface{}{{"value": "  中文  "}}, false},
+		{"null_filter", "SELECT COUNT(*) AS n FROM " + table + " WHERE id IN ('3','5','6') AND json_extract_isnull(chunk_data,'$.amount') = true", []map[string]interface{}{{"n": "2"}}, false},
+		{"qualified_source", "SELECT " + table + ".doc_id,json_extract_string(chunk_data,'$.amount') AS value FROM " + table + " WHERE id='0' ORDER BY CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE)", []map[string]interface{}{{"doc_id": "doc", "value": "100"}}, false},
+		{"group", "SELECT json_extract_string(chunk_data,'$.region') AS region,SUM(CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE)) AS total FROM " + table + " WHERE id IN ('0','1','2','3') GROUP BY json_extract_string(chunk_data,'$.region') ORDER BY json_extract_string(chunk_data,'$.region')", []map[string]interface{}{{"region": "A", "total": "100.000000"}, {"region": "B", "total": "20.500000"}}, false},
+		{"group_count", "SELECT json_extract_string(chunk_data,'$.region') AS region,COUNT(*) AS n FROM " + table + " WHERE id IN ('0','1','2','3') GROUP BY json_extract_string(chunk_data,'$.region') ORDER BY json_extract_string(chunk_data,'$.region')", []map[string]interface{}{{"region": "A", "n": "1"}, {"region": "B", "n": "3"}}, false},
+		{"numeric_order", "SELECT json_extract_string(chunk_data,'$.amount') AS value FROM " + table + " WHERE id IN ('0','1','2') ORDER BY CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE)", []map[string]interface{}{{"value": "0.5"}, {"value": "20"}, {"value": "100"}}, false},
+		{"invalid", "SELECT SUM(CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE)) AS total FROM " + table + " WHERE id='4'", nil, true},
+		{"invalid_literal_null", "SELECT CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE) AS value FROM " + table + " WHERE id='5'", nil, true},
+		{"invalid_empty", "SELECT CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE) AS value FROM " + table + " WHERE id='8'", nil, true},
+		{"invalid_overflow", "SELECT CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE) AS value FROM " + table + " WHERE id='9'", nil, true},
+		{"invalid_nan", "SELECT CAST(json_extract_string(chunk_data,'$.amount') AS DOUBLE) AS value FROM " + table + " WHERE id='10'", nil, true},
+		{"invalid_integer_overflow", "SELECT CAST(json_extract_string(chunk_data,'$.amount') AS INTEGER) AS value FROM " + table + " WHERE id='11'", nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := e.RunSQL(ctx, table, tc.query, []string{"test"}, "")
+			if tc.wantError {
+				if err == nil {
+					t.Fatalf("invalid number accepted: %v", got)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %#v want %#v", got, tc.want)
+			}
+		})
 	}
 }
 

@@ -19,6 +19,7 @@ package infinity
 import (
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -53,144 +54,29 @@ func TestPrepareSQLRejectsUnanalyzableQuery(t *testing.T) {
 	}
 }
 
-// -----------------------------------------------------------------------------
-// parsePsqlTable — mirrors infinity_conn_base.py:894-934.
-// -----------------------------------------------------------------------------
-
-func TestParsePsqlTable_StandardOutput(t *testing.T) {
-	// Sample psql table output for `select 1 as a, 2 as b;`
-	out := ` a | b
----+---
- 1 | 2
-(1 row)`
-
-	res := parsePsqlTable(out)
-	wantCols := []string{"a", "b"}
-	if !reflect.DeepEqual(res.Columns, wantCols) {
-		t.Errorf("columns: got %v, want %v", res.Columns, wantCols)
+func TestToRowMapsPreservesCellValues(t *testing.T) {
+	res := &pgconn.Result{
+		FieldDescriptions: []pgconn.FieldDescription{{Name: "value"}},
+		Rows:              [][][]byte{{[]byte("A|B")}, {[]byte("A\nB")}, {[]byte("  中文  ")}, {[]byte{}}, {nil}},
 	}
-	wantRows := [][]string{{"1", "2"}}
-	if !reflect.DeepEqual(res.Rows, wantRows) {
-		t.Errorf("rows: got %v, want %v", res.Rows, wantRows)
+	want := []map[string]interface{}{{"value": "A|B"}, {"value": "A\nB"}, {"value": "  中文  "}, {"value": ""}, {"value": nil}}
+	if got := toRowMaps(res); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v want %#v", got, want)
 	}
 }
 
-func TestParsePsqlTable_EmptyOutput(t *testing.T) {
-	res := parsePsqlTable("")
-	if len(res.Columns) != 0 || len(res.Rows) != 0 {
-		t.Errorf("empty output should yield (0 cols, 0 rows); got %+v", res)
+func TestResolveSQLHostPort_DefaultsWhenConfigEmpty(t *testing.T) {
+	host, port := resolveSQLHostPort("", 0)
+	if host != defaultSQLHost {
+		t.Errorf("host: got %q, want %q", host, defaultSQLHost)
+	}
+	if port != defaultSQLPort {
+		t.Errorf("port: got %q, want %q", port, defaultSQLPort)
 	}
 }
 
-func TestParsePsqlTable_NoSeparatorLine(t *testing.T) {
-	// Some psql configurations skip the separator line; the parser
-	// should still recover (data starts at line 1 in that case).
-	out := "a | b\n1 | 2"
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 1 {
-		t.Errorf("rows: got %d, want 1", len(res.Rows))
-	}
-}
-
-func TestParsePsqlTable_MultipleRowsAndRowCountFooter(t *testing.T) {
-	out := ` id | name
-----+------
-  1 | foo
-  2 | bar
-(2 rows)`
-	res := parsePsqlTable(out)
-	wantCols := []string{"id", "name"}
-	if !reflect.DeepEqual(res.Columns, wantCols) {
-		t.Errorf("columns: got %v, want %v", res.Columns, wantCols)
-	}
-	if len(res.Rows) != 2 {
-		t.Errorf("rows: got %d, want 2", len(res.Rows))
-	}
-	if res.Rows[0][0] != "1" || res.Rows[0][1] != "foo" {
-		t.Errorf("row[0]: got %v, want [1 foo]", res.Rows[0])
-	}
-	if res.Rows[1][0] != "2" || res.Rows[1][1] != "bar" {
-		t.Errorf("row[1]: got %v, want [2 bar]", res.Rows[1])
-	}
-}
-
-func TestParsePsqlTable_PadsAndTruncatesRows(t *testing.T) {
-	// Row with fewer cells → pad with empty strings.
-	// Row with more cells → truncate.
-	out := ` a | b | c
----+---+---
- 1 | 2
- 1 | 2 | 3 | 4
-(2 rows)`
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 2 {
-		t.Fatalf("rows: got %d, want 2", len(res.Rows))
-	}
-	// First row: ["1", "2", ""] (padded)
-	if !reflect.DeepEqual(res.Rows[0], []string{"1", "2", ""}) {
-		t.Errorf("padded row: got %v, want [1 2 ]", res.Rows[0])
-	}
-	// Second row: ["1", "2", "3"] (truncated)
-	if !reflect.DeepEqual(res.Rows[1], []string{"1", "2", "3"}) {
-		t.Errorf("truncated row: got %v, want [1 2 3]", res.Rows[1])
-	}
-}
-
-func TestParsePsqlTable_SkipsRowCountFooter(t *testing.T) {
-	out := " a \n---\n 1 \n(1 row)"
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 1 {
-		t.Errorf("row count footer should be skipped; got %d rows", len(res.Rows))
-	}
-}
-
-// -----------------------------------------------------------------------------
-// toRowMaps — chunk-shape conversion.
-// -----------------------------------------------------------------------------
-
-func TestToRowMaps_EmptyResultsReturnsNil(t *testing.T) {
-	if rows := toRowMaps(nil); rows != nil {
-		t.Errorf("nil result: got %v, want nil", rows)
-	}
-	if rows := toRowMaps(&psqlResult{}); rows != nil {
-		t.Errorf("empty result: got %v, want nil", rows)
-	}
-}
-
-func TestToRowMaps_ConvertsToRowMaps(t *testing.T) {
-	res := &psqlResult{
-		Columns: []string{"id", "name"},
-		Rows: [][]string{
-			{"1", "foo"},
-			{"2", "bar"},
-		},
-	}
-	got := toRowMaps(res)
-	want := []map[string]interface{}{
-		{"id": "1", "name": "foo"},
-		{"id": "2", "name": "bar"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("toRowMaps: got %v, want %v", got, want)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// resolvePsqlHostPort — mirrors infinity_conn_base.py:838-858.
-// -----------------------------------------------------------------------------
-
-func TestResolvePsqlHostPort_DefaultsWhenConfigEmpty(t *testing.T) {
-	host, port := resolvePsqlHostPort("", 0)
-	if host != defaultPsqlHost {
-		t.Errorf("host: got %q, want %q", host, defaultPsqlHost)
-	}
-	if port != defaultPsqlPort {
-		t.Errorf("port: got %q, want %q", port, defaultPsqlPort)
-	}
-}
-
-func TestResolvePsqlHostPort_OverridesFromConfig(t *testing.T) {
-	host, port := resolvePsqlHostPort("10.0.0.1:23817", 5433)
+func TestResolveSQLHostPort_OverridesFromConfig(t *testing.T) {
+	host, port := resolveSQLHostPort("10.0.0.1:23817", 5433)
 	if host != "10.0.0.1" {
 		t.Errorf("host: got %q, want 10.0.0.1", host)
 	}
@@ -199,14 +85,14 @@ func TestResolvePsqlHostPort_OverridesFromConfig(t *testing.T) {
 	}
 }
 
-func TestResolvePsqlHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
+func TestResolveSQLHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
 	// ":23817" parses via strings.Cut to ("", "23817") — the empty
 	// host doesn't override the default, matching Python's
 	// `re.search(r"host=(\S+)", ...)` which only matches a non-empty
 	// value.
-	host, port := resolvePsqlHostPort(":23817", 5432)
-	if host != defaultPsqlHost {
-		t.Errorf("host: got %q, want default %q (empty host in URI should not override)", host, defaultPsqlHost)
+	host, port := resolveSQLHostPort(":23817", 5432)
+	if host != defaultSQLHost {
+		t.Errorf("host: got %q, want default %q (empty host in URI should not override)", host, defaultSQLHost)
 	}
 	if port != "5432" {
 		t.Errorf("port: got %q, want 5432", port)
