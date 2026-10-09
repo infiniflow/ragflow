@@ -790,3 +790,48 @@ func TestRealignJSONColumnCells(t *testing.T) {
 		t.Errorf("non-JSON segments must be left untouched, got %#v", notJSON[0])
 	}
 }
+
+// TestTagKwdRoundTripsAsList pins that tag_kwd, which the write path always
+// stores "###"-joined, reads back as a list on every read path even when it
+// holds a single tag or none, while scalar keyword columns stay strings.
+func TestTagKwdRoundTripsAsList(t *testing.T) {
+	cases := []struct {
+		name string
+		tags []string
+		want []interface{}
+	}{
+		{"single tag", []string{"alpha"}, []interface{}{"alpha"}},
+		{"several tags", []string{"alpha", "beta"}, []interface{}{"alpha", "beta"}},
+		{"no tags", []string{}, []interface{}{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := transformChunkFields(map[string]interface{}{"tag_kwd": tc.tags, "doc_type_kwd": "pdf"}, nil)
+
+			searched := []map[string]interface{}{{"tag_kwd": stored["tag_kwd"], "doc_type_kwd": stored["doc_type_kwd"]}}
+			applyFieldMappings(searched)
+			if !reflect.DeepEqual(searched[0]["tag_kwd"], tc.want) {
+				t.Fatalf("search tag_kwd = %#v, want %#v", searched[0]["tag_kwd"], tc.want)
+			}
+
+			fields := (&Engine{}).GetFields(
+				[]map[string]interface{}{{"id": "c1", "tag_kwd": stored["tag_kwd"], "doc_type_kwd": stored["doc_type_kwd"]}},
+				[]string{"tag_kwd", "doc_type_kwd"},
+			)
+			if !reflect.DeepEqual(fields["c1"]["tag_kwd"], tc.want) {
+				t.Fatalf("get fields tag_kwd = %#v, want %#v", fields["c1"]["tag_kwd"], tc.want)
+			}
+			if fields["c1"]["doc_type_kwd"] != "pdf" {
+				t.Fatalf("get fields doc_type_kwd = %#v, want scalar \"pdf\"", fields["c1"]["doc_type_kwd"])
+			}
+
+			tagKwd, _ := stored["tag_kwd"].(string)
+			if got, ok := splitKeywordList("tag_kwd", tagKwd); !ok || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("get chunk tag_kwd = %#v (split %v), want %#v", got, ok, tc.want)
+			}
+			if _, ok := splitKeywordList("doc_type_kwd", "pdf"); ok {
+				t.Fatal("a single-valued scalar keyword column must stay a string")
+			}
+		})
+	}
+}
