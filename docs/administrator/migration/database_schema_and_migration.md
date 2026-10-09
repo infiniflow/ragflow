@@ -57,15 +57,20 @@ This starts the target release. The container entrypoint runs the required datab
 
 ### 4. Monitor the migration
 
-Follow the application logs while the deployment starts:
+Identify the application service and follow its logs while the deployment starts. The command selects the created CPU or GPU service, including an exited service whose startup failed, instead of assuming a service name:
 
 ```bash
-docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
+application_service="$(docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all --services | sed -n '/^ragflow-\(cpu\|gpu\)$/p' | head -n 1)"
+if test -z "$application_service"; then
+  echo "No RAGFlow application service was found"
+else
+  docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f "$application_service"
+fi
 ```
 
 Keep the log view open until the migration finishes and the application starts. Press `Ctrl+C` to leave the log view; the containers continue running. Review warnings as well as errors before allowing users, ingestion workers, or synchronization jobs to write data.
 
-If the logs report a migration failure, stop the deployment, inspect the reported error and current database state, resolve the cause, and then retry the migration.
+If the logs report a migration failure, stop the deployment and preserve the logs. Treat the database and the other persistent services as partially migrated: do not retry against them and do not start the previous release against them. Restore the complete pre-upgrade backup, including the matching application release and configuration, resolve the cause in a separate test environment, and then retry the upgrade from the restored recovery point.
 
 ### 5. Check the deployment status
 

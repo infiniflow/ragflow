@@ -30,7 +30,7 @@ Next, list the Docker volumes on the host. You will compare this inventory with 
 docker volume ls
 ```
 
-If the deployment was started with a project name, include the same `-p` value in every Compose and migration command. For example:
+If the deployment was started with a project name, include the same `-p` value in every Compose command. The migration script supports `-p` only in `v0.25.x` and later; step 3 provides the safe alternative for earlier releases. For example:
 
 ```bash
 docker compose -p ragflow -f docker/docker-compose.yml ps
@@ -67,39 +67,52 @@ docker compose -p ragflow -f docker/docker-compose.yml down
 
 The command above stops and removes the containers while preserving their Docker volumes. Wait until it finishes before continuing, and create every archive from this stopped deployment.
 
-## 3. Back up the default four volumes
+## 3. Back up the persistent volumes
 
-The bundled migration script archives the default MySQL, MinIO, Redis, and Elasticsearch volumes. First, display its command syntax so you can confirm that the script is available in the checked-out release:
+The available backup command depends on the source release and its Compose project name:
+
+| Source release | Default Compose project named `docker` | Custom Compose project name |
+|----------------|----------------------------------------|-----------------------------|
+| `v0.20.x` | Use the manual volume procedure below. This release does not contain `docker/migration.sh`. | Use the manual volume procedure below. |
+| `v0.21.x` through `v0.24.x` | The bundled script can back up the four default volumes. | Use the manual volume procedure below. The script in these releases does not support `-p` and always reads `docker_*` volumes. |
+| `v0.25.x` and later `v0.x` | The bundled script can back up the four default volumes. | Pass the project name with `-p`. |
+
+For a supported script-based backup, first display the syntax of the script in the checked-out release:
 
 ```bash
 bash docker/migration.sh help
 ```
 
-Next, create the four archives in the default `backup/` directory:
-
-```bash
-bash docker/migration.sh backup
-```
-
-To give this backup its own directory, pass the directory name to the command. The script creates the directory and writes the archives into it:
+For the default `docker` project, create the four archives in a new backup directory:
 
 ```bash
 bash docker/migration.sh backup my_ragflow_backup
 ```
 
-If the deployment uses a custom Compose project name, pass that name with `-p`. This makes the script read the correctly prefixed volumes:
+On `v0.25.x` or later, a deployment with a custom Compose project name can use:
 
 ```bash
 bash docker/migration.sh -p ragflow backup my_ragflow_backup
 ```
 
-Use a new directory for each backup. After the script finishes, list its contents:
+Do not pass `-p` to the script from `v0.21.x` through `v0.24.x`. For `v0.20.x`, for a custom project on an earlier release, or whenever a recorded volume is not covered by the script, create a new directory and repeat the following commands for **each exact volume name recorded in step 1**:
+
+```bash
+mkdir my_ragflow_backup
+volume_name=ragflow_mysql_data
+docker volume inspect "$volume_name" > /dev/null
+docker run --rm -v "$volume_name":/source:ro -v "$PWD/my_ragflow_backup":/backup alpine:3.20 \
+  tar czf "/backup/$volume_name.tar.gz" -C /source .
+tar tzf "my_ragflow_backup/$volume_name.tar.gz" > /dev/null
+```
+
+Use a new directory for each backup. After all required volumes have been processed, list its contents:
 
 ```bash
 ls -lh my_ragflow_backup
 ```
 
-Confirm that it contains the expected MySQL, MinIO, Redis, and Elasticsearch archives. If your deployment uses another document engine, external storage, or additional persistent services, back up those volumes or services now. Keep all of them together as one backup set.
+Confirm that every volume recorded in step 1 has a corresponding readable archive. A script-based backup is complete only for a deployment using all four default MySQL, MinIO, Redis, and Elasticsearch volumes. If the deployment uses another document engine, external storage, or additional persistent services, back up those volumes or services now. Keep all of them together as one backup set.
 
 ## 4. Transfer the backup
 
@@ -111,29 +124,37 @@ On the target host, list the transferred directory and confirm that its files an
 
 Install the same RAGFlow release on the target host and place the backup directory in the repository root. Keep all target services stopped.
 
-Prepare new, empty volumes on the target host. The bundled restore command expects the four default archives for MySQL, MinIO, Redis, and Elasticsearch.
+Restore only into target volumes that do not yet exist. Both the bundled script and the manual procedure extract files without removing files already present in a volume. Restoring into a used volume can therefore mix old and restored data.
 
-If the backup contains all four default archives, choose one of the following commands. To restore from the default `backup/` directory, run:
-
-```bash
-bash docker/migration.sh restore
-```
-
-To restore from a custom directory, pass its name. The script reads the four archives from that directory and restores them to the target volumes:
+Use the bundled restore command only when the backup was created by a compatible version of the script and contains all four default archives. For a default `docker` project, run:
 
 ```bash
 bash docker/migration.sh restore my_ragflow_backup
 ```
 
-If the target uses a custom Compose project name, pass it with `-p`. This makes the script restore into volumes with the matching prefix:
+On `v0.25.x` or later, a target with a custom Compose project name can use:
 
 ```bash
 bash docker/migration.sh -p ragflow restore my_ragflow_backup
 ```
 
-If the deployment uses Infinity, OpenSearch, SereneDB, or another document engine, restore that engine's saved volume with its storage-specific procedure. Restore any additional volumes and external services from the same backup set before continuing.
+Do not use `-p` with the script from `v0.21.x` through `v0.24.x`. Use the following manual procedure for a `v0.20.x` backup, a custom project on an earlier release, a backup whose archive names are the recorded volume names, or a deployment that does not have all four script archives. Repeat it for every saved volume, changing `source_volume` and `target_volume` when the target project uses a different prefix:
 
-During a bundled restore, the script lists any target volumes that already exist and asks for confirmation. Review the listed project and volume names. Enter `y` when they match the empty target volumes prepared for this restore. When the script finishes, confirm that it reports a successful restore for all four archives.
+```bash
+source_volume=ragflow_mysql_data
+target_volume=ragflow_mysql_data
+if docker volume inspect "$target_volume" > /dev/null 2>&1; then
+  echo "Target volume already exists; stop and inspect it: $target_volume"
+else
+  docker volume create "$target_volume"
+  docker run --rm -v "$target_volume":/target -v "$PWD/my_ragflow_backup":/backup:ro alpine:3.20 \
+    tar xzf "/backup/$source_volume.tar.gz" -C /target
+fi
+```
+
+Restore Infinity, OpenSearch, SereneDB, or another document engine from its saved volume or with its storage-specific procedure. Restore any additional volumes and external services from the same backup set before continuing.
+
+If the restore script reports that any target volume already exists, enter `n` and stop. Check the Compose project name and the contents of the listed volumes. Continue only after choosing a new project name or, after separately confirming that the existing volumes contain no data that must be retained, replacing them with new empty volumes. Do not use the script's confirmation prompt to restore over a previously used volume. When the script finishes, confirm that it reports a successful restore for all four archives.
 
 ## 6. Start and verify the restored release
 

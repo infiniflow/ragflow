@@ -16,6 +16,8 @@ The only intermediate version explicitly required by the `v1.0.0-rc1` release is
 
 This guide applies to MySQL-based Docker deployments.
 
+If the current deployment is older than `v0.20.0`, first upgrade it to `v0.20.0` using the files and instructions supplied with that release, start it, and verify its data before following this guide. Agents created before `v0.20.0` are incompatible with `v0.20.0` and later. Their definitions may be retained as a reference, but the Agents themselves must be rebuilt and tested after reaching `v0.20.0`.
+
 ## Choose an upgrade route
 
 Use the standard route for most deployments:
@@ -69,7 +71,7 @@ The following rules apply regardless of which route you choose:
 3. Stop or drain document imports, parsing jobs, Agents, data-source synchronization, and every other process that can write data.
 4. Back up all persistent volumes and configuration files from the same stopped deployment. The legacy migration script covers only four stores and is not a complete backup when the deployment uses another document engine or additional persistent services. Follow [Backup and Migration (v0.x)](./backup_and_migration_v0.md).
 5. Restore the backup in a test environment and confirm that the restored release can start and retrieve existing documents.
-6. Export any Agent configuration that can be retained. Agents created before `v0.20.0` are incompatible with `v0.20.0` and later and must be rebuilt.
+6. Export the configuration of any Agent that must be retained. If the original deployment was older than `v0.20.0`, use this export only as a reference: rebuild and test every such Agent after reaching `v0.20.0`.
 
 :::warning Isolate same-host tests
 Use a separate Compose project name, host ports, and Docker volumes. Do not connect the test deployment to production data stores.
@@ -217,7 +219,12 @@ From the `v1.0.0-rc1` repository root, start the deployment with the same Compos
 ```bash
 project_name=docker
 docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml up -d
-docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
+application_service="$(docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all --services | sed -n '/^ragflow-\(cpu\|gpu\)$/p' | head -n 1)"
+if test -z "$application_service"; then
+  echo "No RAGFlow application service was found"
+else
+  docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f "$application_service"
+fi
 ```
 
 The container entrypoint runs the data migration before starting the application. Keep the log command open until migration finishes and the application starts. Exit the log view with `Ctrl+C`; this does not stop the containers.
@@ -231,7 +238,7 @@ curl -f http://127.0.0.1/api/v1/system/healthz
 
 The health-check command uses the default web port `80`. If `SVR_WEB_HTTP_PORT` has been changed in `docker/.env`, use that port in the URL.
 
-If the logs report a migration error, stop the v1 deployment and restore the complete v0.27.2 recovery point before retrying.
+If the logs report a migration error, stop the v1 deployment and preserve the logs. Do not retry against the partially migrated data. Restore the complete `v0.27.2` recovery point, resolve the cause in a separate test environment, and retry the upgrade only from the restored recovery point.
 
 The migration is irreversible. Never start `v0.27.2` against a database that has been partially or fully migrated by `v1.0.0-rc1`.
 

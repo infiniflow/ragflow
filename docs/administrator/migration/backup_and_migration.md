@@ -170,11 +170,16 @@ docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compos
 docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps
 ```
 
-Wait until the services report a running or healthy state. Then display the application logs and check that startup and database migration completed successfully. In the standard Linux Compose file, the application service is named `ragflow-cpu`:
+Wait until the services report a running or healthy state. Then identify the application service and display its logs. The command below selects the created CPU or GPU service, including an exited service whose startup failed, instead of assuming a service name:
 
 ```bash
 project_name=docker
-docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs --tail=200 ragflow-cpu
+application_service="$(docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all --services | sed -n '/^ragflow-\(cpu\|gpu\)$/p' | head -n 1)"
+if test -z "$application_service"; then
+  echo "No RAGFlow application service was found"
+else
+  docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs --tail=200 "$application_service"
+fi
 ```
 
 Finally, sign in and confirm that existing knowledge bases and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.
