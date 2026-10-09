@@ -533,22 +533,21 @@ class TestRAGFlowDataConverterEdgeCases:
     def test_convert_array_with_special_characters(self):
         """Test converting array with special characters."""
         converter = RAGFlowDataConverter()
+        values = ["key\\with\\backslashes", "key\nwith\nnewlines", "key\rwith\rcarriage returns", "key\twith\ttabs", " padded "]
 
         es_doc = {
             "_id": "special_array",
             "_source": {
                 "id": "special_array",
                 "kb_id": "kb_001",
-                "important_kwd": ["key\nwith\nnewlines", "key\twith\ttabs"],
+                "important_kwd": values,
             },
         }
 
         row = converter.convert_document(es_doc)
 
-        # Should be JSON string with escaped characters
         assert isinstance(row["important_kwd"], str)
-        parsed = json.loads(row["important_kwd"])
-        assert len(parsed) == 2
+        assert json.loads(row["important_kwd"]) == values
 
     def test_convert_already_json_array(self):
         """Test converting already JSON-encoded array."""
