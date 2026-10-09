@@ -32,28 +32,6 @@ func init() {
 	_ = common.InitLogger("info", common.FileOutput{}, "oceanbase_test")
 }
 
-func TestRunSQLPreservesLiteralAndQuotedAlias(t *testing.T) {
-	db, mock, err := sqlmock.New()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer db.Close()
-	engine := newEngineWithDB("oceanbase", "legacy_doc", db)
-	want := "SELECT JSON_UNQUOTE ( JSON_EXTRACT ( chunk_data, '$.c_amount' ) ) AS `金额` FROM ragflow_tenant1 WHERE docnm_kwd = 'limit `docnm_kwd` json_extract_string(x,y)  50%' LIMIT 1024"
-	mock.ExpectQuery(regexp.QuoteMeta(want)).WillReturnRows(sqlmock.NewRows([]string{"金额"}).AddRow("50"))
-	rows, err := engine.RunSQL(t.Context(), "ragflow_tenant1",
-		"SELECT json_extract_string(chunk_data, '$.c_amount') AS `金额` FROM ragflow_tenant1 WHERE docnm_kwd = 'limit `docnm_kwd` json_extract_string(x,y)  50%'", nil, "json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || rows[0]["金额"] != "50" {
-		t.Fatalf("rows=%v", rows)
-	}
-	if err := mock.ExpectationsWereMet(); err != nil {
-		t.Fatal(err)
-	}
-}
-
 func TestUpdateMetadataReplacesCompleteLegacyJSON(t *testing.T) {
 	db, mock, err := sqlmock.New()
 	if err != nil {

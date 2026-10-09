@@ -19,50 +19,15 @@ package oceanbase
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"strings"
-
-	"ragflow/internal/utility"
 )
 
-func prepareSQL(sqlText string) (string, error) {
-	tokens, err := utility.SQLScan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
-	if err != nil {
-		return "", err
-	}
-	shape, err := utility.SQLSplitSelect(tokens)
-	if err != nil {
-		return "", err
-	}
-	if _, err := utility.SQLTableReference(shape.Clauses.From); err != nil {
-		return "", err
-	}
-	// Work from the end so nested calls are translated before their parents.
-	for i := len(tokens) - 1; i >= 0; i-- {
-		if !tokens[i].IsWord("json_extract_string") && !tokens[i].IsWord("json_extract_isnull") {
-			continue
-		}
-		args, next, err := utility.SQLCallArguments(tokens, i)
-		if err != nil || len(args) != 2 {
-			return "", fmt.Errorf("%s requires two arguments", tokens[i].Text)
-		}
-		call := "JSON_EXTRACT ( " + utility.SQLRender(args[0], '`') + ", " + utility.SQLRender(args[1], '`') + " )"
-		if tokens[i].IsWord("json_extract_string") {
-			call = "JSON_UNQUOTE ( " + call + " )"
-		} else {
-			call = "( " + call + " IS NULL )"
-		}
-		replacement, err := utility.SQLScan(call)
-		if err != nil {
-			return "", err
-		}
-		tokens = append(append(append([]utility.SQLToken(nil), tokens[:i]...), replacement...), tokens[next:]...)
-	}
-	normalized := utility.SQLRender(tokens, '`')
-	if len(shape.Clauses.Limit) == 0 {
-		normalized += " LIMIT 1024"
-	}
-	return normalized, nil
-}
+var (
+	jsonExtractStringPattern = regexp.MustCompile(`(?i)json_extract_string\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)`)
+	jsonExtractNullPattern   = regexp.MustCompile(`(?i)json_extract_isnull\s*\(\s*([^,]+?)\s*,\s*([^)]+?)\s*\)`)
+	limitPattern             = regexp.MustCompile(`(?i)\blimit\b`)
+)
 
 // RunSQL executes the read-only SQL produced by the chat SQL-retrieval flow.
 func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error) {
@@ -71,9 +36,16 @@ func (e *Engine) RunSQL(ctx context.Context, tableName, sqlText string, kbIDs []
 			return nil, err
 		}
 	}
-	normalized, err := prepareSQL(sqlText)
-	if err != nil {
-		return nil, err
+	normalized := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
+	normalized = strings.ReplaceAll(normalized, "`", "")
+	normalized = jsonExtractStringPattern.ReplaceAllString(normalized, "JSON_UNQUOTE(JSON_EXTRACT($1, $2))")
+	normalized = jsonExtractNullPattern.ReplaceAllString(normalized, "(JSON_EXTRACT($1, $2) IS NULL)")
+	lower := strings.ToLower(strings.TrimSpace(normalized))
+	if !strings.HasPrefix(lower, "select ") && !strings.HasPrefix(lower, "with ") {
+		return nil, fmt.Errorf("only SELECT and WITH statements are allowed")
+	}
+	if !limitPattern.MatchString(normalized) {
+		normalized += " LIMIT 1024"
 	}
 	return e.queryRows(ctx, normalized)
 }
