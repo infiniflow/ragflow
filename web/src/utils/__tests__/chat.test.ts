@@ -1,4 +1,56 @@
-import { preprocessLaTeX, replaceThinkToSection } from '../chat';
+import {
+  mergeAnswerChunk,
+  preprocessLaTeX,
+  replaceThinkToSection,
+} from '../chat';
+
+describe('mergeAnswerChunk', () => {
+  it.each([
+    ['First fact. Second fact.', 'First fact.[ID:0] Second fact.[ID:1]'],
+    ['A fact.[ID:0-1]', 'A fact.[ID:0][ID:1]'],
+  ])('replaces %s with the final cited answer', (previous, answer) => {
+    expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(answer);
+  });
+
+  it('keeps streamed thinking when replacing the visible answer', () => {
+    const streamed = [
+      { start_to_think: true },
+      { answer: 'Checking sources.' },
+      { end_to_think: true },
+      { answer: '## First fact. ' },
+      { answer: 'Second fact.' },
+    ].reduce(mergeAnswerChunk, '');
+    expect(streamed).toBe(
+      '<think>Checking sources.</think>\n\n## First fact. Second fact.',
+    );
+    const answer = mergeAnswerChunk(streamed, {
+      answer: '## First fact.[ID:0] Second fact.[ID:1]',
+      final: true,
+    });
+
+    expect(answer).toBe(
+      '<think>Checking sources.</think>\n\n## First fact.[ID:0] Second fact.[ID:1]',
+    );
+    expect(mergeAnswerChunk(answer, { answer, final: true })).toBe(answer);
+  });
+
+  it.each(['', undefined])(
+    'keeps the answer for an empty final chunk (%s)',
+    (answer) => {
+      const previous = '<think>Checking sources.</think>A fact.[ID:0]';
+      expect(mergeAnswerChunk(previous, { answer, final: true })).toBe(
+        previous,
+      );
+    },
+  );
+
+  it('accepts a single-shot final answer without duplicating a repeated one', () => {
+    const chunk = { answer: 'A fact.[ID:0]', final: true };
+    const answer = mergeAnswerChunk('', chunk);
+    expect(answer).toBe(chunk.answer);
+    expect(mergeAnswerChunk(answer, chunk)).toBe(answer);
+  });
+});
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {

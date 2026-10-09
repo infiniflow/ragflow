@@ -33,6 +33,7 @@ from openai.lib.azure import AzureOpenAI, AsyncAzureOpenAI
 from common.aimlapi_utils import attribution_headers
 from common.token_utils import num_tokens_from_string, total_token_count_from_response
 from rag.llm.key_utils import _resolve_bedrock_credentials
+from rag.llm.ollama_utils import resolve_ollama_keep_alive
 from rag.nlp import is_english
 from rag.prompts.generator import vision_llm_describe_prompt
 from rag.utils.url_utils import ensure_v1
@@ -797,7 +798,7 @@ class OllamaCV(Base):
         self.client = Client(host=self.base_url)
         self.model_name = model_name
         self.lang = lang
-        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
+        self.keep_alive = resolve_ollama_keep_alive(kwargs)
         Base.__init__(self, **kwargs)
 
     def _clean_img(self, img):
@@ -844,6 +845,7 @@ class OllamaCV(Base):
                 prompt=prompt[0]["content"],
                 images=[image],
                 think=False,
+                keep_alive=self.keep_alive,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -858,6 +860,7 @@ class OllamaCV(Base):
                 prompt=vision_prompt[0]["content"],
                 images=[image],
                 think=False,
+                keep_alive=self.keep_alive,
             )
             ans = response["response"].strip()
             return ans, 128
@@ -1453,6 +1456,29 @@ class NewAPICv(GptV4):
             raise ValueError("url cannot be None")
         self.client = OpenAI(api_key=key, base_url=base_url)
         self.async_client = AsyncOpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+        self.lang = lang
+        Base.__init__(self, **kwargs)
+
+
+class CheaperInferenceCV(GptV4):
+    """Cheaper Inference vision adapter.
+
+    The gateway takes image input on the same OpenAI-compatible
+    ``chat/completions`` route it uses for text, so the standard OpenAI client
+    path covers ``describe`` and ``describe_with_prompt`` with nothing
+    overridden. The base URL stays tenant-configurable because the gateway is
+    also reachable through per-account domains.
+    """
+
+    _FACTORY_NAME = "Cheaper Inference"
+
+    def __init__(self, key, model_name, lang="Chinese", base_url="", **kwargs):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.base_url = ensure_v1(base_url)
+        self.client = OpenAI(api_key=key, base_url=self.base_url)
+        self.async_client = AsyncOpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name.split("___")[0]
         self.lang = lang
         Base.__init__(self, **kwargs)

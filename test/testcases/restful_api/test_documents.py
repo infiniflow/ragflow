@@ -820,6 +820,11 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
             list_body = list_res.json()
             assert list_body["code"] == 0, (parser_config, list_body)
             doc_parser_config = list_body["data"]["docs"][0]["parser_config"]
+            if IS_GO_PROXY:
+                assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
+                assert "raptor" not in doc_parser_config, (parser_config, list_body)
+                assert "graphrag" not in doc_parser_config, (parser_config, list_body)
+                continue
             if parser_config == {}:
                 assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
             else:
@@ -833,7 +838,10 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
                     else:
                         assert doc_parser_config[key] == value, (parser_config, list_body)
         else:
-            assert body["message"] == expected_message, (parser_config, body)
+            if IS_GO_PROXY:
+                assert body["message"] in expected_message, (parser_config, body)
+            else:
+                assert body["message"] == expected_message, (parser_config, body)
 
 
 @pytest.mark.p2

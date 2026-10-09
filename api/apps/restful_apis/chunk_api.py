@@ -521,7 +521,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
             question = await cross_languages(kb.tenant_id, None, question, langs)
         if req.get("keyword", False):
             chat_model_config = get_tenant_default_model_by_type(kb.tenant_id, LLMType.CHAT)
-            question += await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question)
+            question += "," + await keyword_extraction(LLMBundle(kb.tenant_id, chat_model_config), question)
 
         ranks = await settings.retriever.retrieval(
             question,

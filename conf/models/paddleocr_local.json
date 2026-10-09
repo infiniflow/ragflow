@@ -3,6 +3,7 @@
   "url_suffix": {
     "ocr": "layout-parsing"
   },
+  "url_hint": "http://host.docker.internal:8080",
   "class": "local",
   "models": [
     {

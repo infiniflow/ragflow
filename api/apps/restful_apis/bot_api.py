@@ -448,7 +448,7 @@ async def retrieval_test_embedded(tenant_id=None):
         if req.get("keyword", False):
             default_chat_model = await thread_pool_exec(get_tenant_default_model_by_type, kb.tenant_id, LLMType.CHAT)
             chat_mdl = LLMBundle(kb.tenant_id, default_chat_model)
-            _question += await keyword_extraction(chat_mdl, _question)
+            _question += "," + await keyword_extraction(chat_mdl, _question)
 
         labels = label_question(_question, [kb])
         ranks = await settings.retriever.retrieval(

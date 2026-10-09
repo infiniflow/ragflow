@@ -117,6 +117,9 @@ def document_app_module(monkeypatch):
 
     deepdoc_mineru_module.MinerUParser = _StubMinerUParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+    deepdoc_mistral_module = ModuleType("deepdoc.parser.mistral_parser")
+    deepdoc_mistral_module.MistralParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mistral_parser", deepdoc_mistral_module)
     deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
 
     class _StubPaddleOCRParser:
@@ -125,11 +128,17 @@ def document_app_module(monkeypatch):
     deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
+    rag_llm_cv_module = ModuleType("rag.llm.cv_model")
+    rag_llm_cv_module.GptV4 = type("GptV4", (), {})
+    monkeypatch.setitem(sys.modules, "rag.llm.cv_model", rag_llm_cv_module)
 
     stub_apps = ModuleType("api.apps")
     stub_apps.__path__ = [str(repo_root / "api" / "apps")]
+    stub_apps.AUTH_JWT = "jwt"
+    stub_apps.AUTH_API = "api"
+    stub_apps.AUTH_BETA = "beta"
     stub_apps.current_user = SimpleNamespace(id="user-1")
-    stub_apps.login_required = lambda func: func
+    stub_apps.login_required = lambda func=None, **_kwargs: (lambda wrapped: wrapped) if func is None else func
     monkeypatch.setitem(sys.modules, "api.apps", stub_apps)
 
     stub_apps_services = ModuleType("api.apps.services")
@@ -197,6 +206,9 @@ def document_rest_api_module(monkeypatch):
 
     deepdoc_mineru_module.MinerUParser = _StubMinerUParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.mineru_parser", deepdoc_mineru_module)
+    deepdoc_mistral_module = ModuleType("deepdoc.parser.mistral_parser")
+    deepdoc_mistral_module.MistralParser = _StubMinerUParser
+    monkeypatch.setitem(sys.modules, "deepdoc.parser.mistral_parser", deepdoc_mistral_module)
     deepdoc_paddleocr_module = ModuleType("deepdoc.parser.paddleocr_parser")
 
     class _StubPaddleOCRParser:
@@ -205,11 +217,17 @@ def document_rest_api_module(monkeypatch):
     deepdoc_paddleocr_module.PaddleOCRParser = _StubPaddleOCRParser
     monkeypatch.setitem(sys.modules, "deepdoc.parser.paddleocr_parser", deepdoc_paddleocr_module)
     monkeypatch.setitem(sys.modules, "xgboost", ModuleType("xgboost"))
+    rag_llm_cv_module = ModuleType("rag.llm.cv_model")
+    rag_llm_cv_module.GptV4 = type("GptV4", (), {})
+    monkeypatch.setitem(sys.modules, "rag.llm.cv_model", rag_llm_cv_module)
 
     stub_apps = ModuleType("api.apps")
     stub_apps.__path__ = [str(repo_root / "api" / "apps")]
+    stub_apps.AUTH_JWT = "jwt"
+    stub_apps.AUTH_API = "api"
+    stub_apps.AUTH_BETA = "beta"
     stub_apps.current_user = SimpleNamespace(id="user-1")
-    stub_apps.login_required = lambda func: func
+    stub_apps.login_required = lambda func=None, **_kwargs: (lambda wrapped: wrapped) if func is None else func
     monkeypatch.setitem(sys.modules, "api.apps", stub_apps)
 
     stub_apps_services = ModuleType("api.apps.services")

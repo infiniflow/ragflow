@@ -139,6 +139,13 @@ async def delete_memory(memory_id):
 @manager.route("/memories", methods=["GET"])  # noqa: F821
 @login_required
 async def list_memory():
+    if request.args.get("type") == "filter":
+        try:
+            return get_json_result(message=True, data=await memory_api_service.list_memory_filters())
+        except Exception as e:
+            logging.error(e)
+            return get_json_result(code=RetCode.SERVER_ERROR, message="Internal server error")
+
     # Every list filter accepts repeated query keys and comma-joined values. The getlist idiom comes from
     # api/utils/validation_utils.py, which does not strip; the strip matches _split_filter_values in api/apps/services/memory_api_service.py.
     filter_params = {
@@ -287,9 +294,13 @@ async def search_message():
     if len(memory_ids) == 1 and "," in memory_ids[0]:
         memory_ids = memory_ids[0].split(",")
     query = args.get("query")
-    similarity_threshold = float(args.get("similarity_threshold", 0.2))
-    keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
     try:
+        similarity_threshold = float(args.get("similarity_threshold", 0.2))
+        keywords_similarity_weight = float(args.get("keywords_similarity_weight", 0.7))
+        if not 0 <= similarity_threshold <= 1:
+            raise ValueError("similarity_threshold must be between 0 and 1")
+        if not 0 <= keywords_similarity_weight <= 1:
+            raise ValueError("keywords_similarity_weight must be between 0 and 1")
         validate_rest_api_ids(memory_ids, "memory_id")
         top_n = validate_rest_api_page_size(int(args.get("top_n", 5)))
     except ValueError as exc:

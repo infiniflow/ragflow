@@ -17,6 +17,7 @@ import {
   ViewModeGenerateTypeMap,
   ViewModeLabelKeyMap,
 } from './constants';
+import { CompileProgressBoard } from './compile-progress-board';
 import { ProgressLogPanel } from './progress-log-panel';
 import { ProgressRing } from './progress-ring';
 
@@ -80,51 +81,27 @@ export function CompilationEmptyState({
             </p>
           )}
         </div>
+      ) : isGo ? (
+        <CompileProgressBoard
+          status={status}
+          data={data}
+          label={t(ViewModeLabelKeyMap[type])}
+        />
       ) : (
         <div className="grid h-full w-full grid-cols-[1fr_auto_1fr] items-center gap-8 p-6">
           <div />
           <div className="flex flex-col items-center gap-5">
-            {isGo ? (
-              // Go: no stable percentage and no scheduler cancel, so show
-              // the MySQL inflight/backlog counts (or the error diagnostic).
-              status === 'failed' ? (
-                <div className="flex flex-col items-center gap-2 text-state-error">
-                  <IconFontFill name="reparse" className="size-8" />
-                  <span className="text-text-primary">
-                    {data?.compilationError || t('message.operated')}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-text-secondary">
-                  <span className="text-4xl font-medium text-accent-primary">
-                    {t('knowledgeCompilation.compiling', {
-                      defaultValue: 'Compiling…',
-                    })}
-                  </span>
-                  <span>
-                    {t('knowledgeCompilation.compilingCounts', {
-                      inflight: data?.inflight ?? 0,
-                      backlog: data?.backlog ?? 0,
-                      defaultValue:
-                        '{{inflight}} processing / {{backlog}} queued',
-                    })}
-                  </span>
-                </div>
-              )
-            ) : (
-              <ProgressRing percent={percent} failed={status === 'failed'} />
-            )}
+            <ProgressRing percent={percent} failed={status === 'failed'} />
             <div className="flex items-center gap-2 text-text-primary">
               <span>{t(ViewModeLabelKeyMap[type])}</span>
-              {!isGo && status === 'failed' && (
+              {status === 'failed' ? (
                 <span className="cursor-pointer" onClick={handleGenerate}>
                   <IconFontFill
                     name="reparse"
                     className="text-accent-primary"
                   />
                 </span>
-              )}
-              {!isGo && status !== 'failed' && (
+              ) : (
                 <span
                   className="text-state-error cursor-pointer"
                   onClick={handlePause}

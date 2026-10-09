@@ -1,8 +1,6 @@
 import { FormFieldConfig, FormFieldType } from '@/components/dynamic-form';
-import {
-  EmbeddingSelect,
-  LLMSelect,
-} from '@/pages/dataset/setting/python/configuration/common-item';
+import { EmbeddingSelect } from '@/pages/dataset/setting/embedding-select';
+import { LLMSelect } from '@/pages/dataset/setting/python/configuration/common-item';
 import { TFunction } from 'i18next';
 export enum MemoryType {
   Raw = 'raw',

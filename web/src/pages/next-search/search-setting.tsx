@@ -82,7 +82,7 @@ function SearchSetting({
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     searchSettingSchema,
     search_config?.kb_ids,
-    'search_config.kb_ids',
+    { fieldName: 'search_config.kb_ids' },
   );
   const formMethods = useForm<SearchSettingFormData>({
     resolver: zodResolver(formSchema),

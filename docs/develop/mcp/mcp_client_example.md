@@ -11,6 +11,8 @@ sidebar_custom_props: {
 
 Python and curl MCP client examples.
 
+To use third-party tools inside a RAGFlow agent, see [Connect external MCP tools](./connect_external_mcp_servers.md).
+
 ------
 
 ## Example MCP Python Client

@@ -78,16 +78,14 @@ def test_encrypted_rm_deletes_same_object(storage, tenant_id):
 @pytest.mark.parametrize("tenant_id", [None, "tenant-a"])
 @pytest.mark.parametrize("exists", [False, True])
 def test_encrypted_obj_exist_preserves_backend_result(storage, tenant_id, exists):
+    """The wrapper returns the backend's existence result for either tenant form."""
     adapter, name = storage
     if name == "azure_sas_conn":
         adapter.conn.get_blob_client.return_value.exists.return_value = exists
     else:
         adapter.conn.get_file_client.return_value.exists.return_value = exists
-    # The separate SPN get_blob_client defect remains out of scope: the real
-    # FileSystemClient spec rejects it, and the adapter currently returns False.
-    expected = adapter.obj_exist("kb", "file.txt")
     wrapper = EncryptedStorageWrapper(adapter, key="test-key")
-    assert wrapper.obj_exist("kb", "file.txt", tenant_id) is expected
+    assert wrapper.obj_exist("kb", "file.txt", tenant_id) is exists
 
 
 def test_direct_get_and_rm_remain_callable_without_tenant(storage):

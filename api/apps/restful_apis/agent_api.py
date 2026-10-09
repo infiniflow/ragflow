@@ -1486,6 +1486,14 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         if workflow_session:
             workflow_conv = conv.to_dict()
 
+    if not session_id:
+        if not UserCanvasService.accessible(agent_id, tenant_id):
+            return get_json_result(
+                data=False,
+                message="Make sure you have permission to access the agent.",
+                code=RetCode.OPERATING_ERROR,
+            )
+
     if openai_compatible:
         # OpenAI-compatible mode uses a different wire format, keep it separate from regular agent events.
         messages = req.get("messages", [])
@@ -1582,13 +1590,6 @@ async def agent_chat_completion(tenant_id, agent_id=None):
         )
 
     if not session_id:
-        if not UserCanvasService.accessible(agent_id, tenant_id):
-            return get_json_result(
-                data=False,
-                message="Make sure you have permission to access the agent.",
-                code=RetCode.OPERATING_ERROR,
-            )
-
         # Load the caller's runtime replica as the workflow template. Session-owned
         # history and execution state are reset after Canvas instantiation below.
         query = req.get("query", "") or req.get("question", "")

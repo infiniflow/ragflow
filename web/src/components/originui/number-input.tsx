@@ -1,5 +1,5 @@
 import { cn } from '@/lib/utils';
-import { isNumber, omit, trim } from 'lodash';
+import { isNumber, omit, round, trim } from 'lodash';
 import { MinusIcon, PlusIcon } from 'lucide-react';
 import React, {
   FocusEventHandler,
@@ -20,6 +20,7 @@ interface NumberInputProps {
   height?: number | string;
   min?: number;
   max?: number;
+  step?: number;
   hideIcons?: boolean;
   integer?: boolean;
   inputClassName?: string;
@@ -44,6 +45,13 @@ function limitDecimals(value: number, decimals: number) {
 // integer mode; blocked on keydown so a decimal point can never be typed.
 const BlockedIntegerKeys = ['.', 'e', 'E', '+'];
 
+// Round a stepped value to the step's own decimal places, so float artifacts
+// (0.3 - 0.1 = 0.19999999999999998) never surface in the input.
+function roundToStepPrecision(value: number, step: number) {
+  const [, fractionPart = ''] = String(step).split('.');
+  return round(value, fractionPart.length);
+}
+
 const NumberInput = forwardRef<
   HTMLInputElement,
   Omit<InputProps, 'onChange' | 'value'> & NumberInputProps
@@ -56,6 +64,7 @@ const NumberInput = forwardRef<
     height,
     min = 0,
     max = Infinity,
+    step = 1,
     hideIcons = false,
     integer = false,
     inputClassName,
@@ -78,8 +87,9 @@ const NumberInput = forwardRef<
 
   const handleDecrement = () => {
     if (isNumber(value) && value > min) {
-      setValue(value - 1);
-      onChange?.(value - 1);
+      const nextValue = Math.max(roundToStepPrecision(value - step, step), min);
+      setValue(nextValue);
+      onChange?.(nextValue);
     }
   };
 
@@ -87,11 +97,12 @@ const NumberInput = forwardRef<
     if (!isNumber(value)) {
       return;
     }
-    if (value > max - 1) {
+    const nextValue = roundToStepPrecision(value + step, step);
+    if (nextValue > max) {
       return;
     }
-    setValue(value + 1);
-    onChange?.(value + 1);
+    setValue(nextValue);
+    onChange?.(nextValue);
   };
 
   const handleKeyDown: KeyboardEventHandler<HTMLInputElement> = (e) => {
@@ -226,6 +237,7 @@ const NumberInput = forwardRef<
           )}
           style={style}
           min={min}
+          step={step}
           ref={ref}
           {...omit(props, ['prefix', 'suffix'])}
         />

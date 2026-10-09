@@ -20,6 +20,16 @@ Fallback chain (never drops the answer):
         -> original chunks returned as-is (upper _build_compact_evidence
            head-truncation as the final safety valve)
 
+Table exemption: chunks that look like tables (HTML ``<table>``/``<tr>`` markup, or
+>=3 pipe rows — see ``search._is_table_chunk``) are NEVER narrowed, by any entry
+point of this module. Two reasons, both measured: the term window either cuts the
+``<table>`` opening tag, and then the downstream ``table_view`` renderer refuses
+the fragment (``"<table" not in text``) so the model is handed a partial raw-HTML
+row dump; or it keeps the tag and silently drops the remaining rows, and row
+order/coverage is exactly what decides table answers (a rank row can sit at 62% of
+a 14.7K-char table). Tables are returned VERBATIM — never re-windowed, never
+char-trimmed, and exempt from the per-chunk/total char budget.
+
 Safety: only ``re.compile`` + pure string ops, no eval, no arbitrary code;
 grep-term count cap + context clamp.
 """
@@ -28,16 +38,17 @@ import logging
 import re
 
 from rag.advanced_rag.harness.tools.search import (
-    _split_sentences,
     _is_fact_dense_sentence,
+    _is_table_chunk,
     _narrow_by_keywords,
+    _split_sentences,
 )
 
 _LOG = logging.getLogger(__name__)
 
 # Cost / safety caps.
 _MAX_GREP_TERMS = 16
-_MAX_CONTEXT = 2
+_MAX_CONTEXT = 6
 _DEFAULT_OUT_CHARS_PER_CHUNK = 1200
 _DEFAULT_OUT_TOTAL_CHARS = 16000
 # Head length kept per chunk when there is no match.
@@ -49,6 +60,19 @@ _CONTEXT_CHAR_BUDGET = 600
 # Short chunks (<= this many chars) are not narrowed: they are already 1-2 lines,
 # keeping them whole is safer (answers often live in short chunks).
 _MIN_NARROW_CHARS = 200
+
+
+def _safe_is_table(chunk) -> bool:
+    """Table detector guard: detection must never break narrowing.
+
+    Centralises the whole-table exemption (see the module docstring) so every
+    caller of this engine inherits it, instead of each call site re-implementing
+    the ``table_chunks / prose_chunks`` split.
+    """
+    try:
+        return bool(_is_table_chunk(chunk))
+    except Exception:  # noqa: BLE001 - never let a detector bug drop a chunk
+        return False
 
 
 def _escape_term(term: str) -> str:
@@ -213,7 +237,8 @@ def _apply_narrow(chunks: list[dict], kept_texts: list[str], matched: list[bool]
 def _fallback_narrow_by_keywords(chunks: list[dict], keywords: str) -> list[dict]:
     try:
         return _narrow_by_keywords(chunks, keywords) or chunks
-    except Exception:
+    except Exception:  # noqa: BLE001 - the fallback must never break narrowing
+        _LOG.debug("[grep-sed] keyword fallback narrowing failed; keeping the chunks as-is", exc_info=True)
         return chunks
 
 
@@ -234,6 +259,10 @@ def narrow_by_terms(
     once mechanically (zero extra LLM). Still no hit -> narrowing is abandoned and
     the original chunks are returned (matched=False); the caller must NOT treat a
     failed narrow as an answer failure. Never raises.
+
+    Table chunks are never narrowed and never char-trimmed — see the module
+    docstring. They come back VERBATIM (as a shallow copy), so no caller needs its
+    own ``_is_table_chunk`` split any more.
     """
     ctx = context or {"before": 0, "after": 0}
     try:
@@ -262,14 +291,19 @@ def narrow_by_terms(
         stats["chars_out"] = sum(len(_chunk_text(c)) for c in narrowed)
         return {"kept": narrowed, "stats": stats}
 
+    # Whole-table exemption, computed once and reused by the char-budget pass
+    # below (``_apply_narrow`` preserves order and length, so the two lists stay
+    # aligned). ``False`` = "this chunk was NOT narrowed" -> returned verbatim.
+    table_flags = [_safe_is_table(c) for c in chunks]
+
     def _run(active_patterns) -> tuple[list[str], list[bool]]:
         texts: list[str] = []
         flags: list[bool] = []
-        for c in chunks:
+        for c, is_table in zip(chunks, table_flags):
             raw = _chunk_text(c)
-            if len(raw) <= _MIN_NARROW_CHARS:
+            if is_table or len(raw) <= _MIN_NARROW_CHARS:
                 texts.append(raw)
-                flags.append(True)
+                flags.append(not is_table)
                 continue
             text, ok = _exec_on_text(raw, active_patterns, context, max_out_chars_per_chunk)
             texts.append(text)
@@ -306,7 +340,17 @@ def narrow_by_terms(
             per_chunk_cap = max(200, min(max_out_chars_per_chunk, max_out_total_chars // max(1, len(kept))))
             acc = 0
             trimmed = []
-            for c in kept:
+            for c, is_table in zip(kept, table_flags):
+                if is_table:
+                    # Tables are indivisible and exempt from the char budget: a
+                    # head slice keeps the header and the first rows and drops
+                    # the answer row, and the dropped rows carry no marker, so
+                    # the model reads a truncated table as a complete one. The
+                    # budget therefore bounds PROSE only; a large table can push
+                    # the narrowed prose set past ``max_out_total_chars``, which
+                    # is the intended trade (readability/correctness > char cap).
+                    trimmed.append(c)
+                    continue
                 t = _chunk_text(c)
                 room = max_out_total_chars - acc
                 if room <= 0:
