@@ -2282,6 +2282,20 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
+		// The terminal Message output is authoritative. Do not let a result or
+		// content field from a non-terminal upstream node become the answer when
+		// the Message intentionally selected attachments only.
+		if terminalContent, ok := assistantOutput["content"].(string); ok {
+			answer = terminalContent
+		} else {
+			answer = ""
+		}
+		downloads = assistantOutput["downloads"]
+		if terminalAttachment, ok := assistantOutput["attachment"].(map[string]any); ok {
+			attachment = terminalAttachment
+		} else {
+			attachment = nil
+		}
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
