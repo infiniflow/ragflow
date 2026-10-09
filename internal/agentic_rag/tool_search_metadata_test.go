@@ -25,7 +25,7 @@ import (
 )
 
 // fakeMetadataService is a metadataResolver implementation with no external
-// dependencies, driving the metadata_search tool through every branch.
+// dependencies, driving the search_metadata tool through every branch.
 type fakeMetadataService struct {
 	fields     []common.MetadataFieldDef
 	metas      common.MetaData

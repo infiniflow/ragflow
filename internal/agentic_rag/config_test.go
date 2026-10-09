@@ -189,7 +189,7 @@ func TestShippedConfigIsASingleDirectAnswerTemplate(t *testing.T) {
 	}
 	wantTools := []string{
 		"think", "todo_write", "grep_chunks", "search_bm25_chunks",
-		"search_semantic_chunks", "list_chunks", "run_javascript", "metadata_search",
+		"search_semantic_chunks", "list_chunks", "run_javascript", "search_metadata",
 	}
 	if strings.Join(tmpl.Tools, ",") != strings.Join(wantTools, ",") {
 		t.Fatalf("tools = %v, want %v", tmpl.Tools, wantTools)

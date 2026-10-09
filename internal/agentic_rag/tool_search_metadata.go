@@ -50,13 +50,13 @@ type metadataResolver interface {
 var metadataResolverSvc metadataResolver
 
 // SetMetadataService wires the document-metadata resolver used by the
-// metadata_search tool. Called by the service layer (which owns the concrete
+// search_metadata tool. Called by the service layer (which owns the concrete
 // *service.MetadataService) before an agent run; pass nil to clear it.
 func SetMetadataService(s metadataResolver) { metadataResolverSvc = s }
 
 func getMetadataService() metadataResolver { return metadataResolverSvc }
 
-const metadataSearchToolName = "metadata_search"
+const metadataSearchToolName = "search_metadata"
 
 const metadataSearchToolDescription = `Document-metadata SELECTOR: given metadata conditions, return the document ids (doc_ids) whose metadata matches — it runs NO content retrieval of its own.
 
@@ -68,7 +68,7 @@ Use this to narrow the corpus to the documents that satisfy a metadata predicate
 - "dataset_ids" (optional): restrict to these dataset ids; omit to use the conversation's bound datasets.
 
 ## Output (JSON)
-{"kind":"metadata_search","doc_ids":[...],"documents":[{"doc_id":...,"metadata":{...}}],"filters":[...]}. doc_ids is the result to act on; documents carries each matched doc's own metadata values so you can answer from the selection without another call. An empty doc_ids with a "note" means no document matched (loosen the filters) or the dataset has no metadata (use search_chunks / grep_chunks instead).`
+{"kind":"search_metadata","doc_ids":[...],"documents":[{"doc_id":...,"metadata":{...}}],"filters":[...]}. doc_ids is the result to act on; documents carries each matched doc's own metadata values so you can answer from the selection without another call. An empty doc_ids with a "note" means no document matched (loosen the filters) or the dataset has no metadata (use search_chunks / grep_chunks instead).`
 
 type metadataFilterArg struct {
 	Key   string `json:"key"`
@@ -131,7 +131,7 @@ func (m *MetadataSearchTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 }`
 	s := &jsonschema.Schema{}
 	if err := json.Unmarshal([]byte(schemaJSON), s); err != nil {
-		return nil, fmt.Errorf("metadata_search: parse schema: %w", err)
+		return nil, fmt.Errorf("search_metadata: parse schema: %w", err)
 	}
 	return &schema.ToolInfo{
 		Name:        metadataSearchToolName,
@@ -148,25 +148,25 @@ func (m *MetadataSearchTool) InvokableRun(ctx context.Context, argumentsInJSON s
 func (m *MetadataSearchTool) invokableRun(ctx context.Context, argumentsInJSON string) (string, error) {
 	var args metadataSearchArgs
 	if err := json.Unmarshal([]byte(argumentsInJSON), &args); err != nil {
-		return "", fmt.Errorf("metadata_search: parse arguments: %w", err)
+		return "", fmt.Errorf("search_metadata: parse arguments: %w", err)
 	}
 	filters := normalizeMetadataFilters(args.Filters)
 	if len(filters) == 0 {
 		return metadataSearchResult([]string{}, nil,
-			"No metadata conditions given. metadata_search needs at least one {key, op, value} filter; otherwise use search_chunks / grep_chunks to locate by content.")
+			"No metadata conditions given. search_metadata needs at least one {key, op, value} filter; otherwise use search_chunks / grep_chunks to locate by content.")
 	}
 	svc := getMetadataService()
 	if svc == nil {
 		return metadataSearchResult([]string{}, nil,
-			"metadata_search is unavailable in this deployment (no metadata resolver is wired). Use search_chunks / grep_chunks / list_chunks.")
+			"search_metadata is unavailable in this deployment (no metadata resolver is wired). Use search_chunks / grep_chunks / list_chunks.")
 	}
 	kbIDs, err := resolveDatasetScope(m.datasetIDs, args.DatasetIDs)
 	if err != nil {
-		return "", fmt.Errorf("metadata_search: %w", err)
+		return "", fmt.Errorf("search_metadata: %w", err)
 	}
 	if len(kbIDs) == 0 {
 		return metadataSearchResult([]string{}, nil,
-			"metadata_search needs a dataset scope; none is bound to this conversation.")
+			"search_metadata needs a dataset scope; none is bound to this conversation.")
 	}
 	known := metadataKnownFields(ctx, svc, kbIDs)
 	var bad []string
@@ -344,7 +344,7 @@ func metadataSearchResult(docIDs []string, docs []map[string]any, note string) (
 		docIDs = []string{}
 	}
 	payload := map[string]any{
-		"kind":    "metadata_search",
+		"kind":    "search_metadata",
 		"doc_ids": docIDs,
 	}
 	if docs != nil {
@@ -355,7 +355,7 @@ func metadataSearchResult(docIDs []string, docs []map[string]any, note string) (
 	}
 	b, err := json.Marshal(payload)
 	if err != nil {
-		return "", fmt.Errorf("metadata_search: marshal result: %w", err)
+		return "", fmt.Errorf("search_metadata: marshal result: %w", err)
 	}
 	return string(b), nil
 }
