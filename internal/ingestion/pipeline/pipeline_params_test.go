@@ -1150,7 +1150,7 @@ func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
 // whitelist coverage.
 var componentParamWhitelistExemptions = map[string]string{
 	"File":           "no user-editable params",
-	"Parser":         "accepted keys are the DSL's file families",
+	"Parser":         "DSL file families plus the global vision parameter whitelist",
 	"GeneralChunker": "param struct lives in the chunker package without json tags; template keys + the delimiters exception cover it",
 	"QAChunker":      "no operator form; param struct is not in the schema package",
 	"OneChunker":     "no user-editable params",

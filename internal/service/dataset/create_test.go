@@ -40,6 +40,8 @@ func testDatasetCreateService(t *testing.T) *DatasetService {
 	}
 }
 
+func iptr(i int) *int { return &i }
+
 func TestCreateDataset_NoComponentParams(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -77,6 +79,8 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 
 	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:         "ds-default-parent-child",
+		ParserID:     sptr("general"),
+		ParseType:    iptr(1),
 		ParserConfig: map[string]interface{}{},
 	}, "tenant-1")
 	if err != nil || code != common.CodeSuccess {
@@ -111,21 +115,6 @@ func findChunkerNodeInTest(t *testing.T, config map[string]interface{}) map[stri
 	}
 	t.Fatalf("no chunker node found in parser_config: %#v", config)
 	return nil
-}
-
-func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
-	db := setupServiceTestDB(t)
-	pushServiceDB(t, db)
-	insertCreateDatasetTenant(t, "tenant-1")
-
-	parserID := "qa"
-	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
-		Name:     "ds-parser-only",
-		ParserID: &parserID,
-	}, "tenant-1")
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("CreateDataset err=%v code=%d", err, code)
-	}
 }
 
 func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
@@ -234,20 +223,18 @@ func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
+func TestCreateDataset_ParseTypeBuiltinHasNoPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
 	ctx := t.Context()
 
-	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypeBuiltin := 1
 	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:       "ds-parse-builtin",
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-		ParseType:  &parseTypeBuiltin,
+		Name:      "ds-parse-builtin",
+		ParserID:  &chunkMethod,
+		ParseType: &parseTypeBuiltin,
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -272,10 +259,8 @@ func TestCreateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 
 	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypePipeline := 2
-	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
 		Name:       "ds-parse-pipeline",
-		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseTypePipeline,
 	}, "tenant-1")
@@ -327,7 +312,11 @@ func TestCreateDataset_DedupesDuplicateName(t *testing.T) {
 
 	ctx := t.Context()
 	// Mirror Python's duplicate_name: the create appends (1) instead of failing.
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "Existing",
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -363,6 +352,8 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 
 			_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
 				Name:           "ds-embd-" + tc.name,
+				ParserID:       sptr("general"),
+				ParseType:      iptr(1),
 				EmbeddingModel: &tc.embeddingModel,
 			}, "tenant-1")
 			if err == nil {
@@ -386,8 +377,10 @@ func TestCreateDataset_SetsExplicitLanguage(t *testing.T) {
 
 	language := "  Chinese  "
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language",
-		Language: &language,
+		Name:      "ds-language",
+		Language:  &language,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
@@ -408,7 +401,11 @@ func TestCreateDataset_OmittedLanguageKeepsDefault(t *testing.T) {
 
 	// An omitted language must stay unset on the insert so the column default
 	// applies, mirroring the Python service dropping a None language.
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "ds-no-language"}, "tenant-1")
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "ds-no-language",
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -436,8 +433,10 @@ func TestCreateDataset_RejectsBlankLanguage(t *testing.T) {
 			insertCreateDatasetTenant(t, "tenant-1")
 
 			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
-				Name:     "ds-blank-language",
-				Language: &language,
+				Name:      "ds-blank-language",
+				Language:  &language,
+				ParserID:  sptr("general"),
+				ParseType: iptr(1),
 			}, "tenant-1")
 			if err == nil {
 				t.Fatal("expected language validation error")
@@ -464,8 +463,10 @@ func TestCreateDataset_LanguageLimitCountsCharacters(t *testing.T) {
 	ctx := t.Context()
 
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language-at-limit",
-		Language: &atLimit,
+		Name:      "ds-language-at-limit",
+		Language:  &atLimit,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
 	}, "tenant-1")
 	if err != nil {
 		t.Fatalf("CreateDataset failed for a %d-character language: %v", datasetLanguageLimit, err)
@@ -478,8 +479,10 @@ func TestCreateDataset_LanguageLimitCountsCharacters(t *testing.T) {
 	}
 
 	_, code, err = testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language-over-limit",
-		Language: &overLimit,
+		Name:      "ds-language-over-limit",
+		Language:  &overLimit,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
 	}, "tenant-1")
 	if err == nil {
 		t.Fatal("expected language length validation error")

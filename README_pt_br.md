@@ -246,7 +246,7 @@ _O show está no ar!_
 
 #### ⚙️ Configuração e ajustes do Docker
 
-A implantação Go com Docker usa `docker/.env` e `docker/docker-compose.yml`, com Kvrocks para cache e armazenamento de Checkpoints e NATS JetStream como fila de mensagens. Para configurar imagem, portas, senhas, mecanismo de documentos e origem das imagens de modelos, consulte o [guia de configuração do Docker](./docker/README.md). Para limitações de plataforma e requisitos do macOS, consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx).
+A implantação Go com Docker usa `docker/.env` e `docker/docker-compose.yml`, com Kvrocks para cache e armazenamento de Checkpoints e NATS JetStream como fila de mensagens. Para configurar imagem, portas, senhas, mecanismo de documentos e origem das imagens de modelos, consulte o [guia de configuração do Docker](./docker/README.md). Para suporte de plataforma (observação: macOS não é suportado temporariamente, use um host Linux x86_64), consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx).
 
 Para trocar o mecanismo de documentos, alterar configurações, reiniciar serviços e manter ou remover dados existentes, siga também o guia de configuração do Docker.
 

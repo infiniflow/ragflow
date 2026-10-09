@@ -392,6 +392,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: '画像・表コンテキストウィンドウ',
 
       imageTableContextWindowTip:

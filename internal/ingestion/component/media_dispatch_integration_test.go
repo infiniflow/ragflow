@@ -27,7 +27,7 @@ func TestMaybeDispatchImageNativeOCRWithoutVision(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
-		"picture_ocr.png", pictureOCRFixture, nil, defaultSetups(), false)
+		"picture_ocr.png", pictureOCRFixture, nil, defaultSetups(), false, "")
 	if err != nil {
 		t.Fatal(err)
 	}

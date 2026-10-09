@@ -141,13 +141,19 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		}
 	}
 
-	// Resolve the effective parse mode once: parse_type is authoritative when
-	// present, otherwise inherit the dataset's current mode. Both the
+	// Resolve the effective parse mode once via the shared selection value
+	// object. sel is the request selection (nil when the whole selection block
+	// was omitted); current is the dataset's persisted selection. Resolve applies
+	// PATCH semantics: an omitted block inherits the current mode. Both the
 	// parser_config cleaning and the reparse targeting derive from this single
-	// resolution so they can never disagree. (See service.ResolveParseMode.)
-	isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
-		req.ParseType, req.ParserID, req.PipelineID,
-		service.ParseModeState{ParserID: kb.ParserID, PipelineID: kb.PipelineID})
+	// resolution so they can never disagree.
+	sel, selErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if selErr != nil {
+		return nil, common.CodeDataError, selErr
+	}
+	current := service.CurrentSelection(kb.ParserID, kb.PipelineID)
+	eff, _ := service.Resolve(current, sel)
+	isPipeline, effParserID, effPipelineID := eff.Effective()
 
 	if present["parser_config"] && req.ParserConfig != nil {
 		// Normalize "pages" ranges before persistence. Invalid ranges are
@@ -322,13 +328,13 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 	}
 
 	if present["parse_type"] || present["parser_id"] || present["pipeline_id"] {
-		isBuiltin, _, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
+		sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
 		if err != nil {
 			return common.CodeDataError, err
 		}
 		// The parser_id type constraint (visual/presentation) only applies in
 		// builtin mode — in pipeline mode parser_id is not applicable.
-		if isBuiltin && present["parser_id"] && req.ParserID != nil {
+		if sel != nil && sel.IsBuiltIn() && present["parser_id"] && req.ParserID != nil {
 			parserID := strings.TrimSpace(*req.ParserID)
 			if (doc.Type == "visual" && parserID != "picture") || (isPresentationFile(doc.Name) && parserID != "presentation") {
 				return common.CodeDataError, errors.New("not supported yet")

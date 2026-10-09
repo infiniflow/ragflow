@@ -604,6 +604,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      builtInSuffix: '（内置）',
+      parserSelectPlaceholder: '选择解析方式',
+      parserOptionUnavailable: '不可用',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -1168,6 +1171,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
+      search1apiApiKeyTip:
+        '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
+      search1apiApiKeyMessage: '请输入 Search1API API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
