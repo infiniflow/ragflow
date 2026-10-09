@@ -21,7 +21,7 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 - **docker-compose-base.yml**
   Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. On Linux and macOS, use `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image through Docker Desktop emulation.
+> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
 
 ### Quick start
 
@@ -42,7 +42,7 @@ If you use the default Elasticsearch document engine on Linux, set `vm.max_map_c
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the setting inside its Linux virtual machine as described in the [Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
+This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
 The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
 
