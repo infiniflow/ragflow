@@ -92,7 +92,7 @@ const ChatApiKeyModal = ({
               className="w-fit shrink-0"
               onClick={createToken}
               loading={creatingLoading}
-              disabled={tokenList?.length > 16}
+              disabled={tokenList?.length >= 16}
             >
               {t('createNewKey')}
             </Button>
