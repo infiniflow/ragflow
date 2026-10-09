@@ -61,13 +61,13 @@ func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
 
 // TestMergedChunkMapKeepsWikiFields locks the fix for the merged-row metadata
 // gap: the dataset-level merged row written by mergedChunkMap must carry the
-// wiki page fields (page_type_kwd/topic_kwd/title_kwd/slug_kwd/...) that the
+// wiki page fields (entity_type_kwd/topic_kwd/title_kwd/slug_kwd/...) that the
 // artifact API (ListArtifacts/ListWikiTopics) and page renderers read. Without
 // them the compilation page surfaces no wiki pages from the merged products.
 func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	p := kccommon.Product{
 		ID: "merged-1", DocID: "kb1", TenantID: "t1", Variant: kccommon.VariantWiki,
-		Content: "# Alpha\n\nBody",
+		Content: "# Alpha\n\n**Body** links to [Beta](entity/beta).",
 		Vector:  []float32{0.1, 0.2, 0.3},
 		Meta: map[string]any{
 			"kind":             "page",
@@ -91,12 +91,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		"entity_type_kwd":     "entity",
 		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
-		// The wiki page body goes to md_with_weight, the column Python writes
-		// and reads (wiki_incremental.py:2190); artifact_slug_kwd was a Go-only
-		// column that exists in no engine mapping.
-		"md_with_weight": "# Alpha\n\nBody",
-		"plan_kwd":       "run-abc",
-		"input_hash_kwd": "hash-123",
+		"content_with_weight": p.Content,
+		"plan_kwd":            "run-abc",
+		"input_hash_kwd":      "hash-123",
 	}
 	// The wall-clock audit fields must be stamped from `now`, not omitted.
 	if m["create_time"] != now.Format("2006-01-02 15:04:05") {
@@ -109,6 +106,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		if got, _ := m[k].(string); got != want {
 			t.Errorf("merged row[%q] = %q, want %q", k, got, want)
 		}
+	}
+	if _, ok := m["md_with_weight"]; ok {
+		t.Fatal("merged Wiki rows must not duplicate the body in md_with_weight")
 	}
 	if v, _ := m["entity_names_kwd"].([]string); len(v) != 1 || v[0] != "Alpha" {
 		t.Errorf("entity_names_kwd = %#v, want [Alpha]", m["entity_names_kwd"])
