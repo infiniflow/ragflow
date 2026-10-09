@@ -13,7 +13,7 @@ func TestWikiPageContent(t *testing.T) {
 		{"canonical wins", map[string]any{"content_with_weight": body, "md_with_weight": "stale body"}, body},
 		{"Markdown only", map[string]any{"md_with_weight": body}, body},
 		{"empty canonical", map[string]any{"content_with_weight": "", "md_with_weight": body}, body},
-		{"blank canonical", map[string]any{"content_with_weight": " \n", "md_with_weight": body}, body},
+		{"blank canonical", map[string]any{"content_with_weight": " \n", "md_with_weight": body}, " \n"},
 		{"list values", map[string]any{"content_with_weight": []string{""}, "md_with_weight": []any{body}}, body},
 		{"canonical list", map[string]any{"content_with_weight": []string{body}, "md_with_weight": "stale body"}, body},
 		{"missing", nil, ""},

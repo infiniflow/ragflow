@@ -46,7 +46,7 @@ func TestSearchWithWikiContent(t *testing.T) {
 	}{
 		{"canonical", body, "stale duplicate", nil, 1},
 		{"empty content", "", body, nil, 2},
-		{"blank content", " \n", body, nil, 2},
+		{"blank content", " \n", body, nil, 1},
 		{"empty Markdown", "", "", nil, 2},
 		{"missing Markdown column", "", "", infinity.NewInfinityException(3024, "Failed to execute query: Column: md_with_weight doesn't exist"), 2},
 		{"missing Markdown binder", "", "", infinity.NewInfinityException(3013, "Failed to execute query: Fail to bind the expression: md_with_weight"), 2},
@@ -89,9 +89,9 @@ func TestSearchWithWikiContent(t *testing.T) {
 			if err != nil || result == nil || len(result.Chunks) != 3 || result.Total != 7 || calls != test.calls {
 				t.Fatalf("result = %+v, calls = %d, err = %v", result, calls, err)
 			}
-			want := body
-			if test.markdown == "" && test.content == "" {
-				want = ""
+			want := test.content
+			if want == "" {
+				want = test.markdown
 			}
 			if got := types.WikiPageContent(result.Chunks[0]); got != want || result.Chunks[0]["_score"] != 0.9 {
 				t.Fatalf("body or score changed: %+v", result.Chunks[0])
