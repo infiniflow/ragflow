@@ -18,7 +18,10 @@ import {
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { ParseType } from '@/constants/knowledge';
-import { buildParserOptionValue } from '@/hooks/use-parser-options';
+import {
+  buildParserOptionValue,
+  ParserOptionKind,
+} from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { IModalProps } from '@/interfaces/common';
@@ -150,9 +153,15 @@ export function InputForm({ onOk }: IModalProps<any>) {
               <ParserSelect
                 value={
                   parseType === ParseType.BuiltIn
-                    ? buildParserOptionValue('builtin', parserId ?? '')
+                    ? buildParserOptionValue(
+                        ParserOptionKind.BuiltIn,
+                        parserId ?? '',
+                      )
                     : pipelineId
-                      ? buildParserOptionValue('pipeline', pipelineId)
+                      ? buildParserOptionValue(
+                          ParserOptionKind.Pipeline,
+                          pipelineId,
+                        )
                       : undefined
                 }
                 onChange={handleParserSelect}

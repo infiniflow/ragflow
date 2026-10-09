@@ -1017,15 +1017,14 @@ export const BuiltinPipelineKeys = {
     [AgentApiAction.FetchBuiltinPipelineDetail, id] as const,
 };
 
-export const useFetchBuiltinPipelines = (type = 'builtin', enabled = true) => {
+export const useFetchBuiltinPipelines = () => {
   const { data, isFetching: loading } = useQuery<IBuiltinPipelineListResponse>({
-    queryKey: BuiltinPipelineKeys.list(type),
+    queryKey: BuiltinPipelineKeys.list('builtin'),
     initialData: { canvas: [], total: 0 },
     gcTime: 0,
-    enabled,
     queryFn: async () => {
       const { data } = await agentService.listBuiltinPipelines(
-        { params: { type } },
+        { params: { type: 'builtin' } },
         true,
       );
       return data?.data ?? { canvas: [], total: 0 };

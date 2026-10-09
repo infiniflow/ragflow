@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -281,32 +280,12 @@ func (s *FileService) createFolderRecursive(ctx context.Context, parentFolder *e
 	return s.createFolderRecursive(ctx, newFolder, names, count+1, tenantID)
 }
 
+// getUniqueFilename returns a non-colliding file name within the folder,
+// appending (1), (2), ... when the requested name is already taken.
 func (s *FileService) getUniqueFilename(ctx context.Context, name, parentID, tenantID string) (string, error) {
-	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
-	if err != nil {
-		return "", err
-	}
-
-	if len(existingFiles) == 0 {
-		return name, nil
-	}
-
-	base := filepath.Base(name)
-	ext := filepath.Ext(name)
-	nameWithoutExt := strings.TrimSuffix(base, ext)
-
-	counter := 1
-	for {
-		newName := fmt.Sprintf("%s_%d%s", nameWithoutExt, counter, ext)
-		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, parentID, tenantID)
-		if err != nil {
-			return "", err
-		}
-		if len(existingFiles) == 0 {
-			return newName, nil
-		}
-		counter++
-	}
+	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
+	})
 }
 
 // CreateFolder creates a new folder or virtual file
@@ -330,23 +309,28 @@ func (s *FileService) CreateFolder(ctx context.Context, tenantID, name, parentID
 		return nil, fmt.Errorf("parent folder not found")
 	}
 
-	existingFiles, err := s.fileDAO.Query(ctx, dao.DB, name, parentID, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to query existing files: %w", err)
-	}
-	if len(existingFiles) > 0 {
-		return nil, fmt.Errorf("duplicated folder name in the same folder")
-	}
-
 	if fileType == "" {
 		fileType = FileTypeVirtual
 	}
-
-	if fileType == FileTypeFolder {
-		fileType = FileTypeFolder
-	} else {
+	if fileType != FileTypeFolder {
 		fileType = FileTypeVirtual
 	}
+
+	existsInParent := func(candidate string) (bool, error) {
+		return s.fileDAO.NameExists(ctx, dao.DB, candidate, parentID, tenantID, "")
+	}
+	var uniqueName string
+	var err error
+	if fileType == FileTypeFolder {
+		// A folder is not a file: append the counter to the whole name.
+		uniqueName, err = common.UniqueName(name, 255, existsInParent)
+	} else {
+		uniqueName, err = common.UniqueFileName(name, 255, existsInParent)
+	}
+	if err != nil {
+		return nil, err
+	}
+	name = uniqueName
 
 	folder, err := s.fileDAO.CreateFolder(ctx, dao.DB, parentID, tenantID, name, fileType)
 	if err != nil {
@@ -449,34 +433,45 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 			}
 		}
 
-		// Check for duplicate names in target folder
+		// Check for duplicate names in the target folder.
 		targetParentID := file.ParentID
 		if destFolder != nil {
 			targetParentID = destFolder.ID
 		}
-		var existingFiles []*entity.File
-		existingFiles, err = s.fileDAO.Query(ctx, dao.DB, newName, targetParentID, file.TenantID)
-		if err != nil {
-			return false, fmt.Sprintf("failed to query existing files: %v", err)
+		existsInTarget := func(candidate string) (bool, error) {
+			return s.fileDAO.NameExists(ctx, dao.DB, candidate, targetParentID, file.TenantID, file.ID)
 		}
-		for _, f := range existingFiles {
-			if f.Name == newName {
+		if targetParentID == file.ParentID {
+			// Renaming within the same folder: a case-only change refers to the
+			// file itself, so the NameAvailable shortcut is safe.
+			available, err := common.NameAvailable(file.Name, newName, existsInTarget)
+			if err != nil {
+				return false, fmt.Sprintf("failed to query existing files: %v", err)
+			}
+			if !available {
+				return false, "duplicated file name in the same folder"
+			}
+		} else {
+			// Moving into another folder: the source entry is not part of the
+			// destination namespace, so always check the destination name.
+			taken, err := existsInTarget(newName)
+			if err != nil {
+				return false, fmt.Sprintf("failed to query existing files: %v", err)
+			}
+			if taken {
 				return false, "duplicated file name in the same folder"
 			}
 		}
 	} else if destFolder != nil {
-		// Plain move (no rename): check for duplicate names in destination folder
+		// Plain move (no rename): check for duplicate names in destination folder.
 		for _, file := range files {
-			var existingFiles []*entity.File
-			existingFiles, err = s.fileDAO.Query(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID)
+			var exists bool
+			exists, err = s.fileDAO.NameExists(ctx, dao.DB, file.Name, destFolder.ID, file.TenantID, file.ID)
 			if err != nil {
 				return false, fmt.Sprintf("failed to query existing files: %v", err)
 			}
-			for _, f := range existingFiles {
-				// Ignore the source file itself
-				if f.ID != file.ID {
-					return false, "Duplicated file name in the same folder."
-				}
+			if exists {
+				return false, "Duplicated file name in the same folder."
 			}
 		}
 	}

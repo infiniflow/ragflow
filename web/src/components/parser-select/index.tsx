@@ -14,13 +14,16 @@
  *  limitations under the License.
  */
 
-import { SelectWithSearch } from '@/components/originui/select-with-search';
+import {
+  SelectWithSearch,
+  type SelectWithSearchFlagOptionType,
+} from '@/components/originui/select-with-search';
 import {
   parseParserOptionValue,
+  ParserOptionKind,
   useParserOptions,
-  type ParserOptionKind,
 } from '@/hooks/use-parser-options';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 interface IProps {
@@ -44,6 +47,45 @@ export function ParserSelect({
   const { t } = useTranslation();
   const { options, loading } = useParserOptions();
 
+  // Trim: some locales still define the marker with surrounding whitespace
+  // from when it was appended to the label text.
+  const builtInTag = t('knowledgeConfiguration.builtInSuffix').trim();
+
+  // Render the builtin marker as a tag next to the label instead of baking it
+  // into the label text; keywords keep the plain label searchable via cmdk.
+  const selectOptions = useMemo<SelectWithSearchFlagOptionType[]>(
+    () =>
+      options.map((option) => {
+        if (option.kind !== ParserOptionKind.BuiltIn) {
+          return option;
+        }
+        return {
+          ...option,
+          label: (
+            <>
+              {option.label}
+              <span className="shrink-0 rounded-md bg-bg-card px-1.5 py-0.5 text-xs text-text-secondary">
+                {builtInTag}
+              </span>
+            </>
+          ),
+          keywords: [option.label],
+        };
+      }),
+    [options, builtInTag],
+  );
+
+  // When the saved value references a parser that no longer exists (e.g. a
+  // deleted pipeline) and options have finished loading, render a localized
+  // "unavailable" label instead of the raw internal value.
+  const renderMissingParser = useCallback(
+    () =>
+      t('knowledgeConfiguration.parserOptionUnavailable', {
+        defaultValue: 'unavailable',
+      }),
+    [t],
+  );
+
   const handleChange = useCallback(
     (v: string) => {
       const parsed = parseParserOptionValue(v);
@@ -60,19 +102,12 @@ export function ParserSelect({
     <SelectWithSearch
       value={value}
       loading={loading}
-      // When the saved value references a parser that no longer exists (e.g. a
-      // deleted pipeline) and options have finished loading, render a localized
-      // "unavailable" label instead of the raw internal value.
-      renderMissingValue={() =>
-        t('knowledgeConfiguration.parserOptionUnavailable', {
-          defaultValue: 'unavailable',
-        })
-      }
+      renderMissingValue={renderMissingParser}
       onChange={handleChange}
       placeholder={
         placeholder ?? t('knowledgeConfiguration.parserSelectPlaceholder')
       }
-      options={options}
+      options={selectOptions}
       disabled={disabled}
     />
   );

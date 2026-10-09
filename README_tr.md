@@ -131,11 +131,6 @@ Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) ba
 - Karmaşık soruları analiz edin; gerektiğinde soruları alt parçalara ayırın, bilgi arayın ve kanıtları birden fazla adımda doğrulayın.
 - Low, Medium, High ve Ultra düşünme modlarıyla arama ve akıl yürütme derinliğini sorunun karmaşıklığına göre ayarlayın.
 
-### ⚙️ **Go yerel servis mimarisi**
-
-- API, Admin, Ingestor ve Syncer birleşik bir Go servisi tarafından sunulur. DeepDoc, Go süreci içinde sayfa düzeni analizi, OCR ve tablo tanımayı yürütür.
-- Go servisleri CGO üzerinden yerel belge ayrıştırma kitaplıklarını ve ONNX Runtime'ı çağırır. MCP ve Sandbox Executor gerektiğinde etkinleştirilebilir.
-
 ### 🌱 **Azaltılmış halüsinasyonlarla temellendirilmiş alıntılar**
 
 - İnsan müdahalesine olanak tanıyan metin parçalama görselleştirmesi.
