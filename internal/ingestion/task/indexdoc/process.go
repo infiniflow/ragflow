@@ -18,9 +18,11 @@ package indexdoc
 
 import (
 	"fmt"
+	"reflect"
 	"time"
 
 	"ragflow/internal/common"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/utility"
 )
 
@@ -73,6 +75,9 @@ func ProcessChunksForPipeline(
 	if chunks == nil {
 		return nil, nil
 	}
+	if err := validateTableRows(chunks); err != nil {
+		return nil, err
+	}
 	metadata := make(map[string]any)
 	timeStr := now.Format("2006-01-02 15:04:05")
 	timestamp := float64(now.UnixMicro()) / 1e6
@@ -89,7 +94,11 @@ func ProcessChunksForPipeline(
 		}
 
 		if _, exists := ck["id"]; !exists {
-			ck["id"] = common.ChunkID(docID, text)
+			identity := text
+			if rowIdentity, ok := ingestiontable.RowIdentity(ck); ok {
+				identity = rowIdentity
+			}
+			ck["id"] = common.ChunkID(docID, identity)
 		}
 
 		cleanupConsumedChunkFields(ck)
@@ -255,4 +264,23 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 	}
 	sheet, ok := ck["sheet"].(string)
 	return ok && sheet != ""
+}
+
+// validateTableRows rejects branches that assign different values or roles to
+// the same source row before any chunk is changed or written.
+func validateTableRows(chunks []map[string]any) error {
+	seen := make(map[string][]any)
+	for _, chunk := range chunks {
+		identity, ok := ingestiontable.RowIdentity(chunk)
+		if !ok {
+			continue
+		}
+		source := chunk["table_row_source"].(map[string]any)
+		values := []any{chunk["text"], chunk["chunk_data"], source["mode"], source["roles"], source["columns"]}
+		if previous, exists := seen[identity]; exists && !reflect.DeepEqual(previous, values) {
+			return fmt.Errorf("conflicting TableChunker output for %s", identity)
+		}
+		seen[identity] = values
+	}
+	return nil
 }

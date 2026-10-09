@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -589,4 +590,17 @@ func containsKey(keys []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestPublishColumnPreservesEmptyUserValue(t *testing.T) {
+	for _, value := range []any{"", []string{}} {
+		svc := &stubDocStateSvc{metaData: map[string]any{"金额": value}}
+		if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"金额": []string{"100"}}, TableProfile: tableProfileForTest([]string{"金额"})}); err != nil {
+			t.Fatal(err)
+		}
+		got, present := svc.metaData["金额"]
+		if !present || !reflect.DeepEqual(got, value) {
+			t.Errorf("user value %T(%v) became %T(%v), present=%v", value, value, got, got, present)
+		}
+	}
 }

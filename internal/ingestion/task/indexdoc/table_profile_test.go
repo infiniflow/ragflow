@@ -200,3 +200,31 @@ func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
 		t.Error("sheet identity is pipeline bookkeeping")
 	}
 }
+
+func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
+	first := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	edited := tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	edited["text"] = "Sheet 1, row 2"
+	next := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	next["table_row_source"].(map[string]any)["source_row"] = float64(3)
+	for _, row := range []map[string]any{first, edited, next} {
+		if _, err := ProcessChunksForPipeline([]map[string]any{row}, "doc-1", "table.csv", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if first["id"] != edited["id"] {
+		t.Fatal("changing column roles changes a source row's fallback ID")
+	}
+	if first["id"] == next["id"] {
+		t.Fatal("distinct source rows with the same text overwrite each other")
+	}
+}
+
+func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
+	first := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	other := tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	other["table_row_source"].(map[string]any)["node_id"] = "TableChunker:Other"
+	if _, err := ProcessChunksForPipeline([]map[string]any{first, other}, "doc-1", "table.csv", time.Now()); err == nil {
+		t.Fatal("conflicting roles for the same source row were indexed")
+	}
+}

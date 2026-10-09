@@ -41,7 +41,7 @@ func TestWorkerDispatcherBurstCompletesEveryTask(t *testing.T) {
 
 	db := testutil.SetupTestDB(t)
 	cleanupDB := testutil.ReplaceDBForTest(t, db)
-	defer cleanupDB()
+	t.Cleanup(cleanupDB)
 	taskIDs := seedBurstTasks(t, db, taskCount)
 
 	queue := testutil.SetupNatsEngine(t)

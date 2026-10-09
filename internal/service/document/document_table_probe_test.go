@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/xuri/excelize/v2"
+
 	"ragflow/internal/entity"
 	ingestiontable "ragflow/internal/ingestion/table"
 )
@@ -150,5 +152,62 @@ func TestStaleRoleWarnings(t *testing.T) {
 	}
 	if strings.Contains(warnings[0], "金额") {
 		t.Errorf("a role that still resolves was reported: %q", warnings[0])
+	}
+}
+
+func TestProbeXLSXMultipleSheetsAndHeaderOnly(t *testing.T) {
+	workbook := excelize.NewFile()
+	defer workbook.Close()
+	if err := workbook.SetSheetName("Sheet1", "销售"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workbook.NewSheet("库存"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workbook.NewSheet("只有表头"); err != nil {
+		t.Fatal(err)
+	}
+	for sheet, rows := range map[string][][]any{
+		"销售":   {{"名称", "金额"}, {"订单", "100"}},
+		"库存":   {{"名称", "数量"}, {"物品", "2"}},
+		"只有表头": {{"备注", "金额"}},
+	} {
+		for i, row := range rows {
+			cell, err := excelize.CoordinatesToCellName(1, i+1)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := workbook.SetSheetRow(sheet, cell, &row); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	buf, err := workbook.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := testDocumentService(t).ProbeTableColumns(t.Context(), "多表.xlsx", buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Sheets) != 3 {
+		t.Fatalf("sheets = %#v", result.Sheets)
+	}
+	expected := [][]string{{"名称", "金额"}, {"名称", "数量"}, {"备注", "金额"}}
+	for i, sheet := range result.Sheets {
+		if sheet.SheetIndex != i+1 || len(sheet.Columns) != 2 {
+			t.Fatalf("sheet = %#v", sheet)
+		}
+		for j, col := range sheet.Columns {
+			if col.Key != expected[i][j] {
+				t.Errorf("sheet %d column %d = %q", i, j, col.Key)
+			}
+		}
+	}
+	if result.Sheets[2].RowCount != 0 {
+		t.Errorf("header-only row count = %d", result.Sheets[2].RowCount)
+	}
+	if result.Sheets[0].Columns[1].DataKey != result.Sheets[2].Columns[1].DataKey {
+		t.Error("same header across sheets changed JSON identity")
 	}
 }

@@ -66,6 +66,14 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 	if len(rows) != 1 || fmt.Sprint(rows[0]["value"]) != "100% 中文" {
 		t.Fatalf("JSON SQL rows = %#v", rows)
 	}
+	countQuery := fmt.Sprintf("SELECT count(*) AS n FROM %s WHERE doc_id = 'published' AND available_int = 1 AND table_row_int = 1", table)
+	counts, err := e.RunSQL(ctx, table, countQuery, []string{kb}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(counts) != 1 || fmt.Sprint(counts[0]["n"]) != "1" {
+		t.Fatalf("scoped COUNT = %#v", counts)
+	}
 	// The engine's read path must return the marker used by body edits.
 	row, err := e.GetChunk(ctx, base, "row", []string{kb})
 	if err != nil {

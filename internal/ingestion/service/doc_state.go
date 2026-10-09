@@ -175,6 +175,13 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 		}
 	}
 	merged = common.SplitCombinedMetadataValues(merged)
+	// A rejected table contribution must preserve the user value verbatim,
+	// including empty values that the ordinary metadata merge drops.
+	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, accepted := owned[key]; !accepted {
+			merged[key] = existing[key]
+		}
+	}
 	if r.TableProfile != nil {
 		profile := *r.TableProfile
 		profile.OwnedMetadata = make([]string, 0, len(owned))

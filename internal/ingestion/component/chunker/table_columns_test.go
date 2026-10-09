@@ -307,11 +307,11 @@ func TestTableChunkerRowIdentitySurvivesRoleChange(t *testing.T) {
 		"column_roles": map[string]any{"ID": "metadata"},
 	}, "xlsx", segment)
 
-	autoID, ok := tableRowIdentity(auto[0])
+	autoID, ok := ingestiontable.RowIdentity(auto[0])
 	if !ok {
 		t.Fatalf("auto row has no identity: %#v", auto[0])
 	}
-	manualID, ok := tableRowIdentity(manual[0])
+	manualID, ok := ingestiontable.RowIdentity(manual[0])
 	if !ok {
 		t.Fatalf("manual row has no identity: %#v", manual[0])
 	}
@@ -328,8 +328,8 @@ func TestTableChunkerRowIdentitySurvivesRoleChange(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("got %d chunks, want both rows", len(chunks))
 	}
-	first, _ := tableRowIdentity(chunks[0])
-	second, _ := tableRowIdentity(chunks[1])
+	first, _ := ingestiontable.RowIdentity(chunks[0])
+	second, _ := ingestiontable.RowIdentity(chunks[1])
 	if first == second {
 		t.Errorf("two source rows with the same text share an identity: %q", first)
 	}
