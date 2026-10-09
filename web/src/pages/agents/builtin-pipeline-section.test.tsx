@@ -48,15 +48,23 @@ beforeEach(() => {
 
 describe('BuiltinPipelineSection', () => {
   it('renders the section with cards in the "All" view', () => {
-    render(<BuiltinPipelineSection rawCategory={undefined} searchString="" />, {
-      wrapper,
-    });
+    const { container } = render(
+      <BuiltinPipelineSection rawCategory={undefined} searchString="" />,
+      { wrapper },
+    );
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(
       screen.getByText('knowledgeConfiguration.builtInPipelines'),
     ).toBeInTheDocument();
     // Two built-in cards rendered (each carries a copy button).
     expect(screen.getAllByTestId('copy-builtin-pipeline')).toHaveLength(2);
+    // The cards are laid out in the same responsive grid as the user items
+    // (not a single long column).
+    const grid = container.querySelector('.grid');
+    expect(grid).not.toBeNull();
+    expect(
+      grid?.querySelectorAll('[data-testid="copy-builtin-pipeline"]'),
+    ).toHaveLength(2);
   });
 
   it('still renders when the user list is empty (built-ins are not gated on user items)', () => {
