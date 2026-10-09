@@ -90,13 +90,8 @@
 - 2026-08-19 推出知识编译，支持在文档级和知识库级生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
 - 2026-08-19 推出 Agentic RAG，支持 Low、Medium、High、Ultra 四种思考模式。
 - 2026-07-02 支持 Google BigQuery 数据源接入与增量同步。
-- 2026-06-29 支持 WhatsApp、钉钉和企业微信聊天渠道。
-- 2026-05-26 新增 Browser 组件，支持 Agent 自主浏览和操作网页。
-- 2026-04-21 提供七种预置数据摄取流水线模板。
-- 2026-04-21 支持 Agent 应用发布、沙箱代码执行与图表生成。
-- 2026-04-21 支持用户级记忆存储和检索。
 
-更多更新请参阅[完整发布记录](./docs/release_notes.md)。
+更多更新请参阅[完整发布记录](https://ragflow.io/docs/dev/release_notes)。
 
 ## 🎉 关注项目
 
