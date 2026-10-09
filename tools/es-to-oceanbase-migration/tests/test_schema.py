@@ -663,3 +663,24 @@ class TestRAGFlowDataConverterEdgeCases:
         # extra should contain both existing and new fields
         extra = json.loads(row["extra"])
         assert "custom_field" in extra
+
+
+class TestOBClientCreateColumn:
+    """Test OBClient._create_column type creation."""
+
+    def test_create_column_array_string_length(self):
+        from es_ob_migration.ob_client import OBClient
+        from sqlalchemy import String
+
+        client = OBClient.__new__(OBClient)
+        col_1024 = client._create_column("question_kwd", "ARRAY(String(1024))", True, None, False, True)
+        assert col_1024.name == "question_kwd"
+        assert isinstance(col_1024.type.item_type, String)
+        assert col_1024.type.item_type.length == 1024
+
+        col_256 = client._create_column("doc_nm_kwd", "ARRAY(String(256))", True, None, False, True)
+        assert col_256.type.item_type.length == 256
+
+        col_default = client._create_column("tag_kwd", "ARRAY(String)", True, None, False, True)
+        assert col_default.type.item_type.length == 256
+
