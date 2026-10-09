@@ -134,7 +134,7 @@ var compiledSelectFields = []string{
 // because Infinity's SQL binder rejects a partial wildcard (3013).
 var wikiSelectFields = []string{
 	"page_type_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "plan_group_kwd", "generation_kwd", "title_kwd",
-	"entity_names_kwd", "summary_with_weight", "md_with_weight",
+	"entity_names_kwd", "summary_with_weight",
 	"related_kb_pages_kwd", "outlinks_kwd", "depth_int",
 	"q_*_vec",
 }
@@ -159,7 +159,7 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 	var out []kccommon.Product
 	offset := 0
 	for {
-		res, err := eng.Search(ctx, &types.SearchRequest{
+		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
 			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:        []string{kb},
 			Filter:       map[string]interface{}{"doc_id": docID},
@@ -220,7 +220,7 @@ func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id stri
 		return kccommon.Product{}, nil
 	}
 	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
-	res, err := eng.Search(ctx, &types.SearchRequest{
+	res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
 		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb}, Limit: 1,
 		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 		Filter:       filter,
@@ -249,7 +249,7 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := eng.Search(ctx, &types.SearchRequest{
+		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
 			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
@@ -299,7 +299,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := eng.Search(ctx, &types.SearchRequest{
+		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
 			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
@@ -542,7 +542,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 	if variant == kccommon.VariantWiki {
 		req.Filter["type_kwd"] = compileKwdWikiPage
 	}
-	res, err := eng.Search(ctx, req)
+	res, err := engine.SearchWithWikiContent(ctx, eng, req)
 	if err != nil {
 		return kccommon.Product{}, 0, err
 	}

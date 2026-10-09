@@ -845,7 +845,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		// Select pages, not sections, by their role within the Wiki compilation.
 		Filter: map[string]interface{}{
 			"type_kwd": "wiki_page",
@@ -859,7 +859,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 			ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 		}},
 	}
-	res, err := s.docEngine.Search(ctx, req)
+	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
 	if err != nil || res == nil {
 		return nil, err
 	}
@@ -878,13 +878,13 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
 			"type_kwd": "wiki_page",
 			"slug_kwd": slug,
 		},
 	}
-	res, err := s.docEngine.Search(ctx, req)
+	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
 	if err != nil || res == nil || len(res.Chunks) == 0 {
 		return nil, err
 	}
@@ -900,13 +900,13 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "md_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
 			"type_kwd":         "wiki_page",
 			"source_chunk_ids": chunkIDs,
 		},
 	}
-	res, err := s.docEngine.Search(ctx, req)
+	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
 	if err != nil || res == nil {
 		return nil, err
 	}

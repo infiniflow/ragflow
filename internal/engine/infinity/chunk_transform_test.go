@@ -214,7 +214,6 @@ func compiledRowForTransform() map[string]interface{} {
 		"compile_kwd":         "tree",
 		"raptor_kwd":          "root",
 		"raptor_layer_int":    2,
-		"md_with_weight":      "# page",
 		"extra":               map[string]interface{}{"raptor_method": "gmm"},
 		"q_3_vec":             []float64{0.1, 0.2, 0.3},
 	}

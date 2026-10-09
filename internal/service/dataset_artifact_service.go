@@ -78,7 +78,7 @@ func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, te
 		merged[k] = v
 	}
 	merged["kb_id"] = []string{datasetID}
-	res, err := docEngine.Search(ctx, &types.SearchRequest{
+	res, err := engine.SearchWithWikiContent(ctx, docEngine, &types.SearchRequest{
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Offset:       offset,
@@ -311,7 +311,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "md_with_weight",
+		[]string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd",
 			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
 			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)

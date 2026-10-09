@@ -63,7 +63,7 @@ func TestWikiReadersFilterDisabledDocuments(t *testing.T) {
 	if len(pages) != 1 || pages[0].Content != "# Page\n\nBody" {
 		t.Fatalf("stored Wiki body was not restored: %+v", pages)
 	}
-	for _, field := range []string{"content_with_weight", "md_with_weight"} {
+	for _, field := range []string{"id", "md_with_weight"} {
 		if !slices.Contains(eng.lastSearchReq.SelectFields, field) {
 			t.Fatalf("Wiki reader query is missing %s", field)
 		}

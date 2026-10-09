@@ -703,11 +703,11 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 	if !strings.HasPrefix(slugKwd, pageType+"/") {
 		slugKwd = pageType + "/" + slugKwd
 	}
-	result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
+	result, err := engine.SearchWithWikiContent(ctx, docEngine, &enginetypes.SearchRequest{
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"md_with_weight", "content_with_weight"},
+		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"type_kwd":      []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
@@ -715,7 +715,11 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 			"available_int": 1,
 		},
 	})
-	if err != nil || result == nil || len(result.Chunks) == 0 {
+	if err != nil {
+		common.Warn("failed to read current Wiki page content", zap.Error(err))
+		return ""
+	}
+	if result == nil || len(result.Chunks) == 0 {
 		return ""
 	}
 	return enginetypes.WikiPageContent(result.Chunks[0])

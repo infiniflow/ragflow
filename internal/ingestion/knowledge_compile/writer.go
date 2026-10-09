@@ -327,13 +327,13 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	const pageBatchSize = 2000
 	for offset := 0; ; offset += pageBatchSize {
-		res, err := eng.Search(ctx, &types.SearchRequest{
+		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
 			IndexNames: []string{baseName},
 			KbIDs:      []string{kb},
 			Offset:     offset,
 			Limit:      pageBatchSize,
 			SelectFields: []string{
-				"slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "md_with_weight", "content_with_weight",
+				"id", "slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "content_with_weight",
 			},
 			Filter: map[string]interface{}{
 				"type_kwd":      compileKwdWikiPage,
