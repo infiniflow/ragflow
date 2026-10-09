@@ -170,7 +170,7 @@ func (dao *MemoryDAO) GetByTenantID(ctx context.Context, db *gorm.DB, tenantID s
 //   - error: Database operation error
 func (dao *MemoryDAO) GetByNameAndTenant(ctx context.Context, db *gorm.DB, name string, tenantID string) ([]*entity.Memory, error) {
 	var memories []*entity.Memory
-	err := db.WithContext(ctx).Where("name = ? AND tenant_id = ?", name, tenantID).Find(&memories).Error
+	err := db.WithContext(ctx).Where("LOWER(name) = LOWER(?) AND tenant_id = ?", name, tenantID).Find(&memories).Error
 	return memories, err
 }
 

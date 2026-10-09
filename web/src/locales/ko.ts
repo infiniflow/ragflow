@@ -607,6 +607,7 @@ export default {
       reRankModelWaring: 'Re-rank 모델은 처리 시간이 매우 오래 걸립니다.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Seed는 의사 난수 알고리즘의 시작점으로, 여러 실행에서 동일한 출력을 재현할 수 있도록 합니다.',
       datasetDescription: '데이터셋을 설명하세요',

@@ -624,7 +624,7 @@ jobs:
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -637,7 +637,7 @@ jobs:
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
@@ -1151,7 +1151,7 @@ jobs:
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
                  echo "CLICKHOUSE_HTTP_PORT=${CLICKHOUSE_HTTP_PORT}"
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "RAGFLOW_IMAGE=${RAGFLOW_IMAGE}"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
@@ -1164,7 +1164,7 @@ jobs:
           # RAGFLOW_DEV_MODE rides along for the same reason.
                {
                  echo ""
-                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=${DOC_ENGINE},cpu,ragflow-go,tei-cpu,deepdoc,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  # The image stamps its git-describe output into /ragflow/VERSION,
                  # so this checkout reports v0.27.x while --migrate records the
@@ -1633,9 +1633,9 @@ jobs:
                  # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
                  # because this job runs the Go tests on the runner host against
                  # the dependency services directly — no server container needed.
-                 # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                 # `tei-cpu` the embedding
                  # service; `metadata-mysql` the mysql metadata store.
-                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=infinity,tei-cpu,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                } >> .env
@@ -1646,7 +1646,7 @@ jobs:
           # either yml-interpolation-only or already correct in .env.
                {
                  echo ""
-                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=infinity,tei-cpu,metadata-mysql"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                } >> .env
                RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}

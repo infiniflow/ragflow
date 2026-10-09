@@ -269,7 +269,7 @@ require (
 	modernc.org/sqlite v1.23.1 // indirect
 )
 
-replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9
+replace github.com/infiniflow/infinity-go-sdk => github.com/infiniflow/infinity/go v0.0.0-20261009034419-e1bd341a2083
 
 // gomsg is mirrored to github.com/infiniflow/gomsg (org-owned fork of
 // github.com/AkmalOt/gomsg) so the build no longer depends on a personal
