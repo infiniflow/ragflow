@@ -1022,7 +1022,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("document does not belong to this dataset")
 	}
 
-	for i, cid := range chunkIDs {
+	for _, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
 		if err = s.docEngine.UpdateChunks(ctx, map[string]interface{}{
@@ -1034,13 +1034,14 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		}, indexName, datasetID); err != nil {
 			return err
 		}
-		if i == 0 {
-			if err := s.revokeTableProfile(ctx, documentID); err != nil {
-				return err
-			}
-		}
 	}
+	// Revoking is a consequence of the switch, not a step of it: every id above
+	// is already flipped, so the derived state goes last and a failed revoke
+	// cannot leave half the ids unswitched.
 	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
+	if err := s.revokeTableProfile(ctx, documentID); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -1210,10 +1211,12 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// request. The request still answers with the removal error (the Python
 	// reference does the same); the stored object is an orphan by then.
 	if req.Content != nil || req.Available != nil {
+		// The index edit committed above. The Wiki refresh is bookkeeping about
+		// that edit, so it lands before the derived-state revoke, which may fail.
+		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
 		if err := s.revokeTableProfile(ctx, req.DocumentID); err != nil {
 			return err
 		}
-		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
 	}
 	if removeImageAfterUpdate {
 		if err = s.removeChunkImage(ctx, req.DatasetID, req.ChunkID); err != nil {
@@ -1276,13 +1279,19 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	if deletedCount > 0 {
-		if err := s.revokeTableProfile(ctx, req.DocID); err != nil {
-			return deletedCount, err
-		}
+		// The chunks are already gone from the index, so the counters, the Wiki
+		// refresh and the derived-state revoke are all consequences of a delete
+		// that cannot be undone. Neither may skip the other: the first failure is
+		// reported, and the caller still sees the count.
+		var firstErr error
 		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
-			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
+			firstErr = fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
+		if err := s.revokeTableProfile(ctx, req.DocID); err != nil && firstErr == nil {
+			firstErr = err
+		}
+		return deletedCount, firstErr
 	}
 
 	return deletedCount, nil

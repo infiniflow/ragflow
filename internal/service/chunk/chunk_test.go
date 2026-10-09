@@ -2702,3 +2702,92 @@ func TestChunkChangesRevokeTableProfile(t *testing.T) {
 		})
 	}
 }
+
+// The chunks are already gone from the index when the derived-state revoke runs,
+// so the counters, the Wiki refresh and the revoke are all consequences of an
+// irreversible delete. A failed revoke must not skip the first two, and a failed
+// counter update must not skip the revoke.
+func TestChunkMutationBookkeepingSurvivesRevokeFailure(t *testing.T) {
+	revokeFailure := errors.New("metadata lock unavailable")
+
+	t.Run("delete", func(t *testing.T) {
+		db := setupChunkTestDB(t)
+		pushChunkTestDB(t, db)
+		insertChunkTestUserTenant(t, "user-1", "tenant-1")
+		insertChunkTestKB(t, "kb-1", "tenant-1")
+		insertChunkTestDoc(t, "doc-a", "kb-1")
+		svc := &ChunkService{
+			docEngine:     &parseTestDocEngine{deleteChunksCount: 1},
+			kbDAO:         dao.NewKnowledgebaseDAO(),
+			userTenantDAO: dao.NewUserTenantDAO(),
+		}
+		decremented, wiki := 0, 0
+		svc.decrementChunkStatsFunc = func(string, string, int64, int64, float64) error {
+			decremented++
+			return nil
+		}
+		svc.markWikiDirtyFunc = func(string, string, string, []string) { wiki++ }
+		svc.revokeTableProfileFunc = func(context.Context, string) error { return revokeFailure }
+
+		count, err := svc.RemoveChunks(t.Context(), &service.RemoveChunksRequest{
+			DocID: "doc-a", ChunkIDs: []string{"chunk-1"},
+		}, "user-1")
+		if count != 1 {
+			t.Errorf("deleted = %d, want 1", count)
+		}
+		if !errors.Is(err, revokeFailure) {
+			t.Errorf("error = %v, want the revoke failure reported", err)
+		}
+		if decremented != 1 || wiki != 1 {
+			t.Errorf("counters decremented %d time(s), wiki marked %d time(s), want 1 each", decremented, wiki)
+		}
+	})
+
+	t.Run("switch", func(t *testing.T) {
+		db := setupChunkTestDB(t)
+		pushChunkTestDB(t, db)
+		insertChunkTestUserTenant(t, "user-1", "tenant-1")
+		insertChunkTestKB(t, "kb-1", "tenant-1")
+		insertChunkTestDoc(t, "doc-a", "kb-1")
+		engine := &updateChunkTestEngine{existingChunk: map[string]interface{}{"doc_id": "doc-a"}}
+		svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO(), userTenantDAO: dao.NewUserTenantDAO()}
+		wiki := 0
+		svc.markWikiDirtyFunc = func(string, string, string, []string) { wiki++ }
+		svc.revokeTableProfileFunc = func(context.Context, string) error { return revokeFailure }
+
+		err := svc.SwitchChunks(t.Context(), "user-1", "kb-1", "doc-a", 0, []string{"chunk-1", "chunk-2"})
+		if !errors.Is(err, revokeFailure) {
+			t.Errorf("error = %v, want the revoke failure reported", err)
+		}
+		if len(engine.updateCalls) != 2 {
+			t.Errorf("switched %d chunk(s), want every id in the request", len(engine.updateCalls))
+		}
+		if wiki != 1 {
+			t.Errorf("wiki marked %d time(s), want 1", wiki)
+		}
+	})
+
+	t.Run("update", func(t *testing.T) {
+		db := setupChunkTestDB(t)
+		pushChunkTestDB(t, db)
+		insertChunkTestUserTenant(t, "user-1", "tenant-1")
+		insertChunkTestKB(t, "kb-1", "tenant-1")
+		insertChunkTestDoc(t, "doc-a", "kb-1")
+		engine := &updateChunkTestEngine{existingChunk: map[string]interface{}{"doc_id": "doc-a", "content_with_weight": "old"}}
+		svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO(), userTenantDAO: dao.NewUserTenantDAO()}
+		wiki := 0
+		svc.markWikiDirtyFunc = func(string, string, string, []string) { wiki++ }
+		svc.revokeTableProfileFunc = func(context.Context, string) error { return revokeFailure }
+
+		content := "new"
+		err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+			DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1", Content: &content,
+		}, "user-1")
+		if !errors.Is(err, revokeFailure) {
+			t.Errorf("error = %v, want the revoke failure reported", err)
+		}
+		if wiki != 1 {
+			t.Errorf("wiki marked %d time(s), want 1", wiki)
+		}
+	})
+}

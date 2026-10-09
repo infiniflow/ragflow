@@ -210,3 +210,36 @@ func TestProbeXLSXMultipleSheetsAndHeaderOnly(t *testing.T) {
 		t.Error("same header across sheets changed JSON identity")
 	}
 }
+
+// A data row wider than its header carries cells no column role can route, so a
+// manual-mode parse refuses the sheet. The probe has to say so: it is the only
+// point at which the client can learn it before committing roles to the file.
+func TestProbeWarnsAboutRowsWiderThanTheHeader(t *testing.T) {
+	result, err := testDocumentService(t).ProbeTableColumns(t.Context(), "ragged.csv", []byte("ID,名称\n1,2,3\n"))
+	if err != nil {
+		t.Fatalf("a ragged file is still probeable: %v", err)
+	}
+	if len(result.Sheets) != 1 || len(result.Sheets[0].Columns) != 2 {
+		t.Fatalf("sheets = %#v", result.Sheets)
+	}
+	found := false
+	for _, warning := range result.Warnings {
+		if strings.Contains(warning, "more cells than") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("warnings = %v, want the ragged row reported", result.Warnings)
+	}
+}
+
+// A file whose rows match its header must not warn.
+func TestProbeDoesNotWarnAboutWellFormedRows(t *testing.T) {
+	result, err := testDocumentService(t).ProbeTableColumns(t.Context(), "clean.csv", []byte("ID,名称\n1,2\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Warnings) != 0 {
+		t.Errorf("warnings = %v, want none", result.Warnings)
+	}
+}

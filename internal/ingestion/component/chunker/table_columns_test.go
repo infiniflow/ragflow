@@ -282,8 +282,9 @@ func TestTableChunkerManualRejectsMisalignedPositions(t *testing.T) {
 	}
 }
 
-// TestTableChunkerManualRejectsRowWiderThanHeader: a trailing cell with no
-// column identity must not be dropped silently.
+// TestTableChunkerManualRejectsRowWiderThanHeader: under manual the roles name
+// columns, so a trailing cell with no column identity has no role to route by
+// and must be reported rather than dropped silently.
 func TestTableChunkerManualRejectsRowWiderThanHeader(t *testing.T) {
 	item := map[string]any{
 		"text":         "<table><tr><th>ID</th></tr><tr><td>a</td><td>extra</td></tr></table>",
@@ -291,9 +292,36 @@ func TestTableChunkerManualRejectsRowWiderThanHeader(t *testing.T) {
 		"sheet_index":  1,
 		"positions":    [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 2}},
 	}
-	msg := tableColumnError(t, nil, "csv", item)
+	msg := tableColumnError(t, map[string]any{
+		"column_mode":  "manual",
+		"column_roles": map[string]any{"ID": "both"},
+	}, "csv", item)
 	if !strings.Contains(msg, "header has 1 columns") {
 		t.Errorf("error %q does not report the width mismatch", msg)
+	}
+}
+
+// TestTableChunkerAutoKeepsCellsPastTheHeader: auto indexes every column, so a
+// row with more cells than its header keeps their text the way this path did
+// before column modes existed. Refusing the document over a ragged row would
+// cost every other row with it, and chunk_data must not grow a field the
+// header never named.
+func TestTableChunkerAutoKeepsCellsPastTheHeader(t *testing.T) {
+	segment := spreadsheetSegmentItem("orders", []string{"ID"}, [][]string{{"A-1", "extra"}}, 1, 2)
+	chunks := tableColumnChunks(t, nil, "xlsx", segment)
+	if len(chunks) != 1 {
+		t.Fatalf("got %d chunks, want 1", len(chunks))
+	}
+	ck := chunks[0]
+	if got := ck["text"]; got != "- ID: A-1\n- extra" {
+		t.Errorf("text = %v, want the extra cell kept in the body", got)
+	}
+	data := chunkDataRow(t, ck)
+	if _, ok := data[entity.TableDataKey("ID")]; !ok {
+		t.Errorf("chunk_data lost the header's column: %v", data)
+	}
+	if len(data) != 1 {
+		t.Errorf("chunk_data = %v, want only the columns the header named", data)
 	}
 }
 

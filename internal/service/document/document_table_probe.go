@@ -153,11 +153,11 @@ func (s *DocumentService) ProbeTableColumns(ctx context.Context, filename string
 		return nil, tableProbeFailure(TableProbeParseFailed, "%q could not be parsed: %v", filename, err)
 	}
 
-	sheets, err := collectProbeSheets(items)
+	sheets, warnings, err := collectProbeSheets(items)
 	if err != nil {
 		return nil, err
 	}
-	return &TableProbeResult{Source: "file", Sheets: sheets}, nil
+	return &TableProbeResult{Source: "file", Sheets: sheets, Warnings: warnings}, nil
 }
 
 // ProbeDocumentTableColumns reads the columns of a stored document's own file.
@@ -228,13 +228,18 @@ func parseSpreadsheetItems(ctx context.Context, extension, filename string, data
 // collectProbeSheets groups the parsed items by sheet and derives each sheet's
 // columns from its header row. Segments of one sheet repeat the header, so the
 // widest header seen for a sheet wins and every segment contributes its rows.
-func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
+func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, error) {
 	type sheetState struct {
 		name    string
 		columns []entity.TableColumn
 		rows    int
 	}
 	bySheet := map[int]*sheetState{}
+	// Data rows carrying more cells than their header, per sheet. Manual mode
+	// routes cells by column, and a cell past the header has no column to route
+	// by, so the chunker refuses such a sheet: the client has to hear it here,
+	// before it commits roles to a file that cannot honour them.
+	ragged := map[int]int{}
 	for _, item := range items {
 		if kind, _ := item[parser.DocTypeKey].(string); kind != parser.DocTypeTable {
 			continue
@@ -252,7 +257,7 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 		state, seen := bySheet[sheetIndex]
 		if !seen {
 			if len(bySheet) >= tableProbeMaxSheets {
-				return nil, tableProbeFailure(TableProbeLimit, "the file has more than %d sheets", tableProbeMaxSheets)
+				return nil, nil, tableProbeFailure(TableProbeLimit, "the file has more than %d sheets", tableProbeMaxSheets)
 			}
 			state = &sheetState{columns: columns}
 			bySheet[sheetIndex] = state
@@ -263,10 +268,13 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 			state.name = name
 		}
 		state.rows += dataRowsIn(markup)
+		if wide := dataRowsWiderThan(rows[0], rows[1:]); wide > 0 {
+			ragged[sheetIndex] += wide
+		}
 	}
 
 	if len(bySheet) == 0 {
-		return nil, tableProbeFailure(TableProbeHeaderNotFound, "no column header was found in the file")
+		return nil, nil, tableProbeFailure(TableProbeHeaderNotFound, "no column header was found in the file")
 	}
 
 	indexes := make([]int, 0, len(bySheet))
@@ -276,6 +284,7 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 	sort.Ints(indexes)
 
 	sheets := make([]TableProbeSheet, 0, len(indexes))
+	warnings := make([]string, 0, len(indexes))
 	for _, index := range indexes {
 		state := bySheet[index]
 		sheet := TableProbeSheet{
@@ -293,8 +302,35 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 			})
 		}
 		sheets = append(sheets, sheet)
+		if count := ragged[index]; count > 0 {
+			warnings = append(warnings, fmt.Sprintf(
+				"sheet %s has %d data row(s) with more cells than its %d-column header; column roles cannot route those cells, and a manual-mode parse refuses the sheet",
+				probeSheetLabel(index, state.name), count, len(state.columns)))
+		}
 	}
-	return sheets, nil
+	return sheets, warnings, nil
+}
+
+// dataRowsWiderThan counts the data rows carrying more cells than the header of
+// their own sheet segment.
+func dataRowsWiderThan(header []string, dataRows [][]string) int {
+	width := len(header)
+	count := 0
+	for _, row := range dataRows {
+		if len(row) > width {
+			count++
+		}
+	}
+	return count
+}
+
+// probeSheetLabel names a sheet for a warning, falling back to its index when
+// the wire carries no sheet name.
+func probeSheetLabel(index int, name string) string {
+	if name == "" {
+		return fmt.Sprintf("%d", index)
+	}
+	return fmt.Sprintf("%d (%s)", index, name)
 }
 
 // staleRoleWarnings names configured roles this file has no column for. A
