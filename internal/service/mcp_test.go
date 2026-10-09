@@ -99,17 +99,17 @@ func TestServerInputValidation(t *testing.T) {
 	ctx := t.Context()
 
 	// Empty URL is rejected before any connection attempt.
-	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{ServerType: mcpServerTypeSSE}); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for empty url, got %v", err)
 	}
 
 	// nil body is treated as empty URL.
-	if _, err := s.TestServer(ctx, "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", nil); !errors.Is(err, ErrMCPInvalidURL) {
 		t.Errorf("expected ErrMCPInvalidURL for nil body, got %v", err)
 	}
 
 	// Invalid server type is rejected before connecting.
-	if _, err := s.TestServer(ctx, "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
+	if _, err := s.TestServer(ctx, "tenant-1", "id-1", &TestServerRequest{URL: "http://example.com/sse", ServerType: "stdio"}); !errors.Is(err, ErrMCPInvalidType) {
 		t.Errorf("expected ErrMCPInvalidType for bad type, got %v", err)
 	}
 }
@@ -171,6 +171,81 @@ func TestJSONMapStringValuesRendersScalarVariables(t *testing.T) {
 	}
 	if headerValues := jsonMapHeaderValues(values); len(headerValues) != 1 || headerValues["text"] != "value" {
 		t.Errorf("jsonMapHeaderValues = %#v, want string headers only", headerValues)
+	}
+}
+
+func TestMCPVariablesForResponseRedactsAuthorizationToken(t *testing.T) {
+	stored := entity.JSONMap{"authorization_token": "ragflow-secret", "region": "us"}
+	got := MCPVariablesForResponse(stored)
+	if got["authorization_token"] != maskedMCPSecret || got["region"] != "us" {
+		t.Fatalf("response variables = %#v", got)
+	}
+	if stored["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("stored variables were mutated: %#v", stored)
+	}
+}
+
+func TestMCPManagedTokenLifecycle(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatal(err)
+	}
+	pushServiceDB(t, db)
+	if err := db.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	server, captured := newMCPDiscoveryTestServer(t)
+	defer server.Close()
+	withMCPDiscoveryOverrides(t, server)
+	s := NewMCPService()
+	created, code, err := s.CreateMCPServer(t.Context(), "tenant-1", CreateMCPServerRequest{
+		Name: "managed-auth", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
+		Headers:   json.RawMessage(`{"Authorization":"Bearer ${authorization_token}"}`),
+		Variables: json.RawMessage(`{"authorization_token":"ragflow-secret"}`),
+	})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("create: code=%d err=%v", code, err)
+	}
+	if created.URL != server.URL || created.Variables["authorization_token"] != maskedMCPSecret {
+		t.Fatalf("create response exposed authentication: %#v", created)
+	}
+	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", nil, "", 0, 0, "create_time", false)
+	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
+		t.Fatalf("list: result=%#v err=%v", listed, err)
+	}
+	testReq := &TestServerRequest{URL: server.URL, ServerType: mcpServerTypeStreamableHTTP, Headers: map[string]any{"Authorization": "Bearer ${authorization_token}"}, Variables: map[string]any{"authorization_token": maskedMCPSecret}}
+	if _, err := s.TestServer(t.Context(), "other-tenant", created.ID, testReq); err == nil {
+		t.Fatal("masked preview resolved another tenant's credential")
+	}
+	if _, err := s.TestServer(t.Context(), "tenant-1", created.ID, testReq); err != nil {
+		t.Fatalf("masked preview: %v", err)
+	}
+	if testReq.Variables["authorization_token"] != maskedMCPSecret {
+		t.Fatal("preview mutated the client payload")
+	}
+	updated, code, err := s.UpdateMCPServer(t.Context(), "tenant-1", created.ID, UpdateMCPServerRequest{
+		"url":       json.RawMessage(fmt.Sprintf("%q", server.URL)),
+		"variables": json.RawMessage(`{"authorization_token":"********"}`),
+	})
+	if err != nil || code != common.CodeSuccess || updated.URL != server.URL || updated.Variables["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("masked update: result=%#v code=%d err=%v", updated, code, err)
+	}
+	stored, _, err := s.GetMCPServer(t.Context(), "tenant-1", created.ID)
+	if err != nil || stored.URL != server.URL || stored.Variables["authorization_token"] != "ragflow-secret" {
+		t.Fatalf("reload: result=%#v err=%v", stored, err)
+	}
+	for _, headers := range captured() {
+		if headers.Get("Authorization") != "Bearer ragflow-secret" {
+			t.Fatalf("authentication not preserved: %#v", headers)
+		}
+	}
+	exported, _, err := s.ExportMCPServer(t.Context(), "tenant-1", created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	payload, err := json.Marshal(exported)
+	if err != nil || !strings.Contains(string(payload), "ragflow-secret") {
+		t.Fatalf("explicit credential export: payload=%s err=%v", payload, err)
 	}
 }
 

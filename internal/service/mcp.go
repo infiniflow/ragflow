@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,7 @@ const (
 	mcpServerNameLimit          = 255
 	defaultMCPFetchTimeoutSec   = 10
 	mcpServerDateFormat         = "2006-01-02T15:04:05"
+	maskedMCPSecret             = "********"
 )
 
 // MCPService handles MCP server operations.
@@ -163,7 +165,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		URL:         server.URL,
 		ServerType:  server.ServerType,
 		Description: server.Description,
-		Variables:   server.Variables,
+		Variables:   MCPVariablesForResponse(server.Variables),
 		Headers:     server.Headers,
 	}, common.CodeSuccess, nil
 }
@@ -227,6 +229,18 @@ func jsonMapHeaderValues(values entity.JSONMap) map[string]string {
 		}
 	}
 	return out
+}
+
+// MCPVariablesForResponse masks managed authentication while preserving tool metadata.
+func MCPVariablesForResponse(values entity.JSONMap) entity.JSONMap {
+	result := entity.JSONMap{}
+	for key, value := range values {
+		result[key] = value
+	}
+	if token, ok := result["authorization_token"].(string); ok && token != "" {
+		result["authorization_token"] = maskedMCPSecret
+	}
+	return result
 }
 
 // jsonValueString renders the scalar JSON values that can occur in an MCP
@@ -405,6 +419,9 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 	if variables == nil {
 		variables = entity.JSONMap{}
 	}
+	if value, ok := variables["authorization_token"].(string); ok && value == maskedMCPSecret {
+		variables["authorization_token"] = server.Variables["authorization_token"]
+	}
 	existingTools := server.Variables["tools"]
 	delete(variables, "tools")
 	needsRefresh := serverURLProvided || serverTypeProvided || headerOrVariablesChanged(req)
@@ -503,7 +520,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []
 			ServerType:  server.ServerType,
 			URL:         server.URL,
 			Description: server.Description,
-			Variables:   variables,
+			Variables:   MCPVariablesForResponse(variables),
 			CreateDate:  formatMCPServerDate(server.CreateDate),
 			UpdateDate:  formatMCPServerDate(server.UpdateDate),
 		})
@@ -741,10 +758,8 @@ func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID st
 	}
 }
 
-// TestServerRequest is the body of POST /mcp/servers/:mcp_id/test. The mcp_id
-// from the URL path is threaded through to the connect call for log
-// correlation; the connection itself is opened from the request body so the
-// user can preview unsaved edits — matching Python's test_mcp.
+// TestServerRequest previews unsaved connection settings. A masked token is
+// resolved from the tenant-owned server identified by the request path.
 type TestServerRequest struct {
 	URL        string                 `json:"url"`
 	ServerType string                 `json:"server_type"`
@@ -754,12 +769,22 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, tenantID, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
+	}
+	if req.Variables["authorization_token"] == maskedMCPSecret {
+		server, _, err := s.GetMCPServer(ctx, tenantID, mcpID)
+		if err != nil {
+			return nil, err
+		}
+		preview := *req
+		preview.Variables = maps.Clone(req.Variables)
+		req = &preview
+		req.Variables["authorization_token"] = server.Variables["authorization_token"]
 	}
 
 	// Run the SSRF guard up front so URL-shape failures (disallowed

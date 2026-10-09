@@ -340,7 +340,7 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 // @Param request body service.TestServerRequest true "test parameters"
 // @Router /api/v1/mcp/servers/{mcp_id}/test [post]
 func (h *MCPHandler) TestMCPServer(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -371,7 +371,7 @@ func (h *MCPHandler) TestMCPServer(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	tools, err := h.mcpService.TestServer(ctx, mcpID, &req)
+	tools, err := h.mcpService.TestServer(ctx, user.ID, mcpID, &req)
 	if mcpErrorResponse(c, err) {
 		return
 	}
@@ -390,7 +390,7 @@ func newMCPServerResponse(server *entity.MCPServer) *mcpServerResponse {
 		URL:         server.URL,
 		ServerType:  server.ServerType,
 		Description: server.Description,
-		Variables:   map[string]interface{}(server.Variables),
+		Variables:   map[string]interface{}(service.MCPVariablesForResponse(server.Variables)),
 		Headers:     map[string]interface{}(server.Headers),
 		CreateTime:  server.CreateTime,
 		CreateDate:  formatMCPServerDate(server.CreateDate),
