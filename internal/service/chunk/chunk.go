@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"strings"
 	"sync"
@@ -83,7 +85,7 @@ type ChunkService struct {
 	ingestionTaskDAO *dao.IngestionTaskDAO
 	searchService    *service.SearchService
 
-	accessibleFunc           func(string, string) bool
+	checkDatasetAccessFunc   func(string, string) error
 	getKnowledgebaseByIDFunc func(string) (*entity.Knowledgebase, error)
 	getDocumentsByIDsFunc    func([]string) ([]*entity.Document, error)
 	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
@@ -606,8 +608,9 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	if len(req.DocumentIDs) == 0 {
@@ -682,11 +685,11 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) accessible(ctx context.Context, datasetID, userID string) bool {
-	if s.accessibleFunc != nil {
-		return s.accessibleFunc(datasetID, userID)
+func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID string) error {
+	if s.checkDatasetAccessFunc != nil {
+		return s.checkDatasetAccessFunc(datasetID, userID)
 	}
-	return s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID)
+	return service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun)
 }
 
 func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {
@@ -704,8 +707,9 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 }
 
 func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.accessible(ctx, datasetID, userID) {
-		return nil, common.CodeOperatingError, fmt.Errorf("you don't own the dataset %s", datasetID)
+	if err := s.checkDatasetAccess(ctx, datasetID, userID); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
@@ -1346,8 +1350,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if !s.accessible(ctx, req.DatasetID, userID) {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+	if err := s.checkDatasetAccess(ctx, req.DatasetID, userID); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
 
 	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
@@ -1518,6 +1523,7 @@ func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, d
 type addChunkError struct {
 	code    common.ErrorCode
 	message string
+	cause   error
 }
 
 type updateChunkError struct {
@@ -1535,6 +1541,10 @@ func (e updateChunkError) Code() common.ErrorCode {
 
 func (e addChunkError) Error() string {
 	return e.message
+}
+
+func (e addChunkError) Unwrap() error {
+	return e.cause
 }
 
 func (e addChunkError) Code() common.ErrorCode {

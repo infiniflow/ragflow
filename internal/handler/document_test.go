@@ -413,6 +413,15 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	}
 	if accessible {
 		if err := db.Create(&entity.UserTenant{
+			ID:       "ut-owner",
+			UserID:   "owner-user",
+			TenantID: "tenant-owner",
+			Role:     "owner",
+			Status:   sptr(string(entity.StatusValid)),
+		}).Error; err != nil {
+			t.Fatalf("insert tenant owner: %v", err)
+		}
+		if err := db.Create(&entity.UserTenant{
 			ID:       "ut-user-1",
 			UserID:   "user-1",
 			TenantID: "tenant-owner",
@@ -1231,8 +1240,7 @@ func TestStopParseDocumentsHandler_BadJSON(t *testing.T) {
 	}
 }
 
-// setupHandlerAccessDB sets up SQLite in-memory DB for handler tests that need
-// datasetService.Accessible to work.
+// setupHandlerAccessDB sets up SQLite in-memory DB for handler dataset access tests.
 func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

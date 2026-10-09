@@ -13,6 +13,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -28,14 +30,13 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	tenantID = strings.TrimSpace(tenantID)
+	userID = strings.TrimSpace(userID)
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			// Match Python: nonexistent and not-owned datasets share the
-			// "lacks permission" error so existence is not revealed (IDOR).
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -144,7 +145,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
 				zap.Strings("keys", dropped),
 				zap.String("dataset_id", datasetID),
-				zap.String("tenant_id", tenantID),
+				zap.String("user_id", userID),
 			)
 		}
 		if err != nil {
@@ -179,25 +180,37 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, datasetID, tenantID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
 		if authErr != nil {
 			txCode = code
 			return authErr
-		}
-
-		if req.Permission != nil && lockedKB.TenantID != tenantID {
-			txCode = common.CodeDataError
-			return errors.New("only dataset owner can change permission")
 		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
 		for key, value := range simpleUpdates {
 			updates[key] = value
 		}
+		if permissionValue, ok := updates["permission"].(string); ok {
+			if permissionValue != lockedKB.Permission {
+				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
+					ctx,
+					permission.Subject{UserID: userID},
+					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+					permission.OperationShare,
+				)
+				if accessErr != nil {
+					txCode, accessErr = permissionresponse.Normalize(accessErr)
+					return accessErr
+				}
+			}
+			if permissionValue == lockedKB.Permission {
+				delete(updates, "permission")
+			}
+		}
 
 		if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(lockedKB.Name) {
 			var existing entity.Knowledgebase
-			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, tenantID, string(entity.StatusValid)).First(&existing).Error
+			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, lockedKB.TenantID, string(entity.StatusValid)).First(&existing).Error
 			if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
 				txCode = common.CodeServerError
 				return errors.New("database operation failed")
@@ -222,13 +235,14 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			} else {
 				tenantEmbdID = ""
 			}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, tenantID)
+			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
 					tenantEmbdID = target.ID
 				}
@@ -417,34 +431,28 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
 		First(&kb).Error
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
-	if kb.TenantID == userID {
-		return &kb, common.CodeSuccess, nil
-	}
-	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-	}
-
-	var relation entity.UserTenant
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
-		First(&relation).Error
+	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+		permission.OperationUpdate,
+	)
 	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
 	}
 
 	return &kb, common.CodeSuccess, nil

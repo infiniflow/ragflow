@@ -10,27 +10,14 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// Accessible reports whether docID belongs to a knowledge base
-// reachable by userID. Used to gate actions on a document the caller
-// has access to. Returns false on any lookup failure or empty inputs
-// so callers can treat a denial as a 404-equivalent and avoid leaking
-// whether the document exists at all.
-func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) bool {
-	if docID == "" || userID == "" {
-		return false
-	}
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil {
-		return false
-	}
-	return s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID)
-}
 
 func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *entity.Document) (string, string, error) {
 	if doc == nil {
@@ -227,8 +214,9 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
-	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDelete); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return 0, permissionErr
 	}
 
 	// 2. Resolve document IDs

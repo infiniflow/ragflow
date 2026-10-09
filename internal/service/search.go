@@ -24,6 +24,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/utility"
 )
 
@@ -384,10 +386,9 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	}
 
 	for _, datasetID := range datasetIDs {
-		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
-		if !accessible {
-			// Mirror Python's search completion endpoint message.
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
 		}
 	}
 
