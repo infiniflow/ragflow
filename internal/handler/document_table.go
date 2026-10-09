@@ -44,7 +44,16 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, tableProbeRequestBodyLimit)
 	form, err := c.MultipartForm()
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableProbeLimit),
+		// Only the body that outgrew the reader is a limit; every other way a
+		// multipart form fails to parse is a malformed request, and a client
+		// branching on data.error must not be told to expect a smaller file.
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			common.ResponseWithCodeData(c, common.CodeResourceExhausted, tableProbeErrorData(document.TableProbeLimit),
+				fmt.Sprintf("the probe request exceeds the %d-byte limit", tableProbeRequestBodyLimit))
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 			"the probe request could not be read as a multipart form; upload exactly one file")
 		return
 	}

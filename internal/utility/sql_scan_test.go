@@ -208,6 +208,7 @@ func TestSplitSelectRefusesTwoQueries(t *testing.T) {
 		"join":              "select a from t join u on t.id = u.id",
 		"subquery":          "select a from t where b in (select c from u)",
 		"nested select":     "select (select b from u) from t",
+		"doubly nested":     "select a from t where b in ((select c from u))",
 		"select into":       "select a into outfile '/tmp/x' from t",
 		"two from":          "select a from t from u",
 		"where before from": "select a where b = 1 from t",

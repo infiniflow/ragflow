@@ -2483,3 +2483,38 @@ func TestUpdateDatasetDocumentHandler_TableConfigRejectionCarriesBusinessCode(t 
 		t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
 	}
 }
+
+// A body that is not a multipart form is a malformed request, not a size limit:
+// clients branch on data.error, and "send a smaller file" is the wrong thing to
+// show for a request that never was a form.
+func TestProbeTableColumnsReportsAMalformedBodyAsAnArgumentError(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	h := &DocumentHandler{documentService: &fakeDocumentService{}, datasetService: dataset.NewDatasetService()}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/datasets/"+uploadTestDatasetID+"/documents/probe-table",
+		strings.NewReader(`{"not":"multipart"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+	c.Params = gin.Params{{Key: "dataset_id", Value: uploadTestDatasetID}}
+
+	h.ProbeTableColumns(c)
+
+	body := decodeResponseBody(t, w.Result())
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	if data, ok := body["data"].(map[string]interface{}); ok {
+		if got := data["error"]; got != nil {
+			t.Errorf("data.error = %v, want none: a malformed body is not a size limit", got)
+		}
+	}
+}

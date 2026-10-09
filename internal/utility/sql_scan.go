@@ -395,7 +395,11 @@ func SQLSplitSelect(tokens []SQLToken) (*SQLStatementShape, error) {
 		token := tokens[i]
 		if token.IsPunct("(") {
 			depth++
-			if next, ok := at(tokens, i+1); ok && depth == 1 && (next.IsWord("select") || next.IsWord("with")) {
+			// Any depth: "((select ...))" is as much a query inside a query as
+			// "(select ...)", and this parser's contract is to refuse both. The
+			// scanning stops at the nested keyword rather than reading the inner
+			// statement, because nothing below this layer may execute it.
+			if next, ok := at(tokens, i+1); ok && (next.IsWord("select") || next.IsWord("with")) {
 				return nil, fmt.Errorf("sqlscan: a query in parentheses at token %d is a subquery", i)
 			}
 			continue
