@@ -138,6 +138,8 @@ var toolComponentRegistrations = []struct {
 	{componentName: "PubMed", toolName: "pubmed"},
 	{componentName: "QueritContents", toolName: "querit_contents"},
 	{componentName: "QueritSearch", toolName: "querit_search"},
+	{componentName: "Search1APICrawl", toolName: "search1api_crawl"},
+	{componentName: "Search1APISearch", toolName: "search1api"},
 	{componentName: "SearXNG", toolName: "searxng"},
 	{componentName: "SofyaSearch", toolName: "sofya"},
 	{componentName: "TavilySearch", toolName: "tavily"},

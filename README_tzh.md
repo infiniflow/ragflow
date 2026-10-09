@@ -134,13 +134,6 @@
 - 透過多輪檢索與推理取得更完整的上下文，協助產生有依據的回答。
 - 支援 Low、Medium、High、Ultra 思考模式，可依問題複雜度控制檢索和推理深度。
 
-### ⚙️ **Go 原生服務架構**
-
-- API、Admin、Ingestor 和 Syncer 由 Go 服務統一提供。
-- DeepDoc 在 Go 行程內執行，負責版面分析、OCR 和表格辨識。
-- Go 服務透過 CGO 呼叫原生文件解析程式庫和 ONNX Runtime。
-- MCP 和 Sandbox Executor 是可按需啟用的選用能力。
-
 ### 🌱 **有理有據、最大程度降低幻覺（hallucination）**
 
 - 文字切片過程視覺化，支援手動調整。
