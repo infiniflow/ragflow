@@ -129,11 +129,6 @@ Consulte as [notas de versão completas](./docs/release_notes.md) para ver outra
 - O modelo analisa perguntas complexas e, quando necessário, divide a questão, pesquisa conhecimentos e verifica evidências em várias etapas.
 - Os modos Low, Medium, High e Ultra permitem ajustar a profundidade da busca e do raciocínio à complexidade da pergunta.
 
-### ⚙️ **Arquitetura de serviços nativa em Go**
-
-- Um serviço Go unificado fornece API, Admin, Ingestor e Syncer. O DeepDoc é executado no processo Go e realiza análise de layout, OCR e reconhecimento de tabelas.
-- Os serviços Go chamam bibliotecas nativas de análise de documentos e ONNX Runtime via CGO. MCP e Sandbox Executor podem ser habilitados conforme necessário.
-
 ### 🌱 **Citações fundamentadas com menos alucinações**
 
 - Visualização da fragmentação de texto para permitir intervenção humana.
