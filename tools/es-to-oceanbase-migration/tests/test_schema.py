@@ -663,3 +663,19 @@ class TestRAGFlowDataConverterEdgeCases:
         # extra should contain both existing and new fields
         extra = json.loads(row["extra"])
         assert "custom_field" in extra
+
+    def test_convert_flat_es_hit_metadata_and_existing_extra(self):
+        converter = RAGFlowDataConverter()
+
+        row = converter.convert_document(
+            {
+                "_id": "abc",
+                "_score": None,
+                "kb_id": "k",
+                "extra": {"keep": "me"},
+                "custom_field": 1,
+            }
+        )
+
+        assert row["id"] == "abc"
+        assert json.loads(row["extra"]) == {"keep": "me", "custom_field": 1}
