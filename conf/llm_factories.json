@@ -1906,8 +1906,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
-            "llm": [],
-            "rank": "984"
+            "llm": []
         },
         {
             "name": "VLLM",
