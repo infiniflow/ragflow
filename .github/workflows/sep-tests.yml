@@ -1633,9 +1633,9 @@ jobs:
                  # `cpu` (the heavy ragflow-cpu server container) and `deepdoc`
                  # because this job runs the Go tests on the runner host against
                  # the dependency services directly — no server container needed.
-                 # `ragflow-go` brings up kvrocks + nats; `tei-cpu` the embedding
+                 # `tei-cpu` the embedding
                  # service; `metadata-mysql` the mysql metadata store.
-                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=infinity,tei-cpu,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                  echo "DOC_ENGINE=${DOC_ENGINE}"
                } >> .env
@@ -1646,7 +1646,7 @@ jobs:
           # either yml-interpolation-only or already correct in .env.
                {
                  echo ""
-                 echo "COMPOSE_PROFILES=infinity,ragflow-go,tei-cpu,metadata-mysql,clickhouse"
+                 echo "COMPOSE_PROFILES=infinity,tei-cpu,metadata-mysql,clickhouse"
                  echo "TEI_MODEL=BAAI/bge-small-en-v1.5"
                } >> .env
                RAGFLOW_HTTP_PORT=${SVR_WEB_HTTP_PORT}
