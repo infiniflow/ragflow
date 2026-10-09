@@ -69,10 +69,10 @@ const PdfPreview = ({
   const resetHash = () => {};
 
   useEffect(() => {
-    let timer = null;
-    if (state?.length && state?.length > 0) {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    if (state?.length) {
       timer = setTimeout(() => {
-        ref?.current(state[0]);
+        ref.current(state[0]);
       }, 100);
     }
     return () => {
