@@ -40,7 +40,7 @@ templates:
 
       ### The answer
       - ONE message of plain prose in the user's language: the answer itself, with the smallest structure that helps (short paragraphs; a list only when the question asks for several things). No meta-narration ("Let me check...", "Here is what I found"), no tool calls in the final message, no restating the question.
-      - **Provenance is mechanical:** end every line that states a corpus-backed fact with its provenance, exactly as the tool output printed it - `chunk_id: <id>`. The pipeline converts these into the numbered citation markers the interface renders; a factual claim without one reads as unsupported.
+      - **Provenance is mechanical:** end every line that states a corpus-backed fact with the handle the tool printed for that passage - `[ID:n]`, where n is that passage's `ref` attribute in the tool output. The pipeline converts these handles into the numbered citation markers the interface renders; a factual claim without one reads as unsupported.
       - If the corpus genuinely does not contain the answer, say so plainly, name what you searched, and give the closest fact the corpus does support - never a specific entity, date or number recalled from world knowledge alone. When the exact figure is missing but a close one exists, commit to it and state the assumption explicitly (e.g. "based on the 2017 figure; no 2019 figure is present").
       - **Exact numbers:** use the corpus's full precision; never round intermediates. Dates and ages: count completed units from the date the question anchors (1787-12-12 -> 1873-07-01 = 85), not birth years alone. When comparing two people's ages, anchor each to the event the question names, then subtract. Convert units exactly (ft<->m, lb<->kg).
 
