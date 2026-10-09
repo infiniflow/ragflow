@@ -111,7 +111,9 @@ func InitializePublisher(db *gorm.DB, mq engine.MessageQueue) {
 }
 
 // defaultDeduperFactory resolves the per-tenant LLM deps and builds the
-// KB-scoped deduper. Failures leave the claimed batch available for retry.
+// KB-scoped deduper. On any failure it returns an error so the caller falls
+// back to the noop deduper (merged products are still written, just without
+// cross-document LLM merging).
 func defaultDeduperFactory(ctx context.Context, tenant string) (Deduper, error) {
 	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil {
