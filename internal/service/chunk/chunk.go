@@ -96,6 +96,7 @@ type ChunkService struct {
 	// Production uses service.DocumentService.CancelDocParse; tests inject
 	// a fake to avoid the MQ publisher.
 	cancelIngestionTaskFunc func(ctx context.Context, doc *entity.Document) error
+	revokeTableProfileFunc  func(context.Context, string) error
 	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
 	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
@@ -1021,7 +1022,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("document does not belong to this dataset")
 	}
 
-	for _, cid := range chunkIDs {
+	for i, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
 		if err = s.docEngine.UpdateChunks(ctx, map[string]interface{}{
@@ -1032,6 +1033,11 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			"available_int": availableInt,
 		}, indexName, datasetID); err != nil {
 			return err
+		}
+		if i == 0 {
+			if err := s.revokeTableProfile(ctx, documentID); err != nil {
+				return err
+			}
 		}
 	}
 	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
@@ -1086,6 +1092,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// Content - use new value or existing
 	if req.Content != nil {
 		d["content_with_weight"] = *req.Content
+		if marker, ok := existing["table_row_int"]; ok && fmt.Sprint(marker) == "1" {
+			d["table_row_int"] = 0
+		}
 	} else {
 		if v, ok := existing["content_with_weight"].(string); ok {
 			d["content_with_weight"] = v
@@ -1201,6 +1210,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// request. The request still answers with the removal error (the Python
 	// reference does the same); the stored object is an orphan by then.
 	if req.Content != nil || req.Available != nil {
+		if err := s.revokeTableProfile(ctx, req.DocumentID); err != nil {
+			return err
+		}
 		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
 	}
 	if removeImageAfterUpdate {
@@ -1264,6 +1276,9 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	if deletedCount > 0 {
+		if err := s.revokeTableProfile(ctx, req.DocID); err != nil {
+			return deletedCount, err
+		}
 		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
 			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
 		}
@@ -1803,4 +1818,11 @@ func releaseChunkImageLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageLocks.locks, key)
 	}
+}
+
+func (s *ChunkService) revokeTableProfile(ctx context.Context, docID string) error {
+	if s.revokeTableProfileFunc != nil {
+		return s.revokeTableProfileFunc(ctx, docID)
+	}
+	return document.NewDocumentService().RevokeTableProfile(ctx, docID)
 }

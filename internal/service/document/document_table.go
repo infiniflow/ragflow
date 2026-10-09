@@ -22,6 +22,29 @@ import (
 	ingestiontable "ragflow/internal/ingestion/table"
 )
 
+func relinquishTableMetadata(meta, touched map[string]any) error {
+	profile, ok, err := ingestiontable.DecodeProfile(meta[ingestiontable.ProfileMetadataField])
+	if err != nil || !ok {
+		return err
+	}
+	remaining := make([]string, 0, len(profile.OwnedMetadata))
+	for _, key := range profile.OwnedMetadata {
+		if _, edited := touched[key]; !edited {
+			remaining = append(remaining, key)
+		}
+	}
+	if len(remaining) == len(profile.OwnedMetadata) {
+		return nil
+	}
+	profile.OwnedMetadata = remaining
+	raw, err := profile.Encode()
+	if err != nil {
+		return err
+	}
+	meta[ingestiontable.ProfileMetadataField] = raw
+	return nil
+}
+
 // RevokeTableProfile drops a document's derived table columns and the metadata
 // values that published them. Callers outside this package use it when rows are
 // removed by a path that cannot re-derive what the remaining rows still hold:
@@ -46,6 +69,12 @@ func (s *DocumentService) revokeTableProfile(ctx context.Context, docID string) 
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		return s.revokeTableProfileLocked(ctx, docID)
+	})
+}
+
+func (s *DocumentService) revokeTableProfileLocked(ctx context.Context, docID string) error {
 	existing, err := s.GetDocumentMetadataRaw(ctx, docID)
 	if err != nil {
 		return err
@@ -54,7 +83,7 @@ func (s *DocumentService) revokeTableProfile(ctx context.Context, docID string) 
 	if err != nil {
 		// An unreadable record still has to go: it makes the document look
 		// queryable when nothing can resolve the columns it claims.
-		return s.DeleteDocumentMetadata(ctx, docID, []string{ingestiontable.ProfileMetadataField})
+		return s.DeleteDocumentMetadataRaw(ctx, docID, []string{ingestiontable.ProfileMetadataField})
 	}
 	if !ok {
 		return nil
@@ -62,5 +91,5 @@ func (s *DocumentService) revokeTableProfile(ctx context.Context, docID string) 
 	keys := make([]string, 0, len(profile.OwnedMetadata)+1)
 	keys = append(keys, ingestiontable.ProfileMetadataField)
 	keys = append(keys, profile.OwnedMetadata...)
-	return s.DeleteDocumentMetadata(ctx, docID, keys)
+	return s.DeleteDocumentMetadataRaw(ctx, docID, keys)
 }

@@ -41,7 +41,6 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*ingestiont
 	profile := &ingestiontable.Profile{
 		Engine:  engineName,
 		Columns: []ingestiontable.Column{},
-		Specs:   map[string]ingestiontable.Spec{},
 	}
 	columns := map[string]ingestiontable.Column{}
 	values := map[string]map[string]struct{}{}
@@ -59,10 +58,6 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*ingestiont
 			continue
 		}
 		data, _ := ck["chunk_data"].(map[string]any)
-		key, _ := ck["table_profile_key"].(string)
-		if key != "" {
-			profile.Specs[key] = ingestiontable.Spec{Mode: src.Mode, Roles: src.Roles}
-		}
 
 		for _, col := range src.Columns {
 			value, written := data[col.DataKey].(string)

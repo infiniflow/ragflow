@@ -1,7 +1,6 @@
 package table
 
 import (
-	"strings"
 	"testing"
 )
 
@@ -57,33 +56,5 @@ func TestValidateRoles(t *testing.T) {
 		if _, err := ValidateRoles(c.v); err == nil {
 			t.Errorf("ValidateRoles(%v) [%s]: expected error, got nil", c.v, c.name)
 		}
-	}
-}
-
-func TestCanonicalProfile(t *testing.T) {
-	// auto ignores saved roles.
-	if CanonicalProfile(ModeAuto, map[string]string{"金额": RoleMetadata}) !=
-		CanonicalProfile(ModeAuto, nil) {
-		t.Error("auto profile should not keep roles")
-	}
-	// manual keeps only explicit roles and is order-stable.
-	a := CanonicalProfile(ModeManual, map[string]string{"b": RoleBoth, "a": RoleIndexing})
-	b := CanonicalProfile(ModeManual, map[string]string{"a": RoleIndexing, "b": RoleBoth})
-	if a != b {
-		t.Errorf("profile not stable: %q vs %q", a, b)
-	}
-	if !strings.Contains(a, `"a":"indexing","b":"both"`) {
-		t.Errorf("unexpected canonical JSON: %q", a)
-	}
-	// Explicit both must differ from unset (which also behaves as both).
-	if CanonicalProfile(ModeManual, map[string]string{"a": RoleBoth}) ==
-		CanonicalProfile(ModeManual, nil) {
-		t.Error("explicit both collapsed into default both")
-	}
-	// Keys containing quotes/backslashes survive escaping without breaking
-	// the JSON shape.
-	esc := CanonicalProfile(ModeManual, map[string]string{`a"b\c`: RoleMetadata})
-	if !strings.Contains(esc, `a\"b\\c`) {
-		t.Errorf("key not escaped: %q", esc)
 	}
 }

@@ -17,9 +17,8 @@ import (
 const ProfileMetadataField = "_table_profile"
 
 // Profile is what one document actually indexed: the engine the rows were
-// written to, the columns those rows carry, the column configuration each row
-// was written under, and the document-metadata keys the table system still
-// owns.
+// written to, the columns those rows carry, and the document-metadata keys the table system
+// still owns.
 //
 // The columns must be recorded because data_key is a hash: nothing about
 // "c_9f3a..." recovers the header it came from, so the readable name of an
@@ -32,8 +31,6 @@ type Profile struct {
 	// Columns is the deduplicated column identity of every indexed row, in
 	// key order.
 	Columns []Column `json:"columns"`
-	// Specs maps Profile.Key() to the configuration that produced the rows.
-	Specs map[string]Spec `json:"specs"`
 	// OwnedMetadata lists the document-metadata keys the table system wrote
 	// and may replace or delete. A key a user or the LLM took over is not in
 	// this list.
@@ -63,12 +60,6 @@ func (p *Profile) OwnedKeys() []string {
 	return p.OwnedMetadata
 }
 
-// SpecFor returns the configuration recorded under a profile key.
-func (p *Profile) SpecFor(key string) (Spec, bool) {
-	spec, ok := p.Specs[key]
-	return spec, ok
-}
-
 // Encode renders the profile as the value stored under ProfileMetadataField.
 // It is a JSON string rather than a nested object so that every engine treats
 // it as one opaque metadata value: a nested object would be mapped and indexed
@@ -77,7 +68,6 @@ func (p *Profile) Encode() (string, error) {
 	normalized := Profile{
 		Engine:        p.Engine,
 		Columns:       append([]Column(nil), p.Columns...),
-		Specs:         p.Specs,
 		OwnedMetadata: append([]string(nil), p.OwnedMetadata...),
 	}
 	sort.Slice(normalized.Columns, func(i, j int) bool {

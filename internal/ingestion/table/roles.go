@@ -1,10 +1,7 @@
 package table
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"sort"
 	"strings"
 )
 
@@ -73,80 +70,4 @@ func ValidateRoles(v any) (map[string]string, error) {
 		roles[key] = role
 	}
 	return roles, nil
-}
-
-// CanonicalProfile renders a mode/roles pair into a stable JSON string, used
-// to derive profile keys for re-aggregation. auto normalizes to empty roles;
-// manual keeps only explicit roles, sorted by key. Explicit "both" and the
-// manual default (unset columns behaving as both) stay distinguishable.
-func CanonicalProfile(mode string, roles map[string]string) string {
-	if mode != ModeManual {
-		mode = ModeAuto
-		roles = nil
-	}
-	keys := make([]string, 0, len(roles))
-	for k := range roles {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	out := `{"mode":"` + mode + `","roles":{`
-	for i, k := range keys {
-		if i > 0 {
-			out += ","
-		}
-		out += `"` + escapeJSONString(k) + `":"` + roles[k] + `"`
-	}
-	out += "}}"
-	return out
-}
-
-// ProfileKey renders a mode/roles pair into the stable key stored beside an
-// indexed row, so a later recomputation can recover the roles that were in
-// force when the row was written. It is the SHA-256 of the canonical
-// profile, so two configurations that behave identically share one key and
-// an explicit "both" never collides with a manual default "both".
-func ProfileKey(mode string, roles map[string]string) string {
-	sum := sha256.Sum256([]byte(CanonicalProfile(mode, roles)))
-	return "p_" + hex.EncodeToString(sum[:])
-}
-
-// Spec is an effective column configuration: the mode and the roles that were
-// explicitly configured with it. Its key is what an indexed row records, so a
-// later recomputation (after rows are removed or switched) can recover the
-// roles that were in force when the row was written, rather than the roles the
-// document happens to ask for now.
-type Spec struct {
-	Mode  string            `json:"mode"`
-	Roles map[string]string `json:"roles"`
-}
-
-// Key returns the profile key of this configuration.
-func (s Spec) Key() string { return ProfileKey(s.Mode, s.Roles) }
-
-// RoleOf returns the effective role of a column key: the configured role, or
-// "both" when the column has no entry. auto is handled by the caller storing an
-// empty Roles, so an unset column resolves to both as well.
-func (s Spec) RoleOf(key string) string {
-	if role, ok := s.Roles[key]; ok {
-		return role
-	}
-	return RoleBoth
-}
-
-func escapeJSONString(s string) string {
-	var b []byte
-	b = append(b, '"')
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch c {
-		case '"':
-			b = append(b, '\\', '"')
-		case '\\':
-			b = append(b, '\\', '\\')
-		default:
-			b = append(b, c)
-		}
-	}
-	b = append(b, '"')
-	return string(b[1 : len(b)-1])
 }

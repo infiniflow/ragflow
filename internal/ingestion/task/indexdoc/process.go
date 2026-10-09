@@ -159,7 +159,7 @@ var pipelineOnlyFields = []string{
 	"context_above", "context_below", "page_number",
 	"sheet", "sheet_index",
 	// The row source map is what the derived profile is built from and is never
-	// a chunk column; table_row_int and table_profile_key are, and are written
+	// a chunk column; table_row_int is, and is written
 	// by the engines that support structured table queries.
 	"table_row_source",
 }

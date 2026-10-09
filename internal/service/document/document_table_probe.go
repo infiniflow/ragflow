@@ -17,6 +17,8 @@
 package document
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -43,10 +45,11 @@ import (
 const (
 	// TableProbeMaxFileBytes caps the file a column probe will read. Uploads
 	// keep their own size rules; this one bounds a synchronous request.
-	TableProbeMaxFileBytes  = 32 << 20
-	tableProbeMaxSheets     = 256
-	tableProbeDeadline      = 30 * time.Second
-	tableProbeMaxConcurrent = 4
+	TableProbeMaxFileBytes     = 32 << 20
+	tableProbeMaxExpandedBytes = 256 << 20
+	tableProbeMaxSheets        = 256
+	tableProbeDeadline         = 30 * time.Second
+	tableProbeMaxConcurrent    = 4
 )
 
 var tableProbeSlots = make(chan struct{}, tableProbeMaxConcurrent)
@@ -103,6 +106,9 @@ type TableProbeResult struct {
 
 // ProbeTableColumns reads the columns of one candidate CSV or XLSX file.
 func (s *DocumentService) ProbeTableColumns(ctx context.Context, filename string, data []byte) (*TableProbeResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, tableProbeFailure(TableProbeTimeout, "column probe cancelled: %v", err)
+	}
 	extension := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
 	switch extension {
 	case "csv", "xlsx":
@@ -123,6 +129,19 @@ func (s *DocumentService) ProbeTableColumns(ctx context.Context, filename string
 		return nil, err
 	}
 	defer release()
+	if extension == "xlsx" {
+		archive, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			return nil, tableProbeFailure(TableProbeParseFailed, "invalid XLSX archive: %v", err)
+		}
+		var expanded uint64
+		for _, entry := range archive.File {
+			if entry.UncompressedSize64 > tableProbeMaxExpandedBytes-expanded {
+				return nil, tableProbeFailure(TableProbeLimit, "workbook exceeds %d expanded bytes", tableProbeMaxExpandedBytes)
+			}
+			expanded += entry.UncompressedSize64
+		}
+	}
 
 	parseCtx, cancel := context.WithTimeout(ctx, tableProbeDeadline)
 	defer cancel()

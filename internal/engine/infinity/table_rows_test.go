@@ -21,45 +21,27 @@ import "testing"
 // row, and a table without the column must not be sent one at all.
 func TestApplyTableRowMarkers(t *testing.T) {
 	batch := []map[string]interface{}{
-		{"id": "row-1", "table_row_int": 1, "table_profile_key": "p_abc"},
+		{"id": "row-1", "table_row_int": 1},
 		{"id": "chunk-2", "content_with_weight": "prose"},
 	}
-	applyTableRowMarkers(batch, true, true)
+	applyTableRowMarkers(batch, true)
 
 	if batch[1]["table_row_int"] != 0 {
 		t.Errorf("a non-row chunk must state 0, got %v", batch[1]["table_row_int"])
 	}
-	if batch[1]["table_profile_key"] != "" {
-		t.Errorf("a non-row chunk must state an empty profile, got %v", batch[1]["table_profile_key"])
-	}
-	if batch[0]["table_row_int"] != 1 || batch[0]["table_profile_key"] != "p_abc" {
+	if batch[0]["table_row_int"] != 1 {
 		t.Errorf("the row's own markers were overwritten: %v", batch[0])
 	}
 }
 
 func TestApplyTableRowMarkersWithoutTheColumns(t *testing.T) {
-	batch := []map[string]interface{}{{"id": "row-1", "table_row_int": 1, "table_profile_key": "p_abc"}}
-	applyTableRowMarkers(batch, false, false)
+	batch := []map[string]interface{}{{"id": "row-1", "table_row_int": 1}}
+	applyTableRowMarkers(batch, false)
 
 	if _, ok := batch[0]["table_row_int"]; ok {
 		t.Error("Infinity rejects an insert naming a column the table lacks")
 	}
-	if _, ok := batch[0]["table_profile_key"]; ok {
-		t.Error("the profile key was sent to a table without the column")
-	}
 	if batch[0]["id"] != "row-1" {
 		t.Errorf("unrelated fields changed: %v", batch[0])
-	}
-}
-
-func TestApplyTableRowMarkersPartialColumns(t *testing.T) {
-	batch := []map[string]interface{}{{"id": "row-1"}}
-	applyTableRowMarkers(batch, true, false)
-
-	if batch[0]["table_row_int"] != 0 {
-		t.Errorf("row marker = %v, want 0", batch[0]["table_row_int"])
-	}
-	if _, ok := batch[0]["table_profile_key"]; ok {
-		t.Error("the profile key was sent to a table without that column")
 	}
 }

@@ -35,8 +35,31 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
-// SetDocumentMetadata sets metadata for a document in the document engine
+// SetDocumentMetadata merges explicit metadata edits and transfers touched keys
+// from the table publisher to the caller, including edits that retain a value.
 func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[ingestiontable.ProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		merged := cloneDocumentMetadata(existing)
+		for key, value := range meta {
+			merged[key] = value
+		}
+		if err := relinquishTableMetadata(merged, meta); err != nil {
+			return err
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, merged)
+	})
+}
+
+// SetDocumentMetadataRaw writes a publisher's complete record, including its
+// table profile. Explicit metadata edits must use SetDocumentMetadata.
+func (s *DocumentService) SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -65,6 +88,38 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 
 // DeleteDocumentMetadata deletes metadata keys for a document in the document engine
 func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		touched := make(map[string]any, len(keys))
+		for _, key := range keys {
+			if key == ingestiontable.ProfileMetadataField {
+				return errors.New("_table_profile is reserved")
+			}
+			touched[key] = nil
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(existing)
+		for _, key := range keys {
+			delete(after, key)
+		}
+		if err := relinquishTableMetadata(after, touched); err != nil {
+			return err
+		}
+		if err := s.DeleteDocumentMetadataRaw(ctx, docID, keys); err != nil {
+			return err
+		}
+		if len(after) == 0 {
+			return nil
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
+}
+
+// DeleteDocumentMetadataRaw removes publisher-owned fields. API edits must use
+// DeleteDocumentMetadata to preserve the indexed profile and transfer ownership.
+func (s *DocumentService) DeleteDocumentMetadataRaw(ctx context.Context, docID string, keys []string) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -88,6 +143,10 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 
 // DeleteDocumentAllMetadata deletes all metadata for a document in the document engine
 func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
+	return s.replaceDocumentMetadata(ctx, docID, map[string]any{})
+}
+
+func (s *DocumentService) deleteDocumentAllMetadata(ctx context.Context, docID string) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -551,10 +610,27 @@ func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID str
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
-	if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
-		return err
-	}
-	return s.SetDocumentMetadata(ctx, docID, meta)
+
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[ingestiontable.ProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(meta)
+		if raw, ok := existing[ingestiontable.ProfileMetadataField]; ok {
+			after[ingestiontable.ProfileMetadataField] = raw
+		}
+		if err := relinquishTableMetadata(after, existing); err != nil {
+			return err
+		}
+		if err := s.deleteDocumentAllMetadata(ctx, docID); err != nil {
+			return err
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
 }
 
 func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID string, before, after map[string]interface{}) error {
@@ -569,7 +645,7 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 	if len(deleteKeys) > 0 {
-		if err := s.DeleteDocumentMetadata(ctx, docID, deleteKeys); err != nil {
+		if err := s.DeleteDocumentMetadataRaw(ctx, docID, deleteKeys); err != nil {
 			return err
 		}
 	}
@@ -594,7 +670,7 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 
 	// Send the complete 'after' map — UpdateMetadata does a full replace,
 	// not a merge, so a partial delta would wipe unchanged keys.
-	return s.SetDocumentMetadata(ctx, docID, after)
+	return s.SetDocumentMetadataRaw(ctx, docID, after)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
@@ -688,31 +764,46 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// semantics instead of a simple merge-then-delete.
 	updated := 0
 	for _, docID := range ids {
-		currentMeta, err := s.GetDocumentMetadataByID(ctx, docID)
-		if err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
-				zap.String("docID", docID), zap.Error(err))
-			continue
-		}
+		changed := false
+		err := s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+			currentMeta, err := s.GetDocumentMetadataRaw(ctx, docID)
+			if err != nil {
+				return err
+			}
 
-		meta := cloneDocumentMetadata(currentMeta)
-		originalMeta := cloneDocumentMetadata(meta)
+			meta := cloneDocumentMetadata(currentMeta)
+			originalMeta := cloneDocumentMetadata(meta)
 
-		changed := applyDocumentMetadataUpdates(meta, updates)
-		if applyDocumentMetadataDeletes(meta, deletes) {
+			applyDocumentMetadataUpdates(meta, updates)
+			applyDocumentMetadataDeletes(meta, deletes)
+			touched := make(map[string]any, len(updates)+len(deletes))
+			for _, update := range updates {
+				touched[update.Key] = nil
+			}
+			for _, deletion := range deletes {
+				touched[deletion.Key] = nil
+			}
+			if err := relinquishTableMetadata(meta, touched); err != nil {
+				return err
+			}
+
+			if reflect.DeepEqual(originalMeta, meta) {
+				return nil
+			}
+
+			if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
+				return err
+			}
 			changed = true
-		}
-
-		if !changed || reflect.DeepEqual(originalMeta, meta) {
+			return nil
+		})
+		if err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: update failed", zap.String("docID", docID), zap.Error(err))
 			continue
 		}
-
-		if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
-				zap.String("docID", docID), zap.Error(err))
-			continue
+		if changed {
+			updated++
 		}
-		updated++
 	}
 
 	return &BatchUpdateMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
@@ -724,11 +815,17 @@ func validateBatchUpdateDocumentMetadatasRequest(
 	deletes []MetadataDelete,
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
+		if upd.Key == ingestiontable.ProfileMetadataField {
+			return common.CodeDataError, errors.New("_table_profile is reserved")
+		}
 		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
 			return common.CodeDataError, errors.New("each update requires key and value")
 		}
 	}
 	for _, del := range deletes {
+		if del.Key == ingestiontable.ProfileMetadataField {
+			return common.CodeDataError, errors.New("_table_profile is reserved")
+		}
 		if strings.TrimSpace(del.Key) == "" {
 			return common.CodeDataError, errors.New("each delete requires key")
 		}

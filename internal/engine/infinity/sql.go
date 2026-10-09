@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/sqlscan"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -41,8 +42,6 @@ const (
 	defaultPsqlHost = "infinity"
 	defaultPsqlPort = "5432"
 )
-
-var whitespaceRe = regexp.MustCompile("[ `]+")
 
 var rowCountFooterRe = regexp.MustCompile(`^\(\d+ rows?`)
 
@@ -101,57 +100,42 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 	return aliasToActual, actualToFirstAlias, nil
 }
 
-// preprocessSQL collapses spaces/backticks and strips '%'.
-func preprocessSQL(sql string) string {
-	sql = whitespaceRe.ReplaceAllString(sql, " ")
-	sql = strings.ReplaceAll(sql, "%", "")
-	return sql
-}
-
-// rewriteFieldAliases rewrites alias field names to actual stored names
-// in SELECT, WHERE, ORDER BY, GROUP BY, and HAVING clauses.
-func rewriteFieldAliases(sql string, aliasToActual map[string]string) string {
-	if len(aliasToActual) == 0 {
-		return sql
+// prepareSQL rewrites field identifiers while preserving string literals and
+// result labels. It only transforms the expressions of one single-table SELECT.
+func prepareSQL(sqlText string, aliasToActual map[string]string) (string, error) {
+	tokens, err := sqlscan.Scan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
+	if err != nil {
+		return "", err
 	}
-	selectRe := regexp.MustCompile(`(?si)(select\s+)(.+?)(\s+from\b)`)
-	sql = selectRe.ReplaceAllStringFunc(sql, func(m string) string {
-		parts := selectRe.FindStringSubmatch(m)
-		prefix, cols, suffix := parts[1], parts[2], parts[3]
-		for alias, actual := range aliasToActual {
-			pat := regexp.MustCompile(`(^|[,\s])` + regexp.QuoteMeta(alias) + `($|[,\s])`)
-			cols = pat.ReplaceAllString(cols, "${1}"+actual+"${2}")
-		}
-		return prefix + cols + suffix
-	})
-
-	clauseAliases := func(sql, keyword string) string {
-		return rewriteFirstAliasAfterKeyword(sql, keyword, aliasToActual)
+	shape, err := sqlscan.SplitSelect(tokens)
+	if err != nil {
+		return "", err
 	}
-	sql = clauseAliases(sql, "where")
-	sql = clauseAliases(sql, "order by")
-	sql = clauseAliases(sql, "group by")
-	sql = clauseAliases(sql, "having")
-	return sql
-}
-
-func rewriteFirstAliasAfterKeyword(sql, keyword string, aliasToActual map[string]string) string {
-	for alias, actual := range aliasToActual {
-		aliasPat := regexp.MustCompile(`\b` + regexp.QuoteMeta(alias) + `\b`)
-		kwIdx := regexp.MustCompile(`(?i)\b` + regexp.QuoteMeta(keyword) + `\b`).FindStringIndex(sql)
-		if kwIdx == nil {
-			continue
-		}
-		tail := sql[kwIdx[1]:]
-		aliasIdx := aliasPat.FindStringIndex(tail)
-		if aliasIdx == nil {
-			continue
-		}
-		absStart := kwIdx[1] + aliasIdx[0]
-		absEnd := kwIdx[1] + aliasIdx[1]
-		sql = sql[:absStart] + actual + sql[absEnd:]
+	if _, err := sqlscan.TableReference(shape.Clauses.From); err != nil {
+		return "", err
 	}
-	return sql
+	clauses := shape.Clauses
+	for _, expression := range [][]sqlscan.Token{clauses.Select, clauses.Where, clauses.GroupBy, clauses.Having, clauses.OrderBy} {
+		for i, token := range expression {
+			if token.Kind != sqlscan.Word && token.Kind != sqlscan.Quoted {
+				continue
+			}
+			if i > 0 && expression[i-1].IsWord("as") {
+				continue
+			}
+			if i+1 < len(expression) && (expression[i+1].IsPunct("(") || expression[i+1].IsPunct(".")) {
+				continue
+			}
+			actual, ok := aliasToActual[token.Lower]
+			if !ok {
+				continue
+			}
+			expression[i].Text = actual
+			expression[i].Name = actual
+			expression[i].Lower = strings.ToLower(actual)
+		}
+	}
+	return sqlscan.Render(tokens, '"'), nil
 }
 
 // psqlResult is the structured parse of a psql table-format output.
@@ -284,7 +268,7 @@ func resolvePsqlHostPort(hostURI string, postgresPort int) (host, port string) {
 	return host, port
 }
 
-// RunSQL implements the SQL retrieval path: preprocess, rewrite aliases,
+// RunSQL implements the SQL retrieval path: rewrite identifiers,
 // run psql subprocess, parse output.
 func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, _ string) ([]map[string]interface{}, error) {
 	if e == nil || e.client == nil {
@@ -297,13 +281,14 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 
 	common.Debug("InfinityConnection.sql get sql", zap.String("sql", sqlText))
 
-	sqlText = preprocessSQL(sqlText)
-
 	aliasMap, _, err := loadFieldMapping(e.client.mappingFileName)
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}
-	sqlText = rewriteFieldAliases(sqlText, aliasMap)
+	sqlText, err = prepareSQL(sqlText, aliasMap)
+	if err != nil {
+		return nil, fmt.Errorf("infinity RunSQL: %w", err)
+	}
 
 	common.Debug("InfinityConnection.sql to execute", zap.String("sql", sqlText))
 

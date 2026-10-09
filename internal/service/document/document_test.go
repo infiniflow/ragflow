@@ -244,7 +244,7 @@ func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, [
 }
 
 type failingDeleteMetadataEngine struct {
-	fakeChatDocEngine
+	*metadataDocEngine
 	deleteErr    error
 	updateCalled bool
 }
@@ -558,6 +558,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 	t.Helper()
 	// Use nil engine since we test DB cleanup only; engine ops are nil-guarded.
 	return &DocumentService{
+		metadataLocks:    &memoryMetadataLocks{},
 		documentDAO:      dao.NewDocumentDAO(),
 		kbDAO:            dao.NewKnowledgebaseDAO(),
 		taskDAO:          dao.NewTaskDAO(),
@@ -3104,10 +3105,13 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
 
-	engine := &failingDeleteMetadataEngine{deleteErr: errors.New("delete failed")}
+	engine := &failingDeleteMetadataEngine{
+		metadataDocEngine: newMetadataDocEngine(nil, nil),
+		deleteErr:         errors.New("delete failed"),
+	}
 	svc := testDocumentService(t)
 	svc.docEngine = engine
-	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
 	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},

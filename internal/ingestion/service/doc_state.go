@@ -22,8 +22,8 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	taskpkg "ragflow/internal/ingestion/task"
 	ingestiontable "ragflow/internal/ingestion/table"
+	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
 )
@@ -33,9 +33,11 @@ import (
 // can inject a stub without constructing a real DocumentService (which depends
 // on initialized server config).
 type docStateSvc interface {
+	WithDocumentMetadataLock(context.Context, string, func(context.Context) error) error
+	RevokeTableProfile(ctx context.Context, docID string) error
 	GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]any, error)
-	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
-	DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error
+	SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error
+	DeleteDocumentMetadataRaw(ctx context.Context, docID string, keys []string) error
 	ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
 }
 
@@ -59,6 +61,9 @@ func newDocStateUpdater() *docStateUpdater {
 func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) error {
 	if r == nil {
 		return nil
+	}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
 	if err := publishDocMetadata(ctx, u.docSvc, r); err != nil {
 		return err
@@ -94,8 +99,14 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 // earlier run left: those rows are gone, so their columns are not queryable.
 func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult) error {
 	if len(r.Metadata) == 0 && r.TableProfile == nil {
-		return nil
+		return svc.RevokeTableProfile(ctx, r.DocID)
 	}
+	return svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {
+		return publishDocMetadataLocked(ctx, svc, r)
+	})
+}
+
+func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult) error {
 	// The raw record: this map is written back whole, and a reader that filters
 	// out system keys would silently drop the profile on every later metadata
 	// edit.
@@ -110,6 +121,9 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 	previous, _, _ := ingestiontable.DecodeProfile(existing[ingestiontable.ProfileMetadataField])
 	owned := make(map[string]struct{}, len(r.TableProfile.OwnedKeys()))
 	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, exists := existing[key]; exists && (previous == nil || !ownsKey(previous, key)) {
+			continue
+		}
 		owned[key] = struct{}{}
 	}
 
@@ -128,7 +142,7 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 			stale = append(stale, ingestiontable.ProfileMetadataField)
 		}
 		if len(stale) > 0 {
-			if err := svc.DeleteDocumentMetadata(ctx, r.DocID, stale); err != nil {
+			if err := svc.DeleteDocumentMetadataRaw(ctx, r.DocID, stale); err != nil {
 				return fmt.Errorf("revoke retired metadata of document %s: %w", r.DocID, err)
 			}
 		}
@@ -142,7 +156,16 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 		baseline[key] = value
 	}
 
-	merged := utility.UpdateMetadataTo(r.Metadata, baseline)
+	incoming := make(map[string]any, len(r.Metadata))
+	for key, value := range r.Metadata {
+		incoming[key] = value
+	}
+	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, accepted := owned[key]; !accepted {
+			delete(incoming, key)
+		}
+	}
+	merged := utility.UpdateMetadataTo(incoming, baseline)
 	// A column this run produced keeps exactly this run's values: merging would
 	// fold in whatever the same-named key held before, which for a narrowed
 	// re-parse means rows that no longer exist stay queryable.
@@ -153,13 +176,18 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 	}
 	merged = common.SplitCombinedMetadataValues(merged)
 	if r.TableProfile != nil {
-		encoded, err := r.TableProfile.Encode()
+		profile := *r.TableProfile
+		profile.OwnedMetadata = make([]string, 0, len(owned))
+		for key := range owned {
+			profile.OwnedMetadata = append(profile.OwnedMetadata, key)
+		}
+		encoded, err := profile.Encode()
 		if err != nil {
 			return fmt.Errorf("encode table profile of document %s: %w", r.DocID, err)
 		}
 		merged[ingestiontable.ProfileMetadataField] = encoded
 	}
-	if err := svc.SetDocumentMetadata(ctx, r.DocID, merged); err != nil {
+	if err := svc.SetDocumentMetadataRaw(ctx, r.DocID, merged); err != nil {
 		return fmt.Errorf("publish metadata of document %s: %w", r.DocID, err)
 	}
 	return nil
@@ -202,14 +230,34 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 	if len(builtIn) == 0 {
 		return nil
 	}
-	existing, err := svc.GetDocumentMetadataRaw(ctx, docID)
-	if err != nil {
-		return err
-	}
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	merged := utility.UpdateMetadataTo(existing, builtIn)
-	merged = common.SplitCombinedMetadataValues(merged)
-	return svc.SetDocumentMetadata(ctx, docID, merged)
+	return svc.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		existing, err := svc.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		if existing == nil {
+			existing = map[string]any{}
+		}
+		merged := utility.UpdateMetadataTo(existing, builtIn)
+		merged = common.SplitCombinedMetadataValues(merged)
+		profile, ok, err := ingestiontable.DecodeProfile(merged[ingestiontable.ProfileMetadataField])
+		if err != nil {
+			return err
+		}
+		if ok {
+			remaining := make([]string, 0, len(profile.OwnedMetadata))
+			for _, key := range profile.OwnedMetadata {
+				if _, replaced := builtIn[key]; !replaced {
+					remaining = append(remaining, key)
+				}
+			}
+			profile.OwnedMetadata = remaining
+			raw, err := profile.Encode()
+			if err != nil {
+				return err
+			}
+			merged[ingestiontable.ProfileMetadataField] = raw
+		}
+		return svc.SetDocumentMetadataRaw(ctx, docID, merged)
+	})
 }

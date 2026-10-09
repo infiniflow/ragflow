@@ -141,7 +141,6 @@ type tableProfile struct {
 	nodeID string
 	mode   string
 	roles  map[string]string
-	key    string
 	manual bool
 }
 
@@ -165,11 +164,8 @@ func (p tableProfile) effectiveRoles(cols []ingestiontable.Column) map[string]st
 	return roles
 }
 
-// declaredRoles returns only the roles the configuration states. A row carries
-// these rather than the effective ones, because "unset means both" must stay
-// recoverable after the fact: document-level column values are aggregated for
-// explicitly configured metadata/both columns, and a row written under auto must
-// not look like it declared every column.
+// declaredRoles carries explicit roles to the aggregation step. Only explicitly
+// configured metadata/both columns contribute document metadata in manual mode.
 func (p tableProfile) declaredRoles() map[string]string {
 	if !p.manual {
 		return nil
@@ -194,7 +190,6 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		nodeID: runtime.ComponentNodeID(ctx),
 		mode:   c.param.ColumnMode,
 		roles:  c.param.ColumnRoles,
-		key:    ingestiontable.ProfileKey(c.param.ColumnMode, c.param.ColumnRoles),
 		manual: c.param.ColumnMode == ingestiontable.ModeManual,
 	}
 
@@ -374,7 +369,6 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 		doc.Text = text
 		doc.ChunkData = data
 		doc.TableRowInt = 1
-		doc.TableProfileKey = profile.key
 		doc.TableRowSource = &schema.TableRowSource{
 			NodeID:     profile.nodeID,
 			SheetIndex: *item.SheetIndex,

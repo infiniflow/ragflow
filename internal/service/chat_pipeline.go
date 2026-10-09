@@ -454,23 +454,40 @@ func (s *ChatPipelineService) AsyncChat(
 		// Engines that address physical fields cannot use a JSON column map, so
 		// the read is skipped rather than handed to the SQL prompt.
 		var fieldMap map[string]interface{}
-		if docEngine := engine.Get(); docEngine != nil && SupportsStructuredTableSQL(docEngine.GetType()) {
+		var publishingDocIDs []string
+		var docEngine engine.DocEngine
+		if docEngine = engine.Get(); docEngine != nil && SupportsStructuredTableSQL(docEngine.GetType()) {
 			var fmErr error
-			fieldMap, _, fmErr = s.MetadataSvc.TableFieldMap(ctx, kbIDStrings(kbs))
+			fieldMap, publishingDocIDs, fmErr = s.MetadataSvc.TableFieldMap(ctx, kbIDStrings(kbs))
 			if fmErr != nil {
 				common.Warn("table field map failed; proceeding without field_map", zap.Error(fmErr))
-				fieldMap = nil
+				fieldMap, publishingDocIDs = nil, nil
+			}
+		}
+		// A query that reads the index directly answers only from the rows it
+		// can prove are in range. Until the metadata filter runs on this path,
+		// a dialog that configured one is not answered by SQL at all: the
+		// filter would otherwise be bypassed by the query it was meant to bound.
+		filterConfigured := chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0
+		var tableQuery *tableSQL
+		if len(fieldMap) > 0 && !filterConfigured {
+			var rangeErr error
+			tableQuery, rangeErr = newTableSQL(docEngine, chat, kbs,
+				restrictToRequestedDocs(publishingDocIDs, docIDs), fieldMap)
+			if rangeErr != nil {
+				common.Info("SQL retrieval does not apply", zap.Error(rangeErr))
+				tableQuery = nil
 			}
 		}
 		// Try structured SQL retrieval before vector search.
 		// Only runs on the last question
 		// HIT → return structured result directly.
 		// MISS → fall through to vector search.
-		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
+		if tableQuery != nil && chatModel != nil {
 			common.Info("Phase 6: Use SQL to retrieval")
 			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
 			ans, sqlErr := s.useSQL(
-				ctx, chat, kbs, questions[len(questions)-1], chatModel, fieldMap, quote,
+				ctx, chat, kbs, questions[len(questions)-1], chatModel, tableQuery, quote,
 			)
 			if sqlErr != nil {
 				common.Warn("SQL retrieval error; falling through", zap.Error(sqlErr))
@@ -3667,6 +3684,10 @@ JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
 Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
 NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
 
+Each column is listed as "key (name)": the key is how the column is stored and
+the name is what it means. Put the key, exactly as given, inside '$.'. A name
+never goes in the query; give it to an extracted column with AS instead.
+
 RULES:
 1. Use EXACT field names (case-sensitive) from the list below
 2. For SELECT: include doc_id, docnm, and json_extract_string() for requested fields
@@ -3699,6 +3720,10 @@ const oceanbaseSQLSysPrompt = `You are a Database Administrator. Write SQL for a
 JSON Extraction: json_extract_string(chunk_data, '$.FieldName')
 Numeric Cast: CAST(json_extract_string(chunk_data, '$.FieldName') AS INTEGER/FLOAT)
 NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
+
+Each column is listed as "key (name)": the key is how the column is stored and
+the name is what it means. Put the key, exactly as given, inside '$.'. A name
+never goes in the query; give it to an extracted column with AS instead.
 
 RULES:
 1. Use EXACT field names (case-sensitive) from the list below
@@ -3832,15 +3857,14 @@ The SQL error you provided last time is as follows:
 
 Please correct the error and write SQL again using the exact field names above, only SQL, without any other explanations or text.`
 
-// useSQL is the Go port of dialog_service.use_sql
-// (api/db/services/dialog_service.py:914-1226). It branches on the
-// active document engine, asks the chat model to produce SQL,
-// optionally repairs it once, and executes the query.
+// useSQL answers one question from the indexed table rows. It asks the chat
+// model for a statement, repairs it once if the engine rejected it or if the
+// result cannot name its own sources, and reads the answer back.
 //
-// The caller is responsible for resolving fieldMap (typically via
-// s.KbService.GetFieldMap in AsyncChat before invoking this) so the
-// structured-schema lookup happens once per request and is observable
-// in logs at the AsyncChat call site. Pass nil/empty to short-circuit.
+// query carries the range this answer may read and runs every statement
+// through it, including both repairs and the row-count override: a statement
+// that came back from the model is not trusted because an earlier one was.
+// A nil query means SQL does not apply and the caller answers from retrieval.
 //
 // Returns:
 //
@@ -3860,34 +3884,24 @@ func (s *ChatPipelineService) useSQL(
 	kbs []*entity.Knowledgebase,
 	question string,
 	chatModel *modelModule.ChatModel,
-	fieldMap map[string]interface{},
+	query *tableSQL,
 	quote bool,
 ) (ans map[string]interface{}, err error) {
-	if chat == nil || chatModel == nil || len(kbs) == 0 {
+	if chat == nil || chatModel == nil || query == nil {
 		return nil, nil
 	}
 
-	if fieldMap == nil || len(fieldMap) == 0 {
-		// No structured schema → SQL retrieval doesn't apply.
-		return nil, nil
-	}
-
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return nil, nil
-	}
+	docEngine := query.docEngine
+	engineName := docEngine.GetType()
+	tableName := query.policy.tableName
+	fieldMap := query.fieldMap
 
 	// Entry log. Mirrors `logging.debug(f"use_sql: Question: {question}")`
 	// at dialog_service.py:934.
 	common.Debug("SQL retrieval: question", zap.String("question", question))
 
-	// Build the table name. Infinity: ragflow_{tenant}_{kb_id} (one per
-	// KB). ES: ragflow_{tenant} (kb_id in WHERE).
-	tableName := ragflowTableName(chat.TenantID, kbs, docEngine)
-
 	// Build engine-specific prompts. Mirrors the three-way dispatch
 	// at dialog_service.py:1031-1105.
-	engineName := docEngine.GetType()
 	sysPrompt, userPrompt, overrideSQL := buildSQLPrompts(engineName, tableName, question, fieldMap)
 
 	// Step 1: generate SQL. If the question is a "how many rows in the
@@ -3908,20 +3922,11 @@ func (s *ChatPipelineService) useSQL(
 		}
 	}
 
-	// Step 1.5: inject the kb_id WHERE filter for ES / OS / OceanBase.
-	// No-op for Infinity (the table name already encodes the KB scope).
-	// Mirrors add_kb_filter at dialog_service.py:992-1021, called from
-	// get_table right after normalize_sql.
-	if filtered, ok := addKBFilter(sqlText, engineName, kbs); ok {
-		sqlText = filtered
-	} else {
-		common.Warn("SQL retrieval: invalid kb_id UUID; SQL will run unfiltered")
-	}
-
-	// Step 2: try to execute. On failure, repair once with the
+	// Step 2: read the answer. On failure, repair once with the
 	// engine-specific execution-error prompt so the LLM regenerates
-	// correctly (Flow B at dialog_service.py:1164-1205).
-	rows, execErr := docEngine.RunSQL(ctx, tableName, sqlText, kbIDStrings(kbs), "json")
+	// correctly (Flow B at dialog_service.py:1164-1205). The repaired
+	// statement goes through the same range check as the first one.
+	rows, statement, execErr := query.run(ctx, sqlText)
 	if execErr != nil {
 		common.Debug("SQL retrieval: initial execution failed, attempting repair",
 			zap.String("sql", sqlText), zap.Error(execErr))
@@ -3932,15 +3937,14 @@ func (s *ChatPipelineService) useSQL(
 			common.Warn("SQL retrieval: repair failed", zap.Error(repairErr))
 			return nil, nil
 		}
-		// Re-apply the kb filter after the LLM-driven repair.
-		if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-			repaired = filtered
-		}
-		rows, execErr = docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
+		rows, statement, execErr = query.run(ctx, repaired)
 		if execErr != nil {
 			common.Warn("SQL retrieval: repaired SQL also failed", zap.Error(execErr))
 			return nil, nil
 		}
+	}
+	if statement == nil {
+		return nil, nil
 	}
 	if len(rows) == 0 {
 		common.Debug("SQL retrieval: execution succeeded but returned 0 rows")
@@ -3948,14 +3952,11 @@ func (s *ChatPipelineService) useSQL(
 		return nil, nil
 	}
 
-	// Step 3 (Python parity): for non-aggregate SQL, check that the
-	// result has source-citation columns (Flow A at
-	// dialog_service.py:1211-1221). If missing, call the LLM to
-	// rewrite the SQL with the right columns and retry once. If the
-	// repair doesn't yield source columns, fall through to the
-	// best-effort answer (matches Python's `returning best-effort
-	// answer` log at line 1221).
-	if quote && !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
+	// Step 3: when the rows do not name their own sources, ask the model to
+	// add them and read again (Flow A at dialog_service.py:1211-1221). If the
+	// repair still does not name them, fall through to the best-effort answer
+	// (matches Python's `returning best-effort answer` log at line 1221).
+	if quote && !statement.aggregating && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
 			zap.String("sql", sqlText))
 		expectedCol := expectedDocNameColumn(engineName)
@@ -3963,17 +3964,16 @@ func (s *ChatPipelineService) useSQL(
 			ctx, chatModel, sysPrompt, tableName, question, sqlText, expectedCol, engineName, fieldMap,
 		)
 		if repairErr == nil && repaired != "" {
-			// Re-apply the kb filter after the LLM-driven repair.
-			if filtered, ok := addKBFilter(repaired, engineName, kbs); ok {
-				repaired = filtered
-			}
-			repairedRows, repairedErr := docEngine.RunSQL(ctx, tableName, repaired, kbIDStrings(kbs), "json")
-			if repairedErr == nil && len(repairedRows) > 0 && hasSourceColumns(repairedRows) {
+			repairedRows, repairedStatement, repairedErr := query.run(ctx, repaired)
+			switch {
+			case repairedErr != nil:
+				common.Warn("SQL retrieval: missing-columns repair did not run",
+					zap.String("sql", repaired), zap.Error(repairedErr))
+			case len(repairedRows) > 0 && hasSourceColumns(repairedRows):
 				common.Debug("SQL retrieval: missing-columns repair succeeded",
 					zap.String("sql", repaired))
-				rows = repairedRows
-				sqlText = repaired
-			} else {
+				rows, statement, sqlText = repairedRows, repairedStatement, repairedStatement.text
+			default:
 				common.Warn("SQL retrieval: missing-columns repair did not yield source columns; using best-effort answer",
 					zap.String("sql", repaired))
 			}
@@ -3990,8 +3990,8 @@ func (s *ChatPipelineService) useSQL(
 	// primary (rows have source columns), aggregate secondary fetch,
 	// and best-effort empty refs.
 	answerStr, ref := s.buildSQLReference(
-		ctx, docEngine, tableName, sqlText, rows,
-		sysPrompt, engineName, kbs, fieldMap, quote,
+		ctx, query, statement, rows,
+		sysPrompt, engineName, kbs, quote,
 	)
 	return map[string]interface{}{
 		"answer":    answerStr,
@@ -4034,60 +4034,6 @@ func isValidUUID(s string) bool {
 	return uuidRe.MatchString(s)
 }
 
-// addKBFilter injects a validated kb_id WHERE filter into sqlText for
-// ES / OS / OceanBase engines. Infinity is a no-op because the table
-// name already encodes the KB scope. Mirrors dialog_service.py:992-1021.
-//
-// Returns the (possibly modified) SQL and a boolean indicating whether
-// all kb_ids passed UUID validation. When validation fails, the SQL is
-// returned unchanged — the engine will likely reject the un-filtered
-// query, triggering the repair path (Python's `_assert_valid_uuid` raises
-// ValueError, which `get_table`'s try/except catches and routes to the
-// repair flow).
-//
-// If the SQL already has a WHERE clause with `kb_id =`, the filter is
-// not duplicated. Otherwise a fresh WHERE is appended, or `kb_id = '...'
-// AND` is prepended to an existing WHERE.
-func addKBFilter(sqlText, engineName string, kbs []*entity.Knowledgebase) (string, bool) {
-	if engineName == "infinity" || len(kbs) == 0 {
-		return sqlText, true
-	}
-
-	// Validate all kb_ids as UUIDs.
-	for _, kb := range kbs {
-		if kb == nil || !isValidUUID(kb.ID) {
-			return sqlText, false
-		}
-	}
-
-	kbIDs := kbIDStrings(kbs)
-	var kbFilter string
-	if len(kbIDs) == 1 {
-		kbFilter = fmt.Sprintf("kb_id = '%s'", kbIDs[0])
-	} else {
-		parts := make([]string, len(kbIDs))
-		for i, kid := range kbIDs {
-			parts[i] = fmt.Sprintf("kb_id = '%s'", kid)
-		}
-		kbFilter = "(" + strings.Join(parts, " OR ") + ")"
-	}
-
-	lower := strings.ToLower(sqlText)
-	if !strings.Contains(lower, "where ") {
-		// No WHERE clause: append one. Honor ORDER BY if present.
-		if oIdx := strings.Index(lower, "order by"); oIdx >= 0 {
-			sqlText = sqlText[:oIdx] + " WHERE " + kbFilter + "  order by " + sqlText[oIdx+len("order by"):]
-		} else {
-			sqlText += " WHERE " + kbFilter
-		}
-	} else if !strings.Contains(lower, "kb_id =") && !strings.Contains(lower, "kb_id=") {
-		// Has WHERE but no kb_id: insert "kb_id = '...' AND" after WHERE.
-		whereRe := regexp.MustCompile(`(?i)\bwhere\b `)
-		sqlText = whereRe.ReplaceAllString(sqlText, "where "+kbFilter+" and ")
-	}
-	return sqlText, true
-}
-
 // generateSQL calls the chat model to produce a SQL SELECT.
 // sysPrompt and userPrompt are pre-built by buildSQLPrompts and already
 // carry engine-specific instructions (json_extract_string for Infinity/
@@ -4114,24 +4060,17 @@ func generateSQL(
 // Field names are sorted alphabetically for stable test output and
 // to match the order-independent iteration of Python's dict.
 func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string]interface{}) (sysPrompt, userPrompt, overrideSQL string) {
-	names := make([]string, 0, len(fieldMap))
-	for k := range fieldMap {
-		names = append(names, k)
-	}
-	sort.Strings(names)
+	names := sortedFieldNames(fieldMap)
+	bullets := tableFieldBullets(fieldMap)
 
 	switch engineName {
 	case "infinity":
 		sysPrompt = infinitySQLSysPrompt
-		bullets := strings.Builder{}
-		for _, n := range names {
-			bullets.WriteString("  - " + n + "\n")
-		}
 		userPrompt = fmt.Sprintf(
 			infinitySQLUserPromptTemplate,
 			tableName,
 			strings.Join(names, ", "),
-			strings.TrimRight(bullets.String(), "\n"),
+			bullets,
 			question,
 		)
 		if isRowCountQuestion(question) {
@@ -4139,15 +4078,11 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 		}
 	case "oceanbase", "seekdb":
 		sysPrompt = oceanbaseSQLSysPrompt
-		bullets := strings.Builder{}
-		for _, n := range names {
-			bullets.WriteString("  - " + n + "\n")
-		}
 		userPrompt = fmt.Sprintf(
 			oceanbaseSQLUserPromptTemplate,
 			tableName,
 			strings.Join(names, ", "),
-			strings.TrimRight(bullets.String(), "\n"),
+			bullets,
 			question,
 		)
 		if isRowCountQuestion(question) {
@@ -4156,18 +4091,25 @@ func buildSQLPrompts(engineName, tableName, question string, fieldMap map[string
 	default:
 		// Elasticsearch / OpenSearch / unknown — direct column access.
 		sysPrompt = esSQLSysPrompt
-		bullets := strings.Builder{}
-		for _, n := range names {
-			bullets.WriteString(fmt.Sprintf("  - %s (%v)\n", n, fieldMap[n]))
-		}
 		userPrompt = fmt.Sprintf(
 			esSQLUserPromptTemplate,
 			tableName,
-			strings.TrimRight(bullets.String(), "\n"),
+			bullets,
 			question,
 		)
 	}
 	return
+}
+
+// tableFieldBullets lists one published column per line: the key a statement
+// has to address it by, then the name it means. Only the key goes inside the
+// query; the name is what the answer is labelled with afterwards.
+func tableFieldBullets(fieldMap map[string]interface{}) string {
+	var bullets strings.Builder
+	for _, name := range sortedFieldNames(fieldMap) {
+		fmt.Fprintf(&bullets, "  - %s (%v)\n", name, fieldMap[name])
+	}
+	return strings.TrimRight(bullets.String(), "\n")
 }
 
 // isRowCountQuestion returns true when the question is asking for a
@@ -4218,15 +4160,6 @@ func hasSourceColumns(rows []map[string]interface{}) bool {
 	return names["docnm_kwd"] || names["docnm"]
 }
 
-// isAggregateSQL reports whether the SQL contains an aggregate
-// function call (count, sum, avg, max, min, distinct). Mirrors
-// dialog_service.py:972-974.
-var aggregateFnRe = regexp.MustCompile(`(?i)\b(count|sum|avg|max|min|distinct)\s*\(`)
-
-func isAggregateSQL(sqlText string) bool {
-	return aggregateFnRe.MatchString(sqlText)
-}
-
 // sortedFieldNames returns the field_map keys in alphabetical order.
 // Used to format prompt bullets deterministically (matches Python's
 // dict-iteration order on small maps, and gives stable test output).
@@ -4246,27 +4179,19 @@ func sortedFieldNames(fieldMap map[string]interface{}) []string {
 // "docnm" for Infinity or "docnm_kwd" for everything else.
 func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, expectedCol string, fieldMap map[string]interface{}) string {
 	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
-	names := sortedFieldNames(fieldMap)
-	bullets := strings.Builder{}
+	bullets := tableFieldBullets(fieldMap)
 	if isJSONEngine {
-		for _, n := range names {
-			bullets.WriteString("  - " + n + "\n")
-		}
 		return fmt.Sprintf(
 			infinityMissingColumnsRepairPromptTemplate,
 			tableName,
-			strings.TrimRight(bullets.String(), "\n"),
+			bullets,
 			question, prevSQL, expectedCol,
 		)
-	}
-	// ES / OS: include types in bullets
-	for _, n := range names {
-		bullets.WriteString(fmt.Sprintf("  - %s (%v)\n", n, fieldMap[n]))
 	}
 	return fmt.Sprintf(
 		esMissingColumnsRepairPromptTemplate,
 		tableName,
-		strings.TrimRight(bullets.String(), "\n"),
+		bullets,
 		question, prevSQL,
 	)
 }
@@ -4275,26 +4200,19 @@ func buildMissingColumnsRepairPrompt(engineName, tableName, question, prevSQL, e
 // prompt for the execution-error repair flow.
 func buildExecutionErrorRepairPrompt(engineName, tableName, question, errMsg string, fieldMap map[string]interface{}) string {
 	isJSONEngine := engineName == "infinity" || engine.IsOceanBaseFamily(engineName)
-	names := sortedFieldNames(fieldMap)
-	bullets := strings.Builder{}
+	bullets := tableFieldBullets(fieldMap)
 	if isJSONEngine {
-		for _, n := range names {
-			bullets.WriteString("  - " + n + "\n")
-		}
 		return fmt.Sprintf(
 			infinityExecutionErrorRepairPromptTemplate,
 			tableName,
-			strings.TrimRight(bullets.String(), "\n"),
+			bullets,
 			question, errMsg,
 		)
-	}
-	for _, n := range names {
-		bullets.WriteString(fmt.Sprintf("  - %s (%v)\n", n, fieldMap[n]))
 	}
 	return fmt.Sprintf(
 		esExecutionErrorRepairPromptTemplate,
 		tableName,
-		strings.TrimRight(bullets.String(), "\n"),
+		bullets,
 		question, errMsg,
 	)
 }
@@ -4513,36 +4431,9 @@ func extractSourceColumnIndexes(rows []map[string]interface{}) (docIDIdx, docNam
 	return
 }
 
-// WHERE-clause extraction for the aggregate secondary fetch.
-// Mirrors dialog_service.py:1321.
-var whereClauseRe = regexp.MustCompile(`(?i)\bwhere\b(.+?)(?:\bgroup by\b|\border by\b|\blimit\b|$)`)
-
-// limitClauseRe detects whether a SQL already has a LIMIT clause.
-var limitClauseRe = regexp.MustCompile(`(?i)\blimit\b`)
-
-// buildChunkFetchSQL extracts the WHERE clause from the original SQL
-// and constructs a secondary SQL to fetch source chunks. Mirrors
-// dialog_service.py:1327-1331. Returns ("", false) when no WHERE is
-// present. The `multiKB` flag controls whether `kb_id` is included
-// in the SELECT list (single-kb queries don't need it because the
-// caller already knows the kb_id).
-func buildChunkFetchSQL(originalSQL, tableName, expectedCol string, multiKB bool) (string, bool) {
-	m := whereClauseRe.FindStringSubmatch(originalSQL)
-	if len(m) < 2 {
-		return "", false
-	}
-	where := strings.TrimSpace(m[1])
-	kbCol := ""
-	if multiKB {
-		kbCol = ", kb_id"
-	}
-	sql := fmt.Sprintf("select doc_id, %s%s from %s where %s",
-		expectedCol, kbCol, tableName, where)
-	if !limitClauseRe.MatchString(sql) {
-		sql += " limit 20"
-	}
-	return sql, true
-}
+// sourceRowsLimit bounds the citation read behind an aggregate answer. The
+// answer itself is the aggregate; these rows only name where it came from.
+const sourceRowsLimit = 20
 
 // toIfaceSlice converts a []map[string]interface{} to []interface{} for
 // the call-site contract at async_chat.go:334, which type-asserts
@@ -4559,41 +4450,26 @@ func toIfaceSlice(maps []map[string]interface{}) []interface{} {
 // Aggregate secondary fetch (dialog_service.py:1311-1367)
 // -----------------------------------------------------------------------
 
-// fetchAggregateChunks runs the secondary "select doc_id, docnm[, kb_id]
-// from <table> where <extracted_where> [limit 20]" query and uses the
-// result to build chunks and doc_aggs. Mirrors the aggregate path in
-// dialog_service.py:1311-1365.
+// fetchAggregateChunks reads the rows behind an aggregate answer: the same
+// condition the model asked about, over doc_id and the document name. It goes
+// through the same range as the statement that produced the answer, so a
+// follow-up read cannot widen what the first one was allowed to see.
 //
-// Returns (nil, nil) when the secondary fetch should be skipped or
-// fails. Skips on Infinity multi-KB (RunSQL rejects), on missing WHERE
-// clause, and on engine errors — all matching Python's try/except
-// semantics at dialog_service.py:1333-1364.
+// Returns (nil, nil) when there is no condition to reuse or the read fails.
 func (s *ChatPipelineService) fetchAggregateChunks(
 	ctx context.Context,
-	docEngine engine.DocEngine,
-	tableName, originalSQL, expectedCol string,
+	query *tableSQL,
+	where, expectedCol string,
 	kbIDs []string,
 ) (chunks []map[string]interface{}, docAggs []map[string]interface{}) {
-	multiKB := len(kbIDs) > 1
-
-	// Infinity's RunSQL rejects multi-KB (see infinity/sql.go:63-65).
-	// Python's add_kb_filter is a no-op for Infinity, so this branch is
-	// never exercised in Python either. Skip explicitly to avoid a
-	// hard error.
-	if multiKB && docEngine != nil && docEngine.GetType() == "infinity" {
-		common.Debug("SQL retrieval: skipping aggregate secondary fetch on Infinity multi-KB",
-			zap.Strings("kb_ids", kbIDs))
+	if query == nil || where == "" {
+		common.Debug("SQL retrieval: aggregate secondary fetch skipped (nothing to condition it on)")
 		return nil, nil
 	}
+	chunksSQL := fmt.Sprintf("select doc_id, %s from %s where %s limit %d",
+		expectedCol, query.policy.tableName, where, sourceRowsLimit)
 
-	chunksSQL, ok := buildChunkFetchSQL(originalSQL, tableName, expectedCol, multiKB)
-	if !ok {
-		common.Debug("SQL retrieval: aggregate secondary fetch skipped (no WHERE clause)",
-			zap.String("sql", originalSQL))
-		return nil, nil
-	}
-
-	rows, err := docEngine.RunSQL(ctx, tableName, chunksSQL, kbIDs, "json")
+	rows, _, err := query.run(ctx, chunksSQL)
 	if err != nil {
 		common.Warn("SQL retrieval: aggregate secondary fetch failed",
 			zap.String("sql", chunksSQL), zap.Error(err))
@@ -4661,11 +4537,11 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 // the reference (chunks + doc_aggs) for a SQL retrieval result. Mirrors
 // dialog_service.py:1282-1401.
 //
-// Three branches match Python:
+// Three branches:
 //  1. hasSrc: rows themselves carry doc_id + docnm*. Build chunks/doc_aggs
 //     from the rows directly. (Python L1369-1401.)
-//  2. isAggregateSQL: source columns missing. Run a secondary fetch to
-//     build chunks/doc_aggs; preserve the rendered table as the answer.
+//  2. statement.aggregating: source columns missing. Run a secondary fetch
+//     to build chunks/doc_aggs; preserve the rendered table as the answer.
 //     (Python L1311-1367.)
 //  3. Non-aggregate missing source: best-effort answer with empty refs.
 //     (Python L1367.)
@@ -4676,12 +4552,11 @@ func (s *ChatPipelineService) fetchAggregateChunks(
 // one-cell edge case.
 func (s *ChatPipelineService) buildSQLReference(
 	ctx context.Context,
-	docEngine engine.DocEngine,
-	tableName, originalSQL string,
+	query *tableSQL,
+	statement *tableSQLStatement,
 	rows []map[string]interface{},
 	sysPrompt, engineName string,
 	kbs []*entity.Knowledgebase,
-	fieldMap map[string]interface{},
 	quote bool,
 ) (string, map[string]interface{}) {
 	if len(rows) == 0 {
@@ -4710,6 +4585,10 @@ func (s *ChatPipelineService) buildSQLReference(
 	}
 
 	kbIDs := kbIDStrings(kbs)
+	var fieldMap map[string]interface{}
+	if query != nil {
+		fieldMap = query.fieldMap
+	}
 	docIDIdx, docNameIdx, kbIDIdx, columns := extractSourceColumnIndexes(rows)
 	expectedCol := expectedDocNameColumn(engineName)
 	hasSrc := len(docIDIdx) > 0 && len(docNameIdx) > 0
@@ -4826,8 +4705,8 @@ func (s *ChatPipelineService) buildSQLReference(
 	}
 
 	// Source columns missing — try the aggregate secondary fetch.
-	if isAggregateSQL(originalSQL) {
-		chunks, docAggs := s.fetchAggregateChunks(ctx, docEngine, tableName, originalSQL, expectedCol, kbIDs)
+	if statement != nil && statement.aggregating {
+		chunks, docAggs := s.fetchAggregateChunks(ctx, query, statement.where, expectedCol, kbIDs)
 		if len(chunks) > 0 {
 			ref["chunks"] = chunksFormat(chunks)
 			ref["doc_aggs"] = docAggs
@@ -4837,8 +4716,15 @@ func (s *ChatPipelineService) buildSQLReference(
 
 	// Non-aggregate, no source columns: best-effort empty refs.
 	common.Debug("SQL retrieval: non-aggregate SQL missing source columns; returning best-effort answer",
-		zap.String("sql", originalSQL))
+		zap.String("sql", statementText(statement)))
 	return answer, ref
+}
+
+func statementText(statement *tableSQLStatement) string {
+	if statement == nil {
+		return ""
+	}
+	return statement.text
 }
 
 // jsonMarshal is a small wrapper around encoding/json to keep this

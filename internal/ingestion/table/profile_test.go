@@ -9,7 +9,6 @@ func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
 	profile := &Profile{
 		Engine:        "infinity",
 		Columns:       []Column{cols[1], cols[0]},
-		Specs:         map[string]Spec{Spec{Mode: ModeManual, Roles: map[string]string{"金额": RoleMetadata}}.Key(): {Mode: ModeManual, Roles: map[string]string{"金额": RoleMetadata}}},
 		OwnedMetadata: []string{"编号", "金额"},
 	}
 	raw, err := profile.Encode()
@@ -39,15 +38,6 @@ func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
 	}
 	if len(decoded.Columns) != 2 || len(decoded.OwnedMetadata) != 2 {
 		t.Fatalf("round trip lost entries: %#v", decoded)
-	}
-	for _, col := range decoded.Columns {
-		key := Spec{Mode: ModeManual, Roles: map[string]string{"金额": RoleMetadata}}.Key()
-		if _, found := decoded.Specs[key]; !found {
-			t.Errorf("spec for %q missing: %v", key, decoded.Specs)
-		}
-		if _, found := decoded.SpecFor(col.DataKey); found {
-			t.Error("a data key must not resolve as a spec key")
-		}
 	}
 }
 

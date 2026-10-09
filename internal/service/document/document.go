@@ -43,6 +43,7 @@ type DocumentService struct {
 	fileDAO             *dao.FileDAO
 	api4ConvDAO         *dao.API4ConversationDAO
 	purgeTaskState      func(context.Context, string) error
+	metadataLocks       metadataLockStore
 }
 
 // NewDocumentService create document service

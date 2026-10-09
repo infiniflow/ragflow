@@ -146,11 +146,10 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 				return err
 			}
 			rowIntExists, rowIntErr := e.columnExists(table, "table_row_int")
-			profileKeyExists, profileKeyErr := e.columnExists(table, "table_profile_key")
-			if rowIntErr != nil || profileKeyErr != nil {
-				return fmt.Errorf("failed to check table row marker columns: %v%v", rowIntErr, profileKeyErr)
+			if rowIntErr != nil {
+				return fmt.Errorf("failed to check table row marker column: %w", rowIntErr)
 			}
-			if err := e.ensureTableRowColumns(table, rowIntExists, profileKeyExists); err != nil {
+			if err := e.ensureTableRowColumn(table, rowIntExists); err != nil {
 				return err
 			}
 		}
@@ -187,11 +186,6 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 				Name:     "table_row_int",
 				DataType: "integer",
 				Default:  "0",
-			})
-			columns = append(columns, &infinity.ColumnDefinition{
-				Name:     "table_profile_key",
-				DataType: "varchar",
-				Default:  "",
 			})
 		}
 
@@ -304,7 +298,7 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 // of an insert names the same columns. When the table has no marker column at
 // all — a dataset that never used the table parser — the keys are dropped, since
 // Infinity rejects an insert that names a column the table does not have.
-func applyTableRowMarkers(chunks []map[string]interface{}, hasRowInt, hasProfileKey bool) {
+func applyTableRowMarkers(chunks []map[string]interface{}, hasRowInt bool) {
 	for _, chunk := range chunks {
 		if hasRowInt {
 			if _, ok := chunk["table_row_int"]; !ok {
@@ -313,27 +307,14 @@ func applyTableRowMarkers(chunks []map[string]interface{}, hasRowInt, hasProfile
 		} else {
 			delete(chunk, "table_row_int")
 		}
-		if hasProfileKey {
-			if _, ok := chunk["table_profile_key"]; !ok {
-				chunk["table_profile_key"] = ""
-			}
-		} else {
-			delete(chunk, "table_profile_key")
-		}
 	}
 }
 
-// ensureTableRowColumns adds the two markers a structured table query filters
-// on: table_row_int separates an indexed spreadsheet row from every other chunk
-// so a COUNT cannot silently include images and prose, and table_profile_key
-// says which column configuration wrote the row.
-func (e *Engine) ensureTableRowColumns(table *infinity.Table, hasRowInt, hasProfileKey bool) error {
+// ensureTableRowColumn separates spreadsheet rows from images and prose in SQL.
+func (e *Engine) ensureTableRowColumn(table *infinity.Table, hasRowInt bool) error {
 	missing := infinity.TableSchema{}
 	if !hasRowInt {
 		missing = append(missing, &infinity.ColumnDefinition{Name: "table_row_int", DataType: "integer", Default: "0"})
-	}
-	if !hasProfileKey {
-		missing = append(missing, &infinity.ColumnDefinition{Name: "table_profile_key", DataType: "varchar", Default: ""})
 	}
 	if len(missing) == 0 {
 		return nil
@@ -435,7 +416,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	// ShowColumns returns a result set where Data contains arrays of column values
 	re := regexp.MustCompile(`Embedding\([a-z]+,(\d+)\)`)
-	hasChunkData, hasRowInt, hasProfileKey := false, false, false
+	hasChunkData, hasRowInt := false, false
 	if nameArr, ok := result.Data["name"]; ok {
 		if typeArr, ok := result.Data["type"]; ok {
 			for i := 0; i < len(nameArr); i++ {
@@ -446,8 +427,6 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 					hasChunkData = true
 				case "table_row_int":
 					hasRowInt = true
-				case "table_profile_key":
-					hasProfileKey = true
 				}
 				matches := re.FindStringSubmatch(colType)
 				if len(matches) >= 2 {
@@ -467,10 +446,10 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		} else {
 			hasChunkData = true
 		}
-		if err := e.ensureTableRowColumns(table, hasRowInt, hasProfileKey); err != nil {
+		if err := e.ensureTableRowColumn(table, hasRowInt); err != nil {
 			common.Warn("Failed to add table row marker columns", zap.Error(err))
 		} else {
-			hasRowInt, hasProfileKey = true, true
+			hasRowInt = true
 		}
 	}
 
@@ -483,7 +462,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// so the producer value (if any) is intentionally overridden here.
 		insertChunks[i]["kb_id"] = datasetID
 	}
-	applyTableRowMarkers(insertChunks, hasRowInt, hasProfileKey)
+	applyTableRowMarkers(insertChunks, hasRowInt)
 
 	// Delete existing rows with matching IDs
 	if len(insertChunks) > 0 {

@@ -338,42 +338,6 @@ func TestTableChunkerRowIdentitySurvivesRoleChange(t *testing.T) {
 	}
 }
 
-// TestTableChunkerProfileKeyDistinguishesModes: the key a row carries must let
-// a later recomputation tell auto from manual, and manual with explicit both
-// from manual with the default.
-func TestTableChunkerProfileKeyDistinguishesModes(t *testing.T) {
-	segment := spreadsheetSegmentItem("orders", ordersSegment, [][]string{{"A-1", "paid"}}, 1, 2)
-	auto := tableColumnChunks(t, nil, "xlsx", segment)
-	explicit := tableColumnChunks(t, map[string]any{
-		"column_mode":  "manual",
-		"column_roles": map[string]any{"ID": "both", "Status": "both"},
-	}, "xlsx", segment)
-	defaulted := tableColumnChunks(t, map[string]any{
-		"column_mode":  "manual",
-		"column_roles": map[string]any{},
-	}, "xlsx", segment)
-
-	keys := map[string]string{}
-	for name, chunks := range map[string][]map[string]any{
-		"auto": auto, "explicit": explicit, "defaulted": defaulted,
-	} {
-		key, ok := chunks[0]["table_profile_key"].(string)
-		if !ok || key == "" {
-			t.Fatalf("%s: table_profile_key = %v", name, chunks[0]["table_profile_key"])
-		}
-		if !strings.HasPrefix(key, "p_") {
-			t.Errorf("%s: profile key %q lacks the p_ prefix", name, key)
-		}
-		if _, dup := keys[key]; dup {
-			t.Errorf("%s shares profile key %q with %s", name, key, keys[key])
-		}
-		keys[key] = name
-	}
-	if keys[ingestiontable.ProfileKey("auto", nil)] != "auto" {
-		t.Errorf("auto rows must carry the auto profile key")
-	}
-}
-
 // TestTableChunkerDuplicateAndEmptyHeadersGetDistinctKeys: chunk_data keys
 // must stay addressable when two columns share a header name or a header is
 // blank, and the body shows a readable name for each.

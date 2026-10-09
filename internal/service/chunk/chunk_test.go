@@ -2641,3 +2641,64 @@ func TestStopParsing_DoesNotDeleteChunksOrResetCountersAfterCancel(t *testing.T)
 		t.Fatalf("DeleteChunks called %d times, want 0", engine.deleteChunksCalls)
 	}
 }
+
+func TestChunkChangesRevokeTableProfile(t *testing.T) {
+	for _, operation := range []string{"content", "availability", "enable", "switch", "delete", "delete stats error", "empty delete", "unchanged"} {
+		t.Run(operation, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+			updateEngine := &updateChunkTestEngine{existingChunk: map[string]interface{}{"doc_id": "doc-a", "content_with_weight": "old", "table_row_int": 1}}
+			svc := &ChunkService{docEngine: updateEngine, kbDAO: dao.NewKnowledgebaseDAO(), userTenantDAO: dao.NewUserTenantDAO()}
+			revocations := 0
+			svc.revokeTableProfileFunc = func(ctx context.Context, docID string) error {
+				if docID != "doc-a" {
+					t.Fatalf("revoked document = %q", docID)
+				}
+				revocations++
+				return nil
+			}
+			var err error
+			switch operation {
+			case "content":
+				content := "new"
+				err = svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1", Content: &content}, "user-1")
+				if err == nil && updateEngine.updateCalls[0].newValue["table_row_int"] != 0 {
+					t.Error("edited row remains eligible for table SQL")
+				}
+			case "unchanged":
+				err = svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1"}, "user-1")
+			case "availability", "enable":
+				available := operation == "enable"
+				err = svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{DatasetID: "kb-1", DocumentID: "doc-a", ChunkID: "chunk-1", Available: &available}, "user-1")
+			case "switch":
+				err = svc.SwitchChunks(t.Context(), "user-1", "kb-1", "doc-a", 0, []string{"chunk-1", "chunk-2"})
+			default:
+				count := int64(1)
+				if operation == "empty delete" {
+					count = 0
+				}
+				svc.docEngine = &parseTestDocEngine{deleteChunksCount: count}
+				svc.decrementChunkStatsFunc = func(string, string, int64, int64, float64) error {
+					if operation == "delete stats error" {
+						return errors.New("stats failed")
+					}
+					return nil
+				}
+				_, err = svc.RemoveChunks(t.Context(), &service.RemoveChunksRequest{DocID: "doc-a", ChunkIDs: []string{"chunk-1"}}, "user-1")
+			}
+			if (err != nil) != (operation == "delete stats error") {
+				t.Fatalf("error = %v", err)
+			}
+			want := 1
+			if operation == "empty delete" || operation == "unchanged" {
+				want = 0
+			}
+			if revocations != want {
+				t.Fatalf("revocations = %d, want %d", revocations, want)
+			}
+		})
+	}
+}

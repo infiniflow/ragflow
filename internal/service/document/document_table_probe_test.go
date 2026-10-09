@@ -1,6 +1,8 @@
 package document
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"strings"
@@ -9,6 +11,30 @@ import (
 	"ragflow/internal/entity"
 	ingestiontable "ragflow/internal/ingestion/table"
 )
+
+func TestProbeRejectsExpandedWorkbookLimit(t *testing.T) {
+	var data bytes.Buffer
+	w := zip.NewWriter(&data)
+	if _, err := w.CreateRaw(&zip.FileHeader{Name: "xl/workbook.xml", Method: zip.Store, UncompressedSize64: 257 << 20}); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err := testDocumentService(t).ProbeTableColumns(t.Context(), "large.xlsx", data.Bytes())
+	if got := probeFailureCode(t, err); got != TableProbeLimit {
+		t.Fatalf("expanded workbook error = %s, want %s", got, TableProbeLimit)
+	}
+}
+
+func TestProbeCancelledCSV(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	_, err := testDocumentService(t).ProbeTableColumns(ctx, "data.csv", []byte("key\nvalue\n"))
+	if got := probeFailureCode(t, err); got != TableProbeTimeout {
+		t.Fatalf("cancelled probe error = %s, want %s", got, TableProbeTimeout)
+	}
+}
 
 func probeFailureCode(t *testing.T, err error) string {
 	t.Helper()

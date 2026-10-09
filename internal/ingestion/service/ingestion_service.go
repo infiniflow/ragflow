@@ -770,9 +770,18 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
-	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
+	task, err := e.ingestionTaskSvc.RequestStop(ctx, taskID)
+	if err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
 		return false
+	}
+	// Keep STOPPING until the last publisher has returned and its derived
+	// columns are revoked; a new parse may start as soon as we write STOPPED.
+	if task.Status == common.STOPPING && task.DocumentID != "" && e.docState != nil {
+		if err := e.docState.docSvc.RevokeTableProfile(ctx, task.DocumentID); err != nil {
+			common.Error(fmt.Sprintf("markStopped: revoke table profile for %s: %v", task.DocumentID, err), err)
+			return false
+		}
 	}
 	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
@@ -1225,7 +1234,17 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return err
 	}
-	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
+	return e.finishDocumentTask(ctx, ingestionTask, docTaskCtx.Tenant.ID, result)
+}
+
+func (e *Ingestor) finishDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask, tenantID string, result *taskpkg.PipelineResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if e.cancelCheck(ctx, ingestionTask.ID) {
+		return context.Canceled
+	}
+	e.stagePendingCompileEvent(ingestionTask.ID, tenantID, result)
 	// A spreadsheet run that cannot publish its derived profile leaves columns
 	// the retriever would quote without rows behind them, so the failure is the
 	// task's failure rather than a warning.

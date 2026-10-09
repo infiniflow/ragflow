@@ -26,128 +26,30 @@ import (
 	"testing"
 )
 
-// -----------------------------------------------------------------------------
-// preprocessSQL — mirrors infinity_conn_base.py:788-789.
-// -----------------------------------------------------------------------------
-
-func TestPreprocessSQL_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		// The regex collapses ALL runs of spaces/backticks — including
-		// leading and trailing whitespace. Trimming is a separate step
-		// in RunSQL (strings.TrimSpace before the preprocessing pass).
-		{"  leading and trailing  ", " leading and trailing "},
+func TestPrepareSQLPreservesLiteralsAndRewritesFields(t *testing.T) {
+	aliases := map[string]string{"docnm_kwd": "docnm", "title_tks": "docnm", "content_ltks": "content"}
+	for _, tc := range []struct{ name, sql, want string }{
+		{"literal", "select count(docnm_kwd) as label from ragflow_t1 where docnm_kwd = 'docnm_kwd  50% \x60value\x60' and docnm_kwd = 'where docnm_kwd'", "select count ( docnm ) as label from ragflow_t1 where docnm = 'docnm_kwd  50% \x60value\x60' and docnm = 'where docnm_kwd'"},
+		{"quoted fields", "select \x60docnm_kwd\x60 from \x60ragflow_t1\x60 where docnm_kwd like '%a  \x60b\x60%'", "select \"docnm\" from \"ragflow_t1\" where docnm like '%a  \x60b\x60%'"},
+		{"all expressions", "select docnm_kwd, count(content_ltks) as docnm_kwd from ragflow_t1 where docnm_kwd = 'x' group by docnm_kwd having count(content_ltks) > 0 order by title_tks", "select docnm, count ( content ) as docnm_kwd from ragflow_t1 where docnm = 'x' group by docnm having count ( content ) > 0 order by docnm"},
+		{"qualified name", "select ragflow_t1.docnm_kwd from ragflow_t1", "select ragflow_t1.docnm from ragflow_t1"},
+		{"whole name", "select title_sm_tks from ragflow_t1", "select title_sm_tks from ragflow_t1"},
+		{"JSON path", "select json_extract_string(chunk_data, '$.c_docnm_kwd') from ragflow_t1;", "select json_extract_string ( chunk_data, '$.c_docnm_kwd' ) from ragflow_t1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareSQL(tc.sql, aliases)
+			if err != nil || got != tc.want {
+				t.Fatalf("got=%q err=%v want=%q", got, err, tc.want)
+			}
+		})
 	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
+}
+
+func TestPrepareSQLRejectsUnanalyzableQuery(t *testing.T) {
+	for _, sqlText := range []string{"select doc_id from t; select doc_id from u", "select doc_id from t where docnm = 'unterminated", "select doc_id from t -- filter"} {
+		if _, err := prepareSQL(sqlText, nil); err == nil {
+			t.Fatalf("accepted %q", sqlText)
 		}
-	}
-}
-
-func TestPreprocessSQL_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
-	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocessSQL_Combined(t *testing.T) {
-	in := "SELECT   docnm_kwd  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	got := preprocessSQL(in)
-	want := "SELECT docnm_kwd FROM ragflow_t1 WHERE count > 0 "
-	if got != want {
-		t.Errorf("preprocessSQL(%q) = %q, want %q", in, got, want)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// rewriteFieldAliases — mirrors infinity_conn_base.py:809-830.
-// -----------------------------------------------------------------------------
-
-func TestRewriteFieldAliases_SelectClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":    "docnm",
-		"title_tks":    "docnm",
-		"title_sm_tks": "docnm",
-		"content_ltks": "content",
-	}
-	in := "select docnm_kwd, title_tks, content_ltks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select docnm, docnm, content from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_WhereClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select doc_id from ragflow_t1 where docnm_kwd = 'foo'"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 where docnm = 'foo'"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_OrderGroupHaving(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":     "docnm",
-		"important_kwd": "important_keywords",
-	}
-	in := "select doc_id from ragflow_t1 order by docnm_kwd group by important_kwd having important_kwd > 0"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 order by docnm group by important_keywords having important_keywords > 0"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_EmptyMapIsNoop(t *testing.T) {
-	in := "select docnm_kwd from ragflow_t1"
-	if got := rewriteFieldAliases(in, map[string]string{}); got != in {
-		t.Errorf("empty alias map should not modify SQL; got %q", got)
-	}
-}
-
-func TestRewriteFieldAliases_WordBoundaryProtected(t *testing.T) {
-	// "title" is an alias; "title_sm_tks" should NOT match because
-	// word boundary is enforced.
-	aliases := map[string]string{
-		"title": "docnm",
-	}
-	in := "select title_sm_tks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	// "title" inside "title_sm_tks" should NOT be rewritten.
-	want := "select title_sm_tks from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q (title_sm_tks must NOT be touched)", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_NoAliasMatchLeavesSQLAlone(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select content_with_weight from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	if got != in {
-		t.Errorf("unrelated SQL should be unchanged; got %q", got)
 	}
 }
 

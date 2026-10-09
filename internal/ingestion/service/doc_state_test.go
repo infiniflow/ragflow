@@ -24,8 +24,9 @@ import (
 	"testing"
 	"time"
 
-	taskpkg "ragflow/internal/ingestion/task"
+	"ragflow/internal/entity"
 	ingestiontable "ragflow/internal/ingestion/table"
+	taskpkg "ragflow/internal/ingestion/task"
 )
 
 type stubDocStateSvc struct {
@@ -42,6 +43,22 @@ type stubDocStateSvc struct {
 	readErr         error
 }
 
+func (s *stubDocStateSvc) WithDocumentMetadataLock(ctx context.Context, _ string, update func(context.Context) error) error {
+	return update(ctx)
+}
+
+func (s *stubDocStateSvc) RevokeTableProfile(ctx context.Context, docID string) error {
+	profile, _, err := ingestiontable.DecodeProfile(s.metaData[ingestiontable.ProfileMetadataField])
+	if err != nil {
+		return err
+	}
+	for _, key := range profile.OwnedKeys() {
+		delete(s.metaData, key)
+	}
+	delete(s.metaData, ingestiontable.ProfileMetadataField)
+	return nil
+}
+
 func (s *stubDocStateSvc) GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]any, error) {
 	if s.readErr != nil {
 		return nil, s.readErr
@@ -52,7 +69,7 @@ func (s *stubDocStateSvc) GetDocumentMetadataRaw(ctx context.Context, docID stri
 	return s.metaData, nil
 }
 
-func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
+func (s *stubDocStateSvc) SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error {
 	if s.setErr != nil {
 		return s.setErr
 	}
@@ -63,7 +80,7 @@ func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string,
 	return nil
 }
 
-func (s *stubDocStateSvc) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
+func (s *stubDocStateSvc) DeleteDocumentMetadataRaw(ctx context.Context, docID string, keys []string) error {
 	s.deletedKeys = append(s.deletedKeys, keys...)
 	for _, key := range keys {
 		delete(s.metaData, key)
@@ -302,12 +319,9 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 }
 
 func tableProfileForTest(owned []string) *ingestiontable.Profile {
-	roles := map[string]string{"金额": ingestiontable.RoleMetadata}
-	spec := ingestiontable.Spec{Mode: ingestiontable.ModeManual, Roles: roles}
 	return &ingestiontable.Profile{
 		Engine:        "infinity",
 		Columns:       ingestiontable.DeriveColumns([]string{"金额"}),
-		Specs:         map[string]ingestiontable.Spec{spec.Key(): spec},
 		OwnedMetadata: owned,
 	}
 }
@@ -345,10 +359,6 @@ func TestPublishTableProfileWritesRecordAndValues(t *testing.T) {
 	if got := fmt.Sprintf("%v", svc.metaData["金额"]); got != "[100 200]" {
 		t.Errorf("column values = %v", svc.metaData["金额"])
 	}
-}
-
-func profileKeyOf(mode string, roles map[string]string) string {
-	return ingestiontable.Spec{Mode: mode, Roles: roles}.Key()
 }
 
 // TestPublishNarrowsPreviousColumnValues is the reason the profile carries an
@@ -476,6 +486,99 @@ func TestPublishReadFailureFailsTheRun(t *testing.T) {
 		TableProfile: tableProfileForTest(nil),
 	}); err == nil {
 		t.Fatal("expected the read failure to surface")
+	}
+}
+
+func TestPublishColumnPreservesUnownedValue(t *testing.T) {
+	for _, previous := range []any{nil, publishedUnownedProfile(t)} {
+		svc := &stubDocStateSvc{metaData: map[string]any{
+			ingestiontable.ProfileMetadataField: previous,
+			"金额":                                []string{"用户写的"},
+		}}
+		if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{
+			DocID:        "doc-1",
+			Metadata:     map[string]any{"金额": []string{"100"}},
+			TableProfile: tableProfileForTest([]string{"金额"}),
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if got := fmt.Sprint(svc.metaData["金额"]); got != "[用户写的]" {
+			t.Errorf("table overwrote an unowned value: %s", got)
+		}
+		profile, ok, err := ingestiontable.DecodeProfile(svc.metaData[ingestiontable.ProfileMetadataField])
+		if err != nil || !ok || len(profile.OwnedMetadata) != 0 {
+			t.Fatalf("publisher claimed user metadata: %#v, %v", profile, err)
+		}
+	}
+}
+
+func publishedUnownedProfile(t *testing.T) string {
+	t.Helper()
+	raw, err := tableProfileForTest(nil).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+func TestPublishEmptyRunRevokesPreviousTable(t *testing.T) {
+	raw, err := tableProfileForTest([]string{"金额"}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "金额": []string{"100"}}}
+	if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := svc.metaData[ingestiontable.ProfileMetadataField]; ok {
+		t.Fatal("an empty run left an old table profile queryable")
+	}
+	if _, ok := svc.metaData["金额"]; ok {
+		t.Fatal("an empty run retained retired column values")
+	}
+}
+
+func TestCancelledRunDoesNotPublish(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	svc := &stubDocStateSvc{}
+	err := (&docStateUpdater{docSvc: svc}).apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", TableProfile: tableProfileForTest(nil)})
+	if !errors.Is(err, context.Canceled) || svc.setCalled || svc.incrementCalled {
+		t.Fatalf("cancelled run published state: error=%v metadata=%v counts=%v", err, svc.setCalled, svc.incrementCalled)
+	}
+}
+
+func TestStopRequestedBeforeFinalizationDoesNotPublish(t *testing.T) {
+	svc := &stubDocStateSvc{}
+	e := &Ingestor{
+		docState:    &docStateUpdater{docSvc: svc},
+		cancelCheck: func(context.Context, string) bool { return true },
+	}
+	err := e.finishDocumentTask(t.Context(), &entity.IngestionTask{ID: "task-1"}, "tenant-1", &taskpkg.PipelineResult{DocID: "doc-1", TableProfile: tableProfileForTest(nil)})
+	if !errors.Is(err, context.Canceled) || svc.setCalled {
+		t.Fatalf("stop request still published: error=%v published=%v", err, svc.setCalled)
+	}
+}
+
+func TestBuiltInMetadataTakesOverTableKey(t *testing.T) {
+	profile := &ingestiontable.Profile{
+		Engine:        "infinity",
+		Columns:       ingestiontable.DeriveColumns([]string{"file_name"}),
+		OwnedMetadata: []string{"file_name"},
+	}
+	raw, err := profile.Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "file_name": "table value"}}
+	if err := applyBuiltInMetadata(t.Context(), svc, "doc-1", "sales.xlsx", []any{map[string]any{"key": "file_name"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
+		t.Fatal(err)
+	}
+	if got := svc.metaData["file_name"]; got != "sales.xlsx" {
+		t.Fatalf("table revocation removed built-in metadata: %v", got)
 	}
 }
 

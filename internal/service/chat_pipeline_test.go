@@ -647,9 +647,14 @@ func TestNormalizeSQL_StripsThinkBlocks(t *testing.T) {
 func TestBuildSQLReference_Scalar(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "",
+		t.Context(),
+		nil,
+		nil,
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil, true,
+		"",
+		"",
+		nil,
+		true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
@@ -674,9 +679,14 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "select id, name from t",
+		t.Context(),
+		nil,
+		nil,
 		rows,
-		"sys", "elasticsearch", nil, nil, true,
+		"sys",
+		"elasticsearch",
+		nil,
+		true,
 	)
 	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
@@ -1122,90 +1132,6 @@ func TestExtractSourceColumnIndexes(t *testing.T) {
 	}
 }
 
-// TestBuildChunkFetchSQL verifies the WHERE-clause extraction and SQL
-// construction at dialog_service.py:1321-1331.
-func TestBuildChunkFetchSQL(t *testing.T) {
-	cases := []struct {
-		name      string
-		sql       string
-		multiKB   bool
-		wantSQL   string
-		wantFound bool
-	}{
-		{
-			name:      "WHERE + GROUP BY (extracts up to GROUP BY)",
-			sql:       "select count(*) from t where x = 1 group by y",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "WHERE only, single KB, no limit",
-			sql:       "select * from t where x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "WHERE only, multi KB adds kb_id column",
-			sql:       "select * from t where x = 1",
-			multiKB:   true,
-			wantSQL:   "select doc_id, docnm_kwd, kb_id from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			// Python's regex is non-greedy, so WHERE-clause extraction
-			// stops at the first occurrence of ORDER BY / LIMIT / GROUP BY.
-			// Python's subsequent SQL string is then
-			// "select doc_id, ... from t where {where}", which DROPS
-			// the order by / limit suffixes. Go matches this behavior.
-			name:      "WHERE + ORDER BY + LIMIT 5 (suffixes dropped, no extra limit)",
-			sql:       "select * from t where x = 1 order by y limit 5",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "no WHERE returns not-found",
-			sql:       "select * from t",
-			multiKB:   false,
-			wantSQL:   "",
-			wantFound: false,
-		},
-		{
-			// Python's f-string emits a literal lowercase "where";
-			// the original case from the input is NOT preserved.
-			name:      "case-insensitive where (output uses lowercase where)",
-			sql:       "select * from t WHERE x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm_kwd from t where x = 1 limit 20",
-			wantFound: true,
-		},
-		{
-			name:      "Infinity expectedCol is docnm (not _kwd)",
-			sql:       "select * from t where x = 1",
-			multiKB:   false,
-			wantSQL:   "select doc_id, docnm from t where x = 1 limit 20",
-			wantFound: true,
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			expectedCol := "docnm_kwd"
-			if tc.name == "Infinity expectedCol is docnm (not _kwd)" {
-				expectedCol = "docnm"
-			}
-			gotSQL, gotFound := buildChunkFetchSQL(tc.sql, "t", expectedCol, tc.multiKB)
-			if gotFound != tc.wantFound {
-				t.Errorf("found = %v, want %v", gotFound, tc.wantFound)
-			}
-			if gotSQL != tc.wantSQL {
-				t.Errorf("sql = %q, want %q", gotSQL, tc.wantSQL)
-			}
-		})
-	}
-}
-
 // TestToIfaceSlice verifies the slice type conversion for the call-site
 // contract at chat_pipeline.go:3846.
 func TestToIfaceSlice(t *testing.T) {
@@ -1247,30 +1173,6 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	}
 }
 
-// TestIsAggregateSQL matches the regex from dialog_service.py:974.
-func TestIsAggregateSQL(t *testing.T) {
-	cases := []struct {
-		sql  string
-		want bool
-	}{
-		{"select count(*) from t", true},
-		{"select sum(x) from t", true},
-		{"select avg(x) from t", true},
-		{"select max(x), min(y) from t", true},
-		{"select count(distinct x) from t", true},
-		{"select * from t where x = 1", false},
-		{"select distinct x from t", false}, // bare DISTINCT without ( ) doesn't match
-		{"", false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.sql, func(t *testing.T) {
-			if got := isAggregateSQL(tc.sql); got != tc.want {
-				t.Errorf("isAggregateSQL(%q) = %v, want %v", tc.sql, got, tc.want)
-			}
-		})
-	}
-}
-
 // sqlFakeEngine is a minimal in-memory engine.DocEngine stub for
 // testing fetchAggregateChunks / buildSQLReference without a real
 // engine. It embeds engine.DocEngine to satisfy the interface (the
@@ -1306,28 +1208,12 @@ func (f *sqlFakeEngine) RunSQL(ctx context.Context, table, sqlText string, kbIDs
 	return nil, nil
 }
 
-// TestFetchAggregateChunks_SkipsInfinityMultiKB verifies the
-// Infinity multi-KB short-circuit (mirrors Python's add_kb_filter
-// no-op for Infinity).
-func TestFetchAggregateChunks_SkipsInfinityMultiKB(t *testing.T) {
-	sqlEngine := &sqlFakeEngine{engineType: "infinity"}
-	s := &ChatPipelineService{}
-	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm", []string{"kb_a", "kb_b"},
-	)
-	if chunks != nil || docAggs != nil {
-		t.Errorf("expected nil chunks/docAggs on Infinity multi-KB, got %v / %v", chunks, docAggs)
-	}
-}
-
 // TestFetchAggregateChunks_SingleKBSuccess verifies the secondary fetch
 // path populates chunks and doc_aggs correctly.
 func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
-	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
+	chunksSQL := "select doc_id, docnm_kwd from ragflow_tenant1 where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' and doc_id IN ('d1', 'd2') and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
 	sqlEngine := &sqlFakeEngine{
-		engineType: "elasticsearch",
+		engineType: "oceanbase",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
 				{"doc_id": "d1", "docnm_kwd": "Doc1"},
@@ -1338,9 +1224,11 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{"kb_a"},
+		t.Context(),
+		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
+		"weight_int = 1",
+		"docnm_kwd",
+		[]string{"kb_a"},
 	)
 	if len(chunks) != 3 {
 		t.Fatalf("chunks len = %d, want 3", len(chunks))
@@ -1367,12 +1255,14 @@ func TestFetchAggregateChunks_SingleKBSuccess(t *testing.T) {
 // TestFetchAggregateChunks_NoWhereClause verifies the no-WHERE early
 // return (matches Python's aggregate fallback at L1365).
 func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
-	sqlEngine := &sqlFakeEngine{engineType: "elasticsearch"}
+	sqlEngine := &sqlFakeEngine{engineType: "oceanbase"}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t",
-		"docnm_kwd", []string{"kb_a"},
+		t.Context(),
+		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
+		"",
+		"docnm_kwd",
+		[]string{"kb_a"},
 	)
 	if chunks != nil || docAggs != nil {
 		t.Errorf("expected nil on no-WHERE, got %v / %v", chunks, docAggs)
@@ -1382,16 +1272,18 @@ func TestFetchAggregateChunks_NoWhereClause(t *testing.T) {
 // TestFetchAggregateChunks_RunSQLError verifies graceful failure.
 func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 	sqlEngine := &sqlFakeEngine{
-		engineType: "elasticsearch",
+		engineType: "oceanbase",
 		runSQL: func(ctx context.Context, table, sqlText string, kbIDs []string) ([]map[string]interface{}, error) {
 			return nil, fmt.Errorf("engine boom")
 		},
 	}
 	s := &ChatPipelineService{}
 	chunks, docAggs := s.fetchAggregateChunks(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		"docnm_kwd", []string{"kb_a"},
+		t.Context(),
+		newTestTableQuery(t, sqlEngine, []string{"d1", "d2"}),
+		"weight_int = 1",
+		"docnm_kwd",
+		[]string{"kb_a"},
 	)
 	if chunks != nil || docAggs != nil {
 		t.Errorf("expected nil on RunSQL error, got %v / %v", chunks, docAggs)
@@ -1402,8 +1294,14 @@ func TestFetchAggregateChunks_RunSQLError(t *testing.T) {
 func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "", "", nil,
-		"", "", nil, nil, true,
+		t.Context(),
+		nil,
+		nil,
+		nil,
+		"",
+		"",
+		nil,
+		true,
 	)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
@@ -1424,8 +1322,14 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil, true,
+		t.Context(),
+		nil,
+		nil,
+		rows,
+		"",
+		"elasticsearch",
+		kbs,
+		true,
 	)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
@@ -1449,8 +1353,14 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	}
 
 	ans, ref = s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil, false,
+		t.Context(),
+		nil,
+		nil,
+		rows,
+		"",
+		"elasticsearch",
+		kbs,
+		false,
 	)
 	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
 		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
@@ -1470,9 +1380,9 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	rows := []map[string]interface{}{
 		{"count": 42.0, "label": "total"},
 	}
-	chunksSQL := "select doc_id, docnm_kwd from t where x = 1 limit 20"
+	chunksSQL := "select doc_id, docnm_kwd from ragflow_tenant1 where kb_id = '0f1e2d3c4b5a69788796a5b4c3d2e1f0' and doc_id = 'd1' and available_int = 1 and table_row_int = 1 and (weight_int = 1) limit 20"
 	sqlEngine := &sqlFakeEngine{
-		engineType: "elasticsearch",
+		engineType: "oceanbase",
 		rowsBySQL: map[string][]map[string]interface{}{
 			chunksSQL: {
 				{"doc_id": "d1", "docnm_kwd": "Doc1"},
@@ -1482,9 +1392,14 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	kbs := []*entity.Knowledgebase{{ID: "kb_a"}}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), sqlEngine, "t",
-		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil, true,
+		t.Context(),
+		newTestTableQuery(t, sqlEngine, []string{"d1"}),
+		&tableSQLStatement{aggregating: true, where: "weight_int = 1"},
+		rows,
+		"",
+		"elasticsearch",
+		kbs,
+		true,
 	)
 	// Multi-cell aggregate → renders as a table, not a scalar.
 	if !strings.Contains(ans, "|42|") {
@@ -1506,8 +1421,14 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
-		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil, true,
+		t.Context(),
+		nil,
+		nil,
+		rows,
+		"",
+		"elasticsearch",
+		nil,
+		true,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
@@ -1534,8 +1455,14 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	fieldMap := map[string]interface{}{"title": "My Title"}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap, true,
+		t.Context(),
+		&tableSQL{fieldMap: fieldMap},
+		nil,
+		rows,
+		"",
+		"elasticsearch",
+		nil,
+		true,
 	)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
@@ -1553,8 +1480,14 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	}
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
-		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil, true,
+		t.Context(),
+		nil,
+		nil,
+		rows,
+		"",
+		"elasticsearch",
+		nil,
+		true,
 	)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)

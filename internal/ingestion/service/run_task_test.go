@@ -8,8 +8,39 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/ingestion/testutil"
 )
+
+func TestStopAfterPublishRevokesTableBeforeSettling(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	raw, err := tableProfileForTest([]string{"金额"}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "金额": []string{"100"}, "作者": "用户"}}
+	ingestor := newUnitIngestor("test", 1, []string{"xlsx"})
+	ingestor.docState = &docStateUpdater{docSvc: svc}
+	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+		_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+		return err
+	}
+	if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID}) {
+		t.Fatal("stopped task did not settle")
+	}
+	if _, ok := svc.metaData[ingestiontable.ProfileMetadataField]; ok {
+		t.Fatal("stopped task retained its published table")
+	}
+	if _, ok := svc.metaData["金额"]; ok {
+		t.Fatal("stopped task retained column values")
+	}
+	if svc.metaData["作者"] != "用户" {
+		t.Fatal("stopping removed unrelated metadata")
+	}
+}
 
 // TestRunTask_ContextCancelledBeforePipeline makes a cancelled context settle
 // the task as STOPPED without entering the pipeline.

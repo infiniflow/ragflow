@@ -21,12 +21,10 @@ func tableRowChunk(t *testing.T, mode string, declared map[string]string, header
 			data[col.DataKey] = cells[col.Key]
 		}
 	}
-	spec := ingestiontable.Spec{Mode: mode, Roles: declared}
 	doc := schema.ChunkDoc{
-		Text:            "row",
-		ChunkData:       data,
-		TableRowInt:     1,
-		TableProfileKey: spec.Key(),
+		Text:        "row",
+		ChunkData:   data,
+		TableRowInt: 1,
 		TableRowSource: &schema.TableRowSource{
 			NodeID:     "TableChunker:FastFoxesJump",
 			SheetIndex: 1,
@@ -109,13 +107,6 @@ func TestProjectTableChunksManualRoles(t *testing.T) {
 		}
 	}
 
-	spec, ok := profile.SpecFor(ingestiontable.Spec{Mode: ingestiontable.ModeManual, Roles: declared}.Key())
-	if !ok {
-		t.Fatalf("profile key missing from specs: %v", profile.Specs)
-	}
-	if spec.Mode != ingestiontable.ModeManual || spec.Roles["金额"] != ingestiontable.RoleMetadata {
-		t.Errorf("spec = %#v", spec)
-	}
 	if profile.Engine != "infinity" {
 		t.Errorf("engine = %q", profile.Engine)
 	}
@@ -156,9 +147,6 @@ func TestProjectTableChunksAutoPublishesNoDocumentValues(t *testing.T) {
 	}
 	if _, ok := findColumn(profile.Columns, "金额"); !ok {
 		t.Errorf("auto columns missing: %#v", profile.Columns)
-	}
-	if _, ok := profile.SpecFor(ingestiontable.Spec{Mode: ingestiontable.ModeAuto}.Key()); !ok {
-		t.Errorf("auto spec missing: %v", profile.Specs)
 	}
 }
 
@@ -201,9 +189,6 @@ func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
 	}
 	if ck["table_row_int"] != float64(1) {
 		t.Errorf("table_row_int = %v (%T), want 1 kept for the index", ck["table_row_int"], ck["table_row_int"])
-	}
-	if ck["table_profile_key"] == nil || ck["table_profile_key"] == "" {
-		t.Errorf("table_profile_key = %v, want it kept for the index", ck["table_profile_key"])
 	}
 	if ck["chunk_data"] == nil {
 		t.Error("chunk_data was stripped; the structured columns would be unqueryable")
