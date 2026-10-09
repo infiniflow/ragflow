@@ -447,7 +447,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 // state. Document-wide layout, table merge/replace, cross-page figures, and
 // metrics aggregation happen here so page workers never mutate shared state.
 // pageResults are expected to be sorted by page number.
-func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult, outlines []pdf.Outline) (*pdf.ParseResult, error) {
+func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult, outlines []pdf.Outline, totalPages int) (*pdf.ParseResult, error) {
 	result := &pdf.ParseResult{
 		PageHeight: make(map[int]float64),
 		PageWidth:  make(map[int]float64),
@@ -505,7 +505,7 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 	// when this parse covers the document's first page.
 	coversDocumentStart := len(pages) > 0 && pages[0] == 0
 	if err := p.buildLayout(ctx, result, boxes, pageChars,
-		medianHeights, medianWidths, pageEnglish, coversDocumentStart); err != nil {
+		medianHeights, medianWidths, pageEnglish, coversDocumentStart, totalPages); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
 	return result, nil
@@ -518,12 +518,16 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 //
 // coversDocumentStart reports whether `pages` started at the document's first
 // page, which is what the TOC box-shape signal requires (see RemoveTOCBoxes).
+// totalPages is the document's full page count, forwarded to
+// RemoveHeaderFooterBoxes so its document-level judgments are not derived from
+// the parsed page subset (see that function's doc comment).
 func (p *Parser) buildLayout(ctx context.Context,
 	result *pdf.ParseResult,
 	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
 	medianHeights, medianWidths map[int]float64,
 	pageEnglish map[int]bool,
 	coversDocumentStart bool,
+	totalPages int,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
@@ -576,7 +580,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// no such gate.
 	boxesBefore := len(boxes)
 	if p.Config.RemoveHeaderFooter {
-		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight)
+		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight, totalPages)
 		result.Metrics.BoxesHeaderFooterRemoved = boxesBefore - len(boxes)
 		boxesBefore = len(boxes)
 	}
@@ -659,7 +663,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 			zap.Error(pageErr))
 	}
 
-	result, err := p.assembleDocument(ctx, pages, pageResults, outlines)
+	result, err := p.assembleDocument(ctx, pages, pageResults, outlines, pageCount)
 	if err != nil {
 		return nil, err
 	}

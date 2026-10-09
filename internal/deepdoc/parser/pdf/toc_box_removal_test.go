@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -187,5 +188,46 @@ func TestParseRaw_TOCAndHeaderFooterBothApply(t *testing.T) {
 	}
 	if n := sectionsOnPage(result, 4); n == 0 {
 		t.Fatal("body page 4 must survive both passes")
+	}
+}
+
+// rangeFooterEngine builds a 100-page document whose parsed range (pages 31-41,
+// 1-based) carries a tight bare-number footer: Top is inside the sequence
+// track's 80%+ band but above the 86% footer zone, so only the sequence track
+// can remove it. DlaScale 3 turns a 1000px render into a 333pt page, putting
+// the footer at 280pt.
+func rangeFooterEngine() *MockEngine {
+	const footerTop = 280.0
+	chars := map[int][]pdf.TextChar{}
+	for pg := 30; pg <= 40; pg++ {
+		chars[pg] = []pdf.TextChar{
+			{X0: 50, X1: 550, Top: 100, Bottom: 140, Text: "body text", PageNumber: pg},
+			{X0: 280, X1: 340, Top: footerTop, Bottom: footerTop + 12, Text: strconv.Itoa(pg + 1), PageNumber: pg},
+		}
+	}
+	return &MockEngine{NumPages: 100, RenderW: 1000, RenderH: 1000, Chars: chars}
+}
+
+// TestParseRaw_PageRangeHeaderFooterUsesDocumentPageCount pins that the
+// page-number sequence track judges plausibility against the document's full
+// page count, not the parsed subset. Before the fix len(pageHeights)==11 gave
+// pageNumberCeiling==20, so the 31..41 footers were rejected as implausible and
+// survived; with the engine page count (100) the +1 run is recognised.
+func TestParseRaw_PageRangeHeaderFooterUsesDocumentPageCount(t *testing.T) {
+	cfg := pdf.DefaultParserConfig()
+	cfg.RemoveHeaderFooter = true
+	cfg.Pages = [][]int{{31, 41}}
+
+	result, err := NewParser(cfg).ParseRaw(t.Context(), rangeFooterEngine(), &MockDocAnalyzer{Healthy: true})
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if result.Metrics.BoxesHeaderFooterRemoved == 0 {
+		t.Fatal("the tight page-number footer run must be removed when totalPages is the document size")
+	}
+	for _, s := range result.Sections {
+		if strings.ContainsAny(s.Text, "0123456789") {
+			t.Fatalf("a page number survived into section %q", s.Text)
+		}
 	}
 }

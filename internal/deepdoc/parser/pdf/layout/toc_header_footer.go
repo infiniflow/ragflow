@@ -817,7 +817,15 @@ func findPageNumberSequenceDrops(cands []pageNumCand) []int {
 //     are removed when they step by one across >= 3 consecutive pages at a
 //     stable Y, catching page numbers that sit too tight under body text for
 //     the geometric gate in any tier above.
-func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) []pdf.TextBox {
+//
+// totalPages is the document's full page count (engine.PageCount). The
+// document-level judgments — the bare-page-number ceiling, the short-document
+// guard, the global half-pages threshold, and the sequence-track ceiling — are
+// computed from it, not from len(pageHeights): when Config.Pages parses a
+// subset, pageHeights covers only those pages, while the page numbers are
+// absolute and the document size is unchanged. The parity and locality tracks
+// stay scope-relative (they judge the pages actually observed).
+func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64, totalPages int) []pdf.TextBox {
 	if len(pageHeights) == 0 || len(boxes) == 0 {
 		return boxes
 	}
@@ -843,7 +851,13 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
-	numPages := len(pageHeights)
+	// Document-level basis. Never smaller than the observed subset so a caller
+	// that omits totalPages (0) degrades to the previous subset behavior and a
+	// bogus small value cannot shrink the thresholds below what was parsed.
+	docPages := totalPages
+	if docPages < len(pageHeights) {
+		docPages = len(pageHeights)
+	}
 	drop := make(map[int]struct{}, len(boxes))
 	// promoSpots records where a site-promo box was dropped in Tier 1 so the
 	// companion pass can learn its band peers' text as running-header ads.
@@ -890,7 +904,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 			continue
 		}
 
-		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], numPages) {
+		if isDeterministicPageNumber(b.Text, zone, allGapAbove[i], allGapBelow[i], docPages) {
 			common.Debug("header_footer: dropped by page-number pattern",
 				zap.Int("page", b.PageNumber), zap.String("zone", zone),
 				zap.Int("textLen", utf8.RuneCountInString(b.Text)))
@@ -899,7 +913,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
-	if numPages < minHeaderFooterPages {
+	if docPages < minHeaderFooterPages {
 		if len(drop) == 0 {
 			return boxes
 		}
@@ -952,7 +966,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 		}
 	}
 
-	minGlobalPages := (numPages + 1) / 2
+	minGlobalPages := (docPages + 1) / 2
 	if minGlobalPages < 2 {
 		minGlobalPages = 2
 	}
@@ -1019,7 +1033,7 @@ func RemoveHeaderFooterBoxes(boxes []pdf.TextBox, pageHeights map[int]float64) [
 	// page-number series on sequence evidence alone. This runs after the
 	// recurrence engine so it only adds drops: the recurrence counts, which
 	// include these boxes under their masked key, stay untouched.
-	if seqDrops := findPageNumberSequenceDrops(collectPageNumberCandidates(boxes, pageHeights, pageNumberCeiling(numPages))); len(seqDrops) > 0 {
+	if seqDrops := findPageNumberSequenceDrops(collectPageNumberCandidates(boxes, pageHeights, pageNumberCeiling(docPages))); len(seqDrops) > 0 {
 		common.Debug("header_footer: dropped by page-number sequence", zap.Int("boxes", len(seqDrops)))
 		for _, idx := range seqDrops {
 			drop[idx] = struct{}{}
