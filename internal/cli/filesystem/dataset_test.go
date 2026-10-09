@@ -22,29 +22,26 @@ import (
 	"time"
 )
 
-// TestParseTimeRFC3339WithZoneOffset pins the RFC3339-shaped input families
-// the server returns. Pre-fix the only hand-rolled format with a zone was
-// "2006-01-02T15:04:05Z", which accepted "Z" but not "±HH:MM" offsets —
-// parseTime("2026-09-30T15:04:05+05:30") returned time.Time{} (zero). The
-// fix swaps to time.RFC3339Nano (tried first because it accepts every
-// RFC3339 input plus optional fractional seconds) followed by
-// time.RFC3339 and the existing space-separated format with zone.
+// TestParseTimeRFC3339WithZoneOffset checks supported string formats.
 func TestParseTimeRFC3339WithZoneOffset(t *testing.T) {
 	cases := []struct {
 		name        string
 		input       string
 		wantNonZero bool
 		wantYear    int
+		wantInstant time.Time
 	}{
 		{
 			name:        "RFC3339 with positive zone offset",
 			input:       "2026-09-30T15:04:05+05:30",
+			wantInstant: time.Date(2026, 9, 30, 9, 34, 5, 0, time.UTC),
 			wantNonZero: true,
 			wantYear:    2026,
 		},
 		{
 			name:        "RFC3339 with negative zone offset",
 			input:       "2026-09-30T15:04:05-08:00",
+			wantInstant: time.Date(2026, 9, 30, 23, 4, 5, 0, time.UTC),
 			wantNonZero: true,
 			wantYear:    2026,
 		},
@@ -57,12 +54,14 @@ func TestParseTimeRFC3339WithZoneOffset(t *testing.T) {
 		{
 			name:        "RFC3339Nano with fractional seconds and zone",
 			input:       "2026-09-30T15:04:05.123456789+05:30",
+			wantInstant: time.Date(2026, 9, 30, 9, 34, 5, 123456789, time.UTC),
 			wantNonZero: true,
 			wantYear:    2026,
 		},
 		{
 			name:        "RFC3339Nano with fractional seconds and Z",
 			input:       "2026-09-30T15:04:05.999999999Z",
+			wantInstant: time.Date(2026, 9, 30, 15, 4, 5, 999999999, time.UTC),
 			wantNonZero: true,
 			wantYear:    2026,
 		},
@@ -100,6 +99,9 @@ func TestParseTimeRFC3339WithZoneOffset(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			got := parseTime(tc.input)
+			if !tc.wantInstant.IsZero() && !got.Equal(tc.wantInstant) {
+				t.Fatalf("parseTime(%q) = %v, want %v", tc.input, got, tc.wantInstant)
+			}
 			if tc.wantNonZero {
 				if got.IsZero() {
 					t.Fatalf("parseTime(%q) = zero time, want non-zero", tc.input)
@@ -114,13 +116,7 @@ func TestParseTimeRFC3339WithZoneOffset(t *testing.T) {
 	}
 }
 
-// TestParseTimePreservesMillisecondPrecision pins the integer-precision
-// path. Pre-fix parseTime(1727700000123) divided by 1000 and discarded the
-// "123" ms remainder, then called time.Unix(sec, 0) — the returned
-// time.Time held a seconds-precision instant even though the input was
-// millisecond-precision. The fix routes 13-digit epoch values through
-// time.UnixMilli so the sub-second remainder survives as nanoseconds on
-// the returned time.Time.
+// TestParseTimePreservesMillisecondPrecision checks integer epoch inputs.
 func TestParseTimePreservesMillisecondPrecision(t *testing.T) {
 	// 2024-09-30T14:40:00.123 UTC.
 	have := int64(1727700000123)
@@ -150,8 +146,6 @@ func TestParseTimePreservesMillisecondPrecision(t *testing.T) {
 	}
 }
 
-// TestParseTimeSecondsPrecisionUnchanged pins the existing 10-digit-epoch
-// path so the milliseconds fix does not regress the seconds case.
 func TestParseTimeSecondsPrecisionUnchanged(t *testing.T) {
 	// 2024-09-30T14:40:00 UTC — 10 digits, seconds precision.
 	have := int64(1727700000)
@@ -179,11 +173,6 @@ func TestParseTimeSecondsPrecisionUnchanged(t *testing.T) {
 	}
 }
 
-// TestParseTimeNil pins the no-input contract: nil returns time.Time{}
-// (zero time, NOT the unix epoch). int64 0 is intentionally not asserted
-// here — the seconds path routes it through time.Unix(0, 0) (the unix
-// epoch), and that is the long-standing contract for the int64 seconds
-// branch.
 func TestParseTimeNil(t *testing.T) {
 	if got := parseTime(nil); !got.IsZero() {
 		t.Errorf("parseTime(nil) = %v, want zero time", got)
