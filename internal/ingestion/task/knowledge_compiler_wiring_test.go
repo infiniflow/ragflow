@@ -48,7 +48,8 @@ func TestKnowledgeCompilerRegisteredByWiring(t *testing.T) {
 
 type wikiPageStoreEngine struct {
 	engine.DocEngine
-	row map[string]interface{}
+	row      map[string]interface{}
+	getCalls int
 }
 
 func (e *wikiPageStoreEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -59,6 +60,11 @@ func (e *wikiPageStoreEngine) Search(_ context.Context, req *types.SearchRequest
 		}
 	}
 	return &types.SearchResult{Chunks: []map[string]interface{}{row}}, nil
+}
+
+func (e *wikiPageStoreEngine) GetChunk(_ context.Context, _ string, _ string, _ []string) (interface{}, error) {
+	e.getCalls++
+	return e.row, nil
 }
 
 func TestGetPageBySlugReadsStoredMarkdownBody(t *testing.T) {
@@ -72,7 +78,7 @@ func TestGetPageBySlugReadsStoredMarkdownBody(t *testing.T) {
 	if err != nil || page == nil {
 		t.Fatalf("page = %+v, err = %v", page, err)
 	}
-	if page.ContentMD != body || page.ContentMDRaw != body {
+	if page.ContentMD != body || page.ContentMDRaw != body || eng.getCalls != 1 {
 		t.Fatalf("incremental page body changed: %+v", page)
 	}
 }

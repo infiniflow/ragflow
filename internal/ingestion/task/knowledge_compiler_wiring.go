@@ -859,7 +859,7 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 			ExtraOptions:      map[string]interface{}{"similarity": 0.0},
 		}},
 	}
-	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
+	res, err := s.docEngine.Search(ctx, req)
 	if err != nil || res == nil {
 		return nil, err
 	}
@@ -884,11 +884,20 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 			"slug_kwd": slug,
 		},
 	}
-	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
+	res, err := s.docEngine.Search(ctx, req)
 	if err != nil || res == nil || len(res.Chunks) == 0 {
 		return nil, err
 	}
-	page := wikiPageCandidateFromRow(res.Chunks[0])
+	row := res.Chunks[0]
+	if enginetypes.WikiPageContent(row) == "" {
+		raw, err := s.docEngine.GetChunk(ctx, req.IndexNames[0], anyString(row["id"]), req.KbIDs)
+		if err != nil {
+			return nil, err
+		}
+		stored, _ := raw.(map[string]interface{})
+		row["content_with_weight"] = enginetypes.WikiPageContent(stored)
+	}
+	page := wikiPageCandidateFromRow(row)
 	return &page, nil
 }
 
@@ -906,7 +915,7 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 			"source_chunk_ids": chunkIDs,
 		},
 	}
-	res, err := engine.SearchWithWikiContent(ctx, s.docEngine, req)
+	res, err := s.docEngine.Search(ctx, req)
 	if err != nil || res == nil {
 		return nil, err
 	}

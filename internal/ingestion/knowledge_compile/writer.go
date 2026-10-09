@@ -327,7 +327,7 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	const pageBatchSize = 2000
 	for offset := 0; ; offset += pageBatchSize {
-		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
+		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{baseName},
 			KbIDs:      []string{kb},
 			Offset:     offset,
@@ -357,7 +357,16 @@ func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string
 			if !ok {
 				continue
 			}
-			result[target.key] = types.WikiPageContent(row)
+			content := types.WikiPageContent(row)
+			if content == "" {
+				raw, err := eng.GetChunk(ctx, baseName, pageEngineString(row["id"]), []string{kb})
+				if err != nil {
+					return nil, err
+				}
+				stored, _ := raw.(map[string]interface{})
+				content = types.WikiPageContent(stored)
+			}
+			result[target.key] = content
 		}
 		if len(res.Chunks) < pageBatchSize {
 			break

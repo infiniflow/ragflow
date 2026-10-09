@@ -78,7 +78,7 @@ func (s *DatasetArtifactService) searchCompiledWithMatch(ctx context.Context, te
 		merged[k] = v
 	}
 	merged["kb_id"] = []string{datasetID}
-	res, err := engine.SearchWithWikiContent(ctx, docEngine, &types.SearchRequest{
+	res, err := docEngine.Search(ctx, &types.SearchRequest{
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Offset:       offset,
@@ -322,6 +322,10 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
+	content, err := loadWikiPageBody(ctx, engine.Get(), wikiIndexName(tenantID), datasetID, c)
+	if err != nil {
+		return nil, err
+	}
 	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
 	// "<page_type>/" prefix being doubled (matches ListWikiPages).
@@ -335,7 +339,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		Title:          firstStringValue(c["title_kwd"]),
 		PageType:       detailPageType,
 		Topic:          kccommon.NormalizeWikiTopicPath(firstStringValue(c["topic_kwd"])),
-		ContentMd:      types.WikiPageContent(c),
+		ContentMd:      content,
 		Summary:        firstStringValue(c["summary_with_weight"]),
 		EntityNames:    toStringSlice(c["entity_names_kwd"]),
 		Outlinks:       toStringSlice(c["outlinks_kwd"]),
@@ -344,6 +348,18 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		SourceDocIDs:   toStringSlice(c["source_doc_ids"]),
 	}
 	return detail, nil
+}
+
+func loadWikiPageBody(ctx context.Context, docEngine engine.DocEngine, indexName, datasetID string, row map[string]interface{}) (string, error) {
+	if content := types.WikiPageContent(row); content != "" {
+		return content, nil
+	}
+	raw, err := docEngine.GetChunk(ctx, indexName, firstStringValue(row["id"]), []string{datasetID})
+	if err != nil {
+		return "", err
+	}
+	stored, _ := raw.(map[string]interface{})
+	return types.WikiPageContent(stored), nil
 }
 
 // UpdateWikiPage performs a partial field update of a wiki page's content,

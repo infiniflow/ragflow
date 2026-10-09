@@ -159,7 +159,7 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 	var out []kccommon.Product
 	offset := 0
 	for {
-		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
+		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:        []string{kb},
 			Filter:       map[string]interface{}{"doc_id": docID},
@@ -220,7 +220,7 @@ func (r engineReader) LoadMergedProduct(ctx context.Context, tenant, kb, id stri
 		return kccommon.Product{}, nil
 	}
 	filter := map[string]interface{}{"id": id, "available_int": 1, "scope_kwd": "dataset"}
-	res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
+	res, err := eng.Search(ctx, &types.SearchRequest{
 		IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb}, Limit: 1,
 		SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 		Filter:       filter,
@@ -249,7 +249,7 @@ func (r engineReader) LoadMergedWikiPages(ctx context.Context, tenant, kb string
 	filter := map[string]interface{}{"available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
+		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
 			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
@@ -299,7 +299,7 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 	}
 	var pages []kccommon.Product
 	for offset := 0; ; offset += loadDocProductsLimit {
-		res, err := engine.SearchWithWikiContent(ctx, eng, &types.SearchRequest{
+		res, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)}, KbIDs: []string{kb},
 			Limit: loadDocProductsLimit, Offset: offset,
 			OrderBy:      (&types.OrderByExpr{}).Asc("id"),
@@ -336,9 +336,6 @@ func (r engineReader) LoadDocumentWikiPagesBySlugs(ctx context.Context, tenant, 
 // are rejected consistently rather than leaking into the wrong bucket.
 func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommon.Variant) (kccommon.Product, bool) {
 	content, _ := c["content_with_weight"].(string)
-	if expect == kccommon.VariantWiki {
-		content = types.WikiPageContent(c)
-	}
 	if content == "" {
 		return kccommon.Product{}, false
 	}
@@ -542,7 +539,7 @@ func (r engineReader) SearchSimilar(ctx context.Context, tenant, kb string, vari
 	if variant == kccommon.VariantWiki {
 		req.Filter["type_kwd"] = compileKwdWikiPage
 	}
-	res, err := engine.SearchWithWikiContent(ctx, eng, req)
+	res, err := eng.Search(ctx, req)
 	if err != nil {
 		return kccommon.Product{}, 0, err
 	}

@@ -703,11 +703,11 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 	if !strings.HasPrefix(slugKwd, pageType+"/") {
 		slugKwd = pageType + "/" + slugKwd
 	}
-	result, err := engine.SearchWithWikiContent(ctx, docEngine, &enginetypes.SearchRequest{
+	result, err := docEngine.Search(ctx, &enginetypes.SearchRequest{
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "compile_kwd", "type_kwd", "content_with_weight"},
+		SelectFields: []string{"id", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"type_kwd":      []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
@@ -722,7 +722,17 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 	if result == nil || len(result.Chunks) == 0 {
 		return ""
 	}
-	return enginetypes.WikiPageContent(result.Chunks[0])
+	row := result.Chunks[0]
+	if content := enginetypes.WikiPageContent(row); content != "" {
+		return content
+	}
+	raw, err := docEngine.GetChunk(ctx, wikiIndexName(tenantID), pageContentValue(row["id"]), []string{datasetID})
+	if err != nil {
+		common.Warn("failed to read stored Wiki page content", zap.Error(err))
+		return ""
+	}
+	stored, _ := raw.(map[string]interface{})
+	return enginetypes.WikiPageContent(stored)
 }
 
 func pageContentValue(value interface{}) string {
