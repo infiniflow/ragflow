@@ -24,14 +24,11 @@ export function BuiltinPipelineCard({
     copy({ id: data.id, title: data.title ?? '' });
   };
 
-  // The built-in marker is rendered as a badge. Reuse the existing
-  // " (built in)" suffix but drop the surrounding parentheses for a cleaner
-  // badge label, falling back to a plain label if the locale is missing it.
-  const builtInLabel = (
-    t('knowledgeConfiguration.builtInSuffix') || ' (built in)'
-  )
-    .trim()
-    .replace(/^\(|\)$/g, '');
+  // The built-in marker is rendered as a badge. Use a dedicated translation
+  // key (builtInBadge) rather than the parser dropdown's builtInSuffix, so the
+  // badge label is decoupled from that unrelated feature. Fall back to a plain
+  // label if the locale is missing it.
+  const builtInLabel = t('knowledgeConfiguration.builtInBadge') || 'Built in';
 
   return (
     <HomeCard
@@ -57,7 +54,7 @@ export function BuiltinPipelineCard({
           disabled={copying}
           onClick={handleCopyClick}
         >
-          <Copy className="size-[1em]" />
+          <Copy className="size-4" />
           {t('common.copy')}
         </Button>
       }

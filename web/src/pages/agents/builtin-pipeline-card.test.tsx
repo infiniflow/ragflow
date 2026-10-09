@@ -5,8 +5,8 @@ import { BuiltinPipelineCard } from './builtin-pipeline-card';
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key: string) =>
-      key === 'knowledgeConfiguration.builtInSuffix'
-        ? ' (built in)'
+      key === 'knowledgeConfiguration.builtInBadge'
+        ? 'Built in'
         : key === 'common.copy'
           ? 'Copy'
           : key,
@@ -47,7 +47,7 @@ describe('BuiltinPipelineCard', () => {
     );
     expect(screen.getByText('General')).toBeInTheDocument();
     expect(screen.getByText('Default parsing method')).toBeInTheDocument();
-    expect(screen.getByTestId('builtin-badge')).toHaveTextContent('built in');
+    expect(screen.getByTestId('builtin-badge')).toHaveTextContent('Built in');
   });
 
   it('renders a Copy button and no edit/delete dropdown', () => {
