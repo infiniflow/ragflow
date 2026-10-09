@@ -32,9 +32,11 @@ func IsASCIIPrintable(r rune) bool {
 }
 
 // DefaultSampleChars returns up to n character texts, concatenated.
-// Characters are taken at even intervals in page order so the same page
-// always yields the same sample. Python's random.choices is still unseeded
-// and jitters; do not chase that difference in the parity harness.
+// The page is split into that many equal spans, in page order, and one
+// character is taken from each span. The offset inside a span cycles so a
+// periodic mix is not stuck on one phase. The same page always yields the
+// same sample. Python's random.choices is still unseeded and jitters; do
+// not chase that difference in the parity harness.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
@@ -42,7 +44,9 @@ func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	m := min(n, len(chars))
 	var buf strings.Builder
 	for i := range m {
-		buf.WriteString(chars[i*len(chars)/m].Text)
+		start := i * len(chars) / m
+		width := (i+1)*len(chars)/m - start
+		buf.WriteString(chars[start+i%width].Text)
 	}
 	return buf.String()
 }

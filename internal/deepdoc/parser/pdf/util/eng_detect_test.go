@@ -57,8 +57,8 @@ func TestDefaultSampleCharsStable(t *testing.T) {
 	for i := range chars {
 		chars[i] = pdf.TextChar{Text: string(rune('a' + i%26))}
 	}
-	// Evenly spaced indices 0,4,...,36 of a repeating a-z alphabet.
-	const want = "aeimquycgk"
+	// Span offsets cycle: indexes 0,5,10,15,16,21,26,31,32,37.
+	const want = "afkpqvafgl"
 	var first string
 	for range 30 {
 		got := DefaultSampleChars(chars, 10)
@@ -94,6 +94,27 @@ func TestDetectEnglishPageStable(t *testing.T) {
 		}
 	}
 	if first {
+		t.Fatal("DetectEnglishPage = true, want false")
+	}
+}
+
+func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
+	// 200 glyphs, A / 你 / A / 你. A fixed stride of len/n == 2 samples only
+	// the A phase and DetectEnglishPage returns true. There is no adjacent
+	// ASCII run on the page, so the vote must stay false.
+	chars := make([]pdf.TextChar, 200)
+	for i := range chars {
+		if i%2 == 0 {
+			chars[i] = pdf.TextChar{Text: "A"}
+			continue
+		}
+		chars[i] = pdf.TextChar{Text: "你"}
+	}
+	sample := DefaultSampleChars(chars, 100)
+	if !strings.Contains(sample, "A") || !strings.Contains(sample, "你") {
+		t.Fatalf("DefaultSampleChars = %q, want both A and 你", sample)
+	}
+	if DetectEnglishPage(chars, nil) {
 		t.Fatal("DetectEnglishPage = true, want false")
 	}
 }
