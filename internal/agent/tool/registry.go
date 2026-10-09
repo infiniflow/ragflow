@@ -19,6 +19,7 @@ package tool
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -60,6 +61,8 @@ var registry = map[string]Factory{
 	"retrieval":                  buildRetrievalTool,
 	"search_my_dataset":          buildRetrievalTool,
 	"search_my_dateset":          buildRetrievalTool,
+	"search1api":                 buildSearch1APITool,
+	"search1api_crawl":           buildSearch1APICrawlTool,
 	"searxng":                    buildSearXNGTool,
 	"sofya":                      buildSofyaTool,
 	"tavily":                     buildTavilyTool,
@@ -77,15 +80,17 @@ var registry = map[string]Factory{
 // names such as "CodeExec" and "GoogleScholar", while the tool registry uses
 // snake_case names for several tools.
 var canvasToolNames = map[string]string{
-	"codeexec":       "code_exec",
-	"googlescholar":  "google_scholar",
-	"keenablesearch": "keenable",
-	"queritcontents": "querit_contents",
-	"queritsearch":   "querit_search",
-	"sofyasearch":    "sofya",
-	"tavilyextract":  "tavily_extract",
-	"tavilysearch":   "tavily",
-	"yahoofinance":   "yahoo_finance",
+	"codeexec":         "code_exec",
+	"googlescholar":    "google_scholar",
+	"keenablesearch":   "keenable",
+	"queritcontents":   "querit_contents",
+	"queritsearch":     "querit_search",
+	"search1apicrawl":  "search1api_crawl",
+	"search1apisearch": "search1api",
+	"sofyasearch":      "sofya",
+	"tavilyextract":    "tavily_extract",
+	"tavilysearch":     "tavily",
+	"yahoofinance":     "yahoo_finance",
 }
 
 func noConfig(name string, fn func() einotool.BaseTool) Factory {
@@ -769,6 +774,64 @@ func buildSofyaTool(params map[string]any) (einotool.BaseTool, error) {
 		defaults.TopN = topN
 	}
 	return newSofyaTool(nil, apiKey, defaults), nil
+}
+
+func buildSearch1APITool(params map[string]any) (einotool.BaseTool, error) {
+	defaults := search1APIDefaults{}
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", "search1api")
+		}
+	}
+	if value, ok := params["channel"]; ok {
+		channel, valid := value.(string)
+		if !valid || (channel != search1APIChannelGeneral && channel != search1APIChannelNews) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported channel %v", "search1api", value)
+		}
+		defaults.Channel = channel
+	}
+	if value, ok := params["search_service"]; ok {
+		searchService, valid := value.(string)
+		channel := defaults.Channel
+		if channel == "" {
+			channel = search1APIChannelGeneral
+		}
+		if !valid || (searchService != "" && !slices.Contains(search1APIChannelServices(channel), searchService)) {
+			return nil, fmt.Errorf("agent tool: tool %q has unsupported search_service %v for the %s channel", "search1api", value, channel)
+		}
+		defaults.SearchService = searchService
+	}
+	if value, ok := params["top_n"]; ok {
+		topN, valid := strictInt(value)
+		if !valid || topN <= 0 || topN > search1APIMaxResults {
+			return nil, fmt.Errorf("agent tool: tool %q requires integer node-level param top_n within [1, %d]", "search1api", search1APIMaxResults)
+		}
+		defaults.TopN = topN
+	}
+	return newSearch1APITool(nil, apiKey, defaults), nil
+}
+
+func buildSearch1APICrawlTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey := ""
+	if value, ok := params["api_key"]; ok {
+		var valid bool
+		apiKey, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param api_key", search1APICrawlToolName)
+		}
+	}
+	defaultURL := ""
+	if value, ok := params["url"]; ok {
+		var valid bool
+		defaultURL, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param url", search1APICrawlToolName)
+		}
+	}
+	return newSearch1APICrawlTool(nil, apiKey, defaultURL), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {

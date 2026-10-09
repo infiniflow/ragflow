@@ -2537,6 +2537,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sofyaSearchDepthBasic: '页面正文',
       sofyaSearchDepthSnippets: '仅摘要',
       sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        '基于 Search1API 的网页与新闻搜索组件，覆盖 Google、Bing、百度、GitHub、arXiv、Reddit、YouTube、Hacker News、Reuters 等搜索服务。作为智能体工具时，智能体可以在每次调用时自行选择频道和搜索服务。需要配置 API Key。',
+      search1APIChannelTip:
+        '网页频道搜索通用网页，新闻频道搜索新闻来源。作为智能体工具时，智能体可以在每次调用时切换频道。',
+      search1APIChannelGeneral: '网页',
+      search1APIChannelNews: '新闻',
+      search1APIService: '搜索服务',
+      search1APIServiceTip:
+        '所选频道的默认搜索服务。作为智能体工具时，智能体可以在每次调用时改用该频道支持的其他服务。',
+      search1APIApiKeyTip: '必填。请在 app.s1.dev 申请 API Key。',
+      search1APICrawl: 'Search1API 网页读取',
+      search1APICrawlDescription:
+        '使用 Search1API 读取网页，返回页面标题和完整正文。需要配置 API Key。',
+      search1APICrawlUrl: '网页地址',
+      search1APICrawlUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',

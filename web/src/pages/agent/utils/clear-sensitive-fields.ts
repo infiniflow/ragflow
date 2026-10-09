@@ -11,6 +11,8 @@ const apiKeyOperators = [
   Operator.BGPT,
   Operator.QueritContents,
   Operator.QueritSearch,
+  Operator.Search1APISearch,
+  Operator.Search1APICrawl,
 ];
 
 // Canvas nodes carry the operator under `data.label` and the key under
@@ -19,6 +21,8 @@ const apiKeyOperators = [
 const nodeLabelApiKeyOperators: string[] = [
   Operator.YouComSearch,
   Operator.SofyaSearch,
+  Operator.Search1APISearch,
+  Operator.Search1APICrawl,
 ];
 
 function isQueritOperator(value: unknown) {
