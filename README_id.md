@@ -129,11 +129,6 @@ Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 - Model menganalisis pertanyaan kompleks dan bila perlu memecahnya, mencari pengetahuan, serta memverifikasi bukti melalui beberapa tahap.
 - Mode Low, Medium, High, dan Ultra menyesuaikan kedalaman pencarian dan penalaran dengan kompleksitas pertanyaan.
 
-### ⚙️ **Arsitektur layanan native Go**
-
-- Satu layanan Go menyediakan API, Admin, Ingestor, dan Syncer. DeepDoc berjalan di dalam proses Go untuk analisis tata letak, OCR, dan pengenalan tabel.
-- Layanan Go memanggil pustaka pengurai dokumen native dan ONNX Runtime melalui CGO. MCP dan Sandbox Executor dapat diaktifkan sesuai kebutuhan.
-
 ### 🌱 **Referensi yang Didasarkan pada Data untuk Mengurangi Hallusinasi**
 
 - Visualisasi pemotongan teks memungkinkan intervensi manusia.
