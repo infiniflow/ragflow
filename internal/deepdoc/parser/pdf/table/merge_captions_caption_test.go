@@ -20,8 +20,7 @@ func TestMergeCaptions_EmitsCaptionTag(t *testing.T) {
 		{Text: "Table 1: Revenue", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 61, Right: 144, Top: 219, Bottom: 231}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with caption, standalone caption removed), got %d: %v", len(result), textsOf(result))
@@ -56,8 +55,7 @@ func TestMergeCaptions_LeftMarginCaptionAttaches(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 61, Right: 144, Top: 150, Bottom: 170}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 sections (title + table-with-caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -90,8 +88,7 @@ func TestMergeCaptions_SingleCaptionPerTable(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 200, Right: 380, Top: 350, Bottom: 370}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -129,8 +126,7 @@ func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 107, Right: 501, Top: 105, Bottom: 118}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -175,8 +171,7 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sections := []pdf.Section{table, c.caption}
-			figures := pdf.CollectFigures(sections)
-			result := MergeCaptions(sections, figures)
+			result := MergeCaptions(sections)
 			if len(result) != 1 {
 				t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
 			}
@@ -208,8 +203,7 @@ func TestMergeCaptions_CaptionOtherPageDoesNotAttach(t *testing.T) {
 		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 183, Right: 412, Top: 64, Bottom: 82}},
 	}
 	sections := []pdf.Section{table, caption}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	// No table on the caption's page -> orphaned caption (dropped), table unchanged.
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table unchanged, orphaned caption dropped), got %d: %v", len(result), textsOf(result))
@@ -233,8 +227,7 @@ func TestMergeCaptions_FigureCaptionRawText(t *testing.T) {
 		{Text: "Figure 1: Revenue trend by quarter", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -266,8 +259,7 @@ func TestMergeCaptions_NarrowCaptionAttachesWideTable(t *testing.T) {
 		{Text: "请求参数", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 28, Right: 100, Top: 157, Bottom: 178}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with caption, standalone caption removed), got %d: %v", len(result), textsOf(result))
@@ -295,7 +287,7 @@ func TestMergeCaptions_CJKBodyParagraphKept(t *testing.T) {
 				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 50, Bottom: 80}}},
 			para,
 		}
-		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		result := MergeCaptions(sections)
 		if len(result) != 2 {
 			t.Errorf("body paragraph dropped; got %d sections: %v", len(result), textsOf(result))
 		}
@@ -306,7 +298,7 @@ func TestMergeCaptions_CJKBodyParagraphKept(t *testing.T) {
 				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
 			para,
 		}
-		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		result := MergeCaptions(sections)
 		kept, swallowed := false, false
 		for _, s := range result {
 			if strings.Contains(s.Text, "表格是一种") {
@@ -345,7 +337,7 @@ func TestMergeCaptions_FigureWithCaptionMarkerTextSurvives(t *testing.T) {
 			{Text: text, LayoutType: pdf.LayoutTypeFigure, Image: "img",
 				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
 		}
-		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		result := MergeCaptions(sections)
 		figureAlive := false
 		for _, s := range result {
 			if s.LayoutType == pdf.LayoutTypeFigure {
@@ -371,7 +363,7 @@ func TestMergeCaptions_FigureTextNotStolenIntoTable(t *testing.T) {
 		{Text: "Table 2: embedded chart title inside the figure region", LayoutType: pdf.LayoutTypeFigure, Image: "chartimg",
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 120, Right: 480, Top: 420, Bottom: 600}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	figureAlive, stolen := false, false
 	for _, s := range result {
 		if s.LayoutType == pdf.LayoutTypeFigure {
@@ -401,7 +393,7 @@ func TestMergeCaptions_FigureCaptionKeptWithMarkerFigure(t *testing.T) {
 		{Text: "图4 部署拓扑结构", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	if len(result) != 1 || result[0].LayoutType != pdf.LayoutTypeFigure {
 		t.Fatalf("want the single figure section, got %d sections: %v", len(result), textsOf(result))
 	}
@@ -430,7 +422,7 @@ func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
 				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 300, Bottom: 500}}},
 			caption,
 		}
-		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		result := MergeCaptions(sections)
 		found := false
 		for _, s := range result {
 			if strings.Contains(s.Text, "revenue") {
@@ -457,7 +449,7 @@ func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
 		{Text: "Table 1 shows revenue by category for the fiscal year.", LayoutType: pdf.LayoutTypeText,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	for _, s := range result {
 		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>Table 1 shows revenue") {
 			return
@@ -483,7 +475,7 @@ func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
 		{Text: "Figure 9: latency by shard count", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 250, Right: 350, Top: 400, Bottom: 430}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 
 	var onZero, onTwo bool
 	for _, s := range result {
@@ -517,7 +509,7 @@ func TestMergeCaptions_FigureCaptionUnknownPageStillAttaches(t *testing.T) {
 		{Text: "Table 3: yearly totals", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	for _, s := range result {
 		if s.LayoutType == pdf.LayoutTypeFigure && strings.Contains(s.Text, "yearly totals") {
 			return
@@ -542,7 +534,7 @@ func TestMergeCaptions_TableFallbackSurvivesPageGuard(t *testing.T) {
 			LayoutType: pdf.LayoutTypeText,
 			Positions:  []pdf.Position{{PageNumbers: []int{7}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	for _, s := range result {
 		if strings.Contains(s.Text, "answer quality and retrieval performance") {
 			return
@@ -564,7 +556,7 @@ func TestMergeCaptions_FigureCaptionPositionMerged(t *testing.T) {
 		{Text: "Figure 1: revenue by quarter", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -575,13 +567,7 @@ func TestMergeCaptions_FigureCaptionPositionMerged(t *testing.T) {
 	if got.Positions[0].Top != 300 || got.Positions[0].Bottom != 500 {
 		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
 	}
-	found := false
-	for _, p := range got.Positions {
-		if p.Top == 510 && p.Bottom == 525 {
-			found = true
-		}
-	}
-	if !found {
+	if !hasBox(got.Positions, 510, 525) {
 		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
 	}
 }
@@ -599,7 +585,7 @@ func TestMergeCaptions_CrossPageFallbackDoesNotClaimPage(t *testing.T) {
 		{Text: "Table 9: yearly totals", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	for _, s := range result {
 		if s.LayoutType != pdf.LayoutTypeFigure {
 			continue
@@ -629,7 +615,7 @@ func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
 		{Text: "Figure 7: numbers", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 100, Right: 400, Top: 410, Bottom: 425}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	var zero, two bool
 	for _, s := range result {
 		has := strings.Contains(s.Text, "numbers")
@@ -664,7 +650,7 @@ func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
 		{Text: "Figure 3: detail", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 100, Right: 400, Top: 520, Bottom: 535}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	for _, s := range result {
 		if !strings.Contains(s.Text, "detail") {
 			continue
@@ -687,7 +673,7 @@ func TestMergeCaptions_TableCaptionPositionMerged(t *testing.T) {
 		{Text: "Table 1: results", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 210, Right: 385, Top: 138, Bottom: 149}}},
 	}
-	result := MergeCaptions(sections, nil)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -701,13 +687,7 @@ func TestMergeCaptions_TableCaptionPositionMerged(t *testing.T) {
 	if got.Positions[0].Top != 161 || got.Positions[0].Bottom != 236 {
 		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
 	}
-	found := false
-	for _, p := range got.Positions {
-		if p.Top == 138 && p.Bottom == 149 {
-			found = true
-		}
-	}
-	if !found {
+	if !hasBox(got.Positions, 138, 149) {
 		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
 	}
 }
@@ -724,7 +704,7 @@ func TestMergeCaptions_MergedCaptionKeepsOnlySharedPages(t *testing.T) {
 		{Text: "Figure 5: spread", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0, 5}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
 	}
-	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
 	}

@@ -8,19 +8,26 @@ import (
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 )
 
-// captionText is a caption box's text plus its top edge, used to order
-// multiple captions of one table in READING order (top→bottom) before
-// concatenation. Section order is not guaranteed to match the PDF layout
-// (e.g. 06's lower caption box precedes the upper one in sections), so the
-// top coordinate is carried explicitly.
+// captionText is one caption box: its text plus the box itself.
 type captionText struct {
-	top  float64
 	text string
-	// pos is the caption box itself. Merging a caption into a target moves its
-	// TEXT into the target's chunk, so the target's highlight geometry has to
-	// move with it — otherwise the UI highlights the figure region only and the
-	// caption line is never highlighted with the image it belongs to.
+	// pos is the caption box. Two things read it: the reading-order sort below,
+	// and the target's highlight geometry — merging a caption moves its TEXT
+	// into the target's chunk, so its boxes have to move with it, or the UI
+	// highlights the figure region only and never the caption line beside it.
 	pos []pdf.Position
+}
+
+// top is the caption's top edge, used to order multiple captions of one target
+// in READING order (top→bottom) before concatenation. Section order is not
+// guaranteed to match the PDF layout (e.g. 06's lower caption box precedes the
+// upper one in sections), so it is read from the box. A caption with no
+// positions sorts last.
+func (c captionText) top() float64 {
+	if len(c.pos) == 0 {
+		return 1e9
+	}
+	return c.pos[0].Top
 }
 
 // captionSep returns the separator inserted before a caption whose text is
@@ -40,7 +47,7 @@ func captionSep(text string) string {
 	return ""
 }
 
-func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section {
+func MergeCaptions(sections []pdf.Section) []pdf.Section {
 	captions := make([]int, 0, 4)
 	// Group caption texts by the target section index they attach to, so
 	// multiple caption boxes for the SAME table/figure collapse into a single
@@ -66,18 +73,14 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		if captionType == "" {
 			continue
 		}
-		target := findNearestParent(s, sections, figures, captionType)
+		target := findNearestParent(s, sections, captionType)
 		if target >= 0 {
 			// Emit the caption inside the target table's HTML as a <caption>
 			// element (matching Python's __html_table) and drop the standalone
 			// caption section. Retaining the caption text closes the previous
 			// content-loss go_bug table-html-emission-format; it is NOT a
 			// table-assembly change (cell content/structure are untouched).
-			top := 1e9
-			if len(s.Positions) > 0 {
-				top = s.Positions[0].Top
-			}
-			byTarget[target] = append(byTarget[target], captionText{top: top, text: s.Text, pos: s.Positions})
+			byTarget[target] = append(byTarget[target], captionText{text: s.Text, pos: s.Positions})
 			captions = append(captions, i)
 			continue
 		}
@@ -98,7 +101,7 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 	// Inject one combined <caption> per target. Captions of the same table are
 	// ordered by top edge (reading order, top→bottom) before concatenation.
 	for idx, entries := range byTarget {
-		sort.SliceStable(entries, func(i, j int) bool { return entries[i].top < entries[j].top })
+		sort.SliceStable(entries, func(i, j int) bool { return entries[i].top() < entries[j].top() })
 		texts := make([]string, len(entries))
 		for i, e := range entries {
 			texts[i] = e.text
@@ -162,16 +165,20 @@ func occupiesPage(s pdf.Section, page int) (onPage, hasPages bool) {
 
 // nearestFigureIn returns the index in `sections` of the figure closest to
 // caption by page-local centre distance, or -1 when none is within
-// maxCaptionGap. The figures list is a filtered copy of the figure sections, so
-// a hit is mapped back by its position box.
+// maxCaptionGap.
 //
-// requirePage restricts candidates to figures occupied by the caption's page.
-// Without it the search is page-blind: page-local coordinates repeat on every
-// page (each page has a caption band at roughly the same y), so the nearest
-// figure by page-local centre is usually on a DIFFERENT page. A figure with no
-// page metadata is kept as a candidate in both modes, so a caller that must not
-// lose text (the table-caption fallback) cannot be defeated by missing metadata
-// — see occupiesPage.
+// Candidates are read straight off `sections` and the section index is tracked
+// directly. A position box is NOT a figure's identity: page-local coordinates
+// repeat on every page, so two figures on different pages can carry the same
+// box — the very repetition the page filter exists to resolve — and resolving a
+// hit back by box would land on the wrong page's figure.
+//
+// requirePage restricts candidates to figures that occupy the caption's page.
+// Without it the search is page-blind, and the nearest figure by page-local
+// centre is usually on a DIFFERENT page. A figure with no page metadata stays a
+// candidate in both modes, so a caller that must not lose text (the
+// table-caption fallback) cannot be defeated by missing metadata — see
+// occupiesPage.
 func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bool) int {
 	if len(caption.Positions) == 0 {
 		return -1
@@ -193,12 +200,6 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 	// PageNumbers can still take a caption the table fallback must not drop;
 	// ordering the tiers means it cannot outbid a figure we can actually place.
 	//
-	// The section index is tracked directly. The previous shape searched a
-	// filtered figures copy and then mapped the hit back by comparing position
-	// boxes, which silently returned the first section with an equal box: with
-	// two figures on different pages sharing a box — exactly the situation this
-	// page filter exists to resolve, since page-local coordinates repeat per
-	// page — the caption was still attached to the wrong page's figure.
 	bestIdx, bestDist, bestTier := -1, 1e9, 2
 	for i, t := range sections {
 		if t.LayoutType != pdf.LayoutTypeFigure || len(t.Positions) == 0 {
@@ -238,7 +239,7 @@ func nearestFigureIn(sections []pdf.Section, caption pdf.Section, requirePage bo
 // unreachable (wrong page, out of range, or absent) lands on the nearest
 // figure instead of being dropped. Returns the index in `sections`, or -1
 // when no parent is in range.
-func findNearestParent(caption pdf.Section, sections []pdf.Section, figures []pdf.Section, captionType string) int {
+func findNearestParent(caption pdf.Section, sections []pdf.Section, captionType string) int {
 	// maxCaptionVGap is the vertical band within which a caption attaches to a
 	// table regardless of its horizontal offset. A narrow caption (e.g. a short
 	// Chinese label) sitting directly above a much wider table has a large dx to
@@ -262,26 +263,24 @@ func findNearestParent(caption pdf.Section, sections []pdf.Section, figures []pd
 		// Python's `elif fk` — rather than leaving the caller to delete a
 		// caption whose text Python preserves on a nearby figure.
 	}
-	if len(figures) > 0 {
-		// Two-pass figure search (see nearestFigureIn). Page-local coordinates
-		// repeat on every page, so proximity alone picks a figure on the wrong
-		// page: Figure 1's caption on page 0, page-local centre (415,474), matched
-		// a formula figure on page 13 at (417,480) — dist²=45, ~7pt.
-		//
-		// A genuine FIGURE caption is restricted to its own page: when no figure
-		// shares that page it stays a standalone section, which MergeCaptions keeps
-		// for figure captions — no text is lost and the caption is never glued to
-		// an unrelated figure. The TABLE-caption fallback must not lose text
-		// either, so it retries without the page filter and takes the nearest
-		// figure anywhere, mirroring Python's nearest(figures), which has no page
-		// scope at all: there, placement is best-effort but preservation is not.
-		if idx := nearestFigureIn(sections, caption, true); idx >= 0 {
+	// Two-pass figure search (see nearestFigureIn). Page-local coordinates
+	// repeat on every page, so proximity alone picks a figure on the wrong
+	// page: Figure 1's caption on page 0, page-local centre (415,474), matched
+	// a formula figure on page 13 at (417,480) — dist²=45, ~7pt.
+	//
+	// A genuine FIGURE caption is restricted to its own page: when no figure
+	// shares that page it stays a standalone section, which MergeCaptions keeps
+	// for figure captions — no text is lost and the caption is never glued to
+	// an unrelated figure. The TABLE-caption fallback must not lose text
+	// either, so it retries without the page filter and takes the nearest
+	// figure anywhere, mirroring Python's nearest(figures), which has no page
+	// scope at all: there, placement is best-effort but preservation is not.
+	if idx := nearestFigureIn(sections, caption, true); idx >= 0 {
+		return idx
+	}
+	if captionType == pdf.LayoutTypeTable {
+		if idx := nearestFigureIn(sections, caption, false); idx >= 0 {
 			return idx
-		}
-		if captionType == pdf.LayoutTypeTable {
-			if idx := nearestFigureIn(sections, caption, false); idx >= 0 {
-				return idx
-			}
 		}
 	}
 	return -1

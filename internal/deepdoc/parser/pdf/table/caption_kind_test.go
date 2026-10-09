@@ -62,8 +62,7 @@ func TestMergeCaptions_KeepsInterleavedParagraph(t *testing.T) {
 		{Text: "<table><tr><td >Category</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 159, Right: 393, Top: 130, Bottom: 336}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 sections (title + paragraph + table), got %d: %v", len(result), textsOf(result))
 	}
@@ -112,6 +111,18 @@ func TestCaptionKind_CJKCaptionMarkersStillMatch(t *testing.T) {
 			t.Errorf("CaptionKind(%q) = %q, want %q", tt.text, got, tt.want)
 		}
 	}
+}
+
+// hasBox reports whether positions contains a box with the given top and
+// bottom edges. Tests use it to assert that a merged caption's box reached the
+// section it was merged into.
+func hasBox(positions []pdf.Position, top, bottom float64) bool {
+	for _, p := range positions {
+		if p.Top == top && p.Bottom == bottom {
+			return true
+		}
+	}
+	return false
 }
 
 func textsOf(secs []pdf.Section) []string {
