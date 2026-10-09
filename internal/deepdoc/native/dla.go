@@ -90,8 +90,16 @@ func dlaGeom(img *Image) (newW, newH int, dw, dh float64) {
 
 // dlaLetterbox places the already-resized BGR raster (newH*newW*3, row-major)
 // into the dlaInputSize canvas with 114-filled borders and returns the CHW
-// float blob (/255) the YOLOv10 layout model consumes. Only the resize source
-// differs from the production Python reference (Go bilinearResize vs cv2).
+// float blob (/255) the YOLOv10 layout model consumes.
+//
+// Channel order MUST be RGB (channel 0 = red). The Go decoder yields a BGR
+// raster (img.ToBGR), but the Python reference deepdoc pipeline applies
+// cv2.cvtColor(BGR2RGB) inside its letterbox before the HWC->CHW transpose, so
+// the layout model is trained and inferred on RGB input. Swapping the channels
+// here keeps Go aligned with that reference. Feeding BGR instead (channel 0 =
+// blue) silently flips the colour channels and collapses the confidence of any
+// box over a coloured region, while leaving grayscale pages byte-identical
+// (hence the bug went unnoticed on text-heavy scans).
 func dlaLetterbox(resized []byte, newW, newH int, dw, dh float64) []float32 {
 	top := int(math.Round(dh - 0.1))
 	left := int(math.Round(dw - 0.1))
@@ -103,14 +111,15 @@ func dlaLetterbox(resized []byte, newW, newH int, dw, dh float64) []float32 {
 			inY, inX := y-top, x-left
 			if inY >= 0 && inY < newH && inX >= 0 && inX < newW {
 				o := (inY*newW + inX) * 3
-				cb = float32(resized[o])
-				cg = float32(resized[o+1])
+				// resized is BGR; the model wants RGB (Python ref does BGR2RGB).
 				cr = float32(resized[o+2])
+				cg = float32(resized[o+1])
+				cb = float32(resized[o])
 			}
-			// CHW; model expects BGR, so channel 0 = blue, 2 = red.
-			blob[0*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cb / 255.0
+			// CHW; model expects RGB, so channel 0 = red, 2 = blue.
+			blob[0*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cr / 255.0
 			blob[1*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cg / 255.0
-			blob[2*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cr / 255.0
+			blob[2*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cb / 255.0
 		}
 	}
 	return blob
