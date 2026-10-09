@@ -91,6 +91,10 @@ export const initialRetrievalValues = {
   top_n: 8,
   rerank_candidates_count: 64,
   dataset_ids: [],
+  // Both bindings default to an empty array rather than being absent: the
+  // checklist treats a missing key as unbound, and without a default an
+  // unbound node would never be written back with the key.
+  memory_ids: [],
   rerank_id: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
