@@ -6,7 +6,7 @@ services:
     platform: linux/amd64
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_started
         required: false
     build:
       context: ../

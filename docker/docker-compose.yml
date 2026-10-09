@@ -4,9 +4,13 @@ include:
 services:
 
   ragflow-cpu:
+    # service_started, not service_healthy: the Go processes wait for MySQL
+    # (and the doc engine, kvrocks, NATS) themselves via common.WaitForReady,
+    # so the container boots in parallel with mysql instead of serializing the
+    # whole stack behind mysqld's ~6s boot plus dockerd's start latency.
     depends_on:
       mysql:
-        condition: service_healthy
+        condition: service_started
         required: false
     profiles:
       - cpu

@@ -642,7 +642,7 @@ func main() {
 	}
 	defer storage.CloseStorage()
 
-	if err = engine.InitMessageQueue(); err != nil {
+	if err = engine.InitMessageQueue(ctx); err != nil {
 		common.Fatal("Failed to initialize message queue engine", zap.Error(err))
 	}
 

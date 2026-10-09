@@ -119,26 +119,33 @@ func Init(ctx context.Context) error {
 			return
 		}
 
-		client := redis.NewClient(&redis.Options{
-			Addr:     fmt.Sprintf("%s:%d", kvrocksConfig.Host, kvrocksConfig.Port),
-			Password: kvrocksConfig.Password,
-			DB:       kvrocksConfig.DB,
+		// Kvrocks boots in parallel with this process; wait for it instead of
+		// failing fast on the first refused connection.
+		initErr = common.WaitForReady(ctx, "kvrocks", 2*time.Minute, func(waitCtx context.Context) error {
+			client := redis.NewClient(&redis.Options{
+				Addr:     fmt.Sprintf("%s:%d", kvrocksConfig.Host, kvrocksConfig.Port),
+				Password: kvrocksConfig.Password,
+				DB:       kvrocksConfig.DB,
+			})
+
+			redisCtx, cancel := context.WithTimeout(waitCtx, server.DefaultConnectTimeout)
+			defer cancel()
+
+			if err := client.Ping(redisCtx).Err(); err != nil {
+				_ = client.Close()
+				return fmt.Errorf("failed to connect to Kvrocks: %w", err)
+			}
+
+			globalClient = &Client{
+				client:           client,
+				config:           kvrocksConfig,
+				luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
+				luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
+			}
+			return nil
 		})
-
-		// Test connection
-		redisCtx, cancel := context.WithTimeout(ctx, server.DefaultConnectTimeout)
-		defer cancel()
-
-		if err := client.Ping(redisCtx).Err(); err != nil {
-			initErr = fmt.Errorf("failed to connect to Kvrocks: %w", err)
+		if initErr != nil {
 			return
-		}
-
-		globalClient = &Client{
-			client:           client,
-			config:           kvrocksConfig,
-			luaDeleteIfEqual: redis.NewScript(luaDeleteIfEqualScript),
-			luaTokenBucket:   redis.NewScript(luaTokenBucketScript),
 		}
 
 		common.Info("Kvrocks client initialized",

@@ -160,6 +160,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	sqlDB.SetMaxOpenConns(databaseConfig.MaxConnections)
 	sqlDB.SetConnMaxLifetime(time.Duration(databaseConfig.StaleTimeout) * time.Second)
 
+	// Wait for MySQL to accept queries. The compose deployment starts this
+	// process in parallel with the mysql container (service_started, not a
+	// healthcheck gate), so the first ping usually fails while mysqld is still
+	// booting; gorm.Open itself does not dial, so without this wait the first
+	// real statement would be the one to fail.
+	if err = common.WaitForReady(ctx, "mysql", 2*time.Minute, func(pingCtx context.Context) error {
+		return sqlDB.PingContext(pingCtx)
+	}); err != nil {
+		return err
+	}
+
 	// Auto migrate all dataModels
 	dataModels := []interface{}{
 		&entity.User{},
