@@ -18,21 +18,44 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/http"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/tokenizer"
 
-	"github.com/gin-gonic/gin"
-
 	"go.uber.org/zap"
 )
+
+const openAIInternalErrorMessage = "an internal error occurred"
+
+type openAIChatGetter interface {
+	GetChat(ctx context.Context, userID, chatID string) (*GetChatResponse, error)
+}
+
+type openAITenantLLMKeyGetter interface {
+	GetAPIKeyFromInstance(ctx context.Context, tenantID, compositeModelName string) (string, error)
+}
+
+type openAIModelResolver interface {
+	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+}
+
+type openAIMetadataProvider interface {
+	GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error)
+	EnrichChunksWithDocMetadata(ctx context.Context, chunks []map[string]interface{}, tenantID string, metadataFields []string)
+}
+
+type openAIChatPipeline interface {
+	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
+}
+
+type openAILangfuseFactory func(ctx context.Context, tenantID, userID, chatID, modelName string) *LangfuseClient
 
 type OpenAIRequest struct {
 	ChatID string
@@ -70,7 +93,7 @@ type FormattedChunk struct {
 }
 
 // OpenAICompletionResponse is the non-streaming response payload.
-// The reasoning_tokens quirk (openai_api.py:348-352) lives in the c.JSON call.
+// The handler maps ContextTokens to the compatibility reasoning_tokens field.
 type OpenAICompletionResponse struct {
 	Model            string
 	Content          string
@@ -78,6 +101,7 @@ type OpenAICompletionResponse struct {
 	PromptTokens     int
 	CompletionTokens int
 	TotalTokens      int
+	ContextTokens    int
 	Created          *int64
 }
 
@@ -91,7 +115,7 @@ const (
 	OpenAIEventError                                  // in-band error
 )
 
-// OpenAIStreamEvent is yielded by the event-translator inside OpenAIChatCompletions.
+// OpenAIStreamEvent is yielded by the service-side stream producer.
 type OpenAIStreamEvent struct {
 	Kind             OpenAIStreamEventKind
 	Delta            string // for Content / Reasoning
@@ -103,21 +127,34 @@ type OpenAIStreamEvent struct {
 	TotalTokens      int
 }
 
-// OpenAIChatService implements the /api/v1/openai/<chat_id>/chat/completions route.
-// It composes ChatPipelineService for the shared RAG pipeline (AsyncChat) while
-// keeping handler-level concerns (message filtering, generation config merge,
-// reference metadata enrichment) on the service itself.
+// OpenAIChatStream is the prepared stream returned to the HTTP handler.
+// Preparation and pipeline startup have completed before this value is returned.
+type OpenAIChatStream struct {
+	Events        <-chan OpenAIStreamEvent
+	Model         string
+	NeedReference bool
+}
+
+// OpenAIChatService prepares and executes OpenAI-compatible chat completions.
+// HTTP request parsing and response rendering belong to the handler.
 type OpenAIChatService struct {
-	chatSvc      *ChatService
-	tenantLLMSvc *TenantLLMService
-	pipeline     *ChatPipelineService
+	chatSvc               openAIChatGetter
+	tenantLLMSvc          openAITenantLLMKeyGetter
+	modelResolver         openAIModelResolver
+	metadataSvc           openAIMetadataProvider
+	pipeline              openAIChatPipeline
+	langfuseClientFactory openAILangfuseFactory
 }
 
 func NewOpenAIChatService() *OpenAIChatService {
+	pipeline := NewChatPipelineService()
 	return &OpenAIChatService{
-		chatSvc:      NewChatService(),
-		tenantLLMSvc: NewTenantLLMService(),
-		pipeline:     NewChatPipelineService(),
+		chatSvc:               NewChatService(),
+		tenantLLMSvc:          NewTenantLLMService(),
+		modelResolver:         pipeline.ModelFactory,
+		metadataSvc:           pipeline.MetadataSvc,
+		pipeline:              pipeline,
+		langfuseClientFactory: LangfuseClientFromTenant,
 	}
 }
 
@@ -138,107 +175,252 @@ type OpenAIChatRequest struct {
 	MaxTokens        *int     `json:"max_tokens,omitempty"`
 }
 
-func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID string, bodyBytes []byte) {
-	var req OpenAIChatRequest
-	if err := json.Unmarshal(bodyBytes, &req); err != nil {
-		s.writeArgError(c, err.Error())
-		return
+type openAIRequestOptions struct {
+	needReference      bool
+	includeRefMetadata bool
+	metadataFields     []string
+	metadataCondition  map[string]interface{}
+}
+
+type preparedOpenAIChat struct {
+	ctx           context.Context
+	request       *OpenAIRequest
+	promptTokens  int
+	contextTokens int
+	results       <-chan AsyncChatResult
+	finish        func()
+}
+
+// Complete runs a non-streaming OpenAI-compatible completion. It has no HTTP
+// responsibilities; callers render the returned payload or coded error.
+func (s *OpenAIChatService) Complete(
+	ctx context.Context,
+	userID, chatID string,
+	req OpenAIChatRequest,
+) (response *OpenAICompletionResponse, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI non-stream completion panic", zap.Any("recover", recovered))
+			response = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
+	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
+	prepared, err := s.prepare(ctx, userID, chatID, req, false)
+	if err != nil {
+		return nil, err
 	}
+	defer prepared.finish()
+
+	var finalResult AsyncChatResult
+	found := false
+	for {
+		select {
+		case <-prepared.ctx.Done():
+			return nil, prepared.ctx.Err()
+		case result, ok := <-prepared.results:
+			if !ok {
+				if !found {
+					return nil, openAIInternalError("consume chat pipeline", fmt.Errorf("AsyncChat returned no final result"))
+				}
+				goto completed
+			}
+			if result.Final {
+				if isOpenAIGenerationFailure(result.Answer) {
+					common.Warn("OpenAI non-stream generation failed", zap.String("answer", result.Answer))
+					drainOpenAIResults(prepared.results)
+					return nil, common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+				}
+				finalResult = result
+				found = true
+				drainOpenAIResults(prepared.results)
+				goto completed
+			}
+		}
+	}
+
+completed:
+	content := strings.TrimSpace(finalResult.Answer)
+	completionTokens := tokenizer.NumTokensFromString(content)
+	resp := &OpenAICompletionResponse{
+		Model:            prepared.request.Model,
+		Content:          content,
+		PromptTokens:     prepared.promptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      prepared.promptTokens + completionTokens,
+		ContextTokens:    prepared.contextTokens,
+	}
+	if prepared.request.NeedReference {
+		resp.Reference = []FormattedChunk{}
+		if ref, ok := finalResult.Reference["chunks"]; ok {
+			if chunks, ok := ref.([]map[string]interface{}); ok {
+				resp.Reference = formatChunks(chunks)
+			}
+		}
+		s.enrichChunksWithDocumentMetadata(
+			prepared.ctx,
+			resp.Reference,
+			prepared.request.Chat.TenantID,
+			prepared.request.IncludeRefMetadata,
+			prepared.request.MetadataFields,
+		)
+	}
+	common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
+	return resp, nil
+}
+
+// Stream prepares and starts an OpenAI-compatible streaming completion. The
+// returned channel is owned and closed by the service producer.
+func (s *OpenAIChatService) Stream(
+	ctx context.Context,
+	userID, chatID string,
+	req OpenAIChatRequest,
+) (stream *OpenAIChatStream, err error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI stream preparation panic", zap.Any("recover", recovered))
+			stream = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
+	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
+	prepared, err := s.prepare(ctx, userID, chatID, req, true)
+	if err != nil {
+		return nil, err
+	}
+
+	events := make(chan OpenAIStreamEvent, 16)
+	go s.produceStream(prepared, events, chatID)
+	return &OpenAIChatStream{
+		Events:        events,
+		Model:         prepared.request.Model,
+		NeedReference: prepared.request.NeedReference,
+	}, nil
+}
+
+func normalizeAndValidateOpenAIRequest(req OpenAIChatRequest) (OpenAIChatRequest, openAIRequestOptions, error) {
+	var options openAIRequestOptions
+
 	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
 	if err != nil {
-		s.writeDataError(c, err.Error())
-		return
+		return req, options, common.NewCodedError(common.CodeDataError, err.Error())
 	}
 	if req.Question != "" || req.Query != "" {
 		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
 	}
-	if len(req.Messages) > 0 {
-		req.Messages = req.Messages[len(req.Messages)-1:]
-	}
-	common.Info("OpenAIChatCompletions started", zap.String("chat_id", chatID))
-
-	normalizedMessages, err := normalizeOpenAIMessages(req.Messages)
-	if err != nil {
-		s.writeDataError(c, err.Error())
-		return
-	}
-	if len(normalizedMessages) == 0 {
-		s.writeDataError(c, "You have to provide messages.")
-		return
-	}
-	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
-		s.writeArgError(c, "`max_tokens` must be greater than 0.")
-		return
+	if len(req.Messages) == 0 {
+		return req, options, common.NewCodedError(common.CodeDataError, "You have to provide messages.")
 	}
 
-	lastRole, _ := normalizedMessages[len(normalizedMessages)-1]["role"].(string)
-	if lastRole != "user" {
-		s.writeDataError(c, "The last content of this conversation is not from user.")
-		return
+	extraBody, extraBodyOK := req.ExtraBody.(map[string]interface{})
+	if req.ExtraBody != nil && !extraBodyOK {
+		return req, options, common.NewCodedError(common.CodeArgumentError, "extra_body must be an object.")
 	}
-
-	if req.ExtraBody != nil {
-		if _, ok := req.ExtraBody.(map[string]interface{}); !ok {
-			s.writeDataError(c, "extra_body must be an object.")
-			return
-		}
-	}
-
-	var needReference = false
-	var includeRefMetadata = false
-	var metadataFields []string
-	var metadataCondition map[string]interface{}
-	if eb, ok := req.ExtraBody.(map[string]interface{}); ok {
-		if v, hasRef := eb["reference"].(bool); hasRef {
-			needReference = v
-		}
-		rawRM, hasRM := eb["reference_metadata"]
-		if hasRM && rawRM != nil {
-			rm, ok := rawRM.(map[string]interface{})
-			if !ok {
-				s.writeDataError(c, "reference_metadata must be an object.")
-				return
-			}
-			if inc, hasInc := rm["include"].(bool); hasInc {
-				includeRefMetadata = inc
-			}
-			if rawFields, hasFields := rm["fields"]; hasFields && rawFields != nil {
-				rawArr, rawOK := rawFields.([]interface{})
-				if !rawOK {
-					s.writeDataError(c, "reference_metadata.fields must be an array.")
-					return
+	if extraBody != nil {
+		if rawRM, ok := extraBody["reference_metadata"].(map[string]interface{}); ok {
+			if rawFields, hasFields := rawRM["fields"]; hasFields {
+				rawArr, ok := rawFields.([]interface{})
+				if !ok {
+					return req, options, common.NewCodedError(common.CodeArgumentError, "reference_metadata.fields must be an array.")
 				}
-				if len(rawArr) == 0 {
-					metadataFields = []string{}
-				} else {
-					for _, f := range rawArr {
-						str, ok := f.(string)
-						if !ok {
-							s.writeDataError(c, "reference_metadata.fields must be an array.")
-							return
-						}
-						metadataFields = append(metadataFields, str)
+				for _, field := range rawArr {
+					if _, ok := field.(string); !ok {
+						return req, options, common.NewCodedError(common.CodeArgumentError, "reference_metadata.fields must be an array.")
 					}
 				}
 			}
 		}
-		if mc, hasMC := eb["metadata_condition"]; hasMC && mc != nil {
-			mcMap, isObj := mc.(map[string]interface{})
-			if !isObj {
-				s.writeDataError(c, "metadata_condition must be an object.")
-				return
-			}
-			if len(mcMap) > 0 {
-				metadataCondition = mcMap
+		if rawCondition, ok := extraBody["metadata_condition"]; ok && rawCondition != nil {
+			if _, ok := rawCondition.(map[string]interface{}); !ok {
+				return req, options, common.NewCodedError(common.CodeArgumentError, "metadata_condition must be an object.")
 			}
 		}
 	}
+	if req.MaxTokens != nil && *req.MaxTokens <= 0 {
+		return req, options, common.NewCodedError(common.CodeArgumentError, "`max_tokens` must be greater than 0.")
+	}
 
-	ctx := c.Request.Context()
+	// Preserve the existing OpenAI endpoint behavior: only the final message is
+	// passed into the shared chat pipeline.
+	req.Messages = req.Messages[len(req.Messages)-1:]
+	normalizedMessages, err := normalizeOpenAIMessages(req.Messages)
+	if err != nil {
+		return req, options, common.NewCodedError(common.CodeDataError, err.Error())
+	}
+	lastRole, _ := normalizedMessages[len(normalizedMessages)-1]["role"].(string)
+	if lastRole != "user" {
+		return req, options, common.NewCodedError(common.CodeDataError, "The last content of this conversation is not from user.")
+	}
+	req.Messages = normalizedMessages
+
+	if extraBody != nil {
+		if value, ok := extraBody["reference"].(bool); ok {
+			options.needReference = value
+		}
+		rawRM, hasRM := extraBody["reference_metadata"]
+		if hasRM && rawRM != nil {
+			rm, ok := rawRM.(map[string]interface{})
+			if !ok {
+				return req, options, common.NewCodedError(common.CodeDataError, "reference_metadata must be an object.")
+			}
+			if inc, hasInc := rm["include"].(bool); hasInc {
+				options.includeRefMetadata = inc
+			}
+			if rawFields, hasFields := rm["fields"]; hasFields && rawFields != nil {
+				rawArr := rawFields.([]interface{})
+				if len(rawArr) == 0 {
+					options.metadataFields = []string{}
+				} else {
+					for _, f := range rawArr {
+						options.metadataFields = append(options.metadataFields, f.(string))
+					}
+				}
+			}
+		}
+		if rawCondition, hasCondition := extraBody["metadata_condition"]; hasCondition && rawCondition != nil {
+			condition := rawCondition.(map[string]interface{})
+			if len(condition) > 0 {
+				options.metadataCondition = condition
+			}
+		}
+	}
+	return req, options, nil
+}
+
+func (s *OpenAIChatService) prepare(
+	ctx context.Context,
+	userID, chatID string,
+	req OpenAIChatRequest,
+	stream bool,
+) (prepared *preparedOpenAIChat, err error) {
+	var finish func()
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			if finish != nil {
+				finish()
+			}
+			common.Warn("OpenAI chat preparation panic", zap.Any("recover", recovered))
+			prepared = nil
+			err = common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+		}
+	}()
+
+	req, options, err := normalizeAndValidateOpenAIRequest(req)
+	if err != nil {
+		return nil, err
+	}
+
 	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
-		s.writeDataError(c, err.Error())
-		return
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		if err.Error() == "no authorization" || err.Error() == "chat not found" {
+			return nil, common.NewCodedError(common.CodeDataError, err.Error())
+		}
+		return nil, openAIInternalError("load chat", err)
 	}
 	dialog := dialogResp.Chat
 	resolvedModel := req.Model
@@ -249,14 +431,12 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
-			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
-			return
+		if _, mErr := s.modelResolver.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
+			return nil, common.NewCodedError(common.CodeArgumentError, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 		}
 		apiKey, apiErr := s.tenantLLMSvc.GetAPIKeyFromInstance(ctx, dialog.TenantID, req.Model)
 		if apiErr != nil || apiKey == "" {
-			s.writeDataError(c, fmt.Sprintf("Cannot use specified model %s.", req.Model))
-			return
+			return nil, common.NewCodedError(common.CodeDataError, fmt.Sprintf("Cannot use specified model %s.", req.Model))
 		}
 		dialog.LLMID = resolvedModel
 	}
@@ -265,30 +445,17 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 	s.MergeGenerationConfig(dialog, genCfg)
 
-	stream := req.Stream != nil && *req.Stream
 	openaiReq := &OpenAIRequest{
 		ChatID:             chatID,
 		Model:              resolvedModel,
 		Chat:               dialog,
-		Messages:           normalizedMessages,
+		Messages:           req.Messages,
 		Stream:             stream,
-		NeedReference:      needReference,
-		IncludeRefMetadata: includeRefMetadata,
-		MetadataFields:     metadataFields,
-		MetadataCondition:  metadataCondition,
+		NeedReference:      options.needReference,
+		IncludeRefMetadata: options.includeRefMetadata,
+		MetadataFields:     options.metadataFields,
+		MetadataCondition:  options.metadataCondition,
 		GenerationConfig:   genCfg,
-	}
-
-	completionID := fmt.Sprintf("chatcmpl-%s", openaiReq.ChatID)
-
-	lfClient := LangfuseClientFromTenant(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
-	if lfClient != nil {
-		ctx = context.WithValue(ctx, langfuseCtxKey, lfClient)
-		defer func() {
-			shutdownCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
-			defer cancel()
-			_ = lfClient.Shutdown(shutdownCtx)
-		}()
 	}
 
 	filteredMessages := s.filterMessages(openaiReq.Messages)
@@ -303,10 +470,9 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 				kbIDs = append(kbIDs, id)
 			}
 		}
-		metas, mdErr := s.pipeline.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
+		metas, mdErr := s.metadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
 		if mdErr != nil {
-			s.writeDataError(c, fmt.Errorf("metadata_condition: load metadata: %w", mdErr).Error())
-			return
+			return nil, openAIInternalError("load metadata", mdErr)
 		}
 		docIDsStr = MetadataConditionToDocIDs(metas, openaiReq.MetadataCondition)
 		common.Debug("metadata_condition filter ended", zap.String("doc_ids", docIDsStr))
@@ -330,183 +496,225 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	chatKwargs := map[string]interface{}{
 		"toolcall_session": nil, // no tool calls on OpenAI-compat path
 		"tools":            nil,
-		"quote":            needReference,
+		"quote":            openaiReq.NeedReference,
 	}
 	if docIDsStr != "" {
 		chatKwargs["doc_ids"] = docIDsStr
 	}
-	asyncResults, asyncErr := s.pipeline.AsyncChat(ctx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
-	if asyncErr != nil {
-		s.writeDataError(c, asyncErr.Error())
-		return
+
+	contextTokens := 0
+	for _, message := range openaiReq.Messages {
+		if content, ok := message["content"].(string); ok {
+			contextTokens += tokenizer.NumTokensFromString(content)
+		}
 	}
 
-	if stream {
-		events := make(chan OpenAIStreamEvent, 16)
-		go func() {
-			defer close(events)
-			defer func() {
-				if r := recover(); r != nil {
-					common.Warn("OpenAI streaming goroutine panic", zap.Any("recover", r))
-					events <- OpenAIStreamEvent{Kind: OpenAIEventError, Error: fmt.Sprintf("internal error: %v", r)}
-				}
-			}()
+	langfuseCtx, shutdown := s.withLangfuse(ctx, dialog.TenantID, userID, openaiReq.ChatID, openaiReq.Model)
+	runCtx, cancel := context.WithCancel(langfuseCtx)
+	finish = openAIFinish(cancel, shutdown)
+	asyncResults, asyncErr := s.pipeline.AsyncChat(runCtx, userID, dialog, filteredMessages, openaiReq.Stream, chatKwargs)
+	if asyncErr != nil {
+		finish()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		return nil, openAIInternalError("start chat pipeline", asyncErr)
+	}
+	if asyncResults == nil {
+		finish()
+		return nil, openAIInternalError("start chat pipeline", fmt.Errorf("AsyncChat returned a nil result channel"))
+	}
+	return &preparedOpenAIChat{
+		ctx:           runCtx,
+		request:       openaiReq,
+		promptTokens:  promptTokens,
+		contextTokens: contextTokens,
+		results:       asyncResults,
+		finish:        finish,
+	}, nil
+}
 
-			var (
-				fullContent    string
-				completionTok  int
-				deltaCount     int
-				finalReference []FormattedChunk
-				lastResult     AsyncChatResult
-			)
+func (s *OpenAIChatService) produceStream(prepared *preparedOpenAIChat, events chan<- OpenAIStreamEvent, chatID string) {
+	send := func(event OpenAIStreamEvent) bool {
+		if prepared.ctx.Err() != nil {
+			return false
+		}
+		select {
+		case events <- event:
+			return true
+		case <-prepared.ctx.Done():
+			return false
+		}
+	}
 
-			for result := range asyncResults {
-				lastResult = result
+	defer close(events)
+	defer prepared.finish()
+	defer common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			common.Warn("OpenAI streaming producer panic", zap.Any("recover", recovered))
+			drainOpenAIResults(prepared.results)
+			_ = send(OpenAIStreamEvent{Kind: OpenAIEventError, Error: openAIInternalErrorMessage})
+		}
+	}()
 
-				// Think markers only toggle routing state — Python never emits
-				// "<think>"/"</think>" as content — but the result carrying a
-				// marker can also carry the first delta of the text it delimits
-				// (the first content delta after a think block IS the EndToThink
-				// result). The event must therefore fall through to the emission
-				// below instead of being dropped: dropping it loses that text,
-				// which is what left an answer opening mid-sentence.
+	var (
+		fullContent    string
+		completionTok  int
+		deltaCount     int
+		finalReference []FormattedChunk
+		lastResult     AsyncChatResult
+	)
 
-				if result.Final {
-					finalContent := strings.TrimSpace(result.Answer)
-					fullContent = finalContent
+	for {
+		if prepared.ctx.Err() != nil {
+			drainOpenAIResults(prepared.results)
+			return
+		}
+		select {
+		case <-prepared.ctx.Done():
+			drainOpenAIResults(prepared.results)
+			return
+		case result, ok := <-prepared.results:
+			if !ok {
+				if finalReference == nil && prepared.request.NeedReference {
 					finalReference = []FormattedChunk{}
-					if ref, ok := result.Reference["chunks"]; ok {
+					if ref, ok := lastResult.Reference["chunks"]; ok {
 						if chunks, ok := ref.([]map[string]interface{}); ok {
 							finalReference = formatChunks(chunks)
 						}
 					}
-					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-					completionTok = tokenizer.NumTokensFromString(result.Answer)
-					events <- OpenAIStreamEvent{
-						Kind:             OpenAIEventFinal,
-						FinalAnswer:      finalContent,
-						FinalReference:   finalReference,
-						PromptTokens:     promptTokens,
-						CompletionTokens: completionTok,
-						TotalTokens:      promptTokens + completionTok,
-					}
+				}
+				s.enrichChunksWithDocumentMetadata(
+					prepared.ctx,
+					finalReference,
+					prepared.request.Chat.TenantID,
+					prepared.request.IncludeRefMetadata,
+					prepared.request.MetadataFields,
+				)
+				_ = send(OpenAIStreamEvent{
+					Kind:             OpenAIEventFinal,
+					FinalAnswer:      strings.TrimSpace(fullContent),
+					FinalReference:   finalReference,
+					PromptTokens:     prepared.promptTokens,
+					CompletionTokens: completionTok,
+					TotalTokens:      prepared.promptTokens + completionTok,
+				})
+				return
+			}
+			lastResult = result
+
+			if result.Final {
+				if isOpenAIGenerationFailure(result.Answer) {
+					common.Warn("OpenAI stream generation failed", zap.String("answer", result.Answer))
+					_ = send(OpenAIStreamEvent{Kind: OpenAIEventError, Error: openAIInternalErrorMessage})
+					drainOpenAIResults(prepared.results)
 					return
 				}
-
-				if result.Reasoning != "" {
-					completionTok += tokenizer.NumTokensFromString(result.Reasoning)
-					events <- OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}
-				}
-
-				if result.Answer != "" {
-					delta := result.Answer
-					fullContent += delta
-					completionTok += tokenizer.NumTokensFromString(delta)
-					events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: delta}
-					if deltaCount < 3 {
-						common.Debug("OpenAI first content delta",
-							zap.Int("delta_index", deltaCount),
-							zap.String("delta", result.Answer),
-							zap.Int("delta_len", len(result.Answer)))
-						deltaCount++
-					}
-				}
-			}
-
-			if finalReference == nil && openaiReq.NeedReference {
 				finalReference = []FormattedChunk{}
-				if ref, ok := lastResult.Reference["chunks"]; ok {
+				if ref, ok := result.Reference["chunks"]; ok {
 					if chunks, ok := ref.([]map[string]interface{}); ok {
 						finalReference = formatChunks(chunks)
 					}
 				}
+				s.enrichChunksWithDocumentMetadata(
+					prepared.ctx,
+					finalReference,
+					prepared.request.Chat.TenantID,
+					prepared.request.IncludeRefMetadata,
+					prepared.request.MetadataFields,
+				)
+				completionTok = tokenizer.NumTokensFromString(result.Answer)
+				if !send(OpenAIStreamEvent{
+					Kind:             OpenAIEventFinal,
+					FinalAnswer:      strings.TrimSpace(result.Answer),
+					FinalReference:   finalReference,
+					PromptTokens:     prepared.promptTokens,
+					CompletionTokens: completionTok,
+					TotalTokens:      prepared.promptTokens + completionTok,
+				}) {
+					drainOpenAIResults(prepared.results)
+					return
+				}
+				drainOpenAIResults(prepared.results)
+				return
 			}
-			s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-			events <- OpenAIStreamEvent{
-				Kind:             OpenAIEventFinal,
-				FinalAnswer:      strings.TrimSpace(fullContent),
-				FinalReference:   finalReference,
-				PromptTokens:     promptTokens,
-				CompletionTokens: completionTok,
-				TotalTokens:      promptTokens + completionTok,
-			}
-		}()
-		if err := streamChatCompletionSSE(c, events, completionID, resolvedModel, openaiReq.NeedReference); err != nil {
-			s.writeDataError(c, err.Error())
-		}
-	} else {
-		var finalResult AsyncChatResult
-		found := false
-		for result := range asyncResults {
-			if result.Final {
-				finalResult = result
-				found = true
-				break
-			}
-		}
-		if !found {
-			s.writeDataError(c, "AsyncChat returned no final result")
-			return
-		}
 
-		content := strings.TrimSpace(finalResult.Answer)
-		completionTokens := tokenizer.NumTokensFromString(content)
-		resp := &OpenAICompletionResponse{
-			Model:            openaiReq.Model,
-			Content:          content,
-			PromptTokens:     promptTokens,
-			CompletionTokens: completionTokens,
-			TotalTokens:      promptTokens + completionTokens,
-		}
-		if openaiReq.NeedReference {
-			resp.Reference = []FormattedChunk{}
-			if ref, ok := finalResult.Reference["chunks"]; ok {
-				if chunks, ok := ref.([]map[string]interface{}); ok {
-					resp.Reference = formatChunks(chunks)
+			if result.Reasoning != "" {
+				completionTok += tokenizer.NumTokensFromString(result.Reasoning)
+				if !send(OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: result.Reasoning}) {
+					drainOpenAIResults(prepared.results)
+					return
 				}
 			}
-			s.enrichChunksWithDocumentMetadata(ctx, resp.Reference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-		}
 
-		contextUsed := 0
-		for _, m := range openaiReq.Messages {
-			if c, ok := m["content"].(string); ok {
-				contextUsed += tokenizer.NumTokensFromString(c)
+			if result.Answer != "" {
+				fullContent += result.Answer
+				completionTok += tokenizer.NumTokensFromString(result.Answer)
+				if !send(OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: result.Answer}) {
+					drainOpenAIResults(prepared.results)
+					return
+				}
+				if deltaCount < 3 {
+					common.Debug("OpenAI first content delta",
+						zap.Int("delta_index", deltaCount),
+						zap.String("delta", result.Answer),
+						zap.Int("delta_len", len(result.Answer)))
+					deltaCount++
+				}
 			}
 		}
+	}
+}
 
-		choices := []gin.H{{
-			"index":         0,
-			"finish_reason": "stop",
-			"logprobs":      nil,
-			"message": gin.H{
-				"role":    "assistant",
-				"content": resp.Content,
-			},
-		}}
-		if openaiReq.NeedReference {
-			choices[0]["message"].(gin.H)["reference"] = resp.Reference
-		}
+func (s *OpenAIChatService) withLangfuse(
+	ctx context.Context,
+	tenantID, userID, chatID, modelName string,
+) (context.Context, func()) {
+	if s.langfuseClientFactory == nil {
+		return ctx, func() {}
+	}
+	client := s.langfuseClientFactory(ctx, tenantID, userID, chatID, modelName)
+	if client == nil {
+		return ctx, func() {}
+	}
+	runCtx := context.WithValue(ctx, langfuseCtxKey, client)
+	return runCtx, func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		_ = client.Shutdown(shutdownCtx)
+	}
+}
 
-		c.JSON(http.StatusOK, gin.H{
-			"id":      completionID,
-			"object":  "chat.completion",
-			"created": getCreatedOrDefault(resp.Created),
-			"model":   resp.Model,
-			"usage": gin.H{
-				"prompt_tokens":     resp.PromptTokens,
-				"completion_tokens": resp.CompletionTokens,
-				"total_tokens":      resp.PromptTokens + resp.CompletionTokens,
-				"completion_tokens_details": gin.H{
-					"reasoning_tokens":           contextUsed,
-					"accepted_prediction_tokens": resp.CompletionTokens,
-					"rejected_prediction_tokens": 0,
-				},
-			},
-			"choices": choices,
+func openAIFinish(cancel context.CancelFunc, shutdown func()) func() {
+	var once sync.Once
+	return func() {
+		once.Do(func() {
+			cancel()
+			defer func() {
+				if recovered := recover(); recovered != nil {
+					common.Warn("OpenAI Langfuse cleanup panic", zap.Any("recover", recovered))
+				}
+			}()
+			shutdown()
 		})
 	}
-	common.Info("OpenAIChatCompletions completed", zap.String("chat_id", chatID))
+}
+
+func openAIInternalError(operation string, err error) error {
+	common.Warn("OpenAI chat internal error", zap.String("operation", operation), zap.Error(err))
+	return common.NewCodedError(common.CodeDataError, openAIInternalErrorMessage)
+}
+
+func isOpenAIGenerationFailure(answer string) bool {
+	return strings.HasPrefix(strings.TrimSpace(answer), "**ERROR**")
+}
+
+func drainOpenAIResults(results <-chan AsyncChatResult) {
+	go func() {
+		for range results {
+		}
+	}()
 }
 
 // MergeGenerationConfig merges request config into dialog.LLMSetting (mutating).
@@ -687,7 +895,7 @@ func formatChunks(chunks []map[string]interface{}) []FormattedChunk {
 // When fields is a non-nil empty slice (explicitly provided as []), enrichment
 // is skipped — matching Python's behavior for {"fields": []}.
 func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context, chunks []FormattedChunk, tenantID string, include bool, fields []string) {
-	if !include || len(chunks) == 0 || s == nil || s.pipeline.MetadataSvc == nil {
+	if !include || len(chunks) == 0 || s == nil || s.metadataSvc == nil {
 		return
 	}
 	if fields != nil && len(fields) == 0 {
@@ -701,164 +909,10 @@ func (s *OpenAIChatService) enrichChunksWithDocumentMetadata(ctx context.Context
 			"document_metadata": ch.DocumentMetadata,
 		}
 	}
-	s.pipeline.MetadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
+	s.metadataSvc.EnrichChunksWithDocMetadata(ctx, maps, tenantID, fields)
 	for i, m := range maps {
 		if md, ok := m["document_metadata"]; ok {
 			chunks[i].DocumentMetadata = md
 		}
 	}
-}
-
-// streamChatCompletionSSE drains events and writes SSE chunks.
-func streamChatCompletionSSE(
-	c *gin.Context,
-	events <-chan OpenAIStreamEvent,
-	completionID string,
-	requestedModel string,
-	needReference bool,
-) error {
-	c.Header("Cache-control", "no-cache")
-	c.Header("Connection", "keep-alive")
-	c.Header("X-Accel-Buffering", "no")
-	c.Header("Content-Type", "text/event-stream; charset=utf-8")
-
-	flusher, ok := c.Writer.(http.Flusher)
-	if !ok {
-		return fmt.Errorf("streaming unsupported")
-	}
-
-	writeSSE := func(payload gin.H) {
-		body, _ := json.Marshal(payload)
-		_, _ = c.Writer.Write([]byte("data:"))
-		_, _ = c.Writer.Write(body)
-		_, _ = c.Writer.Write([]byte("\n\n"))
-		flusher.Flush()
-	}
-
-	for ev := range events {
-		switch ev.Kind {
-		case OpenAIEventContent:
-			chunk := gin.H{
-				"id":                 completionID,
-				"object":             "chat.completion.chunk",
-				"created":            time.Now().Unix(),
-				"model":              requestedModel,
-				"system_fingerprint": "",
-				"usage":              nil,
-				"choices": []gin.H{{
-					"index": 0,
-					"delta": gin.H{
-						"role":              "assistant",
-						"content":           ev.Delta,
-						"reasoning_content": nil,
-						"function_call":     nil,
-						"tool_calls":        nil,
-					},
-					"finish_reason": nil,
-					"logprobs":      nil,
-				}},
-			}
-			writeSSE(chunk)
-
-		case OpenAIEventReasoning:
-			chunk := gin.H{
-				"id":                 completionID,
-				"object":             "chat.completion.chunk",
-				"created":            time.Now().Unix(),
-				"model":              requestedModel,
-				"system_fingerprint": "",
-				"usage":              nil,
-				"choices": []gin.H{{
-					"index": 0,
-					"delta": gin.H{
-						"role":              "assistant",
-						"content":           nil,
-						"reasoning_content": ev.Delta,
-						"function_call":     nil,
-						"tool_calls":        nil,
-					},
-					"finish_reason": nil,
-					"logprobs":      nil,
-				}},
-			}
-			writeSSE(chunk)
-
-		case OpenAIEventError:
-			chunk := gin.H{
-				"id":                 completionID,
-				"object":             "chat.completion.chunk",
-				"created":            time.Now().Unix(),
-				"model":              requestedModel,
-				"system_fingerprint": "",
-				"usage":              nil,
-				"choices": []gin.H{{
-					"index": 0,
-					"delta": gin.H{
-						"role":              "assistant",
-						"content":           "**ERROR**: " + ev.Error,
-						"reasoning_content": nil,
-						"function_call":     nil,
-						"tool_calls":        nil,
-					},
-					"finish_reason": nil,
-					"logprobs":      nil,
-				}},
-			}
-			writeSSE(chunk)
-
-		case OpenAIEventFinal:
-			delta := gin.H{
-				"role":              "assistant",
-				"content":           nil,
-				"reasoning_content": nil,
-				"function_call":     nil,
-				"tool_calls":        nil,
-			}
-			if needReference {
-				delta["reference"] = ev.FinalReference
-				delta["final_content"] = ev.FinalAnswer
-			}
-			chunk := gin.H{
-				"id":                 completionID,
-				"object":             "chat.completion.chunk",
-				"created":            time.Now().Unix(),
-				"model":              requestedModel,
-				"system_fingerprint": "",
-				"usage": gin.H{
-					"prompt_tokens":     ev.PromptTokens,
-					"completion_tokens": ev.CompletionTokens,
-					"total_tokens":      ev.TotalTokens,
-				},
-				"choices": []gin.H{{
-					"index":         0,
-					"delta":         delta,
-					"finish_reason": "stop",
-					"logprobs":      nil,
-				}},
-			}
-			writeSSE(chunk)
-		}
-	}
-
-	// Always terminate with data: [DONE]\n\n.
-	_, _ = c.Writer.Write([]byte("data: [DONE]\n\n"))
-	flusher.Flush()
-	return nil
-}
-
-// writeArgError writes a 101 JSON error envelope (malformed request).
-func (s *OpenAIChatService) writeArgError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeArgumentError, nil, msg)
-}
-
-// writeDataError writes a 102 JSON error envelope (service failure).
-func (s *OpenAIChatService) writeDataError(c *gin.Context, msg string) {
-	common.ResponseWithCodeData(c, common.CodeDataError, nil, msg)
-}
-
-func getCreatedOrDefault(created *int64) int64 {
-	if created != nil {
-		return *created
-	}
-	return time.Now().Unix()
 }

@@ -17,19 +17,29 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
+	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/service"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
-type OpenAIChatHandler struct {
-	svc *service.OpenAIChatService
+type openAIChatService interface {
+	Complete(ctx context.Context, userID, chatID string, req service.OpenAIChatRequest) (*service.OpenAICompletionResponse, error)
+	Stream(ctx context.Context, userID, chatID string, req service.OpenAIChatRequest) (*service.OpenAIChatStream, error)
 }
 
-func NewOpenAIChatHandler(svc *service.OpenAIChatService) *OpenAIChatHandler {
+type OpenAIChatHandler struct {
+	svc openAIChatService
+}
+
+func NewOpenAIChatHandler(svc openAIChatService) *OpenAIChatHandler {
 	return &OpenAIChatHandler{svc: svc}
 }
 
@@ -69,72 +79,89 @@ func (h *OpenAIChatHandler) OpenAIChatCompletions(c *gin.Context) {
 		return
 	}
 
-	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-		return
-	}
-	if req.Question != "" || req.Query != "" {
-		req.Messages = []map[string]interface{}{{"role": "user", "content": question}}
-	}
-
-	// Messages presence
-	if len(req.Messages) == 0 {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You have to provide messages.")
-		return
-	}
-
-	// extra_body shape validation
-	extraBody, extraBodyOK := req.ExtraBody.(map[string]interface{})
-	if req.ExtraBody != nil && !extraBodyOK {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "extra_body must be an object.")
-		return
-	}
-
-	// reference_metadata shape validation
-	if extraBody != nil {
-		if rm, ok := extraBody["reference_metadata"].(map[string]interface{}); ok {
-			if rawFields, has := rm["fields"]; has {
-				if rawArr, ok := rawFields.([]interface{}); !ok {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-						"reference_metadata.fields must be an array.")
-					return
-				} else {
-					for _, item := range rawArr {
-						if _, ok = item.(string); !ok {
-							common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-								"reference_metadata.fields must be an array.")
-							return
-						}
-					}
-				}
-			}
-		}
-	}
-
-	// metadata_condition shape validation
-	if extraBody != nil {
-		if mc, ok := extraBody["metadata_condition"]; ok && mc != nil {
-			if _, ok := mc.(map[string]interface{}); !ok {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
-					"metadata_condition must be an object.")
-				return
-			}
-		}
-	}
-
-	// Last message must be from the user
-	if last := req.Messages[len(req.Messages)-1]; last != nil {
-		if role, _ := last["role"].(string); role != "user" {
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "The last content of this conversation is not from user.")
-			return
-		}
-	}
-
-	// All early-rejection checks passed. Delegate to the service for the
-	// actual LLM call.
 	// Long agentic runs stream for minutes or compute before their single
 	// write; clear http.Server.WriteTimeout so neither is cut off mid-response.
 	clearResponseWriteDeadline(c)
-	h.svc.OpenAIChatCompletions(c, user.ID, chatID, bodyBytes)
+
+	completionID := "chatcmpl-" + chatID
+	if req.Stream != nil && *req.Stream {
+		ctx, cancel := context.WithCancel(c.Request.Context())
+		defer cancel()
+
+		stream, err := h.svc.Stream(ctx, user.ID, chatID, req)
+		if err != nil {
+			writeOpenAIChatError(c, err)
+			return
+		}
+		if err := writeOpenAIChatSSE(ctx, c, stream, completionID); err != nil {
+			cancel()
+			if !errors.Is(err, context.Canceled) && c.Request.Context().Err() == nil {
+				if !c.Writer.Written() {
+					writeOpenAIChatError(c, common.NewCodedError(common.CodeDataError, err.Error()))
+					return
+				}
+				common.Warn("OpenAI chat stream writer failed", zap.Error(err))
+			}
+		}
+		return
+	}
+
+	resp, err := h.svc.Complete(c.Request.Context(), user.ID, chatID, req)
+	if err != nil {
+		writeOpenAIChatError(c, err)
+		return
+	}
+	writeOpenAICompletion(c, completionID, resp)
+}
+
+func writeOpenAIChatError(c *gin.Context, err error) {
+	if err == nil || c.Request.Context().Err() != nil {
+		return
+	}
+	var codedErr *common.CodedError
+	if errors.As(err, &codedErr) {
+		common.ResponseWithCodeData(c, codedErr.Code, nil, codedErr.Message)
+		return
+	}
+	jsonInternalError(c, err)
+}
+
+func writeOpenAICompletion(c *gin.Context, completionID string, resp *service.OpenAICompletionResponse) {
+	choices := []gin.H{{
+		"index":         0,
+		"finish_reason": "stop",
+		"logprobs":      nil,
+		"message": gin.H{
+			"role":    "assistant",
+			"content": resp.Content,
+		},
+	}}
+	if resp.Reference != nil {
+		choices[0]["message"].(gin.H)["reference"] = resp.Reference
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":      completionID,
+		"object":  "chat.completion",
+		"created": getOpenAICreatedOrDefault(resp.Created),
+		"model":   resp.Model,
+		"usage": gin.H{
+			"prompt_tokens":     resp.PromptTokens,
+			"completion_tokens": resp.CompletionTokens,
+			"total_tokens":      resp.TotalTokens,
+			"completion_tokens_details": gin.H{
+				"reasoning_tokens":           resp.ContextTokens,
+				"accepted_prediction_tokens": resp.CompletionTokens,
+				"rejected_prediction_tokens": 0,
+			},
+		},
+		"choices": choices,
+	})
+}
+
+func getOpenAICreatedOrDefault(created *int64) int64 {
+	if created != nil {
+		return *created
+	}
+	return time.Now().Unix()
 }

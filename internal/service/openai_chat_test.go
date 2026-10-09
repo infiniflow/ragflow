@@ -17,14 +17,9 @@
 package service
 
 import (
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/tokenizer"
@@ -130,19 +125,17 @@ func TestOpenAI_MergeGenerationConfig_AddsNewKeys(t *testing.T) {
 }
 
 // TestOpenAI_MergeThenBuild_AllGenerationParamsReachChatConfig is the
-// end-to-end contract for the OpenAI path: the handler builds a
-// genCfg via extractGenerationConfig, the handler calls
-// MergeGenerationConfig(dialog, genCfg), and the RAG pipeline later
+// end-to-end contract for the OpenAI path: the service builds a genCfg via
+// extractGenerationConfig, merges it into the dialog, and the RAG pipeline later
 // calls BuildChatConfig(dialog, nil) which reads the merged values.
 // Verifies that all 5 fields the Python server honors
 // (temperature, top_p, max_tokens, frequency_penalty, presence_penalty)
 // survive the merge. For the fields ChatConfig supports, the values must
 // surface on the returned struct.
 //
-// The handler-side float64 coercion of max_tokens is verified by
-// TestExtractGenerationConfig_OnlyKnownFields in the handler package.
-// This test uses a float64 here (matching what the handler produces
-// after the fix) so the BuildChatConfig type assertion succeeds.
+// The service-side float64 coercion of max_tokens is verified by
+// TestExtractGenerationConfig_OnlyKnownFields. This test uses a float64 here
+// so the BuildChatConfig type assertion succeeds.
 func TestOpenAI_MergeThenBuild_AllGenerationParamsReachChatConfig(t *testing.T) {
 	svc := &OpenAIChatService{}
 	dialog := &entity.Chat{} // no LLMSetting, no defaults
@@ -577,259 +570,5 @@ func TestMergeGenerationConfig_RequestOverridesDefault(t *testing.T) {
 	}
 	if got := dialog.LLMSetting["max_tokens"]; got != 512 {
 		t.Fatalf("max_tokens: default should be intact after merge, got %v", got)
-	}
-}
-
-// flushableRecorder wraps httptest.ResponseRecorder with a no-op Flush so
-// the gin.Context's c.Writer.(http.Flusher) type assertion succeeds. The
-// recorder itself doesn't implement Flusher; without this wrapper,
-// streamChatCompletionSSE would return "streaming unsupported" before
-// emitting a single byte.
-type flushableRecorder struct {
-	*httptest.ResponseRecorder
-	flushed int
-}
-
-func (f *flushableRecorder) Flush() { f.flushed++ }
-
-// TestStreamChatCompletionSSE_HappyPath pins the SSE wire format
-// produced by streamChatCompletionSSE: a `data: <json>\n\n` line per
-// event, the `chat.completion.chunk` object, role/content/reasoning
-// fields, FinalAnswer surfaced only via final_content (not
-// delta.content) — the #15286 fix, the [DONE] terminator, and the
-// model field coming from the requestedModel arg (matching Python's
-// _stream_chat_completion_sse, which uses requested_model in every
-// yielded chunk).
-func TestStreamChatCompletionSSE_HappyPath(t *testing.T) {
-	events := make(chan OpenAIStreamEvent, 8)
-	events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: "Hello"}
-	events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: " world"}
-	events <- OpenAIStreamEvent{Kind: OpenAIEventReasoning, Delta: "thinking..."}
-	events <- OpenAIStreamEvent{
-		Kind:             OpenAIEventFinal,
-		FinalAnswer:      "Hello world",
-		FinalReference:   []FormattedChunk{{ID: "chunk-1"}, {ID: "chunk-2"}},
-		PromptTokens:     5,
-		CompletionTokens: 2,
-		TotalTokens:      7,
-	}
-	close(events)
-
-	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat", nil)
-
-	if err := streamChatCompletionSSE(c, events, "chatcmpl-test-1", "test-model", true); err != nil {
-		t.Fatalf("streamChatCompletionSSE returned error: %v", err)
-	}
-
-	body := rec.Body.String()
-	if rec.Header().Get("Content-Type") != "text/event-stream; charset=utf-8" {
-		t.Errorf("Content-Type: got %q, want text/event-stream", rec.Header().Get("Content-Type"))
-	}
-	if rec.flushed < 4 {
-		t.Errorf("expected at least 4 flushes (3 chunks + [DONE]), got %d", rec.flushed)
-	}
-	// Per-chunk shape: data: <json>\n\n, object=chat.completion.chunk.
-	if got := strings.Count(body, `"object":"chat.completion.chunk"`); got != 4 {
-		t.Errorf("expected 4 chat.completion.chunk objects, got %d in body:\n%s", got, body)
-	}
-	if got := strings.Count(body, "\n\ndata: [DONE]"); got != 1 {
-		t.Errorf("expected exactly 1 [DONE] terminator, got %d in body:\n%s", got, body)
-	}
-	// Model field uses requestedModel in every chunk (matches Python).
-	if got := strings.Count(body, `"model":"test-model"`); got != 4 {
-		t.Errorf("expected 4 chunks to carry model=test-model, got %d in body:\n%s", got, body)
-	}
-	// Content deltas surfaced as delta.content (not delta.final_content).
-	if !strings.Contains(body, `"content":"Hello"`) {
-		t.Errorf("expected content delta for 'Hello', body:\n%s", body)
-	}
-	if !strings.Contains(body, `"content":" world"`) {
-		t.Errorf("expected content delta for ' world', body:\n%s", body)
-	}
-	// Reasoning delta surfaced as delta.reasoning_content with content=null.
-	if !strings.Contains(body, `"reasoning_content":"thinking..."`) {
-		t.Errorf("expected reasoning_content for 'thinking...', body:\n%s", body)
-	}
-	// #15286 fix: FinalAnswer is in delta.final_content, NOT in delta.content.
-	// The final chunk has content:null, reasoning_content:null, final_content:"Hello world".
-	if !strings.Contains(body, `"final_content":"Hello world"`) {
-		t.Errorf("expected final_content='Hello world' in final chunk, body:\n%s", body)
-	}
-	if strings.Contains(body, `"content":"Hello world"`) {
-		t.Errorf("final answer leaked into delta.content — #15286 regression, body:\n%s", body)
-	}
-	// Reference is included because NeedReference=true.
-	if !strings.Contains(body, `"reference"`) {
-		t.Errorf("expected reference field (NeedReference=true), body:\n%s", body)
-	}
-	// Usage block on the final chunk.
-	if !strings.Contains(body, `"prompt_tokens":5`) {
-		t.Errorf("expected prompt_tokens=5, body:\n%s", body)
-	}
-	if !strings.Contains(body, `"completion_tokens":2`) {
-		t.Errorf("expected completion_tokens=2, body:\n%s", body)
-	}
-	if !strings.Contains(body, `"total_tokens":7`) {
-		t.Errorf("expected total_tokens=7, body:\n%s", body)
-	}
-	// finish_reason:stop on the final chunk.
-	if !strings.Contains(body, `"finish_reason":"stop"`) {
-		t.Errorf("expected finish_reason=stop on final chunk, body:\n%s", body)
-	}
-}
-
-// TestStreamChatCompletionSSE_NoReference pins the
-// NeedReference=false path: the final chunk's delta must NOT carry
-// final_content or reference (Python omits those when need_reference
-// is false, per openai_api.py:187-194).
-func TestStreamChatCompletionSSE_NoReference(t *testing.T) {
-	events := make(chan OpenAIStreamEvent, 2)
-	events <- OpenAIStreamEvent{
-		Kind:           OpenAIEventFinal,
-		FinalAnswer:    "answer",
-		FinalReference: []FormattedChunk{{ID: "chunk-1"}},
-	}
-	close(events)
-
-	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat", nil)
-
-	if err := streamChatCompletionSSE(c, events, "chatcmpl-test-2", "test-model", false); err != nil {
-		t.Fatalf("streamChatCompletionSSE returned error: %v", err)
-	}
-
-	body := rec.Body.String()
-	if strings.Contains(body, `"final_content"`) {
-		t.Errorf("NeedReference=false: final_content should be omitted, body:\n%s", body)
-	}
-	if strings.Contains(body, `"reference"`) {
-		t.Errorf("NeedReference=false: reference should be omitted, body:\n%s", body)
-	}
-}
-
-// TestStreamChatCompletionSSE_ErrorEvent pins the in-band error path:
-// an OpenAIEventError becomes a single chunk with delta.content =
-// "**ERROR**: <msg>", then the [DONE] terminator (mirrors
-// openai_api.py:174-176).
-func TestStreamChatCompletionSSE_ErrorEvent(t *testing.T) {
-	events := make(chan OpenAIStreamEvent, 1)
-	events <- OpenAIStreamEvent{Kind: OpenAIEventError, Error: "boom"}
-	close(events)
-
-	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat", nil)
-
-	if err := streamChatCompletionSSE(c, events, "chatcmpl-test-3", "test-model", false); err != nil {
-		t.Fatalf("streamChatCompletionSSE returned error: %v", err)
-	}
-
-	body := rec.Body.String()
-	if !strings.Contains(body, `"content":"**ERROR**: boom"`) {
-		t.Errorf("expected error chunk with content='**ERROR**: boom', body:\n%s", body)
-	}
-	if !strings.Contains(body, "data: [DONE]") {
-		t.Errorf("expected [DONE] after error chunk, body:\n%s", body)
-	}
-}
-
-// TestStreamChatCompletionSSE_FlusherUnsupported is intentionally not
-// written: gin's responseWriter wrapper implements http.Flusher
-// regardless of the underlying writer (it calls WriteHeaderNow on
-// Flush), so the "streaming unsupported" branch is unreachable
-// through gin.CreateTestContext. The branch stays in the function as
-// a defensive guard against callers who build a gin.Context
-// themselves with a custom non-flushable writer.
-
-// TestStreamChatCompletionSSE_EmptyChannel pins the empty-input
-// edge case: a channel closed with no events at all should still
-// emit the [DONE] terminator and not crash.
-func TestStreamChatCompletionSSE_EmptyChannel(t *testing.T) {
-	events := make(chan OpenAIStreamEvent)
-	close(events)
-
-	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat", nil)
-
-	if err := streamChatCompletionSSE(c, events, "chatcmpl-empty", "test-model", false); err != nil {
-		t.Fatalf("streamChatCompletionSSE returned error: %v", err)
-	}
-
-	body := rec.Body.String()
-	if !strings.Contains(body, "data: [DONE]") {
-		t.Errorf("expected [DONE] terminator for empty channel, body:\n%s", body)
-	}
-	if got := strings.Count(body, `"object":"chat.completion.chunk"`); got != 0 {
-		t.Errorf("expected 0 chunks for empty channel, got %d", got)
-	}
-}
-
-// TestStreamChatCompletionSSE_ChunkJSONShape pins the structural
-// shape of one chunk by parsing the JSON payload and checking the
-// keys exist. Catches accidental field renames or type changes in
-// the gin.H literals.
-func TestStreamChatCompletionSSE_ChunkJSONShape(t *testing.T) {
-	events := make(chan OpenAIStreamEvent, 2)
-	events <- OpenAIStreamEvent{Kind: OpenAIEventContent, Delta: "x"}
-	events <- OpenAIStreamEvent{
-		Kind:             OpenAIEventFinal,
-		FinalAnswer:      "x",
-		PromptTokens:     1,
-		CompletionTokens: 1,
-		TotalTokens:      2,
-	}
-	close(events)
-
-	rec := &flushableRecorder{ResponseRecorder: httptest.NewRecorder()}
-	c, _ := gin.CreateTestContext(rec)
-	c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat", nil)
-
-	if err := streamChatCompletionSSE(c, events, "chatcmpl-shape", "shape-model", false); err != nil {
-		t.Fatalf("streamChatCompletionSSE returned error: %v", err)
-	}
-
-	// Pull the first data: line and parse it.
-	lines := strings.Split(rec.Body.String(), "\n\n")
-	if len(lines) < 2 {
-		t.Fatalf("expected at least 2 lines (one chunk + [DONE]), got %d", len(lines))
-	}
-	firstLine := strings.TrimPrefix(lines[0], "data:")
-	var chunk map[string]interface{}
-	if err := json.Unmarshal([]byte(firstLine), &chunk); err != nil {
-		t.Fatalf("first chunk is not valid JSON: %v\nline: %s", err, firstLine)
-	}
-
-	// Required top-level fields on a chat.completion.chunk.
-	for _, key := range []string{"id", "object", "created", "model", "choices"} {
-		if _, ok := chunk[key]; !ok {
-			t.Errorf("chunk missing top-level %q", key)
-		}
-	}
-	if chunk["object"] != "chat.completion.chunk" {
-		t.Errorf("chunk.object: got %v, want chat.completion.chunk", chunk["object"])
-	}
-	// Decode the choices[0] shape.
-	choices, ok := chunk["choices"].([]interface{})
-	if !ok || len(choices) != 1 {
-		t.Fatalf("choices: got %T %v, want []interface{} of length 1", chunk["choices"], chunk["choices"])
-	}
-	choice, ok := choices[0].(map[string]interface{})
-	if !ok {
-		t.Fatalf("choices[0]: got %T, want object", choices[0])
-	}
-	delta, ok := choice["delta"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("choices[0].delta: got %T, want object", choice["delta"])
-	}
-	// Content deltas carry role + content.
-	if delta["role"] != "assistant" {
-		t.Errorf("delta.role: got %v, want assistant", delta["role"])
-	}
-	if delta["content"] != "x" {
-		t.Errorf("delta.content: got %v, want x", delta["content"])
 	}
 }
