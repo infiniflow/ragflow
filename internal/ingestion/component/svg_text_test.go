@@ -83,6 +83,9 @@ func TestExtractSVGTextRejectsInvalidInput(t *testing.T) {
 		{"undefined entity", `<svg><text>&undefined;</text></svg>`, "decode SVG"},
 		{"other root", `<html><body>a</body></html>`, `root element is "html"`},
 		{"excessive nesting", "<svg>" + strings.Repeat("<g>", maxSVGDepth), "nest deeper"},
+		{"entity expansion", `<!DOCTYPE svg [<!ENTITY a "` + strings.Repeat("x", 1<<20) + `">]><svg><text>` + strings.Repeat("&a;", 64) + `</text></svg>`, "entity expansion"},
+		{"too many entities", `<!DOCTYPE svg [` + strings.Repeat(`<!ENTITY a "x">`, maxSVGEntities+1) + `]><svg/>`, "more than"},
+		{"entities in a transcoded document", "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><!DOCTYPE svg [<!ENTITY a \"x\">]><svg><text>&a;</text></svg>", "invalid character entity"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := extractSVGText(t.Context(), []byte(tc.svg))

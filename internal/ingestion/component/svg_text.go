@@ -34,15 +34,20 @@ import (
 	"unicode/utf8"
 
 	htmlcharset "golang.org/x/net/html/charset"
+
+	"ragflow/internal/parser/parser"
 )
 
 // maxSVGDepth bounds element nesting: the XML decoder keeps one stack entry
 // per open element, so depth is the allocation an SVG payload could inflate.
 const maxSVGDepth = 1024
 
+// maxSVGEntities bounds the entity declarations read from a DOCTYPE.
+const maxSVGEntities = 64
+
 // svgEntityPattern matches the internal entity declarations of a DOCTYPE,
 // which some editors use for namespace URIs.
-var svgEntityPattern = regexp.MustCompile(`<!ENTITY\s+([^\s%"']+)\s+(?:"([^"]*)"|'([^']*)')\s*>`)
+var svgEntityPattern = regexp.MustCompile(`<!ENTITY\s+([A-Za-z_][\w.-]*)\s+(?:"([^"]*)"|'([^']*)')\s*>`)
 
 func isSVGFilename(filename string) bool {
 	return strings.EqualFold(filepath.Ext(filename), ".svg")
@@ -53,7 +58,14 @@ func isSVGFilename(filename string) bool {
 // line per text element, repositioned <tspan>, or HTML block.
 func extractSVGText(ctx context.Context, data []byte) (string, error) {
 	decoder := xml.NewDecoder(bytes.NewReader(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))))
-	decoder.CharsetReader = htmlcharset.NewReaderLabel
+	// transcoded records that the decoder no longer reads data byte for byte,
+	// so entity references cannot be counted in it.
+	var transcoded bool
+	decoder.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+		transcoded = true
+		return htmlcharset.NewReaderLabel(label, input)
+	}
+	var expansion int64
 	entities := make(map[string]string, len(xml.HTMLEntity))
 	for name, value := range xml.HTMLEntity {
 		entities[name] = value
@@ -87,10 +99,25 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 		}
 		switch el := token.(type) {
 		case xml.Directive:
+			if transcoded {
+				continue
+			}
+			matches := svgEntityPattern.FindAllSubmatch(el, maxSVGEntities+1)
+			if len(matches) > maxSVGEntities {
+				return "", fmt.Errorf("parser: decode SVG: DOCTYPE declares more than %d entities", maxSVGEntities)
+			}
 			// Entity values are substituted as literal text and never parsed
-			// again, so a declaration cannot expand recursively.
-			for _, match := range svgEntityPattern.FindAllSubmatch(el, -1) {
-				entities[string(match[1])] = string(match[2]) + string(match[3])
+			// again, so a declaration cannot expand recursively. Repeated
+			// references still multiply a value, so the total they expand to
+			// is budgeted before the decoder substitutes any of them.
+			for _, match := range matches {
+				value := string(match[2]) + string(match[3])
+				references := bytes.Count(data, []byte("&"+string(match[1])+";"))
+				expansion += int64(references) * int64(len(value))
+				if expansion > parser.MaxImagePayloadBytes {
+					return "", errors.New("parser: decode SVG: entity expansion exceeds size limits")
+				}
+				entities[string(match[1])] = value
 			}
 		case xml.StartElement:
 			depth++
