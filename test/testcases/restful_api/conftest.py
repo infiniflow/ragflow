@@ -120,6 +120,12 @@ def rest_client(token):
 
 
 @pytest.fixture(scope="session")
+def is_go_backend(rest_client):
+    response = rest_client.get("/system/ping")
+    return response.headers.get("X-API-Source") == "go"
+
+
+@pytest.fixture(scope="session")
 def rest_client_noauth():
     return RestClient(token=None)
 

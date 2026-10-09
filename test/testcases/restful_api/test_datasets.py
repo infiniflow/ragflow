@@ -548,7 +548,7 @@ def test_dataset_update_content_type_and_payload_contract(rest_client, clear_dat
 
 
 @pytest.mark.p2
-def test_dataset_update_identifier_validation_contract(rest_client):
+def test_dataset_update_identifier_validation_contract(rest_client, is_go_backend):
     payload = {"name": "dataset_update_identifier_validation"}
 
     not_uuid_res = rest_client.put("/datasets/not_uuid", json=payload)
@@ -560,14 +560,22 @@ def test_dataset_update_identifier_validation_contract(rest_client):
     not_uuid1_res = rest_client.put(f"/datasets/{uuid.uuid4().hex}", json=payload)
     assert not_uuid1_res.status_code == 200
     not_uuid1_payload = not_uuid1_res.json()
-    assert not_uuid1_payload["code"] == 102, not_uuid1_payload
-    assert "lacks permission for dataset" in not_uuid1_payload["message"], not_uuid1_payload
+    if is_go_backend:
+        assert not_uuid1_payload["code"] == 404, not_uuid1_payload
+        assert not_uuid1_payload["message"] == "Resource not found", not_uuid1_payload
+    else:
+        assert not_uuid1_payload["code"] == 102, not_uuid1_payload
+        assert "lacks permission for dataset" in not_uuid1_payload["message"], not_uuid1_payload
 
     wrong_uuid_res = rest_client.put("/datasets/d94a8dc02c9711f0930f7fbc369eab6d", json=payload)
     assert wrong_uuid_res.status_code == 200
     wrong_uuid_payload = wrong_uuid_res.json()
-    assert wrong_uuid_payload["code"] == 102, wrong_uuid_payload
-    assert "lacks permission for dataset" in wrong_uuid_payload["message"], wrong_uuid_payload
+    if is_go_backend:
+        assert wrong_uuid_payload["code"] == 404, wrong_uuid_payload
+        assert wrong_uuid_payload["message"] == "Resource not found", wrong_uuid_payload
+    else:
+        assert wrong_uuid_payload["code"] == 102, wrong_uuid_payload
+        assert "lacks permission for dataset" in wrong_uuid_payload["message"], wrong_uuid_payload
 
 
 @pytest.mark.p2
@@ -1238,7 +1246,7 @@ def test_dataset_list_ordering_and_pagination(rest_client, clear_datasets):
 
 
 @pytest.mark.p2
-def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
+def test_dataset_delete_contract_matrix(rest_client, clear_datasets, is_go_backend):
     ids = []
     for i in range(3):
         create_res = rest_client.post("/datasets", json={"name": f"dataset_delete_matrix_{i}"})
@@ -1312,14 +1320,22 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     id_not_uuid1_res = rest_client.delete("/datasets", json={"ids": [uuid.uuid4().hex]})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
-    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    if is_go_backend:
+        assert id_not_uuid1_payload["code"] == 403, id_not_uuid1_payload
+        assert id_not_uuid1_payload["message"] == "Permission denied", id_not_uuid1_payload
+    else:
+        assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+        assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.delete("/datasets", json={"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]})
     assert id_wrong_uuid_res.status_code == 200
     id_wrong_uuid_payload = id_wrong_uuid_res.json()
-    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
-    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+    if is_go_backend:
+        assert id_wrong_uuid_payload["code"] == 403, id_wrong_uuid_payload
+        assert id_wrong_uuid_payload["message"] == "Permission denied", id_wrong_uuid_payload
+    else:
+        assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
+        assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
 
     list_res = rest_client.get("/datasets")
     assert list_res.status_code == 200
@@ -1416,7 +1432,7 @@ def test_dataset_list_requires_auth_contract(rest_client, clear_datasets):
 
 
 @pytest.mark.p2
-def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
+def test_dataset_list_query_contract_matrix(rest_client, clear_datasets, is_go_backend):
     dataset_ids = []
     for i in range(5):
         create_res = rest_client.post("/datasets", json={"name": f"dataset_{i}"})
@@ -1558,8 +1574,12 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     name_wrong_res = rest_client.get("/datasets", params={"name": "wrong name"})
     assert name_wrong_res.status_code == 200
     name_wrong_payload = name_wrong_res.json()
-    assert name_wrong_payload["code"] == 102, name_wrong_payload
-    assert "lacks permission for dataset" in name_wrong_payload["message"], name_wrong_payload
+    if is_go_backend:
+        assert name_wrong_payload["code"] == 0, name_wrong_payload
+        assert name_wrong_payload["data"] == [], name_wrong_payload
+    else:
+        assert name_wrong_payload["code"] == 102, name_wrong_payload
+        assert "lacks permission for dataset" in name_wrong_payload["message"], name_wrong_payload
 
     name_empty_res = rest_client.get("/datasets", params={"name": ""})
     assert name_empty_res.status_code == 200
@@ -1589,14 +1609,22 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     id_not_uuid1_res = rest_client.get("/datasets", params={"id": uuid.uuid4().hex})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
-    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    if is_go_backend:
+        assert id_not_uuid1_payload["code"] == 404, id_not_uuid1_payload
+        assert id_not_uuid1_payload["message"] == "Resource not found", id_not_uuid1_payload
+    else:
+        assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
+        assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.get("/datasets", params={"id": "d94a8dc02c9711f0930f7fbc369eab6d"})
     assert id_wrong_uuid_res.status_code == 200
     id_wrong_uuid_payload = id_wrong_uuid_res.json()
-    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
-    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+    if is_go_backend:
+        assert id_wrong_uuid_payload["code"] == 404, id_wrong_uuid_payload
+        assert id_wrong_uuid_payload["message"] == "Resource not found", id_wrong_uuid_payload
+    else:
+        assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
+        assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
 
     id_empty_res = rest_client.get("/datasets", params={"id": ""})
     assert id_empty_res.status_code == 200
@@ -1682,7 +1710,7 @@ def test_dataset_get_contract(rest_client, create_dataset):
 
 
 @pytest.mark.p2
-def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dataset):
+def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dataset, is_go_backend):
     dataset_id = create_dataset("dataset_metadata_config_contract")
 
     success_res = rest_client.get(f"/datasets/{dataset_id}/metadata/config")
@@ -1709,8 +1737,12 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     invalid_dataset_res = rest_client.get("/datasets/invalid_dataset_id/metadata/config")
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
+    if is_go_backend:
+        assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+        assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
+    else:
+        assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
+        assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
 
     update_payload = {
         "metadata": [
@@ -1758,8 +1790,12 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     )
     assert invalid_update_dataset_res.status_code == 200
     invalid_update_dataset_payload = invalid_update_dataset_res.json()
-    assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
-    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
+    if is_go_backend:
+        assert invalid_update_dataset_payload["code"] == 404, invalid_update_dataset_payload
+        assert invalid_update_dataset_payload["message"] == "Resource not found", invalid_update_dataset_payload
+    else:
+        assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
+        assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
 
 
 def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):
