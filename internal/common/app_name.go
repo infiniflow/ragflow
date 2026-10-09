@@ -84,6 +84,9 @@ func uniqueName(name string, maxLen int, keepExtension bool, exists func(candida
 		maxLen = AppNameLimit
 	}
 	current := name
+	if err := validateNameLimit(current, maxLen); err != nil {
+		return "", err
+	}
 	for i := 0; i < maxNameRetries; i++ {
 		taken, err := exists(current)
 		if err != nil {
