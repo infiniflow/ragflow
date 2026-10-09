@@ -51,7 +51,7 @@ export function useParserOptions() {
     canvas_category: AgentCategory.DataflowCanvas,
   });
 
-  const suffix = t('knowledgeConfiguration.builtInSuffix') || ' (built in)';
+  const suffix = t('knowledgeConfiguration.builtInSuffix');
 
   const options = useMemo<IParserOption[]>(() => {
     const pipeline = (pipelineData?.canvas ?? [])

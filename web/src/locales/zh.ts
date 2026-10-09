@@ -606,6 +606,7 @@ export default {
     knowledgeConfiguration: {
       builtInSuffix: '（内置）',
       parserSelectPlaceholder: '选择解析方式',
+      parserOptionUnavailable: '不可用',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',

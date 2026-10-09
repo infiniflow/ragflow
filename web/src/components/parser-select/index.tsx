@@ -53,16 +53,21 @@ export function ParserSelect({
       }
       onChange(parsed.kind, parsed.rawId);
     },
-    [onChange, parseParserOptionValue],
+    [onChange],
   );
 
   return (
     <SelectWithSearch
       value={value}
       loading={loading}
-      // Keep the current value visible while options are still loading so the
-      // selection doesn't flash an empty trigger on edit screens.
-      renderMissingValue={(v) => v}
+      // When the saved value references a parser that no longer exists (e.g. a
+      // deleted pipeline) and options have finished loading, render a localized
+      // "unavailable" label instead of the raw internal value.
+      renderMissingValue={() =>
+        t('knowledgeConfiguration.parserOptionUnavailable', {
+          defaultValue: 'unavailable',
+        })
+      }
       onChange={handleChange}
       placeholder={
         placeholder ?? t('knowledgeConfiguration.parserSelectPlaceholder')

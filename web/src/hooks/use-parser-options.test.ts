@@ -8,7 +8,8 @@ import {
 
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => (key === 'builtInSuffix' ? ' (built in)' : key),
+    t: (key: string) =>
+      key === 'knowledgeConfiguration.builtInSuffix' ? ' (built in)' : key,
   }),
 }));
 
