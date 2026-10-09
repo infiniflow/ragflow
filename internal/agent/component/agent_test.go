@@ -71,6 +71,66 @@ func TestAgent_NoToolsReAct(t *testing.T) {
 	}
 }
 
+func TestAgent_PopulatesStructuredFromOutputsSchema(t *testing.T) {
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: "```json\n{\"records\":[{\"ruleId\":\"r1\",\"verdict\":\"PASS\"}],\"opinion\":{\"conclusion\":\"PASS\"}}\n```",
+		}, nil
+	})
+
+	c := NewAgentComponent(agentParamFromMap(map[string]any{
+		"model_id": "stub",
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"records": map[string]any{"type": "array"},
+					"opinion": map[string]any{"type": "object"},
+				},
+				"required": []any{"records"},
+			},
+		},
+	}))
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"user_prompt": "summarize",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	structured, ok := out["structured"].(map[string]any)
+	if !ok {
+		t.Fatalf("structured missing or wrong type: %T (%v)", out["structured"], out["structured"])
+	}
+	if _, ok := structured["records"]; !ok {
+		t.Fatalf("structured.records missing: %#v", structured)
+	}
+	if got, want := out["content"], `{"records":[{"ruleId":"r1","verdict":"PASS"}],"opinion":{"conclusion":"PASS"}}`; got != want {
+		t.Errorf("content=%q, want cleaned JSON %q", got, want)
+	}
+}
+
+func TestAgentOutputStructureFromRequiredKeys(t *testing.T) {
+	keys := agentOutputStructureFrom(map[string]any{
+		"outputs": map[string]any{
+			"structured": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"records": map[string]any{"type": "array"},
+					"opinion": map[string]any{"type": "object"},
+				},
+				"required": []any{"records"},
+			},
+		},
+	})
+	if len(keys) != 1 {
+		t.Fatalf("expected only required keys, got %#v", keys)
+	}
+	if _, ok := keys["records"]; !ok {
+		t.Fatalf("records key missing: %#v", keys)
+	}
+}
+
 func TestScanAllStreamForToolCallWaitsPastTextChunks(t *testing.T) {
 	stream := schema.StreamReaderFromArray([]*schema.Message{
 		{Role: schema.Assistant, Content: "I will calculate this."},
