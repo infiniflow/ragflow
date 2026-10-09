@@ -640,6 +640,15 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 	if maxScan < 1 {
 		return 1
 	}
+
+	// Pre-compute the typical data-row width from sampled mid-sheet rows.
+	// A header candidate whose width is much narrower than the body is
+	// likely a title/metadata row in a form-style spreadsheet (e.g. Kros
+	// budget files where rows 1–5 are labels and the real column header
+	// starts at row 6).
+	medWidth := medianRowWidth(records)
+
+	bestCandidate := 0
 	for k := 0; k < maxScan; k++ {
 		row := records[k]
 		nc := len(row)
@@ -702,11 +711,106 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 			// subtotal looks identical locally, but its label matches a
 			// subtotal keyword so it is still refused and row 1 is kept.
 			if rowHasTextCell(below) || (isPurelyNumeric(below) && !isSubtotalRow(row)) {
+				// Width validation: if this candidate has far fewer filled
+				// cells than the typical data row, it is probably a metadata
+				// title (e.g. "Stavba: DSP MILLHAUS") and not the real
+				// column header. Remember it as fallback and keep scanning.
+				if medWidth >= 4 && nonEmpty*2 < medWidth {
+					if bestCandidate == 0 {
+						bestCandidate = k + 1
+					}
+					continue
+				}
 				return k + 1
 			}
 		}
 	}
+
+	// 3) Width-based scan: if the styled/contrast scan skipped a narrow
+	// candidate, search a wider window for the first text-majority row
+	// whose width is close to the data-row median.
+	if medWidth >= 4 {
+		wideScan := 12
+		if wideScan > n-1 {
+			wideScan = n - 1
+		}
+		for k := 0; k < wideScan; k++ {
+			row := records[k]
+			ne := rowNonEmpty(row)
+			// Accept rows within ±2 of the median data width.
+			if ne < medWidth-2 || ne > medWidth+2 {
+				continue
+			}
+			// Reject numeric-majority rows (data, not a header).
+			numCells := 0
+			textCells := 0
+			for _, v := range row {
+				v = strings.TrimSpace(v)
+				if v == "" {
+					continue
+				}
+				if isNumericCell(v) {
+					numCells++
+				} else {
+					textCells++
+				}
+			}
+			if textCells < numCells {
+				continue
+			}
+			return k + 1
+		}
+	}
+
+	if bestCandidate > 0 {
+		return bestCandidate
+	}
 	return 1
+}
+
+// rowNonEmpty counts the non-empty cells in a row.
+func rowNonEmpty(row []string) int {
+	n := 0
+	for _, v := range row {
+		if strings.TrimSpace(v) != "" {
+			n++
+		}
+	}
+	return n
+}
+
+// medianRowWidth samples 3–4 non-adjacent rows from the middle of the sheet
+// and returns the median of their non-empty cell counts. This gives a
+// representative "data row width" without scanning every row.
+func medianRowWidth(records [][]string) int {
+	n := len(records)
+	if n < 4 {
+		return 0
+	}
+	// Sample from the middle half: [n/4 .. 3n/4), stepping so picks are
+	// non-adjacent. At least 3, at most 4 samples.
+	start := n / 4
+	end := 3 * n / 4
+	span := end - start
+	if span < 3 {
+		return 0
+	}
+	step := span / 4
+	if step < 2 {
+		step = 2
+	}
+	var widths []int
+	for i := start; i < end && len(widths) < 4; i += step {
+		w := rowNonEmpty(records[i])
+		if w > 0 {
+			widths = append(widths, w)
+		}
+	}
+	if len(widths) == 0 {
+		return 0
+	}
+	sort.Ints(widths)
+	return widths[len(widths)/2]
 }
 
 // rowHasTextCell reports whether a row contains at least one non-empty,
