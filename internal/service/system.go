@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
@@ -110,6 +111,55 @@ func (s *SystemService) GetStatus(ctx context.Context) (*StatusResponse, error) 
 		Redis:                  s.getRedisStatus(ctx),
 		TaskExecutorHeartbeats: s.getTaskExecutorHeartbeats(ctx),
 	}, nil
+}
+
+// GetOceanBaseStatus mirrors Python's GET /api/v1/system/oceanbase/status.
+// A missing or different document engine is an expected API error; a failed
+// ping is returned as a timeout payload so clients retain Python's response
+// shape instead of receiving an internal server error.
+func (s *SystemService) GetOceanBaseStatus(ctx context.Context) (map[string]interface{}, common.ErrorCode, error) {
+	return oceanBaseStatus(ctx, engine.Get())
+}
+
+func oceanBaseStatus(ctx context.Context, docEngine engine.DocEngine) (map[string]interface{}, common.ErrorCode, error) {
+	configured := engine.GetEngineType() == string(engine.EngineOceanBase)
+	if docEngine != nil {
+		configured = configured || docEngine.GetType() == string(engine.EngineOceanBase)
+	}
+	if !configured {
+		return nil, common.CodeServerError, errors.New("OceanBase is not in use.")
+	}
+	if docEngine == nil {
+		return map[string]interface{}{
+			"status":  "timeout",
+			"message": "error: OceanBase document engine is not initialized",
+		}, common.CodeSuccess, nil
+	}
+
+	startedAt := time.Now()
+	pingCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	if err := docEngine.Ping(pingCtx); err != nil {
+		return map[string]interface{}{
+			"status":  "timeout",
+			"message": fmt.Sprintf("error: %s", err),
+		}, common.CodeSuccess, nil
+	}
+
+	latency := float64(time.Since(startedAt).Microseconds()) / 1000.0
+	return map[string]interface{}{
+		"status": "alive",
+		"message": map[string]interface{}{
+			"health": map[string]interface{}{
+				"status": "healthy",
+				"type":   docEngine.GetType(),
+			},
+			"performance": map[string]interface{}{
+				"connection": "connected",
+				"latency_ms": latency,
+			},
+		},
+	}, common.CodeSuccess, nil
 }
 
 func (s *SystemService) getDocEngineStatus(ctx context.Context) ComponentStatus {
