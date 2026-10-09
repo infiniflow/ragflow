@@ -88,9 +88,6 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		var question entity.ConversationMessage
 		query := db.WithContext(ctx).Table(messageTable).Where("conversation_id = ? AND message_id = ?", conversationID, update.DeleteMessageID)
 		if err := query.Session(&gorm.Session{}).Select("position").Where("role = ?", "user").Order("position").Take(&question).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil
-			}
 			return err
 		}
 		positions := []int{question.Position}

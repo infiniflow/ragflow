@@ -51,7 +51,7 @@ type QueryBuilder struct {
 // constants, so they are compiled once at package init.
 var (
 	reEngAlpha       = regexp.MustCompile(`^[a-zA-Z]+$`)
-	reSubSpecialChar = regexp.MustCompile(`([:{}/\[\]\-\*"\(\)\|\+~\^])`)
+	reSubSpecialChar = regexp.MustCompile(`([:{}/\[\]\-\*\?"\(\)\|\+~\^])`)
 	reStopWordsZH    = regexp.MustCompile(`(?i)是*(怎么办|什么样的|哪家|一下|那家|请问|啥样|咋样了|什么时候|何时|何地|何人|是否|是不是|多少|哪里|怎么|哪儿|怎么样|如何|哪些|是啥|啥是|啊|吗|呢|吧|咋|什么|有没有|呀|谁|哪位|哪个)是*`)
 	reStopWordsEN1   = regexp.MustCompile(`(?i)(^| )(what|who|how|which|where|why)('re|'s)? `)
 	reStopWordsEN2   = regexp.MustCompile(`(?i)(^| )('s|'re|is|are|were|was|do|does|did|don't|doesn't|didn't|has|have|be|there|you|me|your|my|mine|just|please|may|i|should|would|wouldn't|will|won't|done|go|for|with|so|the|a|an|by|i'm|it's|he's|she's|they|they're|you're|as|by|on|in|at|up|out|down|of|to|or|and|if) `)
@@ -142,8 +142,23 @@ func (qb *QueryBuilder) IsChinese(line string) bool {
 
 // SubSpecialChar escapes special characters for use in queries.
 func (qb *QueryBuilder) SubSpecialChar(line string) string {
-	// Regex matches : { } / [ ] - * " ( ) | + ~ ^ and prepends backslash
-	return reSubSpecialChar.ReplaceAllString(line, `\$1`)
+	// Strip single quotes first so Infinity's lexer does not treat them as
+	// string delimiters, then escape : { } / [ ] - * ? " ( ) | + ~ ^ and trim.
+	// Reference: common/query_base.py sub_special_char
+	line = strings.ReplaceAll(line, "'", "")
+	return strings.TrimSpace(reSubSpecialChar.ReplaceAllString(line, `\$1`))
+}
+
+// cleanSynonym tokenizes a synonym and strips single quotes so it can be
+// embedded in a full-text query. WordNet returns e.g. "cat-o'-nine-tails"
+// for "cat", and a raw single quote breaks the Infinity query parser.
+// Reference: rag/nlp/query.py question(), rag_tokenizer.tokenize(s).replace("'", "")
+func cleanSynonym(s string) string {
+	tokenized, err := tokenizer.Tokenize(s)
+	if err != nil {
+		tokenized = s
+	}
+	return strings.TrimSpace(strings.ReplaceAll(tokenized, "'", ""))
 }
 
 // RmWWW removes common stop words and question words from queries.
@@ -327,14 +342,17 @@ func (qb *QueryBuilder) Question(txt string, tbl string, minMatch float64) (*typ
 				// Format synonyms with weight boost: term^weight
 				var synParts []string
 				for _, syn := range tkSyns {
-					syn = strings.TrimSpace(syn)
+					syn = cleanSynonym(syn)
 					if syn != "" {
+						// Do not escape here. Python's English branch embeds the
+						// cleaned synonym as-is; SubSpecialChar would also escape '-',
+						// which WordNet synonyms contain constantly.
 						synParts = append(synParts, fmt.Sprintf(`"%s"^%.4f`, syn, tw.w/4.0))
+						// Extend keywords with cleaned synonyms
+						keywords = append(keywords, syn)
 					}
 				}
 				syns[i] = strings.Join(synParts, " ")
-				// Extend keywords with synonyms
-				keywords = append(keywords, tkSyns...)
 			} else {
 				syns[i] = ""
 			}

@@ -99,13 +99,11 @@ export const useSendMessage = () => {
     async ({
       message,
       currentConversationId,
-      messages: explicitMessages,
       enableInternet,
       enableThinking,
     }: {
       message: IMessage;
       currentConversationId?: string;
-      messages?: IMessage[];
     } & NextMessageInputOnPressEnterParameter) => {
       const sessionId = currentConversationId ?? conversationId;
 
@@ -114,12 +112,8 @@ export const useSendMessage = () => {
       const { ok, aborted } = await runChatCompletionStream({
         conversationId: sessionId,
         chatId,
-        // An explicitly provided list is authoritative, even when empty
-        // (e.g. regenerating the first question must truncate history).
-        messages: [
-          ...(Array.isArray(explicitMessages) ? explicitMessages : messages),
-          message,
-        ],
+        question: message.content,
+        files: message.files,
         enableThinking,
         enableInternet,
         llmSetting: currentDialog?.llm_setting,
@@ -134,14 +128,7 @@ export const useSendMessage = () => {
         notification.error({ message: t('message.requestError') });
       }
     },
-    [
-      conversationId,
-      chatId,
-      messages,
-      failStream,
-      t,
-      currentDialog?.llm_setting,
-    ],
+    [conversationId, chatId, failStream, t, currentDialog?.llm_setting],
   );
 
   // Hand a failed question back to the input box, but only once the box is
@@ -237,21 +224,11 @@ export const useSendMessage = () => {
 
       // Route the question to the conversation it was asked in, not whichever
       // is currently displayed.
-      //
-      // Snapshot the history before appendQuestion writes the question and its
-      // assistant placeholder into the store.
-      const history =
-        useChatStreamStore.getState().sessions[targetConversationId]
-          ?.messages ?? [];
-
       appendQuestion(targetConversationId, questionMessage);
 
       setValue('');
       sendMessage({
         currentConversationId: targetConversationId,
-        // For an existing conversation currentMessages is empty; fall back to
-        // the store's message list instead of sending an empty history.
-        messages: currentMessages.length > 0 ? currentMessages : history,
         message: {
           id,
           content: value.trim(),
