@@ -9,6 +9,8 @@ jest.mock('@/constants/agent', () => ({
     BGPT: 'Bing',
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
+    Search1APISearch: 'Search1APISearch',
+    Search1APICrawl: 'Search1APICrawl',
   },
 }));
 
@@ -182,6 +184,54 @@ describe('clearSensitiveFields', () => {
     expect(dsl.graph.nodes[0].data.form.api_key).toBe('sofya-graph-secret');
     expect(dsl.tools[0].params.api_key).toBe('sofya-tool-secret');
   });
+
+  it.each([
+    'Search1APISearch',
+    'Search1APICrawl',
+    'search1apisearch',
+    'search1apicrawl',
+    'search1api',
+    'search1api_crawl',
+  ])(
+    'clears a %s key from a canvas node and from a tool record',
+    (operator) => {
+      const dsl = {
+        graph: {
+          nodes: [
+            {
+              data: {
+                label: operator,
+                form: {
+                  api_key: 'search1api-graph-secret',
+                  channel: 'news',
+                },
+              },
+            },
+          ],
+        },
+        tools: [
+          {
+            component_name: operator,
+            params: {
+              api_key: 'search1api-tool-secret',
+              search_service: 'reuters',
+            },
+          },
+        ],
+      };
+
+      const sanitized = clearSensitiveFields(dsl);
+
+      expect(sanitized.graph.nodes[0].data.form.api_key).toBe('');
+      expect(sanitized.graph.nodes[0].data.form.channel).toBe('news');
+      expect(sanitized.tools[0].params.api_key).toBe('');
+      expect(sanitized.tools[0].params.search_service).toBe('reuters');
+      expect(dsl.graph.nodes[0].data.form.api_key).toBe(
+        'search1api-graph-secret',
+      );
+      expect(dsl.tools[0].params.api_key).toBe('search1api-tool-secret');
+    },
+  );
 
   it('does not change standalone graph export behavior for other tools', () => {
     const dsl = {
