@@ -135,7 +135,7 @@ def test_search_completion_requires_kb_ids(rest_client, search_resource):
 
 
 @pytest.mark.p2
-def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_resource, is_go_backend):
+def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_resource):
     search_id = search_resource
     # Even with kb_ids provided, runtime may return an error event in-stream, but
     # contract remains SSE with JSON data lines and terminal boolean event.
@@ -146,9 +146,5 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
     )
     assert res.status_code == 200
     payload = res.json()
-    if is_go_backend:
-        assert payload["code"] == 404, payload
-        assert payload["message"] == "Resource not found", payload
-    else:
-        assert payload["code"] == 102, payload
-        assert "You don't own the dataset nonexistent_dataset" in payload["message"], payload
+    assert payload["code"] == 404, payload
+    assert payload["message"] == "Resource not found", payload

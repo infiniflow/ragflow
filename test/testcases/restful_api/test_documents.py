@@ -574,7 +574,7 @@ def test_documents_update_name_contract(rest_client, create_dataset, tmp_path):
 
 
 @pytest.mark.p2
-def test_documents_update_invalid_dataset_and_document_contract(rest_client, create_dataset, tmp_path, is_go_backend):
+def test_documents_update_invalid_dataset_and_document_contract(rest_client, create_dataset, tmp_path):
     dataset_id, uploaded_docs = _seed_documents_for_update(rest_client, create_dataset, tmp_path)
     first_document_id = uploaded_docs[0]["id"]
 
@@ -584,12 +584,8 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     )
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_body = invalid_dataset_res.json()
-    if is_go_backend:
-        assert invalid_dataset_body["code"] == 404, invalid_dataset_body
-        assert invalid_dataset_body["message"] == "Resource not found", invalid_dataset_body
-    else:
-        assert invalid_dataset_body["code"] == 102, invalid_dataset_body
-        assert "you don't own the dataset" in invalid_dataset_body["message"], invalid_dataset_body
+    assert invalid_dataset_body["code"] == 404, invalid_dataset_body
+    assert invalid_dataset_body["message"] == "Resource not found", invalid_dataset_body
 
     invalid_document_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
@@ -987,7 +983,7 @@ def test_documents_metadata_batch_update_contract(rest_client, create_dataset, t
 
 
 @pytest.mark.p2
-def test_document_metadata_config_contract(rest_client, create_document, is_go_backend):
+def test_document_metadata_config_contract(rest_client, create_document):
     dataset_id, document_id = create_document("document_metadata_config_contract.txt")
 
     for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
@@ -1011,12 +1007,8 @@ def test_document_metadata_config_contract(rest_client, create_document, is_go_b
     )
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    if is_go_backend:
-        assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
-    else:
-        assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == "you don't own the dataset", invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
     invalid_document_res = rest_client.put(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",
@@ -1482,7 +1474,7 @@ def test_documents_stop_parse_invalid_dataset_partial_and_scaled_concurrency(res
 
 
 @pytest.mark.p2
-def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, create_document, tmp_path, is_go_backend):
+def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, create_document, tmp_path):
     dataset_id, document_id = create_document("download_target.txt")
 
     for scenario_name, client in (("missing token", RestClient(token=None)), ("invalid token", RestClient(token=INVALID_API_TOKEN))):
@@ -1495,23 +1487,15 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     invalid_doc_res = _download_document_to_file(rest_client, dataset_id, "invalid_document_id", invalid_doc_path)
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
-    if is_go_backend:
-        assert invalid_doc_payload["code"] == 404, invalid_doc_payload
-        assert invalid_doc_payload["message"] == "Resource not found", invalid_doc_payload
-    else:
-        assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-        assert invalid_doc_payload["message"] == "document not found", invalid_doc_payload
+    assert invalid_doc_payload["code"] == 404, invalid_doc_payload
+    assert invalid_doc_payload["message"] == "Resource not found", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    if is_go_backend:
-        assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
-    else:
-        assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == "document not found", invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
 
 @pytest.mark.p3

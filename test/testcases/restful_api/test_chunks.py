@@ -262,7 +262,7 @@ def test_chunk_add_keyword_question_and_tag_contract(rest_client, create_documen
 
 
 @pytest.mark.p2
-def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_document, is_go_backend):
+def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_document):
     dataset_id, document_id = create_document("chunk_invalid_targets.txt")
 
     invalid_dataset_res = rest_client.post(
@@ -271,12 +271,8 @@ def test_chunk_add_invalid_dataset_and_document_contract(rest_client, create_doc
     )
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    if is_go_backend:
-        assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
-    else:
-        assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-        assert invalid_dataset_payload["message"] == f"You don't own the dataset {INVALID_ID_32}.", invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
     invalid_document_res = rest_client.post(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/chunks",

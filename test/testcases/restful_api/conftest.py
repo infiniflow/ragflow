@@ -120,15 +120,6 @@ def rest_client(token):
 
 
 @pytest.fixture(scope="session")
-def is_go_backend(rest_client):
-    response = rest_client.get("/language")
-    if response.status_code != 200:
-        return False
-    payload = response.json()
-    return payload.get("data", {}).get("language") == "go"
-
-
-@pytest.fixture(scope="session")
 def rest_client_noauth():
     return RestClient(token=None)
 
