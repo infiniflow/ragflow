@@ -604,7 +604,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
-      builtInSuffix: '（内置）',
+      builtInSuffix: '内置',
       builtInBadge: '内置',
       builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
