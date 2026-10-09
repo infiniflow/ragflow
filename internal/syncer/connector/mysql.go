@@ -33,6 +33,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
+	"ragflow/internal/utility"
 )
 
 const defaultMySQLBatchSize = 32
@@ -501,8 +503,8 @@ func (c *MySQLConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 			semanticID = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(fmt.Sprint(value), "\n", " "), "\r", " "))
 			if semanticID == "" {
 				semanticID = "database_record"
-			} else if len(semanticID) > 100 {
-				semanticID = semanticID[:100]
+			} else {
+				semanticID = utility.TruncateRunes(semanticID, 100)
 			}
 		}
 	}

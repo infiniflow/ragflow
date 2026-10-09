@@ -36,6 +36,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/stdlib"
+
+	"ragflow/internal/utility"
 )
 
 const (
@@ -512,8 +514,8 @@ func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedCol
 			semanticID = strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(fmt.Sprint(value), "\n", " "), "\r", " "))
 			if semanticID == "" {
 				semanticID = "database_record"
-			} else if len(semanticID) > 100 {
-				semanticID = semanticID[:100]
+			} else {
+				semanticID = utility.TruncateRunes(semanticID, 100)
 			}
 		}
 	}
