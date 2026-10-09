@@ -1280,6 +1280,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      search1apiApiKeyTip:
+        'When Search1API is selected, its web search results supplement dataset retrieval.',
+      search1apiApiKeyMessage: 'Please enter your Search1API API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -2841,7 +2844,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',

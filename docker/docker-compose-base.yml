@@ -176,6 +176,36 @@ services:
       - ragflow
     restart: unless-stopped
 
+  vastbase:
+    profiles:
+      - vastbase
+    image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
+    env_file: .env
+    environment:
+      - VB_PASSWORD=${VB_PASSWORD}
+      - VB_USERNAME=${VB_USERNAME}
+      - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
+    # Bind the published port to loopback by default: the database ships
+    # default credentials, and RAGFlow reaches it over the shared `ragflow`
+    # network. Remote access is an explicit opt-in through VB_BIND_ADDR
+    # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
+    ports:
+      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
+    volumes:
+      - vastbase_data:/home/vastbase/data
+      - ./vastbase/init:/docker-entrypoint-initdb.d
+      - ./vastbase/license:/home/vastbase/vastbase/lic
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "vsql -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
   sandbox-executor-manager:
     profiles:
       - sandbox
@@ -474,6 +504,8 @@ volumes:
   ob_data:
     driver: local
   seekdb_data:
+    driver: local
+  vastbase_data:
     driver: local
   mysql_data:
     driver: local

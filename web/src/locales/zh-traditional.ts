@@ -925,7 +925,7 @@ export default {
       dataManipulation: '數據操控',
       flow: '流程',
       dialog: '對話',
-      cite: '引用',
+      cite: '顯示引文',
       citeTip: 'citeTip',
       name: '名稱',
       nameMessage: '請輸入名稱',
