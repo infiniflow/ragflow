@@ -963,11 +963,15 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, req.UserID, title, req.CanvasCategory); err != nil {
+	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
+		return s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, candidate, "")
+	})
+	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
+	title = uniqueTitle
+	req.Title = &title
+
 	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
@@ -1144,9 +1148,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	updates["release"] = release
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
-		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, ownerUserID, title, canvasCategory); err != nil {
+		// Exclude the canvas being updated so keeping or only re-casing its
+		// title does not collide with itself, while a move to a category that
+		// already holds the title is still rejected.
+		exists, err := s.canvasDAO.TitleExists(ctx, dao.DB, ownerUserID, canvasCategory, title, canvasID)
+		if err != nil {
 			return fmt.Errorf("check duplicate title: %w", err)
-		} else if existing != nil && existing.ID != canvasID {
+		}
+		if exists {
 			return agentTitleAlreadyExistsError(title)
 		}
 	}
@@ -2282,6 +2291,20 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
+		// The terminal Message output is authoritative. Do not let a result or
+		// content field from a non-terminal upstream node become the answer when
+		// the Message intentionally selected attachments only.
+		if terminalContent, ok := assistantOutput["content"].(string); ok {
+			answer = terminalContent
+		} else {
+			answer = ""
+		}
+		downloads = assistantOutput["downloads"]
+		if terminalAttachment, ok := assistantOutput["attachment"].(map[string]any); ok {
+			attachment = terminalAttachment
+		} else {
+			attachment = nil
+		}
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
