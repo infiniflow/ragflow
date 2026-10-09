@@ -1832,11 +1832,15 @@ func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
 	t.Helper()
 
 	status := "1"
+	role := "normal"
+	if userID == tenantID {
+		role = "owner"
+	}
 	userTenant := &entity.UserTenant{
 		ID:        userID + "-" + tenantID,
 		UserID:    userID,
 		TenantID:  tenantID,
-		Role:      "owner",
+		Role:      role,
 		InvitedBy: userID,
 		Status:    &status,
 	}
@@ -1854,7 +1858,7 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 		TenantID:     tenantID,
 		Name:         id,
 		EmbdID:       "embedding-model",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    tenantID,
 		ParserConfig: entity.JSONMap{},
 		Status:       &status,
@@ -2294,7 +2298,7 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		TenantID:     "tenant-1",
 		Name:         "dataset",
 		EmbdID:       "embed",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    "user-1",
 		ParserID:     string(entity.ParserTypeNaive),
 		ParserConfig: entity.JSONMap{},
