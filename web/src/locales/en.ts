@@ -665,7 +665,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
-      builtInSuffix: ' (built in)',
+      builtInSuffix: 'Built in',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
       randomSeedTip:
