@@ -163,12 +163,14 @@ interface UserGroupButtonProps extends Partial<IRemoveMessageById> {
   content: string;
   regenerateMessage?: () => void;
   sendLoading: boolean;
+  deleteDisabled?: boolean;
 }
 
 export const UserGroupButton = ({
   content,
   messageId,
   sendLoading,
+  deleteDisabled = false,
   removeMessageById,
   regenerateMessage,
 }: UserGroupButtonProps) => {
@@ -211,7 +213,7 @@ export const UserGroupButton = ({
               size="icon-xs"
               className="border-0"
               onClick={onRemoveMessage}
-              disabled={loading}
+              disabled={loading || deleteDisabled}
             >
               <LucideTrash2 />
             </Button>
