@@ -20,6 +20,7 @@ func TestValidateDynamicEntries(t *testing.T) {
 			map[string]any{"key": "question", "ref": "Begin@query", "value": ""},
 			map[string]any{"key": "top_k", "ref": "", "value": "12"},
 			map[string]any{"key": "limit", "ref": "", "value": 10},
+			map[string]any{"key": "enabled", "ref": "", "value": false},
 		}}),
 		// A null variables value carries no rows, same as an omitted one.
 		componentDSL("Invoke", map[string]any{"variables": nil}),
