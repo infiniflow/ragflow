@@ -725,6 +725,9 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 	if !ok {
 		return nil, nil
 	}
+	if string(raw) == "null" {
+		return nil, errors.New(listMessage)
+	}
 	var values []interface{}
 	if err := json.Unmarshal(raw, &values); err != nil {
 		return nil, errors.New(listMessage)
@@ -779,6 +782,11 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
+	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
 	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
@@ -798,6 +806,7 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		Content:           content,
 		ImportantKeywords: importantKeywords,
 		Questions:         questions,
+		TagKwd:            tagKwd,
 		TagFeas:           tagFeas,
 		ImageBase64:       imageBase64,
 	}

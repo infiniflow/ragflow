@@ -2,7 +2,6 @@ package pipeline
 
 import (
 	"bytes"
-	"embed"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -11,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	builtintemplates "ragflow/internal/ingestion/pipeline/template"
 )
 
 const builtinTemplatePrefix = "ingestion_pipeline_"
@@ -32,9 +33,6 @@ var builtinParserOrder = map[string]int{
 	"audio":        10,
 	"email":        11,
 }
-
-//go:embed template/ingestion_pipeline_*.json
-var builtinTemplateFS embed.FS
 
 // BuiltinPipelineMeta is the API-facing metadata for one built-in ingestion
 // pipeline template. The ParserID field is the value stored in the dataset's
@@ -83,7 +81,7 @@ func NewRegistryFromDir(dir string) (*Registry, error) {
 
 func DefaultRegistry() (*Registry, error) {
 	defaultRegistryOnce.Do(func() {
-		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(builtinTemplateFS, "template")
+		defaultRegistry, defaultRegistryErr = NewRegistryFromFS(builtintemplates.FS(), ".")
 	})
 	return defaultRegistry, defaultRegistryErr
 }

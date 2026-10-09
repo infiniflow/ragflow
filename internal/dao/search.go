@@ -18,8 +18,9 @@ package dao
 
 import (
 	"context"
-	"ragflow/internal/entity"
 	"strings"
+
+	"ragflow/internal/entity"
 
 	"gorm.io/gorm"
 )
@@ -99,11 +100,12 @@ func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantID
 	return searches, total, nil
 }
 
-// ListByOwnerIDs list searches by owner IDs with filtering (manual pagination)
-func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
+// ListByOwnerIDs list searches by owner IDs with pagination and filtering
+func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
+	var total int64
 
-	// Build query with join to user table
+	// Build query with join to user table for nickname and avatar
 	query := db.WithContext(ctx).Model(&entity.Search{}).
 		Select(`
 			search.*,
@@ -128,12 +130,22 @@ func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs 
 	// codeql[go/sql-injection] False positive: searchOrderClause
 	query = query.Order(searchOrderClause(terms))
 
-	// Get all matching records
-	if err := query.Scan(&searches).Error; err != nil {
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	total := int64(len(searches))
+	// Apply pagination
+	if page > 0 && pageSize > 0 {
+		offset := (page - 1) * pageSize
+		if err := query.Offset(offset).Limit(pageSize).Scan(&searches).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := query.Scan(&searches).Error; err != nil {
+			return nil, 0, err
+		}
+	}
 
 	return searches, total, nil
 }

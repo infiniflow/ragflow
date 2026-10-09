@@ -30,29 +30,31 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (brave, exa, firecrawl, linkup, parallel, querit, serply, tavily, youcom) so
-// a new provider has exactly one obvious place in each list. Tavily's endpoint
-// lives with its retrieval code in chat_pipeline.go, which is why it has no
-// entry here.
+// (brave, exa, firecrawl, linkup, parallel, querit, search1api, serply, tavily,
+// youcom) so a new provider has exactly one obvious place in each list.
+// Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
+// why it has no entry here.
 const (
-	webSearchProviderBrave     = "brave"
-	webSearchProviderExa       = "exa"
-	webSearchProviderFirecrawl = "firecrawl"
-	webSearchProviderLinkup    = "linkup"
-	webSearchProviderParallel  = "parallel"
-	webSearchProviderQuerit    = "querit"
-	webSearchProviderSerply    = "serply"
-	webSearchProviderTavily    = "tavily"
-	webSearchProviderYouCom    = "youcom"
+	webSearchProviderBrave      = "brave"
+	webSearchProviderExa        = "exa"
+	webSearchProviderFirecrawl  = "firecrawl"
+	webSearchProviderLinkup     = "linkup"
+	webSearchProviderParallel   = "parallel"
+	webSearchProviderQuerit     = "querit"
+	webSearchProviderSearch1API = "search1api"
+	webSearchProviderSerply     = "serply"
+	webSearchProviderTavily     = "tavily"
+	webSearchProviderYouCom     = "youcom"
 
 	braveWebSearchEndpoint = "https://api.search.brave.com/res/v1/web/search"
 	exaWebSearchEndpoint   = "https://api.exa.ai/search"
 	// v2 is Firecrawl's current search shape; the v1 endpoint is deprecated.
-	firecrawlWebSearchEndpoint = "https://api.firecrawl.dev/v2/search"
-	linkupWebSearchEndpoint    = "https://api.linkup.so/v1/search"
-	parallelWebSearchEndpoint  = "https://api.parallel.ai/v1/search"
-	queritWebSearchEndpoint    = "https://api.querit.ai/v1/search"
-	serplyWebSearchEndpoint    = "https://api.serply.io/v1/search/"
+	firecrawlWebSearchEndpoint  = "https://api.firecrawl.dev/v2/search"
+	linkupWebSearchEndpoint     = "https://api.linkup.so/v1/search"
+	parallelWebSearchEndpoint   = "https://api.parallel.ai/v1/search"
+	queritWebSearchEndpoint     = "https://api.querit.ai/v1/search"
+	search1apiWebSearchEndpoint = "https://api.search1api.com/search"
+	serplyWebSearchEndpoint     = "https://api.serply.io/v1/search/"
 	// You.com serves the same response shape from two endpoints. The keyless
 	// one is rate-limited but needs no credentials; the keyed one lifts those
 	// limits. The keyless endpoint rejects an X-API-Key header, so the endpoint
@@ -76,14 +78,15 @@ const (
 )
 
 var (
-	braveWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
-	exaWebSearchHTTPClient       = &http.Client{Timeout: 30 * time.Second}
-	firecrawlWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
-	linkupWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
-	parallelWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
-	queritWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
-	serplyWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
-	youComWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
+	braveWebSearchHTTPClient      = &http.Client{Timeout: 30 * time.Second}
+	exaWebSearchHTTPClient        = &http.Client{Timeout: 30 * time.Second}
+	firecrawlWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
+	linkupWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
+	parallelWebSearchHTTPClient   = &http.Client{Timeout: 30 * time.Second}
+	queritWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
+	search1apiWebSearchHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	serplyWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
+	youComWebSearchHTTPClient     = &http.Client{Timeout: 30 * time.Second}
 	// Tavily is reached from two call sites (the chat pipeline and the deep
 	// researcher) and they used different timeouts; keeping one client per
 	// call site preserves both while allowing connection reuse — a fresh
@@ -133,6 +136,8 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 		apiKeyField = "parallel_api_key"
 	case webSearchProviderQuerit:
 		apiKeyField = "querit_api_key"
+	case webSearchProviderSearch1API:
+		apiKeyField = "search1api_api_key"
 	case webSearchProviderSerply:
 		apiKeyField = "serply_api_key"
 	case webSearchProviderTavily:
@@ -235,6 +240,14 @@ func retrieveWebSearchWithTavily(
 			ctx,
 			queritWebSearchHTTPClient,
 			queritWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
+	case webSearchProviderSearch1API:
+		return retrieveSearch1APIWebSearch(
+			ctx,
+			search1apiWebSearchHTTPClient,
+			search1apiWebSearchEndpoint,
 			provider.APIKey,
 			question,
 		)
@@ -818,6 +831,75 @@ func decodeQueritWebSearchResults(responseBody []byte) ([]queritWebSearchResult,
 	var results []queritWebSearchResult
 	if err := json.Unmarshal(resultValue, &results); err != nil {
 		return nil, fmt.Errorf("querit: response field results.result must be an array: %w", err)
+	}
+	return results, nil
+}
+
+type search1apiWebSearchResult struct {
+	Title   string `json:"title"`
+	Link    string `json:"link"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveSearch1APIWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":       query,
+		"max_results": webSearchResultCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search1api: marshal request: %w", err)
+	}
+
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, map[string]string{
+		"Accept":        "application/json",
+		"Authorization": "Bearer " + apiKey,
+		"Content-Type":  "application/json",
+	}, bytes.NewReader(requestBody))
+	if err != nil {
+		return nil, fmt.Errorf("search1api: %w", err)
+	}
+	results, err := decodeSearch1APIWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		hits = append(hits, webSearchHit{
+			Title:   result.Title,
+			URL:     result.Link,
+			Content: result.Snippet,
+		})
+	}
+	return webSearchPayload("search1api", hits), nil
+}
+
+func decodeSearch1APIWebSearchResults(responseBody []byte) ([]search1apiWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil {
+		return nil, fmt.Errorf("search1api: decode response: %w", err)
+	}
+	if envelope == nil {
+		return nil, fmt.Errorf("search1api: response must be an object")
+	}
+
+	resultsValue, exists := envelope["results"]
+	if !exists {
+		return []search1apiWebSearchResult{}, nil
+	}
+	if strings.TrimSpace(string(resultsValue)) == "null" {
+		return nil, fmt.Errorf("search1api: response field results must be an array")
+	}
+
+	var results []search1apiWebSearchResult
+	if err := json.Unmarshal(resultsValue, &results); err != nil {
+		return nil, fmt.Errorf("search1api: response field results must be an array: %w", err)
 	}
 	return results, nil
 }

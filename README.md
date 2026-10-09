@@ -238,7 +238,7 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
 
 #### ⚙️ Docker Configuration and Adjustment
 
-Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). For platform limitations and macOS requirements, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
+Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). macOS is temporarily not supported by the Go backend (use a Linux x86_64 host); for platform support details, see the [Go Docker image build guide](./docs/develop/build_docker_image.mdx).
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 

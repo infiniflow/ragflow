@@ -37,6 +37,7 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   opensearch01:
     profiles:
       - opensearch
@@ -73,10 +74,11 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.3-x64-v3
+    image: infiniflow/infinity:v0.7.4-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -100,6 +102,7 @@ services:
       retries: 120
     restart: unless-stopped
 
+
   serenedb:
     profiles:
       - serenedb
@@ -120,6 +123,7 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+
 
   oceanbase:
     profiles:
@@ -152,6 +156,7 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   seekdb:
     profiles:
       - seekdb
@@ -175,6 +180,38 @@ services:
     networks:
       - ragflow
     restart: unless-stopped
+
+
+  vastbase:
+    profiles:
+      - vastbase
+    image: ${VB_IMAGE:-vastbase-g100-single-v1.4-3.0.9.31338-linux-x86_64:20260513112809}
+    env_file: .env
+    environment:
+      - VB_PASSWORD=${VB_PASSWORD}
+      - VB_USERNAME=${VB_USERNAME}
+      - VB_VEC_DBNAME=${VB_VEC_DBNAME:-ragflow}
+      - VB_DBCOMPATIBILITY=${VB_DBCOMPATIBILITY:-B}
+    # Bind the published port to loopback by default: the database ships
+    # default credentials, and RAGFlow reaches it over the shared `ragflow`
+    # network. Remote access is an explicit opt-in through VB_BIND_ADDR
+    # (e.g. 0.0.0.0 or a specific interface IP) in docker/.env.
+    ports:
+      - ${VB_BIND_ADDR:-127.0.0.1}:${EXPOSE_VB_PORT:-5432}:5432
+    volumes:
+      - vastbase_data:/home/vastbase/data
+      - ./vastbase/init:/docker-entrypoint-initdb.d
+      - ./vastbase/license:/home/vastbase/vastbase/lic
+    mem_limit: ${MEM_LIMIT}
+    networks:
+      - ragflow
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "vsql -c 'SELECT 1'"]
+      interval: 10s
+      timeout: 10s
+      retries: 120
+
 
   sandbox-executor-manager:
     profiles:
@@ -211,6 +248,7 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+
 
   mysql:
     profiles:
@@ -274,6 +312,7 @@ services:
       retries: 120
     restart: unless-stopped
 
+
   minio:
     image: pgsty/silo:RELEASE.2026-08-06T00-00-00Z
     command: ["server", "--console-address", ":9001", "/data"]
@@ -294,6 +333,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
 
   kvrocks:
     # Apache Kvrocks: a RocksDB-backed, Redis-protocol-compatible store used
@@ -323,8 +363,6 @@ services:
     # regardless of the host mapping (KVROCKS_PORT stays 6379, set by the Go overlay).
     ports:
       - "${KVROCKS_PORT:-6379}:6379"
-    profiles:
-      - ragflow-go
     volumes:
       - kvrocks_data:/var/lib/kvrocks
       - ./kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro
@@ -338,6 +376,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
 
   jaeger:
     profiles:
@@ -354,9 +393,8 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   nats:
-    profiles:
-      - ragflow-go
     image: nats:2.14.2
     ports:
       - ${EXPOSE_NATS_PORT:-4222}:4222
@@ -373,6 +411,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
+
 
   tei-cpu:
     profiles:
@@ -474,6 +513,8 @@ volumes:
   ob_data:
     driver: local
   seekdb_data:
+    driver: local
+  vastbase_data:
     driver: local
   mysql_data:
     driver: local

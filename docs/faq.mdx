@@ -262,58 +262,13 @@ A running container does not necessarily mean that the service inside it is heal
    The status of a Docker container does not necessarily reflect the status of the service inside it. A service can be unhealthy even when its container is up and running. Possible causes include network failures, incorrect ports, and DNS or configuration errors.
    :::
 
-3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144. On Linux, update **/etc/sysctl.conf** to keep the change permanent. For macOS, see the following FAQ.
+3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144. On Linux, update **/etc/sysctl.conf** to keep the change permanent.
 
 ---
 
 ### Why does the Elasticsearch container fail to start with `Elasticsearch did not exit normally`?
 
 On Linux, an insufficient `vm.max_map_count` value is a common cause. Check the Elasticsearch logs first. If they report that `vm.max_map_count` is too low, set it to at least 262144 and add the setting to **/etc/sysctl.conf** so it persists after a reboot. If the logs report a different error, check memory, disk space, permissions, and the Elasticsearch data directory instead.
-
----
-
-### How do I configure `vm.max_map_count` on macOS?
-
-`vm.max_map_count` is a Linux kernel parameter required only by Elasticsearch. It does not affect RAGFlow deployments that use Infinity as the document engine.
-
-On Docker Desktop, set the value in its Linux virtual machine:
-
-```bash
-docker run --rm --privileged alpine sysctl -w vm.max_map_count=262144
-```
-
-This setting is temporary and is reset when Docker Desktop restarts.
-
-On Colima, check the current value inside its virtual machine:
-
-```bash
-colima ssh -- sysctl vm.max_map_count
-```
-
-To set the value temporarily:
-
-```bash
-colima ssh -- sudo sysctl -w vm.max_map_count=262144
-```
-
-For a persistent setting, run `colima start --edit` and add a provision script to `colima.yaml`:
-
-```yaml
-provision:
-  - mode: system
-    script: |
-      #!/bin/bash
-      sysctl -w vm.max_map_count=262144
-```
-
-Then restart Colima:
-
-```bash
-colima stop
-colima start
-```
-
-*Contributed by [@helloxjade](https://github.com/helloxjade).*
 
 ---
 
@@ -332,7 +287,7 @@ The Go Compose deployment uses `SVR_HTTP_PORT` and `ADMIN_SVR_HTTP_PORT` for the
 Yes. The Go parser implementations are in `internal/parser/parser`, and the Go DeepDoc integration is in `internal/deepdoc`. The following tests provide concrete usage examples:
 
 - [`internal/deepdoc/parser/pdf/parser_pipeline_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/pdf/parser_pipeline_integration_test.go) demonstrates the PDF parsing and post-processing pipeline.
-- [`internal/deepdoc/parser/docx/parser_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/docx/parser_integration_test.go) demonstrates DOCX parsing.
+- [`internal/deepdoc/parser/office/parser_integration_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/deepdoc/parser/office/parser_integration_test.go) demonstrates DOCX parsing.
 - [`internal/parser/parser/pdf_parser_pages_e2e_test.go`](https://github.com/infiniflow/ragflow/blob/main/internal/parser/parser/pdf_parser_pages_e2e_test.go) demonstrates configuring and calling the higher-level PDF parser adapter.
 
 RAGFlow's ingestor uses these components when it processes documents. These files are integration or end-to-end tests, so review their prerequisites and build constraints before running them directly.

@@ -197,7 +197,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true,
+		true, "",
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -249,7 +249,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		setups,
-		true,
+		true, "",
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -292,7 +292,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true,
+		true, "",
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -344,7 +344,7 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true,
+		true, "",
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -536,7 +536,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true,
+		true, "global-vision-model",
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -663,7 +663,7 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 		for _, method := range []string{"ocr", ""} {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false)
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, "")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -687,7 +687,7 @@ func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
 		return &unhealthyPictureOCRAnalyzer{}, true
 	}
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false)
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, "")
 	if err != nil || result.Err != nil {
 		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
 	}
@@ -703,7 +703,7 @@ func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
 		setups["image"]["parse_method"] = method
-		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false)
+		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, "")
 		if err == nil || !strings.Contains(err.Error(), "decode") {
 			t.Fatalf("method %q: error = %v, want decode error", method, err)
 		}
@@ -723,7 +723,7 @@ func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
 				t.Error("expected OCR analyzer panic")
 			}
 		}()
-		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false)
+		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, "")
 	}()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -751,7 +751,7 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
 			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
-				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true)
+				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true, "")
 			if method == "ocr" {
 				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
 					t.Fatalf("error = %v, want raster decode error", err)

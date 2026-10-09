@@ -368,7 +368,7 @@ export default {
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
       reselectParserAfterUploadHint:
-        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+        '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -604,6 +604,9 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      builtInSuffix: '（内置）',
+      parserSelectPlaceholder: '选择解析方式',
+      parserOptionUnavailable: '不可用',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -1062,14 +1065,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelUltraDescription: '尽力思考',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
-      failoverModels: '备用模型',
-      failoverModelsTip:
-        '当主模型遇到服务商故障时，Agentic智能体按此列表顺序切换到下一个模型。',
-      failoverModelsPrimaryLabel: '主模型',
-      failoverModelsNoPrimary: '租户默认',
-      failoverModelsEmpty:
-        '暂无备用模型。至少添加一个，才能在服务商故障时继续服务。',
-      failoverModelsAdd: '添加备用模型',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1168,6 +1163,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
+      search1apiApiKeyTip:
+        '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
+      search1apiApiKeyMessage: '请输入 Search1API API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
@@ -2440,7 +2438,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
       },
-      cite: '引用',
+      cite: '显示引文',
       citeTip: '引用',
       nameMessage: '请输入名称',
       lastSavedAt: '上次保存于',
@@ -2555,7 +2553,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       watermarkText: '水印文本',
       headerText: '页眉文本',
       footerText: '页脚文本',
-      includeDownloadInfoInContent: '在内容末尾附加下载信息',
       contentPlaceholder: '输入 Markdown 内容...',
       filenamePlaceholder: 'document.ext（留空则自动生成）',
       contentRequired: '内容不能为空',

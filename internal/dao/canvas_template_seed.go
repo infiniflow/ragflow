@@ -23,13 +23,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	builtintemplates "ragflow/internal/ingestion/pipeline/template"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -37,7 +38,7 @@ import (
 )
 
 // SeedCanvasTemplates seeds the canvas_template table from the built-in
-// agent/templates/*.json and internal/ingestion/pipeline/template/*.json files.
+// agent template files and the embedded ingestion template resources.
 func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 	if err := addColumnIfNotExists(ctx, db, "canvas_template", "parser_ids", "LONGTEXT NULL"); err != nil {
 		return fmt.Errorf("failed to ensure canvas_template.parser_ids column: %w", err)
@@ -46,29 +47,29 @@ func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 	var allTemplates []*entity.CanvasTemplate
 	var allIDs []string
 	complete := true
-	for _, dir := range findTemplateDirs() {
-		if dir == "" {
+	var agentFiles fs.FS
+	if dir := findAgentTemplatesDir(); dir != "" {
+		agentFiles = os.DirFS(dir)
+	}
+	for _, source := range []struct {
+		name  string
+		files fs.FS
+	}{{"agent", agentFiles}, {"ingestion", builtintemplates.FS()}} {
+		if source.files == nil {
 			complete = false
 			continue
 		}
-		entries, err := os.ReadDir(dir)
-		if err != nil {
-			complete = false
-			common.Warn("Failed to read template directory", zap.String("dir", dir), zap.Error(err))
-			continue
-		}
-		sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
-		templates, ids, err := loadTemplatesFromDir(dir, entries)
+		templates, ids, err := loadTemplatesFromFS(source.files)
 		if err != nil || len(templates) == 0 {
 			complete = false
-			common.Warn("Incomplete canvas template resources", zap.String("dir", dir), zap.Int("loaded", len(templates)), zap.Error(err))
+			common.Warn("Incomplete canvas template resources", zap.String("source", source.name), zap.Int("loaded", len(templates)), zap.Error(err))
 		}
 		allTemplates = append(allTemplates, templates...)
 		allIDs = append(allIDs, ids...)
 	}
 
 	if len(allTemplates) == 0 {
-		common.Warn("No template directories found, skipping canvas template seeding")
+		common.Warn("No valid canvas template resources, skipping canvas template seeding")
 		return nil
 	}
 
@@ -80,9 +81,13 @@ func SeedCanvasTemplates(ctx context.Context, db *gorm.DB) error {
 	return nil
 }
 
-// loadTemplatesFromDir returns valid catalog entries and reports any incomplete
+// loadTemplatesFromFS returns valid catalog entries and reports any incomplete
 // resources, allowing callers to update healthy entries without pruning.
-func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTemplate, []string, error) {
+func loadTemplatesFromFS(files fs.FS) ([]*entity.CanvasTemplate, []string, error) {
+	entries, err := fs.ReadDir(files, ".")
+	if err != nil {
+		return nil, nil, fmt.Errorf("read canvas template resources: %w", err)
+	}
 	templates := make([]*entity.CanvasTemplate, 0, len(entries))
 	ids := make([]string, 0, len(entries))
 	var loadErrors []error
@@ -90,15 +95,14 @@ func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTe
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
-		path := filepath.Join(dir, entry.Name())
-		raw, err := os.ReadFile(path)
+		raw, err := fs.ReadFile(files, entry.Name())
 		if err != nil {
-			loadErrors = append(loadErrors, fmt.Errorf("read canvas template %s: %w", path, err))
+			loadErrors = append(loadErrors, fmt.Errorf("read canvas template %s: %w", entry.Name(), err))
 			continue
 		}
 		tmpl, err := parseCanvasTemplateFile(raw)
 		if err != nil {
-			loadErrors = append(loadErrors, fmt.Errorf("parse canvas template %s: %w", path, err))
+			loadErrors = append(loadErrors, fmt.Errorf("parse canvas template %s: %w", entry.Name(), err))
 			continue
 		}
 		if tmpl == nil {
@@ -108,27 +112,6 @@ func loadTemplatesFromDir(dir string, entries []os.DirEntry) ([]*entity.CanvasTe
 		ids = append(ids, tmpl.ID)
 	}
 	return templates, ids, errors.Join(loadErrors...)
-}
-
-// findTemplateDirs retains missing sources so incomplete deployments cannot
-// authorize removal of catalog rows from an unavailable source.
-func findTemplateDirs() []string {
-	return []string{findAgentTemplatesDir(), findIngestionTemplatesDir()}
-}
-
-func findIngestionTemplatesDir() string {
-	candidates := []string{
-		"internal/ingestion/pipeline/template",
-		filepath.Join("..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "internal", "ingestion", "pipeline", "template"),
-		filepath.Join("..", "..", "..", "internal", "ingestion", "pipeline", "template"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate
-		}
-	}
-	return ""
 }
 
 // seedCanvasTemplates only prunes stale rows after every built-in source loaded.

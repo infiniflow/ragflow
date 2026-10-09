@@ -230,6 +230,100 @@ func TestGetTermTag_PoolNotInitialized(t *testing.T) {
 	}
 }
 
+// The memo must hold the analyzer's answer (never a pre-Init zero), cost exactly
+// one entry per term whichever accessor is used, not grow on a repeat lookup, and
+// be dropped when the dictionaries are reloaded.
+func TestTermLookupCacheMemoizesPerTermAndDoesNotGrowOnHit(t *testing.T) {
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+	resetTermLookupCaches()
+
+	const term = "hello"
+	freq, tag := GetTermFreqAndTag(term)
+
+	cached, ok := termLookupCache.Load(term)
+	if !ok {
+		t.Fatalf("GetTermFreqAndTag(%q) did not memoize its result", term)
+	}
+	if entry := cached.(termLookup); entry.freq != freq || entry.tag != tag {
+		t.Fatalf("memoized %+v, want {freq:%d tag:%q}", entry, freq, tag)
+	}
+
+	if gotFreq, gotTag := GetTermFreqAndTag(term); gotFreq != freq || gotTag != tag {
+		t.Fatalf("second lookup = (%d, %q), want (%d, %q)", gotFreq, gotTag, freq, tag)
+	}
+	// The single-value accessors read the same memo rather than keeping their
+	// own: one term occupies one entry however it is asked for.
+	if got := GetTermFreq(term); got != freq {
+		t.Fatalf("GetTermFreq(%q) = %d, want %d", term, got, freq)
+	}
+	if got := GetTermTag(term); got != tag {
+		t.Fatalf("GetTermTag(%q) = %q, want %q", term, got, tag)
+	}
+	if got := termLookupCached.Load(); got != 1 {
+		t.Fatalf("memo holds %d entries after one term, want 1", got)
+	}
+
+	// A miss resolves both halves in one analyzer checkout, so asking for just
+	// the frequency still leaves a complete entry behind for the tag.
+	resetTermLookupCaches()
+	if got := GetTermFreq(term); got != freq {
+		t.Fatalf("GetTermFreq(%q) after reset = %d, want %d", term, got, freq)
+	}
+	if entry, ok := termLookupCache.Load(term); !ok || entry.(termLookup).tag != tag {
+		t.Fatalf("a frequency-only lookup stored %v, want a full entry with tag %q", entry, tag)
+	}
+
+	resetTermLookupCaches()
+	if _, ok := termLookupCache.Load(term); ok {
+		t.Fatal("resetTermLookupCaches left an entry behind")
+	}
+	if got := termLookupCached.Load(); got != 0 {
+		t.Fatalf("memo counter = %d after reset, want 0", got)
+	}
+}
+
+// The three accessors have to agree, and the combined one has to be stable on a
+// repeat. The memo stores whatever the combined lookup returns, so a divergence
+// here would silently change weights. The terms mix in-dictionary entries (so
+// the tag is non-empty) with out-of-vocabulary ones.
+func TestGetTermFreqAndTagAgreesWithSingleValueAccessors(t *testing.T) {
+	if err := Init(&PoolConfig{
+		DictPath:       "",
+		MinSize:        1,
+		MaxSize:        1,
+		IdleTimeout:    5 * time.Second,
+		AcquireTimeout: 5 * time.Second,
+	}); err != nil {
+		t.Fatalf("Failed to initialize pool: %v", err)
+	}
+	defer Close()
+	resetTermLookupCaches()
+
+	for _, term := range []string{"hello", "文档", "北京", "xyzzy", "ab"} {
+		freq, tag := GetTermFreqAndTag(term)
+
+		if got := GetTermFreq(term); got != freq {
+			t.Errorf("GetTermFreq(%q) = %d, want %d", term, got, freq)
+		}
+		if got := GetTermTag(term); got != tag {
+			t.Errorf("GetTermTag(%q) = %q, want %q", term, got, tag)
+		}
+		if freq2, tag2 := GetTermFreqAndTag(term); freq2 != freq || tag2 != tag {
+			t.Errorf("repeat lookup for %q = (%d, %q), want (%d, %q)",
+				term, freq2, tag2, freq, tag)
+		}
+	}
+}
+
 func TestTokenize_DefaultLanguageResetsAnalyzerState(t *testing.T) {
 	restore := saveEngineType()
 	defer restore()

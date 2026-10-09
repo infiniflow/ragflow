@@ -91,6 +91,10 @@ export const initialRetrievalValues = {
   top_n: 8,
   rerank_candidates_count: 64,
   dataset_ids: [],
+  // Both bindings default to an empty array rather than being absent: the
+  // checklist treats a missing key as unbound, and without a default an
+  // unbound node would never be written back with the key.
+  memory_ids: [],
   rerank_id: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
@@ -778,7 +782,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
@@ -1129,7 +1132,6 @@ export const initialDocGeneratorValues = {
   watermark_text: '',
   add_page_numbers: true,
   add_timestamp: true,
-  include_download_info_in_content: false,
   font_size: 12,
   outputs: {
     doc_id: { type: 'string' },

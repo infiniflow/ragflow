@@ -410,7 +410,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): not supported by the current parser configuration',
       reselectParserAfterUploadHint:
-        'Continue uploading, then reselect a parse method for these files in the file list.',
+        'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
       addModelAfterUploadHint:
@@ -665,6 +665,9 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
+      parserSelectPlaceholder: 'Select a parser',
+      parserOptionUnavailable: 'unavailable',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -1167,14 +1170,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
-      failoverModels: 'Failover models',
-      failoverModelsTip:
-        'When the primary model hits a provider error, the agentic agent switches to the next model in this list, in order.',
-      failoverModelsPrimaryLabel: 'Primary model',
-      failoverModelsNoPrimary: 'Tenant default',
-      failoverModelsEmpty:
-        'No fallback model. Add at least one so a provider failure can be survived.',
-      failoverModelsAdd: 'Add a fallback model',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -1280,6 +1275,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      search1apiApiKeyTip:
+        'When Search1API is selected, its web search results supplement dataset retrieval.',
+      search1apiApiKeyMessage: 'Please enter your Search1API API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -2841,7 +2839,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
@@ -2966,7 +2964,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       watermarkText: 'Watermark Text',
       headerText: 'Header Text',
       footerText: 'Footer Text',
-      includeDownloadInfoInContent: 'Append download info to content',
       contentPlaceholder: 'Enter markdown content...',
       filenamePlaceholder: 'document.ext (auto-generated if empty)',
       contentRequired: 'Content is required',

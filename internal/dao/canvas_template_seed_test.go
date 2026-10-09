@@ -52,12 +52,7 @@ func TestSeedCanvasTemplatesIsIdempotentAndRemovesStaleRows(t *testing.T) {
 	seed := func() {
 		t.Helper()
 		ctx := t.Context()
-		var entries []os.DirEntry
-		entries, err = os.ReadDir(dir)
-		if err != nil {
-			t.Fatalf("read templates: %v", err)
-		}
-		templates, ids, loadErr := loadTemplatesFromDir(dir, entries)
+		templates, ids, loadErr := loadTemplatesFromFS(os.DirFS(dir))
 		if loadErr != nil {
 			t.Fatalf("load templates: %v", loadErr)
 		}

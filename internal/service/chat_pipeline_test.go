@@ -1233,6 +1233,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
 		t.Errorf("seekdb = %q, want docnm_kwd", got)
 	}
+	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
+		t.Errorf("vastbase = %q, want docnm_kwd", got)
+	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
 	}
@@ -2482,8 +2485,8 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	_, err := svc.ModelProviderSvc.modelSolver().ResolveModelConfig(
-		t.Context(), "tenant-1", entity.ModelTypeChat, "model-image2text-tools",
+	_, err := svc.ModelFactory.resolveConfig(
+		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {
 		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")

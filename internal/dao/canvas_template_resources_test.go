@@ -4,15 +4,22 @@ import (
 	"bytes"
 	"database/sql/driver"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"reflect"
+	"sync"
+	"testing"
+	"testing/fstest"
+
+	"ragflow/internal/entity"
+	builtintemplates "ragflow/internal/ingestion/pipeline/template"
+
 	sqliteDriver "github.com/glebarez/go-sqlite"
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-	"os"
-	"path/filepath"
-	"ragflow/internal/entity"
-	"sync"
-	"testing"
 )
 
 var seedDatabaseFunction sync.Once
@@ -67,18 +74,101 @@ func writeCanvasResource(t *testing.T, root, dir, name, body string) {
 	}
 }
 
-// TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources exercises the public startup path.
+// embeddedCanvasCatalog reads independent expectations from the original JSON envelopes.
+func embeddedCanvasCatalog(t *testing.T) map[string]map[string]any {
+	t.Helper()
+	entries, err := fs.ReadDir(builtintemplates.FS(), ".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	catalog := make(map[string]map[string]any, len(entries))
+	for _, entry := range entries {
+		raw, err := fs.ReadFile(builtintemplates.FS(), entry.Name())
+		if err != nil {
+			t.Fatal(err)
+		}
+		var data map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&data); err != nil {
+			t.Fatal(err)
+		}
+		catalog[fmt.Sprint(data["id"])] = data
+	}
+	if len(catalog) == 0 {
+		t.Fatal("no embedded ingestion catalog")
+	}
+	return catalog
+}
+
+// assertEmbeddedCanvasCatalog checks persisted fields without using the catalog parser for expectations.
+func assertEmbeddedCanvasCatalog(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	var rows []entity.CanvasTemplate
+	if err := db.Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	byID := make(map[string]entity.CanvasTemplate, len(rows))
+	for _, row := range rows {
+		byID[row.ID] = row
+	}
+	for id, want := range embeddedCanvasCatalog(t) {
+		row, ok := byID[id]
+		if !ok {
+			t.Fatalf("embedded template %s not seeded", id)
+		}
+		for field, got := range map[string]any{"title": row.Title, "description": row.Description, "dsl": row.DSL} {
+			gotJSON, err := json.Marshal(got)
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantJSON, err := json.Marshal(want[field])
+			if err != nil {
+				t.Fatal(err)
+			}
+			var gotValue, wantValue any
+			if err := json.Unmarshal(gotJSON, &gotValue); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(wantJSON, &wantValue); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(gotValue, wantValue) {
+				t.Errorf("template %s lost %s fields", id, field)
+			}
+		}
+		if row.CanvasCategory != want["canvas_category"] {
+			t.Errorf("template %s category=%q, want %v", id, row.CanvasCategory, want["canvas_category"])
+		}
+		if kind, ok := want["canvas_type"].(string); ok {
+			if row.CanvasType == nil || *row.CanvasType != kind {
+				t.Errorf("template %s lost canvas_type", id)
+			}
+			found := false
+			for _, value := range row.CanvasTypes {
+				if value == kind {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("template %s lost canvas_types", id)
+			}
+		}
+	}
+}
+
+// TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources keeps old rows while updating healthy sources.
 func TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources(t *testing.T) {
 	for _, test := range []struct {
-		name            string
-		agent, pipeline bool
-		bad             string
+		name         string
+		agent, empty bool
+		bad          string
 	}{
-		{"missing_agent", false, true, ""}, {"missing_pipeline", true, false, ""}, {"missing_both", false, false, ""},
-		{"empty_pipeline", true, false, ""}, {"empty_agent", false, true, ""},
-		{"malformed_json", true, true, `invalid-json`}, {"missing_identity", true, true, `{"title":{"en":"broken"},"dsl":{}}`},
-		{"unreadable_file", true, true, ""},
-		{"trailing_garbage", true, true, `{"id":"bad","dsl":{}}garbage`},
+		{"missing_agent", false, false, ""}, {"empty_agent", false, true, ""},
+		{"malformed_json", true, false, `invalid-json`},
+		{"missing_identity", true, false, `{"title":{"en":"broken"},"dsl":{}}`},
+		{"unreadable_file", true, false, ""},
+		{"trailing_garbage", true, false, `{"id":"bad","dsl":{}}garbage`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db := canvasSeedResourceDB(t)
@@ -86,15 +176,8 @@ func TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources(t *testing.T) {
 			if test.agent {
 				writeCanvasResource(t, root, "agent/templates", "valid.json", `{"id":"agent","title":{"en":"Agent"},"dsl":{}}`)
 			}
-			if test.pipeline {
-				writeCanvasResource(t, root, "internal/ingestion/pipeline/template", "valid.json", `{"id":"pipeline","canvas_category":"ingestion_pipeline","dsl":{}}`)
-			}
-			if test.name == "empty_pipeline" || test.name == "empty_agent" {
-				dir := "agent/templates"
-				if test.name == "empty_pipeline" {
-					dir = "internal/ingestion/pipeline/template"
-				}
-				if err := os.MkdirAll(filepath.Join(root, dir), 0700); err != nil {
+			if test.empty {
+				if err := os.MkdirAll(filepath.Join(root, "agent/templates"), 0700); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -125,21 +208,24 @@ func TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources(t *testing.T) {
 					t.Fatal(err)
 				}
 				if count != 1 {
-					t.Error("healthy resource not seeded")
+					t.Error("healthy agent resource not seeded")
 				}
 			}
+			assertEmbeddedCanvasCatalog(t, db)
 		})
 	}
 }
 
-// TestSeedCanvasTemplatesCompleteCatalogPrunesAndSkipsStandaloneDSL preserves valid cleanup semantics.
-func TestSeedCanvasTemplatesCompleteCatalogPrunesAndSkipsStandaloneDSL(t *testing.T) {
+// TestSeedCanvasTemplatesWithoutIngestionDirectory checks seeding, pruning and retries with no filesystem ingestion source.
+func TestSeedCanvasTemplatesWithoutIngestionDirectory(t *testing.T) {
 	db := canvasSeedResourceDB(t)
 	root := t.TempDir()
 	writeCanvasResource(t, root, "agent/templates", "valid.json", `{"id":"agent","title":{"en":"Agent"},"dsl":{}}`)
 	writeCanvasResource(t, root, "agent/templates", "compiler.json", `{"components":{},"graph":{}}`)
-	writeCanvasResource(t, root, "internal/ingestion/pipeline/template", "valid.json", `{"id":"pipeline","canvas_category":"ingestion_pipeline","dsl":{}}`)
 	t.Chdir(root)
+	if _, err := os.Stat("internal/ingestion/pipeline/template"); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("ingestion directory unexpectedly exists: %v", err)
+	}
 	for i := 0; i < 2; i++ {
 		if err := SeedCanvasTemplates(t.Context(), db); err != nil {
 			t.Fatal(err)
@@ -149,13 +235,74 @@ func TestSeedCanvasTemplatesCompleteCatalogPrunesAndSkipsStandaloneDSL(t *testin
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 {
-		t.Fatalf("rows=%d, want 2", len(rows))
+	expected := embeddedCanvasCatalog(t)
+	if len(rows) != len(expected)+1 {
+		t.Fatalf("rows=%d, want %d", len(rows), len(expected)+1)
 	}
 	for _, row := range rows {
-		if row.ID != "agent" && row.ID != "pipeline" {
+		if row.ID != "agent" && expected[row.ID] == nil {
 			t.Errorf("unexpected template identity %q", row.ID)
 		}
+	}
+	assertEmbeddedCanvasCatalog(t, db)
+}
+
+// failingCanvasTemplateFS injects a read failure while retaining a healthy file.
+type failingCanvasTemplateFS struct {
+	fs.FS
+	blocked string
+}
+
+func (f failingCanvasTemplateFS) Open(name string) (fs.File, error) {
+	if name == f.blocked {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+	}
+	return f.FS.Open(name)
+}
+
+// TestLoadCanvasTemplatesFromFS checks complete metadata, partial loads and underlying read errors.
+func TestLoadCanvasTemplatesFromFS(t *testing.T) {
+	raw := `{"id":99,"title":{"en":"General","zh":"通用","de":"Allgemein"},"description":{"en":"Description","zh":"说明"},"avatar":"icon","canvas_category":"dataflow_canvas","canvas_type":"Ingestion Pipeline","canvas_types":["Ingestion Pipeline","Other"],"dsl":{"components":{},"params":{"limit":100}}}`
+	source := fstest.MapFS{"valid.json": {Data: []byte(raw)}, "component.json": {Data: []byte(`{"components":{},"graph":{}}`)}}
+	templates, ids, err := loadTemplatesFromFS(source)
+	if err != nil || len(templates) != 1 || !reflect.DeepEqual(ids, []string{"99"}) {
+		t.Fatalf("templates=%v ids=%v error=%v", templates, ids, err)
+	}
+	row := templates[0]
+	if row.Title["zh"] != "通用" || row.Title["en"] != "General" || row.Title["de"] != "Allgemein" || row.Description["zh"] != "说明" {
+		t.Fatal("localized metadata lost")
+	}
+	if row.Avatar == nil || *row.Avatar != "icon" || row.CanvasType == nil || *row.CanvasType != "Ingestion Pipeline" || row.CanvasCategory != "dataflow_canvas" || !reflect.DeepEqual([]any(row.CanvasTypes), []any{"Ingestion Pipeline", "Other"}) {
+		t.Fatalf("canvas metadata lost: %#v", row)
+	}
+	dslJSON, err := json.Marshal(row.DSL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(dslJSON) != `{"components":{},"params":{"limit":100}}` {
+		t.Fatalf("DSL changed: %s", dslJSON)
+	}
+	for _, test := range []struct {
+		name       string
+		files      fs.FS
+		want       int
+		permission bool
+	}{
+		{"directory_read", failingCanvasTemplateFS{source, "."}, 0, true},
+		{"file_read", failingCanvasTemplateFS{fstest.MapFS{"good.json": {Data: []byte(raw)}, "bad.json": {Data: []byte(raw)}}, "bad.json"}, 1, true},
+		{"malformed_json", fstest.MapFS{"good.json": {Data: []byte(raw)}, "bad.json": {Data: []byte(`broken-json`)}}, 1, false},
+		{"missing_identity", fstest.MapFS{"good.json": {Data: []byte(raw)}, "bad.json": {Data: []byte(`{"dsl":{}}`)}}, 1, false},
+		{"trailing_json", fstest.MapFS{"good.json": {Data: []byte(raw)}, "bad.json": {Data: []byte(`{"id":"bad","dsl":{}}{}`)}}, 1, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			templates, _, err := loadTemplatesFromFS(test.files)
+			if err == nil || len(templates) != test.want {
+				t.Fatalf("loaded=%d error=%v", len(templates), err)
+			}
+			if test.permission && !errors.Is(err, fs.ErrPermission) {
+				t.Fatalf("read error identity lost: %v", err)
+			}
+		})
 	}
 }
 
@@ -187,58 +334,46 @@ func TestParseCanvasTemplateIdentity(t *testing.T) {
 	}
 }
 
-// TestBuiltInCanvasResourcesSeedFromRuntimeLayout loads the actual shipped resources through runtime paths.
-func TestBuiltInCanvasResourcesSeedFromRuntimeLayout(t *testing.T) {
+// TestBuiltInCanvasResourcesSeedWithoutIngestionDirectory checks the actual shipped templates with only agent files deployed.
+func TestBuiltInCanvasResourcesSeedWithoutIngestionDirectory(t *testing.T) {
 	db := canvasSeedResourceDB(t)
 	root := t.TempDir()
-	expected := map[string]bool{}
-	for _, source := range []struct{ src, dst string }{{"../agent/templates", "agent/templates"}, {"../ingestion/pipeline/template", "internal/ingestion/pipeline/template"}} {
-		files, err := filepath.Glob(filepath.Join(source.src, "*.json"))
-		if err != nil || len(files) == 0 {
-			t.Fatalf("missing resources: %v", err)
+	expected := embeddedCanvasCatalog(t)
+	files, err := filepath.Glob("../agent/templates/*.json")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("missing agent resources: %v", err)
+	}
+	for _, file := range files {
+		raw, err := os.ReadFile(file)
+		if err != nil {
+			t.Fatal(err)
 		}
-		for _, file := range files {
-			raw, err := os.ReadFile(file)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var catalog map[string]any
-			decoder := json.NewDecoder(bytes.NewReader(raw))
-			decoder.UseNumber()
-			if err := decoder.Decode(&catalog); err != nil {
-				t.Fatalf("%s: %v", file, err)
-			}
-			if id, present := catalog["id"]; present {
-				expected[fmt.Sprint(id)] = true
-			}
-			writeCanvasResource(t, root, source.dst, filepath.Base(file), string(raw))
+		var data map[string]any
+		decoder := json.NewDecoder(bytes.NewReader(raw))
+		decoder.UseNumber()
+		if err := decoder.Decode(&data); err != nil {
+			t.Fatal(err)
 		}
+		if id, ok := data["id"]; ok {
+			expected[fmt.Sprint(id)] = data
+		}
+		writeCanvasResource(t, root, "agent/templates", filepath.Base(file), string(raw))
 	}
 	t.Chdir(root)
 	if err := SeedCanvasTemplates(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	var count int64
-	if err := db.Model(&entity.CanvasTemplate{}).Count(&count).Error; err != nil {
-		t.Fatal(err)
-	}
-	if count != int64(len(expected)) || len(expected) == 0 {
-		t.Fatalf("seeded %d templates, want %d", count, len(expected))
-	}
 	var rows []entity.CanvasTemplate
 	if err := db.Find(&rows).Error; err != nil {
 		t.Fatal(err)
 	}
+	if len(rows) != len(expected) {
+		t.Fatalf("seeded %d templates, want %d", len(rows), len(expected))
+	}
 	for _, row := range rows {
-		if !expected[row.ID] {
+		if expected[row.ID] == nil {
 			t.Errorf("unexpected seeded identity %q", row.ID)
 		}
 	}
-	var empty int64
-	if err := db.Model(&entity.CanvasTemplate{}).Where("id = ?", "").Count(&empty).Error; err != nil {
-		t.Fatal(err)
-	}
-	if empty != 0 {
-		t.Fatal("standalone DSL inserted with an empty ID")
-	}
+	assertEmbeddedCanvasCatalog(t, db)
 }
