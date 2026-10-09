@@ -1404,7 +1404,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if session != nil && !failed {
 					// Store with <think>thinking content</think>
 					content := fullAnswer.String()
-					if content == "" {
+					if content == "" || result.AnswerIsAuthoritative {
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
