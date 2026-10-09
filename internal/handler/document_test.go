@@ -428,6 +428,52 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	t.Cleanup(func() { dao.DB = orig })
 }
 
+func TestDocumentReadHandlersForbidden(t *testing.T) {
+	setupDocumentPermissionDB(t, false)
+	fake := &fakeDocumentService{
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		params  gin.Params
+		handler gin.HandlerFunc
+	}{
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID},
+		{"metadata summary", http.MethodPost, "/api/v1/document/metadata/summary", `{"kb_id":"kb-owner","doc_ids":["doc-1"]}`, nil, h.MetadataSummary},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
+			c.Params = tt.params
+			tt.handler(c)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			}
+			var resp struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+				Data    interface{}      `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Code != common.CodeForbidden || resp.Message != "no permission to access this dataset" || resp.Data != nil {
+				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+			if fake.metadataKBID != "" {
+				t.Fatal("GetMetadataSummary should not be called without dataset access")
+			}
+		})
+	}
+}
+
 func TestSetMetaHandler_NotAccessible(t *testing.T) {
 	setupDocumentPermissionDB(t, false)
 
