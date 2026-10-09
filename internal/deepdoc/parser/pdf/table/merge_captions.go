@@ -44,11 +44,24 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 	// (browsers, HTML→Markdown converters) silently drop — a real content loss.
 	byTarget := make(map[int][]captionText)
 	for i, s := range sections {
+		// An extracted figure/table box is already a parent candidate, never a
+		// caption: Python pops table/figure boxes out of self.boxes BEFORE its
+		// caption scan (pdf_parser.py _extract_table_figure), so they are never
+		// classified there. Without this skip, CaptionKind's text patterns would
+		// classify a figure whose embedded text starts with a caption marker
+		// (图1 …, Figure 1: …) as its own caption, and findNearestParent would
+		// match it to ITSELF (CollectFigures includes it — center distance 0) —
+		// the figure would become its own merge target and be removed with the
+		// caption, deleting the image from the output (go_bug
+		// figure-self-caption-deleted).
+		if s.LayoutType == pdf.LayoutTypeFigure || s.LayoutType == pdf.LayoutTypeTable {
+			continue
+		}
 		captionType := CaptionKind(s)
 		if captionType == "" {
 			continue
 		}
-		target := findNearestParent(i, s, sections, figures, captionType)
+		target := findNearestParent(s, sections, figures, captionType)
 		if target >= 0 {
 			// Emit the caption inside the target table's HTML as a <caption>
 			// element (matching Python's __html_table) and drop the standalone
@@ -66,10 +79,13 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 		// No merge target. A FIGURE caption is kept as its own section: a pure
 		// image figure has no text section (BoxesToSections skips empty figure
 		// boxes), so removing it would drop caption text that Python keeps
-		// (07_mixed_content 'Figure 1/2'). A TABLE caption without a table
-		// section is a DLA mislabel (e.g. rotate_270's rotated text labeled
-		// "table") — keep the historical removal so rotated-page text is not
-		// duplicated.
+		// (07_mixed_content 'Figure 1/2'). A TABLE caption with neither a table
+		// nor a figure parent — findNearestParent already fell back to figures,
+		// mirroring Python's nearest(tables)/nearest(figures) double search — is
+		// a DLA mislabel (e.g. rotate_270's rotated text labeled "table"); keep
+		// the historical removal so rotated-page text is not duplicated. Python
+		// likewise drops a caption only when BOTH searches fail, so the removal
+		// branch now fires only when no parent exists at all.
 		if captionType != pdf.LayoutTypeFigure {
 			captions = append(captions, i)
 		}
@@ -108,39 +124,16 @@ func MergeCaptions(sections []pdf.Section, figures []pdf.Section) []pdf.Section 
 	return out
 }
 
-// findNearestParent finds the nearest figure (for figure caption) or
-// table (for table caption) section by position proximity.
-// captionType is "table" or "figure" (from captionKind).
-// Returns the index in `sections` (for tables) or a virtual index mapping
-// to `figures` (negative offset for figures).
-func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Section, figures []pdf.Section, captionType string) int {
-	find := func(targets []pdf.Section, skipIdx int) (int, float64) {
-		bestIdx := -1
-		bestDist := 1e9
-		for i, t := range targets {
-			if i == skipIdx {
-				continue // don't match caption to itself
-			}
-			if len(t.Positions) == 0 || len(caption.Positions) == 0 {
-				continue
-			}
-			tp := t.Positions[0]
-			cp := caption.Positions[0]
-			// Squared Euclidean distance (Python _extract_table_figure:1196).
-			// Caption is typically below. Use center-point distance.
-			cx := (tp.Left + tp.Right) / 2
-			cy := (tp.Top + tp.Bottom) / 2
-			ccx := (cp.Left + cp.Right) / 2
-			ccy := (cp.Top + cp.Bottom) / 2
-			dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
-			if dist < bestDist {
-				bestDist = dist
-				bestIdx = i
-			}
-		}
-		return bestIdx, bestDist
-	}
-
+// findNearestParent finds the nearest figure (for figure captions) or table
+// (for table captions) section by position proximity. captionType is "table"
+// or "figure" (from CaptionKind). A table caption first searches tables and,
+// when none is in range, falls through to the figure search — mirroring
+// Python's nearest(tables)/nearest(figures) double search and its `elif fk`
+// fallback (pdf_parser.py _extract_table_figure), so a caption whose table is
+// unreachable (wrong page, out of range, or absent) lands on the nearest
+// figure instead of being dropped. Returns the index in `sections`, or -1
+// when no parent is in range.
+func findNearestParent(caption pdf.Section, sections []pdf.Section, figures []pdf.Section, captionType string) int {
 	const maxCaptionGap = 40000.0 // PDF points (~7cm) — beyond this, don't attach.
 	// maxCaptionVGap is the vertical band within which a caption attaches to a
 	// table regardless of its horizontal offset. A narrow caption (e.g. a short
@@ -152,23 +145,6 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 	// via min-distance. Keep this in line with the vertical tolerance implied by
 	// maxCaptionGap when dx≈0 (~200pt).
 	const maxCaptionVGap = 200.0
-	if captionType == pdf.LayoutTypeFigure && len(figures) > 0 {
-		idx, dist := find(figures, -1) // figures don't contain the caption itself
-		if idx >= 0 && dist < maxCaptionGap {
-			// Match by position coordinates, not PositionTag strings.
-			f := figures[idx]
-			for i, s := range sections {
-				if s.LayoutType != pdf.LayoutTypeFigure || len(s.Positions) == 0 || len(f.Positions) == 0 {
-					continue
-				}
-				sp, fp := s.Positions[0], f.Positions[0]
-				if sp.Left == fp.Left && sp.Right == fp.Right &&
-					sp.Top == fp.Top && sp.Bottom == fp.Bottom {
-					return i
-				}
-			}
-		}
-	}
 	if captionType == pdf.LayoutTypeTable {
 		idx, dist, gapY := findTables(sections, caption)
 		// Attach a vertically-adjacent caption even when it is horizontally
@@ -177,6 +153,49 @@ func findNearestParent(captionIdx int, caption pdf.Section, sections []pdf.Secti
 		// tables, e.g. icbccs '请求参数').
 		if idx >= 0 && (dist < maxCaptionGap || gapY <= maxCaptionVGap) {
 			return idx
+		}
+		// No table in range: fall through to the figure search below —
+		// Python's `elif fk` — rather than leaving the caller to delete a
+		// caption whose text Python preserves on a nearby figure.
+	}
+	if len(figures) > 0 {
+		// Center-point squared distance to the nearest figure (Python
+		// _extract_table_figure:1196); the caption typically sits below it.
+		// MergeCaptions skips figure/table sections before consulting
+		// CaptionKind, so the caption can never BE one of these figures — no
+		// self-match is possible here.
+		bestIdx, bestDist := -1, 1e9
+		for i, t := range figures {
+			if len(t.Positions) == 0 || len(caption.Positions) == 0 {
+				continue
+			}
+			tp := t.Positions[0]
+			cp := caption.Positions[0]
+			cx := (tp.Left + tp.Right) / 2
+			cy := (tp.Top + tp.Bottom) / 2
+			ccx := (cp.Left + cp.Right) / 2
+			ccy := (cp.Top + cp.Bottom) / 2
+			dist := (cx-ccx)*(cx-ccx) + (cy-ccy)*(cy-ccy)
+			if dist < bestDist {
+				bestDist = dist
+				bestIdx = i
+			}
+		}
+		if bestIdx >= 0 && bestDist < maxCaptionGap {
+			// Map the figures-list hit back to its section by position
+			// coordinates (the figures list is a filtered copy, so its index
+			// is not the section index).
+			f := figures[bestIdx]
+			for i, s := range sections {
+				if s.LayoutType != pdf.LayoutTypeFigure || len(s.Positions) == 0 {
+					continue
+				}
+				sp, fp := s.Positions[0], f.Positions[0]
+				if sp.Left == fp.Left && sp.Right == fp.Right &&
+					sp.Top == fp.Top && sp.Bottom == fp.Bottom {
+					return i
+				}
+			}
 		}
 	}
 	return -1

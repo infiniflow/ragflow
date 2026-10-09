@@ -280,3 +280,189 @@ func TestMergeCaptions_NarrowCaptionAttachesWideTable(t *testing.T) {
 		t.Errorf("caption text should appear exactly once (inside <caption>), got %q", got)
 	}
 }
+
+// TestMergeCaptions_CJKBodyParagraphKept locks go_bug
+// cjk-caption-false-positive end-to-end: a Chinese/Japanese body paragraph
+// starting with 表/图 must survive MergeCaptions as its own section (Python
+// keeps it as body text) — neither dropped when no table is nearby, nor
+// swallowed into a table's <caption> when one is.
+func TestMergeCaptions_CJKBodyParagraphKept(t *testing.T) {
+	para := pdf.Section{Text: "表格是一种常见的数据组织形式，本文对其进行对比。", LayoutType: pdf.LayoutTypeText,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}}
+	t.Run("no table nearby", func(t *testing.T) {
+		sections := []pdf.Section{
+			{Text: "产品分析报告", LayoutType: pdf.LayoutTypeTitle,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 50, Bottom: 80}}},
+			para,
+		}
+		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		if len(result) != 2 {
+			t.Errorf("body paragraph dropped; got %d sections: %v", len(result), textsOf(result))
+		}
+	})
+	t.Run("table nearby", func(t *testing.T) {
+		sections := []pdf.Section{
+			{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+			para,
+		}
+		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		kept, swallowed := false, false
+		for _, s := range result {
+			if strings.Contains(s.Text, "表格是一种") {
+				kept = true
+			}
+			if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>表格是") {
+				swallowed = true
+			}
+		}
+		if !kept || swallowed {
+			t.Errorf("body paragraph must stay a standalone section (not enter <caption>); kept=%v swallowed=%v sections=%v",
+				kept, swallowed, textsOf(result))
+		}
+	})
+}
+
+// TestMergeCaptions_FigureWithCaptionMarkerTextSurvives locks go_bug
+// figure-self-caption-deleted: a figure section whose OWN text starts with a
+// caption marker (embedded chart title, OCR'd caption inside the figure box)
+// must not be classified as its own caption and deleted. Python pops figure
+// boxes before its caption scan so this cannot happen there; before the fix,
+// findNearestParent matched the figure to ITSELF (CollectFigures includes it,
+// distance 0) and the whole image section vanished from the output. Covers
+// the figure-kind (图1/Figure 1) and table-kind (Table 2) classification
+// paths — the latter would also steal the figure's text into a nearby
+// table's <caption>.
+func TestMergeCaptions_FigureWithCaptionMarkerTextSurvives(t *testing.T) {
+	for _, text := range []string{
+		"Figure 1: system architecture overview",
+		"图1 系统架构总览",
+		"Table 2: embedded chart title inside the figure region",
+	} {
+		sections := []pdf.Section{
+			{Text: "Introduction", LayoutType: pdf.LayoutTypeTitle,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 50, Bottom: 80}}},
+			{Text: text, LayoutType: pdf.LayoutTypeFigure, Image: "img",
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		}
+		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		figureAlive := false
+		for _, s := range result {
+			if s.LayoutType == pdf.LayoutTypeFigure {
+				figureAlive = true
+				if s.Text != text {
+					t.Errorf("figure text mutated: got %q, want %q", s.Text, text)
+				}
+			}
+		}
+		if !figureAlive {
+			t.Errorf("figure %q removed from output (self-caption deletion); sections = %v", text, textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_FigureTextNotStolenIntoTable: same figure, but with a
+// real table in range — before the fix, the figure's "Table 2: …" text was
+// injected into that table's <caption> and the figure section deleted.
+func TestMergeCaptions_FigureTextNotStolenIntoTable(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 2: embedded chart title inside the figure region", LayoutType: pdf.LayoutTypeFigure, Image: "chartimg",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 120, Right: 480, Top: 420, Bottom: 600}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	figureAlive, stolen := false, false
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeFigure {
+			figureAlive = true
+		}
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "embedded chart title") {
+			stolen = true
+		}
+	}
+	if !figureAlive {
+		t.Errorf("figure removed; sections = %v", textsOf(result))
+	}
+	if stolen {
+		t.Errorf("figure text stolen into the table's <caption>: %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_FigureCaptionKeptWithMarkerFigure locks the cascade form
+// of figure-self-caption-deleted: a genuine DLA figure caption attaching to a
+// figure whose own text starts with a caption marker must keep BOTH the
+// image and the real caption text (before the fix, the figure became its own
+// target, was deleted, and the attached caption text vanished with it).
+func TestMergeCaptions_FigureCaptionKeptWithMarkerFigure(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "Figure 4: deployment topology", LayoutType: pdf.LayoutTypeFigure, Image: "img4",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "图4 部署拓扑结构", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	if len(result) != 1 || result[0].LayoutType != pdf.LayoutTypeFigure {
+		t.Fatalf("want the single figure section, got %d sections: %v", len(result), textsOf(result))
+	}
+	if !strings.Contains(result[0].Text, "部署拓扑") {
+		t.Errorf("real figure caption text lost with the deleted figure: %q", result[0].Text)
+	}
+}
+
+// TestMergeCaptions_TableCaptionFallsBackToFigure locks go_bug
+// table-caption-orphan-dropped: Python attaches a caption to the nearest
+// table OR figure (nearest(tables)/nearest(figures), `elif fk`) and drops it
+// only when BOTH searches fail. Go used to search tables only and delete the
+// caption when none was reachable — losing text Python keeps, for English
+// body text AND for correctly-DLA-labeled "table caption" sections alike
+// (language-independent; the figure here is deliberately neutral-text so the
+// figure-self-deletion bug cannot mask this path).
+func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
+	for _, caption := range []pdf.Section{
+		{Text: "Table 1 shows revenue by category.", LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
+		{Text: "Quarterly revenue breakdown", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
+	} {
+		sections := []pdf.Section{
+			{Text: "market overview chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 300, Bottom: 500}}},
+			caption,
+		}
+		result := MergeCaptions(sections, pdf.CollectFigures(sections))
+		found := false
+		for _, s := range result {
+			if strings.Contains(s.Text, "revenue") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("table caption %q dropped although a figure exists (Python attaches it); sections = %v",
+				caption.Text, textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed pins the SHARED
+// (Python-identical) heuristic boundary of the CJK fix: a body paragraph that
+// STARTS with "Table N" is classified a caption by BOTH implementations
+// (Python's re.match is start-anchored too) and consumed into the table's
+// <caption>. The text is retained — misplacement parity with Python, not a
+// Go regression; only the CJK false-positive class was fixed.
+func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 1 shows revenue by category for the fiscal year.", LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
+	}
+	result := MergeCaptions(sections, pdf.CollectFigures(sections))
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>Table 1 shows revenue") {
+			return
+		}
+	}
+	t.Errorf("expected the start-anchored English paragraph consumed into <caption> (Python parity); sections = %v",
+		textsOf(result))
+}
