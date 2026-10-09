@@ -17,16 +17,11 @@ function usage() {
     echo "  --enable-adminserver                    Enables the Admin server."
     echo "  --init-model-provider-tables            Run model provider table migrations and exit."
     echo "  --init-superuser                        Initializes the superuser (needs --enable-adminserver)."
-    echo "  --consumer-no-beg=<num>                 Start range for consumers (if using range-based)."
-    echo "  --consumer-no-end=<num>                 End range for consumers (if using range-based)."
-    echo "  --workers=<num>                         Number of task executors to run (if range is not used)."
-    echo "  --host-id=<string>                      Unique ID for the host (defaults to \`hostname\`)."
-
+    echo "  --workers=<num>                         Number of ingestor workers to run."
     echo
     echo "Examples:"
     echo "  $0 --disable-taskexecutor"
-    echo "  $0 --disable-webserver --consumer-no-beg=0 --consumer-no-end=5"
-    echo "  $0 --disable-webserver --workers=2 --host-id=myhost123"
+    echo "  $0 --disable-webserver --workers=2"
     echo "  $0 --enable-adminserver"
     echo "  $0 --enable-adminserver --init-superuser"
     exit 1
@@ -38,23 +33,7 @@ ENABLE_DATASYNC=1
 ENABLE_ADMIN_SERVER=0 # Default close admin server
 INIT_SUPERUSER_ARGS="" # Default to not initialize superuser
 INIT_MODEL_PROVIDER_TABLES=0
-CONSUMER_NO_BEG=0
-CONSUMER_NO_END=0
 WORKERS=1
-
-# -----------------------------------------------------------------------------
-# Host ID logic:
-#   1. By default, use the system hostname if length <= 32
-#   2. Otherwise, use the full MD5 hash of the hostname (32 hex chars)
-# -----------------------------------------------------------------------------
-CURRENT_HOSTNAME="$(hostname)"
-if [ ${#CURRENT_HOSTNAME} -le 32 ]; then
-  DEFAULT_HOST_ID="$CURRENT_HOSTNAME"
-else
-  DEFAULT_HOST_ID="$(echo -n "$CURRENT_HOSTNAME" | md5sum | cut -d ' ' -f 1)"
-fi
-
-HOST_ID="$DEFAULT_HOST_ID"
 
 # Parse arguments
 for arg in "$@"; do
@@ -83,20 +62,8 @@ for arg in "$@"; do
       INIT_SUPERUSER_ARGS="--init-superuser"
       shift
       ;;
-    --consumer-no-beg=*)
-      CONSUMER_NO_BEG="${arg#*=}"
-      shift
-      ;;
-    --consumer-no-end=*)
-      CONSUMER_NO_END="${arg#*=}"
-      shift
-      ;;
     --workers=*)
       WORKERS="${arg#*=}"
-      shift
-      ;;
-    --host-id=*)
-      HOST_ID="${arg#*=}"
       shift
       ;;
     *)
@@ -194,18 +161,10 @@ if go_backend_enabled; then
     run_go_migrations
 fi
 
-if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
-    echo "Starting data sync..."
-    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
-fi
-
-sleep 5
-
-if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
-    echo "Starting Admin go server..."
-    run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
-fi
-
+# All Go modes self-initialize their dependencies (JetStream streams, kvrocks
+# leases) and run_with_restart covers any transient backend unavailability, so
+# every enabled mode is spawned concurrently with no stagger. The webserver goes
+# first to bind the user-facing ports as early as possible.
 if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     echo "Starting nginx..."
     /usr/sbin/nginx -c /etc/nginx/nginx.conf
@@ -214,25 +173,25 @@ if [[ "${ENABLE_WEBSERVER}" -eq 1 ]]; then
     run_with_restart "RAGFlow go server" bin/ragflow_server --api &
 fi
 
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    echo "Starting Admin go server..."
+    run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
+fi
+
+if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
+    echo "Starting data sync..."
+    run_with_restart "RAGFlow go server" bin/ragflow_server --syncer &
+fi
+
 # MCP configuration comes from service_conf.yaml and RAGFLOW_MCP_* environment
 # variables. The API process owns its optional standalone listener.
 
-# Task execution is the Go ingestor's job. This image ships no Python task
-# executor (rag/svr/task_executor.py is not copied), so --ingestor is the only
-# worker that can run here.
 if [[ "${ENABLE_TASKEXECUTOR}" -eq 1 ]]; then
-    if [[ "${CONSUMER_NO_END}" -gt "${CONSUMER_NO_BEG}" ]]; then
-        echo "Starting go ingestor..."
+    echo "Starting ${WORKERS} ingestor worker(s)..."
+    for (( i=0; i<WORKERS; i++ ))
+    do
         run_with_restart "ingestor" bin/ragflow_server --ingestor &
-    else
-        # Otherwise, start a fixed number of workers
-        echo "Starting ${WORKERS} task executor(s) on host '${HOST_ID}'..."
-        for (( i=0; i<WORKERS; i++ ))
-        do
-            echo "Starting go ingestor..."
-            run_with_restart "ingestor" bin/ragflow_server --ingestor &
-        done
-    fi
+    done
 fi
 
 wait
