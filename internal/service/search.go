@@ -206,10 +206,15 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	searchID := utility.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
-	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
-		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
-		return len(existing) > 0
-	}, name, userID)
+	// search.name is a 128-byte column; keep generated names within it.
+	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		if err != nil {
+			return false, err
+		}
+		return len(existing) > 0, nil
+	})
+
 	if err != nil {
 		return nil, err
 	}
@@ -610,14 +615,21 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		return nil, fmt.Errorf("cannot find search %s", searchID)
 	}
 
-	// Step 3: Check for duplicate name (if name changed)
-	// Python: if req["name"].lower() != search_app.name.lower() and len(SearchService.query(...)) >= 1
+	// Step 3: Check for duplicate name. Case-only changes are allowed, matching
+	// the dataset rename rule.
 	trimmedName := req.Name
-	if search.Name != trimmedName {
-		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, trimmedName, userID)
-		if len(existing) > 0 {
-			return nil, fmt.Errorf("duplicated search name")
+	available, err := common.NameAvailable(search.Name, trimmedName, func(candidate string) (bool, error) {
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		if err != nil {
+			return false, err
 		}
+		return len(existing) > 0, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("duplicated search name")
 	}
 	if err := NormalizeSimilarityWeights(req.SearchConfig); err != nil {
 		return nil, err

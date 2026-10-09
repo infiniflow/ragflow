@@ -340,13 +340,13 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, name, userID, string(entity.StatusValid))
+	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
+		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
-	}
+	req["name"] = name
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
@@ -967,16 +967,14 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if currentChat.Name != nil {
 			currentName = *currentChat.Name
 		}
-		if strings.ToLower(name) != strings.ToLower(currentName) {
-			existingNames, err := s.chatDAO.GetExistingNames(ctx, dao.DB, userID, string(entity.StatusValid))
-			if err != nil {
-				return nil, err
-			}
-			for _, existingName := range existingNames {
-				if strings.EqualFold(existingName, name) {
-					return nil, errors.New("duplicated chat name")
-				}
-			}
+		available, err := common.NameAvailable(currentName, name, func(candidate string) (bool, error) {
+			return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !available {
+			return nil, errors.New("duplicated chat name")
 		}
 	}
 

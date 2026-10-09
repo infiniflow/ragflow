@@ -374,15 +374,9 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 // Returns an error when the existing-name lookup fails so callers never write
 // blind and risk duplicated document names.
 func (s *DocumentService) UniqueDocumentName(ctx context.Context, kbID, name string) (string, error) {
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kbID)
-	if err != nil {
-		return "", err
-	}
-	taken := make(map[string]bool, len(names))
-	for _, n := range names {
-		taken[n] = true
-	}
-	return uniqueUploadName(name, taken), nil
+	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kbID, candidate)
+	})
 }
 
 // resolveDocAndKB loads the document and its knowledgebase, returning both or

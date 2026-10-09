@@ -80,7 +80,7 @@ export function DraftModeCard({
         <AimlapiGetKeyButton onKey={handleAimlapiKey} />
       )}
 
-      {providerName !== LLMFactory.OpenAiAPICompatible && (
+      {/* {providerName !== LLMFactory.OpenAiAPICompatible && (
         <div className="pt-3">
           <VerifyButton
             onVerify={handleVerify}
@@ -88,7 +88,7 @@ export function DraftModeCard({
             formRef={formRef}
           />
         </div>
-      )}
+      )} */}
 
       <div className="pt-3">
         <ModelsSection

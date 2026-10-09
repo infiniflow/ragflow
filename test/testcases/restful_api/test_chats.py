@@ -168,8 +168,8 @@ def test_chat_duplicate_name_validation(rest_client, clear_chats):
     second = rest_client.post("/chats", json={"name": "duplicate_chat_name", "dataset_ids": []})
     assert second.status_code == 200
     second_payload = second.json()
-    assert second_payload["code"] == 102, second_payload
-    assert "duplicated chat name" in second_payload["message"], second_payload
+    assert second_payload["code"] == 0, second_payload
+    assert second_payload["data"]["name"] == "duplicate_chat_name(1)", second_payload
 
 
 @pytest.mark.p2
