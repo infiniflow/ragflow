@@ -61,7 +61,7 @@ func (dao *MCPServerDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*
 func (dao *MCPServerDAO) ExistsByNameAndTenant(ctx context.Context, db *gorm.DB, name, tenantID string) (bool, error) {
 	var count int64
 	if err := db.WithContext(ctx).Model(&entity.MCPServer{}).
-		Where("name = ? AND tenant_id = ?", name, tenantID).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ?", name, tenantID).
 		Count(&count).Error; err != nil {
 		return false, err
 	}

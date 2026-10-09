@@ -44,7 +44,7 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 		TenantID:   "tenant-id",
 		URL:        "https://example.com/mcp",
 		ServerType: "sse",
-		Variables:  entity.JSONMap{"tools": map[string]interface{}{}},
+		Variables:  entity.JSONMap{"authorization_token": "ragflow-secret", "tools": map[string]interface{}{}},
 		Headers:    entity.JSONMap{"Authorization": "Bearer token"},
 		BaseModel: entity.BaseModel{
 			CreateTime: &createTime,
@@ -73,6 +73,9 @@ func TestNewMCPServerResponsePreservesNullDescriptionAndFormatsDates(t *testing.
 	}
 	if bytes.Contains(payload, []byte(`+08:00`)) {
 		t.Fatalf("payload %s includes timezone in date fields", payload)
+	}
+	if bytes.Contains(payload, []byte("ragflow-secret")) || !bytes.Contains(payload, []byte(`"authorization_token":"********"`)) {
+		t.Fatalf("payload %s exposes the MCP authorization token", payload)
 	}
 }
 

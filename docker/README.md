@@ -21,7 +21,7 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 - **docker-compose-base.yml**
   Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
+> **Note:** `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
 
 ### Quick start
 
@@ -51,7 +51,7 @@ For local image builds, use the [Go image build guide](../docs/develop/build_doc
 Verify the deployment with:
 
 ```bash
-docker compose -f docker-compose.yml ps
+docker ps
 docker logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
