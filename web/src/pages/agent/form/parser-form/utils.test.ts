@@ -166,5 +166,59 @@ describe('parser-form utils', () => {
 
       expect(values.vlm).toEqual({ llm_id: '' });
     });
+
+    it('migrates a legacy image ocr parse_method onto ocr_enabled', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+      // An empty parse_method also selects OCR.
+      expect(
+        normalizeParserFormValues({
+          setups: [{ fileFormat: FileType.Image, parse_method: '' }],
+        }).setups[0],
+      ).toEqual({ fileFormat: FileType.Image, ocr_enabled: true });
+    });
+
+    it('lifts a legacy image model reference onto the global vlm and turns OCR off', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [
+          { fileFormat: FileType.Image, parse_method: 'gpt-4o@OpenAI' },
+          { fileFormat: FileType.PDF },
+        ],
+      });
+      // The model is not lost: it becomes the shared vision model, overriding
+      // the (empty) global value, and the switch shape drops parse_method.
+      expect(normalized.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: false,
+      });
+    });
+
+    it('leaves an existing global model untouched when the image already uses the switch', () => {
+      // Migration only fires for a legacy parse_method. A normalized image
+      // setup (ocr_enabled present, no parse_method) never overrides a model
+      // the user chose at the top level.
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: 'qwen-vl@DashScope' },
+        setups: [{ fileFormat: FileType.Image, ocr_enabled: false }],
+      });
+      expect(normalized.vlm).toEqual({ llm_id: 'qwen-vl@DashScope' });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: false,
+      });
+    });
+
+    it('is idempotent for the migrated image switch', () => {
+      const once = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
+      });
+      expect(normalizeParserFormValues(once)).toEqual(once);
+    });
   });
 });

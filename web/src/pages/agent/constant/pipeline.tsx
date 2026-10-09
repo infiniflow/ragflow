@@ -85,10 +85,6 @@ export enum TokenizerSearchMethod {
   FullText = 'full_text',
 }
 
-export enum ImageParseMethod {
-  OCR = 'ocr',
-}
-
 export enum TokenizerFields {
   Text = 'text',
   Questions = 'questions',
@@ -189,7 +185,7 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Json,
-      parse_method: ImageParseMethod.OCR,
+      ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
       system_prompt: '',
     },

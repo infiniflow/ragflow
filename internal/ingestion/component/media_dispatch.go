@@ -96,16 +96,11 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	method := getStringOr(setup, "parse_method", "")
-	useOCR := method == "" || strings.EqualFold(method, "ocr")
-	// A model named as parse_method is an explicit VLM request (mirrors
-	// Python rag/flow/parser/parser.py:_image: "ocr" runs OCR, anything
-	// else is the vision model). It must run the description even when the
-	// global enhancement switch is off, otherwise the image item carries no
-	// text and the Tokenizer's retrievability filter drops the chunk.
-	modelFromParseMethod := ""
-	if !useOCR {
-		modelFromParseMethod = method
-	}
+	ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool)
+	// ocr_enabled is the OCR switch. Legacy setups omit it and encode the same
+	// choice in parse_method: "ocr"/empty selects local OCR, any other value is
+	// a VLM model reference that also implies OCR is off.
+	useOCR := (hasOCRFlag && ocrEnabled) || (!hasOCRFlag && (method == "" || strings.EqualFold(method, "ocr")))
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
@@ -138,10 +133,14 @@ func maybeDispatchImage(
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement || modelFromParseMethod != "" {
+	if enableVisionEnhancement {
+		// A setup with an explicit ocr_enabled switch always uses the global
+		// vision model. Only legacy setups (no switch) carry the VLM model
+		// reference in parse_method, which also disabled OCR by construction.
 		modelRef := visionModelID
-		if modelFromParseMethod != "" {
-			modelRef = modelFromParseMethod
+		if !hasOCRFlag && !useOCR {
+			modelRef = method
+		}
 		}
 		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, modelRef)
 		parsed.Warnings = append(parsed.Warnings, warnings...)

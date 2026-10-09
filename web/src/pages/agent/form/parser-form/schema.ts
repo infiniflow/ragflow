@@ -8,6 +8,11 @@ export const SetupSchema = z
     // preprocess: z.array(z.string()).optional(),
     output_format: z.string().optional(),
     parse_method: z.string().optional(),
+    // Image OCR runs independently of the global vision-enhancement switch.
+    // The dropdown used to encode this choice in parse_method; ocr_enabled is
+    // the new boolean contract. Legacy setups may still carry a parse_method
+    // only; normalizeParserFormValues migrates them on load.
+    ocr_enabled: z.boolean().optional(),
     lang: z.string().optional(),
     fields: z.array(z.string()).optional(),
     // Per-setup vlm is only used by Audio (its ASR model); the vision model

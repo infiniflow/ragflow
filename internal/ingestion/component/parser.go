@@ -258,9 +258,12 @@ func (c *ParserComponent) Check() error {
 	// Image OCR runs independently of optional vision enhancement.
 	if img, ok := c.setups["image"]; ok {
 		pm, _ := img["parse_method"].(string)
-		// A model selected for optional image enhancement needs a language
-		// only when enhancement is enabled.
-		if c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
+		_, hasOCRFlag := img["ocr_enabled"].(bool)
+		// A legacy parse_method carrying a VLM model reference needs a language
+		// when enhancement is enabled. Setups with the ocr_enabled switch pick
+		// the global vision model and fall back to the dataset language, so a
+		// per-setup language is not required.
+		if !hasOCRFlag && c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
 			if lang, _ := img["lang"].(string); lang == "" {
 				return errors.New("image VLM language does not support empty value")
 			}
@@ -325,6 +328,11 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"output_format": "json",
 		},
 		"image": {
+			// Default stays on the legacy parse_method shape. ocr_enabled is
+			// deliberately NOT set here: NewParserComponent overlays params on
+			// top of these defaults, so the mere presence of ocr_enabled in the
+			// merged setup proves the caller chose the switch shape. A default
+			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
 			"llm_id":        "",
 			"lang":          "Chinese",
