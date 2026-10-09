@@ -24,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Form } from '@/components/ui/form';
+import { Form, FormField, FormItem, FormMessage } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
 import { IModalProps } from '@/interfaces/common';
 import { IChangeParserRequestBody } from '@/interfaces/request/document';
@@ -118,15 +118,26 @@ export function DocumentPipelineDialog({
             className="space-y-6 max-h-[70vh] overflow-auto -mx-6 px-10 py-5"
             id={FormId}
           >
-            <ParserSelect
-              value={
-                parseType === ParseType.BuiltIn
-                  ? buildParserOptionValue('builtin', selectedParserId)
-                  : selectedPipelineId
-                    ? buildParserOptionValue('pipeline', selectedPipelineId)
-                    : undefined
+            <FormField
+              control={form.control}
+              name={
+                parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'
               }
-              onChange={handleParserSelect}
+              render={() => (
+                <FormItem>
+                  <ParserSelect
+                    value={
+                      parseType === ParseType.BuiltIn
+                        ? buildParserOptionValue('builtin', selectedParserId)
+                        : selectedPipelineId
+                          ? buildParserOptionValue('pipeline', selectedPipelineId)
+                          : undefined
+                    }
+                    onChange={handleParserSelect}
+                  />
+                  <FormMessage />
+                </FormItem>
+              )}
             />
             {showOperatorTabs && (
               <PipelineOperatorTabs

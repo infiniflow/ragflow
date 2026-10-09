@@ -44,14 +44,14 @@ export function parseParserOptionValue(value?: string): {
 // merged dataset/document parser dropdown: pipeline (canvas) options first,
 // followed by builtin options each suffixed with the " (built in)" marker.
 export function useParserOptions() {
-  const { t } = useTranslation('knowledgeConfiguration');
+  const { t } = useTranslation();
   const { options: builtinOptions, loading: builtinLoading } =
     useFetchBuiltinPipelines();
   const { data: pipelineData, loading: pipelineLoading } = useFetchAgentList({
     canvas_category: AgentCategory.DataflowCanvas,
   });
 
-  const suffix = t('builtInSuffix') || ' (built in)';
+  const suffix = t('knowledgeConfiguration.builtInSuffix') || ' (built in)';
 
   const options = useMemo<IParserOption[]>(() => {
     const pipeline = (pipelineData?.canvas ?? [])

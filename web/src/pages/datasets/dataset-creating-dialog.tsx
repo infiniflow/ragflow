@@ -142,15 +142,24 @@ export function InputForm({ onOk }: IModalProps<any>) {
         />
 
         <EmbeddingModelItem line={2} isEdit={false} />
-        <ParserSelect
-          value={
-            parseType === ParseType.BuiltIn
-              ? buildParserOptionValue('builtin', parserId ?? '')
-              : pipelineId
-                ? buildParserOptionValue('pipeline', pipelineId)
-                : undefined
-          }
-          onChange={handleParserSelect}
+        <FormField
+          control={form.control}
+          name={parseType === ParseType.BuiltIn ? 'parser_id' : 'pipeline_id'}
+          render={() => (
+            <FormItem>
+              <ParserSelect
+                value={
+                  parseType === ParseType.BuiltIn
+                    ? buildParserOptionValue('builtin', parserId ?? '')
+                    : pipelineId
+                      ? buildParserOptionValue('pipeline', pipelineId)
+                      : undefined
+                }
+                onChange={handleParserSelect}
+              />
+              <FormMessage />
+            </FormItem>
+          )}
         />
       </form>
     </Form>

@@ -9,7 +9,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import Divider from '@/components/ui/divider';
-import { Form, FormItem, FormLabel } from '@/components/ui/form';
+import { Form, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
 import { buildParserOptionValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
@@ -221,18 +221,34 @@ export default function DatasetSetting() {
                         {t('knowledgeConfiguration.parseType')}
                       </FormLabel>
                       <div className="text-muted-foreground w-3/4">
-                        <ParserSelect
-                          value={
+                        <FormField
+                          control={form.control}
+                          name={
                             parseType === ParseType.BuiltIn
-                              ? buildParserOptionValue(
-                                  'builtin',
-                                  builtinPipelineId ?? '',
-                                )
-                              : pipelineId
-                                ? buildParserOptionValue('pipeline', pipelineId)
-                                : undefined
+                              ? 'parser_id'
+                              : 'pipeline_id'
                           }
-                          onChange={handleParserSelect}
+                          render={() => (
+                            <FormItem className="space-y-1">
+                              <ParserSelect
+                                value={
+                                  parseType === ParseType.BuiltIn
+                                    ? buildParserOptionValue(
+                                        'builtin',
+                                        builtinPipelineId ?? '',
+                                      )
+                                    : pipelineId
+                                      ? buildParserOptionValue(
+                                          'pipeline',
+                                          pipelineId,
+                                        )
+                                      : undefined
+                                }
+                                onChange={handleParserSelect}
+                              />
+                              <FormMessage />
+                            </FormItem>
+                          )}
                         />
                       </div>
                     </div>

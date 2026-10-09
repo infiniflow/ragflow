@@ -20,7 +20,8 @@ import {
   useParserOptions,
   type ParserOptionKind,
 } from '@/hooks/use-parser-options';
-import { useCallback, useTranslation } from 'react-i18next';
+import { useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 
 interface IProps {
   // Prefixed value produced by buildParserOptionValue, e.g. "builtin:general".
@@ -40,7 +41,7 @@ export function ParserSelect({
   placeholder,
   disabled,
 }: IProps) {
-  const { t } = useTranslation('knowledgeConfiguration');
+  const { t } = useTranslation();
   const { options, loading } = useParserOptions();
 
   const handleChange = useCallback(
@@ -63,7 +64,9 @@ export function ParserSelect({
       // selection doesn't flash an empty trigger on edit screens.
       renderMissingValue={(v) => v}
       onChange={handleChange}
-      placeholder={placeholder ?? t('parserSelectPlaceholder')}
+      placeholder={
+        placeholder ?? t('knowledgeConfiguration.parserSelectPlaceholder')
+      }
       options={options}
       disabled={disabled}
     />
