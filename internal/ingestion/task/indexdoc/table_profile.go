@@ -64,6 +64,10 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*entity.Tab
 			if !written {
 				continue
 			}
+			// The profile is a cross-sheet union keyed by data_key, so a header position
+			// is not meaningful here: two sheets can put the same header at different
+			// ones. Keep the identity, drop the position.
+			col.Index = 0
 			columns[col.DataKey] = col
 			if src.Mode != entity.TableModeManual || !aggregates(col.Key, src.Roles) {
 				continue

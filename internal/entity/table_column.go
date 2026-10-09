@@ -16,7 +16,7 @@ import (
 // JSON key of chunk_data (and field_map).
 type TableColumn struct {
 	// Index is the 1-based position of the column in the sheet header.
-	Index int `json:"index"`
+	Index int `json:"index,omitempty"`
 	// Key is the normalized column key used by column_roles and document
 	// column metadata.
 	Key string `json:"key"`

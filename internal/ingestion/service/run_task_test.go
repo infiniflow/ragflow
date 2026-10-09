@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -310,5 +311,47 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED", task.Status)
+	}
+}
+
+// deadlineRecordingDocState records the deadline the stop path gives the
+// derived-state revoke.
+type deadlineRecordingDocState struct {
+	docStateSvc
+	revokeDeadline time.Time
+}
+
+func (d *deadlineRecordingDocState) RevokeTableProfile(ctx context.Context, docID string) error {
+	d.revokeDeadline, _ = ctx.Deadline()
+	return d.docStateSvc.RevokeTableProfile(ctx, docID)
+}
+
+// Revoking on the stop path takes the document metadata lock, which has its own
+// acquisition budget. Sizing the revoke by the terminal-write deadline would
+// make it lose the lock to a concurrent publish and leave the task unsettled
+// for no reason.
+func TestStopSizesTheRevokeByTheLockNotByTheTerminalWrite(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	svc := &deadlineRecordingDocState{docStateSvc: &stubDocStateSvc{}}
+	ingestor := newUnitIngestor("test", 1, []string{"xlsx"})
+	ingestor.docState = &docStateUpdater{docSvc: svc}
+	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+		_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+		return err
+	}
+	if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID}) {
+		t.Fatal("stopped task did not settle")
+	}
+	if svc.revokeDeadline.IsZero() {
+		t.Fatal("the stop path never revoked the derived state")
+	}
+	// A terminal status write gets five seconds; a revoke sized by that same
+	// deadline loses the lock to a concurrent publish.
+	if budget := time.Until(svc.revokeDeadline); budget <= 5*time.Second {
+		t.Errorf("revoke budget %v is not longer than a terminal write's five seconds", budget)
 	}
 }

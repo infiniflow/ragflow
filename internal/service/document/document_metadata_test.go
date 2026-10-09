@@ -454,3 +454,47 @@ func (s *memoryMetadataLocks) DeleteIfEqual(_ context.Context, key, owner string
 	delete(s.owners, key)
 	return true
 }
+
+// A write that completed is a success even when the deadline expires while it
+// runs: reading a finished publish as a failure would make the caller retry it
+// or leave the task unsettled.
+func TestWithDocumentMetadataLockReportsTheUpdateOutcome(t *testing.T) {
+	svc := &DocumentService{metadataLocks: &memoryMetadataLocks{}}
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	err := svc.WithDocumentMetadataLock(ctx, "doc-1", func(context.Context) error {
+		time.Sleep(80 * time.Millisecond)
+		return nil
+	})
+	if err != nil {
+		t.Errorf("a completed update reported %v", err)
+	}
+}
+
+// The keep-file path deletes the document row, so the derived table state the
+// document published goes with it: nothing can re-derive it afterwards, and a
+// reader would keep seeing columns no row answers for.
+func TestRemoveDocumentKeepFileRevokesTableProfile(t *testing.T) {
+	svc, engine := revokeTestService(t, map[string]map[string]any{
+		"doc-1": {
+			entity.TableProfileMetadataField: publishedProfile(t, "\u91d1\u989d"),
+			"\u91d1\u989d":                   []string{"100"},
+			"\u4f5c\u8005":                   "\u5f20\u4e09",
+		},
+	})
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("RemoveDocumentKeepFile: %v", err)
+	}
+	record := engine.records["doc-1"]
+	if _, ok := record[entity.TableProfileMetadataField]; ok {
+		t.Errorf("the profile outlived its document: %v", record)
+	}
+	if _, ok := record["\u91d1\u989d"]; ok {
+		t.Errorf("a column value the table system owned outlived its document: %v", record)
+	}
+	if record["\u4f5c\u8005"] != "\u5f20\u4e09" {
+		t.Errorf("metadata the table system never owned was removed: %v", record)
+	}
+}

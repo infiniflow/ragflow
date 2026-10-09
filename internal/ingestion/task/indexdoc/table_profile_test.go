@@ -175,3 +175,36 @@ func TestProjectTableChunksEmptyCellsStillPublishColumns(t *testing.T) {
 		t.Errorf("the column must stay queryable: %#v", profile.Columns)
 	}
 }
+
+// The profile is a cross-sheet union keyed by data_key: one header is one
+// column no matter where it sits, and a position that only describes one of the
+// sheets is not recorded.
+func TestProjectTableChunksDropsColumnPositionAcrossSheets(t *testing.T) {
+	first := tableRowChunk(t, entity.TableModeAuto, nil,
+		[]string{"\u91d1\u989d", "\u5907\u6ce8"}, map[string]string{"\u91d1\u989d": "100", "\u5907\u6ce8": "a"})
+	second := tableRowChunk(t, entity.TableModeAuto, nil,
+		[]string{"\u5907\u6ce8", "\u91d1\u989d"}, map[string]string{"\u5907\u6ce8": "b", "\u91d1\u989d": "200"})
+	source, ok := second["table_row_source"].(map[string]any)
+	if !ok {
+		t.Fatalf("row source is %T", second["table_row_source"])
+	}
+	source["sheet_index"] = 2
+
+	profile, _ := ProjectTableChunks([]map[string]any{first, second}, "infinity")
+	if profile == nil {
+		t.Fatal("expected a profile")
+	}
+	if len(profile.Columns) != 2 {
+		t.Fatalf("columns = %#v", profile.Columns)
+	}
+	col, found := findColumn(profile.Columns, "\u91d1\u989d")
+	if !found {
+		t.Fatalf("column missing from %#v", profile.Columns)
+	}
+	if col.Index != 0 {
+		t.Errorf("the profile kept a per-sheet position: %d", col.Index)
+	}
+	if col.DataKey != entity.TableDataKey("\u91d1\u989d") {
+		t.Errorf("data key = %q", col.DataKey)
+	}
+}

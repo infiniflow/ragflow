@@ -759,6 +759,15 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	})
 }
 
+// terminalWriteBudget bounds one status write on the stop/failure path.
+const terminalWriteBudget = 5 * time.Second
+
+// revokeTableProfileBudget sizes the stop path's derived-state revoke. It is
+// longer than the document metadata lock's own acquisition budget, so a
+// contended lock is decided by the lock's deadline rather than by the shorter
+// terminal-write deadline.
+const revokeTableProfileBudget = 20 * time.Second
+
 // markStopped transitions the task to STOPPED (terminal). It first calls
 // RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
 // STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
@@ -768,9 +777,11 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 // cancelled, and a contaminated context would make the terminal write fail
 // exactly when it matters most.
 func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	task, err := e.ingestionTaskSvc.RequestStop(ctx, taskID)
+	// Each step is bounded on its own detached budget: a slow step must not
+	// consume the deadline of the terminal write that follows it.
+	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteBudget)
+	task, err := e.ingestionTaskSvc.RequestStop(stopCtx, taskID)
+	stopCancel()
 	if err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
 		return false
@@ -778,18 +789,26 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 	// Keep STOPPING until the last publisher has returned and its derived
 	// columns are revoked; a new parse may start as soon as we write STOPPED.
 	if task.Status == common.STOPPING && task.DocumentID != "" && e.docState != nil {
-		if err := e.docState.docSvc.RevokeTableProfile(ctx, task.DocumentID); err != nil {
+		// Revoking takes the document metadata lock, whose own acquisition budget is
+		// longer than a terminal write's. Sizing this by the terminal deadline would
+		// make it lose the lock to a concurrent publish and leave the task unsettled.
+		revokeCtx, revokeCancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTableProfileBudget)
+		err := e.docState.docSvc.RevokeTableProfile(revokeCtx, task.DocumentID)
+		revokeCancel()
+		if err != nil {
 			common.Error(fmt.Sprintf("markStopped: revoke table profile for %s: %v", task.DocumentID, err), err)
 			return false
 		}
 	}
-	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
+	writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteBudget)
+	defer writeCancel()
+	if err := e.ingestionTaskSvc.MarkStopped(writeCtx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
 	if rc := kvrocks.Get(); rc != nil {
 		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
-			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
+			rc.Delete(writeCtx, fmt.Sprintf("%s-cancel", taskID))
 			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
 		})
 	}

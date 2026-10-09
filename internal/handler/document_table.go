@@ -128,10 +128,9 @@ func writeTableProbeError(c *gin.Context, err error) {
 
 func tableProbeCode(business string) common.ErrorCode {
 	switch business {
-	case document.TableProbeUnsupportedFormat, "INVALID_TABLE_CONFIG", "DATASET_ACCESS_DENIED":
-		if business == "DATASET_ACCESS_DENIED" {
-			return common.CodePermissionError
-		}
+	case "DATASET_ACCESS_DENIED":
+		return common.CodePermissionError
+	case document.TableProbeUnsupportedFormat:
 		return common.CodeArgumentError
 	case document.TableProbeHeaderNotFound, document.TableProbeParseFailed:
 		return common.CodeDataError

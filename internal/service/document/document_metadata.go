@@ -1266,8 +1266,8 @@ func (s *DocumentService) WithDocumentMetadataLock(ctx context.Context, docID st
 		defer cancel()
 		store.DeleteIfEqual(releaseCtx, key, owner)
 	}()
-	if err := update(ctx); err != nil {
-		return err
-	}
-	return ctx.Err()
+	// The update's own error is the outcome. Reporting an expired deadline after
+	// a write that completed would turn a successful publish into a failure, and
+	// the caller would retry or leave the task unsettled.
+	return update(ctx)
 }

@@ -331,6 +331,13 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
+	// The document row is about to go, so the derived table state it published goes
+	// with it: nothing can re-derive it afterwards, and leaving it would keep the
+	// columns of a deleted document readable. This runs before the row is deleted
+	// because revoking reads the record it removes.
+	if err := s.revokeTableProfile(ctx, docID); err != nil {
+		return err
+	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
