@@ -143,7 +143,7 @@ func seedCanvasTemplates(ctx context.Context, db *gorm.DB, templates []*entity.C
 	return len(templates), nil
 }
 
-// parseCanvasTemplateFile validates a catalog identity. Standalone canvas DSLs
+// parseCanvasTemplateFile validates the catalog envelope. Standalone canvas DSLs
 // return nil without error because they are component fixtures, not catalog rows.
 func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
@@ -203,9 +203,11 @@ func parseCanvasTemplateFile(raw []byte) (*entity.CanvasTemplate, error) {
 		}
 	}
 
-	if v, ok := data["dsl"].(map[string]any); ok {
-		tmpl.DSL = v
+	dsl, ok := data["dsl"].(map[string]any)
+	if !ok {
+		return nil, fmt.Errorf("canvas template dsl must be an object")
 	}
+	tmpl.DSL = dsl
 
 	return tmpl, nil
 }

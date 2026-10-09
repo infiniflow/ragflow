@@ -54,7 +54,7 @@ func canvasSeedResourceDB(t *testing.T) *gorm.DB {
 		}
 	}
 	for _, id := range []string{"previous_agent", "previous_pipeline"} {
-		if err := db.Create(&entity.CanvasTemplate{ID: id, Title: entity.JSONMap{"en": id}, DSL: entity.JSONMap{}}).Error; err != nil {
+		if err := db.Create(&entity.CanvasTemplate{ID: id, Title: entity.JSONMap{"en": id}, DSL: entity.JSONMap{"sentinel": id}}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -169,6 +169,12 @@ func TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources(t *testing.T) {
 		{"missing_identity", true, false, `{"title":{"en":"broken"},"dsl":{}}`},
 		{"unreadable_file", true, false, ""},
 		{"trailing_garbage", true, false, `{"id":"bad","dsl":{}}garbage`},
+		{"missing_dsl", true, false, `{"id":"previous_pipeline"}`},
+		{"null_dsl", true, false, `{"id":"previous_pipeline","dsl":null}`},
+		{"string_dsl", true, false, `{"id":"previous_pipeline","dsl":"invalid"}`},
+		{"array_dsl", true, false, `{"id":"previous_pipeline","dsl":[]}`},
+		{"boolean_dsl", true, false, `{"id":"previous_pipeline","dsl":false}`},
+		{"number_dsl", true, false, `{"id":"previous_pipeline","dsl":42}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			db := canvasSeedResourceDB(t)
@@ -194,12 +200,13 @@ func TestSeedCanvasTemplatesPreservesRowsWithIncompleteResources(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, id := range []string{"previous_agent", "previous_pipeline"} {
-				var count int64
-				if err := db.Model(&entity.CanvasTemplate{}).Where("id = ?", id).Count(&count).Error; err != nil {
-					t.Fatal(err)
+				var row entity.CanvasTemplate
+				if err := db.Where("id = ?", id).Take(&row).Error; err != nil {
+					t.Errorf("existing %s lost with incomplete resources: %v", id, err)
+					continue
 				}
-				if count != 1 {
-					t.Errorf("existing %s deleted with incomplete resources", id)
+				if row.Title["en"] != id || row.DSL["sentinel"] != id {
+					t.Errorf("existing %s overwritten with incomplete resources: %#v", id, row)
 				}
 			}
 			if test.agent {
@@ -376,4 +383,38 @@ func TestBuiltInCanvasResourcesSeedWithoutIngestionDirectory(t *testing.T) {
 		}
 	}
 	assertEmbeddedCanvasCatalog(t, db)
+}
+
+// TestParseCanvasTemplateDSL keeps the catalog envelope contract without constraining DSL extensions.
+func TestParseCanvasTemplateDSL(t *testing.T) {
+	for _, test := range []struct {
+		name, raw, want string
+		invalid         bool
+	}{
+		{"empty_object", `{"id":"template","dsl":{}}`, `{}`, false},
+		{"extension_fields", `{"id":"template","dsl":{"version":2,"future":{"enabled":true,"limit":9007199254740993,"nodes":[]}}}`, `{"future":{"enabled":true,"limit":9007199254740993,"nodes":[]},"version":2}`, false},
+		{"missing", `{"id":"template"}`, "", true},
+		{"null", `{"id":"template","dsl":null}`, "", true},
+		{"string", `{"id":"template","dsl":"invalid"}`, "", true},
+		{"array", `{"id":"template","dsl":[]}`, "", true},
+		{"boolean", `{"id":"template","dsl":false}`, "", true},
+		{"number", `{"id":"template","dsl":42}`, "", true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			row, err := parseCanvasTemplateFile([]byte(test.raw))
+			if test.invalid {
+				if err == nil {
+					t.Fatalf("invalid DSL accepted: %#v", row)
+				}
+				return
+			}
+			if err != nil || row == nil || row.ID != "template" || row.DSL == nil {
+				t.Fatalf("valid DSL rejected: row=%#v err=%v", row, err)
+			}
+			raw, err := json.Marshal(row.DSL)
+			if err != nil || string(raw) != test.want {
+				t.Fatalf("DSL changed: got=%s want=%s err=%v", raw, test.want, err)
+			}
+		})
+	}
 }
