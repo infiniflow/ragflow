@@ -18,12 +18,14 @@ package task
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	kc "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // TestKnowledgeCompilerRegisteredByWiring locks the composition-root contract:
@@ -49,7 +51,11 @@ func TestKnowledgeCompilerRegisteredByWiring(t *testing.T) {
 type wikiPageStoreEngine struct {
 	engine.DocEngine
 	row      map[string]interface{}
+	getErr   error
 	getCalls int
+	getIndex string
+	getID    string
+	getKbIDs []string
 }
 
 func (e *wikiPageStoreEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
@@ -62,24 +68,80 @@ func (e *wikiPageStoreEngine) Search(_ context.Context, req *types.SearchRequest
 	return &types.SearchResult{Chunks: []map[string]interface{}{row}}, nil
 }
 
-func (e *wikiPageStoreEngine) GetChunk(_ context.Context, _ string, _ string, _ []string) (interface{}, error) {
+func (e *wikiPageStoreEngine) GetChunk(_ context.Context, index, id string, kbIDs []string) (interface{}, error) {
 	e.getCalls++
-	return e.row, nil
+	e.getIndex = index
+	e.getID = id
+	e.getKbIDs = append([]string(nil), kbIDs...)
+	return e.row, e.getErr
 }
 
-func TestGetPageBySlugReadsStoredMarkdownBody(t *testing.T) {
+func TestWikiPageStoreReadsBody(t *testing.T) {
 	const body = "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta)."
-	eng := &wikiPageStoreEngine{row: map[string]interface{}{
-		"id": "page1", "slug_kwd": "entity/alpha", "md_with_weight": body,
-		"compile_kwd": "wiki_page", "page_type_kwd": "entity",
-	}}
-	store := &kcWikiPageStore{docEngine: eng}
-	page, err := store.GetPageBySlug(t.Context(), "t1", "kb1", "entity/alpha")
-	if err != nil || page == nil {
-		t.Fatalf("page = %+v, err = %v", page, err)
+	getErr := errors.New("get chunk failed")
+	paths := []struct {
+		name string
+		read func(context.Context, *kcWikiPageStore) ([]kc.WikiPageCandidate, error)
+	}{
+		{name: "similar", read: func(ctx context.Context, store *kcWikiPageStore) ([]kc.WikiPageCandidate, error) {
+			return store.FindSimilarPages(ctx, "t1", "kb1", []float32{1, 2}, 3)
+		}},
+		{name: "slug", read: func(ctx context.Context, store *kcWikiPageStore) ([]kc.WikiPageCandidate, error) {
+			page, err := store.GetPageBySlug(ctx, "t1", "kb1", "entity/alpha")
+			if page == nil {
+				return nil, err
+			}
+			return []kc.WikiPageCandidate{*page}, err
+		}},
+		{name: "source chunks", read: func(ctx context.Context, store *kcWikiPageStore) ([]kc.WikiPageCandidate, error) {
+			return store.FindPagesBySourceChunks(ctx, "t1", "kb1", []string{"source1"}, 3)
+		}},
 	}
-	if page.ContentMD != body || page.ContentMDRaw != body || eng.getCalls != 1 {
-		t.Fatalf("incremental page body changed: %+v", page)
+	cases := []struct {
+		name         string
+		canonical    string
+		hasCanonical bool
+		getErr       error
+		wantBody     string
+		wantGetCalls int
+	}{
+		{name: "stored markdown", wantBody: body, wantGetCalls: 1},
+		{name: "empty canonical", hasCanonical: true, wantBody: body, wantGetCalls: 1},
+		{name: "canonical wins", canonical: "# Updated body", hasCanonical: true, wantBody: "# Updated body"},
+		{name: "whitespace canonical", canonical: "\n\t ", hasCanonical: true},
+		{name: "load failure", getErr: getErr, wantGetCalls: 1},
+	}
+	for _, path := range paths {
+		t.Run(path.name, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					row := map[string]interface{}{
+						"id": "page1", "slug_kwd": "entity/alpha", "md_with_weight": body,
+						"compile_kwd": "wiki_page", "page_type_kwd": "entity",
+					}
+					if tc.hasCanonical {
+						row["content_with_weight"] = tc.canonical
+					}
+					eng := &wikiPageStoreEngine{row: row, getErr: tc.getErr}
+					pages, err := path.read(t.Context(), &kcWikiPageStore{docEngine: eng})
+					if !errors.Is(err, tc.getErr) {
+						t.Fatalf("read error = %v, want %v", err, tc.getErr)
+					}
+					if eng.getCalls != tc.wantGetCalls {
+						t.Fatalf("GetChunk calls = %d, want %d", eng.getCalls, tc.wantGetCalls)
+					}
+					if eng.getCalls > 0 && (eng.getIndex != "ragflow_t1" || eng.getID != "page1" || len(eng.getKbIDs) != 1 || eng.getKbIDs[0] != "kb1") {
+						t.Fatalf("GetChunk scope = (%q, %q, %v), want (ragflow_t1, page1, [kb1])", eng.getIndex, eng.getID, eng.getKbIDs)
+					}
+					if err != nil {
+						return
+					}
+					if len(pages) != 1 || pages[0].ContentMD != tc.wantBody || pages[0].ContentMDRaw != tc.wantBody {
+						t.Fatalf("pages = %+v, want one page with body %q", pages, tc.wantBody)
+					}
+				})
+			}
+		})
 	}
 }
 

@@ -865,7 +865,11 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 	}
 	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
-		out = append(out, wikiPageCandidateFromRow(row))
+		candidate, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, candidate)
 	}
 	return out, nil
 }
@@ -888,16 +892,10 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 	if err != nil || res == nil || len(res.Chunks) == 0 {
 		return nil, err
 	}
-	row := res.Chunks[0]
-	if enginetypes.WikiPageContent(row) == "" {
-		raw, err := s.docEngine.GetChunk(ctx, req.IndexNames[0], anyString(row["id"]), req.KbIDs)
-		if err != nil {
-			return nil, err
-		}
-		stored, _ := raw.(map[string]interface{})
-		row["content_with_weight"] = enginetypes.WikiPageContent(stored)
+	page, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, res.Chunks[0])
+	if err != nil {
+		return nil, err
 	}
-	page := wikiPageCandidateFromRow(row)
 	return &page, nil
 }
 
@@ -921,13 +919,32 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 	}
 	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
-		candidate := wikiPageCandidateFromRow(row)
+		candidate, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, row)
+		if err != nil {
+			return nil, err
+		}
 		if candidate.Score == 0 {
 			candidate.Score = 0.68
 		}
 		out = append(out, candidate)
 	}
 	return out, nil
+}
+
+func (s *kcWikiPageStore) loadPageCandidate(ctx context.Context, indexName string, datasetIDs []string, row map[string]interface{}) (kc.WikiPageCandidate, error) {
+	page := wikiPageCandidateFromRow(row)
+	if enginetypes.WikiPageContent(row) != "" {
+		return page, nil
+	}
+	raw, err := s.docEngine.GetChunk(ctx, indexName, page.ID, datasetIDs)
+	if err != nil {
+		return kc.WikiPageCandidate{}, err
+	}
+	stored, _ := raw.(map[string]interface{})
+	content := strings.TrimSpace(enginetypes.WikiPageContent(stored))
+	page.ContentMD = content
+	page.ContentMDRaw = content
+	return page, nil
 }
 
 func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
