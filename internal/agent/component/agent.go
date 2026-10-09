@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/dao"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -444,6 +445,19 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 	return strings.TrimSpace(resp.Content), nil
 }
 
+// citationGroundingMarkerRe matches canonical [ID:n] / [ID: n] markers that
+// the grounding call is asked to insert. Used only to decide whether a
+// grounding response still has answer text after the markers are removed.
+var citationGroundingMarkerRe = regexp.MustCompile(`\[(?:ID:\s*)?[0-9]+\]`)
+
+// citationGroundingHasSubstantiveText reports whether s contains any
+// non-whitespace text once citation markers are stripped. Marker-only
+// responses such as "[ID:0] [ID:1]" must not replace the first-pass answer.
+func citationGroundingHasSubstantiveText(s string) bool {
+	stripped := citationGroundingMarkerRe.ReplaceAllString(s, "")
+	return strings.TrimSpace(stripped) != ""
+}
+
 // applyCitationGrounding is the post-stream citation grounding
 // call. It reads the chunks recorded in state.Retrieval["chunks"]
 // (populated by the Retrieval tool), renders
@@ -453,7 +467,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 //
 // Streams grounded deltas when the invoker supports streaming. Returns the
 // original content when no chunks are available or the call fails before
-// emitting anything.
+// emitting anything. Marker-only grounding responses fall back to the
+// original answer; if invalid deltas were already streamed, an error is
+// returned so the caller does not append the first-pass text afterward.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -479,6 +495,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	}
 	var resp *ChatInvokeResponse
 	var err error
+	emittedVisible := false
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
 		var leadingWhitespace strings.Builder
 		emitting := false
@@ -497,6 +514,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 				delta = leadingWhitespace.String()
 				emitting = true
 			}
+			emittedVisible = true
 			runtime.EmitAgentMessage(ctx, delta, "")
 			return nil
 		})
@@ -513,6 +531,16 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
 	if strings.TrimSpace(resp.Content) == "" {
+		return content, nil
+	}
+	// Marker-only grounding must not silently replace the first-pass answer
+	// (#20613). Non-stream (or stream that never emitted) can fall back.
+	// Once invalid deltas have already been streamed, surface an error so the
+	// caller does not append the original answer after the bad markers.
+	if !citationGroundingHasSubstantiveText(resp.Content) {
+		if emittedVisible {
+			return content, fmt.Errorf("citation grounding returned markers without answer text")
+		}
 		return content, nil
 	}
 	return resp.Content, nil

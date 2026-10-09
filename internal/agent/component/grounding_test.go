@@ -25,6 +25,7 @@ package component
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -241,6 +242,129 @@ func TestGrounding_EmptyContent(t *testing.T) {
 	}
 	if got, want := out["content"], "original"; got != want {
 		t.Errorf("content=%v, want %v (empty grounding should preserve original)", got, want)
+	}
+}
+
+// TestCitationGroundingHasSubstantiveText: marker-only strings are rejected;
+// real answer text (with or without markers) is accepted.
+func TestCitationGroundingHasSubstantiveText(t *testing.T) {
+	cases := []struct {
+		in   string
+		want bool
+	}{
+		{"", false},
+		{"   ", false},
+		{"[ID:0]", false},
+		{"[ID:0] [ID:1]", false},
+		{"[ID: 0]\n[ID:1]", false},
+		{"The reimbursement request requires manager approval.", true},
+		{"The reimbursement request requires manager approval. [ID:0]", true},
+		{"答案[ID:0]", true},
+	}
+	for _, tc := range cases {
+		if got := citationGroundingHasSubstantiveText(tc.in); got != tc.want {
+			t.Errorf("citationGroundingHasSubstantiveText(%q)=%v, want %v", tc.in, got, tc.want)
+		}
+	}
+}
+
+// TestGrounding_MarkerOnlyFallsBack: non-streaming grounding that returns
+// only [ID:…] markers must keep the first-pass answer (#20613).
+func TestGrounding_MarkerOnlyFallsBack(t *testing.T) {
+	inv := &groundingTestInvoker{responses: []string{"[ID:0] [ID:1]"}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "The reimbursement request requires manager approval."}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "policy text"}})
+	ctx := runtime.WithState(t.Context(), state)
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	want := "The reimbursement request requires manager approval."
+	if got, _ := out["content"].(string); got != want {
+		t.Errorf("content=%q, want %q (marker-only grounding must not replace original)", got, want)
+	}
+	if got := out["grounding_status"]; got == "applied" {
+		t.Errorf("grounding_status=%v, want not applied for marker-only response", got)
+	}
+	if inv.calls != 1 {
+		t.Errorf("expected 1 grounding call, got %d", inv.calls)
+	}
+}
+
+// TestGrounding_MarkerOnlyStreamErrors: once marker-only deltas have been
+// streamed, grounding must surface an error rather than silently accepting
+// the markers or re-emitting the original answer afterward (#20613).
+func TestGrounding_MarkerOnlyStreamErrors(t *testing.T) {
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"[ID:0] [ID:1]"}}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "The reimbursement request requires manager approval."}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "policy text"}})
+	ctx := runtime.WithState(t.Context(), state)
+	var streamed string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		streamed += content
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err == nil {
+		t.Fatal("Invoke: want error after marker-only grounding stream, got nil")
+	}
+	if !strings.Contains(err.Error(), "markers without answer text") {
+		t.Errorf("error=%v, want markers-without-answer-text", err)
+	}
+	if streamed == "" {
+		t.Error("expected marker deltas to have been emitted before the error")
+	}
+	if inv.streamCalls != 1 {
+		t.Errorf("expected 1 stream call, got %d", inv.streamCalls)
+	}
+}
+
+// TestGrounding_MarkersWithTextStillApplied: a grounded answer that keeps
+// substantive text plus markers is still accepted.
+func TestGrounding_MarkersWithTextStillApplied(t *testing.T) {
+	inv := &groundingTestInvoker{responses: []string{"The reimbursement request requires manager approval. [ID:0]"}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "The reimbursement request requires manager approval."}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "policy text"}})
+	ctx := runtime.WithState(t.Context(), state)
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	want := "The reimbursement request requires manager approval. [ID:0]"
+	if got, _ := out["content"].(string); got != want {
+		t.Errorf("content=%q, want %q", got, want)
+	}
+	if got := out["grounding_status"]; got != "applied" {
+		t.Errorf("grounding_status=%v, want applied", got)
 	}
 }
 
