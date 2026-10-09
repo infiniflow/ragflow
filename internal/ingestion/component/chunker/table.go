@@ -35,11 +35,11 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/agent/runtime"
-	"ragflow/internal/ingestion/component/schema"
-	ingestiontable "ragflow/internal/ingestion/table"
-
 	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 const ComponentNameTableChunker = "TableChunker"
@@ -67,7 +67,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 	}
 	if v, ok := conf["column_mode"]; ok {
 		handled["column_mode"] = struct{}{}
-		mode, err := ingestiontable.ValidateMode(v)
+		mode, err := common.ValidateTableMode(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
 		} else {
@@ -76,7 +76,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 	}
 	if v, ok := conf["column_roles"]; ok {
 		handled["column_roles"] = struct{}{}
-		roles, err := ingestiontable.ValidateRoles(v)
+		roles, err := common.ValidateTableRoles(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
 		} else {
@@ -89,7 +89,7 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 func (tableChunkerParam) Defaults() tableChunkerParam {
 	return tableChunkerParam{
 		TableChunkerParam: schema.TableChunkerParam{
-			ColumnMode:  ingestiontable.ModeAuto,
+			ColumnMode:  common.TableModeAuto,
 			ColumnRoles: map[string]string{},
 		},
 	}
@@ -99,12 +99,12 @@ func (p tableChunkerParam) Validate() error {
 	if p.updateErr != nil {
 		return p.updateErr
 	}
-	if p.ColumnMode != ingestiontable.ModeAuto && p.ColumnMode != ingestiontable.ModeManual {
+	if p.ColumnMode != common.TableModeAuto && p.ColumnMode != common.TableModeManual {
 		return fmt.Errorf("column_mode %q is invalid: only %q and %q are allowed",
-			p.ColumnMode, ingestiontable.ModeAuto, ingestiontable.ModeManual)
+			p.ColumnMode, common.TableModeAuto, common.TableModeManual)
 	}
 	for key, role := range p.ColumnRoles {
-		if !ingestiontable.ValidRole(role) {
+		if !common.IsValidTableRole(role) {
 			return fmt.Errorf("column_roles[%q] has an invalid role %q", key, role)
 		}
 	}
@@ -146,17 +146,17 @@ type tableProfile struct {
 
 func (p tableProfile) roleFor(key string) string {
 	if !p.manual {
-		return ingestiontable.RoleBoth
+		return common.TableRoleBoth
 	}
 	if role, ok := p.roles[key]; ok {
 		return role
 	}
-	return ingestiontable.RoleBoth
+	return common.TableRoleBoth
 }
 
 // effectiveRoles resolves each column's role for building a row. An unset
 // manual column behaves as both.
-func (p tableProfile) effectiveRoles(cols []ingestiontable.Column) map[string]string {
+func (p tableProfile) effectiveRoles(cols []common.TableColumn) map[string]string {
 	roles := make(map[string]string, len(cols))
 	for _, col := range cols {
 		roles[col.Key] = p.roleFor(col.Key)
@@ -190,7 +190,7 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		nodeID: runtime.ComponentNodeID(ctx),
 		mode:   c.param.ColumnMode,
 		roles:  c.param.ColumnRoles,
-		manual: c.param.ColumnMode == ingestiontable.ModeManual,
+		manual: c.param.ColumnMode == common.TableModeManual,
 	}
 
 	switch upstream.OutputFormat {
@@ -322,7 +322,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 			profile.mode, describeTableItem(item), len(rows), len(matrix))
 	}
 
-	cols := ingestiontable.DeriveColumns(names)
+	cols := common.DeriveTableColumns(names)
 	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
@@ -393,7 +393,7 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 // the columns readable as structured values, with an empty cell written as an
 // empty string so the row's field set stays the sheet's field set. A row whose
 // cells are all empty yields nothing.
-func projectTableRow(cols []ingestiontable.Column, roles map[string]string, cells []string) (string, map[string]any) {
+func projectTableRow(cols []common.TableColumn, roles map[string]string, cells []string) (string, map[string]any) {
 	lines := make([]string, 0, len(cells))
 	data := make(map[string]any, len(cols))
 	hasValue := false
@@ -406,10 +406,10 @@ func projectTableRow(cols []ingestiontable.Column, roles map[string]string, cell
 			hasValue = true
 		}
 		role := roles[col.Key]
-		if role != ingestiontable.RoleMetadata && value != "" {
+		if role != common.TableRoleMetadata && value != "" {
 			lines = append(lines, "- "+col.DisplayName+": "+value)
 		}
-		if role != ingestiontable.RoleIndexing {
+		if role != common.TableRoleIndexing {
 			data[col.DataKey] = value
 		}
 	}

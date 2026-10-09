@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
 
@@ -95,7 +95,7 @@ func ProcessChunksForPipeline(
 
 		if _, exists := ck["id"]; !exists {
 			identity := text
-			if rowIdentity, ok := ingestiontable.RowIdentity(ck); ok {
+			if rowIdentity, ok := schema.TableRowIdentity(ck); ok {
 				identity = rowIdentity
 			}
 			ck["id"] = common.ChunkID(docID, identity)
@@ -271,7 +271,7 @@ func isSpreadsheetChunk(ck map[string]any) bool {
 func validateTableRows(chunks []map[string]any) error {
 	seen := make(map[string][]any)
 	for _, chunk := range chunks {
-		identity, ok := ingestiontable.RowIdentity(chunk)
+		identity, ok := schema.TableRowIdentity(chunk)
 		if !ok {
 			continue
 		}

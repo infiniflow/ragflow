@@ -8,14 +8,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
-
-	"github.com/google/uuid"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 // keepDatasetOrderTerms narrows the requested terms to the columns the dataset
@@ -232,7 +232,7 @@ func validateTableColumnConfig(parserConfig map[string]any) error {
 		case "table_column_mode", "table_column_roles", "table_column_names":
 			return fmt.Errorf("parser_config key %q must be configured on a TableChunker node", key)
 		}
-		if !ingestiontable.IsNodeKey(key) {
+		if !schema.IsTableChunkerNodeKey(key) {
 			continue
 		}
 		params, ok := value.(map[string]interface{})
@@ -241,7 +241,7 @@ func validateTableColumnConfig(parserConfig map[string]any) error {
 		}
 		// Only the column fields are checked here; the node's other parameters
 		// belong to their own components and are filtered against the DSL.
-		if _, _, err := ingestiontable.ValidateColumnFields(params); err != nil {
+		if _, _, err := schema.ValidateTableColumnFields(params); err != nil {
 			return fmt.Errorf("parser_config[%q]: %w", key, err)
 		}
 	}

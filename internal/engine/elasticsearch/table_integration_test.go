@@ -10,15 +10,16 @@ import (
 	"time"
 
 	"github.com/xuri/excelize/v2"
+
 	"ragflow/internal/common"
-	es "ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/chunker"
-	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/server/config"
 	"ragflow/internal/tokenizer"
+	es "ragflow/internal/engine/elasticsearch"
 )
 
 func TestTableColumnModeRoundTrip(t *testing.T) {
@@ -157,7 +158,7 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 				if !ok {
 					t.Fatalf("chunk_data = %#v", stored)
 				}
-				if data[ingestiontable.DataKey("金额")] != "secretword" || fmt.Sprint(stored["table_row_int"]) != "1" {
+				if data[common.TableDataKey("金额")] != "secretword" || fmt.Sprint(stored["table_row_int"]) != "1" {
 					t.Fatalf("structured row = %#v", stored)
 				}
 				if mode == "auto" && (!strings.Contains(body, "secretword") || len(data) != 4) {
@@ -167,7 +168,7 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 					if strings.Contains(body, "secretword") || !strings.Contains(body, "visibleword") || !strings.Contains(body, "bothword") || !strings.Contains(body, "defaultword") {
 						t.Fatalf("manual body = %q", body)
 					}
-					if _, exists := data[ingestiontable.DataKey("名称")]; exists {
+					if _, exists := data[common.TableDataKey("名称")]; exists {
 						t.Fatal("indexing-only value entered JSON")
 					}
 				}
@@ -196,12 +197,12 @@ func TestTableColumnModeRoundTrip(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				metadata[ingestiontable.ProfileMetadataField] = encoded
+				metadata[entity.TableProfileMetadataField] = encoded
 				metadata["user"] = "kept"
 				if _, err := e.InsertMetadata(ctx, []map[string]interface{}{{"id": doc, "kb_id": kb, "meta_fields": metadata}}, tenant); err != nil {
 					t.Fatal(err)
 				}
-				keys := append([]string{ingestiontable.ProfileMetadataField}, profile.OwnedKeys()...)
+				keys := append([]string{entity.TableProfileMetadataField}, profile.OwnedKeys()...)
 				if err := e.DeleteMetadataKeys(ctx, doc, kb, keys, tenant); err != nil {
 					t.Fatal(err)
 				}

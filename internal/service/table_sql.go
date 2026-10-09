@@ -25,7 +25,7 @@ import (
 
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/sqlscan"
+	"ragflow/internal/utility"
 )
 
 // A structured table answer reads the index directly, so the statement a model
@@ -39,7 +39,7 @@ import (
 const tableSQLBudgetBytes = 64 << 10
 
 // jsonPathRe matches a JSONPath that addresses one indexed table column. The
-// key is a hash of a header (table.DataKey), so a path either names a column a
+// key is a hash of a header (common.TableDataKey), so a path either names a column a
 // document published or was invented.
 var jsonPathRe = regexp.MustCompile(`^\$\.(c_[0-9a-f]{64})$`)
 
@@ -227,17 +227,17 @@ func (q *tableSQL) run(ctx context.Context, sqlText string) ([]map[string]interf
 // ones in range. Anything it cannot fully account for is refused: an unreadable
 // statement is a skipped SQL answer, never a partially checked one.
 func (p *tableSQLPolicy) check(sqlText string) (*tableSQLStatement, error) {
-	tokens, err := sqlscan.Scan(sqlText)
+	tokens, err := utility.SQLScan(sqlText)
 	if err != nil {
 		return nil, err
 	}
-	shape, err := sqlscan.SplitSelect(tokens)
+	shape, err := utility.SQLSplitSelect(tokens)
 	if err != nil {
 		return nil, err
 	}
 	clauses := shape.Clauses
 
-	table, err := sqlscan.TableReference(clauses.From)
+	table, err := utility.SQLTableReference(clauses.From)
 	if err != nil {
 		return nil, err
 	}
@@ -247,7 +247,7 @@ func (p *tableSQLPolicy) check(sqlText string) (*tableSQLStatement, error) {
 
 	for _, clause := range []struct {
 		label  string
-		tokens []sqlscan.Token
+		tokens []utility.SQLToken
 	}{
 		{"select", clauses.Select}, {"where", clauses.Where}, {"group by", clauses.GroupBy},
 		{"having", clauses.Having}, {"order by", clauses.OrderBy},
@@ -263,7 +263,7 @@ func (p *tableSQLPolicy) check(sqlText string) (*tableSQLStatement, error) {
 // rewrite puts the range in front of whatever the caller asked for. The
 // caller's own condition keeps its parentheses, so an OR inside it cannot open
 // out into the injected conditions.
-func (p *tableSQLPolicy) rewrite(shape *sqlscan.StatementShape) (*tableSQLStatement, error) {
+func (p *tableSQLPolicy) rewrite(shape *utility.SQLStatementShape) (*tableSQLStatement, error) {
 	clauses := shape.Clauses
 	conditions := make([]string, 0, 5)
 	if p.kbCondition != "" {
@@ -276,20 +276,20 @@ func (p *tableSQLPolicy) rewrite(shape *sqlscan.StatementShape) (*tableSQLStatem
 	conditions = append(conditions, docCondition)
 	conditions = append(conditions, "available_int = 1", "table_row_int = 1")
 
-	parts := []string{"select " + sqlscan.Render(clauses.Select, p.quote), "from " + p.tableName}
-	where := sqlscan.Render(clauses.Where, p.quote)
+	parts := []string{"select " + utility.SQLRender(clauses.Select, p.quote), "from " + p.tableName}
+	where := utility.SQLRender(clauses.Where, p.quote)
 	if where != "" {
 		conditions = append(conditions, "("+where+")")
 	}
 	parts = append(parts, "where "+strings.Join(conditions, " and "))
 	for _, clause := range []struct {
 		keyword string
-		tokens  []sqlscan.Token
+		tokens  []utility.SQLToken
 	}{
 		{"group by", clauses.GroupBy}, {"having", clauses.Having}, {"order by", clauses.OrderBy},
 		{"limit", clauses.Limit}, {"offset", clauses.Offset},
 	} {
-		if rendered := sqlscan.Render(clause.tokens, p.quote); rendered != "" {
+		if rendered := utility.SQLRender(clause.tokens, p.quote); rendered != "" {
 			parts = append(parts, clause.keyword+" "+rendered)
 		}
 	}
@@ -330,7 +330,7 @@ func tableComparison(column, value string) (string, error) {
 	if !tableIdentifierRe.MatchString(value) {
 		return "", fmt.Errorf("value %q is not readable", value)
 	}
-	quoted, err := sqlscan.QuoteLiteral(value)
+	quoted, err := utility.SQLQuoteLiteral(value)
 	if err != nil {
 		return "", err
 	}
@@ -343,23 +343,23 @@ func tableComparison(column, value string) (string, error) {
 // validate reads one clause against what a table answer may ask for. It walks
 // tokens rather than matching text, so a keyword inside a value stays a value
 // and an unknown word is a refusal.
-func (p *tableSQLPolicy) validate(clause []sqlscan.Token, label string) error {
+func (p *tableSQLPolicy) validate(clause []utility.SQLToken, label string) error {
 	for i := 0; i < len(clause); i++ {
 		token := clause[i]
 		switch token.Kind {
-		case sqlscan.Number, sqlscan.String:
+		case utility.SQLNumber, utility.SQLString:
 			continue
-		case sqlscan.Quoted:
+		case utility.SQLQuoted:
 			// A quoted name means nothing here except as the label a caller put
 			// on a result column.
 			if i == 0 || !clause[i-1].IsWord("as") {
 				return fmt.Errorf("%s: %q is not a column this query may read", label, token.Name)
 			}
-		case sqlscan.Punct:
+		case utility.SQLPunct:
 			if !tableOperators[token.Lower] {
 				return fmt.Errorf("%s: %q is not a supported operator", label, token.Text)
 			}
-		case sqlscan.Word:
+		case utility.SQLWord:
 			used, err := p.validateWord(clause, i, label)
 			if err != nil {
 				return err
@@ -373,7 +373,7 @@ func (p *tableSQLPolicy) validate(clause []sqlscan.Token, label string) error {
 // validateWord reads one word together with however far its name reaches: a
 // function call, a qualified column, a result label, or a plain name. It
 // returns the index after everything it consumed.
-func (p *tableSQLPolicy) validateWord(clause []sqlscan.Token, i int, label string) (int, error) {
+func (p *tableSQLPolicy) validateWord(clause []utility.SQLToken, i int, label string) (int, error) {
 	token := clause[i]
 	if isPunctAt(clause, i+1, "(") {
 		if !tableFunctions[token.Lower] {
@@ -401,8 +401,8 @@ func (p *tableSQLPolicy) validateWord(clause []sqlscan.Token, i int, label strin
 // validateQualifiedName reads table.column. Only the table the query is
 // restricted to may qualify a column, so a name cannot point at another table
 // while the range check is looking at this one.
-func (p *tableSQLPolicy) validateQualifiedName(clause []sqlscan.Token, i int, label string) (int, error) {
-	segments := []sqlscan.Token{clause[i]}
+func (p *tableSQLPolicy) validateQualifiedName(clause []utility.SQLToken, i int, label string) (int, error) {
+	segments := []utility.SQLToken{clause[i]}
 	next := i + 1
 	for isPunctAt(clause, next, ".") {
 		if next+1 >= len(clause) || !isName(clause[next+1]) {
@@ -425,8 +425,8 @@ func (p *tableSQLPolicy) validateQualifiedName(clause []sqlscan.Token, i int, la
 // validateJSONPath checks that a JSON extraction reads a published column by
 // its stored key. The readable name is never the address; it is what the answer
 // is labelled with afterwards.
-func (p *tableSQLPolicy) validateJSONPath(clause []sqlscan.Token, name int, label string) error {
-	args, _, err := sqlscan.CallArguments(clause, name)
+func (p *tableSQLPolicy) validateJSONPath(clause []utility.SQLToken, name int, label string) error {
+	args, _, err := utility.SQLCallArguments(clause, name)
 	if err != nil {
 		return fmt.Errorf("%s: %s: %w", label, clause[name].Text, err)
 	}
@@ -434,9 +434,9 @@ func (p *tableSQLPolicy) validateJSONPath(clause []sqlscan.Token, name int, labe
 		return fmt.Errorf("%s: %s needs a column and a path, got %d arguments", label, clause[name].Text, len(args))
 	}
 	if len(args[0]) != 1 || !args[0][0].IsWord("chunk_data") {
-		return fmt.Errorf("%s: %s reads %q, want chunk_data", label, clause[name].Text, sqlscan.Render(args[0], 0))
+		return fmt.Errorf("%s: %s reads %q, want chunk_data", label, clause[name].Text, utility.SQLRender(args[0], 0))
 	}
-	if len(args[1]) != 1 || args[1][0].Kind != sqlscan.String {
+	if len(args[1]) != 1 || args[1][0].Kind != utility.SQLString {
 		return fmt.Errorf("%s: %s needs a quoted path", label, clause[name].Text)
 	}
 	match := jsonPathRe.FindStringSubmatch(args[1][0].Value)
@@ -449,15 +449,15 @@ func (p *tableSQLPolicy) validateJSONPath(clause []sqlscan.Token, name int, labe
 	return nil
 }
 
-func isPunctAt(tokens []sqlscan.Token, i int, punct string) bool {
+func isPunctAt(tokens []utility.SQLToken, i int, punct string) bool {
 	return i >= 0 && i < len(tokens) && tokens[i].IsPunct(punct)
 }
 
-func isName(token sqlscan.Token) bool {
-	return token.Kind == sqlscan.Word || token.Kind == sqlscan.Quoted
+func isName(token utility.SQLToken) bool {
+	return token.Kind == utility.SQLWord || token.Kind == utility.SQLQuoted
 }
 
-func joinNames(tokens []sqlscan.Token) string {
+func joinNames(tokens []utility.SQLToken) string {
 	names := make([]string, 0, len(tokens))
 	for _, token := range tokens {
 		names = append(names, token.Name)
@@ -483,4 +483,14 @@ func restrictToRequestedDocs(publishing, requested []string) []string {
 		}
 	}
 	return restricted
+}
+
+// SupportsStructuredTableSQL reports whether the active engine can answer a
+// query against the columns a derived profile describes. The profile names
+// columns by the JSON key they are stored under, which only an engine whose SQL
+// prompt extracts from a JSON column can read back; Elasticsearch, OpenSearch
+// and SereneDB address physical fields, so handing them a JSON field map would
+// generate a query nothing can answer.
+func SupportsStructuredTableSQL(engineName string) bool {
+	return engineName == string(engine.EngineInfinity) || engine.IsOceanBaseFamily(engineName)
 }

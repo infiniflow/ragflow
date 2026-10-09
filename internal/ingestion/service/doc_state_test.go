@@ -25,8 +25,8 @@ import (
 	"testing"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	ingestiontable "ragflow/internal/ingestion/table"
 	taskpkg "ragflow/internal/ingestion/task"
 )
 
@@ -49,14 +49,14 @@ func (s *stubDocStateSvc) WithDocumentMetadataLock(ctx context.Context, _ string
 }
 
 func (s *stubDocStateSvc) RevokeTableProfile(ctx context.Context, docID string) error {
-	profile, _, err := ingestiontable.DecodeProfile(s.metaData[ingestiontable.ProfileMetadataField])
+	profile, _, err := entity.DecodeTableProfile(s.metaData[entity.TableProfileMetadataField])
 	if err != nil {
 		return err
 	}
 	for _, key := range profile.OwnedKeys() {
 		delete(s.metaData, key)
 	}
-	delete(s.metaData, ingestiontable.ProfileMetadataField)
+	delete(s.metaData, entity.TableProfileMetadataField)
 	return nil
 }
 
@@ -319,10 +319,10 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 	}
 }
 
-func tableProfileForTest(owned []string) *ingestiontable.Profile {
-	return &ingestiontable.Profile{
+func tableProfileForTest(owned []string) *entity.TableProfile {
+	return &entity.TableProfile{
 		Engine:        "infinity",
-		Columns:       ingestiontable.DeriveColumns([]string{"金额"}),
+		Columns:       common.DeriveTableColumns([]string{"金额"}),
 		OwnedMetadata: owned,
 	}
 }
@@ -340,11 +340,11 @@ func TestPublishTableProfileWritesRecordAndValues(t *testing.T) {
 		t.Fatalf("apply: %v", err)
 	}
 
-	raw, ok := svc.metaData[ingestiontable.ProfileMetadataField].(string)
+	raw, ok := svc.metaData[entity.TableProfileMetadataField].(string)
 	if !ok {
 		t.Fatalf("profile not published: %v", svc.metaData)
 	}
-	stored, decoded, err := ingestiontable.DecodeProfile(raw)
+	stored, decoded, err := entity.DecodeTableProfile(raw)
 	if err != nil || !decoded {
 		t.Fatalf("stored profile unreadable: ok=%v err=%v", decoded, err)
 	}
@@ -372,9 +372,9 @@ func TestPublishNarrowsPreviousColumnValues(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	svc := &stubDocStateSvc{metaData: map[string]any{
-		ingestiontable.ProfileMetadataField: encoded,
-		"金额":                                []string{"100", "200", "300"},
-		"作者":                                "张三",
+		entity.TableProfileMetadataField: encoded,
+		"金额":                             []string{"100", "200", "300"},
+		"作者":                             "张三",
 	}}
 	u := &docStateUpdater{docSvc: svc}
 
@@ -409,9 +409,9 @@ func TestPublishRetiredColumnIsDeleted(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	svc := &stubDocStateSvc{metaData: map[string]any{
-		ingestiontable.ProfileMetadataField: encoded,
-		"金额":                                []string{"100"},
-		"作者":                                "张三",
+		entity.TableProfileMetadataField: encoded,
+		"金额":                             []string{"100"},
+		"作者":                             "张三",
 	}}
 	u := &docStateUpdater{docSvc: svc}
 
@@ -425,10 +425,10 @@ func TestPublishRetiredColumnIsDeleted(t *testing.T) {
 	if _, still := svc.metaData["金额"]; still {
 		t.Errorf("a retired column must be deleted: %v", svc.metaData)
 	}
-	if _, still := svc.metaData[ingestiontable.ProfileMetadataField]; still {
+	if _, still := svc.metaData[entity.TableProfileMetadataField]; still {
 		t.Errorf("a document with no table rows must not keep a profile: %v", svc.metaData)
 	}
-	if !containsKey(svc.deletedKeys, ingestiontable.ProfileMetadataField) || !containsKey(svc.deletedKeys, "金额") {
+	if !containsKey(svc.deletedKeys, entity.TableProfileMetadataField) || !containsKey(svc.deletedKeys, "金额") {
 		t.Errorf("expected explicit deletes, got %v", svc.deletedKeys)
 	}
 	if svc.metaData["作者"] != "张三" || svc.metaData["摘要"] != "季度销售" {
@@ -445,8 +445,8 @@ func TestPublishDoesNotRevokeTakenOverKey(t *testing.T) {
 		t.Fatalf("encode: %v", err)
 	}
 	svc := &stubDocStateSvc{metaData: map[string]any{
-		ingestiontable.ProfileMetadataField: encoded,
-		"金额":                                []string{"用户写的"},
+		entity.TableProfileMetadataField: encoded,
+		"金额":                             []string{"用户写的"},
 	}}
 	u := &docStateUpdater{docSvc: svc}
 
@@ -493,8 +493,8 @@ func TestPublishReadFailureFailsTheRun(t *testing.T) {
 func TestPublishColumnPreservesUnownedValue(t *testing.T) {
 	for _, previous := range []any{nil, publishedUnownedProfile(t)} {
 		svc := &stubDocStateSvc{metaData: map[string]any{
-			ingestiontable.ProfileMetadataField: previous,
-			"金额":                                []string{"用户写的"},
+			entity.TableProfileMetadataField: previous,
+			"金额":                             []string{"用户写的"},
 		}}
 		if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{
 			DocID:        "doc-1",
@@ -506,7 +506,7 @@ func TestPublishColumnPreservesUnownedValue(t *testing.T) {
 		if got := fmt.Sprint(svc.metaData["金额"]); got != "[用户写的]" {
 			t.Errorf("table overwrote an unowned value: %s", got)
 		}
-		profile, ok, err := ingestiontable.DecodeProfile(svc.metaData[ingestiontable.ProfileMetadataField])
+		profile, ok, err := entity.DecodeTableProfile(svc.metaData[entity.TableProfileMetadataField])
 		if err != nil || !ok || len(profile.OwnedMetadata) != 0 {
 			t.Fatalf("publisher claimed user metadata: %#v, %v", profile, err)
 		}
@@ -527,11 +527,11 @@ func TestPublishEmptyRunRevokesPreviousTable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "金额": []string{"100"}}}
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "金额": []string{"100"}}}
 	if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := svc.metaData[ingestiontable.ProfileMetadataField]; ok {
+	if _, ok := svc.metaData[entity.TableProfileMetadataField]; ok {
 		t.Fatal("an empty run left an old table profile queryable")
 	}
 	if _, ok := svc.metaData["金额"]; ok {
@@ -562,16 +562,16 @@ func TestStopRequestedBeforeFinalizationDoesNotPublish(t *testing.T) {
 }
 
 func TestBuiltInMetadataTakesOverTableKey(t *testing.T) {
-	profile := &ingestiontable.Profile{
+	profile := &entity.TableProfile{
 		Engine:        "infinity",
-		Columns:       ingestiontable.DeriveColumns([]string{"file_name"}),
+		Columns:       common.DeriveTableColumns([]string{"file_name"}),
 		OwnedMetadata: []string{"file_name"},
 	}
 	raw, err := profile.Encode()
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "file_name": "table value"}}
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "file_name": "table value"}}
 	if err := applyBuiltInMetadata(t.Context(), svc, "doc-1", "sales.xlsx", []any{map[string]any{"key": "file_name"}}); err != nil {
 		t.Fatal(err)
 	}

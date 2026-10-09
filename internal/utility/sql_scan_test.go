@@ -1,13 +1,13 @@
-package sqlscan
+package utility
 
 import (
 	"strings"
 	"testing"
 )
 
-func mustScan(t *testing.T, sql string) []Token {
+func mustScan(t *testing.T, sql string) []SQLToken {
 	t.Helper()
-	tokens, err := Scan(sql)
+	tokens, err := SQLScan(sql)
 	if err != nil {
 		t.Fatalf("Scan(%q): %v", sql, err)
 	}
@@ -19,7 +19,7 @@ func literalOf(t *testing.T, sql string) string {
 	t.Helper()
 	var found []string
 	for _, tok := range mustScan(t, sql) {
-		if tok.Kind == String {
+		if tok.Kind == SQLString {
 			found = append(found, tok.Value)
 		}
 	}
@@ -62,10 +62,10 @@ func TestScanKeepsLiteralBytes(t *testing.T) {
 func TestScanReadsDoubleQuotesAsNames(t *testing.T) {
 	tokens := mustScan(t, `SELECT a FROM t WHERE b = "x"`)
 	last := tokens[len(tokens)-1]
-	if last.Kind != Quoted || last.Name != "x" {
+	if last.Kind != SQLQuoted || last.Name != "x" {
 		t.Errorf("got %v", last)
 	}
-	if got := Render(tokens, '`'); !strings.Contains(got, "`x`") {
+	if got := SQLRender(tokens, '`'); !strings.Contains(got, "`x`") {
 		t.Errorf("mysql render = %q", got)
 	}
 }
@@ -94,7 +94,7 @@ func TestScanRefusesAmbiguousInput(t *testing.T) {
 	}
 	for name, sql := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := Scan(sql); err == nil {
+			if _, err := SQLScan(sql); err == nil {
 				t.Errorf("Scan(%q) succeeded, want an error", sql)
 			}
 		})
@@ -103,12 +103,12 @@ func TestScanRefusesAmbiguousInput(t *testing.T) {
 
 func TestScanSeparatesKeywordsFromLiterals(t *testing.T) {
 	tokens := mustScan(t, "select DOCNM, count (*) from T where a<=>b and c>=1.5")
-	kinds := make([]Kind, 0, len(tokens))
+	kinds := make([]SQLKind, 0, len(tokens))
 	for _, tok := range tokens {
 		kinds = append(kinds, tok.Kind)
 	}
 	// select DOCNM , count ( * ) from T where a <=> b and c >= 1.5
-	want := []Kind{Word, Word, Punct, Word, Punct, Punct, Punct, Word, Word, Word, Word, Punct, Word, Word, Word, Punct, Number}
+	want := []SQLKind{SQLWord, SQLWord, SQLPunct, SQLWord, SQLPunct, SQLPunct, SQLPunct, SQLWord, SQLWord, SQLWord, SQLWord, SQLPunct, SQLWord, SQLWord, SQLWord, SQLPunct, SQLNumber}
 	if len(kinds) != len(want) {
 		t.Fatalf("tokens = %v, want %d", kinds, len(want))
 	}
@@ -120,28 +120,28 @@ func TestScanSeparatesKeywordsFromLiterals(t *testing.T) {
 	if !tokens[1].IsWord("docnm") {
 		t.Errorf("an identifier compares case-folded, got %q / %q", tokens[1].Name, tokens[1].Lower)
 	}
-	if tokens[len(tokens)-1].Kind != Number {
+	if tokens[len(tokens)-1].Kind != SQLNumber {
 		t.Error("1.5 must be one number token")
 	}
 }
 
 func TestRenderQuotesPerDialect(t *testing.T) {
 	tokens := mustScan(t, "SELECT `地区`, \"other\" FROM t WHERE x = 'a b'")
-	if got, want := Render(tokens, '"'), `SELECT "地区", "other" FROM t WHERE x = 'a b'`; got != want {
+	if got, want := SQLRender(tokens, '"'), `SELECT "地区", "other" FROM t WHERE x = 'a b'`; got != want {
 		t.Errorf("postgres render = %q, want %q", got, want)
 	}
-	if got, want := Render(tokens, '`'), "SELECT `地区`, `other` FROM t WHERE x = 'a b'"; got != want {
+	if got, want := SQLRender(tokens, '`'), "SELECT `地区`, `other` FROM t WHERE x = 'a b'"; got != want {
 		t.Errorf("mysql render = %q, want %q", got, want)
 	}
 	// A literal's own spaces survive: whitespace is collapsed between tokens,
 	// never inside a caller's value.
-	if got := Render(mustScan(t, "select a from t where b = 'x  y'"), 0); got != "select a from t where b = 'x  y'" {
+	if got := SQLRender(mustScan(t, "select a from t where b = 'x  y'"), 0); got != "select a from t where b = 'x  y'" {
 		t.Errorf("verbatim render = %q", got)
 	}
 }
 
 func TestQuoteLiteralEscapes(t *testing.T) {
-	got, err := QuoteLiteral("it's")
+	got, err := SQLQuoteLiteral("it's")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,14 +152,14 @@ func TestQuoteLiteralEscapes(t *testing.T) {
 	if len(tokens) != 1 || tokens[0].Value != "it's" {
 		t.Errorf("a quoted literal must scan back: %v", tokens)
 	}
-	if _, err := QuoteLiteral("bad\x00"); err == nil {
+	if _, err := SQLQuoteLiteral("bad\x00"); err == nil {
 		t.Error("control character accepted")
 	}
 }
 
-func mustShape(t *testing.T, sql string) *StatementShape {
+func mustShape(t *testing.T, sql string) *SQLStatementShape {
 	t.Helper()
-	shape, err := SplitSelect(mustScan(t, sql))
+	shape, err := SQLSplitSelect(mustScan(t, sql))
 	if err != nil {
 		t.Fatalf("SplitSelect(%q): %v", sql, err)
 	}
@@ -171,28 +171,28 @@ func TestSplitSelectCoversEveryClause(t *testing.T) {
 		from ragflow_t_1 where available_int = 1 and table_row_int = 1
 		group by doc_id having sum (weight_flt) > 2 order by doc_id desc limit 10 offset 5`)
 	c := shape.Clauses
-	if got := Render(c.Select, 0); got != "doc_id, count ( * ) as n" {
+	if got := SQLRender(c.Select, 0); got != "doc_id, count ( * ) as n" {
 		t.Errorf("select list = %q", got)
 	}
-	if got := Render(c.From, 0); got != "ragflow_t_1" {
+	if got := SQLRender(c.From, 0); got != "ragflow_t_1" {
 		t.Errorf("from = %q", got)
 	}
-	if got := Render(c.Where, 0); !strings.HasPrefix(got, "available_int = 1") {
+	if got := SQLRender(c.Where, 0); !strings.HasPrefix(got, "available_int = 1") {
 		t.Errorf("where = %q", got)
 	}
-	if got := Render(c.GroupBy, 0); got != "doc_id" {
+	if got := SQLRender(c.GroupBy, 0); got != "doc_id" {
 		t.Errorf("group by = %q", got)
 	}
-	if got := Render(c.Having, 0); got != "sum ( weight_flt ) > 2" {
+	if got := SQLRender(c.Having, 0); got != "sum ( weight_flt ) > 2" {
 		t.Errorf("having = %q", got)
 	}
-	if got := Render(c.OrderBy, 0); got != "doc_id desc" {
+	if got := SQLRender(c.OrderBy, 0); got != "doc_id desc" {
 		t.Errorf("order by = %q", got)
 	}
-	if got := Render(c.Limit, 0); got != "10" {
+	if got := SQLRender(c.Limit, 0); got != "10" {
 		t.Errorf("limit = %q", got)
 	}
-	if got := Render(c.Offset, 0); got != "5" {
+	if got := SQLRender(c.Offset, 0); got != "5" {
 		t.Errorf("offset = %q", got)
 	}
 	if !shape.Aggregating {
@@ -220,7 +220,7 @@ func TestSplitSelectRefusesTwoQueries(t *testing.T) {
 	}
 	for name, sql := range cases {
 		t.Run(name, func(t *testing.T) {
-			if _, err := SplitSelect(mustScan(t, sql)); err == nil {
+			if _, err := SQLSplitSelect(mustScan(t, sql)); err == nil {
 				t.Errorf("SplitSelect(%q) succeeded, want an error", sql)
 			}
 		})
@@ -229,7 +229,7 @@ func TestSplitSelectRefusesTwoQueries(t *testing.T) {
 
 func TestSplitSelectAllowsParenthesisedConditions(t *testing.T) {
 	shape := mustShape(t, "select a from t where (x = 1 or y = 2) and (z in ('a', 'b'))")
-	if got := Render(shape.Clauses.Where, 0); !strings.Contains(got, "( x = 1 or y = 2 )") {
+	if got := SQLRender(shape.Clauses.Where, 0); !strings.Contains(got, "( x = 1 or y = 2 )") {
 		t.Errorf("where = %q", got)
 	}
 	if shape.Aggregating {
@@ -244,7 +244,7 @@ func TestTableReference(t *testing.T) {
 		"\"Ragflow_T\"":  "ragflow_t",
 	}
 	for in, want := range cases {
-		got, err := TableReference(mustScan(t, "select a from "+in)[3:])
+		got, err := SQLTableReference(mustScan(t, "select a from "+in)[3:])
 		if err != nil {
 			t.Errorf("TableReference(%q): %v", in, err)
 			continue
@@ -257,7 +257,7 @@ func TestTableReference(t *testing.T) {
 		"t, u", "t as x", "t x", "t join u", "t (", "t ;", "t.1", "t order 1",
 	} {
 		tokens := mustScan(t, "select a from "+in)[3:]
-		if got, err := TableReference(tokens); err == nil {
+		if got, err := SQLTableReference(tokens); err == nil {
 			t.Errorf("TableReference(%q) = %q, want an error", in, got)
 		}
 	}
@@ -271,14 +271,14 @@ func TestCallArguments(t *testing.T) {
 			cast = i
 		}
 	}
-	args, next, err := CallArguments(tokens, cast)
+	args, next, err := SQLCallArguments(tokens, cast)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(args) != 1 {
 		t.Fatalf("CAST takes one argument group, got %d: %v", len(args), args)
 	}
-	if got := Render(args[0], 0); got != "json_extract_string ( chunk_data, '$.c_1' ) as integer" {
+	if got := SQLRender(args[0], 0); got != "json_extract_string ( chunk_data, '$.c_1' ) as integer" {
 		t.Errorf("cast argument = %q", got)
 	}
 	if tokens[next].Lower != "from" {
@@ -292,11 +292,11 @@ func TestCallArguments(t *testing.T) {
 			name = i
 		}
 	}
-	inner, _, err := CallArguments(jsonTokens, name)
+	inner, _, err := SQLCallArguments(jsonTokens, name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(inner) != 2 || Render(inner[0], 0) != "chunk_data" || inner[1][0].Value != "$.c_1" {
+	if len(inner) != 2 || SQLRender(inner[0], 0) != "chunk_data" || inner[1][0].Value != "$.c_1" {
 		t.Errorf("json call args = %v", inner)
 	}
 }

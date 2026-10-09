@@ -21,7 +21,7 @@ import (
 
 	"golang.org/x/net/html"
 
-	"ragflow/internal/ingestion/table"
+	"ragflow/internal/common"
 )
 
 // ---------------------------------------------------------------------------
@@ -108,7 +108,7 @@ func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 // one reader of the wire here.
 //
 // ok=false means the markup holds no header row to take names from.
-func SpreadsheetHeaderColumns(html string) (columns []table.Column, ok bool) {
+func SpreadsheetHeaderColumns(html string) (columns []common.TableColumn, ok bool) {
 	rows, headerCount := tableRowsWithHeader(html)
 	if headerCount < 1 || len(rows) < headerCount {
 		return nil, false
@@ -119,7 +119,7 @@ func SpreadsheetHeaderColumns(html string) (columns []table.Column, ok bool) {
 	if headerCount > 1 {
 		return nil, false
 	}
-	return table.DeriveColumns(rows[0]), true
+	return common.DeriveTableColumns(rows[0]), true
 }
 
 // isTableStrictHTML reports whether block text is an outer <table> element

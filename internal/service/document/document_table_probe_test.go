@@ -10,8 +10,8 @@ import (
 
 	"github.com/xuri/excelize/v2"
 
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	ingestiontable "ragflow/internal/ingestion/table"
 )
 
 func TestProbeRejectsExpandedWorkbookLimit(t *testing.T) {
@@ -76,7 +76,7 @@ func TestProbeTableColumnsReadsTheCanonicalHeader(t *testing.T) {
 		t.Fatalf("columns = %v", sheet.Columns)
 	}
 
-	want := ingestiontable.DeriveColumns([]string{"订单", "金额", "金额", "", "备注"})
+	want := common.DeriveTableColumns([]string{"订单", "金额", "金额", "", "备注"})
 	for i, column := range sheet.Columns {
 		if column.Index != i+1 {
 			t.Errorf("column %d index = %d, want %d", i, column.Index, i+1)

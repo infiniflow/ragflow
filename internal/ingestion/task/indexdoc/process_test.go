@@ -3,6 +3,8 @@ package indexdoc
 import (
 	"testing"
 	"time"
+
+	"ragflow/internal/common"
 )
 
 // =============================================================================
@@ -555,5 +557,57 @@ func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T)
 	}
 	if top, ok := ck["top_int"].([]int); !ok || len(top) != 1 || top[0] != 41 {
 		t.Errorf("top_int = %v, want the chunk's own row index [41]", ck["top_int"])
+	}
+}
+
+// TestProcessChunksForPipelineKeepsRowMarkers: the row markers are index
+// columns, so the boundary that drops pipeline bookkeeping must keep them while
+// dropping the row source map they were derived from.
+func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
+	ck := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"},
+		[]string{"金额"}, map[string]string{"金额": "100"})
+
+	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "sales.xlsx", time.Unix(0, 0)); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	if ck["table_row_int"] != float64(1) {
+		t.Errorf("table_row_int = %v (%T), want 1 kept for the index", ck["table_row_int"], ck["table_row_int"])
+	}
+	if ck["chunk_data"] == nil {
+		t.Error("chunk_data was stripped; the structured columns would be unqueryable")
+	}
+	if _, ok := ck["table_row_source"]; ok {
+		t.Error("the row source map is pipeline bookkeeping and must not reach the index")
+	}
+	if _, ok := ck["sheet_index"]; ok {
+		t.Error("sheet identity is pipeline bookkeeping")
+	}
+}
+
+func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
+	first := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	edited := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	edited["text"] = "Sheet 1, row 2"
+	next := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	next["table_row_source"].(map[string]any)["source_row"] = float64(3)
+	for _, row := range []map[string]any{first, edited, next} {
+		if _, err := ProcessChunksForPipeline([]map[string]any{row}, "doc-1", "table.csv", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if first["id"] != edited["id"] {
+		t.Fatal("changing column roles changes a source row's fallback ID")
+	}
+	if first["id"] == next["id"] {
+		t.Fatal("distinct source rows with the same text overwrite each other")
+	}
+}
+
+func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
+	first := tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
+	other := tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
+	other["table_row_source"].(map[string]any)["node_id"] = "TableChunker:Other"
+	if _, err := ProcessChunksForPipeline([]map[string]any{first, other}, "doc-1", "table.csv", time.Now()); err == nil {
+		t.Fatal("conflicting roles for the same source row were indexed")
 	}
 }

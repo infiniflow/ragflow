@@ -7,14 +7,15 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"sort"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
-	"sort"
-	"strings"
 )
 
 // applyColumnOverride writes an upload's column settings onto the component
@@ -35,7 +36,7 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 
 	targets := make([]string, 0, 2)
 	for key := range config {
-		if ingestiontable.IsNodeKey(key) {
+		if schema.IsTableChunkerNodeKey(key) {
 			targets = append(targets, key)
 		}
 	}
@@ -47,14 +48,14 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 	}
 
 	for cpnID, raw := range override {
-		if !ingestiontable.IsNodeKey(cpnID) {
+		if !schema.IsTableChunkerNodeKey(cpnID) {
 			return nil, fmt.Errorf("parser_config[%q] must be keyed by a TableChunker node", cpnID)
 		}
 		params, ok := raw.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("parser_config[%q] must be an object of component parameters", cpnID)
 		}
-		if _, _, err := ingestiontable.ValidateNodeConfig(params); err != nil {
+		if _, _, err := schema.ValidateTableColumnOverride(params); err != nil {
 			return nil, fmt.Errorf("parser_config[%q]: %v", cpnID, err)
 		}
 
@@ -72,7 +73,7 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 		}
 
 		base, _ := out[target].(map[string]interface{})
-		merged, err := ingestiontable.MergeNodeParams(base, params)
+		merged, err := schema.MergeTableChunkerParams(base, params)
 		if err != nil {
 			return nil, fmt.Errorf("parser_config[%q]: %v", target, err)
 		}

@@ -25,21 +25,20 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
-	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/knowledge_compile"
-	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	ingestiontable "ragflow/internal/ingestion/table"
+	enginetypes "ragflow/internal/engine/types"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
-
-	"gorm.io/gorm"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	pipelinepkg "ragflow/internal/ingestion/pipeline"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -72,7 +71,7 @@ type PipelineResult struct {
 	// which configuration. The document-state finalizer publishes it into the
 	// document's metadata record; a run with no table rows leaves it nil, which
 	// also clears any profile an earlier run published.
-	TableProfile *ingestiontable.Profile
+	TableProfile *entity.TableProfile
 }
 
 type PipelineExecutor struct {

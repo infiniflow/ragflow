@@ -21,8 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/engine"
-	"ragflow/internal/engine/types"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +28,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -1374,4 +1374,34 @@ func numericValue(value interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+// GetDatasetTableSchema serves GET /datasets/:dataset_id/table-schema: which
+// structured columns the indexed documents of this dataset can actually answer
+// with. It reads the published per-document records rather than the request
+// configuration or the source files, so a client can tell "the file has these
+// columns" apart from "the index can be queried on these".
+func (h *DatasetsHandler) GetDatasetTableSchema(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
+
+	if !h.datasetsService.Accessible(ctx, datasetID, userID) {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData("DATASET_ACCESS_DENIED"),
+			fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		return
+	}
+
+	fieldMap, docIDs, err := h.metadataService.TableFieldMap(ctx, []string{datasetID})
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
+	engineName := h.metadataService.EngineType()
+	common.SuccessWithData(c, gin.H{
+		"engine":         engineName,
+		"document_count": len(docIDs),
+		"sql_supported":  service.SupportsStructuredTableSQL(engineName),
+		"field_map":      fieldMap,
+	}, "success")
 }

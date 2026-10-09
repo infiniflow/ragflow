@@ -26,10 +26,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	"ragflow/internal/utility"
 	"reflect"
 	"strconv"
 	"strings"
@@ -38,11 +34,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
@@ -1054,15 +1054,15 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			if legacy := ingestiontable.CheckLegacyFlatKeys(parsed); len(legacy) > 0 {
+			if legacy := schema.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
 				common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 					fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
-						strings.Join(legacy, ", "), ingestiontable.NodePrefix))
+						strings.Join(legacy, ", "), schema.TableChunkerNodePrefix))
 				return
 			}
 			cleaned := map[string]interface{}{}
 			for key, value := range parsed {
-				if !ingestiontable.IsNodeKey(key) {
+				if !schema.IsTableChunkerNodeKey(key) {
 					continue
 				}
 				params, ok := value.(map[string]interface{})
@@ -1071,7 +1071,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 						fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
 					return
 				}
-				if _, _, err = ingestiontable.ValidateNodeConfig(params); err != nil {
+				if _, _, err = schema.ValidateTableColumnOverride(params); err != nil {
 					common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 						fmt.Sprintf("parser_config[%q]: %v", key, err))
 					return

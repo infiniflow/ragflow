@@ -1,4 +1,4 @@
-package table
+package common
 
 import (
 	"regexp"
@@ -23,7 +23,7 @@ func TestNormalizeHeader(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			if got := NormalizeHeader(c.raw); got != c.want {
+			if got := NormalizeTableHeader(c.raw); got != c.want {
 				t.Errorf("NormalizeHeader(%q) = %q, want %q", c.raw, got, c.want)
 			}
 		})
@@ -33,7 +33,7 @@ func TestNormalizeHeader(t *testing.T) {
 func TestDeriveColumnsKeys(t *testing.T) {
 	// Raw "名称#2" must not collide with the second "名称", and an empty
 	// header must not collide with the raw header "#column:1".
-	cols := DeriveColumns([]string{"名称", "名称", `名称#2`, "", "#column:1", "名称"})
+	cols := DeriveTableColumns([]string{"名称", "名称", `名称#2`, "", "#column:1", "名称"})
 	wantKeys := []string{"名称", "名称#2", `名称\#2`, "#column:4", `\#column:1`, "名称#3"}
 	wantDisplay := []string{"名称", "名称 (2)", "名称#2", "列 4", "#column:1", "名称 (3)"}
 	if len(cols) != len(wantKeys) {
@@ -53,7 +53,7 @@ func TestDeriveColumnsKeys(t *testing.T) {
 }
 
 func TestDeriveColumnsWhitespaceHeaderUsesPosition(t *testing.T) {
-	cols := DeriveColumns([]string{"\t ", "a"})
+	cols := DeriveTableColumns([]string{"\t ", "a"})
 	if cols[0].Key != "#column:1" || cols[0].DisplayName != "列 1" {
 		t.Errorf("whitespace-only header not position-named: %+v", cols[0])
 	}
@@ -62,8 +62,8 @@ func TestDeriveColumnsWhitespaceHeaderUsesPosition(t *testing.T) {
 func TestDeriveColumnsPositionKeyStableAcrossSheets(t *testing.T) {
 	// Column identity must not change when another sheet has more or fewer
 	// columns: keys depend only on this header row.
-	a := DeriveColumns([]string{"", "x", ""})
-	b := DeriveColumns([]string{"y", "", "x", ""})
+	a := DeriveTableColumns([]string{"", "x", ""})
+	b := DeriveTableColumns([]string{"y", "", "x", ""})
 	if a[0].Key != "#column:1" || a[2].Key != "#column:3" {
 		t.Errorf("unexpected position keys: %+v", a)
 	}
@@ -73,20 +73,20 @@ func TestDeriveColumnsPositionKeyStableAcrossSheets(t *testing.T) {
 }
 
 func TestDataKey(t *testing.T) {
-	k1 := DataKey("金额")
-	k2 := DataKey("金额")
+	k1 := TableDataKey("金额")
+	k2 := TableDataKey("金额")
 	if k1 != k2 {
 		t.Errorf("DataKey not deterministic: %q vs %q", k1, k2)
 	}
-	if k1 == DataKey("金额#2") {
+	if k1 == TableDataKey("金额#2") {
 		t.Error("different keys share a data key")
 	}
 	if !regexp.MustCompile(`^c_[a-f0-9]{64}$`).MatchString(k1) {
 		t.Errorf("data key %q is not c_+64 hex", k1)
 	}
-	cols := DeriveColumns([]string{"a", "b"})
+	cols := DeriveTableColumns([]string{"a", "b"})
 	for _, c := range cols {
-		if c.DataKey != DataKey(c.Key) {
+		if c.DataKey != TableDataKey(c.Key) {
 			t.Errorf("column %q data key not derived from its key", c.Key)
 		}
 	}
@@ -94,8 +94,63 @@ func TestDataKey(t *testing.T) {
 
 func TestDeriveColumnsNFCDuplicate(t *testing.T) {
 	// A decomposed and a precomposed form of the same header are duplicates.
-	cols := DeriveColumns([]string{"e\u0301", "\u00e9"})
+	cols := DeriveTableColumns([]string{"e\u0301", "\u00e9"})
 	if cols[0].Key != "\u00e9" || cols[1].Key != "\u00e9#2" {
 		t.Errorf("NFC duplicates not suffixed: %q, %q", cols[0].Key, cols[1].Key)
+	}
+}
+
+func TestValidateMode(t *testing.T) {
+	for _, ok := range []string{TableModeAuto, TableModeManual} {
+		got, err := ValidateTableMode(ok)
+		if err != nil || got != ok {
+			t.Errorf("ValidateMode(%q) = %q, %v", ok, got, err)
+		}
+	}
+	bad := []struct {
+		name string
+		v    any
+	}{
+		{"unknown", "assist"},
+		{"empty", ""},
+		{"number", 100},
+		{"null", nil},
+		{"bool", true},
+	}
+	for _, c := range bad {
+		if _, err := ValidateTableMode(c.v); err == nil {
+			t.Errorf("ValidateMode(%v) [%s]: expected error, got nil", c.v, c.name)
+		}
+	}
+}
+
+func TestValidateRoles(t *testing.T) {
+	raw := map[string]any{"名称": "indexing", "金额": "metadata", "编号": "both"}
+	roles, err := ValidateTableRoles(raw)
+	if err != nil {
+		t.Fatalf("ValidateRoles: %v", err)
+	}
+	if roles["名称"] != TableRoleIndexing || roles["金额"] != TableRoleMetadata || roles["编号"] != TableRoleBoth {
+		t.Errorf("unexpected roles: %+v", roles)
+	}
+	if r, err := ValidateTableRoles(map[string]any{}); err != nil || len(r) != 0 {
+		t.Errorf("empty object: %v, %v", r, err)
+	}
+	bad := []struct {
+		name string
+		v    any
+	}{
+		{"unknown role", map[string]any{"名称": "keyword"}},
+		{"non-string value", map[string]any{"名称": 1}},
+		{"null value", map[string]any{"名称": nil}},
+		{"empty key", map[string]any{"": "both"}},
+		{"not an object", "manual"},
+		{"null", nil},
+		{"array", []any{"名称"}},
+	}
+	for _, c := range bad {
+		if _, err := ValidateTableRoles(c.v); err == nil {
+			t.Errorf("ValidateRoles(%v) [%s]: expected error, got nil", c.v, c.name)
+		}
 	}
 }

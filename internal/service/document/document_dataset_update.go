@@ -6,20 +6,20 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
-	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
-
-	"go.uber.org/zap"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -185,7 +185,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		if ingestiontable.IsColumnOnlyConfig(req.ParserConfig) {
+		if schema.IsTableColumnOnlyConfig(req.ParserConfig) {
 			// A column-only patch edits the document's own configuration. The
 			// general path rebuilds parser_config from the current DSL, which
 			// would drop every parameter this request never mentioned: changing

@@ -3,10 +3,9 @@ package indexdoc
 import (
 	"encoding/json"
 	"testing"
-	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
-	ingestiontable "ragflow/internal/ingestion/table"
 )
 
 // tableRowChunk builds one indexed row the way the chunker hands it over:
@@ -14,10 +13,10 @@ import (
 // roles that were declared for it.
 func tableRowChunk(t *testing.T, mode string, declared map[string]string, headers []string, cells map[string]string) map[string]any {
 	t.Helper()
-	cols := ingestiontable.DeriveColumns(headers)
+	cols := common.DeriveTableColumns(headers)
 	data := make(map[string]any, len(cols))
 	for _, col := range cols {
-		if mode == ingestiontable.ModeAuto || declared[col.Key] != ingestiontable.RoleIndexing {
+		if mode == common.TableModeAuto || declared[col.Key] != common.TableRoleIndexing {
 			data[col.DataKey] = cells[col.Key]
 		}
 	}
@@ -47,16 +46,16 @@ func tableRowChunk(t *testing.T, mode string, declared map[string]string, header
 	return ck
 }
 
-func findColumn(cols []ingestiontable.Column, key string) (ingestiontable.Column, bool) {
+func findColumn(cols []common.TableColumn, key string) (common.TableColumn, bool) {
 	for _, col := range cols {
 		if col.Key == key {
 			return col, true
 		}
 	}
-	return ingestiontable.Column{}, false
+	return common.TableColumn{}, false
 }
 
-func columnKeys(cols []ingestiontable.Column) map[string]string {
+func columnKeys(cols []common.TableColumn) map[string]string {
 	out := make(map[string]string, len(cols))
 	for _, col := range cols {
 		out[col.Key] = col.DisplayName
@@ -71,9 +70,9 @@ func TestProjectTableChunksManualRoles(t *testing.T) {
 	declared := map[string]string{"金额": "metadata", "编号": "both", "名称": "indexing"}
 	headers := []string{"金额", "编号", "名称"}
 	chunks := []map[string]any{
-		tableRowChunk(t, ingestiontable.ModeManual, declared, headers, map[string]string{"金额": "100", "编号": "A-1", "名称": "x"}),
-		tableRowChunk(t, ingestiontable.ModeManual, declared, headers, map[string]string{"金额": "200", "编号": "A-1"}),
-		tableRowChunk(t, ingestiontable.ModeManual, declared, headers, map[string]string{"金额": ""}),
+		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": "100", "编号": "A-1", "名称": "x"}),
+		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": "200", "编号": "A-1"}),
+		tableRowChunk(t, common.TableModeManual, declared, headers, map[string]string{"金额": ""}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -118,7 +117,7 @@ func TestProjectTableChunksManualRoles(t *testing.T) {
 func TestProjectTableChunksManualDefaultColumn(t *testing.T) {
 	declared := map[string]string{"金额": "metadata"}
 	chunks := []map[string]any{
-		tableRowChunk(t, ingestiontable.ModeManual, declared, []string{"金额", "备注"}, map[string]string{"金额": "100", "备注": "急"}),
+		tableRowChunk(t, common.TableModeManual, declared, []string{"金额", "备注"}, map[string]string{"金额": "100", "备注": "急"}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -135,7 +134,7 @@ func TestProjectTableChunksManualDefaultColumn(t *testing.T) {
 
 func TestProjectTableChunksAutoPublishesNoDocumentValues(t *testing.T) {
 	chunks := []map[string]any{
-		tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"}),
+		tableRowChunk(t, common.TableModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"}),
 	}
 
 	profile, values := ProjectTableChunks(chunks, "infinity")
@@ -163,7 +162,7 @@ func TestProjectTableChunksIgnoresNonTableRowChunks(t *testing.T) {
 
 func TestProjectTableChunksEmptyCellsStillPublishColumns(t *testing.T) {
 	chunks := []map[string]any{
-		tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": ""}),
+		tableRowChunk(t, common.TableModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": ""}),
 	}
 	profile, values := ProjectTableChunks(chunks, "infinity")
 	if profile == nil {
@@ -174,57 +173,5 @@ func TestProjectTableChunksEmptyCellsStillPublishColumns(t *testing.T) {
 	}
 	if _, ok := findColumn(profile.Columns, "金额"); !ok {
 		t.Errorf("the column must stay queryable: %#v", profile.Columns)
-	}
-}
-
-// TestProcessChunksForPipelineKeepsRowMarkers: the row markers are index
-// columns, so the boundary that drops pipeline bookkeeping must keep them while
-// dropping the row source map they were derived from.
-func TestProcessChunksForPipelineKeepsRowMarkers(t *testing.T) {
-	ck := tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"},
-		[]string{"金额"}, map[string]string{"金额": "100"})
-
-	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "sales.xlsx", time.Unix(0, 0)); err != nil {
-		t.Fatalf("ProcessChunksForPipeline: %v", err)
-	}
-	if ck["table_row_int"] != float64(1) {
-		t.Errorf("table_row_int = %v (%T), want 1 kept for the index", ck["table_row_int"], ck["table_row_int"])
-	}
-	if ck["chunk_data"] == nil {
-		t.Error("chunk_data was stripped; the structured columns would be unqueryable")
-	}
-	if _, ok := ck["table_row_source"]; ok {
-		t.Error("the row source map is pipeline bookkeeping and must not reach the index")
-	}
-	if _, ok := ck["sheet_index"]; ok {
-		t.Error("sheet identity is pipeline bookkeeping")
-	}
-}
-
-func TestProcessTableRowsWithoutIDsUsesSourceIdentity(t *testing.T) {
-	first := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
-	edited := tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
-	edited["text"] = "Sheet 1, row 2"
-	next := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
-	next["table_row_source"].(map[string]any)["source_row"] = float64(3)
-	for _, row := range []map[string]any{first, edited, next} {
-		if _, err := ProcessChunksForPipeline([]map[string]any{row}, "doc-1", "table.csv", time.Now()); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if first["id"] != edited["id"] {
-		t.Fatal("changing column roles changes a source row's fallback ID")
-	}
-	if first["id"] == next["id"] {
-		t.Fatal("distinct source rows with the same text overwrite each other")
-	}
-}
-
-func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
-	first := tableRowChunk(t, ingestiontable.ModeAuto, nil, []string{"金额"}, map[string]string{"金额": "100"})
-	other := tableRowChunk(t, ingestiontable.ModeManual, map[string]string{"金额": "metadata"}, []string{"金额"}, map[string]string{"金额": "100"})
-	other["table_row_source"].(map[string]any)["node_id"] = "TableChunker:Other"
-	if _, err := ProcessChunksForPipeline([]map[string]any{first, other}, "doc-1", "table.csv", time.Now()); err == nil {
-		t.Fatal("conflicting roles for the same source row were indexed")
 	}
 }

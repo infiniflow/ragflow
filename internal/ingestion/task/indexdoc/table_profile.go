@@ -20,8 +20,9 @@ import (
 	"encoding/json"
 	"sort"
 
+	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
-	ingestiontable "ragflow/internal/ingestion/table"
 )
 
 // ProjectTableChunks reports what this run indexed from spreadsheet rows: the
@@ -37,12 +38,12 @@ import (
 //
 // Only rows that actually carry structured values add columns to the profile, so
 // a field_map never advertises a column no chunk_data holds.
-func ProjectTableChunks(chunks []map[string]any, engineName string) (*ingestiontable.Profile, map[string]any) {
-	profile := &ingestiontable.Profile{
+func ProjectTableChunks(chunks []map[string]any, engineName string) (*entity.TableProfile, map[string]any) {
+	profile := &entity.TableProfile{
 		Engine:  engineName,
-		Columns: []ingestiontable.Column{},
+		Columns: []common.TableColumn{},
 	}
-	columns := map[string]ingestiontable.Column{}
+	columns := map[string]common.TableColumn{}
 	values := map[string]map[string]struct{}{}
 
 	for _, ck := range chunks {
@@ -65,7 +66,7 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*ingestiont
 				continue
 			}
 			columns[col.DataKey] = col
-			if src.Mode != ingestiontable.ModeManual || !aggregates(col.Key, src.Roles) {
+			if src.Mode != common.TableModeManual || !aggregates(col.Key, src.Roles) {
 				continue
 			}
 			if value == "" {
@@ -106,7 +107,7 @@ func ProjectTableChunks(chunks []map[string]any, engineName string) (*ingestiont
 // content into document metadata.
 func aggregates(key string, roles map[string]string) bool {
 	switch roles[key] {
-	case ingestiontable.RoleMetadata, ingestiontable.RoleBoth:
+	case common.TableRoleMetadata, common.TableRoleBoth:
 		return true
 	}
 	return false

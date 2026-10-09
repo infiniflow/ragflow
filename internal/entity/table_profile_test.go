@@ -1,14 +1,16 @@
-package table
+package entity
 
 import (
 	"testing"
+
+	"ragflow/internal/common"
 )
 
 func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
-	cols := DeriveColumns([]string{"金额", "编号"})
-	profile := &Profile{
+	cols := common.DeriveTableColumns([]string{"金额", "编号"})
+	profile := &TableProfile{
 		Engine:        "infinity",
-		Columns:       []Column{cols[1], cols[0]},
+		Columns:       []common.TableColumn{cols[1], cols[0]},
 		OwnedMetadata: []string{"编号", "金额"},
 	}
 	raw, err := profile.Encode()
@@ -16,7 +18,7 @@ func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
 		t.Fatalf("Encode: %v", err)
 	}
 
-	decoded, ok, err := DecodeProfile(raw)
+	decoded, ok, err := DecodeTableProfile(raw)
 	if err != nil || !ok {
 		t.Fatalf("DecodeProfile: ok=%v err=%v", ok, err)
 	}
@@ -42,8 +44,8 @@ func TestProfileEncodeDecodeRoundTrip(t *testing.T) {
 }
 
 func TestProfileFieldMapUsesReadableNames(t *testing.T) {
-	cols := DeriveColumns([]string{"金额", "金额"})
-	profile := &Profile{Engine: "infinity", Columns: cols}
+	cols := common.DeriveTableColumns([]string{"金额", "金额"})
+	profile := &TableProfile{Engine: "infinity", Columns: cols}
 	fields := profile.FieldMap()
 	if len(fields) != 2 {
 		t.Fatalf("field map = %v, want one entry per column", fields)
@@ -72,7 +74,7 @@ func TestDecodeProfileRejectsUnusableRecords(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			_, ok, err := DecodeProfile(c.value)
+			_, ok, err := DecodeTableProfile(c.value)
 			if ok != c.wantOK {
 				t.Errorf("ok = %v, want %v", ok, c.wantOK)
 			}
@@ -84,9 +86,9 @@ func TestDecodeProfileRejectsUnusableRecords(t *testing.T) {
 }
 
 func TestWithoutProfileFieldKeepsCallerMapIntact(t *testing.T) {
-	fields := map[string]any{"作者": "张三", ProfileMetadataField: "{}"}
-	stripped := WithoutProfileField(fields)
-	if _, ok := stripped[ProfileMetadataField]; ok {
+	fields := map[string]any{"作者": "张三", TableProfileMetadataField: "{}"}
+	stripped := WithoutTableProfileField(fields)
+	if _, ok := stripped[TableProfileMetadataField]; ok {
 		t.Error("reserved key survived the strip")
 	}
 	if len(stripped) != 1 {
@@ -94,12 +96,12 @@ func TestWithoutProfileFieldKeepsCallerMapIntact(t *testing.T) {
 	}
 	// The caller's map keeps the record: a reader that needs it must not have
 	// lost it because another reader printed the map.
-	if _, ok := fields[ProfileMetadataField]; !ok {
+	if _, ok := fields[TableProfileMetadataField]; !ok {
 		t.Error("strip mutated the caller's map")
 	}
 
 	plain := map[string]any{"作者": "张三"}
-	if got := WithoutProfileField(plain); len(got) != 1 {
+	if got := WithoutTableProfileField(plain); len(got) != 1 {
 		t.Errorf("ordinary metadata changed: %v", got)
 	}
 }

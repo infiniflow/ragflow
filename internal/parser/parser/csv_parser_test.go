@@ -2,6 +2,7 @@ package parser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -275,5 +276,14 @@ func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
 	text, _ := res.JSON[0]["text"].(string)
 	if !strings.Contains(text, "<tr><td>Widget</td><td></td><td>12</td></tr>") {
 		t.Errorf("empty tab-separated field not kept: %q", text)
+	}
+}
+
+func TestCSVParserHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	result := NewCSVParser().ParseWithResult(ctx, "rows.csv", []byte("key\nvalue\n"))
+	if !errors.Is(result.Err, context.Canceled) {
+		t.Fatalf("cancelled CSV parse returned %v", result.Err)
 	}
 }

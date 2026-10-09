@@ -8,11 +8,11 @@ import (
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
-	ingestiontable "ragflow/internal/ingestion/table"
 )
 
 // tableProfileTestEngine answers only the metadata read the derived field map
@@ -77,8 +77,8 @@ func seedDocument(t *testing.T, db *gorm.DB, id string, enabled bool) {
 
 func profileRecord(t *testing.T, docID, engineName string, headers ...string) map[string]interface{} {
 	t.Helper()
-	cols := ingestiontable.DeriveColumns(headers)
-	profile := &ingestiontable.Profile{Engine: engineName, Columns: cols}
+	cols := common.DeriveTableColumns(headers)
+	profile := &entity.TableProfile{Engine: engineName, Columns: cols}
 	raw, err := profile.Encode()
 	if err != nil {
 		t.Fatalf("encode profile: %v", err)
@@ -87,8 +87,8 @@ func profileRecord(t *testing.T, docID, engineName string, headers ...string) ma
 		"id":    docID,
 		"kb_id": "kb-1",
 		"meta_fields": map[string]interface{}{
-			ingestiontable.ProfileMetadataField: raw,
-			"作者":                                "张三",
+			entity.TableProfileMetadataField: raw,
+			"作者":                             "张三",
 		},
 	}
 }
@@ -114,8 +114,8 @@ func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
 	}
 
 	want := map[string]string{
-		ingestiontable.DataKey("金额"): "金额",
-		ingestiontable.DataKey("编号"): "编号",
+		common.TableDataKey("金额"): "金额",
+		common.TableDataKey("编号"): "编号",
 	}
 	if len(fields) != len(want) {
 		t.Fatalf("fields = %v, want %v", fields, want)
@@ -151,7 +151,7 @@ func TestTableFieldMapSkipsDocumentsThatCannotBeQueried(t *testing.T) {
 		t.Errorf("fields = %v, docs = %v, want only doc-1", fields, docIDs)
 	}
 	for dataKey := range fields {
-		if dataKey == ingestiontable.DataKey("旧列") {
+		if dataKey == common.TableDataKey("旧列") {
 			t.Error("a record from another engine must not contribute fields")
 		}
 	}
@@ -174,20 +174,6 @@ func TestTableFieldMapReadsIndexedFieldsOnEveryEngine(t *testing.T) {
 	}
 }
 
-func TestSupportsStructuredTableSQL(t *testing.T) {
-	supported := []string{string(engine.EngineInfinity), string(engine.EngineOceanBase), string(engine.EngineSeekDB)}
-	for _, name := range supported {
-		if !SupportsStructuredTableSQL(name) {
-			t.Errorf("%q should support the JSON column query path", name)
-		}
-	}
-	for _, name := range []string{"elasticsearch", "opensearch", "serenedb", ""} {
-		if SupportsStructuredTableSQL(name) {
-			t.Errorf("%q addresses physical fields and must not receive a JSON field map", name)
-		}
-	}
-}
-
 func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
@@ -197,10 +183,10 @@ func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
 	// only a publisher bug could give it two different names.
 	one := profileRecord(t, "doc-1", "infinity", "金额")
 	two := profileRecord(t, "doc-2", "infinity", "金额")
-	two["meta_fields"].(map[string]interface{})[ingestiontable.ProfileMetadataField] = func() string {
-		profile := &ingestiontable.Profile{
+	two["meta_fields"].(map[string]interface{})[entity.TableProfileMetadataField] = func() string {
+		profile := &entity.TableProfile{
 			Engine:  "infinity",
-			Columns: []ingestiontable.Column{{Index: 1, Key: "金额", DisplayName: "金额(抄错的)", DataKey: ingestiontable.DataKey("金额")}},
+			Columns: []common.TableColumn{{Index: 1, Key: "金额", DisplayName: "金额(抄错的)", DataKey: common.TableDataKey("金额")}},
 		}
 		raw, err := profile.Encode()
 		if err != nil {
@@ -234,7 +220,7 @@ func TestConvertSearchResultToDocMetaHidesProfileField(t *testing.T) {
 	if !ok {
 		t.Fatal("document missing from the read")
 	}
-	if _, exists := fields[ingestiontable.ProfileMetadataField]; exists {
+	if _, exists := fields[entity.TableProfileMetadataField]; exists {
 		t.Error("the system record leaked into user-visible metadata")
 	}
 	if fields["作者"] != "张三" {

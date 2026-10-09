@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 )
 
@@ -158,6 +159,20 @@ func TestTableSQLRefusesAnythingOutsideOneTable(t *testing.T) {
 				t.Errorf("check(%q) succeeded, want a refusal", sqlText)
 			}
 		})
+	}
+}
+
+func TestSupportsStructuredTableSQL(t *testing.T) {
+	supported := []string{string(engine.EngineInfinity), string(engine.EngineOceanBase), string(engine.EngineSeekDB)}
+	for _, name := range supported {
+		if !SupportsStructuredTableSQL(name) {
+			t.Errorf("%q should support the JSON column query path", name)
+		}
+	}
+	for _, name := range []string{"elasticsearch", "opensearch", "serenedb", ""} {
+		if SupportsStructuredTableSQL(name) {
+			t.Errorf("%q addresses physical fields and must not receive a JSON field map", name)
+		}
 	}
 }
 

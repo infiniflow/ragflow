@@ -26,7 +26,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/entity"
 )
 
 // KBDocIDsMap maps a KB ID to its document IDs.
@@ -267,7 +267,7 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 			if fieldValue == nil {
 				continue
 			}
-			if fieldName == ingestiontable.ProfileMetadataField {
+			if fieldName == entity.TableProfileMetadataField {
 				// System record, not a value a reader filters on.
 				continue
 			}
@@ -393,7 +393,7 @@ func ConvertSearchResultToDocMeta(chunks []map[string]interface{}) DocMetaMap {
 		if err != nil || len(metaFields) == 0 {
 			continue
 		}
-		metaFields = ingestiontable.WithoutProfileField(metaFields)
+		metaFields = entity.WithoutTableProfileField(metaFields)
 		if len(metaFields) == 0 {
 			continue
 		}

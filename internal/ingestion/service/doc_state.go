@@ -22,10 +22,10 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	ingestiontable "ragflow/internal/ingestion/table"
-	taskpkg "ragflow/internal/ingestion/task"
-	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/entity"
 	"ragflow/internal/utility"
+	documentpkg "ragflow/internal/service/document"
+	taskpkg "ragflow/internal/ingestion/task"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -118,7 +118,7 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 		existing = map[string]any{}
 	}
 
-	previous, _, _ := ingestiontable.DecodeProfile(existing[ingestiontable.ProfileMetadataField])
+	previous, _, _ := entity.DecodeTableProfile(existing[entity.TableProfileMetadataField])
 	owned := make(map[string]struct{}, len(r.TableProfile.OwnedKeys()))
 	for _, key := range r.TableProfile.OwnedKeys() {
 		if _, exists := existing[key]; exists && (previous == nil || !ownsKey(previous, key)) {
@@ -139,7 +139,7 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 			}
 		}
 		if r.TableProfile == nil {
-			stale = append(stale, ingestiontable.ProfileMetadataField)
+			stale = append(stale, entity.TableProfileMetadataField)
 		}
 		if len(stale) > 0 {
 			if err := svc.DeleteDocumentMetadataRaw(ctx, r.DocID, stale); err != nil {
@@ -150,7 +150,7 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 
 	baseline := make(map[string]any, len(existing))
 	for key, value := range existing {
-		if key == ingestiontable.ProfileMetadataField || (previous != nil && ownsKey(previous, key)) {
+		if key == entity.TableProfileMetadataField || (previous != nil && ownsKey(previous, key)) {
 			continue
 		}
 		baseline[key] = value
@@ -192,7 +192,7 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 		if err != nil {
 			return fmt.Errorf("encode table profile of document %s: %w", r.DocID, err)
 		}
-		merged[ingestiontable.ProfileMetadataField] = encoded
+		merged[entity.TableProfileMetadataField] = encoded
 	}
 	if err := svc.SetDocumentMetadataRaw(ctx, r.DocID, merged); err != nil {
 		return fmt.Errorf("publish metadata of document %s: %w", r.DocID, err)
@@ -203,7 +203,7 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 // ownsKey reports whether a metadata key still belongs to the table system. A
 // key a user or the LLM took over is absent from the published list, so their
 // value survives the next re-parse instead of being replaced by a column.
-func ownsKey(profile *ingestiontable.Profile, key string) bool {
+func ownsKey(profile *entity.TableProfile, key string) bool {
 	for _, owned := range profile.OwnedMetadata {
 		if owned == key {
 			return true
@@ -247,7 +247,7 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 		}
 		merged := utility.UpdateMetadataTo(existing, builtIn)
 		merged = common.SplitCombinedMetadataValues(merged)
-		profile, ok, err := ingestiontable.DecodeProfile(merged[ingestiontable.ProfileMetadataField])
+		profile, ok, err := entity.DecodeTableProfile(merged[entity.TableProfileMetadataField])
 		if err != nil {
 			return err
 		}
@@ -263,7 +263,7 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 			if err != nil {
 				return err
 			}
-			merged[ingestiontable.ProfileMetadataField] = raw
+			merged[entity.TableProfileMetadataField] = raw
 		}
 		return svc.SetDocumentMetadataRaw(ctx, docID, merged)
 	})

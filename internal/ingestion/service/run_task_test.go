@@ -8,7 +8,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	ingestiontable "ragflow/internal/ingestion/table"
 	"ragflow/internal/ingestion/testutil"
 )
 
@@ -21,7 +20,7 @@ func TestStopAfterPublishRevokesTableBeforeSettling(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := &stubDocStateSvc{metaData: map[string]any{ingestiontable.ProfileMetadataField: raw, "金额": []string{"100"}, "作者": "用户"}}
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "金额": []string{"100"}, "作者": "用户"}}
 	ingestor := newUnitIngestor("test", 1, []string{"xlsx"})
 	ingestor.docState = &docStateUpdater{docSvc: svc}
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
@@ -31,7 +30,7 @@ func TestStopAfterPublishRevokesTableBeforeSettling(t *testing.T) {
 	if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID}) {
 		t.Fatal("stopped task did not settle")
 	}
-	if _, ok := svc.metaData[ingestiontable.ProfileMetadataField]; ok {
+	if _, ok := svc.metaData[entity.TableProfileMetadataField]; ok {
 		t.Fatal("stopped task retained its published table")
 	}
 	if _, ok := svc.metaData["金额"]; ok {

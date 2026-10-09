@@ -5,18 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/dao"
-	ingestiontable "ragflow/internal/ingestion/table"
-	"ragflow/internal/service"
 	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-
-	"ragflow/internal/common"
+	"time"
 
 	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine/kvrocks"
+	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 // GetMetadataSummary get metadata summary for documents
@@ -39,7 +41,7 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 // from the table publisher to the caller, including edits that retain a value.
 func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
 	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
-		if _, reserved := meta[ingestiontable.ProfileMetadataField]; reserved {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
 			return errors.New("_table_profile is reserved")
 		}
 		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
@@ -91,7 +93,7 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
 		touched := make(map[string]any, len(keys))
 		for _, key := range keys {
-			if key == ingestiontable.ProfileMetadataField {
+			if key == entity.TableProfileMetadataField {
 				return errors.New("_table_profile is reserved")
 			}
 			touched[key] = nil
@@ -198,7 +200,7 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 		if err != nil {
 			return nil, err
 		}
-		return ingestiontable.WithoutProfileField(fields), nil
+		return entity.WithoutTableProfileField(fields), nil
 	}
 
 	return make(map[string]interface{}), nil
@@ -302,7 +304,7 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 			if fieldName == "kb_id" || fieldName == "id" {
 				continue
 			}
-			if fieldName == ingestiontable.ProfileMetadataField {
+			if fieldName == entity.TableProfileMetadataField {
 				continue
 			}
 
@@ -460,7 +462,7 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 
 		// Now iterate over the extracted metadata fields
 		for k, v := range metaFields {
-			if k == ingestiontable.ProfileMetadataField {
+			if k == entity.TableProfileMetadataField {
 				continue
 			}
 			// Skip nil values
@@ -612,7 +614,7 @@ func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID str
 	}
 
 	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
-		if _, reserved := meta[ingestiontable.ProfileMetadataField]; reserved {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
 			return errors.New("_table_profile is reserved")
 		}
 		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
@@ -620,8 +622,8 @@ func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID str
 			return err
 		}
 		after := cloneDocumentMetadata(meta)
-		if raw, ok := existing[ingestiontable.ProfileMetadataField]; ok {
-			after[ingestiontable.ProfileMetadataField] = raw
+		if raw, ok := existing[entity.TableProfileMetadataField]; ok {
+			after[entity.TableProfileMetadataField] = raw
 		}
 		if err := relinquishTableMetadata(after, existing); err != nil {
 			return err
@@ -815,7 +817,7 @@ func validateBatchUpdateDocumentMetadatasRequest(
 	deletes []MetadataDelete,
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
-		if upd.Key == ingestiontable.ProfileMetadataField {
+		if upd.Key == entity.TableProfileMetadataField {
 			return common.CodeDataError, errors.New("_table_profile is reserved")
 		}
 		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
@@ -823,7 +825,7 @@ func validateBatchUpdateDocumentMetadatasRequest(
 		}
 	}
 	for _, del := range deletes {
-		if del.Key == ingestiontable.ProfileMetadataField {
+		if del.Key == entity.TableProfileMetadataField {
 			return common.CodeDataError, errors.New("_table_profile is reserved")
 		}
 		if strings.TrimSpace(del.Key) == "" {
@@ -1150,4 +1152,122 @@ func firstScalarMetadataValue(value interface{}) (interface{}, bool) {
 		return nil, false
 	}
 	return value, true
+}
+
+func relinquishTableMetadata(meta, touched map[string]any) error {
+	profile, ok, err := entity.DecodeTableProfile(meta[entity.TableProfileMetadataField])
+	if err != nil || !ok {
+		return err
+	}
+	remaining := make([]string, 0, len(profile.OwnedMetadata))
+	for _, key := range profile.OwnedMetadata {
+		if _, edited := touched[key]; !edited {
+			remaining = append(remaining, key)
+		}
+	}
+	if len(remaining) == len(profile.OwnedMetadata) {
+		return nil
+	}
+	profile.OwnedMetadata = remaining
+	raw, err := profile.Encode()
+	if err != nil {
+		return err
+	}
+	meta[entity.TableProfileMetadataField] = raw
+	return nil
+}
+
+// RevokeTableProfile drops a document's derived table columns and the metadata
+// values that published them. Callers outside this package use it when rows are
+// removed by a path that cannot re-derive what the remaining rows still hold:
+// keeping the record would advertise columns the index no longer answers for.
+func (s *DocumentService) RevokeTableProfile(ctx context.Context, docID string) error {
+	return s.revokeTableProfile(ctx, docID)
+}
+
+// revokeTableProfile drops the derived column record a spreadsheet run published,
+// together with the document-metadata values that run wrote.
+//
+// It belongs to every path that discards a document's indexed output: the rows
+// those columns describe are going away, and a query that still named them would
+// resolve against nothing. Deleting the record here rather than waiting for the
+// next successful run also means a re-parse that fails leaves the document
+// unqueryable instead of queryable against stale data.
+//
+// Metadata keys the table system never owned — written by a user or the LLM, or
+// taken over since — are left alone; only the published ownership list is
+// removed.
+func (s *DocumentService) revokeTableProfile(ctx context.Context, docID string) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		return s.revokeTableProfileLocked(ctx, docID)
+	})
+}
+
+func (s *DocumentService) revokeTableProfileLocked(ctx context.Context, docID string) error {
+	existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+	if err != nil {
+		return err
+	}
+	profile, ok, err := entity.DecodeTableProfile(existing[entity.TableProfileMetadataField])
+	if err != nil {
+		// An unreadable record still has to go: it makes the document look
+		// queryable when nothing can resolve the columns it claims.
+		return s.DeleteDocumentMetadataRaw(ctx, docID, []string{entity.TableProfileMetadataField})
+	}
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(profile.OwnedMetadata)+1)
+	keys = append(keys, entity.TableProfileMetadataField)
+	keys = append(keys, profile.OwnedMetadata...)
+	return s.DeleteDocumentMetadataRaw(ctx, docID, keys)
+}
+
+type metadataLockStore interface {
+	SetNX(context.Context, string, string, time.Duration) bool
+	DeleteIfEqual(context.Context, string, string) bool
+}
+
+// WithDocumentMetadataLock serializes metadata read-modify-write operations
+// across API and ingestor processes using their existing Kvrocks connection.
+// The operation deadline is shorter than the lease, including acquisition.
+func (s *DocumentService) WithDocumentMetadataLock(ctx context.Context, docID string, update func(context.Context) error) error {
+	store := s.metadataLocks
+	if store == nil {
+		client := kvrocks.Get()
+		if client == nil {
+			return errors.New("metadata lock store is not initialized")
+		}
+		store = client
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	key, owner := "document-metadata:"+docID, common.GenerateUUID()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if store.SetNX(ctx, key, owner, 30*time.Second) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		store.DeleteIfEqual(releaseCtx, key, owner)
+	}()
+	if err := update(ctx); err != nil {
+		return err
+	}
+	return ctx.Err()
 }

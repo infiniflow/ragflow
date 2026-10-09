@@ -21,19 +21,19 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/sqlscan"
+	"ragflow/internal/utility"
 )
 
 func prepareSQL(sqlText string) (string, error) {
-	tokens, err := sqlscan.Scan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
+	tokens, err := utility.SQLScan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
 	if err != nil {
 		return "", err
 	}
-	shape, err := sqlscan.SplitSelect(tokens)
+	shape, err := utility.SQLSplitSelect(tokens)
 	if err != nil {
 		return "", err
 	}
-	if _, err := sqlscan.TableReference(shape.Clauses.From); err != nil {
+	if _, err := utility.SQLTableReference(shape.Clauses.From); err != nil {
 		return "", err
 	}
 	// Work from the end so nested calls are translated before their parents.
@@ -41,23 +41,23 @@ func prepareSQL(sqlText string) (string, error) {
 		if !tokens[i].IsWord("json_extract_string") && !tokens[i].IsWord("json_extract_isnull") {
 			continue
 		}
-		args, next, err := sqlscan.CallArguments(tokens, i)
+		args, next, err := utility.SQLCallArguments(tokens, i)
 		if err != nil || len(args) != 2 {
 			return "", fmt.Errorf("%s requires two arguments", tokens[i].Text)
 		}
-		call := "JSON_EXTRACT ( " + sqlscan.Render(args[0], '`') + ", " + sqlscan.Render(args[1], '`') + " )"
+		call := "JSON_EXTRACT ( " + utility.SQLRender(args[0], '`') + ", " + utility.SQLRender(args[1], '`') + " )"
 		if tokens[i].IsWord("json_extract_string") {
 			call = "JSON_UNQUOTE ( " + call + " )"
 		} else {
 			call = "( " + call + " IS NULL )"
 		}
-		replacement, err := sqlscan.Scan(call)
+		replacement, err := utility.SQLScan(call)
 		if err != nil {
 			return "", err
 		}
-		tokens = append(append(append([]sqlscan.Token(nil), tokens[:i]...), replacement...), tokens[next:]...)
+		tokens = append(append(append([]utility.SQLToken(nil), tokens[:i]...), replacement...), tokens[next:]...)
 	}
-	normalized := sqlscan.Render(tokens, '`')
+	normalized := utility.SQLRender(tokens, '`')
 	if len(shape.Clauses.Limit) == 0 {
 		normalized += " LIMIT 1024"
 	}

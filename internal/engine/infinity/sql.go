@@ -29,11 +29,10 @@ import (
 	"strings"
 	"time"
 
-	"ragflow/internal/common"
-	"ragflow/internal/sqlscan"
-	"ragflow/internal/utility"
-
 	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -103,21 +102,21 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 // prepareSQL rewrites field identifiers while preserving string literals and
 // result labels. It only transforms the expressions of one single-table SELECT.
 func prepareSQL(sqlText string, aliasToActual map[string]string) (string, error) {
-	tokens, err := sqlscan.Scan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
+	tokens, err := utility.SQLScan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
 	if err != nil {
 		return "", err
 	}
-	shape, err := sqlscan.SplitSelect(tokens)
+	shape, err := utility.SQLSplitSelect(tokens)
 	if err != nil {
 		return "", err
 	}
-	if _, err := sqlscan.TableReference(shape.Clauses.From); err != nil {
+	if _, err := utility.SQLTableReference(shape.Clauses.From); err != nil {
 		return "", err
 	}
 	clauses := shape.Clauses
-	for _, expression := range [][]sqlscan.Token{clauses.Select, clauses.Where, clauses.GroupBy, clauses.Having, clauses.OrderBy} {
+	for _, expression := range [][]utility.SQLToken{clauses.Select, clauses.Where, clauses.GroupBy, clauses.Having, clauses.OrderBy} {
 		for i, token := range expression {
-			if token.Kind != sqlscan.Word && token.Kind != sqlscan.Quoted {
+			if token.Kind != utility.SQLWord && token.Kind != utility.SQLQuoted {
 				continue
 			}
 			if i > 0 && expression[i-1].IsWord("as") {
@@ -135,7 +134,7 @@ func prepareSQL(sqlText string, aliasToActual map[string]string) (string, error)
 			expression[i].Lower = strings.ToLower(actual)
 		}
 	}
-	return sqlscan.Render(tokens, '"'), nil
+	return utility.SQLRender(tokens, '"'), nil
 }
 
 // psqlResult is the structured parse of a psql table-format output.

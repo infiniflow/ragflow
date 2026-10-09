@@ -27,10 +27,11 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/chunker"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
 )
@@ -232,7 +233,7 @@ func parseSpreadsheetItems(ctx context.Context, extension, filename string, data
 func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, error) {
 	type sheetState struct {
 		name    string
-		columns []ingestiontable.Column
+		columns []common.TableColumn
 		rows    int
 	}
 	bySheet := map[int]*sheetState{}
@@ -313,7 +314,7 @@ func staleRoleWarnings(doc *entity.Document, sheets []TableProbeSheet) []string 
 	}
 	var warnings []string
 	for key, raw := range doc.ParserConfig {
-		if !ingestiontable.IsNodeKey(key) {
+		if !schema.IsTableChunkerNodeKey(key) {
 			continue
 		}
 		params, ok := raw.(map[string]any)

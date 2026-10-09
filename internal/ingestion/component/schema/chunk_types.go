@@ -18,8 +18,9 @@ package schema
 
 import (
 	"encoding/json"
+	"fmt"
 
-	"ragflow/internal/ingestion/table"
+	"ragflow/internal/common"
 )
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
@@ -152,7 +153,7 @@ type TableRowSource struct {
 	// Mode is the column mode actually applied to this row.
 	Mode string `json:"mode"`
 	// Columns is the sheet's column identity in header order.
-	Columns []table.Column `json:"columns"`
+	Columns []common.TableColumn `json:"columns"`
 	// Roles holds only the roles the configuration states — empty for auto,
 	// and never the resolved default. A column missing from it under manual was
 	// indexed as "both", which is the difference between a column whose values
@@ -190,6 +191,37 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		d.Extra = raw
 	}
 	return nil
+}
+
+// TableRowIdentity returns the hash input that identifies a spreadsheet row
+// chunk by where it came from, or ok=false for any other chunk. Two different
+// source rows that render the same text, and the same row re-parsed under
+// different column roles, both keep this identity.
+func TableRowIdentity(ck map[string]any) (string, bool) {
+	src, ok := ck["table_row_source"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	sheet, okSheet := jsonNumber(src["sheet_index"])
+	row, okRow := jsonNumber(src["source_row"])
+	if !okSheet || !okRow || row == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("table-row:v1:%d:%d", sheet, row), true
+}
+
+// jsonNumber reads a number that reaches this layer either as an int (in the
+// same process) or as a float64 (after a JSON round trip through the Tokenizer
+// or a checkpoint).
+func jsonNumber(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 func (d ChunkDoc) MarshalJSON() ([]byte, error) {

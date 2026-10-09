@@ -22,26 +22,15 @@ import (
 	"sort"
 
 	"ragflow/internal/dao"
-	"ragflow/internal/engine"
-	ingestiontable "ragflow/internal/ingestion/table"
+	"ragflow/internal/entity"
 )
-
-// SupportsStructuredTableSQL reports whether the active engine can answer a
-// query against the columns a derived profile describes. The profile names
-// columns by the JSON key they are stored under, which only an engine whose SQL
-// prompt extracts from a JSON column can read back; Elasticsearch, OpenSearch
-// and SereneDB address physical fields, so handing them a JSON field map would
-// generate a query nothing can answer.
-func SupportsStructuredTableSQL(engineName string) bool {
-	return engineName == string(engine.EngineInfinity) || engine.IsOceanBaseFamily(engineName)
-}
 
 // TableFieldMap returns the structured columns the given knowledge bases have
 // indexed: the union over their enabled documents' derived table profiles, and
 // the document IDs that contributed it.
 //
 // Each document's indexed columns are recorded in its own metadata record when
-// a table run publishes (internal/ingestion/table.Profile), so the knowledge
+// a table run publishes (entity.TableProfile), so the knowledge
 // base view is computed from the documents that actually hold rows. Nothing is
 // stored a second time per knowledge base, which is why a document that fails
 // to publish, is disabled, or was indexed under another engine simply does not
@@ -97,7 +86,7 @@ func (s *MetadataService) TableFieldMap(ctx context.Context, kbIDs []string) (ma
 			if err != nil {
 				continue
 			}
-			profile, ok, err := ingestiontable.DecodeProfile(metaFields[ingestiontable.ProfileMetadataField])
+			profile, ok, err := entity.DecodeTableProfile(metaFields[entity.TableProfileMetadataField])
 			if err != nil {
 				// A record that is present but unparseable is a publisher bug;
 				// say so rather than dropping the document in silence.
