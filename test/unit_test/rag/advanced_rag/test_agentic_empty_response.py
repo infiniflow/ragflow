@@ -10,18 +10,23 @@ from rag.advanced_rag.harness.config import resolve_mode
 
 
 class FakeChatModel:
+    """Provide deterministic streamed answers and count model invocations."""
+
     max_length = 8192
 
     def __init__(self):
+        """Initialize the answer-generation call counter."""
         self.calls = 0
 
     async def async_chat_streamly_delta(self, system, messages, config):
+        """Stream a fixed evidence-based answer while recording the call."""
         self.calls += 1
         yield "Answer from the retrieved evidence."
 
 
 @pytest.fixture
 def composition_dependencies(monkeypatch):
+    """Isolate service dependencies while preserving real graph composition."""
     # Composition imports the retrieval/service integrations lazily. Keep those
     # boundaries isolated while exercising the real graph state and answer node.
     budget = ModuleType("rag.advanced_rag.agentic_rag")
@@ -48,6 +53,7 @@ def composition_dependencies(monkeypatch):
     ids=["evidence", "no-evidence", "abstain", "no-empty-response"],
 )
 async def test_compose_answer_after_graph_initialization(mode, has_evidence, abstain, empty_response, expected_calls, composition_dependencies):
+    """Verify evidence and fallback responses after initialization in each mode."""
     model = FakeChatModel()
     tools = SimpleNamespace(
         thinking_mode=mode,
