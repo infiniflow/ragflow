@@ -19,6 +19,11 @@ export function BuiltinPipelineCard({
   const { t } = useTranslation();
   const { copy, copying } = useCopyBuiltinPipeline();
 
+  const handleCopyClick = (e: MouseEvent) => {
+    e.stopPropagation();
+    copy({ id: data.id, title: data.title ?? '' });
+  };
+
   // The built-in marker is rendered as a badge. Reuse the existing
   // " (built in)" suffix but drop the surrounding parentheses for a cleaner
   // badge label, falling back to a plain label if the locale is missing it.
@@ -50,10 +55,7 @@ export function BuiltinPipelineCard({
           variant="static"
           size="auto"
           disabled={copying}
-          onClick={(e: MouseEvent) => {
-            e.stopPropagation();
-            copy({ id: data.id, title: data.title ?? '' });
-          }}
+          onClick={handleCopyClick}
         >
           <Copy className="size-[1em]" />
           {t('common.copy')}

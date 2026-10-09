@@ -88,8 +88,6 @@ export declare interface IFlow {
 
 // GET /agents merges compilation template groups into the agent list when no
 // canvas_category is requested; every item carries this discriminator.
-// Built-in pipelines are composed into the list on the front end (mirroring
-// PR #20603's unified parser dropdown) and tagged with BuiltinPipeline.
 export enum AgentListItemType {
   Agent = 'agent',
   CompilationTemplateGroup = 'compilation_template_group',
@@ -98,8 +96,10 @@ export enum AgentListItemType {
 
 // A built-in ingestion pipeline rendered as a read-only list item. Built-in
 // pipelines are static, non-DB resources served by GET /api/v1/pipelines; they
-// are composed into the agents list on the front end rather than stored as
-// user canvases, and are always marked read-only (builtin: true).
+// are composed into the agents list on the front end (mirroring PR #20603's
+// unified parser dropdown) rather than stored as user canvases, and are always
+// marked read-only (builtin: true). They are kept out of the AgentListItem
+// union because they never come from the server's agent list.
 export interface IBuiltinPipelineListItem extends IBuiltinPipeline {
   canvas_category: string;
   type: AgentListItemType.BuiltinPipeline;
@@ -110,8 +110,7 @@ export type AgentListItem =
   | (IFlow & { type?: AgentListItemType.Agent })
   | (ICompilationTemplateGroup & {
       type: AgentListItemType.CompilationTemplateGroup;
-    })
-  | IBuiltinPipelineListItem;
+    });
 
 export interface IFlowTemplate {
   avatar: string;

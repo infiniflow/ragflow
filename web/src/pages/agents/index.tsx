@@ -14,17 +14,17 @@ import { RAGFlowPagination } from '@/components/ui/ragflow-pagination';
 import { ListDeletionKey } from '@/constants/list-deletion';
 import { useGoToPreviousPageOnEmpty } from '@/hooks/logic-hooks';
 import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
-import { useAgentsWithBuiltin } from './use-agents-with-builtin';
+import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
-import { AgentListItemType } from '@/interfaces/database/agent';
 import { pick } from 'lodash';
+import { BuiltinPipelineSection } from './builtin-pipeline-section';
+import { shouldShowBuiltinForRaw } from './builtin-pipeline-list';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
-import { BuiltinPipelineCard } from './builtin-pipeline-card';
 import { CompilationTemplateCard } from './compilation-template-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
@@ -50,8 +50,15 @@ export default function Agents() {
     setFilterValue,
     handleFilterSubmit,
     checkValue,
-    builtinItems,
-  } = useAgentsWithBuiltin();
+    debouncedSearchString,
+  } = useFetchAgentListByPage();
+
+  // Built-in pipelines surface only in the "All" and "Pipeline" views. Compute
+  // this from the raw filter value so the section (and its catalog request) is
+  // mounted only when eligible, matching the "fire a query where its data is
+  // rendered" convention.
+  const rawCategory = filterValue?.canvasCategory;
+  const builtinVisible = shouldShowBuiltinForRaw(rawCategory);
 
   const { navigateToAgentTemplates } = useNavigatePage();
   const navigate = useNavigate();
@@ -177,7 +184,7 @@ export default function Agents() {
           </ListFilterBar>
         </header>
 
-        {data.length ? (
+        {data.length || builtinVisible ? (
           <>
             <CardContainer className="flex-1 overflow-auto px-5">
               {data.map((x) =>
@@ -188,8 +195,6 @@ export default function Agents() {
                     onClick={handleEditCompilation(x.id)}
                     onDelete={handleDeleteCompilation}
                   />
-                ) : x.type === AgentListItemType.BuiltinPipeline ? (
-                  <BuiltinPipelineCard key={x.id} data={x} />
                 ) : (
                   <AgentCard
                     key={x.id}
@@ -199,31 +204,24 @@ export default function Agents() {
                 ),
               )}
 
-              {builtinItems.length > 0 && (
-                <section
-                  className="mt-6"
-                  data-testid="builtin-pipeline-section"
-                >
-                  {data.length > 0 && (
-                    <div className="border-t border-line-divider my-2" />
-                  )}
-                  <h2 className="text-sm font-medium text-text-secondary mb-3">
-                    {t('knowledgeConfiguration.builtInPipelines')}
-                  </h2>
-                  {builtinItems.map((b) => (
-                    <BuiltinPipelineCard key={b.id} data={b} />
-                  ))}
-                </section>
+              {builtinVisible && (
+                <BuiltinPipelineSection
+                  rawCategory={rawCategory}
+                  searchString={debouncedSearchString}
+                  showDivider={data.length > 0}
+                />
               )}
             </CardContainer>
 
-            <footer className="mt-4 px-5 pb-5">
-              <RAGFlowPagination
-                {...pick(pagination, 'current', 'pageSize')}
-                total={pagination.total}
-                onChange={handlePageChange}
-              />
-            </footer>
+            {data.length > 0 && (
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={pagination.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            )}
           </>
         ) : searchString ? (
           <div className="flex-1 flex items-center justify-center">

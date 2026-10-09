@@ -1,5 +1,5 @@
 import {
-  shouldShowBuiltin,
+  shouldShowBuiltinForRaw,
   filterBuiltinByKeyword,
   toBuiltinListItem,
 } from './builtin-pipeline-list';
@@ -30,19 +30,19 @@ const sample: IBuiltinPipeline[] = [
   },
 ];
 
-describe('shouldShowBuiltin', () => {
+describe('shouldShowBuiltinForRaw', () => {
   it('shows builtin in the "All" view (no category filter)', () => {
-    expect(shouldShowBuiltin(undefined)).toBe(true);
-    expect(shouldShowBuiltin([])).toBe(true);
+    expect(shouldShowBuiltinForRaw(undefined)).toBe(true);
   });
 
   it('shows builtin in the Pipeline (dataflow) view', () => {
-    expect(shouldShowBuiltin([AgentCategory.DataflowCanvas])).toBe(true);
+    expect(shouldShowBuiltinForRaw(AgentCategory.DataflowCanvas)).toBe(true);
+    expect(shouldShowBuiltinForRaw([AgentCategory.DataflowCanvas])).toBe(true);
   });
 
   it('shows builtin when dataflow is among several selected categories', () => {
     expect(
-      shouldShowBuiltin([
+      shouldShowBuiltinForRaw([
         AgentCategory.AgentCanvas,
         AgentCategory.DataflowCanvas,
       ]),
@@ -50,19 +50,32 @@ describe('shouldShowBuiltin', () => {
   });
 
   it('hides builtin in the pure Agent view', () => {
-    expect(shouldShowBuiltin([AgentCategory.AgentCanvas])).toBe(false);
+    expect(shouldShowBuiltinForRaw(AgentCategory.AgentCanvas)).toBe(false);
+    expect(shouldShowBuiltinForRaw([AgentCategory.AgentCanvas])).toBe(false);
   });
 
   it('hides builtin in the compilation template group view', () => {
-    expect(shouldShowBuiltin(['compilation_template_group'])).toBe(false);
+    expect(shouldShowBuiltinForRaw('compilation_template_group')).toBe(false);
+    expect(shouldShowBuiltinForRaw(['compilation_template_group'])).toBe(false);
   });
 
   it('hides builtin when only non-dataflow categories are selected', () => {
     expect(
-      shouldShowBuiltin([
+      shouldShowBuiltinForRaw([
         AgentCategory.AgentCanvas,
         'compilation_template_group',
       ]),
+    ).toBe(false);
+  });
+
+  it('hides builtin for a structured (non-string) category filter', () => {
+    // A Record-typed filter carries no plain ids; the "All"/"Pipeline" intent
+    // cannot be assumed, so built-ins stay hidden rather than guessing.
+    expect(
+      shouldShowBuiltinForRaw({
+        operator: 'or',
+        values: [AgentCategory.DataflowCanvas],
+      }),
     ).toBe(false);
   });
 });
