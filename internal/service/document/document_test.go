@@ -42,8 +42,8 @@ import (
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	syncerconnector "ragflow/internal/syncer/connector"
+	"ragflow/internal/utility"
 )
 
 // recordingTaskPublisher implements service.TaskPublisher and records published messages.

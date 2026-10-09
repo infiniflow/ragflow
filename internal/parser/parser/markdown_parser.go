@@ -29,8 +29,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gomarkdown/markdown/ast"
 	markdownlib "github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/ast"
 	mdparser "github.com/gomarkdown/markdown/parser"
 )
 

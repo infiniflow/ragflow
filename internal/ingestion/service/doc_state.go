@@ -23,9 +23,9 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
-	documentpkg "ragflow/internal/service/document"
 	taskpkg "ragflow/internal/ingestion/task"
+	documentpkg "ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a

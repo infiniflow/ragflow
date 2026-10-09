@@ -30,15 +30,15 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
-	"ragflow/internal/ingestion/knowledge_compile"
-	enginetypes "ragflow/internal/engine/types"
-	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	indexdoc "ragflow/internal/ingestion/task/indexdoc"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been

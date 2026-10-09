@@ -12,6 +12,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"ragflow/internal/common"
+	es "ragflow/internal/engine/elasticsearch"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/chunker"
@@ -19,7 +20,6 @@ import (
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/server/config"
 	"ragflow/internal/tokenizer"
-	es "ragflow/internal/engine/elasticsearch"
 )
 
 func TestTableColumnModeRoundTrip(t *testing.T) {
