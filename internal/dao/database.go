@@ -219,7 +219,20 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.CompilationTemplateGroup{},
 	}
 
-	if migrateDB {
+	// Fast path: when a --migrate run of this exact build already converged the
+	// schema, every step below (manual migrations, the per-model AutoMigrate
+	// loop, the runtime-table and index ensure steps) is a verified no-op that
+	// would only cost information_schema round trips. SeedCanvasTemplates stays
+	// on every path: it seeds data whose content can change between runs of the
+	// same build.
+	codeVersion := common.GetRAGFlowVersion()
+	converged := schemaConvergedForBuild(ctx, DB, codeVersion)
+	if converged {
+		common.Info("Schema already converged for this build, skipping schema setup",
+			zap.String("version", codeVersion))
+	}
+
+	if !converged && migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
 		// the ORM creates and converges the schema: the manual migrations have to see
 		// the legacy tables as they are. Running them after AutoMigrate would let
@@ -257,7 +270,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
-	} else {
+	} else if !converged {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
 		}
@@ -268,21 +281,30 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to auto-migrate runtime models: %w", err)
 		}
 	}
-	// Conversation lists filter by dialog and usually order by update time.
-	for _, table := range []string{"conversation", "api_4_conversation"} {
-		indexName := "idx_" + table + "_dialog_updated"
-		if !DB.WithContext(ctx).Migrator().HasIndex(table, indexName) {
-			if err = DB.WithContext(ctx).Exec("CREATE INDEX " + indexName + " ON " + table + " (dialog_id, update_time, id)").Error; err != nil {
-				common.Warn("Failed to create conversation list index", zap.String("table", table), zap.Error(err))
+	if !converged {
+		// Conversation lists filter by dialog and usually order by update time.
+		for _, table := range []string{"conversation", "api_4_conversation"} {
+			indexName := "idx_" + table + "_dialog_updated"
+			if !DB.WithContext(ctx).Migrator().HasIndex(table, indexName) {
+				if err = DB.WithContext(ctx).Exec("CREATE INDEX " + indexName + " ON " + table + " (dialog_id, update_time, id)").Error; err != nil {
+					common.Warn("Failed to create conversation list index", zap.String("table", table), zap.Error(err))
+				}
 			}
 		}
+		// ingestion_task.pipeline_log_id cannot be added by AutoMigrate (see the
+		// helper for why), and every ingestion_task query selects all columns, so a
+		// missing column fails the whole API with Error 1054. Ensure it on both
+		// startup paths rather than trusting AutoMigrate.
+		if err = migrateIngestionTaskPipelineLogID(ctx, DB); err != nil {
+			return err
+		}
 	}
-	// ingestion_task.pipeline_log_id cannot be added by AutoMigrate (see the
-	// helper for why), and every ingestion_task query selects all columns, so a
-	// missing column fails the whole API with Error 1054. Ensure it on both
-	// startup paths rather than trusting AutoMigrate.
-	if err = migrateIngestionTaskPipelineLogID(ctx, DB); err != nil {
-		return err
+	// The marker goes down only after every schema step above has succeeded, so
+	// a partially converged database never carries a convergence record.
+	if !converged && migrateDB {
+		if err = markSchemaConverged(ctx, DB, codeVersion); err != nil {
+			common.Warn("Failed to record schema convergence marker", zap.Error(err))
+		}
 	}
 	// Seed built-in agent templates so the Go backend can serve the
 	// "create agent from template" catalogue without relying on Python-side
