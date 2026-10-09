@@ -671,6 +671,7 @@ export default {
       reRankModelWaring: 'Rerank modeli juda ko‘p vaqt oladi.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Urug‘ — bir xil natijalarning turli ishga tushirishlarda takrorlanuvchanligini ta’minlovchi psevdo-tasodifiy algoritmdir.',
       datasetDescription: 'Ma’lumotlar to‘plamingizni tasvirlab bering',

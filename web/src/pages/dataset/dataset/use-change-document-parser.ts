@@ -25,7 +25,7 @@ export const useChangeDocumentParser = () => {
           documentId: record?.id,
           datasetId: record?.dataset_id,
           parserConfig: parserConfigInfo.parser_config,
-          parseType: parserConfigInfo.parseType,
+          parse_type: parserConfigInfo.parse_type,
         });
         if (ret === 0) {
           hideChangeParserModal();

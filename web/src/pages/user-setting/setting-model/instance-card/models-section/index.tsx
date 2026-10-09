@@ -306,26 +306,75 @@ export function ModelsSection(props: ModelsSectionProps) {
           {t('setting.models')}
         </div>
         {!hideActions && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handleListModels}
-              disabled={manualListLoading}
-              data-testid="models-list-button"
-            >
-              {manualListLoading && <Loader2 className="size-3 animate-spin" />}
-              {t('setting.listModels')}
-            </Button>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={() => setDialogOpen(true)}
-              data-testid="models-add-custom"
-              aria-label={t('setting.addCustomModel')}
-            >
-              <Plus className="size-4" />
-            </Button>
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleListModels}
+                disabled={manualListLoading}
+                data-testid="models-list-button"
+              >
+                {manualListLoading && (
+                  <Loader2 className="size-3 animate-spin" />
+                )}
+                {t('setting.listModels')}
+              </Button>
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={() => setDialogOpen(true)}
+                data-testid="models-add-custom"
+                aria-label={t('setting.addCustomModel')}
+              >
+                <Plus className="size-4" />
+              </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleBatchVerifyClick}
+                disabled={batchVerifying || filteredModels.length === 0}
+                data-testid="models-batch-verify"
+                className="ml-auto"
+              >
+                {batchVerifying ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <ShieldCheck className="size-3" />
+                )}
+                {tSetting('batchVerifyModels')}
+              </Button>
+              {!hideActions && (
+                // When the toggle is in "remove all" mode the click opens a
+                // confirmation dialog instead of mutating directly; the button
+                // acts as the dialog trigger, so the handler moves to `onOk`.
+                <ConfirmDeleteDialog
+                  hidden={!allFilteredAdded}
+                  onOk={handleBatchToggleModels}
+                  title={t('common.removeModalTitle')}
+                  okButtonText={t('common.remove')}
+                >
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={
+                      allFilteredAdded ? undefined : handleBatchToggleModels
+                    }
+                    disabled={batchLoading || filteredModels.length === 0}
+                    data-testid="models-batch-toggle"
+                  >
+                    {batchLoading && (
+                      <Loader2 className="size-3 animate-spin" />
+                    )}
+                    {allFilteredAdded
+                      ? tSetting('batchRemoveModels')
+                      : tSetting('batchAddModels')}
+                  </Button>
+                </ConfirmDeleteDialog>
+              )}
+            </div>
           </div>
         )}
       </div>
@@ -359,48 +408,6 @@ export function ModelsSection(props: ModelsSectionProps) {
               />
             ))}
           </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleBatchVerifyClick}
-            disabled={batchVerifying || filteredModels.length === 0}
-            data-testid="models-batch-verify"
-            className="ml-auto"
-          >
-            {batchVerifying ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <ShieldCheck className="size-3" />
-            )}
-            {tSetting('batchVerifyModels')}
-          </Button>
-          {!hideActions && (
-            // When the toggle is in "remove all" mode the click opens a
-            // confirmation dialog instead of mutating directly; the button
-            // acts as the dialog trigger, so the handler moves to `onOk`.
-            <ConfirmDeleteDialog
-              hidden={!allFilteredAdded}
-              onOk={handleBatchToggleModels}
-              title={t('common.removeModalTitle')}
-              okButtonText={t('common.remove')}
-            >
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={allFilteredAdded ? undefined : handleBatchToggleModels}
-                disabled={batchLoading || filteredModels.length === 0}
-                data-testid="models-batch-toggle"
-              >
-                {batchLoading && <Loader2 className="size-3 animate-spin" />}
-                {allFilteredAdded
-                  ? tSetting('batchRemoveModels')
-                  : tSetting('batchAddModels')}
-              </Button>
-            </ConfirmDeleteDialog>
-          )}
         </div>
 
         <div className="bg-bg-card rounded-lg max-h-80 overflow-auto scrollbar-auto border border-border-button">

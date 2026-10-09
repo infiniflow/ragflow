@@ -129,11 +129,6 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 - Le modèle analyse les questions complexes et peut les décomposer, rechercher des connaissances et vérifier les preuves en plusieurs étapes.
 - Les modes Low, Medium, High et Ultra permettent de régler la profondeur de recherche et de raisonnement selon la complexité de la question.
 
-### ⚙️ **Architecture de services native Go**
-
-- Une implémentation Go unifiée fournit API, Admin, Ingestor et Syncer. DeepDoc s’exécute dans le processus Go pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
-- Les services Go appellent les bibliothèques natives d’analyse de documents et ONNX Runtime via CGO. MCP et Sandbox Executor sont activables à la demande.
-
 ### 🌱 **Citations fondées avec réduction des hallucinations**
 
 - Visualisation du découpage de texte pour permettre une intervention humaine.
@@ -250,7 +245,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
 #### ⚙️ Configuration et ajustement de Docker
 
-Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
+Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour la prise en charge des plateformes (note : macOS n'est temporairement pas pris en charge, utilisez un hôte Linux x86_64), consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
 
 Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 
