@@ -4,6 +4,7 @@ import (
 	"html"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -649,6 +650,64 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	}
 }
 
+// TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader reproduces a Kros-style
+// budget spreadsheet where rows 1–5 are narrow metadata labels (e.g.
+// "Stavba:", "DSP MILLHAUS") and row 6 is the real 7-column header. The
+// width-validation heuristic must skip the narrow rows and pick row 6.
+func TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: single-cell merged title.
+		mustSetCell(t, f, "Sheet1", "A1", "Rekapitulácia objektov stavby")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "A1", bold)
+		// Row 2: 2-cell metadata (both bold).
+		mustSetCell(t, f, "Sheet1", "A2", "Stavba:")
+		mustSetCell(t, f, "Sheet1", "C2", "DSP MILLHAUS")
+		mustSetCellStyle(t, f, "Sheet1", "A2", "C2", bold)
+		// Row 3: 1-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A3", "Objednávateľ:")
+		// Row 4: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A4", "Zhotoviteľ:")
+		mustSetCell(t, f, "Sheet1", "G4", "Spracoval:")
+		// Row 5: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A5", "Miesto:")
+		mustSetCell(t, f, "Sheet1", "G5", "Dátum:")
+		// Row 6: the REAL header — 7 bold text columns.
+		for i, hdr := range []string{"Kód", "", "Zákazka", "ZRN", "VRN", "Cena bez DPH", "DPH"} {
+			cell := string(rune('A'+i)) + "6"
+			mustSetCell(t, f, "Sheet1", cell, hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A6", "G6", bold)
+		// Rows 7–20: data rows with 5–7 filled cells each (some have numbers).
+		for r := 7; r <= 20; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "SO01")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), "BYTOVÝ OBJEKT")
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), "17234914")
+			mustSetCell(t, f, "Sheet1", cellRef('E', r), "689480")
+			mustSetCell(t, f, "Sheet1", cellRef('F', r), "17924395")
+			mustSetCell(t, f, "Sheet1", cellRef('G', r), "3584879")
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "budget.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	markup := spreadsheetText(res)
+	if !strings.Contains(markup, "<th>Cena bez DPH</th>") {
+		t.Fatalf("expected real header (row 6) to be detected, got:\n%s", markup[:min(len(markup), 500)])
+	}
+	hdr := spreadsheetHeaderText(res)
+	if !strings.Contains(hdr, "Cena bez DPH") {
+		t.Fatalf("header text = %q, want it to contain 'Cena bez DPH'", hdr)
+	}
+}
+
+// cellRef builds "A7", "C12" etc. for test fixtures.
+func cellRef(col rune, row int) string {
+	return string(col) + strconv.Itoa(row)
+}
+
 // TestInheritMergedHeader unit-tests the merge inheritance helper directly.
 func TestInheritMergedHeader(t *testing.T) {
 	records := [][]string{
@@ -692,6 +751,38 @@ func TestPadRowToWidth(t *testing.T) {
 	}
 }
 
+// TestMedianRowWidth verifies the sampling helper.
+func TestMedianRowWidth(t *testing.T) {
+	// Kros-style: 5 narrow rows, then 14 wide rows.
+	records := make([][]string, 20)
+	records[0] = []string{"Title"}
+	records[1] = []string{"Stavba:", "", "DSP MILLHAUS"}
+	records[2] = []string{"Objednávateľ:"}
+	records[3] = []string{"Zhotoviteľ:", "", "", "", "", "", "Spracoval:"}
+	records[4] = []string{"Miesto:", "", "", "", "", "", "Dátum:"}
+	for i := 5; i < 20; i++ {
+		records[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
+	}
+	got := medianRowWidth(records)
+	if got < 5 || got > 7 {
+		t.Fatalf("medianRowWidth = %d, want 5..7 for Kros-style sheet", got)
+	}
+
+	// Narrow sheet: all 2-cell rows → median = 2.
+	narrow := make([][]string, 10)
+	for i := range narrow {
+		narrow[i] = []string{"a", "b"}
+	}
+	if got := medianRowWidth(narrow); got != 2 {
+		t.Fatalf("medianRowWidth(narrow) = %d, want 2", got)
+	}
+
+	// Too few rows → 0.
+	if got := medianRowWidth([][]string{{"a"}, {"b"}}); got != 0 {
+		t.Fatalf("medianRowWidth(tiny) = %d, want 0", got)
+	}
+}
+
 // TestMergeExtentCol asserts the furthest merged column is reported as-is within
 // the cap and clamped to maxMergeExtentCols beyond it (the memory guard).
 func TestMergeExtentCol(t *testing.T) {
@@ -703,6 +794,161 @@ func TestMergeExtentCol(t *testing.T) {
 	}
 	if got := mergeExtentCol([]mergeRange{{1, 1, 1, 5000}}); got != maxMergeExtentCols {
 		t.Fatalf("beyond cap: want %d, got %d", maxMergeExtentCols, got)
+	}
+}
+
+// TestIsFormSheet verifies the form-sheet detection heuristic.
+func TestIsFormSheet(t *testing.T) {
+	// Kros cover sheet: 30 rows, most with 1-2 cells.
+	form := make([][]string, 30)
+	form[0] = []string{""}
+	form[1] = []string{"", "", "", "KRYCÍ LIST ROZPOČTU"}
+	form[2] = []string{"", "", "", "Stavba:"}
+	form[3] = []string{"", "", "", "", "DSP Millhaus"}
+	form[4] = []string{"", "", "", "Objekt:"}
+	form[5] = []string{"", "", "", "", "SO01 - BYTOVÝ OBJEKT"}
+	form[6] = []string{"", "", "", "Časť:"}
+	form[7] = []string{"", "", "", "", "E1.2 - Statika"}
+	for i := 8; i < 25; i++ {
+		if i%3 == 0 {
+			form[i] = []string{"", "", "", "Label:", "", "", "", "", "", "12345"}
+		} else {
+			form[i] = []string{"", "", "", "", "text value"}
+		}
+	}
+	form[25] = []string{"", "", "", "Cena bez DPH", "", "", "", "", "", "5391273.95"}
+	form[26] = []string{"", "", "", "Cena s DPH", "", "", "", "", "", "6469528.74"}
+	for i := 27; i < 30; i++ {
+		form[i] = []string{""}
+	}
+	if !isFormSheet(form) {
+		t.Fatal("Kros cover sheet should be detected as form")
+	}
+
+	// Regular table: 20 rows with 7 cells each.
+	table := make([][]string, 20)
+	table[0] = []string{"Kód", "", "Zákazka", "ZRN", "VRN", "Cena bez DPH", "DPH"}
+	for i := 1; i < 20; i++ {
+		table[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
+	}
+	if isFormSheet(table) {
+		t.Fatal("regular table should NOT be detected as form")
+	}
+
+	// Hybrid sheet: 30-row form prefix followed by 80 wide rows (like E1.2).
+	hybrid := make([][]string, 110)
+	for i := 0; i < 30; i++ {
+		hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "value"}
+	}
+	for i := 30; i < 110; i++ {
+		hybrid[i] = make([]string, 29)
+		for j := range hybrid[i] {
+			hybrid[i][j] = "data"
+		}
+	}
+	if !isFormSheet(hybrid) {
+		t.Fatal("hybrid sheet (form prefix + table body) should be detected as form")
+	}
+
+	// Too few rows.
+	if isFormSheet([][]string{{"a"}, {"b"}}) {
+		t.Fatal("tiny sheet should not be form")
+	}
+}
+
+// TestRenderFormSheetKV verifies KV extraction from a Kros cover sheet.
+func TestRenderFormSheetKV(t *testing.T) {
+	rows := [][]string{
+		{""},
+		{"", "", "", "KRYCÍ LIST ROZPOČTU"},
+		{"", "", "", "Stavba:"},
+		{"", "", "", "", "DSP Millhaus"},
+		{"", "", "", "Časť:"},
+		{"", "", "", "", "E1.2 - Statika"},
+		{""},
+		{"", "", "", "Náklady z rozpočtu", "", "", "", "", "", "5183917.256"},
+		{"", "", "", "Cena bez DPH", "", "", "", "", "", "5391273.95"},
+		{"", "", "", "Cena s DPH", "", "", "", "", "", "6469528.74"},
+	}
+	text := renderFormSheetKV("E1.2 - Statika", rows)
+	if !strings.Contains(text, "Sheet: E1.2 - Statika") {
+		t.Fatalf("missing sheet name in KV text:\n%s", text)
+	}
+	if !strings.Contains(text, "Cena bez DPH: 5391273.95") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "Cena s DPH: 6469528.74") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "Náklady z rozpočtu: 5183917.256") {
+		t.Fatalf("missing KV pair in text:\n%s", text)
+	}
+	if !strings.Contains(text, "DSP Millhaus") {
+		t.Fatalf("missing metadata in text:\n%s", text)
+	}
+}
+
+// TestXLSXParser_FormSheetEmitsKVChunk verifies that a form-style sheet
+// emits an additional text KV chunk alongside the regular HTML table chunk.
+func TestXLSXParser_FormSheetEmitsKVChunk(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		sheet := "E1.2 - Statika"
+		idx, err := f.NewSheet(sheet)
+		if err != nil {
+			t.Fatalf("NewSheet: %v", err)
+		}
+		f.SetActiveSheet(idx)
+		// Fill a form-style sheet with sparse label-value pairs.
+		mustSetCell(t, f, sheet, "D2", "KRYCÍ LIST ROZPOČTU")
+		mustSetCell(t, f, sheet, "D4", "Stavba:")
+		mustSetCell(t, f, sheet, "E5", "DSP Millhaus")
+		mustSetCell(t, f, sheet, "D6", "Časť:")
+		mustSetCell(t, f, sheet, "E7", "E1.2 - Statika")
+		mustSetCell(t, f, sheet, "D8", "Objednávateľ:")
+		mustSetCell(t, f, sheet, "D9", "Projektant:")
+		mustSetCell(t, f, sheet, "D10", "Zhotoviteľ:")
+		mustSetCell(t, f, sheet, "D11", "Spracovateľ:")
+		mustSetCell(t, f, sheet, "D12", "Poznámka:")
+		mustSetCell(t, f, sheet, "D14", "Náklady z rozpočtu")
+		mustSetCell(t, f, sheet, "J14", 5183917.256)
+		mustSetCell(t, f, sheet, "D15", "Ostatné náklady")
+		mustSetCell(t, f, sheet, "J15", 207356.69)
+		mustSetCell(t, f, sheet, "D16", "Cena bez DPH")
+		mustSetCell(t, f, sheet, "J16", 5391273.95)
+		mustSetCell(t, f, sheet, "D18", "Cena s DPH")
+		mustSetCell(t, f, sheet, "J18", 6469528.74)
+		// Pad to enough rows so isFormSheet triggers (>= 6 rows).
+		for r := 19; r <= 30; r++ {
+			mustSetCell(t, f, sheet, cellRef('D', r), "padding")
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "budget.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	// Should have at least 2 items for the form sheet: HTML table + KV text.
+	// (Sheet1 is empty so yields nothing.)
+	var htmlCount, kvCount int
+	for _, item := range res.JSON {
+		text, _ := item["text"].(string)
+		if strings.Contains(text, "<table>") {
+			htmlCount++
+		}
+		if strings.Contains(text, "Sheet: E1.2 - Statika") && strings.Contains(text, "Cena bez DPH: 5391273.95") {
+			kvCount++
+			if item["sheet"] != "E1.2 - Statika" {
+				t.Errorf("KV item sheet = %v, want E1.2 - Statika", item["sheet"])
+			}
+		}
+	}
+	if kvCount == 0 {
+		var texts []string
+		for _, item := range res.JSON {
+			text, _ := item["text"].(string)
+			texts = append(texts, text[:min(len(text), 200)])
+		}
+		t.Fatalf("no KV chunk found for form sheet, items:\n%v", texts)
 	}
 }
 
