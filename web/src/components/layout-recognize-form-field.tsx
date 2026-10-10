@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -60,6 +61,8 @@ export function LayoutRecognizeFormField({
   testId?: string;
   ownerTenantId?: string;
 }) {
+  const { t: translateUi } = useTranslation();
+
   const form = useFormContext();
 
   const { t } = useTranslate('knowledgeDetails');
@@ -98,14 +101,14 @@ export function LayoutRecognizeFormField({
             {node.label}
           </span>
           <span className="text-state-error text-sm flex-shrink-0">
-            Experimental
+            {translateUi('ui.experimental')}
           </span>
         </div>
       ),
     );
 
     return [...prependNodes, ...modelTree];
-  }, [allAddedModels, optionsWithoutLLM, t]);
+  }, [allAddedModels, optionsWithoutLLM, t, translateUi]);
 
   return (
     <FormField

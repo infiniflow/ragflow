@@ -185,7 +185,7 @@ const FloatingChatWidgetMarkdown = ({
       if (!info) {
         return (
           <div className="p-2 text-xs text-red-500">
-            Error: Missing document information.
+            {t('ui.errorMissingDocumentInformation', { keyPrefix: '' })}
           </div>
         );
       }
@@ -275,7 +275,7 @@ const FloatingChatWidgetMarkdown = ({
         </div>
       );
     },
-    [getReferenceInfo, handleDocumentButtonClick],
+    [getReferenceInfo, handleDocumentButtonClick, t],
   );
 
   const renderReference = useCallback(

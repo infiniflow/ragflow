@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -41,6 +42,8 @@ const ChatApiKeyModal = ({
   hideModal,
   idKey,
 }: IModalProps<any> & { dialogId?: string; idKey: string }) => {
+  const { t: translateUi } = useTranslation();
+
   const { createToken, removeToken, tokenList, listLoading, creatingLoading } =
     useOperateApiKey(idKey, dialogId);
   const { t } = useTranslate('chat');
@@ -54,7 +57,9 @@ const ChatApiKeyModal = ({
           </DialogHeader>
           <div className="space-y-4 flex flex-col min-h-0">
             {listLoading ? (
-              <div className="flex justify-center py-8">Loading...</div>
+              <div className="flex justify-center py-8">
+                {translateUi('ui.loadingInProgress')}
+              </div>
             ) : (
               <Table rootClassName="min-h-0 shrink">
                 <TableHeader>

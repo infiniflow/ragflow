@@ -13,7 +13,9 @@ import SchemaVisualEditor, {
 
 export * from './i18n/locales/de';
 export * from './i18n/locales/en';
+export * from './i18n/locales/zh';
 export * from './i18n/translation-context';
+export * from './i18n/translation-provider';
 export * from './i18n/translation-keys';
 
 export * from './components/features/json-validator';

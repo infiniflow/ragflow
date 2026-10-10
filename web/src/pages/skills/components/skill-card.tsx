@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -52,6 +53,8 @@ const SkillCard: React.FC<SkillCardProps> = ({
   onDelete,
   formatRelative,
 }) => {
+  const { t: translateUi } = useTranslation();
+
   const fileCount = skill.files.filter((f) => !f.is_dir).length;
   const filesLoading = skill.files.length === 0 && (skill as any)._folderId;
 
@@ -109,7 +112,9 @@ const SkillCard: React.FC<SkillCardProps> = ({
                   </Tooltip>
                   <AlertDialogContent>
                     <AlertDialogHeader>
-                      <AlertDialogTitle>Delete Skill</AlertDialogTitle>
+                      <AlertDialogTitle>
+                        {translateUi('ui.deleteSkill')}
+                      </AlertDialogTitle>
                       <AlertDialogDescription>
                         Are you sure you want to delete this skill? This action
                         cannot be undone.

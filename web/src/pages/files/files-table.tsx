@@ -137,7 +137,7 @@ export function FilesTable({
         <Checkbox
           checked={row.getIsSelected()}
           onCheckedChange={(value) => row.toggleSelected(!!value)}
-          aria-label="Select row"
+          aria-label={t('ui.selectRow', { keyPrefix: '' })}
           disabled={!row.getCanSelect()}
         />
       ),

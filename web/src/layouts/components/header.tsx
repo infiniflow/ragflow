@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { IconFontFill } from '@/components/icon-font';
 import { RAGFlowAvatar } from '@/components/ragflow-avatar';
 import { Button } from '@/components/ui/button';
@@ -34,6 +35,8 @@ export function Header({
   className,
   ...props
 }: React.HTMLAttributes<HTMLElement>) {
+  const { t: translateUi } = useTranslation();
+
   const { pathname } = useLocation();
   const changeLanguage = useChangeLanguage();
 
@@ -80,7 +83,11 @@ export function Header({
               aria-current={pathname === Routes.Root ? 'page' : undefined}
               className="flex size-10 shrink-0 items-center justify-center"
             >
-              <img src={'/logo.svg'} alt="RAGFlow logo" className="size-10" />
+              <img
+                src={'/logo.svg'}
+                alt={translateUi('ui.ragflowLogo')}
+                className="size-10"
+              />
             </Link>
           </div>
         </div>

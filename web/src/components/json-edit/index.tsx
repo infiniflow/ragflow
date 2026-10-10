@@ -1,3 +1,4 @@
+import { LanguageAbbreviation } from '@/constants/common';
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import './css/cloud9_night.less';
@@ -26,7 +27,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<any>(null);
-  const { i18n } = useTranslation();
+  const { t, i18n } = useTranslation();
   const currentLanguageRef = useRef<string>(i18n.language);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -45,7 +46,8 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
             // Default configuration options
             const defaultOptions: JsonEditorOptions = {
               ...defaultConfig,
-              language: i18n.language === 'zh' ? 'zh-CN' : 'en',
+              language:
+                i18n.language === LanguageAbbreviation.Zh ? 'zh-CN' : 'en',
               onChange: () => {
                 if (editorRef.current && onChange) {
                   try {
@@ -126,7 +128,8 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
 
           const newOptions: JsonEditorOptions = {
             ...defaultConfig,
-            language: i18n.language === 'zh' ? 'zh-CN' : 'en',
+            language:
+              i18n.language === LanguageAbbreviation.Zh ? 'zh-CN' : 'en',
             onChange: () => {
               if (editorRef.current && onChange) {
                 try {
@@ -191,7 +194,7 @@ const JsonEditor: React.FC<JsonEditorProps> = ({
     >
       {isLoading && (
         <div className="flex items-center justify-center h-full">
-          <div className="text-text-secondary">Loading editor...</div>
+          <div className="text-text-secondary">{t('ui.loadingEditor')}</div>
         </div>
       )}
     </div>
