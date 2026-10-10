@@ -199,10 +199,10 @@ type closingLocker struct {
 	db *gorm.DB
 }
 
-func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool) {
+func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
 	sqlDB, _ := l.db.DB()
 	_ = sqlDB.Close()
-	return ConnectorLockLease{}, false
+	return ConnectorLockLease{}, false, nil
 }
 
 func (l closingLocker) Unlock(connectorID, kbID string) {}
