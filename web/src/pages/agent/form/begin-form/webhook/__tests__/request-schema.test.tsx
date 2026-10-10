@@ -47,6 +47,7 @@ jest.mock('@/components/ragflow-form', () => {
   };
 });
 
+/** Renders one editable field per request section using real form state. */
 function RequestSchemaForm() {
   const form = useForm({
     defaultValues: {

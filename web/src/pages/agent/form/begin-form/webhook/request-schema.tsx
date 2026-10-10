@@ -14,6 +14,7 @@ import { DynamicRequest } from './dynamic-request';
 // HTTP field names use the token character set, including hyphens.
 const HeaderNameInvalidCharacters = /[^!#$%&'*+\-.^_`|~0-9a-zA-Z]/g;
 
+/** Configures query, header, and body fields with HTTP token characters for header names. */
 export function WebhookRequestSchema() {
   const { t } = useTranslation();
   const form = useFormContext();

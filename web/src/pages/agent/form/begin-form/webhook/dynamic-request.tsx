@@ -27,6 +27,7 @@ type SelectKeysProps = {
   keyInputPattern?: RegExp;
 };
 
+/** Edits request fields, applying the supplied key pattern when filtering names. */
 export function DynamicRequest({
   name,
   label,
