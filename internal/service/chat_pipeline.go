@@ -2525,17 +2525,22 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 }
 
 // cleanTTSText sanitizes text for TTS synthesis.
-// Mirrors dialog_service.py:1404-1423.
 func cleanTTSText(text string) string {
 	if text == "" {
 		return ""
 	}
+	// Drop invalid UTF-8 before applying the character limit.
+	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
 	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
 	text = controlRe.ReplaceAllString(text, "")
 	// Strip emojis.
 	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
 	text = emojiRe.ReplaceAllString(text, "")
+	// Strip named tags, including reasoning tags, while preserving comparisons.
+	// Quoted attributes may contain > without ending the tag.
+	tagRe := regexp.MustCompile(`</?[A-Za-z][A-Za-z0-9:-]*(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+	text = tagRe.ReplaceAllString(text, "")
 	// Collapse whitespace.
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
@@ -2547,7 +2552,6 @@ func cleanTTSText(text string) string {
 }
 
 // synthesizeTTS calls the TTS model to convert text to audio.
-// Mirrors dialog_service.py:1426-1432.
 func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
