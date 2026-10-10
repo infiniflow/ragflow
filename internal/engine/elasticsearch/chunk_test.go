@@ -20,6 +20,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -598,5 +601,80 @@ func TestParseOrderByExprNilAndEmpty(t *testing.T) {
 	}
 	if got := parseOrderByExpr(&types.OrderByExpr{}); got != nil {
 		t.Errorf("empty OrderByExpr produced %#v, want nil", got)
+	}
+}
+
+// TestSearchAfterPaginateSkipErrorsWithoutSortCursor pins the loud-failure
+// half of #19649: when the skip phase still has rows to skip and a hit
+// carries no sort values (the request's sort was dropped, or the field is
+// missing from the documents), pagination must error instead of silently
+// restarting the take phase from row 0 and returning a wrong page.
+func TestSearchAfterPaginateSkipErrorsWithoutSortCursor(t *testing.T) {
+	// Full batch of hits, none with a Sort cursor. The old code broke out of
+	// the skip phase and the take phase fetched from a nil cursor — i.e. page 0.
+	noCursor := makeResponse(1000, 0, 5000)
+	for i := range noCursor.Hits.Hits {
+		noCursor.Hits.Hits[i].Sort = nil
+	}
+	m := &mockFetcher{scripted: []SearchResponse{noCursor}, scriptedTotal: 5000}
+	_, _, err := searchAfterPaginate(t.Context(), map[string]interface{}{}, 500, 10, m.fetch)
+	if err == nil {
+		t.Fatalf("expected an error when the skip phase cannot advance, got nil (silent page-0 restart)")
+	}
+	if !strings.Contains(err.Error(), "cannot advance past offset") {
+		t.Errorf("error does not mention the stuck offset: %v", err)
+	}
+}
+
+// TestSearchPagesPastResultWindowSortedByID covers the dataset structure
+// scans end to end: they page a sorted-by-id result set with offset/limit,
+// and past index.max_result_window the engine walks it with search_after,
+// which only advances when the request carries the sort. With the legacy
+// "skip id" guard the request went out without a sort, the take phase
+// restarted at row 0, and the caller silently got the wrong page (#19649).
+// Adapted from the field report on PR #20408.
+func TestSearchPagesPastResultWindowSortedByID(t *testing.T) {
+	if err := common.InitLogger("info", common.FileOutput{}, "elasticsearch_test"); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	const total = common.MAX_RESULT_WINDOW + 2
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode search query: %v", err)
+		}
+		_, sorted := body["sort"]
+		start := 0
+		if after, ok := body["search_after"].([]interface{}); ok && len(after) == 1 {
+			start = int(after[0].(float64)) + 1
+		}
+		size := int(body["size"].(float64))
+		hits := []map[string]interface{}{}
+		for i := start; i < total && i < start+size; i++ {
+			hit := map[string]interface{}{"_id": fmt.Sprintf("row-%05d", i), "_source": map[string]interface{}{}}
+			if sorted {
+				hit["sort"] = []int{i}
+			}
+			hits = append(hits, hit)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"hits": map[string]interface{}{"total": map[string]int{"value": total}, "hits": hits}})
+	}))
+	defer server.Close()
+
+	engine := newTestEngine(t, server.URL)
+	res, err := engine.Search(t.Context(), &types.SearchRequest{
+		IndexNames: []string{"ragflow_tenant"},
+		KbIDs:      []string{"kb-1"},
+		Offset:     common.MAX_RESULT_WINDOW,
+		Limit:      5000,
+		OrderBy:    (&types.OrderByExpr{}).Asc("id"),
+	})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if len(res.Chunks) != 2 {
+		t.Fatalf("got %d rows past the result window, want 2", len(res.Chunks))
 	}
 }

@@ -1628,10 +1628,14 @@ func searchAfterPaginate(
 		}
 		nextCursor := resp.Hits.Hits[len(resp.Hits.Hits)-1].Sort
 		if len(nextCursor) == 0 || sortValuesEqual(nextCursor, cursor) {
-			// ES returned hits but no usable cursor (e.g. sort field
-			// missing or unchanged). The index is exhausted from our
-			// point of view.
-			break
+			// ES returned hits but the cursor cannot advance (sort dropped
+			// from the request, missing from the documents, or non-unique
+			// across pages). With rows still to skip, the take phase would
+			// start from this unadvanced cursor and silently return page 0 —
+			// the data-loss shape behind #19649 — so fail loudly instead.
+			return nil, 0, fmt.Errorf(
+				"search_after pagination cannot advance past offset %d: Elasticsearch returned hits without a usable sort cursor (is the sort field mapped and unique across pages?)",
+				offset)
 		}
 		cursor = nextCursor
 		remainingSkip -= len(resp.Hits.Hits)
