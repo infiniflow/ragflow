@@ -158,6 +158,9 @@ func ValidateTableRoles(v any) (map[string]string, error) {
 		if key == "" {
 			return nil, fmt.Errorf("column_roles contains an empty column key")
 		}
+		if normalizeCore(key) != key {
+			return nil, fmt.Errorf("column_roles[%q] must use a normalized column key", key)
+		}
 		role, ok := val.(string)
 		if !ok {
 			return nil, fmt.Errorf("column_roles[%q] must be a string, got %T", key, val)

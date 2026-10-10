@@ -1064,7 +1064,8 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		cleaned := map[string]interface{}{}
 		for key, value := range parsed {
 			if !pipeline.IsTableChunkerNodeKey(key) {
-				continue
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid), fmt.Sprintf("parser_config[%q]: upload overrides only accept TableChunker:<node> keys", key))
+				return
 			}
 			params, ok := value.(map[string]interface{})
 			if !ok {

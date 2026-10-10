@@ -1407,7 +1407,8 @@ func (h *DatasetsHandler) GetDatasetTableSchema(c *gin.Context) {
 
 	fieldMap, docIDs, err := h.metadataService.TableFieldMap(ctx, []string{datasetID})
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		common.Error("read dataset table schema failed", err)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "The indexed table schema could not be read.")
 		return
 	}
 	engineName := h.metadataService.EngineType()

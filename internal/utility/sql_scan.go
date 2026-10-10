@@ -67,6 +67,9 @@ var errComments = errors.New("sqlscan: comments are not allowed")
 // SQLScan splits one statement into tokens. Comments, backslash escapes,
 // placeholders and unterminated literals are rejected rather than interpreted.
 func SQLScan(sql string) ([]SQLToken, error) {
+	if !utf8.ValidString(sql) {
+		return nil, errors.New("sqlscan: invalid UTF-8")
+	}
 	src := []rune(sql)
 	tokens := make([]SQLToken, 0, len(src)/4+8)
 

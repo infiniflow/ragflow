@@ -25,8 +25,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/xuri/excelize/v2"
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component"
+	"ragflow/internal/ingestion/component/chunker"
 	taskpkg "ragflow/internal/ingestion/task"
+	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/storage"
 )
 
 type stubDocStateSvc struct {
@@ -42,12 +48,16 @@ type stubDocStateSvc struct {
 	writeCount      int
 	deletedKeys     []string
 	incrementCalled bool
+	beforeLock      func()
 	setErr          error
 	readErr         error
 }
 
 func (s *stubDocStateSvc) WithDocumentMetadataLock(ctx context.Context, _ string, update func(context.Context) error) error {
 	s.lockCount++
+	if s.beforeLock != nil {
+		s.beforeLock()
+	}
 	return update(ctx)
 }
 
@@ -108,7 +118,7 @@ func TestDocStateUpdater_NilResultIsNoop(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
-	u.apply(ctx, nil)
+	u.apply(ctx, nil, nil)
 	if svc.setCalled || svc.incrementCalled {
 		t.Fatal("nil result must not touch document state")
 	}
@@ -118,7 +128,7 @@ func TestDocStateUpdater_EmptyMetadataSkipsMerge(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
-	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 3, TokenConsumption: 100})
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 3, TokenConsumption: 100}, nil)
 	if svc.setCalled {
 		t.Fatal("empty metadata must not call SetDocumentMetadata")
 	}
@@ -134,7 +144,7 @@ func TestDocStateUpdater_MergesNewKeys(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"existing": "old"}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
-	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"new_key": "value"}, ChunkCount: 1, TokenConsumption: 10})
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"new_key": "value"}, ChunkCount: 1, TokenConsumption: 10}, nil)
 	if svc.metaData["existing"] != "old" {
 		t.Errorf("existing key should be preserved: got %q", svc.metaData["existing"])
 	}
@@ -147,7 +157,7 @@ func TestDocStateUpdater_PreservesExistingKey(t *testing.T) {
 	svc := &stubDocStateSvc{metaData: map[string]any{"author": "Alice"}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
-	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"author": "Bob"}, ChunkCount: 1, TokenConsumption: 10})
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"author": "Bob"}, ChunkCount: 1, TokenConsumption: 10}, nil)
 	if svc.metaData["author"] != "Alice" {
 		t.Errorf("existing key must NOT be overwritten: got %q", svc.metaData["author"])
 	}
@@ -164,7 +174,7 @@ func TestDocStateUpdater_UnionsListValues(t *testing.T) {
 		DocID:      "doc-1",
 		Metadata:   map[string]any{"people": []string{"张辽", "刘备"}},
 		ChunkCount: 1, TokenConsumption: 10,
-	})
+	}, nil)
 	got, ok := svc.metaData["people"].([]string)
 	if !ok {
 		t.Fatalf("people should be []string, got %T", svc.metaData["people"])
@@ -197,7 +207,7 @@ func TestDocStateUpdater_PreservesExistingScalar(t *testing.T) {
 		DocID:      "doc-1",
 		Metadata:   map[string]any{"author": "Bob"},
 		ChunkCount: 1, TokenConsumption: 10,
-	})
+	}, nil)
 	if svc.metaData["author"] != "Alice" {
 		t.Fatalf("stored scalar must win: got %q", svc.metaData["author"])
 	}
@@ -207,7 +217,7 @@ func TestDocStateUpdater_IncrementArgs(t *testing.T) {
 	svc := &stubDocStateSvc{}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
-	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 10, TokenConsumption: 100})
+	u.apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", ChunkCount: 10, TokenConsumption: 100}, nil)
 	if svc.gotDocID != "doc-1" || svc.gotKbID != "kb-1" {
 		t.Fatalf("docID=%q kbID=%q, want doc-1/kb-1", svc.gotDocID, svc.gotKbID)
 	}
@@ -232,7 +242,7 @@ func TestDocStateUpdater_AppliesBuiltInMetadata(t *testing.T) {
 			map[string]any{"key": "file_name", "type": "string"},
 		},
 		ChunkCount: 1, TokenConsumption: 10,
-	})
+	}, nil)
 	if svc.metaData["file_name"] != "annual-report.pdf" {
 		t.Errorf("file_name = %v, want annual-report.pdf", svc.metaData["file_name"])
 	}
@@ -258,7 +268,7 @@ func TestDocStateUpdater_BuiltInMetadataGatedOff(t *testing.T) {
 		AutoMetadataEnabled:   false,
 		BuiltInMetadataConfig: []any{map[string]any{"key": "file_name", "type": "string"}},
 		ChunkCount:            1, TokenConsumption: 10,
-	})
+	}, nil)
 	if _, ok := svc.metaData["file_name"]; ok {
 		t.Errorf("built-in metadata must not be applied when auto-metadata is disabled: %v", svc.metaData)
 	}
@@ -274,7 +284,7 @@ func TestDocStateUpdater_BuiltInMetadataOverwritesExisting(t *testing.T) {
 		AutoMetadataEnabled:   true,
 		BuiltInMetadataConfig: []any{map[string]any{"key": "update_time", "type": "time"}},
 		ChunkCount:            1, TokenConsumption: 10,
-	})
+	}, nil)
 	if svc.metaData["update_time"] == "2020-01-01 00:00:00" {
 		t.Errorf("built-in update_time must overwrite the stored value: %v", svc.metaData["update_time"])
 	}
@@ -291,7 +301,7 @@ func TestDocStateUpdater_BuiltInMetadataEmptyConfig(t *testing.T) {
 		DocID: "doc-1", DocName: "annual-report.pdf",
 		AutoMetadataEnabled: true,
 		ChunkCount:          1, TokenConsumption: 10,
-	})
+	}, nil)
 	if len(svc.metaData) != 0 {
 		t.Errorf("empty built-in config must be a no-op, got %v", svc.metaData)
 	}
@@ -312,7 +322,7 @@ func TestDocStateUpdater_BuiltInNotWrittenWhenEnabledFalse(t *testing.T) {
 		Metadata:         map[string]any{"author": "Alice"},
 		ChunkCount:       1,
 		TokenConsumption: 1,
-	})
+	}, nil)
 	if _, ok := svc.metaData["file_name"]; ok {
 		t.Fatalf("built_in must not be written when enabled=false, got %v", svc.metaData)
 	}
@@ -340,7 +350,7 @@ func TestPublishTableProfileWritesRecordAndValues(t *testing.T) {
 		DocID:        "doc-1",
 		Metadata:     map[string]any{"金额": []string{"100", "200"}},
 		TableProfile: tableProfileForTest([]string{"金额"}),
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -388,7 +398,7 @@ func TestPublishNarrowsPreviousColumnValues(t *testing.T) {
 		DocID:        "doc-1",
 		Metadata:     map[string]any{"金额": []string{"100"}},
 		TableProfile: narrowed,
-	})
+	}, nil)
 	if err != nil {
 		t.Fatalf("apply: %v", err)
 	}
@@ -424,7 +434,7 @@ func TestPublishRetiredColumnIsDeleted(t *testing.T) {
 	if err := u.apply(context.Background(), &taskpkg.PipelineResult{
 		DocID:    "doc-1",
 		Metadata: map[string]any{"摘要": "季度销售"},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if _, still := svc.metaData["金额"]; still {
@@ -455,7 +465,7 @@ func TestPublishDoesNotRevokeTakenOverKey(t *testing.T) {
 	}}
 	u := &docStateUpdater{docSvc: svc}
 
-	if err := u.apply(context.Background(), &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+	if err := u.apply(context.Background(), &taskpkg.PipelineResult{DocID: "doc-1"}, nil); err != nil {
 		t.Fatalf("apply: %v", err)
 	}
 	if svc.metaData["金额"] == nil {
@@ -475,7 +485,7 @@ func TestPublishFailureFailsTheRun(t *testing.T) {
 		DocID:        "doc-1",
 		Metadata:     map[string]any{"金额": []string{"100"}},
 		TableProfile: tableProfileForTest([]string{"金额"}),
-	})
+	}, nil)
 	if err == nil {
 		t.Fatal("expected the publish failure to surface")
 	}
@@ -490,7 +500,7 @@ func TestPublishReadFailureFailsTheRun(t *testing.T) {
 	if err := u.apply(context.Background(), &taskpkg.PipelineResult{
 		DocID:        "doc-1",
 		TableProfile: tableProfileForTest(nil),
-	}); err == nil {
+	}, nil); err == nil {
 		t.Fatal("expected the read failure to surface")
 	}
 }
@@ -505,7 +515,7 @@ func TestPublishColumnPreservesUnownedValue(t *testing.T) {
 			DocID:        "doc-1",
 			Metadata:     map[string]any{"金额": []string{"100"}},
 			TableProfile: tableProfileForTest([]string{"金额"}),
-		}); err != nil {
+		}, nil); err != nil {
 			t.Fatal(err)
 		}
 		if got := fmt.Sprint(svc.metaData["金额"]); got != "[用户写的]" {
@@ -533,7 +543,7 @@ func TestPublishEmptyRunRevokesPreviousTable(t *testing.T) {
 		t.Fatal(err)
 	}
 	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "金额": []string{"100"}}}
-	if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+	if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, ok := svc.metaData[entity.TableProfileMetadataField]; ok {
@@ -548,7 +558,7 @@ func TestCancelledRunDoesNotPublish(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	svc := &stubDocStateSvc{}
-	err := (&docStateUpdater{docSvc: svc}).apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", TableProfile: tableProfileForTest(nil)})
+	err := (&docStateUpdater{docSvc: svc}).apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", TableProfile: tableProfileForTest(nil)}, nil)
 	if !errors.Is(err, context.Canceled) || svc.setCalled || svc.incrementCalled {
 		t.Fatalf("cancelled run published state: error=%v metadata=%v counts=%v", err, svc.setCalled, svc.incrementCalled)
 	}
@@ -581,7 +591,7 @@ func TestBuiltInMetadataTakesOverTableKey(t *testing.T) {
 		DocID: "doc-1", DocName: "sales.xlsx", TableProfile: profile,
 		Metadata:            map[string]any{"file_name": []string{"new table value"}},
 		AutoMetadataEnabled: true, BuiltInMetadataConfig: []any{map[string]any{"key": "file_name"}},
-	}); err != nil {
+	}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
@@ -604,7 +614,7 @@ func containsKey(keys []string, want string) bool {
 func TestPublishColumnPreservesEmptyUserValue(t *testing.T) {
 	for _, value := range []any{"", []string{}} {
 		svc := &stubDocStateSvc{metaData: map[string]any{"金额": value}}
-		if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"金额": []string{"100"}}, TableProfile: tableProfileForTest([]string{"金额"})}); err != nil {
+		if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"金额": []string{"100"}}, TableProfile: tableProfileForTest([]string{"金额"})}, nil); err != nil {
 			t.Fatal(err)
 		}
 		got, present := svc.metaData["金额"]
@@ -622,7 +632,7 @@ func TestDocStateUpdaterPublishesBuiltInAndTableMetadataOnce(t *testing.T) {
 			if table {
 				r.TableProfile = tableProfileForTest(nil)
 			}
-			if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), r); err != nil {
+			if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), r, nil); err != nil {
 				t.Fatal(err)
 			}
 			if svc.lockCount != 1 || svc.readCount != 1 || svc.writeCount != 1 {
@@ -637,7 +647,7 @@ func TestDocStateUpdaterPublishesBuiltInAndTableMetadataOnce(t *testing.T) {
 
 func TestEmptyPublicationWithoutProfileSkipsRevoke(t *testing.T) {
 	svc := &unavailableRevokeDocStateSvc{stubDocStateSvc: stubDocStateSvc{metaData: map[string]any{"user": "kept"}}}
-	if err := publishDocMetadata(t.Context(), svc, &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+	if err := publishDocMetadata(t.Context(), svc, &taskpkg.PipelineResult{DocID: "doc-1"}, nil); err != nil {
 		t.Fatal(err)
 	}
 	if svc.writeCount != 0 {
@@ -649,4 +659,157 @@ type unavailableRevokeDocStateSvc struct{ stubDocStateSvc }
 
 func (*unavailableRevokeDocStateSvc) RevokeTableProfile(context.Context, string) error {
 	return errors.New("lock unavailable")
+}
+
+func TestOrdinaryMetadataFailureKeepsCounts(t *testing.T) {
+	svc := &stubDocStateSvc{setErr: errors.New("metadata unavailable")}
+	err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"summary": "text"}, ChunkCount: 3}, nil)
+	if err != nil || !svc.incrementCalled || svc.gotChunkNum != 3 {
+		t.Fatalf("ordinary metadata failure blocked finalization: err=%v counts=%v chunks=%d", err, svc.incrementCalled, svc.gotChunkNum)
+	}
+}
+
+func TestStopWhileWaitingForMetadataLockDoesNotPublish(t *testing.T) {
+	stopped := false
+	svc := &stubDocStateSvc{beforeLock: func() { stopped = true }}
+	e := &Ingestor{docState: &docStateUpdater{docSvc: svc}, cancelCheck: func(context.Context, string) bool { return stopped }}
+	err := e.finishDocumentTask(t.Context(), &entity.IngestionTask{ID: "task-1"}, "tenant-1", &taskpkg.PipelineResult{DocID: "doc-1", TableProfile: tableProfileForTest(nil)})
+	if !errors.Is(err, context.Canceled) || svc.setCalled || svc.incrementCalled {
+		t.Fatalf("stopped run republished: err=%v published=%v counts=%v", err, svc.setCalled, svc.incrementCalled)
+	}
+}
+
+func TestExistingTableProfileFailureRemainsFatal(t *testing.T) {
+	raw, err := tableProfileForTest(nil).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw}, setErr: errors.New("metadata unavailable")}
+	err = (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{DocID: "doc-1", Metadata: map[string]any{"summary": "text"}}, nil)
+	if err == nil || svc.incrementCalled {
+		t.Fatalf("failed table revocation ignored: %v", err)
+	}
+}
+
+type columnChainEmbedder struct{}
+
+func (columnChainEmbedder) MaxTokens() int { return 2048 }
+func (columnChainEmbedder) BatchSize() int { return 16 }
+func (columnChainEmbedder) Encode(_ context.Context, texts []string) ([]component.EmbeddingResult, error) {
+	results := make([]component.EmbeddingResult, len(texts))
+	for i := range results {
+		results[i] = component.EmbeddingResult{Vector: []float64{1, 0}, TokenCount: 1}
+	}
+	return results, nil
+}
+
+// Components and projection run unchanged; only storage, the model and the
+// final metadata engine use in-process doubles. Real engine writes have their
+// own integration tests.
+func TestColumnModeComponentChainPublishesIndexedColumns(t *testing.T) {
+	for _, format := range []string{"csv", "xlsx"} {
+		for _, mode := range []string{entity.TableModeAuto, entity.TableModeManual} {
+			t.Run(format+"/"+mode, func(t *testing.T) {
+				data := []byte("地区,金额,备注\n北京,10,急\n上海,20,慢\n")
+				if format == "xlsx" {
+					workbook := excelize.NewFile()
+					defer workbook.Close()
+					for i, row := range [][]any{{"地区", "金额", "备注"}, {"北京", "10", "急"}, {"上海", "20", "慢"}} {
+						if err := workbook.SetSheetRow("Sheet1", fmt.Sprintf("A%d", i+1), &row); err != nil {
+							t.Fatal(err)
+						}
+					}
+					buffer, err := workbook.WriteToBuffer()
+					if err != nil {
+						t.Fatal(err)
+					}
+					data = buffer.Bytes()
+				}
+				factory := storage.GetStorageFactory()
+				previous := factory.GetStorage()
+				t.Cleanup(func() { factory.SetStorage(previous) })
+				memory := storage.NewMemoryStorage()
+				factory.SetStorage(memory)
+				name := "sales." + format
+				if err := memory.Put(t.Context(), "bucket", name, data); err != nil {
+					t.Fatal(err)
+				}
+				ctx := runtime.WithState(t.Context(), &runtime.CanvasState{Globals: map[string]any{"kb_id": "kb-1", "tenant_id": "tenant-1"}})
+				file, err := component.NewFileComponent(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				parser, err := component.NewParserComponent(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				params := map[string]any{"column_mode": mode}
+				if mode == entity.TableModeManual {
+					params["column_roles"] = map[string]any{"地区": entity.TableRoleIndexing, "金额": entity.TableRoleMetadata, "备注": entity.TableRoleBoth}
+				}
+				table, err := chunker.NewTableChunker(params)
+				if err != nil {
+					t.Fatal(err)
+				}
+				tokenizer, err := component.NewTokenizerComponentWithResolver(map[string]any{"search_method": []string{"embedding"}, "filename_embd_weight": 0}, func(context.Context, string, string) (component.Embedder, string, error) {
+					return columnChainEmbedder{}, "", nil
+				})
+				if err != nil {
+					t.Fatal(err)
+				}
+				output := map[string]any{"file": []map[string]any{{"name": name}}, "bucket": "bucket", "path": name}
+				for _, stage := range []runtime.Component{file, parser, table, tokenizer} {
+					output, err = stage.Invoke(ctx, nil, output)
+					if err != nil {
+						t.Fatalf("component %T: %v", stage, err)
+					}
+				}
+				chunks, ok := output["chunks"].([]map[string]any)
+				if !ok || len(chunks) != 2 {
+					t.Fatalf("row chunks: %v", output)
+				}
+				profile, metadata := indexdoc.ProjectTableChunks(chunks, "elasticsearch")
+				if profile == nil {
+					t.Fatal("row source was lost before projection")
+				}
+				if _, err := indexdoc.ProcessChunksForPipeline(chunks, "doc-1", name, time.Now()); err != nil {
+					t.Fatal(err)
+				}
+				columns := entity.DeriveTableColumns([]string{"地区", "金额", "备注"})
+				expected := 3
+				if mode == entity.TableModeManual {
+					expected = 2
+				}
+				if len(profile.Columns) != expected {
+					t.Fatalf("published columns: %v", profile.Columns)
+				}
+				for _, row := range chunks {
+					if row["table_row_source"] != nil || fmt.Sprint(row["table_row_int"]) != "1" {
+						t.Fatalf("wrong index boundary: %v", row)
+					}
+					values, _ := row["chunk_data"].(map[string]any)
+					if values[columns[1].DataKey] == nil || row["id"] == nil {
+						t.Fatalf("row identity/data lost: %v", row)
+					}
+					if mode == entity.TableModeManual && (values[columns[0].DataKey] != nil || strings.Contains(row["content_with_weight"].(string), "金额")) {
+						t.Fatalf("manual column routing leaked: %v", row)
+					}
+				}
+				svc := &stubDocStateSvc{}
+				if err := (&docStateUpdater{docSvc: svc}).apply(ctx, &taskpkg.PipelineResult{DocID: "doc-1", KbID: "kb-1", TableProfile: profile, Metadata: metadata, ChunkCount: len(chunks)}, nil); err != nil {
+					t.Fatal(err)
+				}
+				published, present, err := entity.DecodeTableProfile(svc.metaData[entity.TableProfileMetadataField])
+				if err != nil || !present || len(published.Columns) != expected || svc.gotChunkNum != 2 {
+					t.Fatalf("publication failed: %v %v", svc.metaData, err)
+				}
+				if mode == entity.TableModeAuto && len(published.OwnedMetadata) != 0 {
+					t.Fatalf("auto published aggregates: %v", published)
+				}
+				if mode == entity.TableModeManual && !reflect.DeepEqual(svc.metaData["金额"], []string{"10", "20"}) {
+					t.Fatalf("manual aggregates: %v", svc.metaData)
+				}
+			})
+		}
+	}
 }

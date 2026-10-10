@@ -458,3 +458,13 @@ func TestTableSQLElasticsearchRestrictsSharedIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestTableSQLRejectsThreePartColumnNames(t *testing.T) {
+	q := newTestInfinityQuery(t, nil)
+	if _, err := q.policy.check("SELECT " + q.policy.tableName + ".doc_id.doc_id FROM " + q.policy.tableName); err == nil {
+		t.Fatal("three-part name accepted")
+	}
+	if _, err := q.policy.check("SELECT " + q.policy.tableName + ".doc_id FROM " + q.policy.tableName); err != nil {
+		t.Fatalf("table.column rejected: %v", err)
+	}
+}

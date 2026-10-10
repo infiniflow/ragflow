@@ -443,7 +443,7 @@ func (p *tableSQLPolicy) validateQualifiedName(clause []utility.SQLToken, i int,
 		segments = append(segments, clause[next+1])
 		next += 2
 	}
-	if len(segments) > 3 || !strings.EqualFold(segments[0].Lower, p.tableName) {
+	if len(segments) != 2 || !strings.EqualFold(segments[0].Lower, p.tableName) {
 		return 0, fmt.Errorf("%s: %q does not name a column of %s", label, joinNames(segments), p.tableName)
 	}
 	for _, segment := range segments[1:] {

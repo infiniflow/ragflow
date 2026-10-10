@@ -54,7 +54,7 @@ func applyResult(ingestor *Ingestor, docID, kbID string) func(context.Context, *
 			ChunkCount:       int(rcChunks),
 			TokenConsumption: int(rcTokens),
 			Duration:         1,
-		})
+		}, nil)
 		return nil
 	}
 }

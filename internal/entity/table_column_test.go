@@ -140,3 +140,16 @@ func TestValidateRoles(t *testing.T) {
 		}
 	}
 }
+
+func TestTableRolesRejectNoncanonicalKeys(t *testing.T) {
+	for _, key := range []string{" 名称", "名称 ", "\ufeff名称", "e\u0301"} {
+		if _, err := ValidateTableRoles(map[string]any{key: TableRoleBoth}); err == nil {
+			t.Errorf("noncanonical key %q accepted", key)
+		}
+	}
+	for _, key := range []string{"名称#2", "a\\#b", "#column:1"} {
+		if _, err := ValidateTableRoles(map[string]any{key: TableRoleBoth}); err != nil {
+			t.Errorf("canonical key %q rejected: %v", key, err)
+		}
+	}
+}

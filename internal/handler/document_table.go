@@ -130,7 +130,8 @@ func writeTableProbeError(c *gin.Context, err error) {
 		if errors.Is(err, io.ErrUnexpectedEOF) || strings.Contains(err.Error(), "exceeds the maximum allowed size") {
 			code = common.CodeResourceExhausted
 		}
-		common.ResponseWithCodeData(c, code, nil, err.Error())
+		common.Error("table column probe failed", err)
+		common.ResponseWithCodeData(c, code, nil, "The table columns could not be read.")
 		return
 	}
 	common.ResponseWithCodeData(c, tableProbeCode(probeErr.Code), tableErrorData(probeErr.Code), probeErr.Message)

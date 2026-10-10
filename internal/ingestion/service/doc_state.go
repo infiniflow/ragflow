@@ -58,14 +58,14 @@ func newDocStateUpdater() *docStateUpdater {
 	}
 }
 
-func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) error {
+func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult, check func(context.Context) error) error {
 	if r == nil {
 		return nil
 	}
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if err := publishDocMetadata(ctx, u.docSvc, r); err != nil {
+	if err := publishDocMetadata(ctx, u.docSvc, r, check); err != nil {
 		return err
 	}
 	if err := u.docSvc.ApplyDocCounts(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
@@ -87,7 +87,7 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 //
 // A run with no table profile publishes none, which also clears the record an
 // earlier run left: those rows are gone, so their columns are not queryable.
-func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult) error {
+func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, check func(context.Context) error) error {
 	builtIn := make(map[string]any, 2)
 	if r.AutoMetadataEnabled {
 		for _, raw := range r.BuiltInMetadataConfig {
@@ -118,19 +118,43 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 		}
 		return svc.RevokeTableProfile(ctx, r.DocID)
 	}
-	return svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {
-		return publishDocMetadataLocked(ctx, svc, r, builtIn)
+	tableState := r.TableProfile != nil
+	readOK, guardFailed := false, false
+	err := svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {
+		if check != nil {
+			if err := check(ctx); err != nil {
+				guardFailed = true
+				return err
+			}
+		}
+		existing, err := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+		if err != nil {
+			return fmt.Errorf("read metadata of document %s: %w", r.DocID, err)
+		}
+		readOK = true
+		_, previous := existing[entity.TableProfileMetadataField]
+		tableState = tableState || previous
+		return publishDocMetadataLocked(ctx, svc, r, builtIn, existing)
 	})
+	if err != nil && !tableState && !guardFailed && ctx.Err() == nil {
+		// A failed lock never entered the callback. Check whether an earlier run
+		// left a profile before treating this ordinary metadata write as best-effort.
+		if !readOK {
+			existing, readErr := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+			if readErr != nil {
+				return err
+			}
+			if _, present := existing[entity.TableProfileMetadataField]; present {
+				return err
+			}
+		}
+		common.Warn(fmt.Sprintf("failed to publish ordinary document metadata: %v", err))
+		return nil
+	}
+	return err
 }
 
-func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, builtIn map[string]any) error {
-	// The raw record: this map is written back whole, and a reader that filters
-	// out system keys would silently drop the profile on every later metadata
-	// edit.
-	existing, err := svc.GetDocumentMetadataRaw(ctx, r.DocID)
-	if err != nil {
-		return fmt.Errorf("read metadata of document %s: %w", r.DocID, err)
-	}
+func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, builtIn, existing map[string]any) error {
 	if existing == nil {
 		existing = map[string]any{}
 	}

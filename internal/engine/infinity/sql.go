@@ -522,23 +522,22 @@ func prepareJSONResults(tokens []utility.SQLToken) ([]utility.SQLToken, *utility
 		}
 		start, column = i+1, column+1
 	}
-	// Group by the raw JSON value too, so NULL and the string "null" are
-	// different groups and the grouped expression matches the SELECT.
-	if len(shape.Clauses.GroupBy) > 0 {
-		for _, group := range [][]utility.SQLToken{shape.Clauses.GroupBy, shape.Clauses.OrderBy} {
-			for i := 0; i < len(group); i++ {
-				if !group[i].IsWord("json_extract_string") {
-					continue
-				}
-				_, end, err := utility.SQLCallArguments(group, i)
-				if err != nil {
-					return nil, nil, nil, err
-				}
-				if expressions[utility.SQLRender(group[i:end], '"')] {
-					group[i].Text, group[i].Lower = "json_extract", "json_extract"
-				}
-				i = end - 1
+	// Keep bare grouping and ordering expressions aligned with their raw JSON
+	// projections, including standalone ORDER BY. Nested numeric casts must keep
+	// extracting strings: casting a quoted JSON value changes the number.
+	for _, clause := range [][]utility.SQLToken{shape.Clauses.GroupBy, shape.Clauses.OrderBy} {
+		for i := 0; i < len(clause); i++ {
+			if !clause[i].IsWord("json_extract_string") || (i > 0 && !clause[i-1].IsPunct(",")) {
+				continue
 			}
+			_, end, err := utility.SQLCallArguments(clause, i)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if expressions[utility.SQLRender(clause[i:end], '"')] {
+				clause[i].Text, clause[i].Lower = "json_extract", "json_extract"
+			}
+			i = end - 1
 		}
 	}
 	return normalized, shape.Clauses, columns, nil

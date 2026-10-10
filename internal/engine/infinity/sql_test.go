@@ -641,3 +641,23 @@ func TestRewriteSQLNormalizesDoubleEqualsInProductionPath(t *testing.T) {
 		t.Fatalf("invalid equality in SQL: %s", got)
 	}
 }
+
+func TestJSONOrderingMatchesProjectionWithoutChangingNumericCasts(t *testing.T) {
+	for _, tc := range []struct{ order, want string }{
+		{"json_extract_string(chunk_data,'$.value')", "json_extract ( chunk_data, '$.value' )"},
+		{"CAST(json_extract_string(chunk_data,'$.value') AS DOUBLE)", "CAST ( json_extract_string ( chunk_data, '$.value' ) AS DOUBLE )"},
+	} {
+		tokens, err := utility.SQLScan("SELECT json_extract_string(chunk_data,'$.value') FROM t ORDER BY " + tc.order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, clauses, _, err := prepareJSONResults(tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := utility.SQLRender(clauses.OrderBy, '"')
+		if got != tc.want {
+			t.Errorf("order %s: got %s want %s", tc.order, got, tc.want)
+		}
+	}
+}

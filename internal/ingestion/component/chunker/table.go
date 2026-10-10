@@ -159,6 +159,9 @@ func (p tableProfile) declaredRoles() map[string]string {
 }
 
 func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
@@ -191,7 +194,7 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		return emitOne(*upstream.HTMLResult, "text"), nil
 	default:
 		// Row-structured payload: one chunk per upstream record.
-		items, err := tableItems(upstream.JSONResult, upstream.Chunks, profile, upstream.FileType)
+		items, err := tableItems(ctx, upstream.JSONResult, upstream.Chunks, profile, upstream.FileType)
 		if err != nil {
 			return nil, err
 		}
@@ -222,7 +225,7 @@ func supportsColumnMode(fileType string) bool {
 // pre-upgrade row-IR records (ck_type: table_row/table_header with cells),
 // which hold no markup and therefore keep no per-row positions; documents
 // from before this wire must be re-parsed rather than re-chunked.
-func tableItems(items, chunks []schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
+func tableItems(ctx context.Context, items, chunks []schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
 	source := items
 	if len(source) == 0 {
 		source = chunks
@@ -232,7 +235,10 @@ func tableItems(items, chunks []schema.ChunkDoc, profile tableProfile, fileType 
 	}
 	filtered := make([]schema.ChunkDoc, 0, len(source))
 	for _, item := range source {
-		expanded, err := expandHTMLTableRows(item, profile, fileType)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		expanded, err := expandHTMLTableRows(ctx, item, profile, fileType)
 		if err != nil {
 			return nil, err
 		}
@@ -251,7 +257,7 @@ func tableItems(items, chunks []schema.ChunkDoc, profile tableProfile, fileType 
 // column roles leave its body text empty. In manual mode a row set that
 // filters down to nothing emits no chunk rather than falling back to the whole
 // table markup, which would leak every excluded column back into the index.
-func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
+func expandHTMLTableRows(ctx context.Context, item schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
 	if !utility.LooksLikeTableHTML(item.Text) {
 		return []schema.ChunkDoc{item}, nil
 	}
@@ -302,6 +308,9 @@ func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType st
 	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		sourceRow := 0
 		if aligned {
 			sourceRow = int(matrix[headerCount+i][1])

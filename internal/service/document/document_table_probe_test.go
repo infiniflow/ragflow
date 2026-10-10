@@ -277,7 +277,7 @@ func (r *probeReadCounter) Close() error { r.closed = true; return nil }
 
 type probeStreamStorage struct {
 	storage.Storage
-	reader *probeReadCounter
+	reader io.ReadCloser
 }
 
 func (s *probeStreamStorage) Open(context.Context, string, string, ...string) (io.ReadCloser, error) {
@@ -302,5 +302,23 @@ func TestProbeStoredFileBoundsActualStreamSize(t *testing.T) {
 	}
 	if reader.bytes != TableProbeMaxFileBytes+1 || !reader.closed {
 		t.Fatalf("read %d bytes; closed=%v", reader.bytes, reader.closed)
+	}
+}
+
+func TestStoredProbeUsesSuffixAfterRename(t *testing.T) {
+	svc, _ := revokeTestService(t, nil)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]any{"name": "renamed report.pdf", "suffix": "csv", "size": 20, "location": "data.csv"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	t.Cleanup(func() { factory.SetStorage(previous) })
+	factory.SetStorage(&probeStreamStorage{reader: io.NopCloser(strings.NewReader("地区,金额\n北京,10\n"))})
+	result, err := svc.ProbeDocumentTableColumns(t.Context(), "kb-1", "doc-1")
+	if err != nil {
+		t.Fatalf("renamed CSV rejected: %v", err)
+	}
+	if len(result.Sheets) != 1 || len(result.Sheets[0].Columns) != 2 || result.Sheets[0].Columns[0].DisplayName != "地区" {
+		t.Fatalf("unexpected columns: %v", result)
 	}
 }

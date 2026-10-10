@@ -51,22 +51,14 @@ func TestTokenChunker_Registered(t *testing.T) {
 	}
 }
 
-// TestTokenChunker_InvokeEmptyInput mirrors Python validation:
-// missing upstream shape is surfaced under _ERROR.
 func TestTokenChunker_InvokeEmptyInput(t *testing.T) {
 	c, err := NewTokenChunker(nil)
 	if err != nil {
-		t.Fatalf("NewTokenChunker: %v", err)
+		t.Fatal(err)
 	}
-	out, err := c.Invoke(context.Background(), nil, map[string]any{})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if got, want := out["output_format"], "chunks"; got != want {
-		t.Errorf("output_format = %v, want %v", got, want)
-	}
-	if out["_ERROR"] == nil {
-		t.Fatalf("_ERROR missing: %v", out)
+	out, err := c.Invoke(t.Context(), nil, map[string]any{})
+	if err == nil || out != nil {
+		t.Fatalf("invalid input reported success: output=%v err=%v", out, err)
 	}
 }
 

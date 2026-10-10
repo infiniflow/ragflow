@@ -1094,7 +1094,7 @@ func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	if err != nil {
 		return false
 	}
-	return task.Status == common.STOPPING
+	return task.Status == common.STOPPING || task.Status == common.STOPPED
 }
 
 const pollCancelInterval = 500 * time.Millisecond
@@ -1275,7 +1275,24 @@ func (e *Ingestor) finishDocumentTask(ctx context.Context, ingestionTask *entity
 	// A spreadsheet run that cannot publish its derived profile leaves columns
 	// the retriever would quote without rows behind them, so the failure is the
 	// task's failure rather than a warning.
-	if err := e.docState.apply(ctx, result); err != nil {
+	if err := e.docState.apply(ctx, result, func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if e.cancelCheck(ctx, ingestionTask.ID) {
+			return context.Canceled
+		}
+		if e.ingestionTaskSvc != nil {
+			current, err := e.ingestionTaskSvc.GetTask(ctx, ingestionTask.ID)
+			if err != nil {
+				return err
+			}
+			if current.Status != common.RUNNING || !samePipelineLogID(current.PipelineLogID, ingestionTask.PipelineLogID) {
+				return context.Canceled
+			}
+		}
+		return nil
+	}); err != nil {
 		return err
 	}
 	return nil
@@ -1388,4 +1405,11 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	// unblocks (the admin graceful-shutdown path). Guarded by stopOnce: a
 	// repeated Stop must not double-close the channel.
 	e.stopOnce.Do(func() { close(e.ShutdownCh) })
+}
+
+func samePipelineLogID(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

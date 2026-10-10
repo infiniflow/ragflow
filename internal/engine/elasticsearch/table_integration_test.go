@@ -282,6 +282,9 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 		makeRow("bad", "bad", kb, 1, 1, map[string]any{amount: "bad"}),
 		makeRow("disabled", "published", kb, 0, 1, map[string]any{amount: "9999"}),
 		makeRow("otherdoc", "other", kb, 1, 1, map[string]any{amount: "9999"}),
+		makeRow("sort-a", "sort", kb, 1, 1, map[string]any{region: "A|B"}),
+		makeRow("sort-null-text", "sort", kb, 1, 1, map[string]any{region: "null"}),
+		makeRow("sort-null", "sort", kb, 1, 1, map[string]any{region: nil}),
 		makeRow("prose", "published", kb, 1, 0, map[string]any{amount: "9999"}),
 	}
 	if _, err := e.InsertChunks(ctx, rows, base, kb); err != nil {
@@ -300,6 +303,11 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 		}
 		return result
 	}
+	sorted := run("SELECT " + extraction(region) + " AS value FROM " + base + " WHERE doc_id='sort' ORDER BY " + extraction(region) + " LIMIT 10")
+	if len(sorted) != 3 || sorted[0]["value"] != "A|B" || sorted[1]["value"] != "null" || sorted[2]["value"] != nil {
+		t.Fatalf("JSON string/null ordering: %v", sorted)
+	}
+
 	counts := run("SELECT COUNT(*) AS n" + scope + " LIMIT 100")
 	if len(counts) != 1 || fmt.Sprint(counts[0]["n"]) != "4" {
 		t.Fatalf("scoped count=%v", counts)

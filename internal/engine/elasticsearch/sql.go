@@ -37,6 +37,7 @@ import (
 )
 
 const (
+	esSQLQueryTimeout   = 10 * time.Second
 	esSQLRequestTimeout = 2 * time.Second
 	esSQLFetchSize      = 128
 )
@@ -152,7 +153,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 }
 
 func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
-	ctx, cancel := context.WithTimeout(ctx, esSQLRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, esSQLQueryTimeout)
 	defer cancel()
 	normalized, runtime, limit, err := prepareSQL(sqlText)
 	if err != nil {
@@ -192,8 +193,10 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 			return nil, fmt.Errorf("marshal body: %w", err)
 		}
 		request := esapi.SQLQueryRequest{Body: bytes.NewReader(encoded), Format: format}
-		response, err := request.Do(ctx, e.client)
+		pageCtx, pageCancel := context.WithTimeout(ctx, esSQLRequestTimeout)
+		response, err := request.Do(pageCtx, e.client)
 		if err != nil {
+			pageCancel()
 			return nil, fmt.Errorf("request failed: %w", err)
 		}
 		var page struct {
@@ -206,10 +209,12 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 		if response.IsError() {
 			message, _ := io.ReadAll(response.Body)
 			response.Body.Close()
+			pageCancel()
 			return nil, fmt.Errorf("status=%d body=%s", response.StatusCode, string(message))
 		}
 		err = json.NewDecoder(response.Body).Decode(&page)
 		response.Body.Close()
+		pageCancel()
 		if err != nil {
 			return nil, fmt.Errorf("decode response: %w", err)
 		}
@@ -232,7 +237,7 @@ func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) 
 				break
 			}
 		}
-		if len(out) == limit || cursor == "" {
+		if len(out) == limit || cursor == "" || len(page.Rows) == 0 {
 			break
 		}
 		body = map[string]interface{}{"cursor": cursor}

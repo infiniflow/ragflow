@@ -25,7 +25,7 @@ func TestE2E_EnabledFalseDoesNotWriteBuiltIn(t *testing.T) {
 		BuiltInMetadataConfig: []any{map[string]any{"key": "file_name", "type": "string"}, map[string]any{"key": "update_time", "type": "time"}},
 		Metadata:              map[string]any{"author": "Bob"},
 		ChunkCount:            1,
-	})
+	}, nil)
 	if _, ok := svc.metaData["file_name"]; ok {
 		t.Fatalf("must not write file_name when enabled=false, got %v", svc.metaData)
 	}
@@ -66,7 +66,7 @@ func TestE2E_ApplyComponentScopedThenPipelineThenDocState(t *testing.T) {
 		BuiltInMetadataConfig: []any{map[string]any{"key": "file_name", "type": "string"}},
 		Metadata:              map[string]any{"author": "Alice"},
 		ChunkCount:            1,
-	})
+	}, nil)
 	if svc.metaData["file_name"] != "report.pdf" {
 		t.Fatalf("file_name not written, got %v", svc.metaData)
 	}

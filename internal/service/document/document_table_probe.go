@@ -101,10 +101,13 @@ type TableProbeResult struct {
 
 // ProbeTableColumns reads the columns of one candidate CSV or XLSX file.
 func (s *DocumentService) ProbeTableColumns(ctx context.Context, filename string, data []byte) (*TableProbeResult, error) {
+	return s.probeTableColumns(ctx, filename, strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), ".")), data)
+}
+
+func (s *DocumentService) probeTableColumns(ctx context.Context, filename, extension string, data []byte) (*TableProbeResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, tableProbeFailure(TableProbeTimeout, "column probe cancelled: %v", err)
 	}
-	extension := strings.ToLower(strings.TrimPrefix(filepath.Ext(filename), "."))
 	switch extension {
 	case "csv", "xlsx":
 	default:
@@ -194,7 +197,7 @@ func (s *DocumentService) ProbeDocumentTableColumns(ctx context.Context, dataset
 		name = *doc.Name
 	}
 
-	result, err := s.ProbeTableColumns(ctx, name, data)
+	result, err := s.probeTableColumns(ctx, name, strings.ToLower(strings.TrimPrefix(doc.Suffix, ".")), data)
 	if err != nil {
 		return nil, err
 	}

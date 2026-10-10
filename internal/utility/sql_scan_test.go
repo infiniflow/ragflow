@@ -330,3 +330,9 @@ func TestSQLScanAndRenderDoubleEquals(t *testing.T) {
 		t.Fatalf("rendered equality: %s", got)
 	}
 }
+
+func TestSQLScanRejectsInvalidUTF8(t *testing.T) {
+	if _, err := SQLScan("SELECT '\xff' FROM t"); err == nil {
+		t.Fatal("invalid UTF-8 accepted")
+	}
+}

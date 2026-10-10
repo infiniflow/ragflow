@@ -532,3 +532,53 @@ func TestRunSQLDefaultsMissingAvailabilityToEnabled(t *testing.T) {
 		t.Fatalf("missing default availability: %v", runtime)
 	}
 }
+
+func TestRunSQLStopsEmptyPageWithLiveCursor(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		calls.Add(1)
+		if r.URL.Path == "/_sql/close" {
+			fmt.Fprint(w, `{"succeeded":true}`)
+			return
+		}
+		if calls.Load() > 1 {
+			t.Error("empty page was fetched again")
+			w.WriteHeader(400)
+			return
+		}
+		fmt.Fprint(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[],"cursor":"empty"}`)
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1 LIMIT 3", nil, "json")
+	if err != nil || len(rows) != 0 || calls.Load() != 2 {
+		t.Fatalf("rows=%v err=%v calls=%d", rows, err, calls.Load())
+	}
+}
+
+func TestRunSQLBudgetCoversMultiplePages(t *testing.T) {
+	var pages atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		if r.URL.Path == "/_sql/close" {
+			fmt.Fprint(w, `{"succeeded":true}`)
+			return
+		}
+		n := pages.Add(1)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(750 * time.Millisecond):
+		}
+		cursor := "next"
+		if n == 3 {
+			cursor = ""
+		}
+		fmt.Fprintf(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[["d%d"]],"cursor":%q}`, n, cursor)
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).runSQLOnce(t.Context(), "SELECT doc_id FROM ragflow_t1 LIMIT 3", "json")
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("valid paginated query timed out: rows=%v err=%v", rows, err)
+	}
+}

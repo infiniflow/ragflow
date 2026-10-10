@@ -36,6 +36,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -2600,6 +2602,110 @@ func TestProbeTableColumnsWrongFileCountIsArgumentError(t *testing.T) {
 			}
 			if data, ok := response["data"].(map[string]any); ok && data["error"] != nil {
 				t.Fatalf("file count reported as business error: %v", response)
+			}
+		})
+	}
+}
+
+func TestTableProbeHidesInternalFailures(t *testing.T) {
+	c, w := setupGinContextWithUser("GET", "/probe", "")
+	writeTableProbeError(c, errors.New("MinIO private-bucket internal-host doc-secret"))
+	body := decodeResponseBody(t, w.Result())
+	if strings.Contains(fmt.Sprint(body), "private-bucket") || strings.Contains(fmt.Sprint(body), "doc-secret") {
+		t.Fatalf("internal error exposed: %v", body)
+	}
+	if body["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected code: %v", body)
+	}
+}
+
+func TestUploadRejectsNonTableOverrideKeys(t *testing.T) {
+	fake, resp := uploadWithParserConfig(t, `{"TokenChunker:node":{"chunk_token_size":512},"TableChunker:node":{"column_mode":"auto"}}`)
+	body := decodeResponseBody(t, resp)
+	if body["code"] != float64(common.CodeArgumentError) || fake.uploadLocalKB != nil {
+		t.Fatalf("unknown override silently accepted: %v", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["error"] != dataset.TableConfigInvalid {
+		t.Fatalf("business code: %v", body)
+	}
+}
+
+type schemaHandlerEngine struct {
+	engine.DocEngine
+	record map[string]interface{}
+}
+
+func (*schemaHandlerEngine) GetType() string { return "elasticsearch" }
+func (e *schemaHandlerEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{e.record}, Total: 1}, nil
+}
+func schemaHandlerForTest(t *testing.T, raw string) *DatasetsHandler {
+	t.Helper()
+	setupDocumentPermissionDB(t, true)
+	if err := dao.DB.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	name, status := "sales.csv", string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Document{ID: "doc-1", KbID: "kb-owner", Name: &name, Status: &status, Suffix: "csv", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	e := &schemaHandlerEngine{record: map[string]interface{}{"id": "doc-1", "kb_id": "kb-owner", "meta_fields": map[string]interface{}{entity.TableProfileMetadataField: raw}}}
+	return &DatasetsHandler{datasetsService: dataset.NewDatasetService(), metadataService: service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), e)}
+}
+func TestTableSchemaHidesMalformedProfileDetails(t *testing.T) {
+	h := schemaHandlerForTest(t, `{malformed private-profile`)
+	c, w := setupGinContextWithUser("GET", "/table-schema", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+	h.GetDatasetTableSchema(c)
+	body := decodeResponseBody(t, w.Result())
+	if body["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected response: %v", body)
+	}
+	if strings.Contains(fmt.Sprint(body), "doc-1") || strings.Contains(fmt.Sprint(body), "invalid character") {
+		t.Fatalf("internal schema detail exposed: %v", body)
+	}
+}
+func TestTableSchemaReturnsPublishedColumns(t *testing.T) {
+	columns := entity.DeriveTableColumns([]string{"地区"})
+	raw, err := (&entity.TableProfile{Engine: "elasticsearch", Columns: columns}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := schemaHandlerForTest(t, raw)
+	c, w := setupGinContextWithUser("GET", "/table-schema", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+	h.GetDatasetTableSchema(c)
+	body := decodeResponseBody(t, w.Result())
+	data, _ := body["data"].(map[string]any)
+	fields, _ := data["field_map"].(map[string]any)
+	if body["code"] != float64(common.CodeSuccess) || data["document_count"] != float64(1) || data["sql_supported"] != true || fields[columns[0].DataKey] != "地区" {
+		t.Fatalf("unexpected schema response: %v", body)
+	}
+}
+func TestTableProbeEndpointsReturnColumns(t *testing.T) {
+	for _, stored := range []bool{false, true} {
+		t.Run(fmt.Sprint(stored), func(t *testing.T) {
+			setupDocumentPermissionDB(t, true)
+			result := &document.TableProbeResult{Source: "file", Sheets: []document.TableProbeSheet{{SheetIndex: 1, Name: "sheet", RowCount: 2, Columns: entity.DeriveTableColumns([]string{"地区"})}}}
+			h := &DocumentHandler{datasetService: dataset.NewDatasetService(), documentService: &fakeDocumentService{tableProbeResult: result}}
+			var c *gin.Context
+			var w *httptest.ResponseRecorder
+			if stored {
+				c, w = setupGinContextWithUser("GET", "/table-columns", "")
+			} else {
+				c, w = setupUploadContext(t, "/probe-table", map[string]string{}, "sales.csv", []byte("地区\n北京\n"))
+			}
+			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}, {Key: "document_id", Value: "doc-1"}}
+			if stored {
+				h.GetDocumentTableColumns(c)
+			} else {
+				h.ProbeTableColumns(c)
+			}
+			body := decodeResponseBody(t, w.Result())
+			data, _ := body["data"].(map[string]any)
+			if body["code"] != float64(common.CodeSuccess) || data["source"] != "file" || len(data["sheets"].([]any)) != 1 {
+				t.Fatalf("unexpected probe response: %v", body)
 			}
 		})
 	}

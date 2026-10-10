@@ -17,6 +17,8 @@
 package chunker
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -399,5 +401,82 @@ func TestTableChunkerColumnParamsChangeChunkDataNotPlainText(t *testing.T) {
 	plain := tableColumnChunks(t, nil, "xlsx", segment)
 	if plain[0]["text"] != "- ID: A-1\n- Status: paid" {
 		t.Errorf("auto body changed: %q", plain[0]["text"])
+	}
+}
+
+func TestTableChunkerHonorsCancellation(t *testing.T) {
+	c, err := NewTableChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	out, err := c.Invoke(ctx, nil, map[string]any{"name": "table.txt", "output_format": "text", "text": "table"})
+	if !errors.Is(err, context.Canceled) || out != nil {
+		t.Fatalf("cancelled invocation succeeded: %v %v", out, err)
+	}
+}
+
+func TestChunkerInvalidInputFails(t *testing.T) {
+	for _, name := range []string{"QA", "One", "Page"} {
+		t.Run(name, func(t *testing.T) {
+			var out map[string]any
+			var err error
+			switch name {
+			case "QA":
+				c, e := NewQAChunker(nil)
+				if e != nil {
+					t.Fatal(e)
+				}
+				out, err = c.Invoke(t.Context(), nil, map[string]any{})
+			case "One":
+				c, e := NewOneChunker(nil)
+				if e != nil {
+					t.Fatal(e)
+				}
+				out, err = c.Invoke(t.Context(), nil, map[string]any{})
+			case "Page":
+				c, e := NewPageChunker(nil)
+				if e != nil {
+					t.Fatal(e)
+				}
+				out, err = c.Invoke(t.Context(), nil, map[string]any{})
+			}
+			if err == nil || out != nil {
+				t.Fatalf("invalid input succeeded: %v %v", out, err)
+			}
+		})
+	}
+}
+
+type rowCancelContext struct {
+	context.Context
+	cancel context.CancelFunc
+	checks int
+}
+
+func (c *rowCancelContext) Err() error {
+	c.checks++
+	if c.checks == 5 {
+		c.cancel()
+	}
+	return c.Context.Err()
+}
+func TestTableChunkerCancelsDuringRowExpansion(t *testing.T) {
+	base, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	ctx := &rowCancelContext{Context: base, cancel: cancel}
+	c, err := NewTableChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows := make([][]string, 20)
+	for i := range rows {
+		rows[i] = []string{"id", "paid"}
+	}
+	item := spreadsheetSegmentItem("orders", ordersSegment, rows, 1, 2)
+	output, err := c.Invoke(ctx, nil, map[string]any{"name": "orders.csv", "file_type": "csv", "output_format": "json", "json": []map[string]any{item}})
+	if !errors.Is(err, context.Canceled) || output != nil || ctx.checks != 5 {
+		t.Fatalf("row expansion did not stop: checks=%d output=%v err=%v", ctx.checks, output, err)
 	}
 }
