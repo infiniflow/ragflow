@@ -35,6 +35,7 @@ export function useChatSettingSchema() {
         }),
       )
       .optional(),
+    anysearch_api_key: z.string().optional(),
     brave_api_key: z.string().optional(),
     exa_api_key: z.string().optional(),
     firecrawl_api_key: z.string().optional(),
@@ -47,6 +48,7 @@ export function useChatSettingSchema() {
     youcom_api_key: z.string().optional(),
     web_search_provider: z
       .enum([
+        WebSearchProvider.AnySearch,
         WebSearchProvider.Brave,
         WebSearchProvider.Exa,
         WebSearchProvider.Firecrawl,
@@ -100,7 +102,7 @@ export function useChatSettingSchema() {
 
       // A keyed provider selected without its key fails SILENTLY at runtime —
       // the Internet switch never appears in the chat box — so block the save
-      // here instead. Keyless providers (You.com) are exempt. The rule lives in
+      // here instead. Keyless providers are exempt. The rule lives in
       // missingWebSearchApiKeyField so it can be unit-tested without the form.
       const missingKeyField = missingWebSearchApiKeyField(value?.prompt_config);
       if (missingKeyField) {

@@ -57,6 +57,7 @@ export enum DatasetMetadata {
 }
 
 export enum WebSearchProvider {
+  AnySearch = 'anysearch',
   Brave = 'brave',
   Exa = 'exa',
   Firecrawl = 'firecrawl',
@@ -82,5 +83,6 @@ export enum WebSearchProvider {
  * is deliberately absent from this list.
  */
 export const KEYLESS_WEB_SEARCH_PROVIDERS: readonly WebSearchProvider[] = [
+  WebSearchProvider.AnySearch,
   WebSearchProvider.YouCom,
 ];

@@ -1144,9 +1144,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       webSearchApiKeyRequired:
         '所选服务必须填写 API Key —— 否则不会发起联网搜索，聊天框里也不会出现联网开关。',
       // 密钥输入框的标签。{{provider}} 是 provider 的品牌名，故意不翻译，
-      // 因此一个模板即可覆盖全部 9 个 provider。
+      // 因此一个模板即可覆盖全部 provider。
       webSearchApiKeyLabel: '{{provider}} API Key',
       // 每个 provider 一组 Tip/Message，按 provider id 字典序排列。
+      anysearchApiKeyTip:
+        '可选。AnySearch 无需密钥即可使用；填写密钥可使用账户额度。服务限额仍然适用。',
+      anysearchApiKeyMessage: '可选 - 留空则使用匿名搜索',
       braveApiKeyTip:
         '选择 Brave Search 后，将使用其搜索结果补充知识库检索。Brave 的所有端点都需要 Key。',
       braveApiKeyMessage: '请输入你的 Brave Search API Key',
