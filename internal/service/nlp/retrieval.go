@@ -711,6 +711,8 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
+		// Read by the rescoring pass for term, PageRank and tag scores.
+		"question_tks", common.PAGERANK_FLD, common.TAG_FLD,
 		"_score",
 	}
 

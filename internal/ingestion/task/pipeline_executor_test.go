@@ -117,6 +117,25 @@ func TestApplyDocumentAvailability(t *testing.T) {
 	}
 }
 
+func TestApplyDatasetPagerank(t *testing.T) {
+	chunks := []map[string]any{
+		{"id": "src-1", "content_with_weight": "source chunk"},
+		{"id": "parent-1", "content_with_weight": "parent chunk", "available_int": 0},
+	}
+	applyDatasetPagerank(chunks, 10)
+	for _, ck := range chunks {
+		if ck["pagerank_fea"] != 10 {
+			t.Fatalf("row %v pagerank_fea = %#v, want 10", ck["id"], ck["pagerank_fea"])
+		}
+	}
+
+	unranked := []map[string]any{{"id": "src-2", "content_with_weight": "source chunk"}}
+	applyDatasetPagerank(unranked, 0)
+	if v, ok := unranked[0]["pagerank_fea"]; ok {
+		t.Fatalf("zero PageRank should leave pagerank_fea unset, got %#v", v)
+	}
+}
+
 func makeTaskCtx() *TaskContext {
 	return &TaskContext{
 		IngestionTask: &entity.IngestionTask{

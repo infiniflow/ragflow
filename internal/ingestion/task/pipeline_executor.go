@@ -327,6 +327,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		return nil, err
 	}
 	indexChunks := append(chunks, parentChunks...)
+	applyDatasetPagerank(indexChunks, s.taskCtx.KB.Pagerank)
 	if err := s.indexWriter.Write(ctx, indexChunks); err != nil {
 		if cleanupErr := s.compensateFailedIndexWrite(ctx, indexChunks); cleanupErr != nil {
 			return nil, fmt.Errorf("write chunks: %w; compensate partial index write: %v", err, cleanupErr)
@@ -606,6 +607,16 @@ func applyDocumentAvailability(chunks []map[string]any, status *string) {
 	}
 	for _, ck := range chunks {
 		ck["available_int"] = 0
+	}
+}
+
+func applyDatasetPagerank(chunks []map[string]any, pagerank int64) {
+	// Elasticsearch rejects a non-positive rank_feature value.
+	if pagerank <= 0 {
+		return
+	}
+	for _, ck := range chunks {
+		ck[common.PAGERANK_FLD] = int(pagerank)
 	}
 }
 

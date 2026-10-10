@@ -535,6 +535,30 @@ func TestElasticsearchGetFieldsEmptyAndSkippedIDs(t *testing.T) {
 	assertEqual(t, fallbackMap["docnm_kwd"], "fallback.md")
 }
 
+func TestElasticsearchGetFieldsKeepsRankFeaturesNumeric(t *testing.T) {
+	engine := &Engine{}
+	chunks := []map[string]interface{}{
+		{
+			"_id":          "chunk-1",
+			"pagerank_fea": float64(10),
+			"tag_feas":     map[string]interface{}{"finance": 0.8},
+			"question_tks": "what is alpha",
+			"top_int":      float64(3),
+		},
+	}
+
+	got := engine.GetFields(chunks, []string{"pagerank_fea", "tag_feas", "question_tks", "top_int"})
+	fieldMap, ok := got["chunk-1"]
+	if !ok {
+		t.Fatalf("GetFields keys=%v, want chunk-1", got)
+	}
+
+	assertEqual(t, fieldMap["pagerank_fea"], float64(10))
+	assertEqual(t, fieldMap["tag_feas"], map[string]interface{}{"finance": 0.8})
+	assertEqual(t, fieldMap["question_tks"], "what is alpha")
+	assertEqual(t, fieldMap["top_int"], "3")
+}
+
 func TestElasticsearchGetAggregationSplitsCountsAndSorts(t *testing.T) {
 	engine := &Engine{}
 	chunks := []map[string]interface{}{

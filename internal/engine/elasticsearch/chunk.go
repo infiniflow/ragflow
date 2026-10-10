@@ -2660,6 +2660,12 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				}
 			}
 
+			// Retrieval scoring reads these as numbers; %v would turn them into "10" or "map[tag:0.8]".
+			if isRankFeatureField(field) {
+				m[field] = val
+				continue
+			}
+
 			if _, ok = val.(string); !ok {
 				val = fmt.Sprintf("%v", val)
 			}
@@ -2679,6 +2685,11 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 		return keys
 	}()))
 	return result
+}
+
+// isRankFeatureField matches the rank_feature(s) fields of conf/mapping.json.
+func isRankFeatureField(field string) bool {
+	return strings.HasSuffix(field, "_fea") || strings.HasSuffix(field, "_feas")
 }
 
 // GetAggregation aggregates chunk values by field name
