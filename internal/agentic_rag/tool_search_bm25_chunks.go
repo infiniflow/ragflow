@@ -152,12 +152,19 @@ func (k *SearchBm25ChunksTool) invokableRun(ctx context.Context, argumentsInJSON
 	if len(args.DocScope) > 10 {
 		args.DocScope = args.DocScope[:10]
 	}
+	docScope, err := resolveDocumentScope(ctx, args.DocScope)
+	if err != nil {
+		return "", fmt.Errorf("search_bm25_chunks: %w", err)
+	}
+	if docScope != nil && len(docScope) == 0 {
+		return formatLocateResultsXML(ctx, searchBm25ChunksToolName, strings.Join(queries, " | "), nil), nil
+	}
 
 	svc := runtime.GetBm25Service()
 	chunks, err := svc.SearchBm25(ctx, runtime.Bm25Request{
 		Queries:    queries,
 		DatasetIDs: datasetIDs,
-		DocScope:   args.DocScope,
+		DocScope:   docScope,
 		TopN:       topN,
 		TenantID:   k.tenantID,
 	})

@@ -112,6 +112,7 @@ func (s *ChatPipelineService) agenticRag(
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
 		}
+		docIDs := s.chatMetadataDocIDs(runCtx, chat, lastUserQuestion(messages), chain[0], nil, chatDatasetIDs(chat))
 
 		// Apply the dialog's LLM settings with per-request overrides exactly
 		// like the regular AsyncChat path does, then let the template pin its
@@ -164,6 +165,7 @@ func (s *ChatPipelineService) agenticRag(
 			TemplateID:     mode,
 			TenantID:       chat.TenantID,
 			DatasetIDs:     chatDatasetIDs(chat),
+			DocIDs:         docIDs,
 			Stream:         stream,
 			ToolCallCounts: toolCounts,
 			ToolCallErrors: toolErrors,

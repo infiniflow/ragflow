@@ -643,34 +643,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// meta_data_filter — use LLM to map the question to metadata
 		// criteria, then filter docIDs to matching
 		// documents only.
-		if chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0 && len(kbs) > 0 {
-			kbIDs := kbIDStrings(kbs)
-			if metaQ := questions[len(questions)-1]; metaQ != "" {
-				var flattedMeta common.MetaData
-				var mErr error
-				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
-				}
-				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
-						ctx,
-						*chat.MetaDataFilter,
-						flattedMeta,
-						metaQ,
-						chatModel,
-						docIDs,
-						kbIDs,
-					); filtered != nil {
-						common.Debug("meta_data_filter applied",
-							zap.Int("filtered_count", len(filtered)),
-							zap.Int("pre_filter_count", len(docIDs)))
-						docIDs = filtered
-					}
-				} else {
-					common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(mErr))
-				}
-			}
-		}
+		docIDs = s.chatMetadataDocIDs(ctx, chat, questions[len(questions)-1], chatModel, docIDs, kbIDStrings(kbs))
 
 		// keyword — extract top-N keywords from the question via LLM and
 		// append them to the question text to boost lexical retrieval recall.

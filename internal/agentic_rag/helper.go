@@ -114,6 +114,52 @@ func resolveDatasetScope(bound, requested []string) ([]string, error) {
 	return requested, nil
 }
 
+type documentScopeContextKey struct{}
+
+// withDocumentScope binds the chat's allowed documents to every agent tool call.
+// A non-nil empty scope allows no documents; nil leaves document search unrestricted.
+func withDocumentScope(ctx context.Context, ids []string) context.Context {
+	return context.WithValue(ctx, documentScopeContextKey{}, ids)
+}
+
+func resolveDocumentScope(ctx context.Context, requested []string) ([]string, error) {
+	bound, ok := ctx.Value(documentScopeContextKey{}).([]string)
+	if !ok || bound == nil {
+		return requested, nil
+	}
+	if len(requested) == 0 {
+		return bound, nil
+	}
+	allowed := make(map[string]struct{}, len(bound))
+	for _, id := range bound {
+		allowed[id] = struct{}{}
+	}
+	for _, id := range requested {
+		if _, ok := allowed[id]; !ok {
+			return nil, fmt.Errorf("doc_id %q is outside the conversation's bound scope", id)
+		}
+	}
+	return requested, nil
+}
+
+func intersectDocumentScope(ctx context.Context, ids []string) []string {
+	bound, ok := ctx.Value(documentScopeContextKey{}).([]string)
+	if !ok || bound == nil {
+		return ids
+	}
+	allowed := make(map[string]struct{}, len(bound))
+	for _, id := range bound {
+		allowed[id] = struct{}{}
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := allowed[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // clampFloat01 clamps a float into [0, 1], used for similarity weights the model
 // may supply out of range.
 func clampFloat01(v float64) float64 {
