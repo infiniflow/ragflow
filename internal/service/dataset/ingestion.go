@@ -236,6 +236,9 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
+	}
 
 	if page <= 0 {
 		page = 1
