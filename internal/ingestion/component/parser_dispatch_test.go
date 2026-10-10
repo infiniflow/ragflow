@@ -924,9 +924,13 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 }
 
 func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
 	origResolver := resolveMinerUModelForDispatch
 	defer func() { resolveMinerUModelForDispatch = origResolver }()
-	baseURL := "http://mineru-api:8888"
+	baseURL := server.URL
 	apiKey := `{"mineru_backend":"hybrid-http-client"}`
 	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil

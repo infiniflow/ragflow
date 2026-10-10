@@ -477,10 +477,9 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model
-// via the streaming /file_parse endpoint and returns parsed sections.
-// Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
-// stream=True and reads the zip response body directly (no polling).
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
+// MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
+// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -515,6 +514,9 @@ func dispatchMinerUPDF(
 	if baseURL == "" {
 		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
 	}
+	if strings.TrimSpace(baseURL) == "" {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
+	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
@@ -529,13 +531,32 @@ func dispatchMinerUPDF(
 	mineruLang := mineruLangCode(lang)
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
-	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+
+	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
+	}
+	if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return parser.ParseResult{}, err
 	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
-	if err != nil {
-		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
+	var zipBytes []byte
+	if v1 {
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, 30*time.Minute)
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
+		}
+		if result != nil {
+			zipBytes = result.Zip
+			if len(zipBytes) == 0 && strings.TrimSpace(result.Markdown) != "" {
+				return buildMarkdownOCRDispatchResult(result.Markdown), nil
+			}
+		}
+	} else {
+		zipBytes, err = mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
+		}
 	}
 
 	sections, err := mineruExtractSections(zipBytes)
