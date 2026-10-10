@@ -195,7 +195,11 @@ func maybeDispatchPDFVision(
 		return parser.ParseResult{}, true, fmt.Errorf(
 			`parser: pdf parse_method %q requires tenant_id to resolve VLM model`, modelID)
 	}
-	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID)
+	pages, err := utility.NormalizePDFPages(setup["pages"])
+	if err != nil {
+		return parser.ParseResult{}, true, fmt.Errorf("parser: pdf vision pages: %w", err)
+	}
+	res, err := dispatchPDFVision(ctx, db, filename, binary, tenantID, modelID, pages)
 	if err != nil {
 		return parser.ParseResult{}, true, err
 	}
@@ -865,8 +869,9 @@ func dispatchPDFVision(
 	binary []byte,
 	tenantID string,
 	modelID string,
+	pages [][]int,
 ) (parser.ParseResult, error) {
-	renderedPages, err := pdfVisionPageRenderer(binary)
+	renderedPages, err := pdfVisionPageRenderer(binary, pages)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: pdf vision render: %w", err)
 	}

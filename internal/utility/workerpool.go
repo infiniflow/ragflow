@@ -125,14 +125,17 @@ func NewWorkerPool[T any, R any](workers, queueSize int, handler WorkerPoolHandl
 func (p *WorkerPool[T, R]) start(workers int) {
 	for range workers {
 		p.workerWg.Add(1)
+		atomic.AddInt64(&p.liveWorkers, 1)
 		go p.worker()
 	}
 }
 
 func (p *WorkerPool[T, R]) worker() {
-	atomic.AddInt64(&p.liveWorkers, 1)
+	retired := false
 	defer func() {
-		atomic.AddInt64(&p.liveWorkers, -1)
+		if !retired {
+			atomic.AddInt64(&p.liveWorkers, -1)
+		}
 		p.workerWg.Done()
 	}()
 
@@ -164,9 +167,14 @@ func (p *WorkerPool[T, R]) worker() {
 		}
 		p.markDone()
 
+		p.mu.Lock()
 		if atomic.LoadInt64(&p.liveWorkers) > atomic.LoadInt64(&p.desiredWorkers) {
+			atomic.AddInt64(&p.liveWorkers, -1)
+			retired = true
+			p.mu.Unlock()
 			return
 		}
+		p.mu.Unlock()
 	}
 }
 
@@ -191,7 +199,7 @@ func (p *WorkerPool[T, R]) Resize(workers int) {
 		return
 	}
 
-	current := int(atomic.LoadInt64(&p.desiredWorkers))
+	current := int(atomic.LoadInt64(&p.liveWorkers))
 	atomic.StoreInt64(&p.desiredWorkers, int64(workers))
 	if workers > current {
 		p.start(workers - current)

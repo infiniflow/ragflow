@@ -413,7 +413,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
       reselectParserAfterUploadHint:
-        'Yüklemeye devam edin, ardından dosya listesinde bu dosyalar için ayrıştırma yöntemini yeniden seçin.',
+        'Yüklemeye devam edin; sistem bu dosyaları otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçirecektir.',
       reselectParserToParseHint:
         'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
       addModelAfterUploadHint:
@@ -670,6 +670,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       reRankModelWaring: 'Yeniden sıralama modeli çok zaman alır.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Tohum, farklı çalıştırmalarda aynı çıktının yeniden üretilebilirliğini sağlayan sözde rastgele bir algoritmanın başlangıç noktasıdır.',
       datasetDescription: `Dataset'inizi açıklayın`,
@@ -2803,7 +2804,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       dataManipulation: 'Veri işleme',
       flow: 'Akış',
       dialog: 'Diyalog',
-      cite: 'Alıntı',
+      cite: 'Alıntıları göster',
       citeTip: 'alıntıİpucu',
       name: 'Ad',
       nameMessage: 'Lütfen ad girin',

@@ -249,7 +249,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, entity.ModelTypeChat, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}

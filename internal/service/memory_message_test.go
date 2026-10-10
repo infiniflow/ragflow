@@ -315,6 +315,9 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	}
 }
 
+// TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines pins the
+// forget_at companion column behavior for engines that store it as a plain
+// nullable field.
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
@@ -346,6 +349,8 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 		{engineType: "infinity", wantForgetAtCompanion: true},
 		{engineType: "oceanbase", wantForgetAtCompanion: false},
 		{engineType: "seekdb", wantForgetAtCompanion: false},
+		// Vastbase memory tables carry forget_at but no forget_at_flt column.
+		{engineType: "vastbase", wantForgetAtCompanion: false},
 	} {
 		t.Run(test.engineType, func(t *testing.T) {
 			docEngine := &memoryMessageDocEngine{engineType: test.engineType}

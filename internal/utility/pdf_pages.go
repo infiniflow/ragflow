@@ -82,6 +82,20 @@ func NormalizePDFPages(raw any) ([][]int, error) {
 	return merged, nil
 }
 
+// PDFPageInRanges reports whether the 1-indexed page lies inside ranges, as
+// returned by NormalizePDFPages. Empty ranges select every page.
+func PDFPageInRanges(ranges [][]int, page int) bool {
+	if len(ranges) == 0 {
+		return true
+	}
+	for _, r := range ranges {
+		if page >= r[0] && page <= r[1] {
+			return true
+		}
+	}
+	return false
+}
+
 // toInt coerces a JSON-decoded numeric value to int. Accepts int, int64, and
 // integral float64; rejects non-numeric or non-integral values.
 func toInt(v any) (int, bool) {

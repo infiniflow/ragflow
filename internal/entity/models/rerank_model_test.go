@@ -31,7 +31,7 @@ func TestRerankModelTokenLimitModes(t *testing.T) {
 		t.Setenv(common.EnvRerankTokenLimitMode, "")
 		driver := &captureRerankDriver{}
 		model := NewRerankModel(driver, nil, nil, queryTokens+4)
-		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{document}}, nil, nil, nil)
+		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{document}}, nil, nil)
 		if err != nil {
 			t.Fatalf("Rerank() error = %v", err)
 		}
@@ -47,7 +47,7 @@ func TestRerankModelTokenLimitModes(t *testing.T) {
 		t.Setenv(common.EnvRerankTokenLimitMode, " PASSTHROUGH ")
 		driver := &captureRerankDriver{}
 		model := NewRerankModel(driver, nil, nil, 1)
-		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{document}}, nil, nil, nil)
+		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{document}}, nil, nil)
 		if err != nil {
 			t.Fatalf("Rerank() error = %v", err)
 		}
@@ -60,7 +60,7 @@ func TestRerankModelTokenLimitModes(t *testing.T) {
 		t.Setenv(common.EnvRerankTokenLimitMode, "raise_error")
 		driver := &captureRerankDriver{}
 		model := NewRerankModel(driver, nil, nil, queryTokens)
-		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{"short"}}, nil, nil, nil)
+		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{"short"}}, nil, nil)
 		if !errors.Is(err, ErrRerankTokenLimitPolicy) || !strings.Contains(err.Error(), "document index 0") {
 			t.Fatalf("Rerank() error = %v, want token-limit error for document 0", err)
 		}
@@ -73,7 +73,7 @@ func TestRerankModelTokenLimitModes(t *testing.T) {
 		t.Setenv(common.EnvRerankTokenLimitMode, "invalid")
 		driver := &captureRerankDriver{}
 		model := NewRerankModel(driver, nil, nil, 10)
-		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{"short"}}, nil, nil, nil)
+		_, err := model.Rerank(t.Context(), RerankRequest{Query: query, Documents: []string{"short"}}, nil, nil)
 		if !errors.Is(err, ErrRerankTokenLimitPolicy) || !strings.Contains(err.Error(), common.EnvRerankTokenLimitMode) {
 			t.Fatalf("Rerank() error = %v, want invalid-mode error", err)
 		}

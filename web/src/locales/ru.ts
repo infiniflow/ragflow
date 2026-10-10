@@ -210,6 +210,8 @@ export default {
       parserRequired: 'Необходимо указать метод чанкирования',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Продолжите загрузку, и система автоматически переключит эти файлы на поддерживаемую встроенную конфигурацию анализа.',
       metadata: {
         fields: 'поля',
         selectFiles: 'Выбрано файлов: {{count}}',
@@ -445,6 +447,7 @@ export default {
       reRankModelWaring: 'Rerank модель очень требовательна ко времени.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Seed — начальное значение псевдослучайного алгоритма для воспроизводимости результата при повторных запусках.',
       datasetDescription: 'Опишите ваш датасет',
@@ -1646,7 +1649,7 @@ export default {
       dataManipulation: 'Манипуляция данными',
       flow: 'Поток',
       dialog: 'Диалог',
-      cite: 'Цитировать',
+      cite: 'Показывать цитаты',
       citeTip: 'Подсказка цитирования',
       name: 'Название',
       nameMessage: 'Пожалуйста, введите название',

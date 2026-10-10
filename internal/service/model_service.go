@@ -425,13 +425,7 @@ func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenan
 		return nil
 	}
 	// model_info not provided — add all factory default models.
-	// Mirrors Python's create_provider_instance
-	// (api/apps/services/provider_api_service.py:506-531).
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	factoryProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	factoryProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if factoryProvider == nil {
 		return nil
 	}
@@ -443,16 +437,17 @@ func (m *ModelProviderService) addModelsToNewInstance(ctx context.Context, tenan
 		if llm.Thinking != nil {
 			extraMap["thinking"] = llm.Thinking.DefaultValue
 		}
+		contextLength := 0
+		if llm.ContextLength != nil {
+			contextLength = *llm.ContextLength
+		} else if llm.MaxTokens != nil {
+			contextLength = *llm.MaxTokens
+		}
 		if err := m.addModelToInstance(ctx, tenantID, providerName, instanceName, CreateInstanceModelInfo{
 			ModelName:  llm.Name,
 			ModelTypes: llm.ModelTypes,
-			MaxTokens: func() int {
-				if llm.MaxOutput != nil {
-					return *llm.MaxOutput
-				}
-				return 8192
-			}(),
-			Extra: extraMap,
+			MaxTokens:  contextLength,
+			Extra:      extraMap,
 		}); err != nil {
 			return err
 		}
@@ -972,7 +967,7 @@ func verifyProviderModel(ctx context.Context, driver modelModule.ModelDriver, pr
 					Documents: []string{"test"},
 				}
 				rerankModel := modelModule.NewRerankModel(driver, &modelName, apiConfig, 0)
-				_, err = rerankModel.Rerank(ctx, rerankRequest, apiConfig, &modelModule.RerankConfig{}, nil)
+				_, err = rerankModel.Rerank(ctx, rerankRequest, &modelModule.RerankConfig{}, nil)
 			case "tts":
 				content := "hello"
 				ttsModel := modelModule.NewTTSModel(driver, &modelName, apiConfig)
@@ -2454,7 +2449,7 @@ type AddModelRequest struct {
 }
 
 // The tool-calling verdict is no longer memoized: it is computed while the model
-// is resolved (see resolvedModel.supportsTools) and travels with the resolution,
+// is resolved by ModelFactory and travels with the model metadata,
 // so there is no second lookup to amortize.
 
 type AddCustomModelRequest struct {
@@ -2597,65 +2592,4 @@ func (m *ModelProviderService) ListAllModels(pageIndex, pageSize int) ([]map[str
 
 func (m *ModelProviderService) ShowModel(modelName string) (*modelModule.Model, error) {
 	return dao.GetModelProviderManager().GetModelByNameOrAlias(modelName), nil
-}
-
-// ChatModelRef identifies one chat-capable tenant model together with its
-// human-readable coordinates (provider instance), so callers can log and
-// reason about failover chains. Ref is the tenant_model.id that
-// ResolveModelConfig / GetChatModelConfig accepts verbatim.
-type ChatModelRef struct {
-	Ref          string
-	ModelName    string
-	InstanceName string
-	ProviderName string
-}
-
-// ListTenantChatModelRefs enumerates every ACTIVE chat-capable model the
-// tenant owns across all provider instances. Resolution of each ref is the
-// caller's business — a single broken entry here is not an error for the
-// whole enumeration.
-func (m *ModelProviderService) ListTenantChatModelRefs(ctx context.Context, tenantID string) ([]ChatModelRef, error) {
-	providers, err := m.modelProviderDAO.GetByTenantID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, err
-	}
-	if len(providers) == 0 {
-		return nil, nil
-	}
-	providerIDs := make([]string, 0, len(providers))
-	providerInfoByID := make(map[string]*entity.TenantModelProvider, len(providers))
-	for _, p := range providers {
-		providerIDs = append(providerIDs, p.ID)
-		providerInfoByID[p.ID] = p
-	}
-	instances, err := m.modelInstanceDAO.GetByProviderIDs(ctx, dao.DB, providerIDs)
-	if err != nil {
-		return nil, err
-	}
-	if len(instances) == 0 {
-		return nil, nil
-	}
-	instanceIDs := make([]string, 0, len(instances))
-	instanceInfoByID := make(map[string]*entity.TenantModelInstance, len(instances))
-	for _, inst := range instances {
-		instanceIDs = append(instanceIDs, inst.ID)
-		instanceInfoByID[inst.ID] = inst
-	}
-	models, err := m.modelDAO.GetActiveModelsByProviderAndInstanceIDsAndType(
-		ctx, dao.DB, providerIDs, instanceIDs, int(entity.ModelTypeChat))
-	if err != nil {
-		return nil, err
-	}
-	refs := make([]ChatModelRef, 0, len(models))
-	for _, rec := range models {
-		ref := ChatModelRef{Ref: rec.ID, ModelName: rec.ModelName}
-		if inst := instanceInfoByID[rec.InstanceID]; inst != nil {
-			ref.InstanceName = inst.InstanceName
-		}
-		if prov := providerInfoByID[rec.ProviderID]; prov != nil {
-			ref.ProviderName = prov.ProviderName
-		}
-		refs = append(refs, ref)
-	}
-	return refs, nil
 }

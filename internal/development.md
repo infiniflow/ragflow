@@ -59,12 +59,13 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >
 > ```bash
 > RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_deps.py
-> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
+> PLATFORM="linux_amd64"  # macOS (darwin_*) is temporarily unsupported; linux_arm64 is not a supported native build target
 > # NOTE: the ONNX Runtime static lib fetched by download_deps.py is
 > # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
 > # PLATFORM values the production DeepDoc backend cannot be linked, so those
 > # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here.
+> # Linux-amd64 link dependency here. macOS is temporarily not supported by the
+> # Go backend; use a Linux x86-64 host for a supported native build.
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted

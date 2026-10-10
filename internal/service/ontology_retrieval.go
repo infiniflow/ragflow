@@ -214,11 +214,15 @@ func (r *kbScopeResolver) Resolve(ctx context.Context, userID string, datasetIDs
 		return scope, err
 	}
 	if embdID := records[0].EmbdID; embdID != "" {
-		target, err := NewModelSolver().ResolveModelConfig(ctx, scope.TenantIDs[0], entity.ModelTypeEmbedding, embdID)
+		// Same factory the main retrieval uses, so both paths embed the question
+		// with the model the dataset itself resolves to.
+		model, err := NewModelFactory().NewEmbeddingModel(
+			ctx, ModelAccess{TenantID: scope.TenantIDs[0]}, embdID,
+		)
 		if err != nil {
 			return scope, fmt.Errorf("failed to resolve the embedding model for the ontology search: %w", err)
 		}
-		scope.EmbeddingModel = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+		scope.EmbeddingModel = model
 	}
 	return scope, nil
 }

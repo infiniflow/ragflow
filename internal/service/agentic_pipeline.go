@@ -57,7 +57,7 @@ const defaultAgenticTemplateID = "smart-reasoning"
 // (see buildAgenticReference).
 func (s *ChatPipelineService) agenticRag(
 	ctx context.Context,
-	_ string,
+	userID string,
 	chat *entity.Chat,
 	messages []map[string]interface{},
 	stream bool,
@@ -66,6 +66,10 @@ func (s *ChatPipelineService) agenticRag(
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
+	// Wire the document-metadata resolver the metadata_search tool needs. The
+	// eino agentic_rag package must not import service (service imports it), so
+	// the concrete *service.MetadataService is injected here, per turn.
+	agentic_rag.SetMetadataService(NewMetadataService())
 	// agent_mode selects the template id for this run (validated non-empty by
 	// AsyncChat before dispatch). Resolved per-run so conf/agentic_rag.yaml
 	// edits take effect without restart.
@@ -88,6 +92,11 @@ func (s *ChatPipelineService) agenticRag(
 
 		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
 		defer cancel()
+		// The run's evidence registry: every tool result stamps its passages with
+		// the [ID:n] handle the model cites, and buildAgenticReference resolves
+		// those handles against the same numbering.
+		registry := agentic_rag.NewEvidenceRegistry()
+		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
@@ -97,7 +106,7 @@ func (s *ChatPipelineService) agenticRag(
 			}
 		}
 
-		chain, chainErr := s.agenticModelChain(runCtx, chat)
+		chain, chainErr := s.agenticModelChain(runCtx, userID, chat)
 		if chainErr != nil {
 			common.ErrorCtx(runCtx, "agentic_rag: resolve chat model", chainErr)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
@@ -208,11 +217,20 @@ func (s *ChatPipelineService) agenticRag(
 		answer := final
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
-		} else if len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final, registry)
+		} else if len(agentic_rag.CitedIDsFromMarkers(final, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
-		emitResult(AsyncChatResult{Answer: answer, Reference: reference, Final: true})
+		// The agentic answer is the run's whole output — <think> stretch included
+		// — with its handles already compacted against `reference`, so the session
+		// writer must persist THIS text and not the streamed deltas, which still
+		// carry the raw handles the model emitted.
+		emitResult(AsyncChatResult{
+			Answer:                answer,
+			Reference:             reference,
+			Final:                 true,
+			AnswerIsAuthoritative: true,
+		})
 	}()
 
 	return out, nil
@@ -223,8 +241,9 @@ func (s *ChatPipelineService) agenticRag(
 // the dialog configures. Agentic RAG must not silently broaden the dialog's
 // model choice to every chat model owned by the tenant: a failover chain is
 // exactly the list the dialog's author chose, and nothing else.
-func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
-	primary, err := s.agenticPrimaryModel(ctx, chat)
+func (s *ChatPipelineService) agenticModelChain(ctx context.Context, userID string, chat *entity.Chat) ([]*modelModule.ChatModel, error) {
+	access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+	primary, err := s.agenticPrimaryModel(ctx, access, chat)
 	if err != nil {
 		return nil, err
 	}
@@ -238,14 +257,13 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 		if llmID == "" || llmID == chat.LLMID {
 			continue
 		}
-		target, resolveErr := s.ModelProviderSvc.modelSolver().
-			ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, llmID)
-		if resolveErr != nil || target == nil {
+		model, resolveErr := s.ModelFactory.NewChatModel(ctx, access, llmID)
+		if resolveErr != nil || model == nil {
 			common.WarnCtx(ctx, "agentic_rag: skipping unresolvable failover model",
 				zap.String("llm_id", llmID), zap.Error(resolveErr))
 			continue
 		}
-		chain = append(chain, modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig))
+		chain = append(chain, model)
 	}
 	common.InfoCtx(ctx, "agentic model chain resolved",
 		zap.Int("chain", len(chain)), zap.String("primary", chat.LLMID))
@@ -254,23 +272,23 @@ func (s *ChatPipelineService) agenticModelChain(ctx context.Context, chat *entit
 
 // agenticPrimaryModel resolves the dialog's own model, or the tenant default
 // when it selected none.
-func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, chat *entity.Chat) (*modelModule.ChatModel, error) {
+func (s *ChatPipelineService) agenticPrimaryModel(ctx context.Context, access ModelAccess, chat *entity.Chat) (*modelModule.ChatModel, error) {
 	var (
-		target *ModelTarget
-		err    error
+		model *modelModule.ChatModel
+		err   error
 	)
 	if chat.LLMID == "" {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveDefaultModelConfig(ctx, chat.TenantID, entity.ModelTypeChat)
+		model, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
 	} else {
-		target, err = s.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, chat.TenantID, entity.ModelTypeChat, chat.LLMID)
+		model, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	}
-	if err != nil || target == nil {
-		if err == nil {
-			err = fmt.Errorf("no chat model resolved for tenant %s", chat.TenantID)
-		}
+	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", err)
 	}
-	return modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig), nil
+	if model == nil {
+		return nil, fmt.Errorf("resolve chat model: no chat model resolved for tenant %s", chat.TenantID)
+	}
+	return model, nil
 }
 
 // agenticFailoverModelIDs reads the dialog's ordered failover list from
@@ -348,11 +366,7 @@ func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message 
 	return out
 }
 
-// buildAgenticReference turns the answer's own chunk_id citations into the
-// reference payload the naive pipeline ships, and rewrites the answer with
-// [ID:N] markers. With no resolvable citations both come back unchanged: an
-// empty reference keeps the SSE shape the UI expects, and unmarked chunk_id
-// text is the honest state of an answer whose sources could not be loaded.
+// chatDatasetIDs reads the conversation's bound dataset ids.
 func chatDatasetIDs(chat *entity.Chat) []string {
 	if chat == nil {
 		return nil
@@ -366,14 +380,44 @@ func chatDatasetIDs(chat *entity.Chat) []string {
 	return ids
 }
 
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string) (map[string]interface{}, string) {
-	cited := agentic_rag.ExtractCitedChunkIDs(final)
+// buildAgenticReference turns the answer's citations into the reference payload
+// the naive pipeline ships, and rewrites the answer's markers to that payload's
+// numbering. The answer cites the run's evidence handles ([ID:n], the numbering
+// the model was shown); an answer that named passages by raw chunk_id instead
+// (a document-level question has no handle to write) falls back to that path.
+// With no resolvable citations both come back unchanged: an empty reference
+// keeps the SSE shape the UI expects, and the untouched text is the honest state
+// of an answer whose sources could not be loaded.
+func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
+	// Normalize the answer's markers BEFORE anything reads them. A reasoning
+	// model parks the whole answer inside <think>, so the normalization covers
+	// the entire text rather than a post-`</think>` tail: a handle sitting in
+	// the thinking stretch is cited exactly like one in the visible prose.
+	//
+	// Two shapes need repair, and both are invisible to every scanner
+	// downstream — this package's `\[ID:(\d+)\]` and the client's marker regex
+	// each stop at the first non-digit:
+	//   - a near-canonical marker ("(ID:47)", "[ID: 47]", "【ID:47】"), and
+	//   - several handles compressed into one marker ("[ID:47, ID:115]").
+	normalized := agentic_rag.ExpandCommaCitations(
+		RepairBadCitationFormats(final), len(registry.IDs()))
+
+	// Preferred: the answer's own [ID:n] handles, resolved against the run's
+	// evidence registry — the same numbering the model was shown, so a marker
+	// can only name a passage that actually reached the context.
+	cited := agentic_rag.CitedIDsFromMarkers(normalized, registry)
+	byHandles := len(cited) > 0
+	if !byHandles {
+		// Fallback: an answer that named passages by raw chunk_id. A
+		// document-level question has no [ID:n] handle to write.
+		cited = agentic_rag.ExtractCitedChunkIDs(normalized)
+	}
 	if len(cited) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
 	if len(rows) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	// Keep only ids that actually resolved, preserving first-appearance
 	// order: the marker number IS the chunk's position in the payload array.
@@ -390,16 +434,24 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		}
 	}
 	if len(resolved) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	ordered := make([]map[string]interface{}, 0, len(resolved))
 	for _, id := range resolved {
 		ordered = append(ordered, byID[id])
 	}
-	marked := agentic_rag.InsertCitationMarkers(final, resolved)
+	marked := normalized
+	if byHandles {
+		// Compact the run-level handles ("[ID:265]") into the answer's own
+		// first-citation order ("[ID:0]"), the numbering the payload ships.
+		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
+	} else {
+		marked = agentic_rag.InsertCitationMarkers(normalized, resolved)
+	}
 	common.InfoCtx(ctx, "agentic citations built",
 		zap.Int("cited", len(cited)),
 		zap.Int("resolved", len(resolved)),
+		zap.Bool("by_handle", byHandles),
 		zap.Int("final_bytes", len(marked)))
 	return map[string]interface{}{
 		"chunks":   chunksFormat(ordered),

@@ -37,19 +37,23 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		return nil, common.CodeDataError, errors.New("tenant not found")
 	}
 
-	// A built-in parser_id is valid without parse_type. parse_type is only
-	// required when selecting a pipeline or explicitly supplied.
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, err := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if err != nil {
-			return nil, common.CodeDataError, err
-		}
-		if isBuiltin && req.PipelineID != nil {
-			req.PipelineID = nil
-		}
-		if isPipeline && req.ParserID != nil {
-			req.ParserID = nil
-		}
+	// parse_type is required on dataset creation: it explicitly selects BuiltIn
+	// (1) or Pipeline (2) mode. This replaces the previous silent default to
+	// BuiltIn when the field was omitted. FromRequest validates the
+	// parse_type/parser_id/pipeline_id triple; Resolve enforces that a selection
+	// is actually present (current is nil on create).
+	sel, err := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if _, err = service.Resolve(nil, sel); err != nil {
+		return nil, common.CodeDataError, err
+	}
+	if sel.IsBuiltIn() && req.PipelineID != nil {
+		req.PipelineID = nil
+	}
+	if sel.IsPipeline() && req.ParserID != nil {
+		req.ParserID = nil
 	}
 
 	parserID := string(entity.ParserTypeGeneral)
@@ -175,9 +179,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		tenantEmbdID = ""
 	}
 	if embdID != "" && tenantEmbdID == "" {
-		target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+		target, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, embdID)
 		if err == nil {
-			tenantEmbdID = target.ModelID
+			tenantEmbdID = target.ID
 		} else {
 			return nil, common.CodeDataError, err
 		}
@@ -185,9 +189,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 
 	kbID := utility.GenerateToken()
 	status := string(entity.StatusValid)
-	// Mirror Python's duplicate_name: append (1), (2), ... until the name is
-	// unique within the tenant.
-	name = d.dedupeDatasetName(ctx, name, tenantID)
+	// Fall back to a numbered name when the requested one is already taken.
+	dedupedName, dedupeErr := d.dedupeDatasetName(ctx, name, tenantID)
+	if dedupeErr != nil {
+		return nil, common.CodeServerError, dedupeErr
+	}
+	name = dedupedName
 
 	parserConfig = service.ApplyComponentScopedParserConfig(
 		parserConfig,
@@ -228,18 +235,12 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 	return datasetToMap(createdKB), common.CodeSuccess, nil
 }
 
-// dedupeDatasetName mirrors Python's duplicate_name: if the name already
-// exists within the tenant, append (1), (2), ... until it is unique.
-func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) string {
-	candidate := name
-	for i := 1; i < 1000; i++ {
-		existing, err := d.kbDAO.GetByName(ctx, dao.DB, candidate, tenantID)
-		if err != nil || existing == nil {
-			return candidate
-		}
-		candidate = fmt.Sprintf("%s(%d)", name, i)
-	}
-	return candidate
+// dedupeDatasetName returns a non-colliding dataset name within the tenant,
+// appending (1), (2), ... when the requested name is already taken.
+func (d *DatasetService) dedupeDatasetName(ctx context.Context, name, tenantID string) (string, error) {
+	return common.UniqueName(name, entity.DatasetNameLimit, func(candidate string) (bool, error) {
+		return d.kbDAO.NameExists(ctx, dao.DB, tenantID, candidate)
+	})
 }
 
 func (d *DatasetService) GetDataset(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {

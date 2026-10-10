@@ -948,9 +948,8 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
-// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
-// Python-era TraceIndex task-progress endpoint for the Go backend. The optional
-// `kind` query parameter scopes the status to one compile type.
+// state. The optional `kind` query parameter scopes the status to one compile
+// type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {

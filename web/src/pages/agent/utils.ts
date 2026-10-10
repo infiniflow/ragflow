@@ -205,10 +205,8 @@ function transformObjectArrayToPureArray(
 }
 
 export function transformParserParams(params: ParserFormSchemaType) {
-  // The vision options (enable_vision_enhancement / vlm.llm_id) live at the
-  // params top level alongside the per-family setups — the backend reads them
-  // there, so they pass through as-is. normalizeParserFormValues also lifts
-  // legacy per-setup values of nodes saved before the move.
+  // Save global vision options from the normalized form alongside the
+  // per-family setups, including nodes whose form has not been opened.
   const normalizedParams = normalizeParserFormValues(params);
   const setups = normalizedParams.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
@@ -331,7 +329,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
   }, {});
 
   // Flatten the setups map into the top-level params.
-  return { ...omit(params, ['setups']), ...setups };
+  return { ...omit(normalizedParams, ['setups']), ...setups };
 }
 
 // Decides whether an empty delimiter list should be re-seeded with the

@@ -59,6 +59,22 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 	}
 }
 
+// Excel's "CSV UTF-8" export starts with a BOM; it must not become part of
+// the first column name.
+func TestCSVParser_UTF8BOM(t *testing.T) {
+	res := NewCSVParser().ParseWithResult(context.Background(), "bom.csv", []byte("\xef\xbb\xbfName,Age\nAlice,30\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %#v, want one table item", res.JSON)
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if !strings.Contains(text, "<tr><th>Name</th><th>Age</th></tr>") {
+		t.Errorf("header row = %q", text)
+	}
+}
+
 // TestCSVParserHTML4ExcelIsIgnored pins the retirement: html4excel is still
 // accepted at the entry (with a deprecation warning) but selects nothing —
 // the wire is identical to the default path.

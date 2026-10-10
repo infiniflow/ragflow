@@ -21,7 +21,7 @@ The bundled `docker/migration.sh` covers only the MySQL, MinIO, Redis, and Elast
 From the repository root, inspect the running deployment and its Docker volumes:
 
 ```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+docker ps
 docker volume ls
 ```
 
@@ -97,7 +97,7 @@ Start the Go stack with the target configuration and the same Compose project na
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
-docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+docker ps
 ```
 
 The Go image's entrypoint runs the standalone database migration before starting its enabled server modes. Check the container logs for migration errors before using the service. Confirm that an existing dataset can list and open files and that search still returns its documents.

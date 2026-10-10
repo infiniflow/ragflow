@@ -169,13 +169,23 @@ USER root
 SHELL ["/bin/bash", "-c"]
 WORKDIR /ragflow
 
+# Pin GOMODCACHE/GOCACHE to the BuildKit cache-mount paths for the whole stage.
+# Without this, the `GOMODCACHE=... GOCACHE=...` prefix on the RUN lines below only
+# applies to the command before `&&`, so `./build.sh --go` (the command after `&&`)
+# falls back to the default /root/go/pkg/mod and re-downloads every module that
+# `go mod download` already fetched. Exporting them as ENV makes every go command in
+# this stage — including the `go build` inside build.sh — share the same persistent
+# cache mount, so the download happens once and is reused across builds (the CI
+# runner shares the host Docker daemon, so the mount persists across jobs/replicas).
+ENV GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild
+
 # Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
 # copy only the manifests, download the full module graph into a persistent
 # BuildKit cache mount, then bring in source. GOMODCACHE/GOCACHE are pinned to the
 # mounted paths so `go mod download` and `build.sh --go` share the same cache and
 # dependencies are never re-fetched when only source changes.
 COPY go.mod go.sum ./
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
     GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
@@ -217,7 +227,7 @@ RUN set -eux; \
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
     GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
     git config --global safe.directory "*" && \

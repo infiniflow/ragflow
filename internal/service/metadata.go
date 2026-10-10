@@ -515,7 +515,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 	return metaFields, nil
 }
 
-// mergeFieldValues merges two field values when the same key appears multiple times
+// MergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
 func MergeFieldValues(existing, new interface{}) []interface{} {

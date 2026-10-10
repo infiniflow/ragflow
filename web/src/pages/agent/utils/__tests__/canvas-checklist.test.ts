@@ -553,6 +553,52 @@ describe('collectCanvasIssues: missing required fields', () => {
     );
   });
 
+  // Switching the source to memories writes no `memory_ids` key until a
+  // memory is picked, so the unbound node round-trips without it.
+  it('flags a Retrieval node whose binding key is absent', () => {
+    const datasetIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', { retrieval_from: 'dataset' }),
+      ],
+    });
+    const memoryIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r2', 'Retrieval', { retrieval_from: 'memory' }),
+      ],
+    });
+
+    expect(datasetIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    expect(memoryIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalMemoryMissing' }),
+    );
+  });
+
+  it('treats a Retrieval node without retrieval_from as a dataset node', () => {
+    const emptyIssues = collect({
+      nodes: [makeNode('Retrieval:r1', 'Retrieval', {})],
+    });
+    const legacyIssues = collect({
+      nodes: [makeNode('Retrieval:r2', 'Retrieval', { kb_ids: ['kb-1'] })],
+    });
+    const memoryIssues = collect({
+      nodes: [makeNode('Retrieval:r3', 'Retrieval', { memory_ids: ['mem-1'] })],
+    });
+
+    expect(emptyIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    // A legacy `kb_ids` binding counts as bound; a legacy memory binding is
+    // read as a memory source instead of an empty dataset.
+    expect(
+      legacyIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+    expect(
+      memoryIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+  });
+
   it('flags an Agent node without a model', () => {
     const issues = collect({
       nodes: [makeNode('Agent:a1', 'Agent', { llm_id: '' })],

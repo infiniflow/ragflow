@@ -225,7 +225,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil, nil, nil)
+	a := NewNLPRetrievalAdapter(nil, RetrievalModelConstructors{}, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
@@ -491,24 +491,22 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := &fakeModelResolver{modelName: "resolved-model"}
+			var gotRef string
 			adapter := &NLPRetrievalAdapter{
-				modelConfigResolver: func(
-					_ context.Context,
-					_ string,
-					_ entity.ModelType,
-					modelRef string,
-				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-					resolver.call = "resolve:" + modelRef
-					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+				modelConstructors: RetrievalModelConstructors{
+					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						gotRef = modelRef
+						modelName := "resolved-model"
+						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
+					},
 				},
 			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
-			if resolver.call != test.wantCall {
-				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			if got := "resolve:" + gotRef; got != test.wantCall {
+				t.Fatalf("constructor model ref = %q, want %q", got, test.wantCall)
 			}
 			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
 				t.Fatalf("resolved model = %#v", model)
@@ -554,12 +552,6 @@ func TestValidateEmbeddingModelsRejectsDifferentBases(t *testing.T) {
 type fakeKnowledgebaseLookup struct {
 	kbs []*entity.Knowledgebase
 	err error
-}
-
-type fakeModelResolver struct {
-	call      string
-	modelName string
-	err       error
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {

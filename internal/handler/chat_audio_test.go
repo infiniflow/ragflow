@@ -88,7 +88,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}
 
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, service.NewModelProviderService(), nil)
+	h.SetMindMapDependencies(nil, nil, service.NewModelFactory(), nil)
 
 	c, w := setupGinContextWithUser(http.MethodPost, "/api/v1/chat/audio/speech", `{"text":"hello"}`)
 	h.ChatAudioSpeech(c)

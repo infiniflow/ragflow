@@ -14,17 +14,10 @@
 #  limitations under the License.
 #
 
-from test.testcases.configs import IS_GO_PROXY
-
 
 def assert_auth_error(payload: dict, scenario_name: str) -> None:
     assert payload["code"] == 401, (scenario_name, payload)
-    if IS_GO_PROXY:
-        if scenario_name == "missing token":
-            assert payload["message"] == "Missing Authorization header", (scenario_name, payload)
-        else:
-            assert payload["message"] in {"Invalid access token", "Invalid auth credentials"}, (scenario_name, payload)
-        return
+    if scenario_name == "missing token":
+        assert payload["message"] == "Missing Authorization header", (scenario_name, payload)
     else:
-        expected = "<Unauthorized '401: Unauthorized'>"
-    assert payload["message"] == expected, (scenario_name, payload)
+        assert payload["message"] in {"Invalid access token", "Invalid auth credentials"}, (scenario_name, payload)

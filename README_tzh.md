@@ -134,13 +134,6 @@
 - 透過多輪檢索與推理取得更完整的上下文，協助產生有依據的回答。
 - 支援 Low、Medium、High、Ultra 思考模式，可依問題複雜度控制檢索和推理深度。
 
-### ⚙️ **Go 原生服務架構**
-
-- API、Admin、Ingestor 和 Syncer 由 Go 服務統一提供。
-- DeepDoc 在 Go 行程內執行，負責版面分析、OCR 和表格辨識。
-- Go 服務透過 CGO 呼叫原生文件解析程式庫和 ONNX Runtime。
-- MCP 和 Sandbox Executor 是可按需啟用的選用能力。
-
 ### 🌱 **有理有據、最大程度降低幻覺（hallucination）**
 
 - 文字切片過程視覺化，支援手動調整。
@@ -209,7 +202,7 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 3. 切換至 Go 版發布標籤，並使用 Docker Compose 啟動伺服器：
 
 > [!NOTE]
-> Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+> Go 映像的正式建置目標為 `linux/amd64`。平台支援（注意：macOS 暫不受 Go 後端支援，請使用 Linux x86_64 主機）請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
    進入 Docker 部署目錄。
 
@@ -256,7 +249,7 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 
 #### ⚙️ Docker 設定與調整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台限制和 macOS 執行要求，請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台支援（注意：macOS 暫不受支援），請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
 切換文件引擎、更新設定、重新啟動服務，以及保留或清除既有資料等操作，也請依照上述 Docker 設定文件執行。
 

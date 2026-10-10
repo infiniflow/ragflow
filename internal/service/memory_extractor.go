@@ -490,17 +490,15 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 		messages = append(messages, models.Message{Role: "user", Content: PromptAssembler{}.AssembleUserPrompt(conversation, now, now)})
 	}
 
-	// Python prefers tenant_llm_id and falls back to llm_id;
-	// ResolveModelConfig accepts both tenant-model ids and model names.
+	// Python prefers tenant_llm_id and falls back to llm_id.
 	llmRef := mem.LLMID
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	target, err := NewModelSolver().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
+	chatModel, err := NewModelFactory().NewChatModel(ctx, ModelAccess{TenantID: mem.TenantID}, llmRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
 	}
-	chatModel := models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature

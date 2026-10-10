@@ -113,3 +113,19 @@ func TestNormalizePDFPages(t *testing.T) {
 		}
 	})
 }
+
+func TestPDFPageInRanges(t *testing.T) {
+	ranges := [][]int{{2, 3}, {5, 5}}
+	var got []int
+	for page := 1; page <= 6; page++ {
+		if PDFPageInRanges(ranges, page) {
+			got = append(got, page)
+		}
+	}
+	if want := []int{2, 3, 5}; !reflect.DeepEqual(got, want) {
+		t.Errorf("pages in %v = %v, want %v", ranges, got, want)
+	}
+	if !PDFPageInRanges(nil, 7) {
+		t.Error("PDFPageInRanges(nil, 7) = false, want true: empty ranges select every page")
+	}
+}

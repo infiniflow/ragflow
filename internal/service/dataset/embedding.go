@@ -11,7 +11,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
 	"ragflow/internal/service"
 
 	enginetypes "ragflow/internal/engine/types"
@@ -60,11 +59,10 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	target, err := service.NewModelSolver().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.ModelAccess{TenantID: kb.TenantID}, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	checkNum := defaultEmbeddingCheckNum
 	if req.CheckNum != nil {
@@ -281,7 +279,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 }
 
 func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, tenantID string) (bool, string) {
-	_, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	_, err := service.NewModelFactory().ResolveInfo(ctx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

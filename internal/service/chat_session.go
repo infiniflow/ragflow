@@ -36,6 +36,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -59,10 +60,10 @@ type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
-type chatModelConfigResolver interface {
-	ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error)
-	ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error)
-	ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error)
+type chatModelInfoResolver interface {
+	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+	ResolveDefaultInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelModule.ModelInfo, error)
+	ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -87,7 +88,7 @@ type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
 	userTenantDAO        userTenantStore
 	pipeline             chatPipelineRunner
-	modelProviderSvc     chatModelConfigResolver
+	modelFactory         chatModelInfoResolver
 	chunkFeedbackApplier chunkFeedbackApplier
 	docEngine            engine.DocEngine
 }
@@ -95,11 +96,11 @@ type ChatSessionService struct {
 // NewChatSessionService create chat session service
 func NewChatSessionService() *ChatSessionService {
 	return &ChatSessionService{
-		chatSessionDAO:   dao.NewChatSessionDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
-		pipeline:         NewChatPipelineService(),
-		modelProviderSvc: NewModelSolver(),
-		docEngine:        engine.Get(),
+		chatSessionDAO: dao.NewChatSessionDAO(),
+		userTenantDAO:  dao.NewUserTenantDAO(),
+		pipeline:       NewChatPipelineService(),
+		modelFactory:   NewModelFactory(),
+		docEngine:      engine.Get(),
 	}
 }
 
@@ -555,6 +556,7 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	if len(session.Reference) > 0 && references == nil {
 		return nil, common.CodeDataError, errors.New("invalid session reference")
 	}
+	found := false
 	for i, msg := range messages {
 		if msgID != stringValue(msg["id"]) {
 			continue
@@ -571,7 +573,11 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 			end++
 		}
 		messages = append(messages[:i], messages[end:]...)
+		found = true
 		break
+	}
+	if !found {
+		return nil, common.CodeDataError, errors.New("message not found")
 	}
 
 	messageRaw, err := json.Marshal(messages)
@@ -585,6 +591,9 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
 		"history_update": dao.ConversationHistoryUpdate{DeleteMessageID: msgID},
 	}); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("message not found")
+		}
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
@@ -1395,7 +1404,7 @@ func (s *ChatSessionService) ChatCompletions(
 				if session != nil && !failed {
 					// Store with <think>thinking content</think>
 					content := fullAnswer.String()
-					if content == "" {
+					if content == "" || result.AnswerIsAuthoritative {
 						content = result.Answer
 					}
 					s.appendAssistantToSession(session, content, messageID)
@@ -1855,16 +1864,17 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 }
 
 func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID, modelName string) (bool, error) {
-	resolver := s.modelProviderSvc
-	if resolver == nil {
-		resolver = NewModelSolver()
+	modelFactory := s.modelFactory
+	if modelFactory == nil {
+		modelFactory = NewModelFactory()
 	}
 	var err error
+	access := ModelAccess{TenantID: tenantID}
 	if modelName == "" {
-		_, err = resolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+		_, err = modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
 	} else {
 		modelType := entity.ModelTypeChat
-		if modelTypes, typeErr := resolver.ResolveModelType(ctx, tenantID, modelName); typeErr == nil {
+		if modelTypes, typeErr := modelFactory.ResolveModelType(ctx, access, modelName); typeErr == nil {
 			for _, resolvedType := range modelTypes {
 				if resolvedType.Has(entity.ModelTypeImage2Text) {
 					modelType = entity.ModelTypeImage2Text
@@ -1872,7 +1882,7 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 				}
 			}
 		}
-		_, err = resolver.ResolveModelConfig(ctx, tenantID, modelType, modelName)
+		_, err = modelFactory.ResolveInfo(ctx, access, modelType, modelName)
 	}
 	if err != nil {
 		return false, err

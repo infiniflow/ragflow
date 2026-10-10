@@ -114,6 +114,8 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+// GetEnvironments overlays environment variables on top of the file-based
+// settings, filling the runtime environment snapshot.
 func (c *Config) GetEnvironments() error {
 
 	// Language
@@ -152,7 +154,7 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "seekdb":
+		case "infinity", "elasticsearch", "oceanbase", "seekdb", "vastbase":
 			c.environments.DocumentEngineType = docEngine
 		case "opensearch":
 			return fmt.Errorf("not implemented: %s", docEngine)

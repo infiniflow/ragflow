@@ -301,33 +301,9 @@ func stringMap(v any) map[string]any {
 	return map[string]any{}
 }
 
-// parseWebhookRequest mirrors agent_api.py:1828-1894.
-//
-// Returns (parsed, error). The parsed map carries query / headers /
-// body / content_type. The body is parsed according to the request
-// Content-Type:
-//
-//   - application/json              → unmarshal JSON
-//   - application/x-www-form-urlencoded → form fields
-//   - text/plain / octet-stream / unknown / empty → raw bytes → JSON
-//
-// Two errors are surfaced directly to the handler so the dispatch path
-// can return the right envelope without falling through into a
-// misleading schema-validation error:
-//
-//   - ErrWebhookMultipartNotSupported (501): the request used
-//     multipart/form-data. The Python path uploads files through
-//     FileService.upload_info → canvas.get_files_async, both of which
-//     are NOT yet ported. We refuse the request up front so callers
-//     see a clear, typed 501 instead of an unrelated schema error.
-//
-//   - ErrWebhookContentTypeMismatch (102): when the webhook config
-//     sets content_types, the request Content-Type must match. The
-//     Python reference raises here
-//     (`raise ValueError("Invalid Content-Type...")` at
-//     agent_api.py:1839-1842); we mirror that as a typed error and
-//     surface it through the same 102 envelope as the rest of the
-//     validation errors so operators see the same response shape.
+// parseWebhookRequest extracts query, headers, body and content_type.
+// Form bodies are decoded as fields; other supported bodies are decoded as JSON.
+// Read failures, including size-limit errors, stop execution before schema validation.
 func parseWebhookRequest(configuredContentType string, c *gin.Context) (map[string]any, error) {
 	// 1. Query
 	q := map[string]any{}
@@ -365,23 +341,22 @@ func parseWebhookRequest(configuredContentType string, c *gin.Context) (map[stri
 	body := map[string]any{}
 
 	switch ctype {
-	case "application/json":
-		raw, _ := io.ReadAll(c.Request.Body)
-		if len(raw) > 0 {
-			_ = json.Unmarshal(raw, &body)
-		}
 	case "application/x-www-form-urlencoded":
-		if err := c.Request.ParseForm(); err == nil {
-			for k, vals := range c.Request.PostForm {
-				if len(vals) == 1 {
-					body[k] = vals[0]
-				} else {
-					body[k] = vals
-				}
+		if err := c.Request.ParseForm(); err != nil {
+			return nil, fmt.Errorf("parse webhook form: %w", err)
+		}
+		for k, vals := range c.Request.PostForm {
+			if len(vals) == 1 {
+				body[k] = vals[0]
+			} else {
+				body[k] = vals
 			}
 		}
 	default:
-		raw, _ := io.ReadAll(c.Request.Body)
+		raw, err := io.ReadAll(c.Request.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read webhook body: %w", err)
+		}
 		if len(raw) > 0 {
 			_ = json.Unmarshal(raw, &body)
 		}

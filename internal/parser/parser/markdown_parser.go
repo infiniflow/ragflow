@@ -96,7 +96,8 @@ func (p *MarkdownParser) ConfigureFromSetup(setup map[string]any) {
 // the base64-encoded image payload. The legacy debug-print path has
 // been removed; callers consume ParseResult directly.
 func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	rawText := string(data)
+	decoded, _ := DecodeToUTF8(data, "text/markdown")
+	rawText := string(decoded)
 	// Render any GFM/HTML table inline as an HTML block before parsing. This
 	// keeps the document as one item per top-level block (the table becomes a
 	// normal text item) instead of collapsing the whole document into a single

@@ -112,6 +112,7 @@ const pageFormFeed = '\f'
 type ParserComponent struct {
 	setups                  map[string]schema.ParserSetup
 	enableVisionEnhancement bool
+	visionModelID           string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -125,6 +126,7 @@ type ParserComponent struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
+//	  "vlm":                  {"llm_id": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -149,8 +151,21 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			return nil, errors.New("parser: enable_vision_enhancement must be a boolean")
 		}
 	}
+	var visionModelID string
+	if raw, exists := params["vlm"]; exists {
+		vlm, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("parser: vlm must be an object")
+		}
+		if rawID, exists := vlm["llm_id"]; exists {
+			visionModelID, ok = rawID.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.llm_id must be a string")
+			}
+		}
+	}
 	for k, raw := range params {
-		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" {
+		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" || k == "vlm" {
 			continue
 		}
 		ftCfg, ok := raw.(map[string]any)
@@ -165,7 +180,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 	}
 	normalizeParserOutputFormats(s)
-	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement}
+	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, visionModelID: visionModelID}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
@@ -481,7 +496,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledImage bool
 	if !handledVision && !handledMedia {
 		// Image dispatch: OCR with independently controlled VLM enhancement.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.visionModelID)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -501,7 +516,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.visionModelID)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or

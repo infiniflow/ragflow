@@ -161,6 +161,16 @@ func (dao *KnowledgebaseDAO) GetByName(ctx context.Context, db *gorm.DB, name, t
 	return &kb, nil
 }
 
+// NameExists reports whether a valid knowledge base with the given name
+// already exists for the tenant, comparing names case-insensitively.
+func (dao *KnowledgebaseDAO) NameExists(ctx context.Context, db *gorm.DB, tenantID, name string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", name, tenantID, string(entity.StatusValid)).
+		Count(&count).Error
+	return count > 0, err
+}
+
 // GetByCreatedBy retrieves knowledge bases created by a specific user
 func (dao *KnowledgebaseDAO) GetByCreatedBy(ctx context.Context, db *gorm.DB, createdBy string) ([]*entity.Knowledgebase, error) {
 	var kbs []*entity.Knowledgebase

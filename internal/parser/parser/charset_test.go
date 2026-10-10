@@ -299,3 +299,45 @@ func TestDecodeToUTF8_UTF16LEBOM(t *testing.T) {
 		t.Errorf("got %q, want containing %q", string(out), src)
 	}
 }
+
+// A byte-order mark marks the encoding; it is not content. Python's
+// decode_text drops it, so a leading U+FEFF must not reach the parsers.
+func TestDecodeToUTF8_DropsByteOrderMark(t *testing.T) {
+	src := "name,备注\n"
+	utf16le, err := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16LE encode: %v", err)
+	}
+	utf16be, err := unicode.UTF16(unicode.BigEndian, unicode.UseBOM).NewEncoder().Bytes([]byte(src))
+	if err != nil {
+		t.Fatalf("UTF-16BE encode: %v", err)
+	}
+	cases := []struct {
+		name  string
+		data  []byte
+		label string
+	}{
+		{"utf-8", append([]byte("\xef\xbb\xbf"), src...), "utf-8"},
+		{"utf-16le", utf16le, "utf-16le"},
+		{"utf-16be", utf16be, "utf-16be"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			out, label := DecodeToUTF8(tc.data, "text/plain")
+			if string(out) != src {
+				t.Errorf("got %q, want %q", out, src)
+			}
+			if label != tc.label {
+				t.Errorf("got label %q, want %q", label, tc.label)
+			}
+		})
+	}
+}
+
+func TestDecodeToUTF8_KeepsNonLeadingZeroWidthNoBreakSpace(t *testing.T) {
+	src := "a\ufeffb"
+	out, _ := DecodeToUTF8([]byte(src), "text/plain")
+	if string(out) != src {
+		t.Errorf("got %q, want %q", out, src)
+	}
+}

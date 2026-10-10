@@ -433,7 +433,7 @@ func TestPPIOProviderConfigLoadsIntoProviderManager(t *testing.T) {
 	}
 }
 
-func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
+func TestSiliconFlowProviderConfigLoadsCNAndIntlModelUnion(t *testing.T) {
 	dir, restore := setupProviderTestDir(t, "siliconflow.json")
 	defer restore()
 
@@ -450,6 +450,9 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.URL["default"] != "https://api.siliconflow.cn/v1" {
 		t.Errorf("default URL=%q", provider.URL["default"])
 	}
+	if provider.URL["intl"] != "https://api.siliconflow.com/v1" {
+		t.Errorf("intl URL=%q", provider.URL["intl"])
+	}
 	if provider.URLSuffix.Chat != "chat/completions" {
 		t.Errorf("chat suffix=%q", provider.URLSuffix.Chat)
 	}
@@ -459,8 +462,118 @@ func TestSiliconFlowProviderConfigLoadsLatestProModels(t *testing.T) {
 	if provider.ModelDriver.Name() != "SILICONFLOW" {
 		t.Errorf("ModelDriver.Name()=%q", provider.ModelDriver.Name())
 	}
-	if len(provider.Models) != 13 {
-		t.Fatalf("SILICONFLOW model count=%d, want 13", len(provider.Models))
+	if len(provider.Models) != 111 {
+		t.Fatalf("SILICONFLOW model count=%d, want 111", len(provider.Models))
+	}
+
+	for _, modelName := range []string{
+		"tencent/Hy4-preview",
+		"XingChenAGI/XingChenASR-V3.2",
+		"Qwen/Qwen3-Reranker-8B",
+		"IndexTeam/IndexTTS-2",
+	} {
+		if _, err := pm.GetModelByName("SILICONFLOW", modelName); err != nil {
+			t.Errorf("GetModelByName %q: %v", modelName, err)
+		}
+	}
+
+	asrModel, err := pm.GetModelByName("SILICONFLOW", "XingChenAGI/XingChenASR-V3.2")
+	if err != nil {
+		t.Fatalf("GetModelByName XingChenASR: %v", err)
+	}
+	if !asrModel.ModelTypeMap["asr"] {
+		t.Errorf("XingChenASR model types=%v, want asr", asrModel.ModelTypes)
+	}
+
+	rerankModel, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3-Reranker-8B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3-Reranker: %v", err)
+	}
+	if !rerankModel.ModelTypeMap["rerank"] {
+		t.Errorf("Qwen3-Reranker model types=%v, want rerank", rerankModel.ModelTypes)
+	}
+
+	ttsModel, err := pm.GetModelByName("SILICONFLOW", "IndexTeam/IndexTTS-2")
+	if err != nil {
+		t.Fatalf("GetModelByName IndexTTS: %v", err)
+	}
+	if !ttsModel.ModelTypeMap["tts"] {
+		t.Errorf("IndexTTS model types=%v, want tts", ttsModel.ModelTypes)
+	}
+
+	visionModel, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3.6-27B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3.6: %v", err)
+	}
+	if !visionModel.ModelTypeMap["chat"] || !visionModel.ModelTypeMap["vision"] {
+		t.Errorf("Qwen3.6 model types=%v, want chat+vision", visionModel.ModelTypes)
+	}
+
+	glm53, err := pm.GetModelByName("SILICONFLOW", "zai-org/GLM-5.3")
+	if err != nil {
+		t.Fatalf("GetModelByName GLM-5.3: %v", err)
+	}
+	if glm53.ContextLength == nil || *glm53.ContextLength != 1048576 || glm53.MaxOutput == nil || *glm53.MaxOutput != 128000 {
+		t.Errorf("GLM-5.3 context_length=%v max_output=%v, want 1048576 and 128000", glm53.ContextLength, glm53.MaxOutput)
+	}
+	if glm53.Tools == nil || !glm53.Tools.Support || glm53.Thinking == nil || !glm53.Thinking.DefaultValue || !glm53.Thinking.ClearThinking {
+		t.Errorf("GLM-5.3 tools=%+v thinking=%+v, want tools and default/clear thinking support", glm53.Tools, glm53.Thinking)
+	}
+
+	qwen38, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen3.8-27B")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen3.8-27B: %v", err)
+	}
+	if qwen38.ContextLength == nil || *qwen38.ContextLength != 262144 {
+		t.Errorf("Qwen3.8-27B context_length=%v, want 262144", qwen38.ContextLength)
+	}
+	if !qwen38.ModelTypeMap["chat"] || !qwen38.ModelTypeMap["vision"] {
+		t.Errorf("Qwen3.8-27B model types=%v, want chat+vision", qwen38.ModelTypes)
+	}
+
+	for _, limits := range []struct {
+		name        string
+		contextSize int
+		maxOutput   int
+	}{
+		{"moonshotai/Kimi-K2.5", 262144, 262144},
+		{"moonshotai/Kimi-K2.6", 262144, 262144},
+		{"Qwen/Qwen3-14B", 131072, 131072},
+		{"Qwen/Qwen3-30B-A3B-Instruct-2507", 262144, 262144},
+		{"Qwen/Qwen3-32B", 131072, 131072},
+		{"Qwen/Qwen3-VL-30B-A3B-Instruct", 262144, 262144},
+		{"Qwen/Qwen3-VL-30B-A3B-Thinking", 262144, 262144},
+		{"Qwen/Qwen3.5-35B-A3B", 262144, 262144},
+		{"Qwen/Qwen3.6-27B", 262144, 262144},
+		{"zai-org/GLM-5.2", 1048576, 262144},
+		{"zai-org/GLM-5V-Turbo", 204800, 131072},
+	} {
+		model, err := pm.GetModelByName("SILICONFLOW", limits.name)
+		if err != nil {
+			t.Errorf("GetModelByName %q: %v", limits.name, err)
+			continue
+		}
+		if model.ContextLength == nil || *model.ContextLength != limits.contextSize || model.MaxOutput == nil || *model.MaxOutput != limits.maxOutput {
+			t.Errorf("%s context_length=%v max_output=%v, want %d and %d", limits.name, model.ContextLength, model.MaxOutput, limits.contextSize, limits.maxOutput)
+		}
+	}
+
+	qwen25, err := pm.GetModelByName("SILICONFLOW", "Qwen/Qwen2.5-7B-Instruct")
+	if err != nil {
+		t.Fatalf("GetModelByName Qwen2.5-7B: %v", err)
+	}
+	if qwen25.ContextLength == nil || *qwen25.ContextLength != 32768 || qwen25.MaxOutput == nil || *qwen25.MaxOutput != 4096 {
+		t.Errorf("Qwen2.5-7B context_length=%v max_output=%v, want 32768 and 4096", qwen25.ContextLength, qwen25.MaxOutput)
+	}
+
+	if _, err := pm.GetModelByName("SILICONFLOW", "black-forest-labs/FLUX.2-pro"); err == nil {
+		t.Error("FLUX.2-pro should not be listed because it has no supported RAGFlow model type")
+	}
+
+	for _, model := range provider.Models {
+		if model.ModelTypeMap["chat"] && model.ContextLength == nil {
+			t.Errorf("chat model %q has no context_length", model.Name)
+		}
 	}
 
 	deepSeekV4Pro, err := pm.GetModelByName("SILICONFLOW", "Pro/deepseek-ai/DeepSeek-V4-Pro")
@@ -709,6 +822,59 @@ func TestAllModelsCatalogTokenizerTagsAreKnown(t *testing.T) {
 		t.Fatalf("%s declares no tokenizer for any model; the check would pass vacuously", target)
 	}
 	t.Logf("catalog tokenizer tags: %v", tags)
+}
+
+func TestChatModelWithDefaults(t *testing.T) {
+	thinkingDefault := true
+	model := &ChatModel{info: &ModelInfo{
+		ModelClass: "chat",
+		Thinking:   &ModelThinking{DefaultValue: thinkingDefault},
+	}}
+	config := model.withDefaults(nil)
+	if config.ModelClass == nil || *config.ModelClass != "chat" {
+		t.Fatalf("ModelClass = %v, want chat", config.ModelClass)
+	}
+	if config.Thinking == nil || !*config.Thinking {
+		t.Fatalf("Thinking = %v, want true", config.Thinking)
+	}
+
+	modelClass := "custom"
+	thinking := false
+	config = model.withDefaults(&ChatConfig{ModelClass: &modelClass, Thinking: &thinking})
+	if config.ModelClass != &modelClass || config.Thinking != &thinking {
+		t.Fatal("explicit chat config values should not be overwritten by model defaults")
+	}
+}
+
+func TestChatModelValidateMaxOutput(t *testing.T) {
+	maxOutput := 128
+	maxTokens := func(n int) *int { return &n }
+	model := &ChatModel{info: &ModelInfo{MaxOutput: maxOutput}}
+
+	tests := []struct {
+		name    string
+		config  *ChatConfig
+		wantErr bool
+	}{
+		{name: "below limit", config: &ChatConfig{MaxTokens: maxTokens(127)}},
+		{name: "at limit", config: &ChatConfig{MaxTokens: maxTokens(128)}},
+		{name: "above limit", config: &ChatConfig{MaxTokens: maxTokens(129)}, wantErr: true},
+		{name: "unset max tokens", config: &ChatConfig{}},
+		{name: "nil config"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := model.validateMaxOutput(tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("validateMaxOutput() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+
+	unknownLimitModel := &ChatModel{info: &ModelInfo{}}
+	if err := unknownLimitModel.validateMaxOutput(&ChatConfig{MaxTokens: maxTokens(1000)}); err != nil {
+		t.Fatalf("unknown model output limit should not reject config: %v", err)
+	}
 }
 
 // sortedKeys returns the keys of a set, sorted, for a deterministic message.

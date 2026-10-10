@@ -273,20 +273,9 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		upstreams := c.Components[cpnID].Upstream
 		first := true
-		for _, up := range upstreams {
-			if up == loopID {
-				// Upstream is the parent Loop; in the sub-graph the
-				// data source is the synthetic init node.
-				if first {
-					nodes[cpnID].AddInput(loopInitKey)
-					first = false
-				} else {
-					nodes[cpnID].AddDependency(loopInitKey)
-				}
-				continue
-			}
+		wireMember := func(up string) {
 			if !members[up] {
-				continue
+				return
 			}
 			if first {
 				nodes[cpnID].AddInput(up)
@@ -295,10 +284,31 @@ func buildSubWorkflow(
 				nodes[cpnID].AddDependency(up)
 			}
 		}
+		for _, up := range upstreams {
+			if up == loopID {
+				if first {
+					nodes[cpnID].AddInput(loopInitKey)
+					first = false
+				} else {
+					nodes[cpnID].AddDependency(loopInitKey)
+				}
+				continue
+			}
+			if messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			wireMember(up)
+		}
+		for _, up := range upstreams {
+			if !members[up] || !messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			nodes[cpnID].AddDependency(up)
+		}
 		if first {
-			// No in-subgraph upstream: wire from init (this happens
-			// for body entries whose only upstream in the DSL is the
-			// Loop itself).
+			// No in-subgraph data upstream. The loop input stays the
+			// data source, including when the only body predecessor is
+			// a Message. That edge only orders execution.
 			nodes[cpnID].AddInput(loopInitKey)
 		}
 	}

@@ -114,11 +114,6 @@
 - 복잡한 질문을 분석하고 필요하면 여러 단계로 질문을 분해하고 지식을 검색하며 근거를 검증합니다.
 - Low, Medium, High, Ultra 사고 모드로 질문 복잡도에 따라 검색 및 추론 깊이를 조절할 수 있습니다.
 
-### ⚙️ **Go 네이티브 서비스 아키텍처**
-
-- 통합 Go 서비스가 API, Admin, Ingestor, Syncer를 제공합니다. DeepDoc은 Go 프로세스 안에서 레이아웃 분석, OCR, 표 인식을 수행합니다.
-- Go 서비스는 CGO를 통해 네이티브 문서 파싱 라이브러리와 ONNX Runtime을 호출합니다. MCP와 Sandbox Executor는 필요할 때 활성화할 수 있습니다.
-
 ### 🌱 **할루시네이션을 줄인 신뢰할 수 있는 인용**
 
 - 텍스트 청킹을 시각화하여 사용자가 개입할 수 있도록 합니다.
@@ -239,7 +234,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 #### ⚙️ Docker 구성 및 조정
 
-Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 제한과 macOS 요구 사항은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
+Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 지원(참고: macOS는 현재 지원되지 않음, Linux x86_64 호스트 사용 권장)은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
 
 문서 엔진 전환, 구성 변경 후 서비스 재시작, 기존 데이터 보존 또는 삭제 작업도 위 Docker 구성 가이드를 따르세요.
 

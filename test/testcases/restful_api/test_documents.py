@@ -27,7 +27,7 @@ from requests_toolbelt import MultipartEncoder
 from utils import wait_for
 from utils.file_utils import create_txt_file
 
-from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, VERSION
+from test.testcases.configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, VERSION
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import compare_by_hash
@@ -492,7 +492,7 @@ def test_documents_upload_error_contract(rest_client, create_dataset, tmp_path):
     assert filename_empty_res.status_code == 200
     filename_empty_payload = filename_empty_res.json()
     assert filename_empty_payload["code"] == 101, filename_empty_payload
-    expected_message = "No file part!" if IS_GO_PROXY else "No file selected!"
+    expected_message = "No file part!"
     assert filename_empty_payload["message"] == expected_message, filename_empty_payload
 
 
@@ -821,28 +821,11 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
             list_body = list_res.json()
             assert list_body["code"] == 0, (parser_config, list_body)
             doc_parser_config = list_body["data"]["docs"][0]["parser_config"]
-            if IS_GO_PROXY:
-                assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
-                assert "raptor" not in doc_parser_config, (parser_config, list_body)
-                assert "graphrag" not in doc_parser_config, (parser_config, list_body)
-                continue
-            if parser_config == {}:
-                assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
-            else:
-                for key, value in parser_config.items():
-                    if key in {"graphrag", "raptor"}:
-                        assert key not in doc_parser_config, (parser_config, list_body)
-                        continue
-                    if isinstance(value, dict):
-                        for sub_key, sub_value in value.items():
-                            assert doc_parser_config[key][sub_key] == sub_value, (parser_config, list_body)
-                    else:
-                        assert doc_parser_config[key] == value, (parser_config, list_body)
+            assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
+            assert "raptor" not in doc_parser_config, (parser_config, list_body)
+            assert "graphrag" not in doc_parser_config, (parser_config, list_body)
         else:
-            if IS_GO_PROXY:
-                assert body["message"] in expected_message, (parser_config, body)
-            else:
-                assert body["message"] == expected_message, (parser_config, body)
+            assert body["message"] in expected_message, (parser_config, body)
 
 
 @pytest.mark.p2
@@ -1045,12 +1028,9 @@ def test_document_metadata_config_contract(rest_client, create_document):
     update_body = update_res.json()
     assert update_body["code"] == 0, update_body
     parser_config = update_body["data"]["parser_config"]
-    if IS_GO_PROXY:
-        # Go scopes metadata onto the Extractor node rather than a flat key.
-        scoped = parser_config.get("Extractor:AutoExtractDefault", {})
-        assert scoped.get("metadata") == update_payload["metadata"], update_body
-    else:
-        assert parser_config["metadata"] == update_payload["metadata"], update_body
+    # Go scopes metadata onto the Extractor node rather than a flat key.
+    scoped = parser_config.get("Extractor:AutoExtractDefault", {})
+    assert scoped.get("metadata") == update_payload["metadata"], update_body
 
 
 @pytest.mark.p2

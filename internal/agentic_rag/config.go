@@ -80,6 +80,7 @@ func toolRegistry() map[string]toolFactory {
 		// all (see tool_search_semantic_chunks.go).
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
 		"list_chunks":            func(t string, d []string) tool.BaseTool { return NewListChunksTool(t, d) },
+		"search_metadata":        func(t string, d []string) tool.BaseTool { return NewMetadataSearchTool(t, d) },
 	}
 }
 
