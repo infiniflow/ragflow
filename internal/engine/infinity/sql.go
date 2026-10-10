@@ -46,53 +46,45 @@ type fieldMappingEntry struct {
 	Comment string `json:"comment"`
 }
 
-// loadFieldMapping reads infinity_mapping.json and returns alias→actual
-// and actual→firstAlias maps. Silently returns empty maps on missing file.
-func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, actualToFirstAlias map[string]string, err error) {
+// loadFieldMapping reads field aliases from infinity_mapping.json.
+// A missing file yields an empty map.
+func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, err error) {
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
 	}
 
 	filePath, err := utility.FindConfFileInProject(mappingFileName)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	data, err := os.ReadFile(*filePath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return map[string]string{}, map[string]string{}, nil
+			return map[string]string{}, nil
 		}
-		return nil, nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
+		return nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
 	}
 
 	fields := map[string]fieldMappingEntry{}
 	if err = json.Unmarshal(data, &fields); err != nil {
-		return nil, nil, fmt.Errorf("parse field mapping %q: %w", *filePath, err)
+		return nil, fmt.Errorf("parse field mapping %q: %w", *filePath, err)
 	}
 
 	aliasToActual = make(map[string]string, len(fields)*2)
-	actualToFirstAlias = make(map[string]string, len(fields))
 	for actual, info := range fields {
 		if info.Comment == "" {
 			continue
 		}
-		var firstAlias string
 		for raw := range strings.SplitSeq(info.Comment, ",") {
 			alias := strings.TrimSpace(raw)
 			if alias == "" {
 				continue
 			}
 			aliasToActual[alias] = actual
-			if firstAlias == "" {
-				firstAlias = alias
-			}
-		}
-		if firstAlias != "" {
-			actualToFirstAlias[actual] = firstAlias
 		}
 	}
-	return aliasToActual, actualToFirstAlias, nil
+	return aliasToActual, nil
 }
 
 // prepareSQL rewrites field identifiers while preserving string literals and
@@ -101,6 +93,12 @@ func prepareSQL(sqlText string, aliasToActual map[string]string) (string, error)
 	tokens, err := utility.SQLScan(strings.TrimSuffix(strings.TrimSpace(sqlText), ";"))
 	if err != nil {
 		return "", err
+	}
+	// Infinity cannot safely bind CASE expressions in the table SQL path.
+	for _, token := range tokens {
+		if token.IsWord("case") {
+			return "", fmt.Errorf("Infinity table SQL does not support CASE expressions")
+		}
 	}
 	shape, err := utility.SQLSplitSelect(tokens)
 	if err != nil {
@@ -591,7 +589,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 
 	common.Debug("InfinityConnection.sql get sql", zap.String("sql", sqlText))
 
-	aliasMap, _, err := loadFieldMapping(e.client.mappingFileName)
+	aliasMap, err := loadFieldMapping(e.client.mappingFileName)
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}

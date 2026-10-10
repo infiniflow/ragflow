@@ -120,7 +120,7 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 		t.Fatalf("write conf/mapping: %v", err)
 	}
 
-	a2a, r2a, err := loadFieldMapping("test_mapping.json")
+	a2a, err := loadFieldMapping("test_mapping.json")
 	if err != nil {
 		t.Fatalf("loadFieldMapping: %v", err)
 	}
@@ -136,38 +136,23 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 	if !reflect.DeepEqual(a2a, expectedAliases) {
 		t.Errorf("aliasToActual: got %v, want %v", a2a, expectedAliases)
 	}
-
-	// actual → first alias (mirrors Python at line 807)
-	if r2a["docnm"] != "docnm_kwd" {
-		t.Errorf("actualToFirstAlias[docnm]: got %q, want docnm_kwd", r2a["docnm"])
-	}
-	if r2a["content"] != "content_with_weight" {
-		t.Errorf("actualToFirstAlias[content]: got %q, want content_with_weight", r2a["content"])
-	}
-	// "plain" has no comment, so it shouldn't appear in the reverse map.
-	if _, ok := r2a["plain"]; ok {
-		t.Errorf("actualToFirstAlias should not include fields without comments")
-	}
 }
 
 func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
-	// Ensure the test runs in an isolated project base so any repo file
-	// named "infinity_mapping.json" doesn't get picked up.
 	dir := t.TempDir()
-	os.Setenv("RAG_PROJECT_BASE", dir)
-	defer os.Unsetenv("RAG_PROJECT_BASE")
-
-	// Empty name → defaults to "infinity_mapping.json" (line 145).
-	// We just verify the function doesn't panic and the file-not-found
-	// path is taken silently.
-	t.Setenv("RAG_PROJECT_BASE", t.TempDir())
-
-	a2a, r2a, err := loadFieldMapping("")
-	if err != nil {
-		t.Fatalf("empty name: %v", err)
+	t.Setenv("RAG_PROJECT_BASE", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "conf"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if len(a2a) == 0 || len(r2a) == 0 {
-		t.Errorf("empty name + no file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
+	if err := os.WriteFile(filepath.Join(dir, "conf", "infinity_mapping.json"), []byte(`{"native":{"comment":"alias"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	aliases, err := loadFieldMapping("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(aliases, map[string]string{"alias": "native"}) {
+		t.Fatalf("default mapping aliases: %v", aliases)
 	}
 }
 
@@ -584,5 +569,19 @@ func TestPrepareSQLKeepsAGeneratedTableName(t *testing.T) {
 	}
 	if len(table) <= 64 {
 		t.Fatalf("the fixture no longer exceeds the id bound: %d", len(table))
+	}
+}
+
+func TestPrepareSQLRejectsCaseExpressions(t *testing.T) {
+	for _, query := range []string{
+		"SELECT CASE WHEN doc_id = 'x' THEN 'yes' ELSE 'no' END FROM chunks",
+		"SELECT CASE WHEN doc_id = 'x' THEN json_extract_string(chunk_data, '$.k_abc') ELSE 'other' END AS label FROM chunks ORDER BY label",
+	} {
+		if _, err := prepareSQL(query, nil); err == nil || !strings.Contains(err.Error(), "CASE") {
+			t.Fatalf("CASE query accepted: %v", err)
+		}
+	}
+	if _, err := prepareSQL("SELECT 'case' AS label FROM chunks", nil); err != nil {
+		t.Fatalf("literal rejected: %v", err)
 	}
 }
