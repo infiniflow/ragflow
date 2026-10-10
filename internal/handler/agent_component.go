@@ -215,6 +215,11 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
 		}
 	}
+	// Permission checks in Retrieval use the authenticated caller and the
+	// canvas whose component is being debugged. Set these after copying inputs
+	// so request parameters cannot impersonate another user or canvas.
+	debugState.Sys["canvas_id"] = cv.ID
+	debugState.Sys["user_id"] = user.ID
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
 
 	outputs, err := runtime.TrackElapsed(name, func() (map[string]any, error) {

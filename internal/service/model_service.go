@@ -1618,7 +1618,7 @@ var (
 		common.EnvMonkeyOCROutputDir:    "",
 		common.EnvMonkeyOCRServerURL:    "",
 		common.EnvMonkeyOCRBackend:      "vlm-engine",
-		common.EnvMonkeyOCRDeleteOutput: "1",
+		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )
 

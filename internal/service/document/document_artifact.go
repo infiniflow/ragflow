@@ -226,29 +226,14 @@ func (s *DocumentService) sandboxArtifactDialogIDsForUser(ctx context.Context, f
 	return out
 }
 
-// sandboxArtifactAccessible reports whether userID may reach at
-// least one agent canvas whose session references filename.
-// Mirrors `UserCanvasService.accessible(dialog_id, user_id)` from
-// the Python fix; on the Go side this is the same predicate as
-// UserCanvasDAO.Accessible (owner or team permission, with the
-// latter scoped to the caller's tenant membership — PR review
-// round 5).
+// sandboxArtifactAccessible reports whether userID may read at least one
+// canvas whose session references filename.
 func (s *DocumentService) sandboxArtifactAccessible(ctx context.Context, filename, userID string) bool {
 	if userID == "" {
 		return false
 	}
-	// Fetch the caller's tenant list once; passing it into
-	// canvasDAO.Accessible ensures the team-permission branch only
-	// matches canvases the caller can actually see. An empty list
-	// (callers without tenant data) is safe — it effectively disables
-	// the team branch, so the only matches are canvases the caller
-	// directly owns.
-	tenantIDs, terr := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if terr != nil {
-		tenantIDs = nil
-	}
 	for _, dialogID := range s.sandboxArtifactDialogIDsForUser(ctx, filename, userID) {
-		if s.canvasDAO.Accessible(ctx, dao.DB, dialogID, userID, tenantIDs) {
+		if service.CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, dialogID, permission.OperationRead) == nil {
 			return true
 		}
 	}

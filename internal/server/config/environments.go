@@ -665,6 +665,8 @@ func (c *Config) GetMaxContentLength() int { return c.environments.MAXContentLen
 
 func (c *Config) GetHomePath() string { return c.environments.HomePath }
 
+func (c *Config) GetMCPAllowPrivateHosts() bool { return c.environments.MCPAllowPrivateHosts }
+
 func (c *Config) GetUserProfile() string { return c.environments.UserProfile }
 
 func (c *Config) GetHTTPProxy() string { return c.environments.HTTPProxy }

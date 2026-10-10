@@ -325,7 +325,7 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 // CLI flag > environment variable > config file > default(1) and returns the
 // resolved ingestor worker count (K), validating it against the inclusive
 // range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
-// non-integer value at any layer is a fatal startup error.
+// noninteger value at any layer is a fatal startup error.
 func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int, error) {
 	val := config.MinIngestorWorkers
 	if configured > 0 {
@@ -352,7 +352,7 @@ func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int,
 // CLI flag > environment variable > config file > default(2) and returns the
 // resolved per-document page concurrency (N), validating it against the
 // inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
-// non-integer value at any layer is a fatal startup error.
+// noninteger value at any layer is a fatal startup error.
 func resolveIngestorPageConcurrency(args *serverArgs, configured int) (int, error) {
 	val := 2 // default page concurrency
 	if configured > 0 {
@@ -584,7 +584,7 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		if err := registerNativeDeepDoc(arguments); err != nil {
+		if err = registerNativeDeepDoc(arguments); err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
 		}
@@ -622,7 +622,7 @@ func main() {
 	}
 
 	if err = checkDatabaseVersion(ctx); err != nil {
-		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
+		common.Fatal("Database has a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
@@ -944,7 +944,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// topic title and an existing cluster's description is fused with the joining
 	// document. Passing an empty model ref resolves each tenant's default chat
 	// model on demand; without one the nav service keeps its deterministic
-	// behaviour.
+	// behavior.
 	navService.SetNavMergeLLM(service.NewNavMergeLLM(service.NewModelFactory(), ""))
 	nav.SetNavService(navService)
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
@@ -956,7 +956,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// goroutines and joins them via Stop); a provisioning failure here must
 	// fail the server (main's os.Exit(1) path) instead of reporting a
 	// healthy ingestor that can never consume.
-	if err := ingestor.Start(); err != nil {
+	if err = ingestor.Start(); err != nil {
 		common.Error("Failed to initialize ingestor", err)
 		return err
 	}
