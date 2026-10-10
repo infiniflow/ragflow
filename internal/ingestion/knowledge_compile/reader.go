@@ -166,6 +166,12 @@ func (r engineReader) LoadDocProducts(ctx context.Context, tenant, kb, docID str
 			SelectFields: append(append([]string(nil), compiledSelectFields...), wikiSelectFields...),
 			Limit:        loadDocProductsLimit,
 			Offset:       offset,
+			// Stable sort on the unique keyword `id`: without an explicit
+			// OrderBy this scan pages with from/size, which Elasticsearch
+			// rejects once from+size passes max_result_window, so a document
+			// with more products than that window would load silently
+			// truncated. The sort key also unlocks the search_after path.
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
 		})
 		if err != nil {
 			return nil, err
