@@ -29,6 +29,7 @@ export function useLoadingPause(
       return;
     }
 
+    setShow(false);
     const timer = setTimeout(() => {
       setShow(true);
     }, delay);
