@@ -475,15 +475,15 @@ func AnnotateBoxLayouts(boxes []pdf.TextBox, regions []pdf.DLARegion, scale floa
 }
 
 // ── garbage layout helpers ────────────────────────────────────────────
-// garbageKeepFeat matches Python's keep_feats in LayoutRecognizer.__call__:
-// footer near page bottom (>90% of page height) or header near page top (<10%)
-// are real page decorations - keep them.  Others are DLA noise.
+// garbageKeepFeat keeps likely false-positive garbage labels.
 func garbageKeepFeat(ty string, box pdf.TextBox, pageImgHeight float64) bool {
 	switch ty {
 	case pdf.LayoutTypeFooter:
 		return box.Bottom < pageImgHeight*0.9
 	case pdf.LayoutTypeHeader:
 		return box.Top > pageImgHeight*0.1
+	case pdf.LayoutTypeReference:
+		return IsCaptionBox(box.Text, "")
 	}
 	return false
 }
