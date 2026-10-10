@@ -19,6 +19,7 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"unicode"
 
 	pdfoxide "github.com/yfedoseev/pdf_oxide/go"
 
@@ -403,6 +404,52 @@ func (r *RenderResult) At(x, y int) color.Color {
 }
 
 // ── Utility ──────────────────────────────────────────────────────────────
+
+// AverageNonWhitespaceCharsPerPage returns the mean count of non-whitespace
+// characters per page in [fromPage, toPage). toPage < 0 means through the end.
+func AverageNonWhitespaceCharsPerPage(data []byte, fromPage, toPage int) (float64, error) {
+	if len(data) == 0 {
+		return 0, fmt.Errorf("empty PDF")
+	}
+	doc, err := OpenBytes(data)
+	if err != nil {
+		return 0, err
+	}
+	defer doc.Close()
+	pageCount, err := doc.PageCount()
+	if err != nil {
+		return 0, err
+	}
+	if pageCount == 0 {
+		return 0, nil
+	}
+	start := fromPage
+	if start < 0 {
+		start = 0
+	}
+	end := pageCount
+	if toPage >= 0 && toPage < end {
+		end = toPage
+	}
+	if start >= end {
+		return 0, nil
+	}
+	var total int
+	for page := start; page < end; page++ {
+		chars, err := doc.GetPageChars(page)
+		if err != nil {
+			return 0, err
+		}
+		for _, ch := range chars {
+			for _, r := range ch.Text {
+				if !unicode.IsSpace(r) {
+					total++
+				}
+			}
+		}
+	}
+	return float64(total) / float64(end-start), nil
+}
 
 // TotalPageNumber opens a PDF and returns the page count.
 func TotalPageNumber(path string, data []byte) (int, error) {
