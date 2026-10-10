@@ -61,10 +61,6 @@ for arg in "$@"; do
       INGESTOR_NUMBER="${arg#*=}"
       shift
       ;;
-    --host-id=*)
-      HOST_ID="${arg#*=}"
-      shift
-      ;;
     *)
       usage
       ;;

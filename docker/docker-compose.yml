@@ -22,7 +22,6 @@ services:
 
     # Example configuration to start Admin server:
     command:
-      - --enable-adminserver
       - --init-superuser
       #- --init-model-provider-tables
     ports:
