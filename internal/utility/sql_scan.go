@@ -321,7 +321,7 @@ var aggregateFunctions = map[string]bool{
 	"var_pop": true, "stddev_pop": true,
 }
 
-// structuralWords cannot appear at the top level of the statement this package
+// structuralWords cannot appear at any depth of the statement this package
 // reads: each one starts a compound query, a common table expression, a join
 // or a write.
 var structuralWords = map[string]bool{
@@ -403,13 +403,6 @@ func SQLSplitSelect(tokens []SQLToken) (*SQLStatementShape, error) {
 		}
 		if token.IsPunct("(") {
 			depth++
-			// Any depth: "((select ...))" is as much a query inside a query as
-			// "(select ...)", and this parser's contract is to refuse both. The
-			// scanning stops at the nested keyword rather than reading the inner
-			// statement, because nothing below this layer may execute it.
-			if next, ok := at(tokens, i+1); ok && (next.IsWord("select") || next.IsWord("with")) {
-				return nil, fmt.Errorf("sqlscan: a query in parentheses at token %d is a subquery", i)
-			}
 			continue
 		}
 		if token.IsPunct(")") {
@@ -418,11 +411,14 @@ func SQLSplitSelect(tokens []SQLToken) (*SQLStatementShape, error) {
 			}
 			continue
 		}
-		if depth != 0 || token.Kind != SQLWord {
+		if token.Kind != SQLWord {
 			continue
 		}
-		if structuralWords[token.Lower] {
+		if token.IsWord("select") || structuralWords[token.Lower] {
 			return nil, fmt.Errorf("sqlscan: %q is not allowed in a table query", token.Lower)
+		}
+		if depth != 0 {
+			continue
 		}
 		found, ok := clauseKeyword(tokens, i)
 		if !ok {

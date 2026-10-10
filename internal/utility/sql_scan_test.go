@@ -336,3 +336,24 @@ func TestSQLScanRejectsInvalidUTF8(t *testing.T) {
 		t.Fatal("invalid UTF-8 accepted")
 	}
 }
+
+func TestSplitSelectRejectsStructuralWordsInsideExpressions(t *testing.T) {
+	for _, sql := range []string{
+		"SELECT a FROM t WHERE b IN (1 UNION SELECT c FROM u)",
+		"SELECT a FROM t WHERE b = (1 + SELECT c FROM u)",
+		"SELECT a FROM t WHERE b IN (1 WITH c)",
+		"SELECT a FROM t WHERE b IN (1 JOIN u)",
+	} {
+		if _, err := SQLSplitSelect(mustScan(t, sql)); err == nil {
+			t.Errorf("accepted nested structural word: %s", sql)
+		}
+	}
+	for _, sql := range []string{
+		"SELECT 'select union' FROM t WHERE b IN (1, 2)",
+		"SELECT \"select\" FROM t WHERE \"union\" = (1 + 2)",
+	} {
+		if _, err := SQLSplitSelect(mustScan(t, sql)); err != nil {
+			t.Errorf("rejected literal or quoted identifier: %v", err)
+		}
+	}
+}
