@@ -64,7 +64,7 @@ If Docker is not installed, see [Install Docker Engine](https://docs.docker.com/
 4. Check that the service is running:
 
    ```bash
-   docker compose -f docker-compose.yml ps
+   docker ps
    docker logs -f ragflow-cpu
    ```
 
@@ -82,7 +82,7 @@ The Go container runs the API server, ingestion workers, and data synchronizatio
 
 ## Configure LLMs
 
-RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs. For a complete list of supported models, please refer to [Supported Models](./guides/models/supported_models.mdx).
+RAGFlow is a RAG engine and needs to work with an LLM to offer grounded, hallucination-free question-answering capabilities. RAGFlow supports most mainstream LLMs.
 
 :::note
 RAGFlow also supports deploying LLMs locally using Ollama, Xinference, or LocalAI, but this part is not covered in this quick start guide.

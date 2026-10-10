@@ -45,8 +45,6 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 		&entity.TenantModelProvider{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroup{},
-		&entity.TenantModelGroupMapping{},
 		&entity.UserCanvas{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
@@ -60,6 +58,29 @@ func pushServiceDB(t *testing.T, testDB *gorm.DB) {
 	oldDB := dao.DB
 	dao.DB = testDB
 	t.Cleanup(func() { dao.DB = oldDB })
+}
+
+func ensureDatasetTestMembership(t *testing.T, userID, tenantID, role string) {
+	t.Helper()
+	var count int64
+	if err := dao.DB.Model(&entity.UserTenant{}).
+		Where("user_id = ? AND tenant_id = ? AND status = ?", userID, tenantID, string(entity.StatusValid)).
+		Count(&count).Error; err != nil {
+		t.Fatalf("count test tenant memberships: %v", err)
+	}
+	if count > 0 {
+		return
+	}
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        userID + "-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      role,
+		InvitedBy: tenantID,
+		Status:    sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert test tenant membership: %v", err)
+	}
 }
 
 func sptr(s string) *string { return &s }

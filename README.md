@@ -126,13 +126,6 @@ releases! 🌟
 - Gather more complete context through multiple rounds of retrieval and reasoning to help generate well-grounded answers.
 - Choose Low, Medium, High, or Ultra thinking modes to control retrieval and reasoning depth according to question complexity.
 
-### ⚙️ **Go-native service architecture**
-
-- API, Admin, Ingestor, and Syncer are provided by a unified Go service.
-- DeepDoc runs within the Go process and handles layout analysis, OCR, and table recognition.
-- Go services use CGO to call native document parsing libraries and ONNX Runtime.
-- MCP and Sandbox Executor are optional capabilities that can be enabled as needed.
-
 ### 🌱 **Grounded citations with reduced hallucinations**
 
 - Visualization of text chunking to allow human intervention.
@@ -165,7 +158,7 @@ releases! 🌟
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only when using the Self-Managed container Sandbox.
 
-Docker deployment does not require Go on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
+Docker deployment does not require Go compiler on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
 
 > [!TIP]
 > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -238,7 +231,7 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
 
 #### ⚙️ Docker Configuration and Adjustment
 
-Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). For platform limitations and macOS requirements, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
+Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). macOS is temporarily not supported by the Go backend (use a Linux x86_64 host); for platform support details, see the [Go Docker image build guide](./docs/develop/build_docker_image.mdx).
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 

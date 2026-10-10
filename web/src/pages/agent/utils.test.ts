@@ -1,4 +1,5 @@
 import { RAGFlowNodeType } from '@/interfaces/database/agent';
+import { FileType } from '@/constants/file';
 import { Operator } from './constant';
 import {
   generateNodeNamesWithIncreasingIndex,
@@ -7,8 +8,38 @@ import {
   receiveMessageError,
   shouldSeedDefaultDelimiter,
   transformGeneralChunkerParams,
+  transformParserParams,
   transformTokenChunkerParams,
 } from './utils';
+
+describe('transformParserParams vision settings', () => {
+  it('saves the normalized global settings when the node form was not opened', () => {
+    const result = transformParserParams({
+      setups: [
+        { fileFormat: FileType.PDF, vlm: { llm_id: 'model-B' } },
+        { fileFormat: FileType.Audio, vlm: { llm_id: 'asr-model' } },
+      ],
+    } as any);
+
+    expect(result.enable_vision_enhancement).toBe(true);
+    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+    expect(result).not.toHaveProperty(`${FileType.PDF}.vlm`);
+    expect(result).toHaveProperty(`${FileType.Audio}.vlm`, {
+      llm_id: 'asr-model',
+    });
+  });
+
+  it.each([true, false])('preserves model B with enhancement %s', (enabled) => {
+    const result = transformParserParams({
+      enable_vision_enhancement: enabled,
+      vlm: { llm_id: 'model-B' },
+      setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
+    } as any);
+
+    expect(result.enable_vision_enhancement).toBe(enabled);
+    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+  });
+});
 
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {

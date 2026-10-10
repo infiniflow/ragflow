@@ -190,8 +190,9 @@ type Deps struct {
 	ModelMaxOutput int
 }
 
-// DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
-type DepsResolver func(tenantID, llmID, embeddingModel string) (Deps, error)
+// DepsResolver resolves the per-run Deps from the active task context and
+// tenant/model references.
+type DepsResolver func(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error)
 
 // DepsResolver / SetDepsResolver / ResolveDeps are the only injection seams the
 // component exposes. The component is DB-independent: it compiles knowledge
@@ -214,14 +215,14 @@ func SetDepsResolver(r DepsResolver) {
 }
 
 // ResolveDeps resolves Deps via the installed resolver.
-func ResolveDeps(tenantID, llmID, embeddingModel string) (Deps, error) {
+func ResolveDeps(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error) {
 	depsResolverMu.RLock()
 	r := depsResolver
 	depsResolverMu.RUnlock()
 	if r == nil {
 		return Deps{}, fmt.Errorf("knowledge_compiler: no DepsResolver registered (call common.SetDepsResolver in production wiring)")
 	}
-	return r(tenantID, llmID, embeddingModel)
+	return r(ctx, tenantID, llmID, embeddingModel)
 }
 
 // GroupResolver resolves compilation-template-group ids to the concrete

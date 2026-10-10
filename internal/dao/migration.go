@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -78,7 +79,38 @@ func RunMigrations(ctx context.Context, db *gorm.DB) error {
 		return fmt.Errorf("failed to migrate tenant model data: %w", err)
 	}
 
+	// Drop the unused tenant-level model group tables. Failover is configured
+	// per conversation instead, so nothing reads or writes these any more.
+	if err := dropModelGroupTables(ctx, db); err != nil {
+		return fmt.Errorf("failed to drop tenant model group tables: %w", err)
+	}
+
 	common.Info("All manual migrations completed successfully")
+	return nil
+}
+
+// dropModelGroupTables removes tenant_model_group and
+// tenant_model_group_mapping.
+//
+// The tables were created by AutoMigrate for a tenant-scoped failover-group
+// feature that was never shipped: no service read them, and the per-conversation
+// failover path replaced the concept entirely. Their Go definitions are gone, so
+// without this they would linger in every existing database with no way to remove
+// them. AutoMigrate cannot express a drop, hence the explicit migration.
+//
+// Guarded by HasTable so a database that never had them is a no-op, and
+// mapping-first because it references the group table.
+func dropModelGroupTables(ctx context.Context, db *gorm.DB) error {
+	migrator := db.WithContext(ctx).Migrator()
+	for _, table := range []string{"tenant_model_group_mapping", "tenant_model_group"} {
+		if !migrator.HasTable(table) {
+			continue
+		}
+		if err := migrator.DropTable(table); err != nil {
+			return fmt.Errorf("drop %s: %w", table, err)
+		}
+		common.Info("Dropped unused table", zap.String("table", table))
+	}
 	return nil
 }
 
@@ -459,6 +491,120 @@ func migrateUserCanvasTitleUnique(ctx context.Context, db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// knowledgebaseParserConfigTargetVersion is the database version a completed
+// knowledgebase parser config cleanup brings the database to. It is stored in
+// system_settings under mysql_migration.database.version, the marker shared with
+// the other versioned steps, so work already performed by a previous run is
+// skipped.
+const knowledgebaseParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+
+// removedParserConfigKeys are the top level knowledgebase parser config keys the
+// v1.0.0-rc2.dev1 step deletes. raptor and graphrag moved out of the dataset
+// parser config, so the stored sections are dead data.
+var removedParserConfigKeys = []string{"raptor", "graphrag"}
+
+// migrateKnowledgebaseParserConfig deletes the retired raptor and graphrag
+// sections from knowledgebase.parser_config, leaving every other key of the
+// stored JSON untouched.
+//
+// It runs after AutoMigrate: the shared version marker is monotonic, and this
+// step's version sorts above the conversation split's, so running it any
+// earlier would mark that split as done on a database that has not run it yet.
+func migrateKnowledgebaseParserConfig(ctx context.Context, db *gorm.DB) error {
+	currentVersion, err := GetDatabaseMigrationVersion(ctx, db)
+	if err != nil {
+		return fmt.Errorf("read database migration version: %w", err)
+	}
+	if shouldSkipMigration(currentVersion, knowledgebaseParserConfigTargetVersion) {
+		common.Info("Knowledgebase parser configs already cleaned, skipping",
+			zap.String("current_version", currentVersion),
+			zap.String("target_version", knowledgebaseParserConfigTargetVersion))
+		return nil
+	}
+	if !db.WithContext(ctx).Migrator().HasTable("knowledgebase") {
+		return nil
+	}
+
+	common.Info("Running knowledgebase parser config migration",
+		zap.String("current_version", currentVersion),
+		zap.String("target_version", knowledgebaseParserConfigTargetVersion))
+	migrated, err := removeParserConfigKeys(ctx, db)
+	if err != nil {
+		return err
+	}
+	if err := setDatabaseMigrationVersion(ctx, db, knowledgebaseParserConfigTargetVersion); err != nil {
+		return fmt.Errorf("mark database migration version %s: %w", knowledgebaseParserConfigTargetVersion, err)
+	}
+	common.Info("Knowledgebase parser config migration completed",
+		zap.Int("knowledgebases", migrated),
+		zap.String("version", knowledgebaseParserConfigTargetVersion))
+	return nil
+}
+
+// knowledgebaseParserConfigRow reads one knowledgebase row's parser config as
+// raw text, so a malformed payload is skipped instead of failing the stage.
+type knowledgebaseParserConfigRow struct {
+	ID           string  `gorm:"column:id"`
+	ParserConfig *string `gorm:"column:parser_config"`
+}
+
+func removeParserConfigKeys(ctx context.Context, db *gorm.DB) (int, error) {
+	var migrated int
+	var rows []knowledgebaseParserConfigRow
+	result := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Select("id", "parser_config").Order("id").
+		FindInBatches(&rows, parserConfigMigrationBatchSize, func(batchDB *gorm.DB, _ int) error {
+			return batchDB.Transaction(func(tx *gorm.DB) error {
+				for _, row := range rows {
+					config, ok := parseParserConfig(row.ParserConfig)
+					if !ok || !dropRemovedParserConfigKeys(config) {
+						continue
+					}
+					if err := tx.Model(&entity.Knowledgebase{}).Where("id = ?", row.ID).
+						Update("parser_config", entity.JSONMap(config)).Error; err != nil {
+						return fmt.Errorf("update knowledgebase parser config %q: %w", row.ID, err)
+					}
+					migrated++
+				}
+				return nil
+			})
+		})
+	if result.Error != nil {
+		return migrated, fmt.Errorf("read knowledgebase parser configs: %w", result.Error)
+	}
+	return migrated, nil
+}
+
+// parseParserConfig decodes one stored parser config. It reports false for a
+// missing, empty or non-object payload, which no cleanup can apply to.
+func parseParserConfig(raw *string) (map[string]interface{}, bool) {
+	if raw == nil {
+		return nil, false
+	}
+	trimmed := strings.TrimSpace(*raw)
+	if trimmed == "" {
+		return nil, false
+	}
+	config := make(map[string]interface{})
+	if err := json.Unmarshal([]byte(trimmed), &config); err != nil {
+		return nil, false
+	}
+	return config, true
+}
+
+// dropRemovedParserConfigKeys deletes the retired sections and reports whether
+// the config changed, so only rows that actually carry them are rewritten.
+func dropRemovedParserConfigKeys(config map[string]interface{}) bool {
+	removed := false
+	for _, key := range removedParserConfigKeys {
+		if _, ok := config[key]; ok {
+			delete(config, key)
+			removed = true
+		}
+	}
+	return removed
 }
 
 // modifyColumnTypes aligns columns whose stored type must match the Python
