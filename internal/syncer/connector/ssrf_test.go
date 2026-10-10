@@ -559,19 +559,25 @@ func TestPostgreSQLConnectorOpenAllowsLoopbackUnderHook(t *testing.T) {
 }
 
 // TestValidateS3CompatibleEndpointSSRF verifies the user-controlled endpoint
-// is rejected when it resolves to non-public addresses and allowed for
-// loopback under the test hook.
+// is rejected when it resolves to non-public addresses or uses plain HTTP, and
+// that plain-HTTP loopback is allowed only under the test hook.
 func TestValidateS3CompatibleEndpointSSRF(t *testing.T) {
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
-	for _, endpoint := range []string{"http://10.0.0.5", "https://169.254.169.254", "http://127.0.0.1"} {
+	for _, endpoint := range []string{"https://10.0.0.5", "https://169.254.169.254", "https://127.0.0.1", "http://8.8.8.8"} {
 		if err := validateS3CompatibleEndpoint(endpoint); err == nil {
 			t.Fatalf("endpoint %q should be rejected", endpoint)
 		}
 	}
+	if err := validateS3CompatibleEndpoint("https://8.8.8.8"); err != nil {
+		t.Fatalf("public HTTPS endpoint should be allowed: %v", err)
+	}
 	withConnectorLoopbackTestHook(t)
 	if err := validateS3CompatibleEndpoint("http://127.0.0.1"); err != nil {
 		t.Fatalf("loopback endpoint should be allowed under the test hook: %v", err)
+	}
+	if err := validateS3CompatibleEndpoint("http://8.8.8.8"); err == nil {
+		t.Fatalf("public plain-HTTP endpoint should be rejected under the test hook")
 	}
 }
 
@@ -633,4 +639,53 @@ func TestS3PinnedHTTPClientRedirectPolicy(t *testing.T) {
 			t.Fatalf("CheckRedirect(%d) = %v, want nil (follow)", code, err)
 		}
 	}
+}
+
+// TestS3PinnedHTTPClientRedirectRequiresHTTPS verifies a followed 307/308 hop
+// cannot downgrade the signed request to plain HTTP: the dial-time pin only
+// sees the host, so CheckRedirect must reject a non-HTTPS destination, with
+// loopback excepted under the test hook.
+func TestS3PinnedHTTPClientRedirectRequiresHTTPS(t *testing.T) {
+	client := s3PinnedHTTPClient()
+	prev, err := http.NewRequest(http.MethodGet, "https://bucket.s3.example.com/obj", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	check := func(t *testing.T, dest string, wantFollow bool) {
+		t.Helper()
+		for _, code := range []int{http.StatusTemporaryRedirect, http.StatusPermanentRedirect} {
+			next, err := http.NewRequest(http.MethodGet, dest, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			next.Response = &http.Response{StatusCode: code, Request: prev}
+			err = client.CheckRedirect(next, []*http.Request{prev})
+			if wantFollow && err != nil {
+				t.Fatalf("CheckRedirect(%d -> %s) = %v, want nil (follow)", code, dest, err)
+			}
+			if !wantFollow && (err == nil || err == http.ErrUseLastResponse) {
+				t.Fatalf("CheckRedirect(%d -> %s) = %v, want a scheme error", code, dest, err)
+			}
+		}
+	}
+
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+	check(t, "http://8.8.8.8/x", false)
+	check(t, "https://8.8.8.8/x", true)
+	// Other redirects still go back to the SDK whatever their scheme.
+	for _, code := range []int{http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther} {
+		next, err := http.NewRequest(http.MethodGet, "http://8.8.8.8/x", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		next.Response = &http.Response{StatusCode: code, Request: prev}
+		if err := client.CheckRedirect(next, []*http.Request{prev}); err != http.ErrUseLastResponse {
+			t.Fatalf("CheckRedirect(%d -> http://8.8.8.8/x) = %v, want http.ErrUseLastResponse", code, err)
+		}
+	}
+
+	withConnectorLoopbackTestHook(t)
+	check(t, "http://8.8.8.8/x", false)
+	check(t, "http://127.0.0.1/x", true)
 }
