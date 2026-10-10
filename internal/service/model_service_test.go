@@ -50,7 +50,7 @@ func TestMonkeyOCREnvConfig(t *testing.T) {
 	if config[common.EnvMonkeyOCRBackend] != "vlm-engine" {
 		t.Fatalf("backend = %#v", config[common.EnvMonkeyOCRBackend])
 	}
-	if config[common.EnvMonkeyOCRDeleteOutput] != 1 {
+	if config[common.EnvMonkeyOCRDeleteOutput] != "1" {
 		t.Fatalf("delete output = %#v", config[common.EnvMonkeyOCRDeleteOutput])
 	}
 }

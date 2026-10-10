@@ -1083,9 +1083,12 @@ func TestDispatch_PDFMonkeyOCR_CompositeSelectorInParseMethod(t *testing.T) {
 	t.Cleanup(func() { resolveMonkeyOCRModelForDispatch = origResolver })
 	baseURL := server.URL
 	apiKey := ""
-	factoryDriver, err := models.NewModelFactory().CreateModelDriver("MonkeyOCR", nil, models.URLSuffix{})
+	factoryDriver, err := models.NewModelFactory().CreateModelDriver("MonkeyOCR", map[string]string{"default": server.URL}, models.URLSuffix{DocumentParse: "file_parse"})
 	if err != nil {
 		t.Fatalf("CreateModelDriver: %v", err)
+	}
+	if factoryDriver.Name() != "monkeyocr" {
+		t.Fatalf("factory driver Name()=%q, want monkeyocr", factoryDriver.Name())
 	}
 	resolveMonkeyOCRModelForDispatch = func(_ context.Context, _ *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		if got, want := modelID, selector; got != want {
