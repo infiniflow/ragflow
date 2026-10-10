@@ -21,7 +21,6 @@
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "summary",
                         "frequencyPenaltyEnabled": true,
                         "frequency_penalty": 0.7,
                         "llm_id": "",
@@ -35,16 +34,12 @@
                         },
                         "presencePenaltyEnabled": true,
                         "presence_penalty": 0.4,
-                        "prompts": [
-                            {
-                                "content": "Text to Summarize:\n{TokenChunker:ModernPetsKneel@chunks}",
-                                "role": "user"
-                            }
-                        ],
-                        "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                        "summary": {
+                            "enabled": true,
+                            "system_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff."
+                        },
                         "temperature": 0.1,
                         "temperatureEnabled": true,
-                        "tenant_llm_id": null,
                         "topPEnabled": true,
                         "top_p": 0.3
                     }
@@ -492,7 +487,6 @@
                 {
                     "data": {
                         "form": {
-                            "field_name": "summary",
                             "frequencyPenaltyEnabled": true,
                             "frequency_penalty": 0.7,
                             "llm_id": "",
@@ -506,11 +500,12 @@
                             },
                             "presencePenaltyEnabled": true,
                             "presence_penalty": 0.4,
-                            "prompts": "Text to Summarize:\n{TokenChunker:ModernPetsKneel@chunks}",
-                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
+                            "summary": {
+                                "enabled": true,
+                                "system_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff."
+                            },
                             "temperature": 0.1,
                             "temperatureEnabled": true,
-                            "tenant_llm_id": null,
                             "topPEnabled": true,
                             "top_p": 0.3
                         },
