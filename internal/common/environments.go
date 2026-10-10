@@ -75,6 +75,7 @@ const (
 	EnvDefaultSuperuserEmail             = "DEFAULT_SUPERUSER_EMAIL"
 	EnvDefaultSuperuserNickname          = "DEFAULT_SUPERUSER_NICKNAME"
 	EnvDefaultSuperuserPassword          = "DEFAULT_SUPERUSER_PASSWORD"
+	EnvAdminDefaultPassword              = "ADMIN_DEFAULT_PASSWORD"
 	EnvDBType                            = "DB_TYPE"
 	EnvDevice                            = "DEVICE"
 	EnvStorageImpl                       = "STORAGE_IMPL"
