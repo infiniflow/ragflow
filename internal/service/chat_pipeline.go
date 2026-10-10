@@ -454,6 +454,8 @@ func (s *ChatPipelineService) AsyncChat(
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
 			fieldMap = nil
 		}
+		sqlUnavailableKBs := tableDatasetsWithoutFieldMap(kbs)
+		warnTableSQLUnavailable(kbs)
 		// Try structured SQL retrieval before vector search.
 		// Only runs on the last question
 		// HIT → return structured result directly.
@@ -1509,6 +1511,10 @@ func (s *ChatPipelineService) AsyncChat(
 			// Python uses state.full_text (raw text with <think> tags) as input
 			// to _extract_visible_answer → decorate_answer (dialog_service.py:914-920).
 			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
+			if withNotice := appendSQLUnavailableNotice(visibleAnswer, sqlUnavailableKBs); withNotice != visibleAnswer {
+				send(AsyncChatResult{Answer: withNotice[len(visibleAnswer):], Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+				visibleAnswer = withNotice
+			}
 
 			// Pass nil for ttsModel — audio was already produced per-delta.
 			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, decorateQuote(quote, visibleAnswer, emptyResponse), nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
@@ -1548,6 +1554,8 @@ func (s *ChatPipelineService) AsyncChat(
 				}
 			}
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
+
+			answer = appendSQLUnavailableNotice(answer, sqlUnavailableKBs)
 
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, decorateQuote(quote, answer, emptyResponse), ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
