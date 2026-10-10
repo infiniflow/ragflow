@@ -22,6 +22,7 @@ constraints = [
     { name = "pyasn1", specifier = ">=0.6.4" },
     { name = "trio", specifier = ">=0.26.0", index = "https://pypi.org/simple" },
     { name = "urllib3", specifier = ">=2.7.0" },
+    { name = "thrift", specifier = ">=0.24.0" },
 ]
 overrides = [
     { name = "attrs", specifier = ">=23.2.0" },
@@ -9690,9 +9691,9 @@ wheels = [
 
 [[package]]
 name = "thrift"
-version = "0.22.0"
+version = "0.24.0"
 source = { registry = "https://mirrors.aliyun.com/pypi/simple" }
-sdist = { url = "https://mirrors.aliyun.com/pypi/packages/b2/c2/db648cc10dd7d15560f2eafd92a27cd280811924696e0b4a87175fb28c94/thrift-0.22.0.tar.gz", hash = "sha256:42e8276afbd5f54fe1d364858b6877bc5e5a4a5ed69f6a005b94ca4918fe1466" }
+sdist = { url = "https://mirrors.aliyun.com/pypi/packages/5f/bd/8f90501b11206e545da3343ed0e5740fc694be24a5f637d7dd7e4e3af927/thrift-0.24.0.tar.gz", hash = "sha256:9ef601c49e988475ff0e741d8e1b45feec23b48514e524341efc274191f1789c" }
 
 [[package]]
 name = "tika"
