@@ -880,6 +880,7 @@ func isFormSheet(rows [][]string) bool {
 	}
 	nonEmpty := 0
 	narrow := 0 // rows with ≤ 3 filled cells
+	kvRows := 0 // rows pairing a text label with a numeric cell
 	for _, row := range rows[:limit] {
 		w := rowNonEmpty(row)
 		if w == 0 {
@@ -889,8 +890,23 @@ func isFormSheet(rows [][]string) bool {
 		if w <= 3 {
 			narrow++
 		}
+		hasLabel, hasNumber := false, false
+		for _, cell := range row {
+			v := strings.TrimSpace(cell)
+			if v == "" {
+				continue
+			}
+			if isNumericCell(v) {
+				hasNumber = true
+			} else {
+				hasLabel = true
+			}
+		}
+		if hasLabel && hasNumber {
+			kvRows++
+		}
 	}
-	if nonEmpty < 4 {
+	if nonEmpty < 4 || kvRows < 2 {
 		return false
 	}
 	return narrow*2 > nonEmpty // majority of prefix rows are narrow → form

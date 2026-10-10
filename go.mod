@@ -32,6 +32,7 @@ require (
 	github.com/cloudwego/eino v0.10.0-alpha.33
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/denisenkom/go-mssqldb v0.12.3
+	github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5
 	github.com/eino-contrib/jsonschema v1.0.3
 	github.com/elastic/go-elasticsearch/v8 v8.19.1
 	github.com/emersion/go-imap/v2 v2.0.0-beta.8
@@ -48,6 +49,7 @@ require (
 	github.com/infiniflow/infinity-go-sdk v0.0.0-00010101000000-000000000000
 	github.com/infiniflow/onnxruntime_go v1.29.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/jloor/go-excel-reader v0.3.0
 	github.com/kaptinlin/jsonrepair v0.4.8
 	github.com/larksuite/oapi-sdk-go/v3 v3.9.9
 	github.com/ledongthuc/pdf v0.0.0-20250511090121-5959a4027728
@@ -70,6 +72,7 @@ require (
 	github.com/spf13/viper v1.18.2
 	github.com/ucloud/ucloud-sandbox-sdk-go v0.0.0-20260807065450-08464aef9ed5
 	github.com/xuri/excelize/v2 v2.11.0
+	github.com/yamitzky/xlrd-go v0.1.0
 	github.com/yfedoseev/office_oxide/go v0.1.12
 	github.com/yfedoseev/pdf_oxide/go v0.3.73
 	github.com/yuin/goldmark v1.7.1
@@ -139,7 +142,6 @@ require (
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
 	github.com/dlclark/regexp2 v1.10.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
-	github.com/dop251/goja v0.0.0-20260820211235-95a30dcd3fa5 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect
 	github.com/elastic/elastic-transport-go/v8 v8.8.0 // indirect

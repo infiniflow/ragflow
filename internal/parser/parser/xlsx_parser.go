@@ -120,6 +120,16 @@ func (p *XLSXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{Err: ctx.Err()}
 	}
 
+	// A legacy .xls (OLE2/BIFF) payload uploaded under an .xlsx name fails
+	// the zip check above; route it through the BIFF path instead.
+	if bytes.HasPrefix(data, compoundDocumentSignature) {
+		items, sheets, biffErr := parseBIFF8Bytes(ctx, data)
+		if biffErr == nil {
+			return xlsxParseResult(filename, items, nil, sheets)
+		}
+		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; biff fallback: %v", err, biffErr)}
+	}
+
 	normalized, normalizeWarnings, changed, normalizeErr := normalizeXLSXForRead(data)
 	if normalizeErr != nil {
 		return ParseResult{Err: fmt.Errorf("xlsx parse: %w; normalize: %v", err, normalizeErr)}
