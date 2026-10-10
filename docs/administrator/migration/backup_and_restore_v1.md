@@ -47,7 +47,6 @@ Use the following table to check the list you recorded. Include each service ena
 | Infinity index | `docker_infinity_data` |
 | Kvrocks cache and checkpoint data | `docker_kvrocks_data` |
 | NATS JetStream data | `docker_nats_data` |
-| ClickHouse analytics data | `docker_clickhouse_data` |
 | Kibana data, when Kibana is enabled | `docker_kibana_data` |
 | RAGFlow logs | `docker/ragflow-logs` bind mount |
 
