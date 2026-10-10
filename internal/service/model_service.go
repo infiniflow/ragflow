@@ -90,9 +90,7 @@ type CheckConnectionModelInfo struct {
 }
 
 type CheckConnectionRequest struct {
-	// APIKey may be a JSON string or a JSON object (credential bundles such
-	// as XunFei Spark's); the handler normalizes it to a string before use.
-	APIKey     json.RawMessage            `json:"api_key"`
+	APIKey     string                     `json:"api_key"`
 	Region     string                     `json:"region"`
 	BaseURL    string                     `json:"base_url"`
 	InstanceID string                     `json:"instance_id"`

@@ -1,7 +1,7 @@
 {
   "name": "XunFei Spark",
   "url": {
-    "default": "https://spark-api-open.xf-yun.com"
+    "default": "https://maas-api.cn-huabei-1.xf-yun.com"
   },
   "url_suffix": {
     "chat": "v2/chat/completions"
@@ -9,7 +9,7 @@
   "class": "xunfei",
   "models": [
     {
-      "name": "spark-x",
+      "name": "spark-x2.5-1.7b",
       "context_length": 128000,
       "max_output": 8192,
       "model_types": [
