@@ -661,3 +661,33 @@ func TestJSONOrderingMatchesProjectionWithoutChangingNumericCasts(t *testing.T) 
 		}
 	}
 }
+
+func TestProjectionExcludesAggregateAliasesFromSource(t *testing.T) {
+	for _, tc := range []struct{ name, query, unwanted string }{
+		{"order", "SELECT json_extract_string(chunk_data, '$.region') AS region, SUM(CAST(json_extract_string(chunk_data, '$.amount') AS DOUBLE)) AS total FROM t GROUP BY json_extract_string(chunk_data, '$.region') ORDER BY total DESC", ", total FROM"},
+		{"having", "SELECT json_extract_string(chunk_data, '$.region') AS region, COUNT(*) AS n FROM t GROUP BY json_extract_string(chunk_data, '$.region') HAVING n > 1", ", n FROM"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareSQL(tc.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(got, tc.unwanted) {
+				t.Fatalf("aggregate alias became a source column: %s", got)
+			}
+		})
+	}
+}
+
+func TestProjectionPreservesSourceColumnShadowedByAlias(t *testing.T) {
+	got, err := prepareSQL("SELECT SUM(total) AS total, CAST(amount AS DOUBLE) AS amount FROM t ORDER BY total", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, ", total FROM t") {
+		t.Fatalf("native aggregate input lost: %s", got)
+	}
+	if strings.Count(got, ", total FROM") != 1 {
+		t.Fatalf("native input duplicated: %s", got)
+	}
+}

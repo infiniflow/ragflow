@@ -240,10 +240,26 @@ func projectSQLExpressions(c *utility.SQLClauses) (string, error) {
 	where := utility.SQLRender(c.Where, '"')
 	// Include only native columns still used by the outer expressions. Infinity
 	// cannot reliably expand a star alongside computed fields in a derived table.
+	aliases := map[string]bool{}
+	depth := 0
+	for i, token := range c.Select {
+		if token.IsPunct("(") {
+			depth++
+		} else if token.IsPunct(")") {
+			depth--
+		} else if depth == 0 && token.IsWord("as") && i+1 < len(c.Select) {
+			aliases[c.Select[i+1].Lower] = true
+		}
+	}
 	inputs := map[string]bool{}
-	for _, body := range [][]utility.SQLToken{c.Select, c.GroupBy, c.Having, c.OrderBy} {
+	for clauseIndex, body := range [][]utility.SQLToken{c.Select, c.GroupBy, c.Having, c.OrderBy} {
 		for i, token := range body {
 			if token.Kind != utility.SQLWord && token.Kind != utility.SQLQuoted {
+				continue
+			}
+			// HAVING and ORDER BY may refer to output aliases. SELECT inputs
+			// remain physical columns even when an alias has the same name.
+			if clauseIndex >= 2 && aliases[token.Lower] {
 				continue
 			}
 			if derivedNames[token.Lower] || (i > 0 && body[i-1].IsWord("as")) || (i+1 < len(body) && body[i+1].IsPunct("(")) {
