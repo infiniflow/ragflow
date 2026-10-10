@@ -371,6 +371,21 @@ func TestGetAgentWebhookLogsPollsTraceIncrementally(t *testing.T) {
 	if !incremental.Data.Finished || incremental.Data.NextSinceTS != finishedTS {
 		t.Fatalf("incremental completion = %+v", incremental.Data)
 	}
+	for _, cursor := range []float64{incremental.Data.NextSinceTS, trailingTS} {
+		repeated := requestWebhookTrace(t, h, "c1", "u1", url.Values{
+			"since_ts":   {strconv.FormatFloat(cursor, 'f', -1, 64)},
+			"webhook_id": {*discovery.Data.WebhookID},
+		})
+		if repeated.Code != int(common.CodeSuccess) || repeated.Data == nil || !repeated.Data.Finished {
+			t.Fatalf("repeat at %f = %+v, want completed trace", cursor, repeated)
+		}
+		if repeated.Data.WebhookID == nil || *repeated.Data.WebhookID != *discovery.Data.WebhookID || repeated.Data.NextSinceTS != cursor {
+			t.Fatalf("repeat data = %+v, want unchanged run and cursor", repeated.Data)
+		}
+		if repeated.Data.Events == nil || len(repeated.Data.Events) != 0 {
+			t.Fatalf("repeat events = %#v, want no replayed or trailing events", repeated.Data.Events)
+		}
+	}
 }
 
 // TestGetAgentWebhookLogsHandlesMissingAndInvalidState covers empty and stale cursors.
