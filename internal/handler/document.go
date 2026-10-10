@@ -762,23 +762,24 @@ func parseDocumentListOptions(c *gin.Context, datasetID string) (dao.DocumentLis
 }
 
 func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.DocumentListOptions) (dao.DocumentListOptions, string) {
-	// Mirror Python's metadata_condition query-param validation.
+	var metadataCondition map[string]interface{}
 	if raw := strings.TrimSpace(c.Query("metadata_condition")); raw != "" {
-		var mc interface{}
-		if err := json.Unmarshal([]byte(raw), &mc); err != nil {
+		if err := json.Unmarshal([]byte(raw), &metadataCondition); err != nil {
 			return opts, fmt.Sprintf("metadata_condition must be valid JSON: %s.", raw)
 		}
-		if _, ok := mc.(map[string]interface{}); !ok {
+		if metadataCondition == nil {
 			return opts, "metadata_condition must be an object."
 		}
 	}
+	conditionInput := common.ParseAndConvert(metadataCondition)
+	hasCondition := conditionInput != nil && len(conditionInput.Conditions) > 0
 
 	metadata, err := parseMetadataQuery(c.Request.URL.Query())
 	if err != nil {
 		return opts, err.Error()
 	}
 	returnEmptyMetadata := strings.ToLower(strings.TrimSpace(c.Query("return_empty_metadata"))) == "true"
-	if !returnEmptyMetadata && len(metadata) == 0 {
+	if !returnEmptyMetadata && len(metadata) == 0 && !hasCondition {
 		return opts, ""
 	}
 
@@ -797,7 +798,7 @@ func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.D
 
 	docIDsWithMetadata := map[string]bool{}
 	matchedIDs := map[string]bool{}
-	firstMetadataKey := true
+	firstMatch := true
 	for key, values := range metadata {
 		valueMatches := map[string]bool{}
 		rawValues, _ := metadataByKey[key].(map[string][]string)
@@ -807,11 +808,20 @@ func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.D
 				docIDsWithMetadata[docID] = true
 			}
 		}
-		if firstMetadataKey {
+		if firstMatch {
 			matchedIDs = valueMatches
-			firstMetadataKey = false
+			firstMatch = false
 		} else {
 			matchedIDs = intersectStringSets(matchedIDs, valueMatches)
+		}
+	}
+	if hasCondition {
+		conditionMatches := stringSet(common.MetaFilter(toMetaData(metadataByKey), conditionInput))
+		if firstMatch {
+			matchedIDs = conditionMatches
+			firstMatch = false
+		} else {
+			matchedIDs = intersectStringSets(matchedIDs, conditionMatches)
 		}
 	}
 	if returnEmptyMetadata {
@@ -843,6 +853,18 @@ func (h *DocumentHandler) applyDocumentMetadataFilter(c *gin.Context, opts dao.D
 	opts.DocIDs = filteredIDs
 	opts.DocIDFilterApplied = true
 	return opts, ""
+}
+
+func toMetaData(metadataByKey map[string]interface{}) common.MetaData {
+	out := common.MetaData{}
+	for key, raw := range metadataByKey {
+		values, ok := raw.(map[string][]string)
+		if !ok {
+			continue
+		}
+		out[key] = common.MetaValueDocs(values)
+	}
+	return out
 }
 
 func parseMetadataQuery(values url.Values) (map[string][]string, error) {
@@ -2025,11 +2047,7 @@ func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string)
 			return nil, "document_ids must be a list."
 		}
 		for _, id := range ids {
-			docID, ok := id.(string)
-			if !ok {
-				return nil, "document_ids must contain only strings."
-			}
-			selector.DocumentIDs = append(selector.DocumentIDs, docID)
+			selector.DocumentIDs = append(selector.DocumentIDs, id.(string))
 		}
 	}
 	if v, ok := m["metadata_condition"]; ok && v != nil {
