@@ -116,7 +116,7 @@ function ActionButton<T>({ deleteRecord, record, edit }: ActionButtonProps<T>) {
 export function AgentTools() {
   const tools = useGetNodeTools();
   const { deleteNodeTool } = useDeleteAgentNodeTools();
-  const { mcpIds } = useGetAgentMCPIds();
+  const { mcpIds, mcpList } = useGetAgentMCPIds();
   const { findMcpById } = useFindMcpById(mcpIds);
   const { deleteNodeMCP } = useDeleteAgentNodeMCP();
   const { showFormDrawer } = useContext(AgentInstanceContext);
@@ -158,9 +158,9 @@ export function AgentTools() {
           </ToolCard>
         ))}
 
-        {mcpIds.map((id, idx) => (
+        {mcpList.map(({ mcp_id: id, name }, idx) => (
           <ToolCard key={id || `mcp-${idx}`} isNodeTool={false}>
-            {findMcpById(id)?.name ?? 'MCP'}
+            {name ?? findMcpById(id)?.name ?? 'MCP'}
             <ActionButton
               record={id}
               deleteRecord={deleteNodeMCP(id)}
