@@ -151,8 +151,14 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parser: decode image: %w", err)
 	}
-	if config.Width <= 0 || config.Height <= 0 || config.Width > parser.MaxImageEdge || config.Height > parser.MaxImageEdge || int64(config.Width)*int64(config.Height) > parser.MaxImagePixels {
-		return nil, fmt.Errorf("parser: image dimensions %dx%d exceed limits", config.Width, config.Height)
+	if config.Width <= 0 || config.Height <= 0 {
+		return nil, fmt.Errorf("parser: image has invalid dimensions %dx%d", config.Width, config.Height)
+	}
+	// Length/width are unbounded (mirrors Python's picture.py); the decoded
+	// raster byte ceiling is opt-in via RAGFLOW_IMAGE_RASTER_MAX_BYTES (0 =
+	// unlimited).
+	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
 	}
 	// VLM consumes the original bytes; only local OCR needs a decoded raster.
 	if !decodeRaster {
