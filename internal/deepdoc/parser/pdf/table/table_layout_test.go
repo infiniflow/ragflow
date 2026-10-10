@@ -166,6 +166,28 @@ func TestAnnotateTableBoxes(t *testing.T) {
 	}
 }
 
+func TestAnnotateTableBoxes_DoesNotAssignColumnOutsideRowBand(t *testing.T) {
+	boxes := []pdf.TextBox{{
+		X0: 300, X1: 320, Top: 110, Bottom: 120, Text: "below table", LayoutType: "table",
+		R: -1, C: -1,
+	}}
+	grid := [][]pdf.TSRCell{
+		{
+			{X0: 0, Y0: 0, X1: 100, Y1: 50},
+			{X0: 100, Y0: 0, X1: 200, Y1: 50},
+		},
+		{
+			{X0: 0, Y0: 50, X1: 100, Y1: 100},
+			{X0: 100, Y0: 50, X1: 200, Y1: 100},
+		},
+	}
+
+	AnnotateTableBoxes(boxes, grid)
+	if boxes[0].R != -1 || boxes[0].C != -1 {
+		t.Fatalf("box outside the table row and columns must remain unassigned, got R=%d C=%d", boxes[0].R, boxes[0].C)
+	}
+}
+
 // ── GroupTSRCellsToRows ─────────────────────────────────────────
 
 func TestGroupTSRCellsToRowsLabeled(t *testing.T) {

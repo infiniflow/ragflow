@@ -7,6 +7,7 @@ import (
 	"image"
 	"math"
 	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -214,8 +215,12 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr start"))
 		ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, pageImg, chars, pg, renderErr, isScanNoise, docAnalyzer, pageZoom)
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "ocr done"))
+		var rescueChars []pdf.TextChar
+		if ocrUsed && len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars) {
+			rescueChars = chars
+		}
 		annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
-			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom)
+			ctx, pageImg, ocrBoxes, pg, renderErr, docAnalyzer, tb, pageZoom, rescueChars)
 		common.Info("deepdoc pdf parse: stage", zap.Int("page", pg), zap.String("stage", "dla_tsr done"))
 	}
 
@@ -236,8 +241,12 @@ func (p *Parser) processPage(ctx context.Context, engine pdf.PDFEngine, pg int,
 		retryImg, retryRenderErr := p.renderAtDPI(ctx, engine, pg, retryZoom*72)
 		if retryRenderErr == nil && retryImg != nil {
 			ocrBoxes, updatedChars, ocrUsed = p.processPageBoxes(ctx, retryImg, chars, pg, retryRenderErr, isScanNoise, docAnalyzer, retryZoom)
+			var rescueChars []pdf.TextChar
+			if ocrUsed && len(chars) > 0 && !isScanNoise && !util.IsGarbledPage(chars) {
+				rescueChars = chars
+			}
 			annotated, pageTables, dlaRegions = p.enrichOnePageWithDeepDoc(
-				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom)
+				ctx, retryImg, ocrBoxes, pg, retryRenderErr, docAnalyzer, tb, retryZoom, rescueChars)
 			pageImg = retryImg
 			pageZoom = retryZoom
 		} else if retryRenderErr != nil {
@@ -356,6 +365,96 @@ func (p *Parser) processPageBoxes(ctx context.Context, pageImg image.Image, char
 	}
 
 	return ocrBoxes, chars, ocrUsed
+}
+
+// rescueUnmatchedChars recovers embedded characters missed by OCR within a
+// matched table region and packages them into text boxes for table assembly.
+func rescueUnmatchedChars(boxes []pdf.TextBox, chars []pdf.TextChar, pg int) []pdf.TextBox {
+	if len(chars) == 0 {
+		return boxes
+	}
+	var unmatched []pdf.TextChar
+	for _, c := range chars {
+		if strings.TrimSpace(c.Text) == "" {
+			continue
+		}
+		covered := false
+		for _, b := range boxes {
+			if charBoxOverlapRatio(c, b.X0, b.X1, b.Top, b.Bottom) > 0.3 {
+				covered = true
+				break
+			}
+		}
+		if !covered {
+			unmatched = append(unmatched, c)
+		}
+	}
+	if len(unmatched) == 0 {
+		return boxes
+	}
+	added := 0
+	for _, rb := range rescueBoxes(unmatched, pg) {
+		boxes = append(boxes, rb)
+		added++
+	}
+	if added > 0 {
+		common.Debug("rescueUnmatchedChars", zap.Int("page", pg), zap.Int("unmatchedChars", len(unmatched)), zap.Int("rescuedBoxes", added))
+	}
+	return boxes
+}
+
+// maxRescueIntraWordGap caps the gap that may still join two rescued glyphs
+// into one box. Typographic reality: glyphs of a single value never sit more
+// than a dozen points apart at body sizes, so any wider gap is cell
+// whitespace and must split — without the cap the median stays self-fulfilling
+// on a line made entirely of isolated cross-cell chars (median IS the cell
+// gap, nothing exceeds it and the whole row glues into one box).
+const maxRescueIntraWordGap = 12.0
+
+// rescueBoxes packs unmatched chars into per-cell text boxes. Grouping must
+// NOT reuse CharsToBoxes: that builder derives its split threshold from the
+// sample's own inter-char gaps, but rescued chars are by construction sparse
+// isolated glyphs, so on such a sample the median gap IS the inter-cell gap —
+// a threshold that never fires. Instead: group per text line and cut where a
+// gap exceeds min(line median + 8pt, maxRescueIntraWordGap).
+//
+// No redundancy filter is applied to the results: rescueUnmatchedChars
+// already dropped every char overlapping a retained box by more than 30% of
+// its own area, so a rescued group can not duplicate existing text — not even
+// when its bbox straddles a retained box (OCR keeping the middle digit of
+// "345" while "3" and "5" are rescued around it), which an older bbox-level
+// dedup check wrongly discarded whole.
+func rescueBoxes(chars []pdf.TextChar, pg int) []pdf.TextBox {
+	var out []pdf.TextBox
+	for _, line := range lyt.GroupCharsToLines(chars, false) {
+		sorted := append([]pdf.TextChar(nil), line...)
+		sort.Slice(sorted, func(i, j int) bool { return sorted[i].X0 < sorted[j].X0 })
+		var gaps []float64
+		for i := 1; i < len(sorted); i++ {
+			gaps = append(gaps, sorted[i].X0-sorted[i-1].X1)
+		}
+		thr := math.Inf(1)
+		if len(gaps) > 0 {
+			srt := append([]float64(nil), gaps...)
+			sort.Float64s(srt)
+			thr = math.Min(srt[len(srt)/2]+8, maxRescueIntraWordGap)
+		}
+		start := 0
+		flush := func(end int) {
+			box := lyt.LineToTextBox(sorted[start:end])
+			box.PageNumber = pg
+			box.HasPageNumber = true
+			out = append(out, box)
+		}
+		for i := 1; i < len(sorted); i++ {
+			if sorted[i].X0-sorted[i-1].X1 > thr {
+				flush(i)
+				start = i
+			}
+		}
+		flush(len(sorted))
+	}
+	return out
 }
 
 // runPageWorkers executes pages through the single process-wide worker

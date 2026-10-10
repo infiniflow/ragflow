@@ -99,7 +99,7 @@ func TestEnrichOnePageWithDeepDoc_ImageOnlyPage(t *testing.T) {
 	dummyImg := image.NewRGBA(image.Rect(0, 0, 900, 600))
 	ctx := t.Context()
 
-	_, tables, _ := p.enrichOnePageWithDeepDoc(ctx, dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale)
+	_, tables, _ := p.enrichOnePageWithDeepDoc(ctx, dummyImg, boxes, 0, nil, mock, NewTableBuilderFor(mock), pdf.DlaScale, nil)
 	if len(tables) == 0 {
 		t.Fatal("enrichOnePageWithDeepDoc: expected at least 1 table from DLA on page with image but no boxes, got 0")
 	}

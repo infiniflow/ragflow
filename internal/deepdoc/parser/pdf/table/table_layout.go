@@ -187,6 +187,9 @@ func AnnotateBoxesWithGrid(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 //
 // Python: pdf_parser.py:518-554
 func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
+	if len(grid) == 0 {
+		return
+	}
 	// grid[0] is the header row.  Spans are computed by calSpans later.
 	var headers, spans []pdf.TSRCell
 	var clmns []pdf.TSRCell
@@ -234,6 +237,8 @@ func AnnotateTableBoxes(boxes []pdf.TextBox, grid [][]pdf.TSRCell) {
 		if boxes[i].LayoutType != pdf.LayoutTypeTable && boxes[i].LayoutType != "" {
 			continue
 		}
+		boxes[i].R = -1
+		boxes[i].C = -1
 		// R: Python find_overlapped_with_threshold(box, rows, 0.3) over the
 		// WHOLE row line — the grid row's bbox spans the table width (the row
 		// line's own X range), not individual grid cells.
