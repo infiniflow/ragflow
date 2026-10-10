@@ -223,13 +223,12 @@ func (s *LocalFileEventStore) Seek(ctx context.Context, clock uint64) (EventIter
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	pos := 0
+	pos := len(s.cached)
 	for i, ev := range s.cached {
 		if ev.Clock >= clock {
 			pos = i
 			break
 		}
-		_ = i
 	}
 	return &sliceIterator{events: s.cached[pos:], pos: 0}, nil
 }
