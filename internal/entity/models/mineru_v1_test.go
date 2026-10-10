@@ -50,9 +50,9 @@ func TestMinerUSupportsV1(t *testing.T) {
 }
 
 func TestParseMinerUV1UploadJobDownload(t *testing.T) {
-	orig := minerUV1PollInterval
-	minerUV1PollInterval = time.Millisecond
-	t.Cleanup(func() { minerUV1PollInterval = orig })
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
 
 	var (
 		mu       sync.Mutex
@@ -131,10 +131,64 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 	}
 }
 
+func TestParseMinerUV1OutputFilesUseFileID(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"markdown":{"file_id":"out-md"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+			_, _ = w.Write([]byte("# From file_id\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if result.Markdown != "# From file_id\n" {
+		t.Fatalf("markdown = %q", result.Markdown)
+	}
+}
+
+func TestParseMinerUV1PartialJobIncludesFileError(t *testing.T) {
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"partial","files":[{"name":"doc.pdf","status":"failed","error":{"message":"page render failed"}}]}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	_, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	if err == nil {
+		t.Fatal("expected error for partial job without artifacts")
+	}
+	if !strings.Contains(err.Error(), "partial") || !strings.Contains(err.Error(), "page render failed") {
+		t.Fatalf("error = %q, want partial status and file error", err.Error())
+	}
+}
+
 func TestParseMinerUV1ZipDownloadFailureFallsBackToMarkdown(t *testing.T) {
-	orig := minerUV1PollInterval
-	minerUV1PollInterval = time.Millisecond
-	t.Cleanup(func() { minerUV1PollInterval = orig })
+	orig := minerUV1PollInitial
+	minerUV1PollInitial = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInitial = orig })
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {

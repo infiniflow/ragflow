@@ -1003,6 +1003,37 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 		requireJSONText(t, out, "Table caption")
 	})
 
+	t.Run("markdown fallback when zip has no content_list", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("middle.json")
+		_, _ = f.Write([]byte(`{}`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Zip had no content_list\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Zip had no content_list")
+	})
+
 	t.Run("markdown fallback when zip download fails", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			switch {

@@ -517,7 +517,6 @@ func dispatchMinerUPDF(
 	if strings.TrimSpace(baseURL) == "" {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
 	}
-	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	// Language chain mirrors Python's mineru_parser.py:1181
@@ -540,23 +539,39 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, err
 	}
 
-	var zipBytes []byte
 	if v1 {
-		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, 30*time.Minute)
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, 0)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}
+		v1Markdown := ""
+		var zipBytes []byte
 		if result != nil {
+			v1Markdown = strings.TrimSpace(result.Markdown)
 			zipBytes = result.Zip
-			if len(zipBytes) == 0 && strings.TrimSpace(result.Markdown) != "" {
+		}
+		sections, extractErr := mineruExtractSections(zipBytes)
+		if extractErr != nil || len(sections) == 0 {
+			if v1Markdown != "" {
 				return buildMarkdownOCRDispatchResult(result.Markdown), nil
 			}
+			if extractErr != nil {
+				return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
+			}
 		}
-	} else {
-		zipBytes, err = mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
-		if err != nil {
-			return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
+		var parts []string
+		for _, s := range sections {
+			if s != "" {
+				parts = append(parts, s)
+			}
 		}
+		return buildMarkdownOCRDispatchResult(strings.Join(parts, "\n")), nil
+	}
+
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
+	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
 	sections, err := mineruExtractSections(zipBytes)

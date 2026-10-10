@@ -29,14 +29,30 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"sync"
 	"time"
 
 	"ragflow/internal/common"
 )
 
-// minerUV1PollInterval is the delay between GET /v1/parse/jobs/{id} polls.
-// Tests may shorten it.
-var minerUV1PollInterval = time.Second
+// minerUV1PollInitial and minerUV1PollMax bound GET /v1/parse/jobs/{id} polling.
+// Tests may shorten minerUV1PollInitial.
+var (
+	minerUV1PollInitial = 2 * time.Second
+	minerUV1PollMax     = 30 * time.Second
+)
+
+// DefaultMinerUV1ParseTimeout is used when ParseMinerUV1 receives a non-positive timeout.
+const DefaultMinerUV1ParseTimeout = 30 * time.Minute
+
+type minerUV1SupportCacheEntry struct {
+	supported bool
+	expires   time.Time
+}
+
+var minerUV1SupportCache sync.Map
+
+const minerUV1SupportCacheTTL = 5 * time.Minute
 
 type minerUV1UploadResponse struct {
 	ID            string            `json:"id"`
@@ -49,6 +65,19 @@ type minerUV1UploadResponse struct {
 
 type minerUV1FileRef struct {
 	ID string `json:"id"`
+}
+
+// minerUV1ArtifactRef maps parse-job output_files entries (file_id) and legacy test mocks (id).
+type minerUV1ArtifactRef struct {
+	ID     string `json:"id"`
+	FileID string `json:"file_id"`
+}
+
+func (r minerUV1ArtifactRef) artifactID() string {
+	if id := strings.TrimSpace(r.FileID); id != "" {
+		return id
+	}
+	return strings.TrimSpace(r.ID)
 }
 
 type minerUV1JobResponse struct {
@@ -64,10 +93,10 @@ type minerUV1Error struct {
 }
 
 type minerUV1JobFile struct {
-	Name        string                     `json:"name"`
-	Status      string                     `json:"status"`
-	Error       *minerUV1Error             `json:"error"`
-	OutputFiles map[string]minerUV1FileRef `json:"output_files"`
+	Name        string                         `json:"name"`
+	Status      string                         `json:"status"`
+	Error       *minerUV1Error                 `json:"error"`
+	OutputFiles map[string]minerUV1ArtifactRef `json:"output_files"`
 }
 
 // MinerUV1Result is the downloadable parse output from a MinerU 4 V1 job.
@@ -109,17 +138,30 @@ func MinerUSupportsV1(ctx context.Context, baseURL, apiKey string) (bool, error)
 	if baseURL == "" {
 		return false, fmt.Errorf("MinerU base URL is empty")
 	}
+	cacheKey := baseURL + "\x00" + minerUBearerFromAPIKey(apiKey)
+	if cached, ok := minerUV1SupportCache.Load(cacheKey); ok {
+		entry := cached.(minerUV1SupportCacheEntry)
+		if time.Now().Before(entry.expires) {
+			return entry.supported, nil
+		}
+	}
 	token := minerUBearerFromAPIKey(apiKey)
 	code, err := minerUProbeGET(ctx, minerUHTTPClient(), baseURL+"/v1/health", token)
 	if err != nil {
 		return false, err
 	}
+	var supported bool
 	switch code {
 	case http.StatusNotFound, http.StatusMethodNotAllowed:
-		return false, nil
+		supported = false
 	default:
-		return true, nil
+		supported = true
 	}
+	minerUV1SupportCache.Store(cacheKey, minerUV1SupportCacheEntry{
+		supported: supported,
+		expires:   time.Now().Add(minerUV1SupportCacheTTL),
+	})
+	return supported, nil
 }
 
 func applyMinerUAuth(req *http.Request, token string) {
@@ -234,7 +276,7 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		return nil, fmt.Errorf("MinerU V1 requires file content")
 	}
 	if timeout <= 0 {
-		timeout = 30 * time.Minute
+		timeout = DefaultMinerUV1ParseTimeout
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -327,15 +369,18 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		return nil, fmt.Errorf("MinerU V1 parse job missing job_id")
 	}
 
-	deadline := time.Now().Add(timeout)
+	pollWait := minerUV1PollInitial
 	for !minerUV1Terminal(job.Status) {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timed out waiting for MinerU V1 job %s (status %s)", job.JobID, job.Status)
-		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
-		case <-time.After(minerUV1PollInterval):
+		case <-time.After(pollWait):
+		}
+		if pollWait < minerUV1PollMax {
+			pollWait *= 2
+			if pollWait > minerUV1PollMax {
+				pollWait = minerUV1PollMax
+			}
 		}
 		if err := minerUJSON(ctx, client, http.MethodGet, baseURL+"/v1/parse/jobs/"+job.JobID, token, nil, &job); err != nil {
 			return nil, fmt.Errorf("poll parse job: %w", err)
@@ -356,8 +401,8 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		if file.Status != "" && file.Status != "completed" {
 			continue
 		}
-		if ref, ok := file.OutputFiles["zip"]; ok && ref.ID != "" && len(result.Zip) == 0 {
-			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.ID)
+		if ref, ok := file.OutputFiles["zip"]; ok && ref.artifactID() != "" && len(result.Zip) == 0 {
+			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.artifactID())
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download zip: %w", err)
@@ -366,8 +411,8 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 				result.Zip = body
 			}
 		}
-		if ref, ok := file.OutputFiles["markdown"]; ok && ref.ID != "" && result.Markdown == "" {
-			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.ID)
+		if ref, ok := file.OutputFiles["markdown"]; ok && ref.artifactID() != "" && result.Markdown == "" {
+			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.artifactID())
 			if err != nil {
 				if artifactErr == nil {
 					artifactErr = fmt.Errorf("download markdown: %w", err)
@@ -386,9 +431,26 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		if artifactErr != nil {
 			return nil, artifactErr
 		}
-		return nil, fmt.Errorf("MinerU V1 job %s completed without zip or markdown artifacts", job.JobID)
+		return nil, minerUV1NoArtifactsError(job)
 	}
 	return result, nil
+}
+
+func minerUV1NoArtifactsError(job minerUV1JobResponse) error {
+	msg := fmt.Sprintf("MinerU V1 job %s (%s) completed without zip or markdown artifacts", job.JobID, job.Status)
+	if fileMsg := minerUV1FirstFileErrorMessage(job.Files); fileMsg != "" {
+		msg += ": " + fileMsg
+	}
+	return fmt.Errorf("%s", msg)
+}
+
+func minerUV1FirstFileErrorMessage(files []minerUV1JobFile) string {
+	for _, file := range files {
+		if file.Error != nil && strings.TrimSpace(file.Error.Message) != "" {
+			return file.Error.Message
+		}
+	}
+	return ""
 }
 
 func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, token, fileID string) ([]byte, error) {
