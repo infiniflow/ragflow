@@ -262,3 +262,84 @@ func TestDispatchPaddleOCRPdfEmptyTextFails(t *testing.T) {
 		t.Errorf("expected zero-value result on error, got %+v", res)
 	}
 }
+
+func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Hello","page_idx":0,"bbox":[10,20,110,40]},
+		{"type":"image","img_path":"images/figure.png","image_caption":["A figure"],"page_idx":1,"bbox":[1,2,3,4]},
+		{"type":"header","text":"skip me","page_idx":0,"bbox":[0,0,1,1]}
+	]`))
+	img, err := zw.Create("images/figure.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte("png-data"))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	items, err := mineruExtractJSONItems(buf.Bytes())
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (header dropped)", len(items))
+	}
+	if items[0]["text"] != "Hello" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("text item = %#v", items[0])
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("text positions = %#v", items[0]["_pdf_positions"])
+	}
+	if page, _ := pos[0][0].(int); page != 1 {
+		t.Fatalf("text page = %#v, want 1-based page 1", pos[0])
+	}
+	if left, _ := pos[0][1].(float64); left != 10 {
+		t.Fatalf("bbox left = %#v, want 10 (x0)", pos[0])
+	}
+	if right, _ := pos[0][2].(float64); right != 110 {
+		t.Fatalf("bbox right = %#v, want 110 (x1)", pos[0])
+	}
+
+	imageItem := items[1]
+	if imageItem["doc_type_kwd"] != "image" {
+		t.Fatalf("image doc_type = %#v", imageItem["doc_type_kwd"])
+	}
+	if imageItem["text"] != "A figure" {
+		t.Fatalf("image text = %#v", imageItem["text"])
+	}
+	uri, _ := imageItem["image"].(string)
+	if !strings.HasPrefix(uri, "data:image/png;base64,") {
+		t.Fatalf("image data URI = %q", uri)
+	}
+	imgPos, _ := imageItem["_pdf_positions"].([][]any)
+	if len(imgPos) != 1 {
+		t.Fatalf("image positions = %#v", imageItem["_pdf_positions"])
+	}
+	if page, _ := imgPos[0][0].(int); page != 2 {
+		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
+	}
+}
+
+func TestDispatchMinerUPDFRequiresBaseURL(t *testing.T) {
+	t.Setenv("MINERU_APISERVER", "")
+	orig := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = orig })
+
+	empty := ""
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{BaseURL: &empty}, nil
+	}
+
+	_, err := dispatchMinerUPDF(t.Context(), dao.DB, "sample.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Fatalf("dispatchMinerUPDF empty URL error = %v", err)
+	}
+}

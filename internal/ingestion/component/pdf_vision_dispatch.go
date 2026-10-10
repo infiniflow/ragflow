@@ -503,17 +503,13 @@ func dispatchMinerUPDF(
 	if apiConfig.ApiKey != nil {
 		apiKeyRaw = *apiConfig.ApiKey
 	}
-	providerCfg := modelModule.MinerUProviderConfigFromAPIKey(apiKeyRaw)
 
-	baseURL := ""
-	if apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	if baseURL == "" {
-		baseURL = providerCfg.APIServer
-	}
+	baseURL := modelModule.ResolveMinerUAPIServer(apiConfig)
 	if baseURL == "" {
 		baseURL, _ = resolveMinerUBaseURL(driver, apiConfig)
+	}
+	if strings.TrimSpace(baseURL) == "" {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
@@ -538,20 +534,21 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
 
-	sections, err := mineruExtractSections(zipBytes)
+	items, err := mineruExtractJSONItems(zipBytes)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
-	var parts []string
-	for _, s := range sections {
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	md := strings.Join(parts, "\n")
-
-	return buildMarkdownOCRDispatchResult(md), nil
+	return parser.ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":         filename,
+			"page_count":   mineruItemPageCount(items),
+			"outline":      []map[string]any{},
+			"parse_method": "mineru",
+		},
+		JSON: items,
+	}, nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -758,73 +755,281 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 	return zipBytes, nil
 }
 
-// mineruExtractSections reads the MinerU content_list.json from a zip
-// archive and extracts section text blocks, mirroring Python's
-// _transfer_to_sections.
-func mineruExtractSections(zipBytes []byte) ([]string, error) {
+const mineruMaxImageBytes = 20 << 20
+
+// mineruExtractJSONItems reads MinerU content_list.json from a zip and
+// emits JSON parser items with captions, embedded zip images, and
+// 1-indexed _pdf_positions so jump-to-source works like DeepDoc.
+func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return nil, fmt.Errorf("open zip: %w", err)
 	}
 
+	images := make(map[string]*zip.File)
 	var contentList []byte
 	for _, f := range zipReader.File {
-		if strings.HasSuffix(f.Name, "content_list.json") {
-			rc, err := f.Open()
-			if err != nil {
-				continue
+		if strings.HasSuffix(f.Name, "content_list.json") && len(contentList) == 0 {
+			rc, openErr := f.Open()
+			if openErr != nil {
+				return nil, fmt.Errorf("open %s: %w", f.Name, openErr)
 			}
-			contentList, _ = io.ReadAll(rc)
-			rc.Close()
-			break
+			var readErr error
+			contentList, readErr = io.ReadAll(rc)
+			if closeErr := rc.Close(); readErr == nil {
+				readErr = closeErr
+			}
+			if readErr != nil {
+				return nil, fmt.Errorf("read %s: %w", f.Name, readErr)
+			}
+		}
+		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {
+			clean := strings.TrimPrefix(path.Clean(f.Name), "./")
+			images[path.Base(f.Name)] = f
+			images[clean] = f
+			images[strings.ReplaceAll(clean, "\\", "/")] = f
 		}
 	}
 	if len(contentList) == 0 {
 		return nil, fmt.Errorf("content_list.json not found in MinerU zip")
 	}
 
-	var items []map[string]any
-	if err = json.Unmarshal(contentList, &items); err != nil {
+	var rawItems []map[string]any
+	if err = json.Unmarshal(contentList, &rawItems); err != nil {
 		return nil, fmt.Errorf("parse content_list.json: %w", err)
 	}
 
-	var sections []string
-	for _, item := range items {
-		typ, _ := item["type"].(string)
-		switch typ {
-		case "text":
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
-		case "table":
-			if tb, ok := item["table_body"].(string); ok {
-				sections = append(sections, tb)
-			}
-			for _, caption := range stringSlice(item["table_caption"]) {
-				sections = append(sections, caption)
-			}
-		case "image":
-			for _, caption := range stringSlice(item["image_caption"]) {
-				sections = append(sections, caption)
-			}
-			if desc, ok := item["vlm_description"].(string); ok && desc != "" {
-				sections = append(sections, desc)
-			}
-		case "equation", "code":
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
-		case "list":
-			for _, li := range stringSlice(item["list_items"]) {
-				sections = append(sections, li)
-			}
-		default:
-			if text, ok := item["text"].(string); ok {
-				sections = append(sections, text)
-			}
+	out := make([]map[string]any, 0, len(rawItems))
+	for _, item := range rawItems {
+		converted := mineruContentItemToJSON(item, images)
+		if converted != nil {
+			out = append(out, converted)
 		}
 	}
-	return sections, nil
+	if len(out) == 0 {
+		return nil, fmt.Errorf("MinerU zip contained no usable content_list items")
+	}
+	return out, nil
+}
+
+func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) map[string]any {
+	typ, _ := item["type"].(string)
+	typ = strings.ToLower(strings.TrimSpace(typ))
+	switch typ {
+	case "header", "footer", "page_number", "page-header", "page-footer", "discarded":
+		return nil
+	}
+
+	text := mineruItemText(item, typ)
+	imageURI := ""
+	docType := "text"
+	layout := typ
+	switch typ {
+	case "image", "chart":
+		docType = "image"
+		layout = "figure"
+		if imgPath, _ := item["img_path"].(string); imgPath != "" {
+			imageURI = mineruZipImageDataURI(images, imgPath)
+		}
+		if text == "" && imageURI == "" {
+			return nil
+		}
+	case "table":
+		docType = "table"
+		layout = "table"
+		if text == "" {
+			return nil
+		}
+	default:
+		if text == "" {
+			return nil
+		}
+	}
+
+	jsonItem := map[string]any{
+		"text":         text,
+		"doc_type_kwd": docType,
+		"layout":       layout,
+	}
+	if imageURI != "" {
+		jsonItem["image"] = imageURI
+	}
+	if positions := mineruItemPositions(item); len(positions) > 0 {
+		jsonItem["_pdf_positions"] = positions
+		jsonItem["positions"] = positions
+		if page, ok := positions[0][0].(int); ok {
+			jsonItem["page_number"] = page
+		}
+	}
+	return jsonItem
+}
+
+func mineruItemText(item map[string]any, typ string) string {
+	var parts []string
+	switch typ {
+	case "table":
+		if tb, ok := item["table_body"].(string); ok {
+			parts = append(parts, tb)
+		}
+		parts = append(parts, stringSlice(item["table_caption"])...)
+		parts = append(parts, stringSlice(item["table_footnote"])...)
+	case "image":
+		parts = append(parts, stringSlice(item["image_caption"])...)
+		parts = append(parts, stringSlice(item["image_footnote"])...)
+		if desc, ok := item["vlm_description"].(string); ok && strings.TrimSpace(desc) != "" {
+			parts = append(parts, desc)
+		}
+	case "chart":
+		parts = append(parts, stringSlice(item["chart_caption"])...)
+		parts = append(parts, stringSlice(item["chart_footnote"])...)
+		if desc, ok := item["vlm_description"].(string); ok && strings.TrimSpace(desc) != "" {
+			parts = append(parts, desc)
+		}
+	case "list":
+		parts = append(parts, stringSlice(item["list_items"])...)
+	case "code":
+		if body, ok := item["code_body"].(string); ok && body != "" {
+			parts = append(parts, body)
+		} else if text, ok := item["text"].(string); ok {
+			parts = append(parts, text)
+		}
+		parts = append(parts, stringSlice(item["code_caption"])...)
+	default:
+		if text, ok := item["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.TrimSpace(strings.Join(parts, "\n"))
+}
+
+func mineruItemPositions(item map[string]any) [][]any {
+	if raw, ok := item["_mineru_positions"].([]any); ok {
+		var out [][]any
+		for _, entry := range raw {
+			posMap, ok := entry.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pos := mineruBBoxPosition(posMap["page_idx"], posMap["bbox"]); pos != nil {
+				out = append(out, pos)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	}
+	if pos := mineruBBoxPosition(item["page_idx"], item["bbox"]); pos != nil {
+		return [][]any{pos}
+	}
+	return nil
+}
+
+func mineruBBoxPosition(pageRaw, bboxRaw any) []any {
+	pageIdx, ok := mineruJSONInt(pageRaw)
+	if !ok {
+		return nil
+	}
+	bbox := mineruJSONFloatSlice(bboxRaw)
+	if len(bbox) < 4 {
+		return nil
+	}
+	// MinerU page_idx is 0-based; bbox is [x0, top, x1, bottom].
+	// Downstream position_int is 1-based [page, left, right, top, bottom].
+	return []any{pageIdx + 1, bbox[0], bbox[2], bbox[1], bbox[3]}
+}
+
+func mineruJSONInt(raw any) (int, bool) {
+	switch v := raw.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		return int(n), err == nil
+	default:
+		return 0, false
+	}
+}
+
+func mineruJSONFloatSlice(raw any) []float64 {
+	switch v := raw.(type) {
+	case []any:
+		out := make([]float64, 0, len(v))
+		for _, item := range v {
+			switch n := item.(type) {
+			case float64:
+				out = append(out, n)
+			case int:
+				out = append(out, float64(n))
+			case int64:
+				out = append(out, float64(n))
+			case json.Number:
+				f, err := n.Float64()
+				if err != nil {
+					return nil
+				}
+				out = append(out, f)
+			default:
+				return nil
+			}
+		}
+		return out
+	case []float64:
+		return v
+	case []int:
+		out := make([]float64, len(v))
+		for i, n := range v {
+			out[i] = float64(n)
+		}
+		return out
+	default:
+		return nil
+	}
+}
+
+func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
+	imgPath = strings.TrimSpace(strings.ReplaceAll(imgPath, "\\", "/"))
+	if imgPath == "" {
+		return ""
+	}
+	candidates := []string{imgPath, path.Base(imgPath), strings.TrimPrefix(path.Clean(imgPath), "./")}
+	var file *zip.File
+	for _, key := range candidates {
+		if f, ok := images[key]; ok {
+			file = f
+			break
+		}
+	}
+	if file == nil || file.UncompressedSize64 > mineruMaxImageBytes {
+		return ""
+	}
+	rc, err := file.Open()
+	if err != nil {
+		return ""
+	}
+	data, err := io.ReadAll(io.LimitReader(rc, mineruMaxImageBytes+1))
+	rc.Close()
+	if err != nil || len(data) == 0 || len(data) > mineruMaxImageBytes {
+		return ""
+	}
+	mediaType := mime.TypeByExtension(path.Ext(file.Name))
+	if mediaType == "" {
+		mediaType = http.DetectContentType(data)
+	}
+	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
+}
+
+func mineruItemPageCount(items []map[string]any) int {
+	maxPage := 0
+	for _, item := range items {
+		if page, ok := mineruJSONInt(item["page_number"]); ok && page > maxPage {
+			maxPage = page
+		}
+	}
+	return maxPage
 }
 
 func stringSlice(raw any) []string {

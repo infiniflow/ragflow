@@ -52,6 +52,15 @@ func (m *MinerULocalModel) Name() string {
 	return "mineru"
 }
 
+// GetBaseURL prefers the instance URL, then mineru_apiserver from the
+// provider api_key JSON, then MINERU_APISERVER, then the factory default.
+func (m *MinerULocalModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+	if u := ResolveMinerUAPIServer(apiConfig); u != "" {
+		return u, nil
+	}
+	return m.baseModel.GetBaseURL(apiConfig)
+}
+
 func (m *MinerULocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	return nil, fmt.Errorf("%s no such method", m.Name())
 }
@@ -106,7 +115,7 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return err
 	}
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return err
 	}
@@ -155,7 +164,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("local MinerU API requires file content byte array, but content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +277,7 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("taskID is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
