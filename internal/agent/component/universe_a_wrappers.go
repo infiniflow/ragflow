@@ -531,8 +531,9 @@ func (c *codeExecComponent) Inputs() map[string]string {
 }
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
-	res := make(map[string]any, len(c.params))
-	for k := range c.params {
+	arguments := asAnyMap(c.params["arguments"])
+	res := make(map[string]any, len(arguments))
+	for k := range arguments {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
@@ -558,12 +559,21 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	for k, v := range c.params {
 		merged[k] = v
 	}
+	arguments := asAnyMap(c.params["arguments"])
 	for k, v := range inputs {
-		merged[k] = v
+		if _, ok := arguments[k]; !ok {
+			merged[k] = v
+		}
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
 		state, _ := runtime.GetStateFromContext(ctx)
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
+		resolvedArgs := resolveCodeExecArguments(rawArgs, merged, state)
+		for k := range rawArgs {
+			if v, ok := inputs[k]; ok {
+				resolvedArgs[k] = v
+			}
+		}
+		merged["arguments"] = resolvedArgs
 	}
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),
