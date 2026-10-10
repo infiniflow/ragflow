@@ -100,7 +100,7 @@ type SummaryExtractConfig struct {
 
 // MetadataExtractConfig configures structured metadata extraction.
 // BuiltInMetadata is carried for persistence/replay; it is NOT LLM-extracted.
-// Deterministic file_name/update_time is applied via PipelineResult -> doc_state.applyBuiltInMetadata.
+// Deterministic file_name/update_time is applied via PipelineResult -> doc_state.publishDocMetadata.
 type MetadataExtractConfig struct {
 	Enabled         bool                      `json:"enabled"`
 	Metadata        []common.MetadataFieldDef `json:"metadata,omitempty"`

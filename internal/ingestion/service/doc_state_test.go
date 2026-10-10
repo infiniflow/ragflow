@@ -37,6 +37,9 @@ type stubDocStateSvc struct {
 	gotTokenNum     int
 	gotDuration     float64
 	setCalled       bool
+	lockCount       int
+	readCount       int
+	writeCount      int
 	deletedKeys     []string
 	incrementCalled bool
 	setErr          error
@@ -44,6 +47,7 @@ type stubDocStateSvc struct {
 }
 
 func (s *stubDocStateSvc) WithDocumentMetadataLock(ctx context.Context, _ string, update func(context.Context) error) error {
+	s.lockCount++
 	return update(ctx)
 }
 
@@ -60,6 +64,7 @@ func (s *stubDocStateSvc) RevokeTableProfile(ctx context.Context, docID string) 
 }
 
 func (s *stubDocStateSvc) GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]any, error) {
+	s.readCount++
 	if s.readErr != nil {
 		return nil, s.readErr
 	}
@@ -70,6 +75,7 @@ func (s *stubDocStateSvc) GetDocumentMetadataRaw(ctx context.Context, docID stri
 }
 
 func (s *stubDocStateSvc) SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error {
+	s.writeCount++
 	if s.setErr != nil {
 		return s.setErr
 	}
@@ -570,8 +576,12 @@ func TestBuiltInMetadataTakesOverTableKey(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "file_name": "table value"}}
-	if err := applyBuiltInMetadata(t.Context(), svc, "doc-1", "sales.xlsx", []any{map[string]any{"key": "file_name"}}); err != nil {
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "file_name": []string{"table value"}}}
+	if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), &taskpkg.PipelineResult{
+		DocID: "doc-1", DocName: "sales.xlsx", TableProfile: profile,
+		Metadata:            map[string]any{"file_name": []string{"new table value"}},
+		AutoMetadataEnabled: true, BuiltInMetadataConfig: []any{map[string]any{"key": "file_name"}},
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
@@ -601,5 +611,26 @@ func TestPublishColumnPreservesEmptyUserValue(t *testing.T) {
 		if !present || !reflect.DeepEqual(got, value) {
 			t.Errorf("user value %T(%v) became %T(%v), present=%v", value, value, got, got, present)
 		}
+	}
+}
+
+func TestDocStateUpdaterPublishesBuiltInAndTableMetadataOnce(t *testing.T) {
+	for _, table := range []bool{false, true} {
+		t.Run(fmt.Sprint(table), func(t *testing.T) {
+			svc := &stubDocStateSvc{metaData: map[string]any{"file_name": "old", "user": "keep"}}
+			r := &taskpkg.PipelineResult{DocID: "doc-1", DocName: "sales.xlsx", AutoMetadataEnabled: true, BuiltInMetadataConfig: []any{map[string]any{"key": "file_name"}}}
+			if table {
+				r.TableProfile = tableProfileForTest(nil)
+			}
+			if err := (&docStateUpdater{docSvc: svc}).apply(t.Context(), r); err != nil {
+				t.Fatal(err)
+			}
+			if svc.lockCount != 1 || svc.readCount != 1 || svc.writeCount != 1 {
+				t.Fatalf("locks=%d reads=%d writes=%d", svc.lockCount, svc.readCount, svc.writeCount)
+			}
+			if svc.metaData["file_name"] != "sales.xlsx" || svc.metaData["user"] != "keep" {
+				t.Fatalf("metadata=%v", svc.metaData)
+			}
+		})
 	}
 }

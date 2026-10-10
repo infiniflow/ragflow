@@ -68,16 +68,6 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 	if err := publishDocMetadata(ctx, u.docSvc, r); err != nil {
 		return err
 	}
-	// Built-in metadata (update_time / file_name) is applied on top of the
-	// LLM-extracted metadata, mirroring Python apply_built_in_metadata
-	// (task_executor_refactor/chunk_post_processor.py): it runs when
-	// auto-metadata is enabled and built-in fields are configured, and its
-	// values overwrite whatever is already stored.
-	if r.AutoMetadataEnabled && len(r.BuiltInMetadataConfig) > 0 {
-		if err := applyBuiltInMetadata(ctx, u.docSvc, r.DocID, r.DocName, r.BuiltInMetadataConfig); err != nil {
-			common.Warn(fmt.Sprintf("failed to apply built-in metadata: %v", err))
-		}
-	}
 	if err := u.docSvc.ApplyDocCounts(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to apply doc counts: %v", err))
 	}
@@ -98,15 +88,33 @@ func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) 
 // A run with no table profile publishes none, which also clears the record an
 // earlier run left: those rows are gone, so their columns are not queryable.
 func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult) error {
-	if len(r.Metadata) == 0 && r.TableProfile == nil {
+	builtIn := make(map[string]any, 2)
+	if r.AutoMetadataEnabled {
+		for _, raw := range r.BuiltInMetadataConfig {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			key, _ := item["key"].(string)
+			switch key {
+			case "update_time":
+				builtIn["update_time"] = time.Now().Format("2006-01-02 15:04:05")
+			case "file_name":
+				if r.DocName != "" {
+					builtIn["file_name"] = r.DocName
+				}
+			}
+		}
+	}
+	if len(r.Metadata) == 0 && r.TableProfile == nil && len(builtIn) == 0 {
 		return svc.RevokeTableProfile(ctx, r.DocID)
 	}
 	return svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {
-		return publishDocMetadataLocked(ctx, svc, r)
+		return publishDocMetadataLocked(ctx, svc, r, builtIn)
 	})
 }
 
-func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult) error {
+func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, builtIn map[string]any) error {
 	// The raw record: this map is written back whole, and a reader that filters
 	// out system keys would silently drop the profile on every later metadata
 	// edit.
@@ -182,6 +190,11 @@ func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.P
 			merged[key] = existing[key]
 		}
 	}
+	// Built-in values are authoritative and relinquish table ownership.
+	for key, value := range builtIn {
+		merged[key] = value
+		delete(owned, key)
+	}
 	if r.TableProfile != nil {
 		profile := *r.TableProfile
 		profile.OwnedMetadata = make([]string, 0, len(owned))
@@ -210,61 +223,4 @@ func ownsKey(profile *entity.TableProfile, key string) bool {
 		}
 	}
 	return false
-}
-
-// applyBuiltInMetadata writes the configured built-in metadata fields into the
-// document's metadata, overwriting existing values. Mirrors Python
-// apply_built_in_metadata (task_executor_refactor/chunk_post_processor.py):
-//   - update_time -> current timestamp "2006-01-02 15:04:05"
-//   - file_name   -> the document name
-func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName string, config []any) error {
-	builtIn := make(map[string]any, 2)
-	for _, raw := range config {
-		item, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		key, _ := item["key"].(string)
-		switch key {
-		case "update_time":
-			builtIn["update_time"] = time.Now().Format("2006-01-02 15:04:05")
-		case "file_name":
-			if docName != "" {
-				builtIn["file_name"] = docName
-			}
-		}
-	}
-	if len(builtIn) == 0 {
-		return nil
-	}
-	return svc.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
-		existing, err := svc.GetDocumentMetadataRaw(ctx, docID)
-		if err != nil {
-			return err
-		}
-		if existing == nil {
-			existing = map[string]any{}
-		}
-		merged := utility.UpdateMetadataTo(existing, builtIn)
-		merged = common.SplitCombinedMetadataValues(merged)
-		profile, ok, err := entity.DecodeTableProfile(merged[entity.TableProfileMetadataField])
-		if err != nil {
-			return err
-		}
-		if ok {
-			remaining := make([]string, 0, len(profile.OwnedMetadata))
-			for _, key := range profile.OwnedMetadata {
-				if _, replaced := builtIn[key]; !replaced {
-					remaining = append(remaining, key)
-				}
-			}
-			profile.OwnedMetadata = remaining
-			raw, err := profile.Encode()
-			if err != nil {
-				return err
-			}
-			merged[entity.TableProfileMetadataField] = raw
-		}
-		return svc.SetDocumentMetadataRaw(ctx, docID, merged)
-	})
 }
