@@ -39,7 +39,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
-	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 )
 
 const ComponentNameGeneralChunker = "GeneralChunker"
@@ -501,10 +501,10 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 	case "text":
 		return doc.Text, true
 	case "table":
-		if !hasSpreadsheetIdentity(doc) || !parser.IsTableOpeningTag(doc.Text) {
+		if !hasSpreadsheetIdentity(doc) || !utility.IsTableOpeningTag(doc.Text) {
 			return "", false
 		}
-		rows, headerCount := parser.HTMLTableRowsWithHeader(doc.Text)
+		rows, headerCount := utility.HTMLTableRowsWithHeader(doc.Text)
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))
@@ -898,7 +898,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
-		if itemDocType(unit) == "table" && parser.IsTableOpeningTag(unit.Text) {
+		if itemDocType(unit) == "table" && utility.IsTableOpeningTag(unit.Text) {
 			chunks = append(chunks, c.splitSpreadsheetTable(unit)...)
 			continue
 		}

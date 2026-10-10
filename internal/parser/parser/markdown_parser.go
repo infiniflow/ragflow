@@ -32,6 +32,8 @@ import (
 	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	mdparser "github.com/gomarkdown/markdown/parser"
+
+	"ragflow/internal/utility"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -437,7 +439,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			// order — no duplicate doc_type_kwd:"text" copy — so the table is
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
-			if IsTableOpeningTag(txt) {
+			if utility.IsTableOpeningTag(txt) {
 				*out = append(*out, map[string]any{
 					"text":         txt,
 					"doc_type_kwd": "table",

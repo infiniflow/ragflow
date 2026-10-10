@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"sort"
 
-	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -49,7 +48,7 @@ func (s *MetadataService) TableFieldMap(ctx context.Context, kbIDs []string) (ma
 	}
 	engineName := s.docEngine.GetType()
 
-	docIDsByKB, err := dao.NewDocumentDAO().ListEnabledIDsByKBIDs(ctx, dao.DB, kbIDs)
+	docIDsByKB, err := s.documentDAO.ListEnabledIDsByKBIDs(ctx, s.db, kbIDs)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list enabled documents: %w", err)
 	}

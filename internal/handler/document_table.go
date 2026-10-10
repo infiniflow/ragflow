@@ -50,7 +50,7 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 		// branching on data.error must not be told to expect a smaller file.
 		var maxBytesErr *http.MaxBytesError
 		if errors.As(err, &maxBytesErr) {
-			common.ResponseWithCodeData(c, common.CodeResourceExhausted, tableProbeErrorData(document.TableProbeLimit),
+			common.ResponseWithCodeData(c, common.CodeResourceExhausted, tableErrorData(document.TableProbeLimit),
 				fmt.Sprintf("the probe request exceeds the %d-byte limit", tableProbeRequestBodyLimit))
 			return
 		}
@@ -60,21 +60,21 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	}
 	files := form.File["file"]
 	if len(files) != 1 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableProbeLimit),
+		common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(document.TableProbeLimit),
 			fmt.Sprintf("column probing takes exactly one file, got %d", len(files)))
 		return
 	}
 	header := files[0]
 
 	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
 
 	file, openErr := header.Open()
 	if openErr != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, tableProbeErrorData(document.TableProbeParseFailed),
+		common.ResponseWithCodeData(c, common.CodeDataError, tableErrorData(document.TableProbeParseFailed),
 			fmt.Sprintf("the uploaded file could not be read: %v", openErr))
 		return
 	}
@@ -83,7 +83,7 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	// without buffering an unbounded file.
 	data, readErr := io.ReadAll(io.LimitReader(file, document.TableProbeMaxFileBytes+1))
 	if readErr != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, tableProbeErrorData(document.TableProbeParseFailed),
+		common.ResponseWithCodeData(c, common.CodeDataError, tableErrorData(document.TableProbeParseFailed),
 			fmt.Sprintf("the uploaded file could not be read: %v", readErr))
 		return
 	}
@@ -108,7 +108,7 @@ func (h *DocumentHandler) GetDocumentTableColumns(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
@@ -133,7 +133,7 @@ func writeTableProbeError(c *gin.Context, err error) {
 		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
-	common.ResponseWithCodeData(c, tableProbeCode(probeErr.Code), tableProbeErrorData(probeErr.Code), probeErr.Message)
+	common.ResponseWithCodeData(c, tableProbeCode(probeErr.Code), tableErrorData(probeErr.Code), probeErr.Message)
 }
 
 func tableProbeCode(business string) common.ErrorCode {
@@ -153,7 +153,7 @@ func tableProbeCode(business string) common.ErrorCode {
 	}
 }
 
-func tableProbeErrorData(business string) map[string]any {
+func tableErrorData(business string) map[string]any {
 	if business == "" {
 		return nil
 	}

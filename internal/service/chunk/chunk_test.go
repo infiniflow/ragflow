@@ -1624,9 +1624,10 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 
 	engine := &parseTestDocEngine{deleteChunksCount: 3}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		revokeTableProfileFunc: func(context.Context, string) error { return nil },
+		docEngine:              engine,
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		userTenantDAO:          dao.NewUserTenantDAO(),
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
@@ -2336,9 +2337,10 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 
 	engine := &switchChunksEngineMock{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		revokeTableProfileFunc: func(context.Context, string) error { return nil },
+		docEngine:              engine,
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		userTenantDAO:          dao.NewUserTenantDAO(),
 	}
 
 	ctx := t.Context()

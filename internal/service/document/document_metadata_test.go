@@ -250,7 +250,7 @@ func TestRevokeTableProfileRemovesItsOwnContributions(t *testing.T) {
 		},
 	})
 
-	if err := svc.revokeTableProfile(t.Context(), "doc-1"); err != nil {
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	record := engine.records["doc-1"]
@@ -276,7 +276,7 @@ func TestRevokeTableProfileLeavesTakenOverKey(t *testing.T) {
 		},
 	})
 
-	if err := svc.revokeTableProfile(t.Context(), "doc-1"); err != nil {
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	record := engine.records["doc-1"]
@@ -293,7 +293,7 @@ func TestRevokeTableProfileWithoutARecordIsNoop(t *testing.T) {
 		"doc-1": {"作者": "张三"},
 	})
 
-	if err := svc.revokeTableProfile(t.Context(), "doc-1"); err != nil {
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	record := engine.records["doc-1"]
@@ -310,7 +310,7 @@ func TestRevokeTableProfileClearsUnreadableRecord(t *testing.T) {
 		},
 	})
 
-	if err := svc.revokeTableProfile(t.Context(), "doc-1"); err != nil {
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("revoke: %v", err)
 	}
 	record := engine.records["doc-1"]
@@ -330,7 +330,7 @@ func TestRevokeTableProfileWithoutEngineIsNoop(t *testing.T) {
 
 	svc := testDocumentService(t)
 	svc.docEngine = nil
-	if err := svc.revokeTableProfile(t.Context(), "doc-1"); err != nil {
+	if err := svc.RevokeTableProfile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("revoke without an engine: %v", err)
 	}
 	var count int64

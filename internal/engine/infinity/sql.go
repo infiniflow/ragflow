@@ -94,20 +94,24 @@ func prepareSQL(sqlText string, aliasToActual map[string]string) (string, error)
 	if err != nil {
 		return "", err
 	}
+	shape, err := utility.SQLSplitSelect(tokens)
+	if err != nil {
+		return "", err
+	}
+	return rewriteSQL(tokens, shape.Clauses, aliasToActual)
+}
+
+// rewriteSQL uses the parsed clauses shared by the result and numeric checks.
+func rewriteSQL(tokens []utility.SQLToken, clauses *utility.SQLClauses, aliasToActual map[string]string) (string, error) {
 	// Infinity cannot safely bind CASE expressions in the table SQL path.
 	for _, token := range tokens {
 		if token.IsWord("case") {
 			return "", fmt.Errorf("Infinity table SQL does not support CASE expressions")
 		}
 	}
-	shape, err := utility.SQLSplitSelect(tokens)
-	if err != nil {
+	if _, err := utility.SQLTableReference(clauses.From); err != nil {
 		return "", err
 	}
-	if _, err := utility.SQLTableReference(shape.Clauses.From); err != nil {
-		return "", err
-	}
-	clauses := shape.Clauses
 	for _, expression := range [][]utility.SQLToken{clauses.Select, clauses.Where, clauses.GroupBy, clauses.Having, clauses.OrderBy} {
 		for i, token := range expression {
 			if token.Kind != utility.SQLWord && token.Kind != utility.SQLQuoted {
@@ -380,15 +384,7 @@ type numericSQLCheck struct {
 // numericSQLChecks validates original values before Infinity's permissive
 // casts can turn malformed input into zero. Checks read the same WHERE range,
 // stream distinct values, and share the statement's timeout and connection.
-func numericSQLChecks(sql string, aliases map[string]string) ([]numericSQLCheck, error) {
-	tokens, err := utility.SQLScan(sql)
-	if err != nil {
-		return nil, err
-	}
-	shape, err := utility.SQLSplitSelect(tokens)
-	if err != nil {
-		return nil, err
-	}
+func numericSQLChecks(tokens []utility.SQLToken, clauses *utility.SQLClauses, aliases map[string]string) ([]numericSQLCheck, error) {
 	var checks []numericSQLCheck
 	seen := map[string]bool{}
 	for i, token := range tokens {
@@ -442,9 +438,9 @@ func numericSQLChecks(sql string, aliases map[string]string) ([]numericSQLCheck,
 			raw[0].Text, raw[0].Lower = "json_extract", "json_extract"
 			projection += ", " + utility.SQLRender(raw, '"') + " AS raw_value"
 		}
-		query := "SELECT DISTINCT " + projection + " FROM " + utility.SQLRender(shape.Clauses.From, '"')
-		if len(shape.Clauses.Where) > 0 {
-			query += " WHERE " + utility.SQLRender(shape.Clauses.Where, '"')
+		query := "SELECT DISTINCT " + projection + " FROM " + utility.SQLRender(clauses.From, '"')
+		if len(clauses.Where) > 0 {
+			query += " WHERE " + utility.SQLRender(clauses.Where, '"')
 		}
 		check.query, err = prepareSQL(query, aliases)
 		if err != nil {
@@ -461,11 +457,7 @@ func numericSQLChecks(sql string, aliases map[string]string) ([]numericSQLCheck,
 
 // prepareJSONResults reads raw JSON for standalone string projections. This
 // preserves the distinction between JSON null and the ordinary string "null".
-func prepareJSONResults(sql string) (string, map[int]bool, error) {
-	tokens, err := utility.SQLScan(sql)
-	if err != nil {
-		return "", nil, err
-	}
+func prepareJSONResults(tokens []utility.SQLToken) ([]utility.SQLToken, *utility.SQLClauses, map[int]bool, error) {
 	// A missing path makes Infinity's isnull return SQL NULL. Both a missing
 	// path and an explicit JSON null must satisfy the caller's null check.
 	var normalized []utility.SQLToken
@@ -473,12 +465,12 @@ func prepareJSONResults(sql string) (string, map[int]bool, error) {
 		if tokens[i].IsWord("json_extract_isnull") && i+1 < len(tokens) && tokens[i+1].IsPunct("(") {
 			_, end, err := utility.SQLCallArguments(tokens, i)
 			if err != nil {
-				return "", nil, err
+				return nil, nil, nil, err
 			}
 			call := utility.SQLRender(tokens[i:end], '"')
 			replacement, err := utility.SQLScan("(" + call + " IS NULL OR " + call + ")")
 			if err != nil {
-				return "", nil, err
+				return nil, nil, nil, err
 			}
 			normalized = append(normalized, replacement...)
 			i = end
@@ -489,7 +481,7 @@ func prepareJSONResults(sql string) (string, map[int]bool, error) {
 	}
 	shape, err := utility.SQLSplitSelect(normalized)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, nil, err
 	}
 	columns := map[int]bool{}
 	expressions := map[string]bool{}
@@ -511,7 +503,7 @@ func prepareJSONResults(sql string) (string, map[int]bool, error) {
 		if len(item) > 1 && item[0].IsWord("json_extract_string") {
 			_, end, err := utility.SQLCallArguments(item, 0)
 			if err != nil {
-				return "", nil, err
+				return nil, nil, nil, err
 			}
 			if end == len(item) || (end+2 == len(item) && item[end].IsWord("as")) {
 				expressions[utility.SQLRender(item[:end], '"')] = true
@@ -531,7 +523,7 @@ func prepareJSONResults(sql string) (string, map[int]bool, error) {
 				}
 				_, end, err := utility.SQLCallArguments(group, i)
 				if err != nil {
-					return "", nil, err
+					return nil, nil, nil, err
 				}
 				if expressions[utility.SQLRender(group[i:end], '"')] {
 					group[i].Text, group[i].Lower = "json_extract", "json_extract"
@@ -540,7 +532,7 @@ func prepareJSONResults(sql string) (string, map[int]bool, error) {
 			}
 		}
 	}
-	return utility.SQLRender(normalized, '"'), columns, nil
+	return normalized, shape.Clauses, columns, nil
 }
 
 func toRowMaps(res *pgconn.Result) []map[string]interface{} {
@@ -593,15 +585,19 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}
-	sqlText, jsonColumns, err := prepareJSONResults(sqlText)
+	tokens, err := utility.SQLScan(sqlText)
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}
-	checks, err := numericSQLChecks(sqlText, aliasMap)
+	tokens, clauses, jsonColumns, err := prepareJSONResults(tokens)
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}
-	sqlText, err = prepareSQL(sqlText, aliasMap)
+	checks, err := numericSQLChecks(tokens, clauses, aliasMap)
+	if err != nil {
+		return nil, fmt.Errorf("infinity RunSQL: %w", err)
+	}
+	sqlText, err = rewriteSQL(tokens, clauses, aliasMap)
 	if err != nil {
 		return nil, fmt.Errorf("infinity RunSQL: %w", err)
 	}

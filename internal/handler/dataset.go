@@ -1383,7 +1383,7 @@ func numericValue(value interface{}) float64 {
 // other failure keeps the generic envelope.
 func writeDatasetError(c *gin.Context, code common.ErrorCode, err error) {
 	if dataset.IsTableConfigError(err) {
-		common.ResponseWithCodeData(c, code, tableProbeErrorData(document.TableConfigInvalid), err.Error())
+		common.ResponseWithCodeData(c, code, tableErrorData(dataset.TableConfigInvalid), err.Error())
 		return
 	}
 	common.ErrorWithCode(c, code, err.Error())
@@ -1400,7 +1400,7 @@ func (h *DatasetsHandler) GetDatasetTableSchema(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}

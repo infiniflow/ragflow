@@ -55,9 +55,6 @@ func setupTableProfileDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	orig := dao.DB
-	dao.DB = db
-	t.Cleanup(func() { dao.DB = orig })
 
 	status := string(entity.StatusValid)
 	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "sales", Status: &status, ParserConfig: entity.JSONMap{}}).Error; err != nil {
@@ -97,29 +94,31 @@ func profileRecord(t *testing.T, docID, engineName string, headers ...string) ma
 	}
 }
 
-func tableProfileService(engineType string, records []map[string]interface{}) *MetadataService {
-	return NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), &tableProfileTestEngine{engineType: engineType, records: records})
+func tableProfileService(db *gorm.DB, engineType string, records []map[string]interface{}) *MetadataService {
+	return &MetadataService{db: db, kbDAO: dao.NewKnowledgebaseDAO(), documentDAO: dao.NewDocumentDAO(), docEngine: &tableProfileTestEngine{engineType: engineType, records: records}}
 }
 
 func TestTableFieldMapReportsMalformedProfile(t *testing.T) {
+	t.Parallel()
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-bad", true)
 	seedDocument(t, db, "doc-good", true)
 	bad := map[string]any{"id": "doc-bad", "meta_fields": map[string]any{entity.TableProfileMetadataField: "{broken"}}
-	_, _, err := tableProfileService("infinity", []map[string]any{bad, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
+	_, _, err := tableProfileService(db, "infinity", []map[string]any{bad, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
 	if err == nil || !strings.Contains(err.Error(), "doc-bad") {
 		t.Fatalf("malformed publisher was silently dropped: %v", err)
 	}
 }
 
 func TestTableFieldMapSkipsIncompleteProfiles(t *testing.T) {
+	t.Parallel()
 	for _, raw := range []string{`{"columns":[{"key":"金额"}]}`, `{"engine":"infinity","columns":[]}`} {
 		t.Run(raw, func(t *testing.T) {
 			db := setupTableProfileDB(t)
 			seedDocument(t, db, "doc-incomplete", true)
 			seedDocument(t, db, "doc-good", true)
 			incomplete := map[string]any{"id": "doc-incomplete", "meta_fields": map[string]any{entity.TableProfileMetadataField: raw}}
-			fields, ids, err := tableProfileService("infinity", []map[string]any{incomplete, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
+			fields, ids, err := tableProfileService(db, "infinity", []map[string]any{incomplete, profileRecord(t, "doc-good", "infinity", "金额")}).TableFieldMap(t.Context(), []string{"kb-1"})
 			if err != nil || len(fields) != 1 || len(ids) != 1 || ids[0] != "doc-good" {
 				t.Fatalf("incomplete profile affected the valid publisher: fields=%v ids=%v err=%v", fields, ids, err)
 			}
@@ -128,6 +127,7 @@ func TestTableFieldMapSkipsIncompleteProfiles(t *testing.T) {
 }
 
 func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
+	t.Parallel()
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
 	seedDocument(t, db, "doc-2", true)
@@ -137,7 +137,7 @@ func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
 	recordTwo := profileRecord(t, "doc-2", "infinity", "编号")
 	recordOff := profileRecord(t, "doc-off", "infinity", "不该出现")
 
-	fields, docIDs, err := tableProfileService("infinity", []map[string]interface{}{recordOne, recordTwo, recordOff}).
+	fields, docIDs, err := tableProfileService(db, "infinity", []map[string]interface{}{recordOne, recordTwo, recordOff}).
 		TableFieldMap(context.Background(), []string{"kb-1"})
 	if err != nil {
 		t.Fatalf("TableFieldMap: %v", err)
@@ -161,6 +161,7 @@ func TestTableFieldMapUnionsIndexedDocuments(t *testing.T) {
 }
 
 func TestTableFieldMapSkipsDocumentsThatCannotBeQueried(t *testing.T) {
+	t.Parallel()
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
 	seedDocument(t, db, "doc-other-engine", true)
@@ -173,7 +174,7 @@ func TestTableFieldMapSkipsDocumentsThatCannotBeQueried(t *testing.T) {
 		// A document with no table run at all simply has no record.
 		{"id": "doc-plain", "kb_id": "kb-1", "meta_fields": map[string]interface{}{"作者": "张三"}},
 	}
-	fields, docIDs, err := tableProfileService("infinity", records).TableFieldMap(context.Background(), []string{"kb-1"})
+	fields, docIDs, err := tableProfileService(db, "infinity", records).TableFieldMap(context.Background(), []string{"kb-1"})
 	if err != nil {
 		t.Fatalf("TableFieldMap: %v", err)
 	}
@@ -188,12 +189,13 @@ func TestTableFieldMapSkipsDocumentsThatCannotBeQueried(t *testing.T) {
 }
 
 func TestTableFieldMapReadsIndexedFieldsOnEveryEngine(t *testing.T) {
+	t.Parallel()
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
 
 	// A read-only view of what was indexed is useful even where the engine
 	// cannot query it; whether SQL may run is the caller's gate, not this read's.
-	fields, docIDs, err := tableProfileService("elasticsearch", []map[string]interface{}{
+	fields, docIDs, err := tableProfileService(db, "elasticsearch", []map[string]interface{}{
 		profileRecord(t, "doc-1", "elasticsearch", "金额"),
 	}).TableFieldMap(context.Background(), []string{"kb-1"})
 	if err != nil {
@@ -205,6 +207,7 @@ func TestTableFieldMapReadsIndexedFieldsOnEveryEngine(t *testing.T) {
 }
 
 func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
+	t.Parallel()
 	db := setupTableProfileDB(t)
 	seedDocument(t, db, "doc-1", true)
 	seedDocument(t, db, "doc-2", true)
@@ -225,7 +228,7 @@ func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
 		return raw
 	}()
 
-	fields, _, err := tableProfileService("infinity", []map[string]interface{}{one, two}).
+	fields, _, err := tableProfileService(db, "infinity", []map[string]interface{}{one, two}).
 		TableFieldMap(context.Background(), []string{"kb-1"})
 	if err == nil {
 		t.Fatalf("expected a conflict error, got fields %v", fields)
@@ -236,8 +239,9 @@ func TestTableFieldMapReportsConflictingColumnNames(t *testing.T) {
 }
 
 func TestTableFieldMapNoKnowledgeBases(t *testing.T) {
-	setupTableProfileDB(t)
-	fields, docIDs, err := tableProfileService("infinity", nil).TableFieldMap(context.Background(), nil)
+	t.Parallel()
+	db := setupTableProfileDB(t)
+	fields, docIDs, err := tableProfileService(db, "infinity", nil).TableFieldMap(context.Background(), nil)
 	if err != nil || fields != nil || docIDs != nil {
 		t.Errorf("fields = %v, docs = %v, err = %v, want no result", fields, docIDs, err)
 	}
@@ -262,12 +266,12 @@ func TestConvertSearchResultToDocMetaHidesProfileField(t *testing.T) {
 // that published a profile must not offer "_table_profile" among the metadata
 // values the dataset lists.
 func TestGetFlattedMetaByKBsDropsTheTableProfile(t *testing.T) {
-	setupTableProfileDB(t)
+	db := setupTableProfileDB(t)
 	docEngine := &tableProfileTestEngine{
 		engineType: "infinity",
 		records:    []map[string]interface{}{profileRecord(t, "doc-1", "infinity", "金额")},
 	}
-	svc := NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), docEngine)
+	svc := &MetadataService{db: db, kbDAO: dao.NewKnowledgebaseDAO(), documentDAO: dao.NewDocumentDAO(), docEngine: docEngine}
 
 	flattened, err := svc.GetFlattedMetaByKBs(t.Context(), []string{"kb-1"})
 	if err != nil {

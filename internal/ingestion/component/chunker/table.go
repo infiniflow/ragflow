@@ -40,7 +40,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 )
 
 const ComponentNameTableChunker = "TableChunker"
@@ -51,23 +51,10 @@ type tableChunkerParam struct {
 }
 
 func (p *tableChunkerParam) Update(conf map[string]any) {
-	// The pipeline feeds saved configuration back through this path on every
-	// run, and one stale or mistyped value must not abort a document that used
-	// to parse: failures are collected and reported by Validate.
-	_, _ = p.applyColumnParams(conf)
-}
-
-// applyColumnParams reads the column fields from a component parameter map.
-// Unlike Update it reports why a value was refused, which is what the settings
-// and upload APIs need: a client that sent an unknown mode, role or type has to
-// hear about it instead of watching the value dropped.
-func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]struct{}, error) {
-	handled := map[string]struct{}{}
 	if conf == nil {
-		return handled, nil
+		return
 	}
 	if v, ok := conf["column_mode"]; ok {
-		handled["column_mode"] = struct{}{}
 		mode, err := entity.ValidateTableMode(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
@@ -76,7 +63,6 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 		}
 	}
 	if v, ok := conf["column_roles"]; ok {
-		handled["column_roles"] = struct{}{}
 		roles, err := entity.ValidateTableRoles(v)
 		if err != nil {
 			p.updateErr = errors.Join(p.updateErr, err)
@@ -84,7 +70,6 @@ func (p *tableChunkerParam) applyColumnParams(conf map[string]any) (map[string]s
 			p.ColumnRoles = roles
 		}
 	}
-	return handled, p.updateErr
 }
 
 func (tableChunkerParam) Defaults() tableChunkerParam {
@@ -275,10 +260,10 @@ func tableItems(items, chunks []schema.ChunkDoc, profile tableProfile, fileType 
 // filters down to nothing emits no chunk rather than falling back to the whole
 // table markup, which would leak every excluded column back into the index.
 func expandHTMLTableRows(item schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
-	if !parser.LooksLikeTableHTML(item.Text) {
+	if !utility.LooksLikeTableHTML(item.Text) {
 		return []schema.ChunkDoc{item}, nil
 	}
-	rows, headerCount := parser.HTMLTableRowsWithHeader(item.Text)
+	rows, headerCount := utility.HTMLTableRowsWithHeader(item.Text)
 	spreadsheet := item.SheetIndex != nil && headerCount >= 1
 	if profile.manual {
 		if !supportsColumnMode(fileType) {

@@ -11,6 +11,7 @@ import (
 	"github.com/xuri/excelize/v2"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 )
 
 func TestProbeRejectsExpandedWorkbookLimit(t *testing.T) {
@@ -141,7 +142,7 @@ func TestStaleRoleWarnings(t *testing.T) {
 		},
 		"Tokenizer:SomeNode": map[string]any{"chunk_token_size": 256},
 	}}
-	sheets := []TableProbeSheet{{Columns: []TableProbeColumn{
+	sheets := []TableProbeSheet{{Columns: []entity.TableColumn{
 		{Index: 1, Key: "金额"},
 	}}}
 
@@ -241,5 +242,20 @@ func TestProbeDoesNotWarnAboutWellFormedRows(t *testing.T) {
 	}
 	if len(result.Warnings) != 0 {
 		t.Errorf("warnings = %v, want none", result.Warnings)
+	}
+}
+
+func TestCollectProbeSheetsCountsParsedOuterRows(t *testing.T) {
+	items := []map[string]any{{
+		parser.DocTypeKey: parser.DocTypeTable,
+		"sheet_index":     1,
+		"text":            `<table><tr><th>Name</th></tr><tr><td><table><tr><td>nested</td></tr></table></td></tr></table>`,
+	}}
+	sheets, _, err := collectProbeSheets(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sheets) != 1 || sheets[0].RowCount != 1 {
+		t.Fatalf("expected one outer data row, got %+v", sheets)
 	}
 }

@@ -175,7 +175,7 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	}
 	// Before any early return below: the indexed output is being discarded
 	// whether or not this document still has a chunk store to clear.
-	if err := s.revokeTableProfile(ctx, doc.ID); err != nil {
+	if err := s.RevokeTableProfile(ctx, doc.ID); err != nil {
 		return err
 	}
 
@@ -439,7 +439,7 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 	}
 	// The parse method is changing, so whatever columns the previous run indexed
 	// stop describing this document's rows.
-	if err := s.revokeTableProfile(ctx, doc.ID); err != nil {
+	if err := s.RevokeTableProfile(ctx, doc.ID); err != nil {
 		return err
 	}
 

@@ -22,6 +22,8 @@ import (
 	"fmt"
 	"strconv"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -39,15 +41,19 @@ type DocMetaMap map[string]map[string]interface{}
 
 // MetadataService provides common metadata operations
 type MetadataService struct {
-	kbDAO     *dao.KnowledgebaseDAO
-	docEngine engine.DocEngine
+	db          *gorm.DB
+	documentDAO *dao.DocumentDAO
+	kbDAO       *dao.KnowledgebaseDAO
+	docEngine   engine.DocEngine
 }
 
 // NewMetadataService creates a new metadata service
 func NewMetadataService() *MetadataService {
 	return &MetadataService{
-		kbDAO:     dao.NewKnowledgebaseDAO(),
-		docEngine: engine.Get(),
+		db:          dao.DB,
+		documentDAO: dao.NewDocumentDAO(),
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		docEngine:   engine.Get(),
 	}
 }
 
@@ -55,8 +61,10 @@ func NewMetadataService() *MetadataService {
 // for tests that need to control the DAO and engine.
 func NewMetadataServiceForTest(kbDAO *dao.KnowledgebaseDAO, docEngine engine.DocEngine) *MetadataService {
 	return &MetadataService{
-		kbDAO:     kbDAO,
-		docEngine: docEngine,
+		db:          dao.DB,
+		documentDAO: dao.NewDocumentDAO(),
+		kbDAO:       kbDAO,
+		docEngine:   docEngine,
 	}
 }
 
@@ -97,7 +105,7 @@ func (s *MetadataService) EnsureMetadataStore(ctx context.Context, tenantID stri
 
 // GetTenantIDByKBID retrieves tenant ID from knowledge base ID
 func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (string, error) {
-	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
+	return dao.GetTenantIDByKBID(ctx, s.db, kbID)
 }
 
 // GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
@@ -105,7 +113,7 @@ func (s *MetadataService) GetTenantIDByKBIDs(ctx context.Context, kbIDs []string
 	if len(kbIDs) == 0 {
 		return "", fmt.Errorf("no kb_ids provided")
 	}
-	return dao.GetTenantIDByKBID(ctx, dao.DB, kbIDs[0])
+	return dao.GetTenantIDByKBID(ctx, s.db, kbIDs[0])
 }
 
 // SearchMetadataResponse holds the result of a metadata search
@@ -219,7 +227,7 @@ func (s *MetadataService) DeclaredMetadataFields(ctx context.Context, kbIDs []st
 	}
 	var out []common.MetadataFieldDef
 	for _, kbID := range kbIDs {
-		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		kb, err := s.kbDAO.GetByID(ctx, s.db, kbID)
 		if err != nil || kb == nil {
 			continue
 		}
@@ -353,7 +361,7 @@ func (s *MetadataService) FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs 
 	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(filters) == 0 {
 		return nil, false
 	}
-	docIDs := s.docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, filters, logic)
+	docIDs := s.docEngine.FilterDocIdsByMetaPushdown(ctx, s.db, kbIDs, filters, logic)
 	if docIDs == nil {
 		return nil, false
 	}

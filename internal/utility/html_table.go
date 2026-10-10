@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package parser
+package utility
 
 import (
 	"strings"

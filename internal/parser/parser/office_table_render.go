@@ -55,7 +55,7 @@ type spreadsheetSegmentRow struct {
 // captioned <table> whose header row is <th> cells and whose data rows are
 // <td> cells, one row per line. It is the byte contract every consumer reads —
 // the chunkers parse this shape back row by row (see
-// internal/parser/parser/html_table.go), and the positions matrix
+// internal/utility/html_table.go), and the positions matrix
 // emitted next to it is aligned one tuple per <tr>, header included.
 func renderSpreadsheetTable(sheet string, header []string, rows [][]string) string {
 	var builder strings.Builder

@@ -339,7 +339,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	// Best effort: the field map and the SQL range are already gated on live
 	// documents, so a revoke that cannot take the metadata lock leaves a record
 	// nothing queries rather than a reason to refuse deleting the file.
-	if err := s.revokeTableProfile(ctx, docID); err != nil {
+	if err := s.RevokeTableProfile(ctx, docID); err != nil {
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: revoked derived table state for %s: %v", docID, err))
 	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {

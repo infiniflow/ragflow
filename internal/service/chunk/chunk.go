@@ -111,14 +111,15 @@ type ChunkService struct {
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	return &ChunkService{
-		docEngine:        engine.Get(),
-		embeddingCache:   utility.NewEmbeddingLRU(1000), // default capacity
-		kbDAO:            dao.NewKnowledgebaseDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
-		documentDAO:      dao.NewDocumentDAO(),
-		taskDAO:          dao.NewTaskDAO(),
-		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
-		searchService:    service.NewSearchService(),
+		docEngine:              engine.Get(),
+		embeddingCache:         utility.NewEmbeddingLRU(1000), // default capacity
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		userTenantDAO:          dao.NewUserTenantDAO(),
+		documentDAO:            dao.NewDocumentDAO(),
+		taskDAO:                dao.NewTaskDAO(),
+		ingestionTaskDAO:       dao.NewIngestionTaskDAO(),
+		searchService:          service.NewSearchService(),
+		revokeTableProfileFunc: document.NewDocumentService().RevokeTableProfile,
 	}
 }
 
@@ -1865,5 +1866,5 @@ func (s *ChunkService) revokeTableProfile(ctx context.Context, docID string) err
 	if s.revokeTableProfileFunc != nil {
 		return s.revokeTableProfileFunc(revokeCtx, docID)
 	}
-	return document.NewDocumentService().RevokeTableProfile(revokeCtx, docID)
+	return fmt.Errorf("table profile revocation dependency is not initialized")
 }

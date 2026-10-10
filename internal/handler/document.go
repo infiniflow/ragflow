@@ -1054,7 +1054,7 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		var parsed map[string]interface{}
 		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
 			if legacy := pipeline.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableConfigInvalid),
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
 					fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
 						strings.Join(legacy, ", "), pipeline.TableChunkerNodePrefix))
 				return
@@ -1066,12 +1066,12 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 				}
 				params, ok := value.(map[string]interface{})
 				if !ok {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableConfigInvalid),
+					common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
 						fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
 					return
 				}
 				if _, _, err = pipeline.ValidateTableColumnOverride(params); err != nil {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableConfigInvalid),
+					common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
 						fmt.Sprintf("parser_config[%q]: %v", key, err))
 					return
 				}
@@ -1874,7 +1874,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 	if present["parser_config"] && req.ParserConfig != nil {
-		dropped, err := dataset.ValidateDocumentParserConfig(req.ParserConfig)
+		dropped, err := dataset.ValidateParserConfig(req.ParserConfig)
 		if len(dropped) > 0 {
 			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
 				zap.Strings("keys", dropped),
@@ -1888,7 +1888,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 			// code; the validator's other rejections (the size limit) keep the
 			// generic shape.
 			if dataset.IsTableConfigError(err) {
-				common.ResponseWithCodeData(c, common.CodeArgumentError, tableProbeErrorData(document.TableConfigInvalid), err.Error())
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid), err.Error())
 				return
 			}
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

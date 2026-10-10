@@ -32,6 +32,8 @@ import (
 	"ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/storage"
+
+	"ragflow/internal/utility"
 )
 
 // Column probing reads a spreadsheet through the parser ingestion would use and
@@ -61,11 +63,6 @@ const (
 	TableProbeParseFailed       = "TABLE_PARSE_FAILED"
 	TableProbeLimit             = "TABLE_PROBE_LIMIT"
 	TableProbeTimeout           = "TABLE_PROBE_TIMEOUT"
-	// TableConfigInvalid marks a rejection the column contract itself produced: a
-	// retired flat key, an unknown mode or role, a node key that is not usable.
-	// It is answered with CodeArgumentError, so a client reads a table rejection
-	// the same way wherever it was raised.
-	TableConfigInvalid = "INVALID_TABLE_CONFIG"
 	// TableAccessDenied answers a probe request from someone the dataset is not
 	// shared with, the same code the dataset endpoints use for it.
 	TableAccessDenied = "DATASET_ACCESS_DENIED"
@@ -83,23 +80,13 @@ func tableProbeFailure(code, format string, args ...any) error {
 	return &TableProbeError{Code: code, Message: fmt.Sprintf(format, args...)}
 }
 
-// TableProbeColumn is one column of a probed sheet, carrying the names the
-// feature uses: the position, the readable label, the key a role configuration
-// matches on, and the JSON key the index stores values under.
-type TableProbeColumn struct {
-	Index       int    `json:"index"`
-	Key         string `json:"key"`
-	DisplayName string `json:"display_name"`
-	DataKey     string `json:"data_key"`
-}
-
 // TableProbeSheet is one sheet's columns. Sheet indexes are 1-based, as
 // everywhere else in the spreadsheet wire.
 type TableProbeSheet struct {
-	SheetIndex int                `json:"sheet_index"`
-	Name       string             `json:"name"`
-	RowCount   int                `json:"row_count"`
-	Columns    []TableProbeColumn `json:"columns"`
+	SheetIndex int                  `json:"sheet_index"`
+	Name       string               `json:"name"`
+	RowCount   int                  `json:"row_count"`
+	Columns    []entity.TableColumn `json:"columns"`
 }
 
 // TableProbeResult is the probe response. Source is "file" for both entry
@@ -257,7 +244,7 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, er
 			continue // no sheet identity: not the spreadsheet wire
 		}
 		markup, _ := item["text"].(string)
-		rows, headerCount := parser.HTMLTableRowsWithHeader(markup)
+		rows, headerCount := utility.HTMLTableRowsWithHeader(markup)
 		if headerCount != 1 || len(rows) == 0 {
 			continue
 		}
@@ -275,7 +262,7 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, er
 		if name, isName := item["sheet"].(string); isName && state.name == "" {
 			state.name = name
 		}
-		state.rows += dataRowsIn(markup)
+		state.rows += len(rows) - headerCount
 		if wide := dataRowsWiderThan(rows[0], rows[1:]); wide > 0 {
 			ragged[sheetIndex] += wide
 		}
@@ -299,15 +286,7 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, er
 			SheetIndex: index,
 			Name:       state.name,
 			RowCount:   state.rows,
-			Columns:    make([]TableProbeColumn, 0, len(state.columns)),
-		}
-		for _, column := range state.columns {
-			sheet.Columns = append(sheet.Columns, TableProbeColumn{
-				Index:       column.Index,
-				Key:         column.Key,
-				DisplayName: column.DisplayName,
-				DataKey:     column.DataKey,
-			})
+			Columns:    state.columns,
 		}
 		sheets = append(sheets, sheet)
 		if count := ragged[index]; count > 0 {
@@ -398,15 +377,6 @@ func acquireTableProbeSlot(ctx context.Context) (func(), error) {
 	case <-timer.C:
 		return nil, tableProbeFailure(TableProbeLimit, "too many column probes are running; try again shortly")
 	}
-}
-
-// dataRowsIn counts a segment's data rows, the repeated header row excluded.
-func dataRowsIn(markup string) int {
-	rows := strings.Count(strings.ToLower(markup), "<tr")
-	if rows <= 1 {
-		return 0
-	}
-	return rows - 1
 }
 
 func intField(value any) (int, bool) {

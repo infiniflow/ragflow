@@ -1,6 +1,7 @@
 package chunk
 
 import (
+	"context"
 	"testing"
 
 	"ragflow/internal/dao"
@@ -71,9 +72,10 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 			} {
 				t.Run(op.name, func(t *testing.T) {
 					svc := &ChunkService{
-						kbDAO:             dao.NewKnowledgebaseDAO(),
-						documentDAO:       dao.NewDocumentDAO(),
-						markWikiDirtyFunc: func(string, string, string, []string) {},
+						revokeTableProfileFunc: func(context.Context, string) error { return nil },
+						kbDAO:                  dao.NewKnowledgebaseDAO(),
+						documentDAO:            dao.NewDocumentDAO(),
+						markWikiDirtyFunc:      func(string, string, string, []string) {},
 					}
 					err := op.run(svc)
 					if tt.allowed {

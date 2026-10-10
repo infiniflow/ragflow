@@ -57,6 +57,9 @@ var (
 	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
 
+// TableConfigInvalid identifies a rejection of the table column configuration.
+const TableConfigInvalid = "INVALID_TABLE_CONFIG"
+
 const (
 	maximumTaskPageNumber    = int64(100000000)
 	serverQueueNamePrefix    = "te"
@@ -277,17 +280,6 @@ func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error)
 	}
 	dropped := DropUnscopedParserConfigKeys(parserConfig)
 	return dropped, validateDatasetParserConfigSize(parserConfig)
-}
-
-// ValidateDocumentParserConfig validates the parser_config attached to a
-// document. Documents follow the same component-scoped contract as datasets:
-// every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
-// or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
-// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
-// (not kept) and the size limit is enforced. It returns the dropped key names
-// for logging, mirroring ValidateParserConfig.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
-	return ValidateParserConfig(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
