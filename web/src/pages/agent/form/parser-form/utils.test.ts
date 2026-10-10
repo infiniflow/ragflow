@@ -64,7 +64,6 @@ describe('parser-form utils', () => {
 
       expect(values.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
-        lang: '',
         system_prompt: '',
       });
       expect(values.enable_vision_enhancement).toBe(false);
@@ -104,7 +103,6 @@ describe('parser-form utils', () => {
       expect(values.enable_vision_enhancement).toBe(true);
       expect(values.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
-        lang: '',
         system_prompt: '',
       });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.PDF });
@@ -124,7 +122,7 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(false);
-      expect(values.vlm).toEqual({ llm_id: '', lang: '', system_prompt: '' });
+      expect(values.vlm).toEqual({ llm_id: '', system_prompt: '' });
     });
 
     it('treats a non-empty per-setup model as enabled enhancement', () => {
@@ -137,7 +135,6 @@ describe('parser-form utils', () => {
       expect(values.enable_vision_enhancement).toBe(true);
       expect(values.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
-        lang: '',
         system_prompt: '',
       });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.Video });
@@ -159,7 +156,7 @@ describe('parser-form utils', () => {
 
       const normalized = normalizeParserFormValues(values);
       expect(normalized).toEqual({
-        vlm: { llm_id: 'gpt-4o@OpenAI', lang: '', system_prompt: '' },
+        vlm: { llm_id: 'gpt-4o@OpenAI', system_prompt: '' },
         enable_vision_enhancement: true,
         setups: [
           { fileFormat: FileType.PDF },
@@ -176,7 +173,7 @@ describe('parser-form utils', () => {
         setups: [{ fileFormat: FileType.PDF, vlm: { llm_id: 'stale@Model' } }],
       });
 
-      expect(values.vlm).toEqual({ llm_id: '', lang: '', system_prompt: '' });
+      expect(values.vlm).toEqual({ llm_id: '', system_prompt: '' });
     });
 
     it('migrates a legacy image ocr parse_method onto ocr_enabled', () => {
@@ -206,7 +203,6 @@ describe('parser-form utils', () => {
       // the (empty) global value, and the switch shape drops parse_method.
       expect(normalized.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
-        lang: '',
         system_prompt: '',
       });
       expect(normalized.setups[0]).toEqual({
@@ -215,7 +211,7 @@ describe('parser-form utils', () => {
       });
     });
 
-    it('lifts the image family language and prompt onto the global vlm', () => {
+    it('lifts the image prompt but never the language', () => {
       const normalized = normalizeParserFormValues({
         setups: [
           {
@@ -228,29 +224,29 @@ describe('parser-form utils', () => {
       });
       expect(normalized.vlm).toEqual({
         llm_id: '',
-        lang: 'French',
         system_prompt: 'Describe the chart.',
       });
-      // The image setup keeps only its own switch.
+      // Language stays in the family setup as the legacy fallback the backend
+      // still reads. Lifting it would promote a value that cannot be told apart
+      // from the hardcoded default (issue #20727).
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: true,
+        lang: 'French',
       });
       expect(normalizeParserFormValues(normalized)).toEqual(normalized);
     });
 
-    it('does not let a stale image language override a global choice', () => {
+    it('drops a stale vlm.lang left by an earlier draft of the contract', () => {
       const normalized = normalizeParserFormValues({
         vlm: { llm_id: '', lang: 'German', system_prompt: '' },
         setups: [
           { fileFormat: FileType.Image, lang: 'French', system_prompt: 'old' },
         ],
       });
-      // An explicit global language wins; the prompt still lifts because no
-      // global prompt was chosen.
+      // Nothing renders that control any more, so it must not survive a save.
       expect(normalized.vlm).toEqual({
         llm_id: '',
-        lang: 'German',
         system_prompt: 'old',
       });
     });
@@ -265,7 +261,6 @@ describe('parser-form utils', () => {
       });
       expect(normalized.vlm).toEqual({
         llm_id: 'qwen-vl@DashScope',
-        lang: '',
         system_prompt: '',
       });
       expect(normalized.setups[0]).toEqual({

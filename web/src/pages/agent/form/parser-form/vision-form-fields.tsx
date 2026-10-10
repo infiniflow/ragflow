@@ -4,8 +4,6 @@ import {
 } from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
-import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
-import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { Textarea } from '@/components/ui/textarea';
 import { ModelTypeToField } from '@/constants/llm';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
@@ -45,14 +43,14 @@ function VisionEnhancementSwitch({
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
 }
 
-// Global vision enhancement: one switch + img2txt model + response language +
-// description prompt shared by the vision paths. The fields live at the form's
-// top level (`enable_vision_enhancement` and `vlm.{llm_id, lang, system_prompt}`)
-// alongside `setups`, matching the backend Parser component's params contract.
+// Global vision enhancement: one switch + img2txt model + description prompt.
+// The fields live at the form's top level (`enable_vision_enhancement` and
+// `vlm.{llm_id, system_prompt}`) alongside `setups`, matching the backend Parser
+// component's params contract. Response language is not offered here on purpose:
+// it belongs to the knowledge base, which also drives tokenization.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
-  const languageOptions = useCrossLanguageOptions();
   const enabled = useWatch({ name: 'enable_vision_enhancement' });
 
   return (
@@ -80,21 +78,6 @@ export function VisionEnhancementFormFields() {
           allowClear
           ownerTenantId={ownerTenantId}
         />
-      )}
-      {enabled && (
-        <RAGFlowFormItem
-          name="vlm.lang"
-          label={t('flow.lang')}
-          tooltip={t('flow.visionEnhancementLangTip')}
-        >
-          {(field) => (
-            <SelectWithSearch
-              options={languageOptions}
-              value={field.value}
-              onChange={field.onChange}
-            />
-          )}
-        </RAGFlowFormItem>
       )}
       {enabled && (
         <RAGFlowFormItem

@@ -177,10 +177,11 @@ func maybeDispatchVisionEnhancement(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
 	setup := setups[family]
-	// The global enhancement language drives the description; the per-family
-	// language stays as the fallback and continues to feed the PDF parsing
-	// engines, which take it as an OCR parameter rather than a caption language.
-	language := resolveVisionLanguage(inputs, firstNonEmpty(vision.lang, getStringOr(setup, "lang", "")))
+	// The knowledge base language drives the caption language; the per-family
+	// language is only a legacy fallback. The PDF parsing engines read the same
+	// family key for a different purpose (an OCR parameter), and that use is
+	// untouched here — see pdf_vision_dispatch.go.
+	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.

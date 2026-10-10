@@ -164,9 +164,9 @@ export const initialParserValues = {
     json: { type: 'Array<object>', value: [] },
   },
   // Global vision enhancement, off by default; the model id is prefilled from
-  // the tenant's image2text default when a node is created. Language and prompt
-  // are shared by the vision paths, so they live here rather than per family.
-  vlm: { llm_id: '', lang: '', system_prompt: '' },
+  // the tenant's image2text default when a node is created. The prompt is shared
+  // by the vision paths here; response language belongs to the knowledge base.
+  vlm: { llm_id: '', system_prompt: '' },
   enable_vision_enhancement: false,
   setups: [
     {

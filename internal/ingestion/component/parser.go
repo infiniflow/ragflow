@@ -116,12 +116,12 @@ type ParserComponent struct {
 }
 
 // visionSettings carries the global vision-enhancement choices. They sit at the
-// Parser params top level (vlm) instead of a per-family setup, so one model,
-// language and prompt serve the enhanced file types rather than each family
-// repeating them.
+// Parser params top level (vlm) instead of a per-family setup, so one model and
+// prompt serve the enhanced file types rather than each family repeating them.
+// Response language is deliberately absent: it belongs to the knowledge base,
+// which also drives tokenization, so the two can never disagree.
 type visionSettings struct {
 	modelID      string
-	lang         string
 	systemPrompt string
 }
 
@@ -136,7 +136,7 @@ type visionSettings struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
-//	  "vlm":                  {"llm_id": string, "lang": string, "system_prompt": string},
+//	  "vlm":                  {"llm_id": string, "system_prompt": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -171,12 +171,6 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			vision.modelID, ok = rawID.(string)
 			if !ok {
 				return nil, errors.New("parser: vlm.llm_id must be a string")
-			}
-		}
-		if rawLang, exists := vlm["lang"]; exists {
-			vision.lang, ok = rawLang.(string)
-			if !ok {
-				return nil, errors.New("parser: vlm.lang must be a string")
 			}
 		}
 		if rawPrompt, exists := vlm["system_prompt"]; exists {
@@ -286,7 +280,7 @@ func (c *ParserComponent) Check() error {
 		// the global vision model and fall back to the dataset language, so a
 		// per-setup language is not required.
 		if !hasOCRFlag && c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
-			if lang, _ := img["lang"].(string); lang == "" && c.vision.lang == "" {
+			if lang, _ := img["lang"].(string); lang == "" {
 				return errors.New("image VLM language does not support empty value")
 			}
 		}

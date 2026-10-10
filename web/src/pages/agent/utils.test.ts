@@ -24,7 +24,6 @@ describe('transformParserParams vision settings', () => {
     expect(result.enable_vision_enhancement).toBe(true);
     expect(result.vlm).toEqual({
       llm_id: 'model-B',
-      lang: '',
       system_prompt: '',
     });
     expect(result).not.toHaveProperty(`${FileType.PDF}.vlm`);
@@ -43,7 +42,6 @@ describe('transformParserParams vision settings', () => {
     expect(result.enable_vision_enhancement).toBe(enabled);
     expect(result.vlm).toEqual({
       llm_id: 'model-B',
-      lang: '',
       system_prompt: '',
     });
   });

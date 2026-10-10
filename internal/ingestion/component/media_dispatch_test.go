@@ -387,14 +387,18 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 // contract: the image description reads its language and prompt from the global
 // vlm block, and a legacy per-family value only applies when the global one is
 // unset.
-func TestMaybeDispatchImage_GlobalVisionSettingsDriveImage(t *testing.T) {
+// TestMaybeDispatchImage_GlobalVisionPromptDrivesImage locks the moved
+// contract: the image description reads its prompt from the global vlm block,
+// and a legacy per-family value only applies when the global one is unset.
+// Language is not part of the enhancement settings — captions follow the
+// knowledge base language (see TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage).
+func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
 	origResolver := resolveTenantModelByType
 	defer func() { resolveTenantModelByType = origResolver }()
 
 	for _, tc := range []struct {
 		name         string
 		inputs       map[string]any
-		globalLang   string
 		familyLang   string
 		globalPrompt string
 		familyPrompt string
@@ -414,11 +418,10 @@ func TestMaybeDispatchImage_GlobalVisionSettingsDriveImage(t *testing.T) {
 			want:         "family prompt",
 		},
 		{
-			name:       "global language applies when the dataset has none",
-			inputs:     map[string]any{"tenant_id": "t1"},
-			globalLang: "French",
+			name:       "language comes from the dataset, not the enhancement settings",
+			inputs:     map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 			familyLang: "Chinese",
-			want:       "Respond in French.",
+			want:       "Respond in Japanese.",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -432,7 +435,7 @@ func TestMaybeDispatchImage_GlobalVisionSettingsDriveImage(t *testing.T) {
 			_, _, err := maybeDispatchImage(
 				t.Context(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
 				tc.inputs, setups, true,
-				visionSettings{lang: tc.globalLang, systemPrompt: tc.globalPrompt},
+				visionSettings{systemPrompt: tc.globalPrompt},
 			)
 			if err != nil {
 				t.Fatalf("maybeDispatchImage: %v", err)

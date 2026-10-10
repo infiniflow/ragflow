@@ -215,9 +215,11 @@ func describeImage(
 	vision visionSettings,
 ) (string, []string) {
 	// --- Optional VLM description ---
-	// The dataset language still wins over an explicitly configured one, which
-	// is how every other vision path resolves its response language.
-	lang := resolveVisionLanguage(inputs, firstNonEmpty(vision.lang, getStringOr(setup, "lang", "")))
+	// The knowledge base language drives the response; the per-family language is
+	// only a legacy fallback. There is deliberately no enhancement-level language:
+	// captions are indexed text, so they must follow the same language the
+	// tokenizer uses.
+	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
 	if tenantID == "" {
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}

@@ -60,13 +60,14 @@ export const SetupSchema = z
 
 export const FormSchema = z.object({
   setups: z.array(SetupSchema).min(1, i18n.t('flow.atLeastOneFileType')),
-  // Global vision enhancement: one switch + img2txt model + response language +
-  // description prompt, sitting at the params top level alongside the
-  // per-family setups (see the backend Parser component contract).
+  // Global vision enhancement: one switch + img2txt model + description prompt,
+  // sitting at the params top level alongside the per-family setups (see the
+  // backend Parser component contract). Response language is intentionally not
+  // here: captions are indexed text, so they follow the knowledge base language
+  // that also drives tokenization, and can never disagree with it.
   vlm: z
     .object({
       llm_id: z.string().optional(),
-      lang: z.string().optional(),
       system_prompt: z.string().optional(),
     })
     .optional(),

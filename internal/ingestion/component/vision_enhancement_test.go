@@ -457,7 +457,6 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 		name   string
 		inputs map[string]any
 		setups map[string]schema.ParserSetup
-		vision visionSettings
 		want   string
 	}{
 		{
@@ -471,20 +470,6 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 			inputs: map[string]any{"tenant_id": "t1"},
 			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
 			want:   "Chinese",
-		},
-		{
-			name:   "global vlm.lang wins over the family setup lang",
-			inputs: map[string]any{"tenant_id": "t1"},
-			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
-			vision: visionSettings{lang: "English"},
-			want:   "English",
-		},
-		{
-			name:   "dataset language still wins over the global choice",
-			inputs: map[string]any{"tenant_id": "t1", "lang": "Japanese"},
-			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
-			vision: visionSettings{lang: "English"},
-			want:   "Japanese",
 		},
 		{
 			name:   "english when neither is set",
@@ -512,7 +497,7 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 
 			_, handled, err := maybeDispatchVisionEnhancement(
 				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs, tc.setups,
-				tc.vision)
+				visionSettings{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
