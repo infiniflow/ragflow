@@ -255,34 +255,15 @@ func cloneParserSetupValue(value any) any {
 //     either, and audio dispatch resolves a missing/empty model to
 //     the tenant default, so validating it here would only block
 //     otherwise valid pipelines (see ingestion_pipeline_audio.json).
+//   - any language: a missing language is no longer fatal downstream —
+//     captions fall back to the knowledge base language and MinerU to its own
+//     default — and Check runs before run inputs exist, so the knowledge base
+//     value cannot be consulted here. Rejecting stored canvases for it would
+//     only break pipelines that resolve fine at run time.
 func (c *ParserComponent) Check() error {
-	// PDF family (parser.py:252-261).
 	if pdf, ok := c.setups["pdf"]; ok {
-		pm, _ := pdf["parse_method"].(string)
-		if pm == "" {
+		if pm, _ := pdf["parse_method"].(string); pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
-		}
-		if !parser.IsPDFParseMethod(pm) {
-			// A parse_method outside the known vocabulary is treated as a
-			// VLM model reference, which requires lang (Python
-			// parser.py:257-258).
-			if lang, _ := pdf["lang"].(string); lang == "" {
-				return errors.New("PDF VLM language does not support empty value")
-			}
-		}
-	}
-	// Image OCR runs independently of optional vision enhancement.
-	if img, ok := c.setups["image"]; ok {
-		pm, _ := img["parse_method"].(string)
-		_, hasOCRFlag := img["ocr_enabled"].(bool)
-		// A legacy parse_method carrying a VLM model reference needs a language
-		// when enhancement is enabled. Setups with the ocr_enabled switch pick
-		// the global vision model and fall back to the dataset language, so a
-		// per-setup language is not required.
-		if !hasOCRFlag && c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
-			if lang, _ := img["lang"].(string); lang == "" {
-				return errors.New("image VLM language does not support empty value")
-			}
 		}
 	}
 	return nil
@@ -292,7 +273,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 	return map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
-			"lang":                  "Chinese",
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
@@ -351,7 +331,6 @@ func defaultSetups() map[string]schema.ParserSetup {
 			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
 			"llm_id":        "",
-			"lang":          "Chinese",
 			"system_prompt": "",
 			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
 			"output_format": "json",
@@ -540,7 +519,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.vision)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or

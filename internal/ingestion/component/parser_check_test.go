@@ -68,9 +68,11 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "tcadp parser"}},
 		},
 		{
-			name:    "pdf: unknown VLM method without lang → error",
-			setups:  map[string]schema.ParserSetup{"pdf": {"parse_method": "some_vlm", "lang": ""}},
-			wantErr: "PDF VLM language",
+			// A stored canvas that names a model in parse_method but carries no
+			// language is valid: the engine and the caption path each resolve
+			// their own default at run time, and Check has no run inputs yet.
+			name:   "pdf: unknown VLM method without lang → pass",
+			setups: map[string]schema.ParserSetup{"pdf": {"parse_method": "some_vlm", "lang": ""}},
 		},
 		{
 			name:   "pdf: unknown VLM method with lang → pass",
@@ -95,10 +97,9 @@ func TestParserComponent_Check(t *testing.T) {
 			setups: map[string]schema.ParserSetup{"image": {"parse_method": "ocr", "lang": ""}},
 		},
 		{
-			name:    "image: non-ocr without lang → error",
+			name:    "image: non-ocr without lang → pass (language is not validated)",
 			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": ""}},
 			enhance: true,
-			wantErr: "image VLM language",
 		},
 		{
 			name:   "image: non-ocr with lang → pass",

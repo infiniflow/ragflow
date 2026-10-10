@@ -40,7 +40,6 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -166,7 +165,6 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parser.ParseResult,
 	inputs map[string]any,
-	setups map[string]schema.ParserSetup,
 	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	// Only enhance successful JSON output format containing items.
@@ -176,12 +174,10 @@ func maybeDispatchVisionEnhancement(
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
-	setup := setups[family]
-	// The knowledge base language drives the caption language; the per-family
-	// language is only a legacy fallback. The PDF parsing engines read the same
-	// family key for a different purpose (an OCR parameter), and that use is
-	// untouched here — see pdf_vision_dispatch.go.
-	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// Captions follow the knowledge base language, which also drives
+	// tokenization. The family setup's lang is an OCR engine parameter
+	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
+	language := resolveVisionLanguage(inputs, "")
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
