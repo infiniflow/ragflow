@@ -41,6 +41,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 const (
@@ -1088,10 +1090,11 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	// The caller-supplied kb is targeted by delete + re-sync below, so it must
 	// be accessible to the caller and the connector must be bound to it.
-	if !s.knowledgebaseDAO.Accessible(ctx, dao.DB, kbID, userID) {
+	if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kbID, permission.OperationRun); err != nil {
 		common.Warn("rebuild denied: kb not accessible",
 			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
-		return false, common.CodeAuthenticationError, ErrConnectorNoAuth
+		code, permissionErr := permissionresponse.Normalize(err)
+		return false, code, permissionErr
 	}
 	bound, err := s.connectorDAO.Connector2KBExists(ctx, dao.DB, connectorID, kbID)
 	if err != nil {

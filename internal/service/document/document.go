@@ -170,6 +170,7 @@ type UpdateDatasetDocumentResponse struct {
 }
 
 var (
+	ErrDocumentNotFound        = errors.New("document not found")
 	ErrArtifactInvalidFilename = errors.New("invalid filename")
 	ErrArtifactInvalidFileType = errors.New("invalid file type")
 	ErrArtifactNotFound        = errors.New("artifact not found")

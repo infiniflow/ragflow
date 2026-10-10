@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/file"
@@ -71,8 +72,8 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}
-	if !h.datasetSvc.Accessible(c.Request.Context(), datasetID, user.ID) {
-		common.ErrorWithCode(c, common.CodeForbidden, "no permission to access this dataset")
+	if err := h.datasetSvc.CheckAccess(c.Request.Context(), permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		respondPermissionFailure(c, err, false)
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg
