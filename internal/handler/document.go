@@ -2028,6 +2028,7 @@ func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string)
 		if !ok {
 			return nil, "document_ids must be a list."
 		}
+		selector.DocumentIDs = make([]string, 0, len(ids))
 		for _, id := range ids {
 			docID, ok := id.(string)
 			if !ok {
