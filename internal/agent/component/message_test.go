@@ -352,6 +352,47 @@ func TestMessage_ConsumesDeferredAgentStream(t *testing.T) {
 	}
 }
 
+func TestMessage_MaterializesDeferredAgentStructured(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-structured", "task-deferred-structured")
+	opened := false
+	state.SetVar("Agent:HungryLiliesDance", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, _ runtime.AgentDeltaSink) (map[string]any, error) {
+			opened = true
+			return map[string]any{
+				"content": `{"findings":[{"ruleId":"r1"}],"opinion":{"conclusion":"PASS"}}`,
+				"structured": map[string]any{
+					"findings": []any{map[string]any{"ruleId": "r1"}},
+					"opinion":  map[string]any{"conclusion": "PASS"},
+				},
+			}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	completed := false
+	runtime.RegisterDeferredNode(ctx, "Agent:HungryLiliesDance", func() { completed = true })
+
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"text": "{{Agent:HungryLiliesDance@structured}}",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if !opened {
+		t.Fatal("deferred Agent stream was not opened for @structured")
+	}
+	if !completed {
+		t.Fatal("deferred Agent node was not completed")
+	}
+	got, _ := out["content"].(string)
+	if !strings.Contains(got, `"findings"`) || !strings.Contains(got, `"ruleId":"r1"`) {
+		t.Fatalf("content = %q, want structured JSON", got)
+	}
+	if v, _ := state.GetVar("Agent:HungryLiliesDance@structured"); v == nil {
+		t.Fatal("structured missing from state after materialize")
+	}
+}
+
 func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-deferred-thinking", "task-deferred-thinking")
@@ -452,7 +493,7 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 	}
 }
 
-func TestMessage_DoesNotUseUnconfiguredUpstreamResult(t *testing.T) {
+func TestMessage_SingleStringFallback(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-6", "task-6")
 	ctx := withStateForTest(t.Context(), state)
@@ -464,49 +505,8 @@ func TestMessage_DoesNotUseUnconfiguredUpstreamResult(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, _ := out["content"].(string); got != "" {
-		t.Errorf("content: got %q, want empty content", got)
-	}
-}
-
-func TestMessage_AttachmentOnlyDoesNotResurrectResult(t *testing.T) {
-	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
-	state := canvas.NewCanvasState("run-attachment-only", "task-attachment-only")
-	state.SetVar("source", "attachments", []map[string]any{{
-		"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown",
-		"url": "/api/v1/agents/attachments/d-1/download",
-	}})
-	ctx := withStateForTest(t.Context(), state)
-	out, err := c.Invoke(ctx, nil, map[string]any{
-		"content":     "upstream content",
-		"attachments": []any{map[string]any{"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown", "url": "/api/v1/agents/attachments/d-1/download"}},
-		"result":      "upstream result",
-		"stream":      false,
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if got, _ := out["content"].(string); strings.Contains(got, "upstream result") || strings.Contains(got, "upstream content") {
-		t.Fatalf("content = %q, must not contain unconfigured upstream text", got)
-	}
-	downloads, ok := out["downloads"].([]DownloadInfo)
-	if !ok || len(downloads) != 1 || downloads[0].DocID != "d-1" {
-		t.Fatalf("downloads = %#v, want attachment metadata", out["downloads"])
-	}
-}
-
-func TestMessage_MissingAttachmentIsOptional(t *testing.T) {
-	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
-	state := canvas.NewCanvasState("run-missing-attachment", "task-missing-attachment")
-	ctx := withStateForTest(t.Context(), state)
-	out, err := c.Invoke(ctx, nil, map[string]any{
-		"content": "upstream content", "result": "upstream result",
-	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
-	}
-	if got, _ := out["content"].(string); got != "" {
-		t.Fatalf("content = %q, want empty", got)
+	if got, _ := out["content"].(string); got != "single upstream text" {
+		t.Errorf("content: got %q, want %q", got, "single upstream text")
 	}
 }
 

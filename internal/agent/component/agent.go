@@ -109,6 +109,11 @@ type AgentParam struct {
 	Driver  string
 	APIKey  string
 	BaseURL string
+	// OutputStructure is the expected top-level JSON key set for the
+	// Agent's structured output. Canvas DSL stores the JSON Schema under
+	// outputs.structured; when set, Invoke populates outputs["structured"]
+	// so downstream Message templates like {Agent:X@structured} resolve.
+	OutputStructure map[string]any
 }
 
 // SubAgentTool is a child Agent exposed to a parent Agent as an Eino tool.
@@ -1045,6 +1050,21 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
+	if len(p.OutputStructure) > 0 {
+		cleaned := cleanFormattedAnswer(content)
+		parsed, ok := matchOutputStructure(cleaned, p.OutputStructure)
+		if !ok {
+			parsed, ok = matchOutputStructure(content, p.OutputStructure)
+		}
+		if ok {
+			out["structured"] = parsed
+			out["content"] = cleaned + artifactMD
+			content = cleaned
+		} else {
+			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
+				zap.Strings("expected_keys", sortedMapKeys(p.OutputStructure)))
+		}
+	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
 	switch {
 	case !streamed:
@@ -1579,7 +1599,65 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
 	}
+	if keys := agentOutputStructureFrom(inputs); len(keys) > 0 {
+		p.OutputStructure = keys
+	}
 	return p
+}
+
+// agentOutputStructureFrom reads the Agent's structured-output schema from
+// either the LLM-style output_structure map or the canvas outputs.structured
+// JSON Schema, and returns the expected top-level response key set.
+func agentOutputStructureFrom(inputs map[string]any) map[string]any {
+	if v, ok := mapFrom(inputs, "output_structure"); ok {
+		return structuredExpectedKeySet(v)
+	}
+	outputs, ok := mapFrom(inputs, "outputs")
+	if !ok {
+		return nil
+	}
+	structured, ok := mapFrom(outputs, "structured")
+	if !ok || len(structured) == 0 {
+		return nil
+	}
+	return structuredExpectedKeySet(structured)
+}
+
+// structuredExpectedKeySet turns a JSON Schema (properties/required) or a
+// flat key map into the key set matchOutputStructure checks against.
+func structuredExpectedKeySet(schema map[string]any) map[string]any {
+	if req, ok := schema["required"].([]any); ok && len(req) > 0 {
+		keys := make(map[string]any, len(req))
+		for _, item := range req {
+			if s, ok := item.(string); ok && s != "" {
+				keys[s] = true
+			}
+		}
+		if len(keys) > 0 {
+			return keys
+		}
+	}
+	if props, ok := schema["properties"].(map[string]any); ok && len(props) > 0 {
+		keys := make(map[string]any, len(props))
+		for k := range props {
+			keys[k] = true
+		}
+		return keys
+	}
+	if _, hasType := schema["type"]; hasType {
+		// JSON Schema without properties/required — not a flat key hint.
+		return nil
+	}
+	return schema
+}
+
+func sortedMapKeys(m map[string]any) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 // agentToolsFrom extracts the Agent tools list. The Go-native shape is
