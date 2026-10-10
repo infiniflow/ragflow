@@ -248,6 +248,73 @@ export const initialSofyaValues = {
   },
 };
 
+export enum Search1APIChannel {
+  General = 'general',
+  News = 'news',
+}
+
+// Search services each Search1API channel accepts. The agent may pick any of
+// them at call time; the node value is only the default.
+export const Search1APIServices: Record<Search1APIChannel, string[]> = {
+  [Search1APIChannel.General]: [
+    'google',
+    'bing',
+    'bingcn',
+    'duckduckgo',
+    'yahoo',
+    'yandex',
+    'youtube',
+    'x',
+    'reddit',
+    'github',
+    'arxiv',
+    'wechat',
+    'bilibili',
+    'imdb',
+    'wikipedia',
+    'baidu',
+    '360',
+    'quark',
+  ],
+  [Search1APIChannel.News]: [
+    'google',
+    'bing',
+    'duckduckgo',
+    'yahoo',
+    'hackernews',
+    'reuters',
+  ],
+};
+
+export const initialSearch1APISearchValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  channel: Search1APIChannel.General,
+  search_service: 'google',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialSearch1APICrawlValues = {
+  api_key: '',
+  url: '',
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
+    },
+  },
+};
+
 export const initialKeenableValues = {
   api_key: '',
   query: AgentGlobals.SysQuery,
@@ -803,6 +870,8 @@ export const RestrictedUpstreamMap = {
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APICrawl]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -862,6 +931,8 @@ export const NodeMap = {
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
   [Operator.SofyaSearch]: 'ragNode',
+  [Operator.Search1APISearch]: 'ragNode',
+  [Operator.Search1APICrawl]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',

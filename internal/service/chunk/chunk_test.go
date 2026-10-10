@@ -754,6 +754,61 @@ func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
 	}
 }
 
+func TestUpdateChunkStoresTagKwdOnlyWhenSent(t *testing.T) {
+	tests := []struct {
+		name    string
+		tagKwd  []string
+		want    []string
+		present bool
+	}{
+		{name: "tags sent", tagKwd: []string{"alpha", "beta"}, want: []string{"alpha", "beta"}, present: true},
+		{name: "empty list clears tags", tagKwd: []string{}, want: []string{}, present: true},
+		{name: "absent leaves tags untouched", tagKwd: nil, present: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupChunkTestDB(t)
+			pushChunkTestDB(t, db)
+
+			insertChunkTestUserTenant(t, "user-1", "tenant-1")
+			insertChunkTestKB(t, "kb-1", "tenant-1")
+			insertChunkTestDoc(t, "doc-a", "kb-1")
+
+			engine := &updateChunkTestEngine{
+				existingChunk: map[string]interface{}{
+					"doc_id":              "doc-a",
+					"content_with_weight": "existing content",
+				},
+			}
+			svc := &ChunkService{
+				docEngine:     engine,
+				kbDAO:         dao.NewKnowledgebaseDAO(),
+				userTenantDAO: dao.NewUserTenantDAO(),
+			}
+
+			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
+				DatasetID:  "kb-1",
+				DocumentID: "doc-a",
+				ChunkID:    "chunk-1",
+				TagKwd:     tt.tagKwd,
+			}, "user-1")
+			if err != nil {
+				t.Fatalf("UpdateChunk() error = %v", err)
+			}
+			if len(engine.updateCalls) != 1 {
+				t.Fatalf("UpdateChunks calls = %d, want 1", len(engine.updateCalls))
+			}
+			got, ok := engine.updateCalls[0].newValue["tag_kwd"]
+			if ok != tt.present {
+				t.Fatalf("tag_kwd present = %v, want %v (newValue=%#v)", ok, tt.present, engine.updateCalls[0].newValue)
+			}
+			if tt.present && !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("tag_kwd = %#v, want %#v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -1784,11 +1839,15 @@ func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
 	t.Helper()
 
 	status := "1"
+	role := "normal"
+	if userID == tenantID {
+		role = "owner"
+	}
 	userTenant := &entity.UserTenant{
 		ID:        userID + "-" + tenantID,
 		UserID:    userID,
 		TenantID:  tenantID,
-		Role:      "owner",
+		Role:      role,
 		InvitedBy: userID,
 		Status:    &status,
 	}
@@ -1814,7 +1873,7 @@ func insertChunkTestKB(t *testing.T, id, tenantID string) {
 		TenantID:     tenantID,
 		Name:         id,
 		EmbdID:       "embedding-model",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    tenantID,
 		ParserConfig: entity.JSONMap{},
 		Status:       &status,
@@ -2254,7 +2313,7 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 		TenantID:     "tenant-1",
 		Name:         "dataset",
 		EmbdID:       "embed",
-		Permission:   string(entity.TenantPermissionMe),
+		Permission:   string(entity.TenantPermissionTeam),
 		CreatedBy:    "user-1",
 		ParserID:     string(entity.ParserTypeNaive),
 		ParserConfig: entity.JSONMap{},

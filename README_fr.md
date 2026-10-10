@@ -129,11 +129,6 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 - Le modèle analyse les questions complexes et peut les décomposer, rechercher des connaissances et vérifier les preuves en plusieurs étapes.
 - Les modes Low, Medium, High et Ultra permettent de régler la profondeur de recherche et de raisonnement selon la complexité de la question.
 
-### ⚙️ **Architecture de services native Go**
-
-- Une implémentation Go unifiée fournit API, Admin, Ingestor et Syncer. DeepDoc s’exécute dans le processus Go pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
-- Les services Go appellent les bibliothèques natives d’analyse de documents et ONNX Runtime via CGO. MCP et Sandbox Executor sont activables à la demande.
-
 ### 🌱 **Citations fondées avec réduction des hallucinations**
 
 - Visualisation du découpage de texte pour permettre une intervention humaine.

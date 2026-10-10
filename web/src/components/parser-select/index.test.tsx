@@ -23,7 +23,7 @@ jest.mock('@/hooks/use-parser-options', () => {
       { value: 'pipeline:pipe-1', label: 'My Flow', kind: 'pipeline' },
       {
         value: 'builtin:general',
-        label: 'General (built in)',
+        label: 'General',
         kind: 'builtin',
       },
     ],
@@ -33,6 +33,7 @@ jest.mock('@/hooks/use-parser-options', () => {
     __setLoading: (v: boolean) => {
       parserOptions.loading = v;
     },
+    ParserOptionKind: { BuiltIn: 'builtin', Pipeline: 'pipeline' },
     useParserOptions: () => parserOptions,
     buildParserOptionValue: (kind: string, id: string) => `${kind}:${id}`,
     parseParserOptionValue: (v?: string) => {
@@ -66,6 +67,24 @@ describe('ParserSelect', () => {
     render(<ParserSelect value={undefined} onChange={jest.fn()} />);
     expect(mockSelectProps.options).toHaveLength(2);
     expect(mockSelectProps.options[0].value).toBe('pipeline:pipe-1');
+  });
+
+  it('renders the builtin marker as a tag with searchable keywords', () => {
+    render(<ParserSelect value={undefined} onChange={jest.fn()} />);
+    const pipelineOption = mockSelectProps.options[0];
+    const builtinOption = mockSelectProps.options[1];
+
+    // Pipeline options keep their plain string label.
+    expect(pipelineOption.label).toBe('My Flow');
+
+    // Builtin options get a ReactNode label (label + tag) and explicit
+    // keywords so cmdk search still matches the plain label text.
+    expect(builtinOption.keywords).toEqual(['General']);
+    const { container } = render(<>{builtinOption.label}</>);
+    expect(container.textContent).toContain('General');
+    expect(container.textContent).toContain(
+      'knowledgeConfiguration.builtInSuffix',
+    );
   });
 
   it('decodes a builtin selection into kind + rawId', () => {
