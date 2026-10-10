@@ -313,6 +313,31 @@ func TestQueryBuilder_Question(t *testing.T) {
 	}
 }
 
+func TestQueryBuilderQuestionUnsegmentedChinese(t *testing.T) {
+	tokenizer.SetEngineType("infinity")
+	t.Cleanup(func() { tokenizer.SetEngineType("") })
+	qb := NewQueryBuilder()
+
+	for _, question := range []string{"甲烷报警阈值是多少", "青柚七号充一次电能跑多久？", "故障码E-17怎么处理", "红外热像仪", "LEL"} {
+		t.Run(question, func(t *testing.T) {
+			expr, keywords := qb.Question(question, "", 0.3)
+			if expr == nil || len(keywords) == 0 {
+				t.Fatalf("missing query or keywords for %q", question)
+			}
+			if strings.Contains(expr.MatchingText, `"`) {
+				t.Errorf("unsegmented terms must not produce phrase branches: %s", expr.MatchingText)
+			}
+			if got := expr.ExtraOptions["minimum_should_match"]; got != 0.3 {
+				t.Errorf("minimum_should_match = %v, want 0.3", got)
+			}
+			if got := expr.ExtraOptions["original_query"]; got != question {
+				t.Errorf("original_query = %v, want %q", got, question)
+			}
+			t.Logf("query: %s", expr.MatchingText)
+		})
+	}
+}
+
 func TestQueryBuilder_Paragraph(t *testing.T) {
 	qb := NewQueryBuilder()
 	tests := []struct {
