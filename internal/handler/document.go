@@ -1044,42 +1044,43 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 
-	// Optional parser_config override: a component-domain object whose
-	// TableChunker nodes carry the column fields for this upload. Malformed or
-	// Column settings live on a TableChunker node. The retired flat keys are
-	// refused rather than read, so an upload cannot report success while its
-	// settings are ignored.
+	// Optional parser_config override carries column settings on TableChunker
+	// nodes. Invalid JSON and retired flat keys are rejected so an upload
+	// cannot succeed while silently ignoring its settings.
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
-		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			if legacy := pipeline.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
+		if err = json.Unmarshal([]byte(raw), &parsed); err != nil || parsed == nil {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+				"parser_config must be a JSON object")
+			return
+		}
+		if legacy := pipeline.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+				fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
+					strings.Join(legacy, ", "), pipeline.TableChunkerNodePrefix))
+			return
+		}
+		cleaned := map[string]interface{}{}
+		for key, value := range parsed {
+			if !pipeline.IsTableChunkerNodeKey(key) {
+				continue
+			}
+			params, ok := value.(map[string]interface{})
+			if !ok {
 				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
-					fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
-						strings.Join(legacy, ", "), pipeline.TableChunkerNodePrefix))
+					fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
 				return
 			}
-			cleaned := map[string]interface{}{}
-			for key, value := range parsed {
-				if !pipeline.IsTableChunkerNodeKey(key) {
-					continue
-				}
-				params, ok := value.(map[string]interface{})
-				if !ok {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
-						fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
-					return
-				}
-				if _, _, err = pipeline.ValidateTableColumnOverride(params); err != nil {
-					common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
-						fmt.Sprintf("parser_config[%q]: %v", key, err))
-					return
-				}
-				cleaned[key] = params
+			if _, _, err = pipeline.ValidateTableColumnOverride(params); err != nil {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+					fmt.Sprintf("parser_config[%q]: %v", key, err))
+				return
 			}
-			if len(cleaned) > 0 {
-				override = cleaned
-			}
+			cleaned[key] = params
+		}
+		if len(cleaned) > 0 {
+			override = cleaned
 		}
 	}
 	ctx := c.Request.Context()

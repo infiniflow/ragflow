@@ -105,8 +105,6 @@ func prepareSQL(sqlText string) (string, map[string]interface{}, int, error) {
 			}
 			tokens = append(append(append([]utility.SQLToken(nil), tokens[:i]...), replacement...), tokens[next:]...)
 			i += len(replacement) - 1
-		case token.IsPunct("=") && i+1 < len(tokens) && tokens[i+1].IsPunct("="):
-			tokens = append(tokens[:i+1], tokens[i+2:]...)
 		}
 	}
 	return utility.SQLRender(tokens, '"'), runtime, limit, nil

@@ -42,6 +42,12 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
+			fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		return
+	}
+
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, tableProbeRequestBodyLimit)
 	form, err := c.MultipartForm()
 	if err != nil {
@@ -60,17 +66,11 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	}
 	files := form.File["file"]
 	if len(files) != 1 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(document.TableProbeLimit),
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil,
 			fmt.Sprintf("column probing takes exactly one file, got %d", len(files)))
 		return
 	}
 	header := files[0]
-
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
-			fmt.Sprintf("You don't own the dataset %s.", datasetID))
-		return
-	}
 
 	file, openErr := header.Open()
 	if openErr != nil {

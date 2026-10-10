@@ -83,7 +83,7 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	table := buildChunkTableName(base, kb)
-	query := fmt.Sprintf("SELECT json_extract_string(chunk_data, '$.%s') AS value FROM %s WHERE doc_id = 'published' AND available_int = 1 AND table_row_int = 1", col.DataKey, table)
+	query := fmt.Sprintf("SELECT json_extract_string(chunk_data, '$.%s') AS value FROM %s WHERE doc_id = 'published' AND available_int = 1 AND table_row_int = 1", col.DataKey, table) + fmt.Sprintf(" AND json_extract_isnull(chunk_data, '$.%s') == false", col.DataKey)
 	rows, err := e.RunSQL(ctx, table, query, []string{kb}, "")
 	if err != nil {
 		t.Fatal(err)

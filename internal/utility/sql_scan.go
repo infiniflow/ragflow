@@ -58,7 +58,7 @@ func (t SQLToken) String() string {
 
 // multiCharPuncts are matched longest-first so "<=>" is not read as "<=>"
 // through a "<=" prefix.
-var multiCharPuncts = []string{"<=>", "<=", ">=", "<>", "!=", "||", "::"}
+var multiCharPuncts = []string{"<=>", "<=", ">=", "<>", "!=", "==", "||", "::"}
 
 const singleCharPuncts = "(),.;+-*/%=<>."
 
@@ -244,7 +244,7 @@ func hasPrefixRunes(src []rune, prefix string) bool {
 	return true
 }
 
-// SQLRender writes tokens back as a statement whose tokens are separated by a
+// SQLRender normalizes == to = and writes tokens separated by a
 // single space. Both engines read that as the same syntax, and it means a
 // checked statement cannot be re-split by whatever whitespace a caller typed.
 //
@@ -261,6 +261,8 @@ func SQLRender(tokens []SQLToken, quote rune) string {
 			b.WriteByte(' ')
 		}
 		switch {
+		case token.IsPunct("=="):
+			b.WriteByte('=')
 		case token.Kind == SQLQuoted && quote != 0:
 			escaped := strings.ReplaceAll(token.Name, string(quote), string(quote)+string(quote))
 			b.WriteString(string(quote) + escaped + string(quote))

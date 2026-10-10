@@ -49,6 +49,8 @@ func TestResolveChatDocIDsPreservesExplicitScope(t *testing.T) {
 		want            []string
 	}{
 		{"absent", nil, nil, nil},
+		{"null absent", nil, map[string]any{"doc_ids": nil}, nil},
+		{"null falls back", map[string]any{"doc_ids": "doc-two"}, map[string]any{"doc_ids": nil}, []string{"doc-two"}},
 		{"kwargs", map[string]any{"doc_ids": " doc-one, doc-two "}, nil, []string{"doc-one", "doc-two"}},
 		{"JSON overrides kwargs", map[string]any{"doc_ids": "doc-two"}, fromJSON, []string{"doc-one"}},
 		{"typed slice", nil, map[string]any{"doc_ids": []string{"doc-one"}}, []string{"doc-one"}},
@@ -71,7 +73,7 @@ func TestResolveChatDocIDsPreservesExplicitScope(t *testing.T) {
 }
 
 func TestAsyncChatRejectsInvalidDocIDsBeforeDispatch(t *testing.T) {
-	for _, raw := range []any{nil, "doc-one", 1, []any{"doc-one", 2}, []string{""}} {
+	for _, raw := range []any{"doc-one", 1, []any{"doc-one", 2}, []string{""}} {
 		_, err := (&ChatPipelineService{}).AsyncChat(t.Context(), "user-1", dialForTest(""),
 			[]map[string]any{{"role": "user", "content": "question", "doc_ids": raw}}, false, nil)
 		if err == nil || !strings.Contains(err.Error(), "doc_ids") {

@@ -623,3 +623,21 @@ func TestNumericChecksRejectUnsupportedConversions(t *testing.T) {
 		}
 	}
 }
+
+func TestRewriteSQLNormalizesDoubleEqualsInProductionPath(t *testing.T) {
+	tokens, err := utility.SQLScan("SELECT count(*) FROM ragflow_t1 WHERE json_extract_isnull(chunk_data, '$.c_value') == false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, clauses, _, err := prepareJSONResults(tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := rewriteSQL(tokens, clauses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, ") = false") || strings.Contains(got, "= =") {
+		t.Fatalf("invalid equality in SQL: %s", got)
+	}
+}

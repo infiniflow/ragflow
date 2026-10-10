@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -880,7 +881,7 @@ func TestDeleteDocumentsHandler_Success(t *testing.T) {
 	}
 }
 
-func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *testing.T) {
+func TestUploadDocumentsHandler_LocalUsesFullKB(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -897,8 +898,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 
 	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
-		"parent_path":   "nested/path",
-		"parser_config": "{bad json",
+		"parent_path": "nested/path",
 	}, "a.txt", []byte("abc"))
 
 	h.UploadDocuments(c)
@@ -916,7 +916,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 		t.Fatalf("parent path=%q, want nested/path", fake.uploadLocalPath)
 	}
 	if fake.uploadOverride != nil {
-		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+		t.Fatalf("absent parser_config produced an override: %v", fake.uploadOverride)
 	}
 }
 
@@ -2400,6 +2400,10 @@ func TestUploadDocumentsRefusesInvalidColumnValues(t *testing.T) {
 		"unknown role":   `{"TableChunker:FastFoxesJump":{"column_roles":{"金额":"keyword"}}}`,
 		"unknown mode":   `{"TableChunker:FastFoxesJump":{"column_mode":"assist"}}`,
 		"roles not json": `{"TableChunker:FastFoxesJump":{"column_roles":"金额"}}`,
+		"malformed JSON": `{"TableChunker:X":{"column_mode":"manual",}}`,
+		"array":          `[]`,
+		"null":           `null`,
+		"scalar":         `42`,
 	}
 	for name, payload := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -2412,8 +2416,8 @@ func TestUploadDocumentsRefusesInvalidColumnValues(t *testing.T) {
 			if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
 				t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
 			}
-			if fake.uploadOverride != nil {
-				t.Errorf("a refused upload still reached the service: %v", fake.uploadOverride)
+			if fake.uploadLocalKB != nil {
+				t.Errorf("a refused upload still reached the service: %v", fake.uploadLocalKB)
 			}
 		})
 	}
@@ -2503,7 +2507,7 @@ func TestProbeTableColumnsReportsAMalformedBodyAsAnArgumentError(t *testing.T) {
 	c.Request = req
 	c.Set("user", &entity.User{ID: "user-1"})
 	c.Set("user_id", "user-1")
-	c.Params = gin.Params{{Key: "dataset_id", Value: uploadTestDatasetID}}
+	c.Params = gin.Params{{Key: "dataset_id", Value: strings.ReplaceAll(uploadTestDatasetID, "-", "")}}
 
 	h.ProbeTableColumns(c)
 
@@ -2528,6 +2532,8 @@ func TestTableEndpointsDenyAccessBeforeReading(t *testing.T) {
 		t.Run(endpoint, func(t *testing.T) {
 			c, w := setupUploadContext(t, "/table", nil, "sales.csv", []byte("name\nvalue\n"))
 			c.Set("user_id", "outsider")
+			reader := &tableProbeReadCounter{ReadCloser: c.Request.Body}
+			c.Request.Body = reader
 			c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: "doc-1"}}
 			// Nil downstream services make any unauthorized read fail immediately.
 			switch endpoint {
@@ -2541,6 +2547,59 @@ func TestTableEndpointsDenyAccessBeforeReading(t *testing.T) {
 			body := decodeResponseBody(t, w.Result())
 			if body["code"] != float64(common.CodePermissionError) {
 				t.Fatalf("unauthorized response: %v", body)
+			}
+			if reader.reads != 0 {
+				t.Fatalf("unauthorized request body read %d times", reader.reads)
+			}
+		})
+	}
+}
+
+// Counts actual request-body reads, including multipart parsing.
+type tableProbeReadCounter struct {
+	io.ReadCloser
+	reads int
+}
+
+func (r *tableProbeReadCounter) Read(p []byte) (int, error) {
+	r.reads++
+	return r.ReadCloser.Read(p)
+}
+
+func TestProbeTableColumnsWrongFileCountIsArgumentError(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	previous := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previous })
+	for _, count := range []int{0, 2} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			for i := 0; i < count; i++ {
+				part, err := writer.CreateFormFile("file", fmt.Sprintf("sales%d.csv", i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write([]byte("name\nvalue\n")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/probe-table", &body)
+			c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+			c.Set("user_id", "user-1")
+			c.Params = gin.Params{{Key: "dataset_id", Value: strings.ReplaceAll(uploadTestDatasetID, "-", "")}}
+			(&DocumentHandler{datasetService: dataset.NewDatasetService()}).ProbeTableColumns(c)
+			response := decodeResponseBody(t, w.Result())
+			if response["code"] != float64(common.CodeArgumentError) {
+				t.Fatalf("response: %v", response)
+			}
+			if data, ok := response["data"].(map[string]any); ok && data["error"] != nil {
+				t.Fatalf("file count reported as business error: %v", response)
 			}
 		})
 	}

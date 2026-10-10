@@ -152,7 +152,7 @@ type ThinkEvent struct {
 // A message array overrides the comma-separated range supplied in kwargs.
 func resolveChatDocIDs(kwargs, lastMsg map[string]interface{}) ([]string, error) {
 	raw, present := lastMsg["doc_ids"]
-	if !present {
+	if !present || raw == nil {
 		raw, present = kwargs["doc_ids"]
 		if !present {
 			return nil, nil

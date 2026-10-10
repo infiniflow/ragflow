@@ -320,3 +320,13 @@ func TestSQLCallArgumentsRejectsInvalidIndex(t *testing.T) {
 		}
 	}
 }
+
+func TestSQLScanAndRenderDoubleEquals(t *testing.T) {
+	tokens := mustScan(t, "SELECT a FROM t WHERE b == '=='")
+	if len(tokens) != 8 || !tokens[6].IsPunct("==") {
+		t.Fatalf("double equality tokens: %#v", tokens)
+	}
+	if got := SQLRender(tokens, '"'); got != "SELECT a FROM t WHERE b = '=='" {
+		t.Fatalf("rendered equality: %s", got)
+	}
+}
