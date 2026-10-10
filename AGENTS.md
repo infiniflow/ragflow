@@ -11,7 +11,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Keep refactors centered on the owning abstraction, not on adjacent compatibility layers.
 
 ## Current stack
-- Backend: Go implements the API, admin, ingestor, and syncer modes in `cmd/ragflow_server.go`; the CLI runs from `cmd/ragflow-cli.go`. The Python API, admin, and workers are still present and `docker/entrypoint.sh` still defaults to Python when `API_PROXY_SCHEME` is unset. Go-only operation is the migration target, not the current repository state.
+- Backend: Go implements the API, admin, ingestor, and syncer modes in `cmd/ragflow_server.go`; the CLI runs from `cmd/ragflow-cli.go`. The Docker entrypoint starts the Go services according to its command-line flags, and the frontend development server uses fixed Go backend proxy routes. The Python API, admin, and workers are still present pending removal.
 - Frontend: React + TypeScript + Vite in `web/`. When working under `web/`, read and follow `web/AGENTS.md` for frontend conventions.
 - The Go module contains the server, ingestion, parsing, agent runtime, CLI, and supporting services.
 - Runtime services commonly include MySQL/PostgreSQL, Kvrocks, NATS JetStream, MinIO, ClickHouse, and Elasticsearch/Infinity/OpenSearch depending on configuration.
@@ -20,7 +20,7 @@ Use this file as the local operating guide for the current codebase. Prefer the 
 - Move any still-required behavior and test coverage into the Go backend or the frontend before deleting the old implementation. Do not preserve a Python server, compatibility layer, fallback, or dual-backend path.
 - Before deleting `rag/`, move the Go DeepDoc `.ort` models and `ocr.res` out of `internal/rag/res/deepdoc/`, then update model discovery, dependency preparation, Docker packaging, and tests together.
 - Remove the frontend's Go/Python backend variants and update `web/CLAUDE.md` when the frontend no longer needs them. Until then, treat its dual-backend instructions as migration-only guidance; new frontend work should target the Go API.
-- Update Docker's default entrypoint, dependency image, and CI workflows when removing their Python paths. Until then, select Go explicitly with `API_PROXY_SCHEME=go` where that variable controls startup.
+- Update Docker's default entrypoint, dependency image, and CI workflows when removing their remaining Python paths. Keep the frontend development proxy routes aligned with the Go API and Admin ports in `web/vite.config.ts`.
 - Keep this guide aligned with the checked-in tree. Once the Python directories are deleted, remove their migration inventory below.
 
 ## Code Layout to Expect
