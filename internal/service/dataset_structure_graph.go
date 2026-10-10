@@ -24,11 +24,8 @@ import (
 
 // Structure-graph query constants.
 const (
-	// structureBucketPageSize pages a bucket's rows out of the document engine; a
-	// single search cannot exceed the index result window.
-	structureBucketPageSize = 1000
-	graphKeywordCandidates  = 16   // keyword candidate rows
-	graphExpansionCap       = 4096 // hub-node expansion cap
+	graphKeywordCandidates = 16   // keyword candidate rows
+	graphExpansionCap      = 4096 // hub-node expansion cap
 )
 
 var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids"}
@@ -477,18 +474,20 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
 
-	orderBy := (&types.OrderByExpr{}).Asc("id")
+	// Count, then fetch the whole bucket in one request at the exact limit. That
+	// lets the engine walk the result set in a single cursor pass (search_after
+	// past index.max_result_window) instead of re-skipping from the start on
+	// every offset page. Asc("id") is the stable cursor search_after needs.
+	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
+	if err != nil {
+		return nil, nil, err
+	}
 	fieldMap := map[string]map[string]interface{}{}
-	for offset := 0; ; offset += structureBucketPageSize {
-		page, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, offset, structureBucketPageSize, nil)
+	if total > 0 {
+		orderBy := (&types.OrderByExpr{}).Asc("id")
+		fieldMap, _, err = graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, 0, int(total), nil)
 		if err != nil {
 			return nil, nil, err
-		}
-		for id, row := range page {
-			fieldMap[id] = row
-		}
-		if len(page) < structureBucketPageSize {
-			break
 		}
 	}
 
@@ -560,22 +559,19 @@ func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenan
 	if len(ids) == 0 {
 		return nil, nil
 	}
-	order := make(map[string]int, len(ids))
-	filter := map[string]interface{}{"id": ids}
-	for offset := 0; ; offset += structureBucketPageSize {
-		page, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "chunk_order_int"}, filter, nil, offset, structureBucketPageSize, nil)
-		if err != nil {
-			return nil, err
-		}
-		for id, row := range page {
-			// intValue cannot distinguish an absent field from 0, so gate on
-			// presence: chunk 0 is a valid reading order.
-			if raw, ok := row["chunk_order_int"]; ok && raw != nil {
-				order[id] = intValue(raw)
-			}
-		}
-		if len(page) < structureBucketPageSize {
-			break
+	// One fetch at the exact id count; Asc("id") keeps the engine's cursor
+	// pagination (search_after) available past index.max_result_window.
+	page, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "chunk_order_int"},
+		map[string]interface{}{"id": ids}, (&types.OrderByExpr{}).Asc("id"), 0, len(ids), nil)
+	if err != nil {
+		return nil, err
+	}
+	order := make(map[string]int, len(page))
+	for id, row := range page {
+		// intValue cannot distinguish an absent field from 0, so gate on
+		// presence: chunk 0 is a valid reading order.
+		if raw, ok := row["chunk_order_int"]; ok && raw != nil {
+			order[id] = intValue(raw)
 		}
 	}
 	return order, nil
