@@ -31,6 +31,11 @@ import (
 	"gorm.io/gorm"
 )
 
+// minerUDefaultLanguage is MinerU's own OCR language default, applied when
+// neither mineru_lang nor the family setup names one. It deliberately does not
+// consult the knowledge base: it is an engine input, not a caption setting.
+const minerUDefaultLanguage = "Chinese"
+
 type pdfVisionPage struct {
 	PageNumber int
 	WidthPts   float64
@@ -518,13 +523,14 @@ func dispatchMinerUPDF(
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
-	// Language chain mirrors Python's mineru_parser.py:1181
-	// (mineru_lang → lang → "English"): the dedicated MinerU option wins,
-	// then the setup language, then English. The pdf setup's lang default
-	// ("Chinese") makes the unconfigured lang_list match Python's ch.
-	lang := getStringOr(setup, "mineru_lang", "")
+	// MinerU's language is an OCR engine parameter, not the caption language:
+	// mineru_lang wins, then the family lang, then the engine's own default.
+	// That default used to arrive implicitly through defaultSetups() — which
+	// also fed captions, so a knowledge base that never chose a language got
+	// Chinese captions (issue #20727). Keeping it here confines it to the engine.
+	lang := firstNonEmpty(getStringOr(setup, "mineru_lang", ""), getStringOr(setup, "lang", ""))
 	if lang == "" {
-		lang = getStringOr(setup, "lang", "English")
+		lang = minerUDefaultLanguage
 	}
 	mineruLang := mineruLangCode(lang)
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)

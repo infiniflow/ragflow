@@ -86,7 +86,7 @@ func maybeDispatchImage(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 	enableVisionEnhancement bool,
-	visionModelID string,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
 		return parser.ParseResult{}, false, nil
@@ -96,16 +96,11 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	method := getStringOr(setup, "parse_method", "")
-	useOCR := method == "" || strings.EqualFold(method, "ocr")
-	// A model named as parse_method is an explicit VLM request (mirrors
-	// Python rag/flow/parser/parser.py:_image: "ocr" runs OCR, anything
-	// else is the vision model). It must run the description even when the
-	// global enhancement switch is off, otherwise the image item carries no
-	// text and the Tokenizer's retrievability filter drops the chunk.
-	modelFromParseMethod := ""
-	if !useOCR {
-		modelFromParseMethod = method
-	}
+	ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool)
+	// ocr_enabled is the OCR switch. Legacy setups omit it and encode the same
+	// choice in parse_method: "ocr"/empty selects local OCR, any other value is
+	// a VLM model reference that also implies OCR is off.
+	useOCR := (hasOCRFlag && ocrEnabled) || (!hasOCRFlag && (method == "" || strings.EqualFold(method, "ocr")))
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
@@ -135,18 +130,37 @@ func maybeDispatchImage(
 	} else if useOCR && strings.TrimSpace(text) == "" {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
+	if !useOCR && !enableVisionEnhancement {
+		// Neither text source is enabled: local OCR is off and the vision
+		// description is not permitted. The item still carries the image, but the
+		// Tokenizer's retrievability filter drops chunks that have no text and no
+		// surrounding context, so this document indexes nothing. Say so instead of
+		// silently returning an empty result.
+		parsed.Warnings = append(parsed.Warnings,
+			"image has no text source: OCR is off and vision enhancement is disabled, so the Tokenizer will discard this item")
+	}
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement || modelFromParseMethod != "" {
-		modelRef := visionModelID
-		if modelFromParseMethod != "" {
-			modelRef = modelFromParseMethod
+	if enableVisionEnhancement {
+		// A setup with an explicit ocr_enabled switch always uses the global
+		// vision settings. Only legacy setups (no switch) carry the VLM model
+		// reference in parse_method, which also disabled OCR by construction.
+		imageVision := vision
+		if !hasOCRFlag && !useOCR {
+			imageVision.modelID = method
 		}
-		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, modelRef)
+		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, imageVision)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
 			appendItemText(parsed.JSON[0], description)
+		} else if strings.TrimSpace(text) == "" {
+			// Enhancement was permitted and the model produced nothing usable,
+			// so the item still has no text at all. Without this the chunk is
+			// dropped downstream with no trace, which is what the two other
+			// empty-text warnings above exist to prevent.
+			parsed.Warnings = append(parsed.Warnings,
+				"image has no searchable text: the vision model returned no description, so the Tokenizer will discard this item")
 		}
 	}
 	return parsed, true, nil
@@ -205,15 +219,21 @@ func describeImage(
 	tenantID string,
 	setup schema.ParserSetup,
 	inputs map[string]any,
-	modelRef string,
+	vision visionSettings,
 ) (string, []string) {
 	// --- Optional VLM description ---
-	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// Captions follow the knowledge base language, which also drives
+	// tokenization, so indexed text and analysis can never disagree. The family
+	// setup's lang is not consulted here: it is an OCR engine input (see
+	// pdf_vision_dispatch.go) and its old implicit default was the subject of
+	// issue #20727.
+	lang := resolveVisionLanguage(inputs)
 	if tenantID == "" {
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
 
 	// Use the selected description model or the tenant default.
+	modelRef := vision.modelID
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -236,10 +256,11 @@ func describeImage(
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
-	// image family's contract key is system_prompt (parser.go:295),
-	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
-	// here — that key is for the video family, not image.
-	if v, ok := setup["system_prompt"].(string); ok && v != "" {
+	// The global enhancement prompt wins; the image family's legacy system_prompt
+	// (the key the Python parser's image branch used) stays readable for canvases
+	// saved before the move. Do NOT read setup["prompt"] here — that key is for
+	// the video family, not image.
+	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{
@@ -249,9 +270,9 @@ func describeImage(
 			map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURI}},
 		},
 	}}
-	vision := true
+	visionFlag := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
 	if err != nil {
 		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}

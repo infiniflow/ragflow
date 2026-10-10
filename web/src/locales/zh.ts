@@ -2351,6 +2351,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      visionEnhancementPromptTip:
+        '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',
       enableVisionEnhancementTip:
         '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',

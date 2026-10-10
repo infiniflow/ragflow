@@ -23,7 +23,9 @@ jest.mock('@/components/ragflow-form', () => ({
       <Controller
         name={name}
         control={control}
-        render={({ field }) => children(field)}
+        render={({ field }) =>
+          typeof children === 'function' ? children(field) : children
+        }
       />
     );
   },
@@ -55,7 +57,10 @@ jest.mock('@/components/model-tree-select', () => ({
 
 function ParserVisionForm({ model = '' }: { model?: string }) {
   const form = useForm({
-    defaultValues: { enable_vision_enhancement: false, vlm: { llm_id: model } },
+    defaultValues: {
+      enable_vision_enhancement: false,
+      vlm: { llm_id: model, system_prompt: '' },
+    },
   });
   return (
     <FormProvider {...form}>
@@ -65,6 +70,22 @@ function ParserVisionForm({ model = '' }: { model?: string }) {
 }
 
 describe('global vision model selection', () => {
+  it('offers the shared prompt only while enhancement is on', () => {
+    render(<ParserVisionForm />);
+    expect(
+      screen.queryByPlaceholderText('flow.systemPromptPlaceholder'),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole('switch'));
+
+    expect(
+      screen.getByPlaceholderText('flow.systemPromptPlaceholder'),
+    ).toBeInTheDocument();
+    // Language has no control here on purpose: captions follow the knowledge
+    // base language, which also drives tokenization.
+    expect(screen.queryByLabelText('Vision language')).toBeNull();
+  });
+
   it('selects default A on first enable and preserves user-selected B across toggles', () => {
     render(<ParserVisionForm />);
     fireEvent.click(screen.getByRole('switch'));

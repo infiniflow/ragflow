@@ -85,10 +85,6 @@ export enum TokenizerSearchMethod {
   FullText = 'full_text',
 }
 
-export enum ImageParseMethod {
-  OCR = 'ocr',
-}
-
 export enum TokenizerFields {
   Text = 'text',
   Questions = 'questions',
@@ -168,8 +164,9 @@ export const initialParserValues = {
     json: { type: 'Array<object>', value: [] },
   },
   // Global vision enhancement, off by default; the model id is prefilled from
-  // the tenant's image2text default when a node is created.
-  vlm: { llm_id: '' },
+  // the tenant's image2text default when a node is created. The prompt is shared
+  // by the vision paths here; response language belongs to the knowledge base.
+  vlm: { llm_id: '', system_prompt: '' },
   enable_vision_enhancement: false,
   setups: [
     {
@@ -189,9 +186,8 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Json,
-      parse_method: ImageParseMethod.OCR,
+      ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
-      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,
