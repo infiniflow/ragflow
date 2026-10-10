@@ -94,7 +94,7 @@ func TestDatasetsHandlerListIngestionMessagesValidatesAndPages(t *testing.T) {
 	}
 }
 
-func TestDatasetsHandlerListIngestionLogsSyncType(t *testing.T) {
+func TestDatasetsHandlerListIngestionLogsDatasourceLogType(t *testing.T) {
 	db := setupIngestionMessagesHandlerDB(t)
 	insertIngestionMessagesHandlerKB(t, db, "kb-1", "user-1")
 
@@ -118,7 +118,7 @@ func TestDatasetsHandlerListIngestionLogsSyncType(t *testing.T) {
 
 	router := newIngestionLogsHandlerRouter()
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/ingestions?type=sync&page=1&page_size=10&log_type=dataset", nil))
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/ingestions?log_type=datasource&page=1&page_size=10", nil))
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 	}

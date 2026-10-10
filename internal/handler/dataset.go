@@ -531,7 +531,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
-// The type=sync query returns logs for connectors linked to the dataset.
+// The log_type=datasource query returns logs for connectors linked to the dataset.
 func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -564,7 +564,7 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if strings.EqualFold(strings.TrimSpace(c.Query("type")), "sync") {
+	if strings.EqualFold(strings.TrimSpace(c.Query("log_type")), "datasource") {
 		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, user.ID, page, pageSize)
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
