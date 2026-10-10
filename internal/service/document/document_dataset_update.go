@@ -163,6 +163,20 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	current := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	eff, _ := service.Resolve(current, sel)
 	isPipeline, effParserID, effPipelineID := eff.Effective()
+	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
+			ctx,
+			permission.Subject{UserID: userID, TenantID: kb.TenantID},
+			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID},
+			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
+			permission.OperationUpdate,
+			permission.OperationUse,
+		)
+		if accessErr != nil {
+			code, permissionErr := permissionresponse.Normalize(accessErr)
+			return nil, code, permissionErr
+		}
+	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
 		// Normalize "pages" ranges before persistence. Invalid ranges are

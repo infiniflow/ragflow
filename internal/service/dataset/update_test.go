@@ -468,7 +468,7 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+func TestDatasetServiceUpdateDatasetAllowsTeamMemberPermissionChange(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
@@ -484,22 +484,19 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "user-1", service.UpdateDatasetRequest{
 		Permission: &permission,
 	})
-	if err == nil {
-		t.Fatal("expected permission change error")
+	if err != nil {
+		t.Fatalf("expected shared tenant member to update dataset permission: %v", err)
 	}
-	if code != common.CodeForbidden {
-		t.Fatalf("expected forbidden code, got %d", code)
-	}
-	if err.Error() != "Permission denied" {
-		t.Fatalf("unexpected error: %v", err)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
-	if persisted.Permission != string(entity.TenantPermissionTeam) {
-		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	if persisted.Permission != string(entity.TenantPermissionMe) {
+		t.Fatalf("expected permission to change to %q, got %q", entity.TenantPermissionMe, persisted.Permission)
 	}
 }
 
