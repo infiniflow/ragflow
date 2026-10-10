@@ -49,6 +49,7 @@ func TestImageRasterMaxBytesResolution(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv(EnvImageRasterMaxBytes, c.env)
 			resetImageRasterMaxBytesForTest()
+			t.Cleanup(resetImageRasterMaxBytesForTest)
 			if got := ImageRasterMaxBytes(); got != c.want {
 				t.Errorf("ImageRasterMaxBytes() with env %q = %d, want %d", c.env, got, c.want)
 			}
@@ -80,6 +81,7 @@ func TestCheckImageRasterLimit(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			t.Setenv(EnvImageRasterMaxBytes, c.env)
 			resetImageRasterMaxBytesForTest()
+			t.Cleanup(resetImageRasterMaxBytesForTest)
 			err := CheckImageRasterLimit(c.w, c.h)
 			if (err != nil) != c.wantErr {
 				t.Errorf("CheckImageRasterLimit(%d,%d) env=%q: err=%v, wantErr=%v", c.w, c.h, c.env, err, c.wantErr)

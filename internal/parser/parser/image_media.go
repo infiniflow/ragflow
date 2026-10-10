@@ -38,7 +38,15 @@ const (
 // guard at all: length/width are unbounded and the raster-byte ceiling is opt
 // in. A value of 0 (the default when unset, empty, or invalid/negative) means
 // unlimited. When set to N > 0 (bytes), a decoded raster larger than N bytes
-// (width * height * 4 for the RGBA raster image.Decode allocates) is rejected.
+// (modelled as width * height * 4 for an 8-bit RGBA raster) is rejected.
+//
+// Operator guidance: with the default (unlimited) ceiling, a highly
+// compressible image can still exhaust the ingestion worker's heap during
+// decode. For untrusted input sources, set RAGFLOW_IMAGE_RASTER_MAX_BYTES to a
+// budget the deployment can absorb (bounded by DeepDocConcurrency). The 4
+// bytes/pixel model is an 8-bit RGBA estimate; 16-bit formats (e.g. NRGBA64)
+// allocate roughly twice that, so size the ceiling with headroom for such
+// input.
 const EnvImageRasterMaxBytes = "RAGFLOW_IMAGE_RASTER_MAX_BYTES"
 
 var (
@@ -72,10 +80,16 @@ func resolveImageRasterMaxBytes() int64 {
 // raster would exceed the opt-in byte ceiling (ImageRasterMaxBytes). Edge
 // (length/width) limits are intentionally absent to match Python's picture.py.
 // A zero ceiling means unlimited and always passes.
+//
+// The raster is modelled as 4 bytes/pixel (8-bit RGBA); see EnvImageRasterMaxBytes
+// for the 16-bit headroom note. The product is computed in uint64 so extreme
+// dimensions cannot silently wrap to 0 under int64 signed overflow and bypass
+// a positive ceiling.
 func CheckImageRasterLimit(w, h int) error {
 	if max := ImageRasterMaxBytes(); max > 0 {
-		if bytes := int64(w) * int64(h) * 4; bytes > max {
-			return fmt.Errorf("image raster %dx%d (%d bytes) exceeds %d-byte limit", w, h, bytes, max)
+		const bytesPerPixel = 4
+		if uint64(w)*uint64(h)*bytesPerPixel > uint64(max) {
+			return fmt.Errorf("image raster %dx%d exceeds %d-byte limit", w, h, max)
 		}
 	}
 	return nil
