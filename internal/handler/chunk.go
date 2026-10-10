@@ -637,7 +637,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	req.TagFeas = rawBody["tag_feas"]
 	if _, ok := rawBody["image_base64"]; ok {
 		req.TouchChunkImageFields = true
-		imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a string")
+		imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a non-empty string")
 		if err != nil {
 			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
 			return
