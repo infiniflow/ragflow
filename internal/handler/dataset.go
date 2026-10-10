@@ -30,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -265,7 +266,10 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -527,6 +531,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
+// The log_type=datasource query returns logs for connectors linked to the dataset.
 func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -558,6 +563,17 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 		pageSize = ps
 	}
 
+	ctx := c.Request.Context()
+	if strings.EqualFold(strings.TrimSpace(c.Query("log_type")), "datasource") {
+		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, user.ID, page, pageSize)
+		if err != nil {
+			common.ErrorWithCode(c, code, err.Error())
+			return
+		}
+		common.SuccessWithData(c, result, "success")
+		return
+	}
+
 	orderby := c.DefaultQuery("orderby", "create_time")
 	// desc defaults to true and is only disabled by the literal value "false".
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
@@ -570,8 +586,6 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	// Exact per-document filter for the file-log list. Python's endpoint has no
 	// equivalent; the frontend only sends it on the Go backend.
 	documentID := c.Query("document_id")
-
-	ctx := c.Request.Context()
 
 	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {
@@ -706,7 +720,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1010,8 +1027,8 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
+		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+			respondPermissionError(c, err, false)
 			return
 		}
 	}
@@ -1137,6 +1154,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}

@@ -100,6 +100,11 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Internal-only: set when Answer is the run's authoritative full text —
+	// <think> stretch included, citation handles already compacted against the
+	// shipped reference — so the session writer must persist it instead of the
+	// accumulated stream deltas, which still carry the pre-compaction handles.
+	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
 }

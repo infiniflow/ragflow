@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -440,13 +441,10 @@ func TestDatasetServiceUpdateDatasetRejectsMissingDataset(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected missing dataset error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeNotFound {
+		t.Fatalf("expected not found code, got %d", code)
 	}
-	// Nonexistent and not-owned datasets share the "lacks permission"
-	// error so existence is not revealed (IDOR), matching Python.
-	expected := "user 'tenant-1' lacks permission for dataset 'missing-kb'"
-	if err.Error() != expected {
+	if err.Error() != "Resource not found" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -462,15 +460,15 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeNotFound {
+		t.Fatalf("expected not found code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "lacks permission") {
+	if err.Error() != "Resource not found" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+func TestDatasetServiceUpdateDatasetAllowsTeamMemberPermissionChange(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
@@ -486,22 +484,94 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "user-1", service.UpdateDatasetRequest{
 		Permission: &permission,
 	})
-	if err == nil {
-		t.Fatal("expected permission change error")
+	if err != nil {
+		t.Fatalf("expected shared tenant member to update dataset permission: %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
-	}
-	if err.Error() != "only dataset owner can change permission" {
-		t.Fatalf("unexpected error: %v", err)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
-	if persisted.Permission != string(entity.TenantPermissionTeam) {
-		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	if persisted.Permission != string(entity.TenantPermissionMe) {
+		t.Fatalf("expected permission to change to %q, got %q", entity.TenantPermissionMe, persisted.Permission)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetAllowsTeamMemberToResubmitUnchangedPermission(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+
+	name := "Renamed by team member"
+	permission := string(entity.TenantPermissionTeam)
+	result, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "user-1", service.UpdateDatasetRequest{
+		Name:       &name,
+		Permission: &permission,
+	})
+	if err != nil {
+		t.Fatalf("expected unchanged permission to be accepted, got: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["name"] != name {
+		t.Fatalf("expected updated name %q, got %#v", name, result["name"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("get dataset: %v", err)
+	}
+	if persisted.Name != name {
+		t.Fatalf("expected persisted name %q, got %q", name, persisted.Name)
+	}
+	if persisted.Permission != permission {
+		t.Fatalf("expected permission to remain %q, got %q", permission, persisted.Permission)
+	}
+}
+
+func TestDatasetServiceUpdateDatasetResolvesEmbeddingInDatasetTenant(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("update kb permission: %v", err)
+	}
+	insertDatasetUpdateTeamMember(t, "user-1", "tenant-1")
+	insertDatasetUpdateModelProvider(t, "provider-1", "tenant-1", "ZHIPU-AI")
+	insertDatasetUpdateModelInstance(t, "instance-1", "provider-1", "test")
+	embeddingModelID := "aabbccdd11223344aabbccdd11223344"
+	insertDatasetUpdateTenantModel(t, embeddingModelID, "provider-1", "instance-1", "embedding-2", int(entity.ModelTypeEmbedding))
+
+	permission := string(entity.TenantPermissionTeam)
+	_, code, err := testDatasetUpdateService(t).UpdateDataset(t.Context(), "kb-1", "user-1", service.UpdateDatasetRequest{
+		Permission:     &permission,
+		EmbeddingModel: &embeddingModelID,
+	})
+	if err != nil {
+		t.Fatalf("expected shared dataset embedding model to resolve in its owning tenant, got: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("get dataset: %v", err)
+	}
+	if persisted.TenantEmbdID == nil || *persisted.TenantEmbdID != embeddingModelID {
+		t.Fatalf("expected tenant_embd_id %q, got %#v", embeddingModelID, persisted.TenantEmbdID)
 	}
 }
 
@@ -868,14 +938,14 @@ func TestDatasetServiceDeleteDatasetsRejectsUnauthorizedID(t *testing.T) {
 	ctx := t.Context()
 	svc := NewDatasetService()
 	normalizedID := "11111111111141118111111111111111"
-	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, "tenant-2")
+	_, code, err := svc.DeleteDatasets(ctx, []string{normalizedID}, false, permission.Subject{UserID: "tenant-2"})
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeForbidden {
+		t.Fatalf("expected forbidden code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "lacks permission") {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -886,14 +956,34 @@ func TestDatasetServiceDeleteDatasetsRejectsAllUnauthorized(t *testing.T) {
 
 	ctx := t.Context()
 	svc := NewDatasetService()
-	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, "tenant-1")
+	_, code, err := svc.DeleteDatasets(ctx, []string{"d94a8dc02c9711f0930f7fbc369eab6d"}, false, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected unauthorized error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeForbidden {
+		t.Fatalf("expected forbidden code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "lacks permission") {
+	if err.Error() != "Permission denied" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestDatasetServiceDeleteAllDatasetsRequiresTenantOwner(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Shared dataset")
+	insertDatasetUpdateTeamMember(t, "member-1", "tenant-1")
+
+	_, code, err := NewDatasetService().DeleteDatasets(
+		t.Context(), nil, true, permission.Subject{UserID: "member-1", TenantID: "tenant-1"},
+	)
+	if err == nil {
+		t.Fatal("expected delete-all to be denied for a non-owner tenant member")
+	}
+	if code != common.CodeForbidden {
+		t.Fatalf("expected forbidden code, got %d", code)
+	}
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -949,6 +1039,7 @@ func insertDatasetUpdateKB(t *testing.T, id, tenantID, name string) {
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
@@ -965,16 +1056,7 @@ func insertDatasetUpdateCanvas(t *testing.T, id, userID string) {
 
 func insertDatasetUpdateTeamMember(t *testing.T, userID, tenantID string) {
 	t.Helper()
-	if err := dao.DB.Create(&entity.UserTenant{
-		ID:        userID + "-" + tenantID,
-		UserID:    userID,
-		TenantID:  tenantID,
-		Role:      "normal",
-		InvitedBy: tenantID,
-		Status:    sptr("1"),
-	}).Error; err != nil {
-		t.Fatalf("insert user tenant: %v", err)
-	}
+	ensureDatasetTestMembership(t, userID, tenantID, "normal")
 }
 
 func insertDatasetUpdateConnector(t *testing.T, id, tenantID string) {
@@ -1101,6 +1183,7 @@ func insertDatasetUpdateCanvasKB(t *testing.T, id, tenantID, name, pipelineID st
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test canvas kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func TestUpdateDataset_StripsUnknownParam_Builtin(t *testing.T) {

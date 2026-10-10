@@ -249,7 +249,7 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 			common.WarnCtx(ctx, "agentic_rag: list_chunks unresolved anchors",
 				zap.String("doc_id", docID), zap.Strings("anchors", anchors),
 				zap.Strings("missing", missing))
-			return formatChunksXML(docID, nil, anchorMeta,
+			return formatChunksXML(ctx, docID, nil, anchorMeta,
 				unresolvedNotice(missing, len(missing) == len(anchors))), nil
 		}
 		for i, m := range mark {
@@ -293,7 +293,7 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 
 	// Only the nb=0 path reaches here: the nb>0 path returns early on
 	// unresolved anchors, and its empty case is reported by chunksXMLNoText.
-	return formatChunksXML(docID, chunks, anchorMeta, ""), nil
+	return formatChunksXML(ctx, docID, chunks, anchorMeta, ""), nil
 }
 
 // resolveDocDatasetID returns the knowledge-base id that owns the given document,

@@ -559,6 +559,9 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
 	logServedChunks(ctx, tool, query, hits)
+	// The passages in front of the model are stamped with their [ID:n] handle as
+	// they are served, so a citation names a number the model actually saw.
+	reg := evidenceRegistryFrom(ctx)
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<search_results count=\"%d\" query=\"%s\">\n",
 		len(hits), xmlEscape(query)))
@@ -566,6 +569,7 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	previewHits := 0
 	for i, h := range hits {
 		c := h.chunk
+		refAttr := refAttrOf(reg, c.ID)
 		truncatedAttr := ""
 		if h.truncated {
 			truncatedAttr = ` truncated="true"`
@@ -577,11 +581,11 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			previewHits++
 		}
 		b.WriteString(fmt.Sprintf(
-			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s>\n",
+			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s>\n",
 			i+1,
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
 			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), c.Score,
-			utf8.RuneCountInString(c.Content), truncatedAttr, matchAttr,
+			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr,
 		))
 		if h.snippet != "" {
 			b.WriteString(fmt.Sprintf("<match_snippet>%s</match_snippet>\n", xmlEscape(h.snippet)))
@@ -664,7 +668,10 @@ func dedupStrings(s []string) []string {
 // findings that must NOT abort the caller's turn (e.g. anchors that did not
 // resolve), so the model can see and judge them instead of losing the whole
 // ReAct turn to an error.
-func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
+func formatChunksXML(ctx context.Context, docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
+	// Deep-read passages are citable too: stamp the same [ID:n] handle the locate
+	// tools use, so a fact read from the full text can be cited.
+	reg := evidenceRegistryFrom(ctx)
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<chunks doc_id=\"%s\" fetched=\"%d\"%s>\n",
 		xmlEscape(docID), len(chunks), anchorMeta))
@@ -673,9 +680,9 @@ func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, 
 	}
 	for _, c := range chunks {
 		b.WriteString(fmt.Sprintf(
-			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\">\n",
+			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\"%s>\n",
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
-			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName)))
+			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), refAttrOf(reg, c.ID)))
 		if c.Content != "" {
 			b.WriteString(fmt.Sprintf("<content>%s</content>\n", xmlEscape(c.Content)))
 		}
@@ -683,4 +690,14 @@ func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, 
 	}
 	b.WriteString("</chunks>")
 	return b.String()
+}
+
+// refAttrOf stamps a passage with its [ID:n] handle: ` ref="n"` when the run
+// carries a registry, empty when it does not (a renderer without a registry
+// publishes no handle, and the answer falls back to naming chunk ids).
+func refAttrOf(reg *EvidenceRegistry, chunkID string) string {
+	if n := reg.Stamp(chunkID); n >= 0 {
+		return fmt.Sprintf(` ref="%d"`, n)
+	}
+	return ""
 }

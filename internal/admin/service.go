@@ -38,7 +38,6 @@ import (
 	"ragflow/internal/server"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"regexp"
 	"time"
 
@@ -204,8 +203,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := role == "admin"
@@ -293,7 +292,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	// 3. Create user-tenant relation
 	userTenantStatus := "1"
 	userTenant := &entity.UserTenant{
-		ID:        utility.GenerateToken(),
+		ID:        common.GenerateToken(),
 		UserID:    userID,
 		TenantID:  userID,
 		Role:      "owner",
@@ -306,7 +305,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	}
 
 	// 4. Create root file folder
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	fileLocation := ""
 	file := &entity.File{
 		ID:        fileID,
@@ -483,7 +482,7 @@ func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string,
 
 	user.IsActive = targetStatus
 	if !isActive {
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -618,8 +617,8 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	tenantID := userTenants[0].TenantID
 
 	// 3. Generate API token
-	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken()
+	key := common.GenerateAPIToken()
+	beta := common.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
@@ -1344,8 +1343,8 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
-		userID := utility.GenerateToken()
-		accessToken := utility.GenerateToken()
+		userID := common.GenerateToken()
+		accessToken := common.GenerateToken()
 		status := "1"
 		loginChannel := "password"
 		isSuperuser := true

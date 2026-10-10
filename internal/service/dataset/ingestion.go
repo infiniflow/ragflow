@@ -8,6 +8,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 
@@ -46,8 +48,9 @@ func (d *DatasetService) GetIngestionSummary(ctx context.Context, datasetID, use
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -168,8 +171,9 @@ func (d *DatasetService) ListIngestionMessages(ctx context.Context, datasetID, u
 	if limit < 0 || limit > maxIngestionMessagesLimit {
 		return nil, common.CodeArgumentError, fmt.Errorf("limit must be between 1 and %d", maxIngestionMessagesLimit)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	run, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)
@@ -224,12 +228,47 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 	return log.RunCount == nil || *log.RunCount > 0
 }
 
+// ListSyncLogs returns paginated sync logs for connectors currently linked to an accessible dataset.
+func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
+	}
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	logs, total, err := d.connectorDAO.ListLogsByDatasetID(ctx, dao.DB, datasetID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connector sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	return map[string]interface{}{
+		"total": total,
+		"logs":  logs,
+	}, common.CodeSuccess, nil
+}
+
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
 	}
 
 	if page <= 0 {
@@ -289,8 +328,9 @@ func (d *DatasetService) GetIngestionLog(ctx context.Context, datasetID, userID,
 	if logID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Log ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	log, err := d.pipelineLogDAO.GetByIDAndKBID(ctx, dao.DB, logID, datasetID)

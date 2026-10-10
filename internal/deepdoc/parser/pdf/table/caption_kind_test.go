@@ -62,8 +62,7 @@ func TestMergeCaptions_KeepsInterleavedParagraph(t *testing.T) {
 		{Text: "<table><tr><td >Category</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 159, Right: 393, Top: 130, Bottom: 336}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 3 {
 		t.Fatalf("expected 3 sections (title + paragraph + table), got %d: %v", len(result), textsOf(result))
 	}
@@ -76,6 +75,54 @@ func TestMergeCaptions_KeepsInterleavedParagraph(t *testing.T) {
 	if !found {
 		t.Errorf("interleaved paragraph dropped; sections = %v", textsOf(result))
 	}
+}
+
+// TestCaptionKind_CJKBodyParagraphNotCaption locks the fix for go_bug
+// cjk-caption-false-positive: Python's is_caption pattern
+// `[图表]+[ 0-9:：]{2,}` requires ≥2 marker chars after the 图/表 run, so a
+// body paragraph that merely STARTS with 表/图 (Chinese or Japanese) is not a
+// caption. The bare `^表`/`^图` used previously misclassified such paragraphs
+// as captions, and MergeCaptions then either dropped them (no table nearby)
+// or swallowed them into <caption> — content loss Python never has.
+func TestCaptionKind_CJKBodyParagraphNotCaption(t *testing.T) {
+	for _, text := range []string{
+		"表格是一种常见的数据组织形式，本文对其进行对比。", // Chinese: 表格…
+		"图中所示的方法在实践中得到广泛应用。",       // Chinese: 图中…
+		"表現方法の比較について述べる。",          // Japanese: 表現…
+	} {
+		if got := CaptionKind(pdf.Section{Text: text, LayoutType: pdf.LayoutTypeText}); got != "" {
+			t.Errorf("CaptionKind(%q) = %q, want \"\" (body paragraph is not a caption)", text, got)
+		}
+	}
+}
+
+// TestCaptionKind_CJKCaptionMarkersStillMatch pins the other side of the
+// cjk-caption-false-positive fix: real CJK captions (图/表 + number +
+// separator) must still classify — the suffix requirement must not
+// over-tighten detection. The kind follows the run's first character.
+func TestCaptionKind_CJKCaptionMarkersStillMatch(t *testing.T) {
+	for _, tt := range []struct{ text, want string }{
+		{"表1：交通工具等级", pdf.LayoutTypeTable},
+		{"表 1 出差标准", pdf.LayoutTypeTable},
+		{"图1 系统架构总览", pdf.LayoutTypeFigure},
+		{"图表1 全球市场规模", pdf.LayoutTypeFigure},
+	} {
+		if got := CaptionKind(pdf.Section{Text: tt.text, LayoutType: pdf.LayoutTypeText}); got != tt.want {
+			t.Errorf("CaptionKind(%q) = %q, want %q", tt.text, got, tt.want)
+		}
+	}
+}
+
+// hasBox reports whether positions contains a box with the given top and
+// bottom edges. Tests use it to assert that a merged caption's box reached the
+// section it was merged into.
+func hasBox(positions []pdf.Position, top, bottom float64) bool {
+	for _, p := range positions {
+		if p.Top == top && p.Bottom == bottom {
+			return true
+		}
+	}
+	return false
 }
 
 func textsOf(secs []pdf.Section) []string {

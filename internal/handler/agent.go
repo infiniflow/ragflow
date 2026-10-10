@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -468,7 +467,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	if sessionID == "" {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
-		sessionID = utility.GenerateToken()
+		sessionID = common.GenerateToken()
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
@@ -1271,7 +1270,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// Keep the effective session available to the non-stream response and
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
-		req.SessionID = utility.GenerateToken()
+		req.SessionID = common.GenerateToken()
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 

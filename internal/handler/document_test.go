@@ -123,6 +123,7 @@ func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
 type fakeDocumentService struct {
 	deleted                int
 	err                    error
+	downloadErr            error
 	doc                    *document.DocumentResponse
 	docErr                 error
 	updateCalled           bool
@@ -232,8 +233,11 @@ func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, do
 	}, nil
 }
 func (f *fakeDocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error) {
+	if f.downloadErr != nil {
+		return nil, f.downloadErr
+	}
 	if docID == "not-found" {
-		return nil, fmt.Errorf("not found")
+		return nil, document.ErrDocumentNotFound
 	}
 	return &document.DownloadDocumentResp{
 		Data:        []byte("document data"),
@@ -411,6 +415,15 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
 	}
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-owner",
+		UserID:   "owner-user",
+		TenantID: "tenant-owner",
+		Role:     "owner",
+		Status:   sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
+	}
 	if accessible {
 		if err := db.Create(&entity.UserTenant{
 			ID:       "ut-user-1",
@@ -426,6 +439,52 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
+}
+
+func TestDocumentReadHandlersForbidden(t *testing.T) {
+	setupDocumentPermissionDB(t, false)
+	fake := &fakeDocumentService{
+		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
+	}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		params  gin.Params
+		handler gin.HandlerFunc
+	}{
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID},
+		{"metadata summary", http.MethodPost, "/api/v1/document/metadata/summary", `{"kb_id":"kb-owner","doc_ids":["doc-1"]}`, nil, h.MetadataSummary},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
+			c.Params = tt.params
+			tt.handler(c)
+			if w.Code != http.StatusForbidden {
+				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			}
+			var resp struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+				Data    interface{}      `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Code != common.CodeForbidden || resp.Message != "Permission denied" || resp.Data != nil {
+				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+			if fake.metadataKBID != "" {
+				t.Fatal("GetMetadataSummary should not be called without dataset access")
+			}
+		})
+	}
 }
 
 func TestSetMetaHandler_NotAccessible(t *testing.T) {
@@ -449,10 +508,10 @@ func TestSetMetaHandler_NotAccessible(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
+	if resp["code"] != float64(common.CodeForbidden) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.setMetaCalled {
@@ -517,10 +576,10 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
+	if resp["code"] != float64(common.CodeForbidden) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.deleteCalled {
@@ -583,10 +642,10 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
+	if resp["code"] != float64(common.CodeForbidden) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.updateCalled {
@@ -716,6 +775,9 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	}
 	if err := db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: role, Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert user_tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	pipelineID := "pipe-1"
 	if err := db.Create(&entity.Knowledgebase{
@@ -1231,8 +1293,7 @@ func TestStopParseDocumentsHandler_BadJSON(t *testing.T) {
 	}
 }
 
-// setupHandlerAccessDB sets up SQLite in-memory DB for handler tests that need
-// datasetService.Accessible to work.
+// setupHandlerAccessDB sets up SQLite in-memory DB for handler dataset access tests.
 func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -1257,7 +1318,8 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	// Insert tenant
 	db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
 	// Insert user_tenant mapping
-	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "admin"})
+	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))})
+	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "normal", Status: sptr(string(entity.StatusValid))})
 	// Insert knowledgebase
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
@@ -2193,8 +2255,36 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != float64(common.CodeDataError) {
-		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
+	}
+	if resp["message"] != "Resource not found" {
+		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	h.documentService = &fakeDocumentService{downloadErr: errors.New("database connection failed")}
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response envelope, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	if resp["message"] != "Failed to download document" {
+		t.Fatalf("unexpected client-visible error: %v", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "database connection failed") {
+		t.Fatal("database error detail leaked to the client")
 	}
 }
 
@@ -2214,10 +2304,10 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != float64(common.CodeDataError) {
-		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
 	}
-	if resp["message"] != "document not found" {
-		t.Fatalf("foreign user must get the same message as a missing document, got %v", resp["message"])
+	if resp["message"] != "Resource not found" {
+		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
 	}
 }
