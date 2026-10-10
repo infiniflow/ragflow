@@ -125,6 +125,17 @@ def _dataset_relation_row_id(kb_id: str, compile_kwd: str, template_id: str | No
 # ---------------------------------------------------------------------------
 
 
+def _scan_order():
+    from common.doc_store.doc_store_base import OrderByExpr
+
+    # Elasticsearch pages past index.max_result_window only through
+    # search_after, which needs an explicit sort ending on the unique id.
+    order = OrderByExpr()
+    if settings.DOC_ENGINE.lower() == "elasticsearch":
+        order.asc("id")
+    return order
+
+
 async def _index_search(
     tenant_id: str,
     kb_id: str,
@@ -133,29 +144,23 @@ async def _index_search(
     limit: int = 10000,
     offset: int = 0,
 ) -> list[dict]:
-    from common.doc_store.doc_store_base import OrderByExpr
-
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return []
-    try:
-        res = await thread_pool_exec(
-            settings.docStoreConn.search,
-            fields,
-            [],
-            condition,
-            [],
-            OrderByExpr(),
-            offset,
-            limit,
-            index,
-            [kb_id],
-        )
-        field_map = settings.docStoreConn.get_fields(res, fields) or {}
-        return list(field_map.values())
-    except Exception:
-        logging.exception("structure_merge: search failed for kb=%s", kb_id)
-        return []
+    res = await thread_pool_exec(
+        settings.docStoreConn.search,
+        fields,
+        [],
+        condition,
+        [],
+        _scan_order(),
+        offset,
+        limit,
+        index,
+        [kb_id],
+    )
+    field_map = settings.docStoreConn.get_fields(res, fields) or {}
+    return list(field_map.values())
 
 
 async def _index_delete(tenant_id: str, kb_id: str, condition: dict) -> None:
@@ -529,8 +534,6 @@ async def _cleanup_deleted_docs(
     otherwise.  The caller must delete the processed meta rows only after
     **all** (compile_kwd, template_id) pairs have been handled successfully.
     """
-    from common.doc_store.doc_store_base import OrderByExpr
-
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return False
@@ -539,22 +542,19 @@ async def _cleanup_deleted_docs(
     cursor: dict[str, str] = {}  # meta_row_id → deleted_doc_id
     offset = 0
     while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id", "deleted_doc_id"],
-                [],
-                {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
-                [],
-                OrderByExpr(),
-                offset,
-                _PAGE_SIZE,
-                index,
-                [kb_id],
-            )
-            fm = settings.docStoreConn.get_fields(res, ["id", "deleted_doc_id"]) or {}
-        except Exception:
-            break
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "deleted_doc_id"],
+            [],
+            {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
+            [],
+            _scan_order(),
+            offset,
+            _PAGE_SIZE,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["id", "deleted_doc_id"]) or {}
         if not fm:
             break
         for row in fm.values():
@@ -595,7 +595,7 @@ async def _cleanup_deleted_docs(
                 [],
                 dataset_del_cond,
                 [],
-                OrderByExpr(),
+                _scan_order(),
                 offset,
                 _PAGE_SIZE,
                 index,
@@ -667,30 +667,25 @@ async def _consume_deletion_markers(tenant_id: str, kb_id: str) -> None:
     Called from :func:`run_structure_merge` *after* every eligible
     ``(compile_kwd, template_id)`` pair has been processed successfully.
     """
-    from common.doc_store.doc_store_base import OrderByExpr
-
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return
     offset = 0
     all_marker_ids: list[str] = []
     while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id"],
-                [],
-                {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
-                [],
-                OrderByExpr(),
-                offset,
-                _PAGE_SIZE,
-                index,
-                [kb_id],
-            )
-            fm = settings.docStoreConn.get_fields(res, ["id"]) or {}
-        except Exception:
-            break
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id"],
+            [],
+            {"kb_id": [kb_id], "knowledge_graph_kwd": [_DELETION_META_KWD]},
+            [],
+            _scan_order(),
+            offset,
+            _PAGE_SIZE,
+            index,
+            [kb_id],
+        )
+        fm = settings.docStoreConn.get_fields(res, ["id"]) or {}
         if not fm:
             break
         all_marker_ids.extend(row["id"] for row in fm.values() if row.get("id"))
@@ -973,13 +968,14 @@ async def run_structure_merge(ctx: TaskContext) -> None:
     if all_cleanup_ok:
         await _consume_deletion_markers(ctx.tenant_id, ctx.kb_id)
 
+    if rebuilt < total:
+        progress(-1, f"Built {rebuilt}/{total} dataset graph(s); retry required.")
+        return
     progress(1.0, f"Built {rebuilt}/{total} dataset graph(s).")
 
 
 async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str, str]]:
     """Collect distinct (compile_kwd, template_id) pairs from doc_graph entity rows."""
-    from common.doc_store.doc_store_base import OrderByExpr
-
     index = _index_name(tenant_id)
     if not settings.docStoreConn.index_exist(index, kb_id):
         return set()
@@ -991,22 +987,19 @@ async def _collect_structure_pairs(tenant_id: str, kb_id: str) -> set[tuple[str,
     pairs: set[tuple[str, str]] = set()
     offset = 0
     while True:
-        try:
-            res = await thread_pool_exec(
-                settings.docStoreConn.search,
-                ["id", "compile_kwd", "compilation_template_ids"],
-                [],
-                {"knowledge_graph_kwd": ["entity"]},
-                [],
-                OrderByExpr(),
-                offset,
-                _PAGE_SIZE,
-                index,
-                [kb_id],
-            )
-            field_map = settings.docStoreConn.get_fields(res, ["id", "compile_kwd", "compilation_template_ids"]) or {}
-        except Exception:
-            break
+        res = await thread_pool_exec(
+            settings.docStoreConn.search,
+            ["id", "compile_kwd", "compilation_template_ids"],
+            [],
+            {"knowledge_graph_kwd": ["entity"]},
+            [],
+            _scan_order(),
+            offset,
+            _PAGE_SIZE,
+            index,
+            [kb_id],
+        )
+        field_map = settings.docStoreConn.get_fields(res, ["id", "compile_kwd", "compilation_template_ids"]) or {}
         if not field_map:
             break
         for row in field_map.values():
