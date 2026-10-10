@@ -396,8 +396,9 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	if customDelimiter {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+	} else {
+		units = mergeDOCXUnits(units, c.param.ChunkTokenSize)
 	}
-	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, customDelimiter)
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "")
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
@@ -415,12 +416,17 @@ func separateDOCXParagraphs(units []schema.ChunkDoc) []schema.ChunkDoc {
 		if itemDocType(units[i]) != "text" {
 			continue
 		}
-		units[i].Text = normalizeGeneralNewlines(itemTextOrFallback(units[i]))
 		if strings.TrimSpace(units[i].Text) == "" {
 			continue
 		}
-		if previousText >= 0 && !strings.HasSuffix(units[previousText].Text, "\n") && !strings.HasPrefix(units[i].Text, "\n") {
-			units[previousText].Text += "\n"
+		if previousText >= 0 {
+			previous := units[previousText].Text
+			current := units[i].Text
+			// Splitting normalizes both CR and LF boundaries to LF.
+			if !strings.HasSuffix(previous, "\n") && !strings.HasSuffix(previous, "\r") &&
+				!strings.HasPrefix(current, "\n") && !strings.HasPrefix(current, "\r") {
+				units[previousText].Text += "\n"
+			}
 		}
 		previousText = i
 	}
@@ -430,30 +436,21 @@ func separateDOCXParagraphs(units []schema.ChunkDoc) []schema.ChunkDoc {
 // mergeDOCXUnits keeps the previous text merge target across intervening
 // table/image units. Paragraph separators and sentence delimiters are already
 // carried by the text units.
-func mergeDOCXUnits(units []schema.ChunkDoc, target int, customDelimiter bool) []schema.ChunkDoc {
+func mergeDOCXUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc {
 	merged := make([]schema.ChunkDoc, 0, len(units))
 	previousText := -1
 	for _, unit := range units {
 		if itemDocType(unit) != "text" {
-			media := cloneChunkDoc(unit)
-			media.DocType = itemDocType(media)
-			media.CKType = media.DocType
-			merged = append(merged, media)
+			merged = append(merged, cloneChunkDoc(unit))
 			continue
 		}
 
-		text := cloneChunkDoc(unit)
-		text.DocType = "text"
-		text.CKType = "text"
-		text.TKNums = intPtr(generalUnitTokens(text))
-		if previousText < 0 || customDelimiter || intValue(merged[previousText].TKNums) >= target {
-			merged = append(merged, text)
+		if previousText < 0 || intValue(merged[previousText].TKNums) >= target {
+			merged = append(merged, cloneChunkDoc(unit))
 			previousText = len(merged) - 1
 			continue
 		}
-		mergeGeneralChunk(&merged[previousText], text, "")
-		merged[previousText].DocType = "text"
-		merged[previousText].CKType = "text"
+		mergeGeneralChunk(&merged[previousText], unit, "")
 	}
 	return merged
 }
@@ -1197,7 +1194,7 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDeli
 			parts = foldWhitespaceSegments(parts)
 		}
 		for _, part := range parts {
-			if strings.TrimSpace(part) == "" {
+			if !keepDelimiter && strings.TrimSpace(part) == "" {
 				continue
 			}
 			piece := cloneChunkDoc(unit)

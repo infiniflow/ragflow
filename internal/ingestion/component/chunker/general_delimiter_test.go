@@ -70,25 +70,39 @@ func TestGeneralChunkerPreservesDelimitersAcrossChunks(t *testing.T) {
 }
 
 func TestGeneralChunkerDOCXPreservesParagraphBoundaries(t *testing.T) {
-	component, err := NewGeneralChunker(map[string]any{
-		"chunk_token_size": 512,
-		"delimiters":       []string{"\n", "。"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	out, err := component.Invoke(t.Context(), nil, map[string]any{
-		"name": "document.docx", "file_type": "docx", "output_format": "json",
-		"json": []map[string]any{
-			{"text": "第一段。还有一句。", "doc_type_kwd": "text"},
-			{"text": "第二段。", "doc_type_kwd": "text"},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got, want := outputTexts(t, out), []string{"第一段。还有一句。\n第二段。"}; !reflect.DeepEqual(got, want) {
-		t.Fatalf("chunks = %q, want %q", got, want)
+	for _, tc := range []struct {
+		name   string
+		first  string
+		second string
+	}{
+		{"implicit", "第一段。还有一句。", "第二段。"},
+		{"trailing CRLF", "第一段。还有一句。\r\n", "第二段。"},
+		{"trailing CR", "第一段。还有一句。\r", "第二段。"},
+		{"leading CRLF", "第一段。还有一句。", "\r\n第二段。"},
+		{"leading CR", "第一段。还有一句。", "\r第二段。"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			component, err := NewGeneralChunker(map[string]any{
+				"chunk_token_size": 512,
+				"delimiters":       []string{"\n", "。"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := component.Invoke(t.Context(), nil, map[string]any{
+				"name": "document.docx", "file_type": "docx", "output_format": "json",
+				"json": []map[string]any{
+					{"text": tc.first, "doc_type_kwd": "text"},
+					{"text": tc.second, "doc_type_kwd": "text"},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := outputTexts(t, out), []string{"第一段。还有一句。\n第二段。"}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("chunks = %q, want %q", got, want)
+			}
+		})
 	}
 }
 
