@@ -20,8 +20,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"time"
 
 	"gorm.io/gorm"
@@ -159,7 +159,7 @@ func (dao *ConnectorDAO) LinkDatasetConnectorsTx(ctx context.Context, tx *gorm.D
 		}
 
 		if err := tx.WithContext(ctx).Create(&entity.Connector2Kb{
-			ID:          utility.GenerateUUID(),
+			ID:          common.GenerateUUID(),
 			ConnectorID: connector.ID,
 			KbID:        kbID,
 			AutoParse:   autoParse,
@@ -424,7 +424,7 @@ func createRebuildSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, t
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	taskID := utility.GenerateToken()
+	taskID := common.GenerateToken()
 	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
 		ID:               taskID,
 		ConnectorID:      connectorID,
@@ -485,7 +485,7 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		fromBeginning = "1"
 	}
 	now := time.Now().Local()
-	taskID := utility.GenerateToken()
+	taskID := common.GenerateToken()
 	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
 		ID:               taskID,
 		ConnectorID:      connectorID,

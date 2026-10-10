@@ -19,11 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -218,7 +218,7 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 	now := time.Now().Local()
 	runCount := input.RunCount
 	log := &entity.PipelineOperationLog{
-		ID:              utility.GenerateUUID(),
+		ID:              common.GenerateUUID(),
 		DocumentID:      input.DocumentID,
 		RunCount:        &runCount,
 		TenantID:        input.TenantID,

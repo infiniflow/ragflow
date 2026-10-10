@@ -70,7 +70,6 @@ import (
 	"ragflow/internal/common"
 	kvrocks "ragflow/internal/engine/kvrocks"
 	"ragflow/internal/service"
-	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -486,7 +485,7 @@ func renderImmediatelyResponse(cfg map[string]any) (int, string, []byte, error) 
 func (h *AgentHandler) runWebhookDetached(
 	parent context.Context, cv *entity.UserCanvas, payload map[string]any, isTest bool, startTs time.Time,
 ) {
-	sessionID := utility.GenerateToken()
+	sessionID := common.GenerateToken()
 	parent = service.WithAgentSessionID(parent, sessionID)
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(parent), 5*time.Minute)
 	defer cancel()
@@ -562,7 +561,7 @@ func (h *AgentHandler) runWebhookSync(
 	isTest bool, startTs time.Time,
 ) webhookSyncResult {
 	status := 200
-	sessionID := utility.GenerateToken()
+	sessionID := common.GenerateToken()
 	ctx = service.WithAgentSessionID(ctx, sessionID)
 	events, err := h.loader.RunAgentWithWebhook(ctx, cv.UserID, cv.ID, payload)
 	if err != nil {
