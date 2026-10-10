@@ -12,11 +12,11 @@ function usage() {
     echo "Usage: $0 [OPTIONS]"
     echo
     echo "  --disable-api-server                     Disables the web server (nginx + ragflow_server)."
-    echo "  --disable-ingestor                  Disables ingestor."
-    echo "  --disable-syncer                      Disables data source syncer."
-    echo "  --init-model-provider-tables            Run model provider table migrations and exit."
-    echo "  --init-superuser                        Initializes the superuser."
-    echo "  --ingestors=<num>                         Number of ingestors to run."
+    echo "  --disable-ingestor                       Disables ingestor."
+    echo "  --disable-syncer                         Disables data source syncer."
+    echo "  --init-model-provider-tables             Run model provider table migrations and exit."
+    echo "  --init-superuser                         Initializes the superuser."
+    echo "  --ingestors=<num>                        Number of ingestors to run."
 
     echo
     echo "Examples:"
