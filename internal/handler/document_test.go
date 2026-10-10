@@ -477,7 +477,7 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 				t.Fatal(err)
 			}
-			if resp.Code != common.CodeForbidden || resp.Message != "no permission to access this dataset" || resp.Data != nil {
+			if resp.Code != common.CodeForbidden || resp.Message != "Permission denied" || resp.Data != nil {
 				t.Fatalf("unexpected response: %s", w.Body.String())
 			}
 			if fake.metadataKBID != "" {

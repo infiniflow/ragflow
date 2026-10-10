@@ -519,7 +519,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -669,11 +669,11 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID string) error {
+func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID string, operation permission.Operation) error {
 	if s.checkDatasetAccessFunc != nil {
 		return s.checkDatasetAccessFunc(datasetID, userID)
 	}
-	return service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun)
+	return service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, operation)
 }
 
 func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {
@@ -683,9 +683,9 @@ func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID strin
 	return s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 }
 
-func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string) (*entity.Knowledgebase, error) {
-	if !s.accessible(ctx, datasetID, userID) {
-		return nil, fmt.Errorf("user does not have access to this dataset")
+func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string, operation permission.Operation) (*entity.Knowledgebase, error) {
+	if err := s.checkDatasetAccess(ctx, datasetID, userID, operation); err != nil {
+		return nil, err
 	}
 	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
@@ -702,7 +702,7 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 }
 
 func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if err := s.checkDatasetAccess(ctx, datasetID, userID); err != nil {
+	if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationRun); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
 	}
@@ -790,7 +790,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("document not found")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1006,7 +1006,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("req is null")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1048,7 +1048,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1230,7 +1230,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("document not found")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
 	if err != nil {
 		return 0, err
 	}
@@ -1280,7 +1280,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if err := s.checkDatasetAccess(ctx, req.DatasetID, userID); err != nil {
+	if err := s.checkDatasetAccess(ctx, req.DatasetID, userID, permission.OperationUpdate); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}

@@ -144,8 +144,8 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 		return
 	}
 
-	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "no permission to access this dataset")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationRead); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 
@@ -1336,8 +1336,8 @@ func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, kbID, user.ID) {
-		common.ResponseWithHttpCodeData(c, http.StatusForbidden, common.CodeForbidden, nil, "no permission to access this dataset")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, kbID, permission.OperationRead); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 
