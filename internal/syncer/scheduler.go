@@ -183,15 +183,22 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
 			return
 		}
-		s.timerMu.Lock()
-		if s.timers[taskID] == timer {
-			delete(s.timers, taskID)
-		}
-		s.timerMu.Unlock()
+		s.retireTimer(taskID, timer)
 	})
 	s.timers[taskID] = timer
 	s.timerMu.Unlock()
 	return nil
+}
+
+
+// retireTimer removes only the timer whose callback finished. A newer
+// schedule for the same task must remain registered for replacement/shutdown.
+func (s *Scheduler) retireTimer(taskID string, timer *time.Timer) {
+	s.timerMu.Lock()
+	defer s.timerMu.Unlock()
+	if s.timers[taskID] == timer {
+		delete(s.timers, taskID)
+	}
 }
 
 func (s *Scheduler) publish(ctx context.Context, taskID string, wakeup bool) error {
