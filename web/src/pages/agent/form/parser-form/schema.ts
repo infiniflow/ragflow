@@ -8,13 +8,11 @@ export const SetupSchema = z
     // preprocess: z.array(z.string()).optional(),
     output_format: z.string().optional(),
     parse_method: z.string().optional(),
-    layout_recognize_auto_text: z.string().optional(),
-    layout_recognize_auto_scanned: z.string().optional(),
-    layout_recognize_auto_min_chars_per_page: z.coerce.number().optional(),
     lang: z.string().optional(),
     fields: z.array(z.string()).optional(),
+    // Per-setup vlm is only used by Audio (its ASR model); the vision model
+    // lives at the top level, shared by all vision-capable file types.
     vlm: z.object({ llm_id: z.string().optional() }).optional(),
-    flatten_media_to_text: z.boolean().optional(),
     system_prompt: z.string().optional(),
     table_result_type: z.string().optional(),
     markdown_image_response_type: z.string().optional(),
@@ -57,6 +55,11 @@ export const SetupSchema = z
 
 export const FormSchema = z.object({
   setups: z.array(SetupSchema).min(1, i18n.t('flow.atLeastOneFileType')),
+  // Global vision enhancement: one switch + one img2txt model shared by every
+  // vision-capable file type, sitting at the params top level alongside the
+  // per-family setups (see the backend Parser component contract).
+  vlm: z.object({ llm_id: z.string().optional() }).optional(),
+  enable_vision_enhancement: z.boolean().optional(),
 });
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;
