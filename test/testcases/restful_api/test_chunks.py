@@ -303,7 +303,7 @@ def test_chunk_add_repeated_and_deleted_document_contract(rest_client, create_do
 
     repeated_list_payload = rest_client.get(base_path).json()
     assert repeated_list_payload["code"] == 0, repeated_list_payload
-    assert repeated_list_payload["data"]["doc"]["chunk_count"] == initial_count + 2, repeated_list_payload
+    assert repeated_list_payload["data"]["doc"]["chunk_count"] == initial_count + 1, repeated_list_payload
     assert repeated_list_payload["data"]["total"] == 1, repeated_list_payload
 
     delete_document_res = rest_client.delete(f"/datasets/{dataset_id}/documents", json={"ids": [document_id]})
