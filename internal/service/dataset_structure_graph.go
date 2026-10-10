@@ -491,8 +491,19 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 		}
 	}
 
+	// fieldMap is keyed by id (the engine returns rows in a map), so ranging it
+	// would discard the requested Asc("id") order. Walk the ids in sorted order
+	// to fix a deterministic base: the stable source-position sort below then
+	// orders by reading position, and equal/absent positions keep THIS id order
+	// instead of map iteration order.
+	ids := make([]string, 0, len(fieldMap))
+	for id := range fieldMap {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
 	rows := make([]map[string]interface{}, 0, len(fieldMap))
-	for _, row := range fieldMap {
+	for _, id := range ids {
+		row := fieldMap[id]
 		if !rowHasEnabledSource(row, excludedDocIDs) {
 			continue
 		}
