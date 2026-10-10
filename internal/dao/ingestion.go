@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -43,7 +42,7 @@ func (dao *IngestionTaskDAO) Create(ctx context.Context, db *gorm.DB, ingestionT
 		return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", ingestionTask.DocumentID, existing.Status, existing.ID)
 	}
 	if ingestionTask.ID == "" {
-		ingestionTask.ID = utility.GenerateUUID()
+		ingestionTask.ID = common.GenerateUUID()
 	}
 	if err = db.WithContext(ctx).Create(ingestionTask).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {

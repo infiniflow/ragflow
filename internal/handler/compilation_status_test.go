@@ -45,6 +45,7 @@ func setupCompilationStatusHandlerDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&entity.Knowledgebase{},
 		&entity.KnowledgeCompileDataset{},
+		&entity.UserTenant{},
 	); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
@@ -68,6 +69,17 @@ func insertCompilationStatusHandlerKB(t *testing.T, kbID, ownerID string) {
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
+	}
+	active := string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.UserTenant{
+		ID:        ownerID + "-membership",
+		UserID:    ownerID,
+		TenantID:  ownerID,
+		Role:      "owner",
+		InvitedBy: ownerID,
+		Status:    &active,
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 }
 
@@ -182,8 +194,7 @@ func TestCompilationStatusHandler_FullOutput(t *testing.T) {
 }
 
 // TestCompilationStatusHandler_Unauthorized verifies a user who does not own the
-// dataset is rejected with a data error (HTTP 200 + non-zero code, matching the
-// handler's ErrorWithCode contract).
+// dataset is rejected with the standardized forbidden response.
 func TestCompilationStatusHandler_Unauthorized(t *testing.T) {
 	db := setupCompilationStatusHandlerDB(t)
 	// KB is owned by user-1; the router sets user to user-1, so this test must
@@ -202,10 +213,10 @@ func TestCompilationStatusHandler_Unauthorized(t *testing.T) {
 	}
 
 	_, body := getCompilationStatus(t, newCompilationStatusHandlerRouter(), "kb-status-forbidden")
-	if body.Code != int(common.CodeDataError) {
-		t.Fatalf("code=%d want %d", body.Code, common.CodeDataError)
+	if body.Code != int(common.CodeForbidden) {
+		t.Fatalf("code=%d want %d", body.Code, common.CodeForbidden)
 	}
-	if body.Message != "no authorization" {
-		t.Fatalf("message=%q want %q", body.Message, "no authorization")
+	if body.Message != "Permission denied" {
+		t.Fatalf("message=%q want %q", body.Message, "Permission denied")
 	}
 }

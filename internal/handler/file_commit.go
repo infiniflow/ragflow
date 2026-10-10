@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -95,10 +96,16 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 		// Authorize, not just existence: the commit surface exposes artifact
 		// contents and history, so it needs the same access check the dataset
 		// routes apply.
-		if entityType == "datasets" && !h.kbDAO.Accessible(ctx, dao.DB, id, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeNotFound, nil, fmt.Sprintf("%s not found", entityType))
-			c.Abort()
-			return
+		if entityType == "datasets" {
+			operation := permission.OperationUpdate
+			if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
+				operation = permission.OperationRead
+			}
+			if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, id, operation); err != nil {
+				respondHTTPPermissionError(c, err, true)
+				c.Abort()
+				return
+			}
 		}
 		folderID, err := h.ResolveFolderID(ctx, entityType, id)
 		if err != nil {

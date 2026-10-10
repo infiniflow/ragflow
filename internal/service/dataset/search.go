@@ -10,6 +10,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/service/nlp"
 )
@@ -112,9 +114,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	var kbRecords []*entity.Knowledgebase
 	seenTenants := make(map[string]bool)
 	for _, datasetID := range datasetIDs {
-		if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
 			common.Warn("SearchDatasets access denied", zap.String("datasetID", datasetID), zap.String("userID", userID))
-			return nil, fmt.Errorf("only owner of dataset %s is authorized for this operation", datasetID)
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 
 		kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)

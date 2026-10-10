@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
@@ -1096,7 +1097,7 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
-	_, err = c.Invoke(context.Background(), nil, map[string]any{
+	_, err = c.Invoke(common.WithRetryDelay(context.Background(), time.Millisecond), nil, map[string]any{
 		"chunks":    []any{map[string]any{"id": "c1", "text": "Alpha is a Beta"}},
 		"doc_id":    "d1",
 		"tenant_id": "t1",

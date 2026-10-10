@@ -615,7 +615,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// PageHeight is already in PDF-point space — computed in processPage.
 	result.Sections = lyt.BoxesToSections(boxes, result.PageHeight)
 	result.Metrics.BoxesFinal = len(result.Sections)
-	result.Sections = tbl.MergeCaptions(result.Sections, result.Figures())
+	result.Sections = tbl.MergeCaptions(result.Sections)
 	return nil
 }
 

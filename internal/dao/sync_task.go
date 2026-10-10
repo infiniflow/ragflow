@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"time"
@@ -512,7 +513,7 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 		Update("status", SyncStatusSchedule).Error; err != nil {
 		return "", err
 	}
-	taskID := utility.GenerateToken()
+	taskID := common.GenerateToken()
 	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
 		ID:               taskID,
 		ConnectorID:      connectorID,
