@@ -388,10 +388,11 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	}
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
-	if recordPrefixes := chunk.CustomDelimiterPrefixes(c.param.Delimiters); len(recordPrefixes) > 0 {
+	recordPrefixes := chunk.CustomDelimiterPrefixes(c.param.Delimiters)
+	if len(recordPrefixes) > 0 {
 		units = groupDOCXUnitsByRecordBoundary(units, recordPrefixes)
 	}
-	units = splitGeneralUnits(units, primaryPattern)
+	units = splitGeneralUnitsPreservingRecordPrefix(units, primaryPattern, recordPrefixes)
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	units = mergeDOCXUnits(units, c.param.ChunkTokenSize, hasCustomDelim(c.param.Delimiters), "\n")
 	units = applyGeneralOverlap(units, c.param.OverlappedPercent, "\n")
@@ -1220,20 +1221,33 @@ func joinGeneralOverlapText(prefix, text, separator string) string {
 }
 
 func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
+	return splitGeneralUnitsPreservingRecordPrefix(units, pattern, nil)
+}
+
+// splitGeneralUnitsPreservingRecordPrefix is splitGeneralUnits, except a
+// leading custom-delimiter record prefix (for example "问：") is kept on the
+// first fragment. Inline delimiter matches are still dropped in splitByDelim
+// drop mode.
+func splitGeneralUnitsPreservingRecordPrefix(units []schema.ChunkDoc, pattern *regexp.Regexp, recordPrefixes []string) []schema.ChunkDoc {
 	result := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
 		unit.DocType = itemDocType(unit)
 		unit.CKType = unit.DocType
-		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
+		prefix, rest := peelLeadingRecordPrefix(unit.Text, recordPrefixes)
+		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(rest) {
+			unit.Text = prefix + rest
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result = append(result, unit)
 			continue
 		}
-		for _, part := range splitByDelim(unit.Text, pattern, false) {
+		for i, part := range splitByDelim(rest, pattern, false) {
 			if strings.TrimSpace(part) == "" {
 				continue
+			}
+			if i == 0 {
+				part = prefix + part
 			}
 			piece := cloneChunkDoc(unit)
 			piece.Text = part
@@ -1242,6 +1256,20 @@ func splitGeneralUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema
 		}
 	}
 	return result
+}
+
+func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest string) {
+	if len(prefixes) == 0 {
+		return "", text
+	}
+	trimmed := strings.TrimLeft(text, " \t")
+	leadingWS := text[:len(text)-len(trimmed)]
+	for _, p := range prefixes {
+		if p != "" && strings.HasPrefix(trimmed, p) {
+			return leadingWS + p, trimmed[len(p):]
+		}
+	}
+	return "", text
 }
 
 func normalizeGeneralNewlines(text string) string {
