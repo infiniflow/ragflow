@@ -546,7 +546,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.vision.modelID)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.vision)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or

@@ -167,7 +167,7 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
-	modelRef string,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
@@ -177,7 +177,10 @@ func maybeDispatchVisionEnhancement(
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
 	setup := setups[family]
-	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// The global enhancement language drives the description; the per-family
+	// language stays as the fallback and continues to feed the PDF parsing
+	// engines, which take it as an OCR parameter rather than a caption language.
+	language := resolveVisionLanguage(inputs, firstNonEmpty(vision.lang, getStringOr(setup, "lang", "")))
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
@@ -207,11 +210,11 @@ func maybeDispatchVisionEnhancement(
 	var resolveErr error
 	if tenantID != "" {
 		var err error
-		if modelRef != "" {
-			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if vision.modelID != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
 			if err != nil {
 				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-					zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
 				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 			}
 		} else {
