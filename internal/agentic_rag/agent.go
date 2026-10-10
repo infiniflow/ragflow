@@ -70,6 +70,9 @@ type Input struct {
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
+	// DocIDs is the server-bound document scope. Nil leaves retrieval unrestricted;
+	// a non-nil empty slice restricts all corpus tools to no documents.
+	DocIDs []string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
 	// The web_search tool is NOT passed here: it is injected from the run's
@@ -291,6 +294,9 @@ func (t *instrumentedTool) InvokableRun(ctx context.Context, args string, opts .
 func Run(ctx context.Context, in Input) (string, error) {
 	if in.Model == nil {
 		return "", errNilModel
+	}
+	if in.DocIDs != nil {
+		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
 
 	tmpl, errT := resolveTemplateFor(in.TemplateID)
