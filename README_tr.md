@@ -170,7 +170,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
 
 #### 🚀 Sunucuyu Başlatma
 
-1. `vm.max_map_count` değerinin >= 262144 olduğundan emin olun:
+1. Elasticsearch kullanıyorsanız Docker ana makinesinde `vm.max_map_count` değerini en az 262144 olarak ayarlayın. Infinity kullanılırken bu adım genellikle gerekli değildir:
 
    > `vm.max_map_count` değerini kontrol etmek için:
    >
@@ -178,7 +178,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    > sysctl vm.max_map_count
    > ```
    >
-   > Değer 262144'ten düşükse, en az 262144 olarak ayarlayın.
+   > Elasticsearch kullanıyorsanız ve değer 262144'in altındaysa sıfırlayın:
    >
    > ```bash
    > # Bu örnekte 262144 olarak ayarlıyoruz:
