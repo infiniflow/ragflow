@@ -492,8 +492,7 @@ func TestTableSectionCaptionInHTML(t *testing.T) {
 	})
 
 	// Step 2: mergeCaptions injects caption as a <caption> element inside <table>
-	figures := pdf.CollectFigures(sections)
-	sections = tbl.MergeCaptions(sections, figures)
+	sections = tbl.MergeCaptions(sections)
 
 	got := sections[0].Text
 	if !strings.Contains(got, "<caption>表1: 交通工具等级</caption>") {

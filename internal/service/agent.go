@@ -2242,6 +2242,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		if isResume && resumeID != "" {
 			wfInput = map[string]any{"query": ""}
 		}
+		runStartedAt := time.Now()
 		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, wfInput, invokeOpts...)
 		err = invokeErr
 		if errors.Is(err, context.Canceled) || errors.Is(ctx2.Err(), context.Canceled) {
@@ -2255,56 +2256,27 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			_ = s.runTracker.AttachCheckpoint(ctx2, runID, cpID)
 		}
 
-		// Collect answer and references from the state snapshot.
+		// Collect thinking and references from the state snapshot.
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
-		var answer string
 		var thinking string
 		var legacyReference []interface{}
-		var downloads any
-		var attachment map[string]any
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
-			if v, ok := bucket["answer"].(string); ok && v != "" {
-				if answer == "" {
-					answer = v
-				}
-			}
-			if v, ok := bucket["content"].(string); ok && v != "" && answer == "" {
-				answer = v
-			}
-			if v, ok := bucket["result"].(string); ok && v != "" && answer == "" {
-				answer = v
-			}
 			if v, ok := bucket["thinking"].(string); ok && v != "" && thinking == "" {
 				thinking = v
 			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
 				legacyReference = append(legacyReference, v...)
 			}
-			if v, ok := bucket["downloads"]; ok && !emptyDownloadValue(v) {
-				downloads = v
-			}
-			if v, ok := bucket["attachment"].(map[string]any); ok && len(v) > 0 {
-				attachment = v
-			}
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
-		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
-		// The terminal Message output is authoritative. Do not let a result or
-		// content field from a non-terminal upstream node become the answer when
-		// the Message intentionally selected attachments only.
-		if terminalContent, ok := assistantOutput["content"].(string); ok {
-			answer = terminalContent
-		} else {
-			answer = ""
-		}
-		downloads = assistantOutput["downloads"]
-		if terminalAttachment, ok := assistantOutput["attachment"].(map[string]any); ok {
-			attachment = terminalAttachment
-		} else {
-			attachment = nil
-		}
+		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, runStartedAt)
+		// The selected Message owns the answer, including empty text when it
+		// intentionally selected attachments only.
+		answer, _ := assistantOutput["content"].(string)
+		downloads := assistantOutput["downloads"]
+		attachment, _ := assistantOutput["attachment"].(map[string]any)
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
@@ -2346,41 +2318,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					emit("message_end", string(meData))
 				}
 				return state, err
-			}
-			if shouldTreatAsCompletedLoopRun(err, answer) {
-				appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
-				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
-					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
-					return nil, canvas.NewInternalRunError(
-						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
-					)
-				}
-				if !messageEventsEmitted && shouldEmitMessage {
-					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
-				}
-
-				if shouldEmitMessage {
-					meData, _ := json.Marshal(canvas.MessageEndEvent{
-						Attachment: attachment,
-						Reference:  referencePayload,
-					})
-					emit("message_end", string(meData))
-				}
-
-				wfPayload := map[string]interface{}{
-					"inputs":       map[string]any{"query": userInput},
-					"outputs":      workflowOutputsFromTerminal(assistantOutput),
-					"elapsed_time": now - startedAt,
-					"created_at":   now,
-				}
-				if u := usagePayload(); u != nil {
-					wfPayload["usage"] = u
-				}
-				wfData, _ := json.Marshal(wfPayload)
-				emit("workflow_finished", string(wfData))
-
-				s.markRunSucceeded(ctx2, runID)
-				return state, nil
 			}
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
@@ -2760,19 +2697,27 @@ func terminalCanvasOutput(
 	c *canvas.Canvas,
 	state *canvas.CanvasState,
 	workflowOutput map[string]any,
-	answer string,
-	downloads any,
-	attachment any,
+	runStartedAt time.Time,
 ) map[string]any {
 	terminalIDs := make([]string, 0)
+	messageIDs := make([]string, 0)
 	if c != nil {
 		for cpnID, component := range c.Components {
-			if len(component.Downstream) == 0 {
+			if strings.EqualFold(component.Obj.ComponentName, "Message") {
+				messageIDs = append(messageIDs, cpnID)
+			}
+			if c.NodeParents[cpnID] != "" || strings.EqualFold(component.Obj.ComponentName, "ExitLoop") {
+				continue
+			}
+			// Successful workflow output names the actual outer terminals,
+			// including macros whose declared downstream belongs to their body.
+			if _, ok := workflowOutput[cpnID]; ok || len(component.Downstream) == 0 {
 				terminalIDs = append(terminalIDs, cpnID)
 			}
 		}
 	}
 	sort.Strings(terminalIDs)
+	sort.Strings(messageIDs)
 	for _, cpnID := range terminalIDs {
 		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
 			return cloneCanvasOutput(output)
@@ -2782,21 +2727,30 @@ func terminalCanvasOutput(
 		snapshot := state.Snapshot()
 		for _, cpnID := range terminalIDs {
 			if output := snapshot[cpnID]; len(output) > 0 {
-				return cloneCanvasOutput(output)
+				created, _ := output["_created_time"].(string)
+				createdAt, err := time.Parse(time.RFC3339Nano, created)
+				if err == nil && !createdAt.Before(runStartedAt) {
+					return cloneCanvasOutput(output)
+				}
 			}
 		}
+		// A Message may have emitted a prompt before the next node paused.
+		// Persist that partial answer, but never replay an earlier turn.
+		var partial map[string]any
+		latest := runStartedAt
+		for _, cpnID := range messageIDs {
+			output := snapshot[cpnID]
+			created, _ := output["_created_time"].(string)
+			createdAt, err := time.Parse(time.RFC3339Nano, created)
+			if err == nil && !createdAt.Before(latest) {
+				partial, latest = output, createdAt
+			}
+		}
+		if partial != nil {
+			return cloneCanvasOutput(partial)
+		}
 	}
-	if len(workflowOutput) > 0 {
-		return cloneCanvasOutput(workflowOutput)
-	}
-	fallback := map[string]any{"content": answer}
-	if !emptyDownloadValue(downloads) {
-		fallback["downloads"] = downloads
-	}
-	if !emptyAttachmentValue(attachment) {
-		fallback["attachment"] = attachment
-	}
-	return fallback
+	return map[string]any{}
 }
 
 func cloneCanvasOutput(input map[string]any) map[string]any {
@@ -2957,14 +2911,6 @@ func deferredAgentStreamFailureText(err error) string {
 		return ""
 	}
 	return strings.TrimSpace(deferred.FailureText())
-}
-
-func shouldTreatAsCompletedLoopRun(err error, answer string) bool {
-	if err == nil || answer == "" {
-		return false
-	}
-	msg := err.Error()
-	return strings.Contains(msg, "[GraphRunError] no tasks to execute")
 }
 
 func canvasInvokeError(err error) error {
