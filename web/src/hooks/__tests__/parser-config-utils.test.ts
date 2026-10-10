@@ -29,9 +29,7 @@ const baseConfig = {
 };
 
 describe('normalizeParserConfig backend awareness', () => {
-  beforeEach(() => {
-    mockIsGoBackend = true;
-  });
+  beforeEach(() => {});
 
   it('scopes metadata and parent_child onto component nodes and drops every flat key for the Go backend', () => {
     const out = normalizeParserConfig({

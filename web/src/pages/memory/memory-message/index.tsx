@@ -13,7 +13,6 @@ export default function MemoryMessage() {
     setPagination,
     filterValue,
     handleFilterSubmit,
-    loading,
   } = useFetchMemoryMessageList();
   const { filters } = useSelectFilters();
   return (

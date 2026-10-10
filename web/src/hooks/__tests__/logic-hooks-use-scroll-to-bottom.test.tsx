@@ -7,12 +7,14 @@ function createMockContainer({ atBottom = true } = {}) {
   const scrollTop = atBottom ? 100 : 0;
   const clientHeight = 100;
   const scrollHeight = 200;
-  const listeners = {};
+  const listeners: Record<string, any> = {};
   return {
     current: {
       scrollTop,
       clientHeight,
       scrollHeight,
+      style: {},
+      scrollTo: jest.fn(),
       addEventListener: jest.fn((event, cb) => {
         listeners[event] = cb;
       }),
@@ -54,23 +56,18 @@ describe('useScrollToBottom', () => {
 
   it('should scroll to bottom when isAtBottom is true and messages change', async () => {
     const containerRef = createMockContainer({ atBottom: true });
-    const mockScroll = jest.fn();
-
-    function useTestScrollToBottom(messages: any, containerRef: any) {
-      const hook = useScrollToBottom(messages, containerRef);
-      hook.scrollRef.current = { scrollIntoView: mockScroll } as any;
-      return hook;
-    }
 
     const { rerender } = renderHook(
-      ({ messages }) => useTestScrollToBottom(messages, containerRef),
+      ({ messages }) => useScrollToBottom(messages, containerRef),
       { initialProps: { messages: [] } },
     );
 
-    rerender({ messages: ['msg1'] });
+    rerender({ messages: ['msg1'] } as any);
     await flushAll();
 
-    expect(mockScroll).toHaveBeenCalled();
+    // The hook pins the transcript with container.scrollTo(...), not
+    // scrollRef.scrollIntoView (which it no longer uses).
+    expect(containerRef.current.scrollTo).toHaveBeenCalled();
   });
 
   it('should NOT scroll to bottom when isAtBottom is false and messages change', async () => {
@@ -79,7 +76,7 @@ describe('useScrollToBottom', () => {
 
     function useTestScrollToBottom(messages: any, containerRef: any) {
       const hook = useScrollToBottom(messages, containerRef);
-      hook.scrollRef.current = { scrollIntoView: mockScroll } as any;
+      (hook.scrollRef as any).current = { scrollIntoView: mockScroll };
       console.log('HOOK: isAtBottom:', hook.isAtBottom);
       return hook;
     }
@@ -99,7 +96,7 @@ describe('useScrollToBottom', () => {
       console.log('AFTER SCROLL: isAtBottom:', result.current.isAtBottom);
     });
 
-    rerender({ messages: ['msg1'] });
+    rerender({ messages: ['msg1'] } as any);
     await flushAll();
 
     console.log('AFTER RERENDER: isAtBottom:', result.current.isAtBottom);

@@ -13,7 +13,9 @@ export const useBuildFormSelectOptions = (
     (toList: string[]) => {
       const excludedNodes: Operator[] = [
         Operator.Note,
-        ...(RestrictedUpstreamMap[operatorName] ?? []),
+        ...((RestrictedUpstreamMap as Record<string, Operator[] | undefined>)[
+          operatorName
+        ] ?? []),
       ];
       return nodes
         .filter(

@@ -106,7 +106,7 @@ function VariableWithPath({ name }: VariableWithPathProps) {
     <div className="flex-1 min-w-0 flex items-center gap-2">
       <div className="flex-[3] min-w-0">
         <GroupedSelectWithSecondaryMenu
-          options={options}
+          options={options as any}
           value={base}
           onChange={(val) => writeCombined(val, suffix)}
         />

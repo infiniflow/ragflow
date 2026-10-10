@@ -15,7 +15,7 @@ web_dir="$repo_root/web"
 lock="$web_dir/package-lock.json"
 
 if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-  echo "web_tools: node/npm not found — they are required to lint and format web/ files" >&2
+  echo "web_tools: node/npm not found — web/ requires node >= 22 (and npm) to lint and format its files" >&2
   exit 1
 fi
 

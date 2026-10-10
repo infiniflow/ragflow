@@ -4,7 +4,7 @@ jest.mock('react-i18next', () => ({
 
 import { act, renderHook } from '@testing-library/react';
 import { MetadataType, metadataValueTypeEnum } from '../../constant';
-import { IManageValuesProps, IMetaDataTableData } from '../../interface';
+import type { IManageValuesProps, IMetaDataTableData } from '../../interface';
 import { useManageValues } from '../use-manage-values-modal';
 
 function makeProps(

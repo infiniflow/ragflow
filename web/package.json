@@ -202,7 +202,7 @@
     }
   },
   "engines": {
-    "node": ">=18.20.4"
+    "node": ">=22"
   },
   "allowScripts": {
     "esbuild@0.25.12": true,

@@ -6,10 +6,8 @@ import { cn } from '@/lib/utils';
 import api from '@/utils/api';
 import { getAuthorization } from '@/utils/authorization-util';
 import { chain, sum } from 'lodash';
-import { Loader2, Mic, Square } from 'lucide-react';
+import { Loader2, Mic } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Input } from './input';
-import { Popover, PopoverContent, PopoverTrigger } from './popover';
 import message from './message';
 
 const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
@@ -167,53 +165,6 @@ const VoiceVisualizer = ({ isRecording }: { isRecording: boolean }) => {
   return <canvas ref={canvasRef} className="block size-full" />;
 };
 
-const VoiceInputBox = ({
-  isRecording,
-  onStop,
-  recordingTime,
-  value,
-}: {
-  value: string;
-  isRecording: boolean;
-  onStop: () => void;
-  recordingTime: number;
-}) => {
-  // Format recording time
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  return (
-    <div className="w-full">
-      <div className=" absolute w-full h-6 translate-y-full">
-        <VoiceVisualizer isRecording={isRecording} />
-      </div>
-      <Input
-        rootClassName="w-full"
-        className="flex-1 "
-        readOnly
-        value={value}
-        suffix={
-          <div className="flex justify-end px-1 items-center gap-1 w-20">
-            <Button
-              variant={'ghost'}
-              size="sm"
-              className="text-text-primary p-1 border-none hover:bg-transparent"
-              onClick={onStop}
-            >
-              <Square className="text-text-primary" size={12} />
-            </Button>
-            <span className="text-xs text-text-secondary">
-              {formatTime(recordingTime)}
-            </span>
-          </div>
-        }
-      />
-    </div>
-  );
-};
 export const AudioButton = ({
   onOk,
   testId,
@@ -224,10 +175,10 @@ export const AudioButton = ({
   // const [showInputBox, setShowInputBox] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
-  const [transcript, setTranscript] = useState('');
-  const [popoverOpen, setPopoverOpen] = useState(false);
   const recorderControls = useAudioRecorder();
+  const [, setRecordingTime] = useState(0);
+  const [, setTranscript] = useState('');
+  const [, setPopoverOpen] = useState(false);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   // Handle logic after recording is complete
   const handleRecordingComplete = async (blob: Blob) => {
@@ -306,7 +257,7 @@ export const AudioButton = ({
       clearInterval(intervalRef.current);
     }
     intervalRef.current = setInterval(() => {
-      setRecordingTime((prev) => prev + 1);
+      setRecordingTime((prev: number) => prev + 1);
     }, 1000);
   };
 

@@ -8,7 +8,7 @@ class KeyGenerator {
   constructor() {
     const chars = Array(26)
       .fill(1)
-      .map((x, idx) => String.fromCharCode(97 + idx)); // 26 char
+      .map((_x, idx) => String.fromCharCode(97 + idx)); // 26 char
     this.chars = chars;
   }
   generateKey() {

@@ -202,12 +202,12 @@ export const SchemaPropertyEditor: React.FC<SchemaPropertyEditorProps> = ({
         </div>
 
         {/* Error badge */}
-        {validationNode?.cumulativeChildrenErrors > 0 && (
+        {(validationNode?.cumulativeChildrenErrors ?? 0) > 0 && (
           <Badge
             className="h-5 min-w-5 rounded-full px-1 font-mono tabular-nums justify-center"
             variant="destructive"
           >
-            {validationNode.cumulativeChildrenErrors}
+            {validationNode?.cumulativeChildrenErrors}
           </Badge>
         )}
 

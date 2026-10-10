@@ -1,13 +1,12 @@
 import { TimelineNode } from '@/components/originui/timeline';
-import message from '@/components/ui/message';
 import { useSetModalState, useShowDeleteConfirm } from '@/hooks/common-hooks';
 import { useGetKnowledgeSearchParams } from '@/hooks/route-hook';
 import { useFetchMessageTrace } from '@/hooks/use-agent-request';
 import { useCreateChunk, useDeleteChunk } from '@/hooks/use-chunk-request';
-import kbService, { getPipelineDetail } from '@/services/knowledge-service';
+import { getPipelineDetail } from '@/services/knowledge-service';
 import { formatSecondsToHumanReadable } from '@/utils/date';
 import { buildChunkHighlights } from '@/utils/document-util';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { t } from 'i18next';
 import { camelCase, upperFirst } from 'lodash';
 import {

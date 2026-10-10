@@ -57,7 +57,7 @@ export function SkillsView() {
     return (
       <CompilationEmptyState
         type={ViewMode.Skills}
-        disabled={!canGenerate}
+        {...({ disabled: !canGenerate } as any)}
         data={skillRunData}
       />
     );

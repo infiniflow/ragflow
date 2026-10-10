@@ -141,7 +141,7 @@ function UserFillUpForm({ node }: INextOperatorForm) {
           rightContent={
             <Button
               variant={'ghost'}
-              onClick={(e) => {
+              onClick={(e: any) => {
                 e.preventDefault();
                 showModal();
               }}

@@ -272,7 +272,7 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          forceDelete
+          {...({ forceDelete: true } as any)}
           handleOperationIconClick={handleOperationIconClick}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}

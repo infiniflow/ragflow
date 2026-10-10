@@ -43,7 +43,7 @@ export function parseBooleanish(value: any): boolean {
 export function createFuzzySearchFn<TData extends RowData>(
   columns: (keyof TData)[] = [],
 ) {
-  return (row: Row<TData>, columnId: string, filterValue: string) => {
+  return (row: Row<TData>, _columnId: string, filterValue: string) => {
     const searchText = filterValue.trim().toLowerCase();
 
     return columns

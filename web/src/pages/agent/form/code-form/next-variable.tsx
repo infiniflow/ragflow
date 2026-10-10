@@ -83,7 +83,7 @@ export function DynamicVariableForm({ name = 'arguments', isOutputs }: IProps) {
                       ></SelectWithSearch>
                     ) : (
                       <SelectWithSearch
-                        options={nextOptions}
+                        options={nextOptions as any}
                         {...field}
                       ></SelectWithSearch>
                     )}

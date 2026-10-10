@@ -16,7 +16,10 @@ export const useHandleUploadFile = () => {
   const onFileUploadOk = useCallback(
     async ({ fileList }: UploadFormSchemaType): Promise<number | undefined> => {
       if (fileList.length > 0) {
-        const ret: number = await uploadFile({ fileList, parentId: id });
+        const ret: number = await uploadFile({
+          fileList: fileList as any,
+          parentId: id,
+        });
         if (ret === 0) {
           hideFileUploadModal();
         }

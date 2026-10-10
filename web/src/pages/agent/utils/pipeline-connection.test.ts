@@ -97,8 +97,9 @@ describe('isSingleInstanceOperator', () => {
     expect(isSingleInstanceOperator(Operator.GeneralChunker)).toBe(true);
   });
 
-  it('leaves multi-instance operators unchecked', () => {
-    expect(isSingleInstanceOperator(Operator.Extractor)).toBe(false);
+  it('marks Extractor single-instance and leaves other multi-instance operators unchecked', () => {
+    // upstream #20711: the pipeline canvas allows at most one Extractor operator.
+    expect(isSingleInstanceOperator(Operator.Extractor)).toBe(true);
     expect(isSingleInstanceOperator(Operator.Agent)).toBe(false);
   });
 });
@@ -106,12 +107,12 @@ describe('isSingleInstanceOperator', () => {
 describe('buildPipelineNextOperators', () => {
   const noOperator = () => false;
 
-  it('always offers Extractor, which is multi-instance', () => {
+  it('does not offer Extractor when one is already on the canvas (single-instance)', () => {
     const hasExtractor = (operator: Operator) =>
       operator === Operator.Extractor;
     expect(
       buildPipelineNextOperators(undefined, hasExtractor).operators,
-    ).toContain(Operator.Extractor);
+    ).not.toContain(Operator.Extractor);
   });
 
   it('offers Compiler only when none is on the canvas', () => {

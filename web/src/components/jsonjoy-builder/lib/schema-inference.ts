@@ -126,7 +126,7 @@ function detectSemanticFormatsInArrayItems(
       /coordinates?|coords?|latLon|lonLat|point/i.test(key) &&
       currentSchema.type === 'array'
     ) {
-      const itemsSchema = asObjectSchema(currentSchema.items);
+      const itemsSchema = asObjectSchema(currentSchema.items ?? {});
       if (itemsSchema?.type === 'number' || itemsSchema?.type === 'integer') {
         let isValidCoordArray = true;
         let coordLength: number | null = null;

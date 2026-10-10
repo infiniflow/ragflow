@@ -114,7 +114,7 @@ const ParserContainer = (props: IProps) => {
         >
           {initialText && (
             <FormatPreserEditor
-              initialValue={initialText}
+              initialValue={initialText as any}
               onSave={handleSave}
               isReadonly={isReadonly}
               isChunck={isChunck}

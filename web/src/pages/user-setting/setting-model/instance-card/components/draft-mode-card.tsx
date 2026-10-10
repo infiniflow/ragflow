@@ -20,7 +20,6 @@ import { useCallback, type RefObject } from 'react';
 import { AimlapiGetKeyButton } from '../aimlapi-get-key-button';
 import { DRAFT_INSTANCE_SENTINEL, DraftModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
-import VerifyButton from '../verify-button';
 import { InstanceNameSection } from './instance-name-section';
 
 /**
@@ -37,7 +36,6 @@ export function DraftModeCard({
   formFields,
   formDefaultValues,
   formRef,
-  handleVerify,
   handleDelete,
   handleInstanceModelsEdited,
   providerName,

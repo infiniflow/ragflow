@@ -66,7 +66,7 @@ export default function AgentTemplates() {
           memoryIds.length > 0)
           ? bindUnboundRetrieval(dsl, datasetBindings, memoryIds)
           : dsl;
-      boundDsl = bindUnboundModel(boundDsl, modelId);
+      boundDsl = bindUnboundModel(boundDsl as any, modelId) as any;
 
       const ret = await setAgent({
         title: payload.name,

@@ -211,7 +211,9 @@ export const useInitializeOperatorParams = () => {
 
   const initializeOperatorParams = useCallback(
     (operatorName: Operator, position: Position) => {
-      const initialValues = initialFormValuesMap[operatorName];
+      const initialValues = (initialFormValuesMap as Record<string, any>)[
+        operatorName
+      ];
       if (isBottomSubAgent(operatorName, position)) {
         return {
           ...initialValues,
@@ -422,7 +424,7 @@ export function useAddNode(reactFlowInstance?: ReactFlowInstance<any, any>) {
 
         const newNode: Node<any> = {
           id: `${type}:${humanId()}`,
-          type: NodeMap[type as Operator] || 'ragNode',
+          type: (NodeMap as Record<string, string>)[type] || 'ragNode',
           position: position || {
             x: 0,
             y: 0,

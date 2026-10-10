@@ -52,7 +52,7 @@ const FormSheet = ({
   const operatorName: Operator = node?.data.label as Operator;
   const { clickedToolId, getAgentToolById } = useGraphStore();
 
-  const currentFormMap = FormConfigMap[operatorName];
+  const currentFormMap = (FormConfigMap as any)[operatorName];
   const OperatorForm = currentFormMap?.component ?? EmptyContent;
   const isMcp = useIsMcp(operatorName);
   const { t } = useTranslate('flow');

@@ -13,7 +13,9 @@ export function useBuildNodeOutputOptions(nodeId?: string) {
       nodes,
       edges,
       nodeId,
-      Icon: ({ name }) => <OperatorIcon name={name as Operator}></OperatorIcon>,
-    });
+      Icon: ({ name }: { name: string }) => (
+        <OperatorIcon name={name as Operator}></OperatorIcon>
+      ),
+    } as any);
   }, [edges, nodeId, nodes]);
 }

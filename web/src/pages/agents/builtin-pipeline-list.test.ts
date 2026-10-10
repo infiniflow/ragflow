@@ -87,7 +87,7 @@ describe('shouldShowBuiltinForRaw', () => {
       shouldShowBuiltinForRaw({
         operator: 'or',
         values: [AgentCategory.DataflowCanvas],
-      }),
+      } as any),
     ).toBe(false);
   });
 });

@@ -145,7 +145,7 @@ function transformApiResponseToForm(
     chunk_token_cap,
     hierarchyRules,
     groupRules,
-  };
+  } as any;
 }
 
 type HierarchyOption = {

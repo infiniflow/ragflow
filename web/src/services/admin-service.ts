@@ -211,13 +211,17 @@ export const listServices = async () => {
     await request.get<
       ResponseData<AdminService.ListServicesItem[] | GoServiceStatus[]>
     >(adminListServices);
-  return data.code === 0 ? adaptServiceList(data.data) : [];
+  return data.code === 0
+    ? adaptServiceList(data.data as GoServiceStatus[])
+    : [];
 };
 export const showServiceDetails = async (serviceId: number | string) => {
   const { data } = await request.get<
     ResponseData<AdminService.ServiceDetail | GoServiceStatus>
   >(adminShowServiceDetails(encodeURIComponent(String(serviceId))));
-  return data.code === 0 ? adaptServiceDetail(data.data) : undefined;
+  return data.code === 0
+    ? adaptServiceDetail(data.data as GoServiceStatus)
+    : undefined;
 };
 
 export const createRole = (params: {

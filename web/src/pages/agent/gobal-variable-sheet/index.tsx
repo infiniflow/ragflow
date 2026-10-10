@@ -11,7 +11,6 @@ import { useSetModalState } from '@/hooks/common-hooks';
 import { useFetchAgent } from '@/hooks/use-agent-request';
 import { GlobalVariableType } from '@/interfaces/database/agent';
 import { cn } from '@/lib/utils';
-import { t } from 'i18next';
 import { Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { FieldValues } from 'react-hook-form';
@@ -142,7 +141,7 @@ export const GlobalParamSheet = (props: IGlobalParamModalProps) => {
                         <Button
                           variant={'secondary'}
                           className="bg-transparent hidden text-text-secondary border-none group-hover:bg-bg-card group-hover:text-text-primary group-hover:border group-hover:block"
-                          onClick={(e) => {
+                          onClick={(e: any) => {
                             e.stopPropagation();
                           }}
                         >

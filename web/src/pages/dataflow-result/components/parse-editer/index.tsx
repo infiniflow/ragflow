@@ -33,9 +33,9 @@ const FormatPreserveEditor = ({
         <ArrayContainer
           isReadonly={isReadonly}
           className={className}
-          initialValue={initialValue}
+          initialValue={initialValue as any}
           handleCheck={handleCheck}
-          selectedChunkIds={selectedChunkIds}
+          {...({ selectedChunkIds } as any)}
           onSave={onSave}
           escapeNewlines={escapeNewlines}
           unescapeNewlines={unescapeNewlines}
@@ -50,9 +50,9 @@ const FormatPreserveEditor = ({
         <ObjectContainer
           isReadonly={isReadonly}
           className={className}
-          initialValue={initialValue}
+          initialValue={initialValue as any}
           handleCheck={handleCheck}
-          selectedChunkIds={selectedChunkIds}
+          {...({ selectedChunkIds } as any)}
           onSave={onSave}
           escapeNewlines={escapeNewlines}
           unescapeNewlines={unescapeNewlines}

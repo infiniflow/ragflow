@@ -89,7 +89,7 @@ const EditTag = React.forwardRef<HTMLDivElement, EditTagsProps>(
                   <Button
                     variant="delete"
                     size="icon-xs"
-                    onClick={(e) => {
+                    onClick={(e: any) => {
                       e.preventDefault();
                       handleClose(tag);
                     }}

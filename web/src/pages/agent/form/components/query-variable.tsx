@@ -55,14 +55,14 @@ export function QueryVariable({
     handleChange?: (value: string) => void,
   ) => (
     <GroupedSelectWithSecondaryMenu
-      options={finalOptions}
+      options={finalOptions as any}
       value={value}
       onChange={(val) => {
         handleChange?.(val);
         onChange?.(val);
       }}
       // allowClear
-      types={types}
+      types={types as any}
     ></GroupedSelectWithSecondaryMenu>
   );
 

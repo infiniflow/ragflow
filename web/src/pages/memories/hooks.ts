@@ -188,9 +188,9 @@ export const useFetchMemoryDetail = (tenantId?: string) => {
       tenant_id: tenantId,
     };
   }
-  const fetchMemoryDetailFunc = shared_id
-    ? memoryService.getMemoryDetailShare
-    : memoryService.getMemoryDetail;
+  const fetchMemoryDetailFunc =
+    (memoryService as any).getMemoryDetailShare ??
+    (memoryService as any).getMemoryDetail;
 
   const { data, isLoading, isError } = useQuery<MemoryDetailResponse, Error>({
     queryKey: ['memoryDetail', memoryId],
@@ -266,7 +266,7 @@ export const useUpdateMemory = () => {
 
       return response.data;
     },
-    onSuccess: (data, variables) => {
+    onSuccess: (_data, variables) => {
       message.success(t('message.updated'));
       queryClient.invalidateQueries({
         queryKey: ['memoryDetail', variables.id],

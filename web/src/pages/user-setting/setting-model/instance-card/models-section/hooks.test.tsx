@@ -58,8 +58,6 @@ jest.mock('@/hooks/use-llm-request', () => ({
   }),
 }));
 
-jest.mock('@/components/dynamic-form', () => ({}));
-
 jest.mock('../../provider-schema/hooks', () => ({
   useProviderFields: jest.fn(),
 }));
