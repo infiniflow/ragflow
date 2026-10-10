@@ -31,6 +31,17 @@ export function getCachedLlmList(): Record<string, any> | null {
     if (!cached) return null;
 
     const parsed: LlmCache = JSON.parse(cached);
+    if (
+      !parsed ||
+      typeof parsed !== 'object' ||
+      !Number.isFinite(parsed.timestamp) ||
+      !parsed.data ||
+      typeof parsed.data !== 'object' ||
+      Array.isArray(parsed.data)
+    ) {
+      clearLlmCache();
+      return null;
+    }
     const now = Date.now();
 
     // Check if cache is expired
