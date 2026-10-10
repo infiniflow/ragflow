@@ -14,8 +14,10 @@
  *  limitations under the License.
  */
 
-const webAPI = `/v1`;
-const restAPIv1 = `/api/v1`;
+import { withAppBasePath } from '@/utils/base-path';
+
+const webAPI = withAppBasePath(`/v1`);
+const restAPIv1 = withAppBasePath(`/api/v1`);
 
 export { restAPIv1, webAPI };
 
