@@ -81,6 +81,18 @@ func toolRegistry() map[string]toolFactory {
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
 		"list_chunks":            func(t string, d []string) tool.BaseTool { return NewListChunksTool(t, d) },
 		"search_metadata":        func(t string, d []string) tool.BaseTool { return NewMetadataSearchTool(t, d) },
+		// The compiled-knowledge-graph walk. Registered always; a template that
+		// omits it simply never offers it to the model.
+		"graph_explore": func(t string, d []string) tool.BaseTool { return NewGraphExploreTool(t, d) },
+		// The compiled-navigation-tree router. Registered always; a template that
+		// omits it simply never offers it to the model (same pattern as
+		// graph_explore).
+		"navigate_tree": func(t string, d []string) tool.BaseTool { return NewNavigateTreeTool(t, d) },
+		// The compiled-structure drilldown: given a doc_id (from navigate_tree),
+		// reads that document's compiled entity/relation outline and returns a
+		// query-focused TOC the model feeds to list_chunks. Registered always; a
+		// template that omits it never offers it to the model.
+		"navigate_structure": func(t string, d []string) tool.BaseTool { return NewNavigateStructureTool(t, d) },
 	}
 }
 

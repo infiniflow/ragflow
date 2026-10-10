@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -70,6 +71,14 @@ type Input struct {
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
+	// ConversationKey is the conversation's stable identifier (the chat id). When
+	// set, the compiled-knowledge tools (navigate_tree / navigate_structure /
+	// graph_explore) record a dataset-level absence once and disable themselves
+	// for the rest of the conversation, so the agent stops spending calls on a
+	// tool the corpus cannot satisfy. When empty, the disable is scoped to the
+	// single run (still useful within a ReAct turn). The chat pipeline sets it
+	// from the conversation id; see nav_tool_enablement.go.
+	ConversationKey string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
 	// The web_search tool is NOT passed here: it is injected from the run's
@@ -111,6 +120,11 @@ type Input struct {
 const defaultMaxIterations = 120
 
 var errNilModel = errors.New("agentic_rag: model is required")
+
+// runSeq issues a unique key for each Run that carries no ConversationKey, so a
+// disable decision is scoped to that turn and does not collide with a concurrent
+// one.
+var runSeq uint64
 
 // llmRetryMax bounds retry attempts per model call on top of the initial one
 // (adk semantics: MaxRetries=1 → up to 2 calls). With the backoff below the
@@ -293,6 +307,16 @@ func Run(ctx context.Context, in Input) (string, error) {
 		return "", errNilModel
 	}
 
+	// Conversation identity for per-conversation compiled-knowledge tool
+	// availability: the chat pipeline passes the chat id; when absent, a unique
+	// per-run key keeps any availability decision scoped to this turn and
+	// isolated from concurrent runs.
+	convKey := in.ConversationKey
+	if convKey == "" {
+		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
+	}
+	ctx = WithConversationKey(ctx, convKey)
+
 	tmpl, errT := resolveTemplateFor(in.TemplateID)
 	if errT != nil {
 		common.ErrorCtx(ctx, "agentic_rag: resolve template", errT)
@@ -316,6 +340,13 @@ func Run(ctx context.Context, in Input) (string, error) {
 		// describes the corpus toolset, and a conversation whose context
 		// carries a provider gets one extra tool at run time.
 		tools = append(tools, webSearchTools(ctx)...)
+		// The compiled-knowledge tools are injected, never declared: they only
+		// make sense when the bound datasets have produced knowledge-compilation
+		// products (navigation tree / compiled structure / knowledge graph), so
+		// an uncompiled corpus never offers - or pays for - them.
+		if datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
+			tools = append(tools, compiledKnowledgeTools(in.TenantID, in.DatasetIDs)...)
+		}
 	}
 
 	maxIter := in.MaxIterations
@@ -339,6 +370,21 @@ func Run(ctx context.Context, in Input) (string, error) {
 		}
 	}
 	tools = wrapped
+
+	// Drop compiled-knowledge tools this conversation has already proven
+	// unusable (dataset-level absence), so the model cannot keep calling them
+	// and wasting turns. The tool still short-circuits on its own for any call
+	// that slips through, but removing it from the list is the clean stop.
+	if unavailable := navUnavailableToolSet(ctx); len(unavailable) > 0 {
+		kept := tools[:0]
+		for _, t := range tools {
+			if info, ierr := t.Info(ctx); ierr == nil && info != nil && unavailable[info.Name] {
+				continue
+			}
+			kept = append(kept, t)
+		}
+		tools = kept
+	}
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),

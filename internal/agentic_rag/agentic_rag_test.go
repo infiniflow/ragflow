@@ -37,8 +37,8 @@ func TestRun_NilModel(t *testing.T) {
 func TestPrompt(t *testing.T) {
 	p := Prompt()
 	for _, want := range []string{
-		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks", "list_chunks",
-		"todo_write", "think", "run_javascript", "[ID:", "Evidence-First",
+		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks", "search_metadata",
+		"list_chunks", "todo_write", "think", "run_javascript", "[ID:", "Evidence-First",
 	} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt must mention %q", want)

@@ -23,9 +23,10 @@ package agentic_rag
 //   - The answer is direct prose: the model investigates, deep-reads, and
 //     answers - there is no intermediate deliverable format to render, no
 //     question decomposition stage and no answer auditor to satisfy.
-//   - Provenance is mechanical instead: corpus-backed lines carry
-//     `chunk_id: <id>`, which the chat pipeline converts into the numbered
-//     citation markers the frontend renders (see citations.go).
+//   - Provenance is mechanical instead: corpus-backed lines carry `[ID:n]`,
+//     the handle the tool printed for that passage, which the chat pipeline
+//     converts into the numbered citation markers the frontend renders (see
+//     citations.go).
 //   - The locate roles are described per tool, because the toolset supplies
 //     the lexical and semantic legs per deployment.
 //   - Runtime placeholders (web_search_status, language, runtime_context,
