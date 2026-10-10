@@ -724,32 +724,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	// Fold whitespace-only pieces into an adjacent real piece instead of
-	// dropping them, so a bare retained delimiter that produces a blank run
-	// (the blank line between two "\n", or a leading "\n") survives in the
-	// emitted text. This mirrors the text/children paths and keeps the chunk
-	// reconstruction lossless for the common case.
-	var kept []string
-	var leading string
-	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
-			leading += p
-			continue
-		}
-		if leading != "" {
-			p = leading + p
-			leading = ""
-		}
-		kept = append(kept, p)
-	}
-	// A pending blank run belongs to the source and must be preserved. A run
-	// that preceded the first real piece is already prepended during the loop;
-	// any run left over after the last real piece (a trailing delimiter) is
-	// appended to the last kept piece so the emitted text reconstructs the
-	// source exactly instead of being shifted to the front.
-	if leading != "" && len(kept) > 0 {
-		kept[len(kept)-1] += leading
-	}
+	kept := foldWhitespaceSegments(parts)
 	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
