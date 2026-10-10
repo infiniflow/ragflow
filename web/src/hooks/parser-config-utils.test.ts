@@ -92,4 +92,15 @@ describe('normalizeParserConfig', () => {
     const chunker = out[CHUNKER] as Record<string, unknown>;
     expect(chunker.parent_child).toEqual(existing);
   });
+
+  it('re-homes a backtick-wrapped delimiter onto the general chunker node', () => {
+    const out = normalizeParserConfig({
+      delimiter: '`问：`',
+    }) as Record<string, unknown>;
+
+    expect(out['delimiter']).toBeUndefined();
+    expect((out[CHUNKER] as Record<string, unknown>).delimiters).toEqual([
+      '`问：`',
+    ]);
+  });
 });
