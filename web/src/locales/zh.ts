@@ -3081,6 +3081,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       nodeFormInvalid: '配置有误，请先修正',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
+      extractorKeywordsTopNMissing:
+        '自动关键词已开启，请设置抽取数量（至少为 1）',
+      extractorQuestionsTopNMissing:
+        '自动问题已开启，请设置生成数量（至少为 1）',
+      extractorTagsTopNMissing: '自动标签已开启，请设置标签数量（至少为 1）',
+      extractorTagFileMissing: '自动标签已开启，请先选择标签文件',
       retrievalDatasetMissing: '未选择知识库，请先选择',
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',

@@ -216,6 +216,11 @@ type ExtractorComponent struct {
 //	  "metadata":       map[string]any,   — optional auto metadata extraction config
 //	}
 //
+// The keywords/questions/tags groups accept an "enabled" switch. A group
+// without the key is a legacy DSL: enabled derives from top_n > 0, matching
+// the pre-switch behavior of saved canvases. A group carrying an explicit
+// "enabled": true with top_n < 1 is a contradictory config and fails here.
+//
 // errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
 func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
@@ -233,6 +238,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := kwRaw["system_prompt"].(string); ok {
 				p.Keywords.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(kwRaw, "keywords", p.Keywords.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Keywords.Enabled = enabled
 		}
 
 		// 2. Questions
@@ -243,6 +253,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := qRaw["system_prompt"].(string); ok {
 				p.Questions.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(qRaw, "questions", p.Questions.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Questions.Enabled = enabled
 		}
 
 		// 3. Tags
@@ -253,6 +268,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := tagRaw["tag_file_id"].(string); ok {
 				p.Tags.TagFileID = v
 			}
+			enabled, err := resolveExtractToggle(tagRaw, "tags", p.Tags.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Tags.Enabled = enabled
 		}
 
 		// 4. Summary
@@ -287,6 +307,36 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
 	}
 	return &ExtractorComponent{Param: p}, nil
+}
+
+// resolveExtractToggle resolves the enabled switch of one extraction group
+// (keywords / questions / tags).
+//
+// The presence of the "enabled" key distinguishes the contract version:
+//   - key present: it is authoritative. enabled=true with top_n < 1 is a
+//     contradictory config (nothing could be extracted) and fails fast, so
+//     the canvas run dies at build time with a clear message instead of
+//     silently skipping the extraction.
+//   - key absent: legacy DSL saved before the switch existed — enabled
+//     derives from top_n > 0, preserving the saved canvas's behavior.
+//
+// Accepts bool and numeric "enabled" values, mirroring the summary/metadata
+// parsing below.
+func resolveExtractToggle(group map[string]any, name string, topN int) (bool, error) {
+	v, ok := group["enabled"]
+	if !ok {
+		return topN > 0, nil
+	}
+	enabled := false
+	if b, ok := v.(bool); ok {
+		enabled = b
+	} else {
+		enabled = mapInt(v) == 1
+	}
+	if enabled && topN < 1 {
+		return false, fmt.Errorf("extractor: %s.enabled requires top_n >= 1", name)
+	}
+	return enabled, nil
 }
 
 // Inputs returns the parameter metadata. Matches the python
@@ -624,9 +674,9 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}, nil
 	}
 
-	keywordsOn := c.Param.Keywords.TopN > 0
-	tagsOn := c.Param.Tags.TopN > 0
-	remainingOn := c.Param.Questions.TopN > 0 || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
+	keywordsOn := c.Param.Keywords.Enabled
+	tagsOn := c.Param.Tags.Enabled
+	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
 	phaseWindows := newFractionSplit(keywordsOn, tagsOn, remainingOn)
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
@@ -726,10 +776,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if _, exists := ck["important_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Keywords.TopN
-	if topN <= 0 {
+	if !c.Param.Keywords.Enabled {
 		return nil
 	}
+	topN := c.Param.Keywords.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Keywords.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoKeywordPrompt
@@ -771,10 +821,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if _, exists := ck["question_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Questions.TopN
-	if topN <= 0 {
+	if !c.Param.Questions.Enabled {
 		return nil
 	}
+	topN := c.Param.Questions.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Questions.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoQuestionPrompt
@@ -896,7 +946,7 @@ func (s *fractionSplit) take(enabled bool) fractionWindow {
 // runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
 // using extractorPool before the tagging stage.
 func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
-	if c.Param.Keywords.TopN <= 0 || len(in.chunks) == 0 {
+	if !c.Param.Keywords.Enabled || len(in.chunks) == 0 {
 		return nil
 	}
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
@@ -924,7 +974,7 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 // runRemainingExtractions dispatches auto questions / summary / metadata
 // extractions across all chunks concurrently using extractorPool.
 func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
-	if c.Param.Questions.TopN <= 0 && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
+	if !c.Param.Questions.Enabled && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
 		return nil
 	}
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
@@ -946,7 +996,7 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 
 func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
 	return func() error {
-		if c.Param.Questions.TopN > 0 {
+		if c.Param.Questions.Enabled {
 			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
 				return fmt.Errorf("chunk %d questions: %w", idx, err)
 			}

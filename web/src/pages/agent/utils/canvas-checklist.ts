@@ -561,6 +561,39 @@ export function collectCanvasIssues({
           messageKey: 'flow.extractorModelMissing',
         });
       }
+      // An extraction group switched on with nothing to extract (top_n < 1)
+      // — or tags without a tag file — can be saved but would fail the Go
+      // canvas build / silently skip at run time, so flag it here.
+      if (form?.keywords?.enabled && !(Number(form?.keywords?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorKeywordsTopNMissing',
+        });
+      }
+      if (form?.questions?.enabled && !(Number(form?.questions?.top_n) > 0)) {
+        issues.push({
+          ...target,
+          type: CanvasIssueType.MissingRequired,
+          messageKey: 'flow.extractorQuestionsTopNMissing',
+        });
+      }
+      if (form?.tags?.enabled) {
+        if (!(Number(form?.tags?.top_n) > 0)) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagsTopNMissing',
+          });
+        }
+        if (!form?.tags?.tag_file_id) {
+          issues.push({
+            ...target,
+            type: CanvasIssueType.MissingRequired,
+            messageKey: 'flow.extractorTagFileMissing',
+          });
+        }
+      }
     }
 
     if (label === Operator.Compiler) {
