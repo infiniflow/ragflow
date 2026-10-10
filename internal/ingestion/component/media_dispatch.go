@@ -130,6 +130,15 @@ func maybeDispatchImage(
 	} else if useOCR && strings.TrimSpace(text) == "" {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
+	if !useOCR && !enableVisionEnhancement {
+		// Neither text source is enabled: local OCR is off and the vision
+		// description is not permitted. The item still carries the image, but the
+		// Tokenizer's retrievability filter drops chunks that have no text and no
+		// surrounding context, so this document indexes nothing. Say so instead of
+		// silently returning an empty result.
+		parsed.Warnings = append(parsed.Warnings,
+			"image has no text source: OCR is off and vision enhancement is disabled, so the Tokenizer will discard this item")
+	}
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}

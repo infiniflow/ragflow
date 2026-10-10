@@ -201,6 +201,11 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 	if res.JSON[0]["image"] == "" || res.JSON[0]["doc_type_kwd"] != "image" {
 		t.Fatalf("image attachment lost: %+v", res.JSON[0])
 	}
+	// #20668 reported this exact configuration producing zero chunks with no
+	// explanation. The answer is now a warning rather than a permission bypass.
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+		t.Fatalf("silent empty result: expected a no-text-source warning, got %v", res.Warnings)
+	}
 }
 
 // TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision pins the other side
@@ -947,8 +952,9 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 // TestMaybeDispatchImageOCRSwitch drives the new ocr_enabled shape (no
 // parse_method) directly. It locks the switch semantics the dropdown used to
 // encode: OCR on runs local OCR regardless of vision enhancement; OCR off with
-// enhancement off yields an empty-text image kept without a warning (the
-// #20424 degradation contract); OCR off with enhancement on runs only the VLM.
+// enhancement off yields an empty-text image that is still kept, plus a warning
+// naming the dead configuration (the #20424 degradation, now diagnosable); OCR
+// off with enhancement on runs only the VLM.
 // The presence of ocr_enabled must also override a stale parse_method:"ocr".
 func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 	original := deepdoctype.NativeDocAnalyzerFactory
@@ -986,8 +992,11 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		if res.JSON[0]["text"] != "" || res.JSON[0]["image"] == "" {
 			t.Fatalf("want empty text with image retained, got %#v", res.JSON[0])
 		}
-		if len(res.Warnings) != 0 {
-			t.Fatalf("OCR off must not warn, got %v", res.Warnings)
+		if len(res.Warnings) == 0 {
+			t.Fatalf("OCR off + enhancement off must warn that the item has no text source, got %v", res.Warnings)
+		}
+		if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+			t.Fatalf("missing no-text-source warning: %v", res.Warnings)
 		}
 	})
 	t.Run("ocr-off-vision-only", func(t *testing.T) {
