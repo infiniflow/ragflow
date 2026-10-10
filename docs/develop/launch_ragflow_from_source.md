@@ -168,10 +168,10 @@ In another terminal:
 ```bash
 cd web
 npm install
-API_PROXY_SCHEME=go npm run dev
+npm run dev
 ```
 
-With `API_PROXY_SCHEME=go`, the frontend routes requests to two Go backend ports: regular /api and /v1 requests use port 9380, while /api/v1/admin requests use port 9381.
+The frontend routes requests to the Go backend by default: regular `/api` and `/v1` requests use port `9380`, while `/api/v1/admin` requests use port `9381`.
 Open http://127.0.0.1:9222/ unless Vite prints a different frontend port.
 
 ## 5. Verify the startup

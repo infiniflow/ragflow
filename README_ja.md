@@ -51,6 +51,22 @@
 <a href="https://trendshift.io/repositories/9064" target="_blank"><img src="https://trendshift.io/api/badge/repositories/9064" alt="infiniflow%2Fragflow | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
 </div>
 
+<details open>
+<summary><b>📕 目次</b></summary>
+
+- 💡 [RAGFlow とは？](#-ragflow-とは)
+- 🎮 [はじめに](#-はじめに)
+- 🔥 [最新情報](#-最新情報)
+- 🌟 [主な特徴](#-主な特徴)
+- 🔎 [システム構成](#-システム構成)
+- 🏠 [ローカルデプロイ](#-ローカルデプロイ)
+- 📚 [ドキュメンテーション](#-ドキュメンテーション)
+- 📜 [ロードマップ](#-ロードマップ)
+- 🏄 [コミュニティ](#-コミュニティ)
+- 🙌 [コントリビュート](#-コントリビュート)
+
+</details>
+
 ## 💡 RAGFlow とは？
 
 [RAGFlow](https://ragflow.io/) は、先進的な[RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）技術と Agent 機能を融合し、大規模言語モデル（LLM）に優れたコンテキスト層を構築する最先端のオープンソース RAG エンジンです。あらゆる規模の企業に対応可能な合理化された RAG ワークフローを提供し、統合型[コンテキストエンジン](https://ragflow.io/basics/what-is-agent-context-engine)と事前構築されたAgentテンプレートにより、開発者が複雑なデータを驚異的な効率性と精度で高精細なプロダクションレディAIシステムへ変換することを可能にします。
@@ -115,7 +131,7 @@
 
 ### 🍔 **多様なデータソースとの互換性**
 
-- Word、スライド、Excel、txt、画像、スキャンコピー、構造化データ、Web ページなどをサポート。
+- Word 文書、PowerPoint プレゼンテーション、Excel スプレッドシート、TXT ファイル、画像、PDF、スキャンデータ、構造化データ、Web ページなどをサポート。
 
 ### 🛀 **自動化された楽な RAG ワークフロー**
 
@@ -127,178 +143,122 @@
 ## 🔎 システム構成
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow システムアーキテクチャ" width="1000" />
+<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
 </div>
 
-## 🎬 セルフホスティング
+## 🏠 ローカルデプロイ
 
-ローカルデプロイでは、Docker デプロイとソースコードからの起動を利用できます。Docker は迅速な評価、統合テスト、本番環境に適し、ソースコードからの起動は RAGFlow の開発とデバッグに適しています。Docker では Go コンパイラは不要です。ソースコードから起動する場合は `go.mod` で指定された Go が必要で、フロントエンド開発には Node.js と npm も必要です。
+Docker は迅速な評価、統合テスト、本番環境に、ソース起動は開発とデバッグに適しています。Docker に Go は不要です。ソース起動には `go.mod` 指定の Go、フロントエンド開発には Node.js と npm が必要です。
 
 ### 🐳 Docker デプロイ
 
-#### 📝 Docker デプロイの前提条件
+#### 📝 前提条件
 
-- 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルやその他のオプションコンポーネントでは、追加のリソースが必要になる場合があります。
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-
-> [!TIP]
-> ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
+- 推奨される初期構成：4 CPU コア、16 GB RAM、50 GB の空きディスク容量。
+- Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
 
 #### 🚀 サーバーを起動
 
-1. `vm.max_map_count` >= 262144 であることを確認する:
+1. Elasticsearch: `vm.max_map_count` ≥ 262144.
 
-   > `vm.max_map_count` の値をチェックするには:
-   >
-   > ```bash
-   > sysctl vm.max_map_count
-   > ```
-   >
-   > `vm.max_map_count` が 262144 より大きい値でなければリセットする。
-   >
-   > ```bash
-   > # In this case, we set it to 262144:
-   > sudo sysctl -w vm.max_map_count=262144
-   > ```
-   >
-   > この変更はシステム再起動後にリセットされる。変更を恒久的なものにするには、**/etc/sysctl.conf** の `vm.max_map_count` 値を適宜追加または更新する:
-   >
-   > ```bash
-   > vm.max_map_count=262144
-   > ```
-   >
-2. リポジトリをクローンする:
+2. `git clone https://github.com/infiniflow/ragflow.git`
 
-   ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   ```
-3. Go リリースタグに切り替え、Docker Compose で事前ビルド済み Go イメージを起動します:
-
-> [!CAUTION]
-> 現在、公式に提供されているすべての Docker イメージは x86 アーキテクチャ向けにビルドされており、ARM64 用の Docker イメージは提供されていません。
-> ARM64 アーキテクチャのオペレーティングシステムを使用している場合は、[このドキュメント](https://ragflow.io/docs/dev/build_docker_image)を参照して Docker イメージを自分でビルドしてください。
-
-
-
-   Docker デプロイディレクトリに移動します。
+3. Docker:
 
    ```bash
    cd ragflow/docker
-   ```
-
-   Go v1.0.0-rc1 リリースタグに切り替えます。
-
-   ```bash
    git checkout v1.0.0-rc1
-   ```
-
-   Go サービスと依存サービスをバックグラウンドで起動します。
-
-   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
-   デフォルトの MySQL 構成では、Go イメージのエントリーポイントが最初にデータベース移行を実行し、その後 `bin/ragflow_server` を介して Syncer、Admin、API、Ingestor を起動します。
-
-> RAGFlow オープンソース 1.0 の DeepDoc は、レイアウト解析、OCR、表認識に CPU 推論を使用します。
-
-4. 起動後にサービスの状態と API の準備状況を確認します：
-
-   ```bash
-   docker ps
-   ```
-
-   上記のコマンドは依存サービスの状態を表示します。RAGFlow 自体には Compose healthcheck が定義されていないため、API で準備状況を確認します：
+4. サービスと API の準備状況を確認します:
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
+   docker logs --tail 50 ragflow-cpu
    ```
 
-   HTTP 200 レスポンスは準備完了を示します。`SVR_WEB_HTTP_PORT` を変更した場合は、そのポートを使用してください。起動に失敗した場合は、`docker logs --tail 50 ragflow-cpu` でログを確認してください。
+5. ブラウザで `http://IP_OF_YOUR_MACHINE` を開いてログインします。
 
-5. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
+6. モデルプロバイダーページで LLM、Embedding、Reranker を追加します。詳細は [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
 
-   > デフォルトの設定を使用する場合、デフォルトの HTTP サービングポート `80` は省略できるので、与えられたシナリオでは、`http://IP_OF_YOUR_MACHINE`（ポート番号は省略）だけを入力すればよい。
-   >
-6. RAGFlow にログインした後、モデルプロバイダーページで LLM、Embedding、Reranker を追加し、モデル名、サービスアドレス、API キーを入力します。
-
-   > 詳しくは [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
-   >
-
-   _これで初期設定完了！ショーの開幕です！_
-
-詳細は[クイックスタートガイド](./docs/quickstart.mdx)を参照してください。
+詳細は[クイックスタート](./docs/quickstart.mdx)を参照してください。
 
 #### ⚙️ Docker の設定と調整
 
-Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームのサポートについて（注：macOSは現時点では非対応です。Linux x86_64ホストを使用してください）、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
+`docker/.env` と `docker/docker-compose.yml` を使用します。[Docker 設定](./docker/README.md)および[イメージのビルドとプラットフォームサポート](./docs/develop/build_docker_image.mdx)を参照してください。macOS は現在サポートされていません。
 
-ドキュメントエンジンの切り替え、設定変更後のサービス再起動、既存データの保持または削除についても、上記のDocker設定ガイドに従ってください。
+### 🔨 ソースコードから起動
 
-### 🔨 ソースコードからサービスを起動する方法
+#### 📝 前提条件
 
-#### 📝 ソースビルドの前提条件
+1. リポジトリをクローンし、`go.mod` で指定された Go、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2、および CGO に必要なネイティブライブラリをインストールします。
 
-1. `go.mod` で指定されたGoバージョン（現在はGo 1.27）、Clang 20、LLD 20、CMake 4.0以降、およびPCRE2開発ファイルをインストールします。GoサービスはCGOとネイティブライブラリに依存し、[build.sh](./build.sh)が必要なビルド設定を行います。
-2. リポジトリをクローンし、必要なネイティブライブラリとモデルファイルを準備してからGoサービスをビルドします:
-
-   ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow/
-   ```
+2. 依存関係を準備します:
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   bash build.sh --all
+   ./build.sh --all
    ```
 
-   このスクリプトはGoビルドに必要なネイティブライブラリとモデルリソースを準備し、`requests`と`huggingface-hub`を使用します。同じリソースを別の方法で準備済みの場合は、この手順を省略できます。リポジトリルートから起動するとGoサービスは`internal/rag/res/deepdoc`を自動検出します。別のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR`にその絶対パスを設定してください。
-3. Docker Composeで必要な依存サービス（Elasticsearch、MySQL、MinIO、NATS、Kvrocks、ClickHouse）を起動します:
+3. サービスをビルドします:
+
+   ```bash
+   ./build.sh --all
+   ```
+
+4. ローカル依存サービスを起動します:
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144
-   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-   ソースから起動する Go サービスは `localhost:6379` で Kvrocks に接続するため、提供されている設定では `/etc/hosts` の変更は不要です。
-
-4. データベースのマイグレーション後、サービスを順番に起動します。各コマンドはリポジトリのルートから別々のターミナルで実行し、サービス用の4つのターミナルは開いたままにします:
+5. データベースをマイグレーションします:
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+6. 4つのサービスを4つのターミナルで起動します:
+
+   ターミナル1: Admin (`9381`)。
+
+   ```bash
    ./bin/ragflow_server --admin
+   ```
+
+   ターミナル2: Ingestor。
+
+   ```bash
    ./bin/ragflow_server --ingestor
+   ```
+
+   ターミナル3: Syncer。
+
+   ```bash
    ./bin/ragflow_server --syncer
+   ```
+
+   ターミナル4: API (`9380`)。
+
+   ```bash
    ./bin/ragflow_server --api
    ```
 
-   各起動モードの役割は次のとおりです:
-
-   - `--migrate`: データベース移行を実行して終了します。
-   - `--admin`: 管理と初期化を行うAdminサービスを起動します。
-   - `--ingestor`: データ取り込みと解析を行うIngestorサービスを起動します。
-   - `--syncer`: データ同期を行うSyncerサービスを起動します。
-   - `--api`: Web UI、SDK、外部クライアント向けのAPIサービスを起動します。
-
-5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールしてReactフロントエンドを起動します:
+7. フロントエンド開発時のみ Node.js と npm をインストールし、API を確認します:
 
    ```bash
    cd web
    npm install
-   ```
-
-   別のターミナルでGo APIの準備が完了したことを確認します:
-
-   ```bash
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   HTTP 200が返ればAPIは応答しています。
-
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
+
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_deps.py` はネイティブライブラリとモデルを準備し、`requests` と `huggingface-hub` を使用します。`--migrate` は移行後に終了し、残りの各オプションは対応サービスを起動します。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 
