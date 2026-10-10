@@ -28,9 +28,9 @@ import (
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelProviderSvc *ModelProviderService) ([]string, error) {
-	if modelProviderSvc == nil {
-		return nil, fmt.Errorf("model provider service not configured")
+func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelFactory *ModelFactory) ([]string, error) {
+	if modelFactory == nil {
+		return nil, fmt.Errorf("model factory not configured")
 	}
 	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
 	modelID := relatedQuestionsModelID(ctx, tenantID, searchConfig, tenantSvc)
@@ -45,7 +45,11 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 		{Role: "system", Content: prompt},
 		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
 	}
-	response, err := modelProviderSvc.Chat(ctx, tenantID, modelID, messages, relatedQuestionsConfig(searchConfig))
+	chatModel, err := modelFactory.NewChatModel(ctx, ModelAccess{TenantID: tenantID}, modelID)
+	if err != nil {
+		return nil, err
+	}
+	response, err := chatModel.ChatWithMessages(ctx, messages, relatedQuestionsConfig(searchConfig), nil)
 	if err != nil {
 		return nil, err
 	}

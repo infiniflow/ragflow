@@ -31,6 +31,10 @@
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "doc": {
                             "output_format": "json",
                             "preprocess": [
@@ -275,6 +279,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "setups": [
                                 {
                                     "fileFormat": "pdf",

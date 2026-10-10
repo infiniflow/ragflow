@@ -59,7 +59,7 @@ func (h *ChatHandler) Recommendation(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
 	if err != nil {
 		common.Warn("chat recommendation failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())

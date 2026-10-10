@@ -113,11 +113,6 @@
 - 複雑な質問を分析し、必要に応じて分解、ナレッジ検索、根拠確認を複数段階で行います。
 - Low、Medium、High、Ultra の思考モードで、質問の複雑さに応じて検索と推論の深さを調整できます。
 
-### ⚙️ **Go ネイティブサービスアーキテクチャ**
-
-- API、Admin、Ingestor、Syncer は統合された Go サービスが提供します。DeepDoc は Go プロセス内で動作し、レイアウト解析、OCR、表認識を担当します。
-- Go サービスは CGO 経由でネイティブ文書解析ライブラリと ONNX Runtime を呼び出します。MCP と Sandbox Executor は必要に応じて有効化できます。
-
 ### 🌱 **ハルシネーションが軽減された根拠のある引用**
 
 - 可視化されたテキストチャンキング（text chunking）で人間の介入を可能にする。
@@ -240,7 +235,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
 #### ⚙️ Docker の設定と調整
 
-Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームの制限とmacOSの要件については、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
+Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` を使用し、キャッシュとCheckpointの保存にKvrocks、メッセージキューにNATS JetStreamを使用します。イメージ、ポート、パスワード、ドキュメントエンジン、モデルイメージの取得元を変更する場合は、[Docker設定ガイド](./docker/README.md)に従ってください。プラットフォームのサポートについて（注：macOSは現時点では非対応です。Linux x86_64ホストを使用してください）、[Go Dockerイメージのビルドとプラットフォームサポートガイド](./docs/develop/build_docker_image.mdx)を参照してください。
 
 ドキュメントエンジンの切り替え、設定変更後のサービス再起動、既存データの保持または削除についても、上記のDocker設定ガイドに従ってください。
 
