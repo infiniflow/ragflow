@@ -1,4 +1,5 @@
 import { AgentBackground } from '@/components/canvas/background';
+import { canvasBackgroundFromGlobals } from '@/components/canvas/canvas-background';
 import Spotlight from '@/components/spotlight';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -67,6 +68,8 @@ export function VersionDialog({
       setSelectedId(data[0].id);
     }
   }, [data, selectedId]);
+
+  const previewBackground = canvasBackgroundFromGlobals(agent?.dsl?.globals);
 
   return (
     <Dialog open onOpenChange={hideModal}>
@@ -157,8 +160,16 @@ export function VersionDialog({
                         nodesConnectable={false}
                         elementsSelectable={false}
                       >
-                        <AgentBackground></AgentBackground>
-                        <Spotlight className="z-0" opcity={0.7} coverage={70} />
+                        <AgentBackground
+                          setting={previewBackground}
+                        ></AgentBackground>
+                        {previewBackground.mode === 'default' ? (
+                          <Spotlight
+                            className="z-0"
+                            opcity={0.7}
+                            coverage={70}
+                          />
+                        ) : null}
                       </ReactFlow>
                     </ReactFlowProvider>
                   </section>
