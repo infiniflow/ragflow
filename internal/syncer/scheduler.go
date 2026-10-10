@@ -175,14 +175,18 @@ func (s *Scheduler) ScheduleTaskAfter(ctx context.Context, taskID string, delay 
 	if existing := s.timers[taskID]; existing != nil {
 		existing.Stop()
 	}
-	timer := time.AfterFunc(delay, func() {
+	// Keep the timer identity so a callback cannot remove a newer replacement.
+	var timer *time.Timer
+	timer = time.AfterFunc(delay, func() {
 		if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
 			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
 			_ = s.ScheduleTaskAfter(ctx, taskID, 3*time.Second)
 			return
 		}
 		s.timerMu.Lock()
-		delete(s.timers, taskID)
+		if s.timers[taskID] == timer {
+			delete(s.timers, taskID)
+		}
 		s.timerMu.Unlock()
 	})
 	s.timers[taskID] = timer
