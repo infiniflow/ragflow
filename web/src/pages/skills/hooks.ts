@@ -65,10 +65,8 @@ const toTimestampMs = (value: unknown): number | null => {
     let n = raw;
     // Convert unit by magnitude: ns -> us -> ms -> s.
     // Current epoch in ms is around 1e12.
-    if (n > 1e17)
-      n = n / 1e6; // nanoseconds
-    else if (n > 1e14)
-      n = n / 1e3; // microseconds
+    if (n > 1e17) n = n / 1e6; // nanoseconds
+    else if (n > 1e14) n = n / 1e3; // microseconds
     else if (n < 1e11) n = n * 1e3; // seconds
 
     return Math.round(n);
