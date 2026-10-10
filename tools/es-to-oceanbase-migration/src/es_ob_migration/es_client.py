@@ -172,6 +172,7 @@ class ESClient:
         batch_size: int = 1000,
         query: dict[str, Any] | None = None,
         sort_field: str = "_doc",
+        search_after: list[Any] | None = None,
     ) -> Iterator[list[dict[str, Any]]]:
         """
         Scroll through all documents in an index using search_after (ES 8+).
@@ -184,9 +185,13 @@ class ESClient:
             batch_size: Number of documents per batch
             query: Optional query filter
             sort_field: Field to sort by (default: _doc for efficiency)
+            search_after: Optional sort values to resume scrolling from
+                (e.g. the cursor persisted by a previous interrupted run)
 
         Yields:
-            Batches of documents
+            Batches of documents; the last document of each batch carries
+            its sort values under the "_sort" key so callers can persist
+            the cursor and resume later
         """
         search_body: dict[str, Any] = {
             "size": batch_size,
@@ -197,6 +202,9 @@ class ESClient:
             search_body["query"] = query
         else:
             search_body["query"] = {"match_all": {}}
+
+        if search_after:
+            search_body["search_after"] = search_after
 
         # Initial search
         response = self.client.search(index=index_name, body=search_body)
@@ -211,6 +219,10 @@ class ESClient:
                 if "_score" in hit:
                     doc["_score"] = hit["_score"]
                 documents.append(doc)
+
+            # Expose the cursor of the last hit so callers can persist it
+            # and resume from this position later
+            documents[-1]["_sort"] = hits[-1]["sort"]
 
             yield documents
 

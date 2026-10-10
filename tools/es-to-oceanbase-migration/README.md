@@ -285,8 +285,9 @@ es-ob-migrate migrate \
 Migration progress is automatically saved to `.migration_progress/` directory. If migration is interrupted (network error, timeout, etc.), use `--resume` to continue from where it stopped:
 
 - Progress file: `.migration_progress/{index_name}_progress.json`
-- Contains: total count, migrated count, last document ID, timestamp
+- Contains: total count, migrated count, last document ID, last sort values (the `search_after` cursor), timestamp
 - On resume: skips already migrated documents, continues from last position
+- Progress files written by older versions contain no sort values; resuming those falls back to a full re-scan with a warning
 
 **Output:**
 
