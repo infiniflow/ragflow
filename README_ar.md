@@ -172,7 +172,7 @@
 
 #### 🚀 بدء تشغيل الخادم
 
-1. تأكد من `vm.max_map_count` >= 262144:
+1. إذا كنت تستخدم Elasticsearch، فاضبط `vm.max_map_count` على مضيف Docker إلى 262144 على الأقل. هذه الخطوة غير ضرورية عادةً عند استخدام Infinity:
 
    > للتحقق من قيمة `vm.max_map_count`:
    >
@@ -180,7 +180,7 @@
    > sysctl vm.max_map_count
    > ```
    >
-   > أعد تعيين `vm.max_map_count` إلى قيمة 262144 على الأقل إذا لم تكن كذلك.
+   > إذا كنت تستخدم Elasticsearch وكانت القيمة أقل من 262144، فأعد تعيينها:
    >
    > ```bash
    > # In this case, we set it to 262144:

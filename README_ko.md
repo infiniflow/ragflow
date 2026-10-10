@@ -153,7 +153,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 #### 🚀 서버 시작하기
 
-1. `vm.max_map_count`가 262144 이상인지 확인하세요:
+1. Elasticsearch를 사용하는 경우 Docker 호스트의 `vm.max_map_count`를 262144 이상으로 설정하세요. Infinity를 사용하는 경우에는 일반적으로 이 단계가 필요하지 않습니다:
 
    > `vm.max_map_count`의 값을 아래 명령어를 통해 확인하세요:
    >
@@ -161,7 +161,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    > sysctl vm.max_map_count
    > ```
    >
-   > 만약 `vm.max_map_count` 이 262144 보다 작다면 값을 쟈설정하세요.
+   > Elasticsearch를 사용하면서 값이 262144 미만이라면 값을 재설정하세요:
    >
    > ```bash
    > # 이 경우에 262144로 설정했습니다.:

@@ -168,7 +168,7 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
 
 #### 🚀 Iniciar o servidor
 
-1. Certifique-se de que `vm.max_map_count` >= 262144:
+1. Se você usar Elasticsearch, defina `vm.max_map_count` no host Docker como pelo menos 262144. Esta etapa geralmente não é necessária com o Infinity:
 
    > Para verificar o valor de `vm.max_map_count`:
    >
@@ -176,7 +176,7 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
    > sysctl vm.max_map_count
    > ```
    >
-   > Se necessário, redefina `vm.max_map_count` para um valor de pelo menos 262144:
+   > Se você usar Elasticsearch e o valor for inferior a 262144, redefina-o:
    >
    > ```bash
    > # Neste caso, defina para 262144:

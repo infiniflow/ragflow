@@ -168,7 +168,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
 #### 🚀 Démarrer le serveur
 
-1. Assurez-vous que `vm.max_map_count` >= 262144 :
+1. Si vous utilisez Elasticsearch, définissez `vm.max_map_count` sur l'hôte Docker à au moins 262144. Cette étape est généralement inutile avec Infinity :
 
    > Pour vérifier la valeur de `vm.max_map_count` :
    >
@@ -176,7 +176,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
    > sysctl vm.max_map_count
    > ```
    >
-   > Réinitialisez `vm.max_map_count` à une valeur d'au moins 262144 si ce n'est pas le cas.
+   > Si vous utilisez Elasticsearch et que la valeur est inférieure à 262144, réinitialisez-la :
    >
    > ```bash
    > # Dans ce cas, nous le définissons à 262144 :

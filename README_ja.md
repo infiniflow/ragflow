@@ -152,7 +152,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
 
 #### 🚀 サーバーを起動
 
-1. `vm.max_map_count` >= 262144 であることを確認する:
+1. Elasticsearch を使用する場合は、Docker ホストの `vm.max_map_count` を 262144 以上に設定してください。Infinity を使用する場合は通常この手順は不要です:
 
    > `vm.max_map_count` の値をチェックするには:
    >
@@ -160,7 +160,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
    > sysctl vm.max_map_count
    > ```
    >
-   > `vm.max_map_count` が 262144 より大きい値でなければリセットする。
+   > Elasticsearch を使用していて、値が 262144 未満の場合は、リセットしてください:
    >
    > ```bash
    > # In this case, we set it to 262144:

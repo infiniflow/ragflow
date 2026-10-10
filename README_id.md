@@ -168,7 +168,7 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
 
 #### 🚀 Menjalankan Server
 
-1. Pastikan `vm.max_map_count` >= 262144:
+1. Jika menggunakan Elasticsearch, atur `vm.max_map_count` pada host Docker ke minimal 262144. Langkah ini biasanya tidak diperlukan dengan Infinity:
 
    > Untuk memeriksa nilai `vm.max_map_count`:
    >
@@ -176,7 +176,7 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    > sysctl vm.max_map_count
    > ```
    >
-   > Jika nilainya kurang dari 262144, setel ulang `vm.max_map_count` ke setidaknya 262144:
+   > Jika Anda menggunakan Elasticsearch dan nilainya kurang dari 262144, atur ulang nilainya:
    >
    > ```bash
    > # Dalam contoh ini, kita atur menjadi 262144:
