@@ -32,6 +32,9 @@ sends no Authorization header. There is no AnySearch environment-variable
 fallback, and another provider's saved key is not used. Clearing the provider
 disables web search even when old keys remain saved.
 
+Result URLs must be parseable absolute HTTP(S) URLs with a nonempty hostname.
+Invalid URLs are discarded before the usable-result limit is applied.
+
 For a web-only Chat, retain the system prompt's `{knowledge}` placeholder and
 its dynamic `knowledge` parameter, keep the empty-response text blank and select
 a usable chat model. The current retrieval path requires that parameter even

@@ -168,10 +168,70 @@ func TestDecodeAnySearchWebSearchResultsChecksEnvelope(t *testing.T) {
 	}
 }
 
+func TestRetrieveAnySearchWebSearchFiltersInvalidURLs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "HTTPS", url: "https://example.com/article", want: "https://example.com/article"},
+		{name: "HTTP", url: "http://example.com/article", want: "http://example.com/article"},
+		{name: "trimmed query and fragment", url: " \thttps://example.com/article?q=rag%20flow#source \n", want: "https://example.com/article?q=rag%20flow#source"},
+		{name: "IPv6", url: "https://[2001:db8::1]/article", want: "https://[2001:db8::1]/article"},
+		{name: "javascript", url: "javascript:alert(1)"},
+		{name: "data", url: "data:text/html,hello"},
+		{name: "FTP", url: "ftp://example.com/article"},
+		{name: "relative", url: "/relative/path"},
+		{name: "scheme relative", url: "//example.com/article"},
+		{name: "missing host", url: "https:///missing-host"},
+		{name: "port only", url: "https://:443/article"},
+		{name: "opaque HTTP", url: "http:article"},
+		{name: "invalid escape", url: "https://example.com/%zz"},
+		{name: "invalid port", url: "https://example.com:bad/article"},
+		{name: "invalid bracket", url: "https://[example.com/article"},
+		{name: "host whitespace", url: "https://bad host/article"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			body, err := json.Marshal(map[string]interface{}{"code": 0, "data": map[string]interface{}{
+				"results": []map[string]string{{"title": "Source", "url": tc.url, "content": "Source content"}},
+			}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write(body) }))
+			defer server.Close()
+			payload, err := retrieveAnySearchWebSearch(t.Context(), server.Client(), server.URL, "", "query")
+			if err != nil {
+				t.Fatalf("retrieve AnySearch: %v", err)
+			}
+			chunks := payload["chunks"].([]map[string]interface{})
+			cards := payload["doc_aggs"].([]interface{})
+			if tc.want == "" {
+				if len(chunks) != 0 || len(cards) != 0 {
+					t.Fatalf("invalid URL retained: chunks=%#v cards=%#v", chunks, cards)
+				}
+				return
+			}
+			if len(chunks) != 1 || len(cards) != 1 || chunks[0]["url"] != tc.want || cards[0].(map[string]interface{})["url"] != tc.want {
+				t.Fatalf("valid URL mapping changed: chunks=%#v cards=%#v", chunks, cards)
+			}
+			card := cards[0].(map[string]interface{})
+			if chunks[0]["chunk_id"] != "anysearch-"+tc.want || chunks[0]["doc_id"] != chunks[0]["chunk_id"] ||
+				chunks[0]["docnm_kwd"] != "Source" || chunks[0]["content_with_weight"] != "Source content" ||
+				card["doc_id"] != chunks[0]["doc_id"] || card["doc_name"] != "Source" {
+				t.Fatalf("valid citation mapping changed: chunks=%#v cards=%#v", chunks, cards)
+			}
+		})
+	}
+}
+
 func TestRetrieveAnySearchWebSearchFiltersBeforeCapAndFallsBackToSnippet(t *testing.T) {
 	results := []map[string]string{
 		{"url": "https://example.com/blank", "content": " \n", "snippet": " \t"},
 		{"url": " \t", "content": "orphan text"},
+	}
+	for i := 0; i < webSearchResultCount; i++ {
+		results = append(results, map[string]string{"url": fmt.Sprintf("javascript:alert(%d)", i), "content": "invalid citation"})
 	}
 	for i := 0; i < 8; i++ {
 		results = append(results, map[string]string{"title": fmt.Sprintf("Hit %d", i), "url": fmt.Sprintf(" https://example.com/%d ", i), "content": " \n", "snippet": fmt.Sprintf(" Snippet %d ", i)})

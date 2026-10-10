@@ -457,12 +457,17 @@ func retrieveAnySearchWebSearch(
 	}
 	hits := make([]webSearchHit, 0, len(results))
 	for _, result := range results {
+		rawURL := strings.TrimSpace(result.URL)
+		parsed, err := url.ParseRequestURI(rawURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+			continue
+		}
 		content := result.Content
 		if strings.TrimSpace(content) == "" {
 			content = result.Snippet
 		}
 		hits = append(hits, webSearchHit{
-			Title: result.Title, URL: strings.TrimSpace(result.URL), Content: content,
+			Title: result.Title, URL: rawURL, Content: content,
 		})
 	}
 	return webSearchPayload("anysearch", hits), nil
