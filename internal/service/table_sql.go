@@ -44,11 +44,6 @@ const (
 	tableSQLMaxRows     = 1000
 )
 
-// jsonPathRe matches a JSONPath that addresses one indexed table column. The
-// key is a hash of a header (entity.TableDataKey), so a path either names a column a
-// document published or was invented.
-var jsonPathRe = regexp.MustCompile(`^\$\.(c_[0-9a-f]{64})$`)
-
 // tableIdentifierRe is the shape of a document or knowledge base id this
 // process generated. Anything else is refused rather than written into a
 // statement.
@@ -476,12 +471,12 @@ func (p *tableSQLPolicy) validateJSONPath(clause []utility.SQLToken, name int, l
 	if len(args[1]) != 1 || args[1][0].Kind != utility.SQLString {
 		return 0, fmt.Errorf("%s: %s needs a quoted path", label, clause[name].Text)
 	}
-	match := jsonPathRe.FindStringSubmatch(args[1][0].Value)
-	if match == nil {
+	key, ok := entity.TableDataKeyFromPath(args[1][0].Value)
+	if !ok {
 		return 0, fmt.Errorf("%s: %q is not a published column path", label, args[1][0].Value)
 	}
-	if !p.dataKeys[match[1]] {
-		return 0, fmt.Errorf("%s: column %q is not published by these documents", label, match[1])
+	if !p.dataKeys[key] {
+		return 0, fmt.Errorf("%s: column %q is not published by these documents", label, key)
 	}
 	return next, nil
 }

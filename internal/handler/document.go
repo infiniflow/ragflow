@@ -1046,9 +1046,9 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 
 	// Optional parser_config override: a component-domain object whose
 	// TableChunker nodes carry the column fields for this upload. Malformed or
-	// non-object input keeps being ignored, as the Python API did, but a request
-	// that names the retired flat keys is refused: those uploads reported
-	// success while the roles silently did nothing.
+	// Column settings live on a TableChunker node. The retired flat keys are
+	// refused rather than read, so an upload cannot report success while its
+	// settings are ignored.
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}

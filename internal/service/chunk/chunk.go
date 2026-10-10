@@ -1229,6 +1229,12 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			common.Error("failed to remove chunk image", err,
 				zap.String("dataset_id", req.DatasetID),
 				zap.String("chunk_id", req.ChunkID))
+			if revokeErr != nil {
+				// The removal error is what the caller sees; the revoke failure
+				// would otherwise go unreported.
+				common.Warn("UpdateChunk: revoke table profile failed before the image removal error",
+					zap.String("document_id", req.DocumentID), zap.Error(revokeErr))
+			}
 			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 		}
 	}
@@ -1297,8 +1303,15 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 			firstErr = fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
-		if err := s.revokeTableProfile(ctx, req.DocID); err != nil && firstErr == nil {
-			firstErr = err
+		if err := s.revokeTableProfile(ctx, req.DocID); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			} else {
+				// The counter failure is what the caller sees; this one still has
+				// to be visible, because it means the derived state is stale.
+				common.Warn("RemoveChunks: revoke table profile failed after a counter failure",
+					zap.String("document_id", req.DocID), zap.Error(err))
+			}
 		}
 		return deletedCount, firstErr
 	}

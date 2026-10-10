@@ -1303,10 +1303,7 @@ func TestMergeNodeParamsKeepsTheRestOfTheNode(t *testing.T) {
 		"enable_children": true,
 		"outputs":         map[string]any{"chunks": map[string]any{"type": "Array<Object>"}},
 	}
-	merged, err := MergeTableChunkerParams(base, map[string]any{"column_mode": entity.TableModeManual})
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
+	merged := MergeTableChunkerParams(base, map[string]any{"column_mode": entity.TableModeManual})
 	if merged["column_mode"] != entity.TableModeManual {
 		t.Errorf("column_mode = %v", merged["column_mode"])
 	}
@@ -1330,10 +1327,7 @@ func TestMergeNodeParamsReplacesRolesWholesale(t *testing.T) {
 		"column_mode":  entity.TableModeManual,
 		"column_roles": map[string]any{"金额": "metadata", "编号": "both"},
 	}
-	merged, err := MergeTableChunkerParams(base, map[string]any{"column_roles": map[string]any{"金额": "indexing"}})
-	if err != nil {
-		t.Fatalf("merge: %v", err)
-	}
+	merged := MergeTableChunkerParams(base, map[string]any{"column_roles": map[string]any{"金额": "indexing"}})
 	roles, ok := merged["column_roles"].(map[string]any)
 	if !ok {
 		t.Fatalf("column_roles type %T", merged["column_roles"])
@@ -1346,18 +1340,9 @@ func TestMergeNodeParamsReplacesRolesWholesale(t *testing.T) {
 	}
 
 	// An empty map clears every role rather than being treated as "no change".
-	cleared, err := MergeTableChunkerParams(base, map[string]any{"column_roles": map[string]any{}})
-	if err != nil {
-		t.Fatalf("clear: %v", err)
-	}
+	cleared := MergeTableChunkerParams(base, map[string]any{"column_roles": map[string]any{}})
 	if len(cleared["column_roles"].(map[string]any)) != 0 {
 		t.Errorf("empty roles map did not clear: %v", cleared["column_roles"])
-	}
-}
-
-func TestMergeNodeParamsRefusesBadOverride(t *testing.T) {
-	if _, err := MergeTableChunkerParams(map[string]any{}, map[string]any{"column_mode": "nope"}); err == nil {
-		t.Fatal("an invalid override was accepted")
 	}
 }
 

@@ -564,3 +564,25 @@ func TestKeywordFilterRenderingBothPaths(t *testing.T) {
 		t.Errorf("update/delete path with only blank entries = %q, want '1=1'", got)
 	}
 }
+
+// The table name the chat path builds is longer than one identifier: "ragflow_"
+// plus a 32-character tenant id, an underscore, and a 32-character dataset id.
+// The rewrite has to carry it through, which only holds while the range check
+// and this rewrite agree on the name.
+func TestPrepareSQLKeepsAGeneratedTableName(t *testing.T) {
+	table := "ragflow_" + strings.Repeat("a1", 16) + "_" + strings.Repeat("b2", 16)
+	path := "'$.c_" + strings.Repeat("b2", 32) + "'"
+	got, err := prepareSQL("select doc_id, json_extract_string(chunk_data, "+path+") from "+table+
+		" where doc_id IN ( 'doc-one' ) and available_int = 1 and table_row_int = 1", nil)
+	if err != nil {
+		t.Fatalf("prepareSQL: %v", err)
+	}
+	for _, want := range []string{table, path, "available_int = 1", "table_row_int = 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the rewrite lost %q: %s", want, got)
+		}
+	}
+	if len(table) <= 64 {
+		t.Fatalf("the fixture no longer exceeds the id bound: %d", len(table))
+	}
+}

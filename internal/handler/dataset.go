@@ -33,6 +33,7 @@ import (
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
+	document "ragflow/internal/service/document"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
@@ -271,7 +272,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		TenantID: user.ID,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		writeDatasetError(c, code, err)
 		return
 	}
 
@@ -457,7 +458,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, userID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		writeDatasetError(c, code, err)
 		return
 	}
 	if code != common.CodeSuccess {
@@ -1374,6 +1375,18 @@ func numericValue(value interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+// writeDatasetError answers a dataset request failure. A parser_config
+// rejection the column contract produced carries the business code its clients
+// branch on, the same one the upload and document paths answer with; every
+// other failure keeps the generic envelope.
+func writeDatasetError(c *gin.Context, code common.ErrorCode, err error) {
+	if dataset.IsTableConfigError(err) {
+		common.ResponseWithCodeData(c, code, tableProbeErrorData(document.TableConfigInvalid), err.Error())
+		return
+	}
+	common.ErrorWithCode(c, code, err.Error())
 }
 
 // GetDatasetTableSchema serves GET /datasets/:dataset_id/table-schema: which

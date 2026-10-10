@@ -264,11 +264,13 @@ func validateTableColumnConfig(parserConfig map[string]any) error {
 }
 
 // ValidateParserConfig validates the shared REST parser_config schema. Flat
-// (non-component-scoped) keys are no longer rejected: they are silently dropped
-// because downstream consumers never read them. The size limit is still
-// enforced. It returns the names of the dropped (unscoped) keys so the caller
-// can log the silent drop; this is the single drop point shared by every entry
-// path, so callers should not call DropUnscopedParserConfigKeys again.
+// (non-component-scoped) keys are dropped because downstream consumers never
+// read them, with one exception: the retired table column keys are refused (see
+// validateTableColumnConfig), because those uploads used to report success while
+// the roles did nothing. The size limit is still enforced. It returns the names
+// of the dropped (unscoped) keys so the caller can log the drop; this is the
+// single drop point shared by every entry path, so callers should not call
+// DropUnscopedParserConfigKeys again.
 func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
 	if err := validateTableColumnConfig(parserConfig); err != nil {
 		return nil, err

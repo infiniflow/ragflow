@@ -2352,9 +2352,9 @@ func decodeResponseBody(t *testing.T, resp *http.Response) map[string]any {
 	return body
 }
 
-// TestUploadDocumentsAcceptsComponentScopedColumns is the contract the frontend
-// sends: the column settings live on the TableChunker node, in the same shape
-// the pipeline reads them.
+// TestUploadDocumentsAcceptsComponentScopedColumns is the shape the API accepts:
+// the column settings live on the TableChunker node, in the same form the
+// pipeline reads them.
 func TestUploadDocumentsAcceptsComponentScopedColumns(t *testing.T) {
 	fake, resp := uploadWithParserConfig(t, `{"TableChunker:FastFoxesJump":{"column_mode":"manual","column_roles":{"金额":"metadata"}}}`)
 	if resp.StatusCode != http.StatusOK {
@@ -2371,6 +2371,8 @@ func TestUploadDocumentsAcceptsComponentScopedColumns(t *testing.T) {
 
 // TestUploadDocumentsRefusesRetiredFlatKeys: these uploads used to report
 // success while the roles did nothing, which is worse than an error.
+// Column settings live on a TableChunker node; the retired flat keys are
+// refused rather than read.
 func TestUploadDocumentsRefusesRetiredFlatKeys(t *testing.T) {
 	fake, resp := uploadWithParserConfig(t, `{"table_column_mode":"manual","table_column_roles":{"金额":"metadata"}}`)
 	if resp.StatusCode != http.StatusOK {
@@ -2386,7 +2388,7 @@ func TestUploadDocumentsRefusesRetiredFlatKeys(t *testing.T) {
 	}
 	message, _ := body["message"].(string)
 	if !strings.Contains(message, "TableChunker") {
-		t.Errorf("message does not name the replacement shape: %q", message)
+		t.Errorf("message does not name the shape to use: %q", message)
 	}
 	if fake.uploadOverride != nil {
 		t.Errorf("a refused upload still reached the service: %v", fake.uploadOverride)
@@ -2450,7 +2452,7 @@ func TestProbeTableColumnsReportsStableBusinessCodes(t *testing.T) {
 
 // A parser_config rejection the column contract produced answers with its
 // documented business code, so a client reads a table rejection the same way
-// whichever endpoint raised it. The validator's other rejections, such as the
+// wherever it was raised; the validator's other rejections, such as the
 // parser_config size limit, keep the generic shape.
 func TestUpdateDatasetDocumentHandler_TableConfigRejectionCarriesBusinessCode(t *testing.T) {
 	setupDocumentPermissionDB(t, true)

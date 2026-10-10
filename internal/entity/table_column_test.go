@@ -16,31 +16,6 @@ func TestValidateTableRolesReservesProfileKey(t *testing.T) {
 	}
 }
 
-func TestNormalizeHeader(t *testing.T) {
-	cases := []struct {
-		name string
-		raw  string
-		want string
-	}{
-		{"plain", "名称", "名称"},
-		{"trim spaces", "  金额\t", "金额"},
-		{"trim full-width space", "　金额　", "金额"},
-		{"strip bom", "\ufeff金额", "金额"},
-		{"nfc compose", "e\u0301", "\u00e9"},
-		{"escape backslash", `a\b`, `a\\b`},
-		{"escape hash", "名称#2", `名称\#2`},
-		{"escape both", `#\`, `\#\\`},
-		{"empty stays empty", "   ", ""},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := NormalizeTableHeader(c.raw); got != c.want {
-				t.Errorf("NormalizeHeader(%q) = %q, want %q", c.raw, got, c.want)
-			}
-		})
-	}
-}
-
 func TestDeriveColumnsKeys(t *testing.T) {
 	// Raw "名称#2" must not collide with the second "名称", and an empty
 	// header must not collide with the raw header "#column:1".

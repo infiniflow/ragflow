@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
@@ -32,14 +33,6 @@ type TableColumn struct {
 // headers. A non-empty header can never produce it because headers escape
 // '#' (an unescaped '#' only appears in duplicate suffixes and this prefix).
 const emptyKeyPrefix = "#column:"
-
-// NormalizeTableHeader applies Unicode NFC, strips leading/trailing BOM and
-// whitespace, then escapes backslash and '#' so the result can be embedded in
-// a column key unambiguously. Duplicate disambiguation and empty-header
-// position names are added by DeriveTableColumns.
-func NormalizeTableHeader(raw string) string {
-	return escapeKey(normalizeCore(raw))
-}
 
 func normalizeCore(raw string) string {
 	s := norm.NFC.String(raw)
@@ -94,6 +87,21 @@ func DeriveTableColumns(headers []string) []TableColumn {
 func TableDataKey(key string) string {
 	sum := sha256.Sum256([]byte(key))
 	return "c_" + hex.EncodeToString(sum[:])
+}
+
+// tableDataPathRe is the JSON path form a published column is read through. It is
+// written once here because both the SQL range check and the engines' runtime
+// fields have to agree on it.
+var tableDataPathRe = regexp.MustCompile(`^\$\.(c_[0-9a-f]{64})$`)
+
+// TableDataKeyFromPath returns the column key an indexed chunk_data JSON path
+// addresses, or ok=false when the path is not one this package produces.
+func TableDataKeyFromPath(path string) (key string, ok bool) {
+	match := tableDataPathRe.FindStringSubmatch(path)
+	if match == nil {
+		return "", false
+	}
+	return match[1], true
 }
 
 // Column modes. auto indexes every column into both body text and chunk_data

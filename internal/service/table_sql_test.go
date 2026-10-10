@@ -416,6 +416,18 @@ func TestNewTableSQLAcceptsAGeneratedInfinityTableName(t *testing.T) {
 	if len(want) <= 64 {
 		t.Fatalf("the fixture no longer exceeds the id bound: %d characters", len(want))
 	}
+
+	// The statement the engine receives: the range is the backend's, and the
+	// table it reads is the long one the engine built.
+	statement, err := query.policy.check("select doc_id from " + want)
+	if err != nil {
+		t.Fatalf("check: %v", err)
+	}
+	for _, fragment := range []string{"from " + want, "doc_id = 'doc-one'", "available_int = 1", "table_row_int = 1"} {
+		if !strings.Contains(statement.text, fragment) {
+			t.Errorf("the rewritten statement lost %q: %s", fragment, statement.text)
+		}
+	}
 }
 
 func TestTableSQLSkipsOceanBaseFamily(t *testing.T) {

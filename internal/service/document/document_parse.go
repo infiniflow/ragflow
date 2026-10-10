@@ -259,16 +259,6 @@ func (s *DocumentService) clearDocumentAndKBCountersForRerun(docID, kbID string)
 	})
 }
 
-func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
-	if doc == nil {
-		return fmt.Errorf("document is nil")
-	}
-	return dao.GetDB().Model(&entity.Knowledgebase{}).Where("id = ?", doc.KbID).Updates(map[string]interface{}{
-		"token_num": gorm.Expr("token_num - ?", doc.TokenNum),
-		"chunk_num": gorm.Expr("chunk_num - ?", doc.ChunkNum),
-	}).Error
-}
-
 func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)

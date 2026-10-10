@@ -73,11 +73,7 @@ func applyColumnOverride(config entity.JSONMap, override map[string]interface{})
 		}
 
 		base, _ := out[target].(map[string]interface{})
-		merged, err := pipeline.MergeTableChunkerParams(base, params)
-		if err != nil {
-			return nil, fmt.Errorf("parser_config[%q]: %v", target, err)
-		}
-		out[target] = merged
+		out[target] = pipeline.MergeTableChunkerParams(base, params)
 	}
 	return out, nil
 }

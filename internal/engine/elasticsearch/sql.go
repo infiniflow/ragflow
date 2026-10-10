@@ -24,12 +24,12 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
@@ -43,8 +43,6 @@ const (
 
 const esSQLRetryAttempts = 2
 const esSQLRetryDelay = 3 * time.Second
-
-var tableSQLPathRe = regexp.MustCompile(`^\$\.(c_[a-f0-9]{64})$`)
 
 // prepareSQL renders checked JSON field expressions as request-local keyword
 // fields. Reading _source preserves strings that dynamic keyword mapping omits.
@@ -86,11 +84,10 @@ func prepareSQL(sqlText string) (string, map[string]interface{}, int, error) {
 			if err != nil || len(args) != 2 || len(args[0]) != 1 || !args[0][0].IsWord("chunk_data") || len(args[1]) != 1 || args[1][0].Kind != utility.SQLString {
 				return "", nil, 0, errors.New("table JSON extraction requires chunk_data and a quoted column path")
 			}
-			match := tableSQLPathRe.FindStringSubmatch(args[1][0].Value)
-			if match == nil {
+			key, ok := entity.TableDataKeyFromPath(args[1][0].Value)
+			if !ok {
 				return "", nil, 0, errors.New("table JSON extraction requires a canonical column key")
 			}
-			key := match[1]
 			runtime[key] = map[string]interface{}{
 				"type": "keyword",
 				"script": map[string]interface{}{

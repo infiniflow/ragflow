@@ -209,6 +209,13 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 				}
 			} else {
 				cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+			// A TableChunker parameter this request set but the DSL does not
+			// declare is dropped by the rebuild without a word. The upload path
+			// refuses the same input as a misspelling, so say what was lost.
+			for _, field := range pipelinepkg.TableChunkerParamsLostInBuild(req.ParserConfig, cleaned) {
+				common.Warn("parser_config: the pipeline DSL does not declare this TableChunker parameter, so the rebuild dropped it",
+					zap.String("parameter", field))
+			}
 				pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
 				tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
 				if tenantErr == nil && tenant != nil {

@@ -454,10 +454,10 @@ func ValidateTableColumnOverride(params map[string]any) (mode string, roles map[
 // Every other parameter of the node — outputs, delimiters, anything a canvas
 // carries — survives untouched, because an upload override is about columns,
 // not about re-declaring the node.
-func MergeTableChunkerParams(base, override map[string]any) (map[string]any, error) {
-	if _, _, err := ValidateTableColumnOverride(override); err != nil {
-		return nil, err
-	}
+// The override is validated by the caller (ValidateTableColumnOverride): an
+// upload reaches this through the handler and the service, and validating it a
+// third time here only pinned a branch nothing reaches.
+func MergeTableChunkerParams(base, override map[string]any) map[string]any {
 	merged := make(map[string]any, len(base)+len(override))
 	for key, value := range base {
 		merged[key] = value
@@ -465,7 +465,7 @@ func MergeTableChunkerParams(base, override map[string]any) (map[string]any, err
 	for key, value := range override {
 		merged[key] = value
 	}
-	return merged, nil
+	return merged
 }
 
 // IsTableColumnOnlyConfig reports whether a parser_config carries nothing but table
@@ -497,6 +497,33 @@ func IsTableColumnOnlyConfig(raw map[string]any) bool {
 // with an explicit error rather than ignored: a request that carried them used
 // to report success while the roles silently did nothing.
 var retiredTableColumnKeys = []string{"table_column_mode", "table_column_roles", "table_column_names"}
+
+// TableChunkerParamsLostInBuild names the parameters a request set on a
+// TableChunker node that the built configuration does not carry: the pipeline
+// DSL does not declare them, so BuildParserConfig filtered them out. It is
+// reporting only — the general update path rebuilds the whole configuration
+// from the DSL, and refusing there would break a client that sends the form its
+// operator tab shows. `built` is the configuration BuildParserConfig produced.
+func TableChunkerParamsLostInBuild(requested, built map[string]interface{}) []string {
+	var lost []string
+	for key, raw := range requested {
+		if !IsTableChunkerNodeKey(key) {
+			continue
+		}
+		params, ok := raw.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		applied, _ := built[key].(map[string]interface{})
+		for field := range params {
+			if _, ok := applied[field]; !ok {
+				lost = append(lost, key+"."+field)
+			}
+		}
+	}
+	sort.Strings(lost)
+	return lost
+}
 
 // CheckRetiredTableColumnKeys reports which retired flat keys a request carried.
 func CheckRetiredTableColumnKeys(raw map[string]any) []string {
