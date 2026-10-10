@@ -55,7 +55,7 @@ function InnerToolNode({
                 className="cursor-pointer"
                 data-tool={mcp.mcp_id}
               >
-                {findMcpById(mcp.mcp_id)?.name ?? 'MCP'}
+                {mcp.name ?? findMcpById(mcp.mcp_id)?.name ?? 'MCP'}
               </ToolCard>
             );
           }
