@@ -714,6 +714,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1232,6 +1240,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1816,6 +1832,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.
