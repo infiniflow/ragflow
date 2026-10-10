@@ -19,8 +19,10 @@ assert_template() {
   grep -q 'alias /ragflow/web/dist/;' "$tmp_conf"
   grep -q 'location /ragflow/ {' "$tmp_conf"
   grep -q "$REWRITE_PATTERN" "$tmp_conf"
-  grep -q 'location ~ \^/ragflow/(v1|api)' "$tmp_conf"
+  grep -q 'location ~ \^/ragflow/api/v1' "$tmp_conf"
+  grep -q 'location ~ \^/ragflow/api/v1/admin' "$tmp_conf"
   grep -q 'try_files \$uri \$uri/ /ragflow/index.html' "$tmp_conf"
+  grep -q 'location = /ragflow {' "$tmp_conf"
 
   local rewrite_count
   rewrite_count="$(grep -c "$REWRITE_PATTERN" "$tmp_conf" || true)"
@@ -33,6 +35,7 @@ import sys
 
 text = open(sys.argv[1], encoding="utf-8").read()
 blocks = re.findall(r"location ~ \^/ragflow/.*?\{(.*?)\n\s*\}", text, re.S)
+assert blocks, "expected prefixed regex locations"
 for body in blocks:
     if "proxy_pass" in body or "expires 10y" in body:
         assert "rewrite ^/ragflow/(.*)$ /$1 break;" in body
@@ -49,16 +52,15 @@ PY
   rm -f "$tmp_conf"
 }
 
-assert_template ragflow.conf.python 3
-assert_template ragflow.conf.golang 8
-assert_template ragflow.conf.hybrid 12
+# Current nginx template has admin + API proxy locations plus the static cache block.
+assert_template ragflow.conf 3
 
 # Regex locations must escape metacharacters in the base path (e.g. '.').
 DOT_CONF="$(mktemp)"
-cp "${SCRIPT_DIR}/ragflow.conf.python" "$DOT_CONF"
+cp "${SCRIPT_DIR}/ragflow.conf" "$DOT_CONF"
 RAGFLOW_NGINX_CONF="$DOT_CONF" RAGFLOW_WEB_BASE_PATH="/rag.flow" \
   bash "${SCRIPT_DIR}/apply_web_base_path.sh"
-grep -F 'location ~ ^/rag\.flow/(v1|api)' "$DOT_CONF"
+grep -F 'location ~ ^/rag\.flow/api/v1' "$DOT_CONF"
 grep -F 'rewrite ^/rag\.flow/(.*)$ /$1 break;' "$DOT_CONF"
 grep -F 'location /rag.flow/ {' "$DOT_CONF"
 rm -f "$DOT_CONF"
