@@ -149,7 +149,9 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 		if text == "" {
 			return nil
 		}
-		return map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
+		item := map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
+		projectPDFTable(item)
+		return item
 	case "image", "picture", "figure":
 		if text == "" {
 			text = "[Image]"

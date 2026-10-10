@@ -196,7 +196,9 @@ func soMarkBlockToItem(block map[string]any, keepHeaderFooter bool) map[string]a
 		if content == "" {
 			return nil
 		}
-		return map[string]any{"text": content, "doc_type_kwd": pdfTableDocType(content), "layout": "table"}
+		item := map[string]any{"text": content, "doc_type_kwd": pdfTableDocType(content), "layout": "table"}
+		projectPDFTable(item)
+		return item
 	case "equation":
 		if content == "" {
 			return nil

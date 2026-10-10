@@ -99,6 +99,38 @@ func TestDatasetServiceUpdateDatasetUpdatesFields(t *testing.T) {
 	}
 }
 
+func TestUpdateDataset_ClearsAvatarWithEmptyString(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-1", "tenant-1", "Original")
+
+	svc := testDatasetUpdateService(t)
+	initial := "data:image/png;base64,iVBORw0KGgo="
+	if _, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &initial}); err != nil || code != common.CodeSuccess {
+		t.Fatalf("set avatar failed: code=%d err=%v", code, err)
+	}
+
+	empty := ""
+	result, code, err := svc.UpdateDataset(t.Context(), "kb-1", "tenant-1", service.UpdateDatasetRequest{Avatar: &empty})
+	if err != nil {
+		t.Fatalf("clear avatar failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
+	}
+	if result["avatar"] != "" {
+		t.Fatalf("expected empty avatar in response, got %#v", result["avatar"])
+	}
+
+	persisted, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatalf("get updated kb: %v", err)
+	}
+	if persisted.Avatar == nil || *persisted.Avatar != "" {
+		t.Fatalf("expected persisted empty avatar, got %#v", persisted.Avatar)
+	}
+}
+
 // TestUpdateDataset_ParentChildConfigReachesGeneralChunker verifies an edit to
 // the dataset setting updates the runtime chunker parameter, not only the UI
 // payload retained in parser_config.
@@ -468,7 +500,7 @@ func TestDatasetServiceUpdateDatasetRejectsNonOwner(t *testing.T) {
 	}
 }
 
-func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing.T) {
+func TestDatasetServiceUpdateDatasetAllowsTeamMemberPermissionChange(t *testing.T) {
 	db := setupDatasetUpdateTestDB(t)
 	pushServiceDB(t, db)
 	insertDatasetUpdateKB(t, "kb-1", "owner-1", "Original")
@@ -484,22 +516,19 @@ func TestDatasetServiceUpdateDatasetRejectsTeamMemberPermissionChange(t *testing
 	_, code, err := testDatasetUpdateService(t).UpdateDataset(ctx, "kb-1", "user-1", service.UpdateDatasetRequest{
 		Permission: &permission,
 	})
-	if err == nil {
-		t.Fatal("expected permission change error")
+	if err != nil {
+		t.Fatalf("expected shared tenant member to update dataset permission: %v", err)
 	}
-	if code != common.CodeForbidden {
-		t.Fatalf("expected forbidden code, got %d", code)
-	}
-	if err.Error() != "Permission denied" {
-		t.Fatalf("unexpected error: %v", err)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
 
 	persisted, err := dao.NewKnowledgebaseDAO().GetByID(ctx, db, "kb-1")
 	if err != nil {
 		t.Fatalf("get dataset: %v", err)
 	}
-	if persisted.Permission != string(entity.TenantPermissionTeam) {
-		t.Fatalf("expected permission unchanged, got %q", persisted.Permission)
+	if persisted.Permission != string(entity.TenantPermissionMe) {
+		t.Fatalf("expected permission to change to %q, got %q", entity.TenantPermissionMe, persisted.Permission)
 	}
 }
 

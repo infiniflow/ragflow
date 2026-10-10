@@ -1288,14 +1288,16 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 	}, nil
 }
 
-// buildIndexNames creates index names for the given tenant IDs.
+// buildIndexNames creates one index name per distinct tenant ID.
 // Each tenantID may be a comma-separated list.
 func buildIndexNames(tenantIDs []string) []string {
 	var indexNames []string
+	seen := make(map[string]bool)
 	for _, tid := range tenantIDs {
 		for part := range strings.SplitSeq(tid, ",") {
 			part = strings.TrimSpace(part)
-			if part != "" {
+			if part != "" && !seen[part] {
+				seen[part] = true
 				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))
 			}
 		}

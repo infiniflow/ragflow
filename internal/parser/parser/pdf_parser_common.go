@@ -32,6 +32,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/utility"
 )
 
@@ -494,6 +495,7 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 			}
 		}
 		normalizePDFDocType(items[i])
+		projectPDFTable(items[i])
 		if img, _ := items[i]["image"].(string); img != "" {
 			items[i]["image"] = pdflayout.InlinePNGDataURL(img)
 		}
@@ -929,6 +931,42 @@ func normalizePDFDocType(item map[string]any) {
 		}
 		item["doc_type_kwd"] = "text"
 	}
+}
+
+// projectPDFTable upgrades a legacy pdf table item — one whose doc_type_kwd is
+// "table" and whose text is <table> markup — to the structured TableData
+// contract, so the downstream chunker reads Rows directly instead of
+// re-parsing HTML. ParseTableHTML + RenderTableHTML round-trips the legacy
+// htmlTableRE extraction exactly (entity/html unescaping is left to the
+// consumer), so dropping the original HTML string loses no information: the
+// markdown and search paths render it on demand from `table`. The pdf page
+// number (when present) is projected onto TableData.Page.
+//
+// The redundant HTML `text` is deleted once `table` is projected: keeping both
+// would duplicate every table's cell text in the parse result (the storage
+// cost that motivated moving to the structured contract). Non-table items, and
+// table items whose text is not <table> markup, are left untouched so their
+// `text` is preserved as a last-resort carrier.
+func projectPDFTable(item map[string]any) {
+	if item == nil {
+		return
+	}
+	if dt, _ := item["doc_type_kwd"].(string); dt != "table" {
+		return
+	}
+	text, _ := item["text"].(string)
+	if !isTableHTML(text) {
+		return
+	}
+	td, err := tableutil.ParseTableHTML(text)
+	if err != nil || td == nil {
+		return
+	}
+	if page := numberValue(item["page_number"]); page > 0 {
+		td.Page = int(page)
+	}
+	item["table"] = td
+	delete(item, "text")
 }
 
 // ExtractPDFPositions is the single source of truth for "does this parsed item

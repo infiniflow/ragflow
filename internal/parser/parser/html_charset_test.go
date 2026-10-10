@@ -63,10 +63,8 @@ func htmlEncodedFixture(t *testing.T, src string, enc encoding.Encoding) []byte 
 func itemsText(res ParseResult) string {
 	var sb strings.Builder
 	for _, it := range res.JSON {
-		if s, ok := it["text"].(string); ok {
-			sb.WriteString(s)
-			sb.WriteString("\n")
-		}
+		sb.WriteString(renderedText(it))
+		sb.WriteString("\n")
 	}
 	return sb.String()
 }
@@ -163,7 +161,7 @@ func TestHTMLParser_DecodeTableSurvivesGBK(t *testing.T) {
 	var tableText string
 	for _, it := range res.JSON {
 		if it["doc_type_kwd"] == "table" {
-			tableText, _ = it["text"].(string)
+			tableText = renderedText(it)
 		}
 	}
 	if tableText == "" {

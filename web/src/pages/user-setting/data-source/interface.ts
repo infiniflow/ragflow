@@ -43,6 +43,7 @@ export interface IDataSourceBase {
 }
 
 export interface IDataSourceLog {
+  avatar?: string;
   connector_id: string;
   docs_removed_from_index?: number;
   error_count: number;

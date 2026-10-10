@@ -1,6 +1,11 @@
 import { HomeCard } from '@/components/home-card';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { useNavigatePage } from '@/hooks/logic-hooks/navigate-hooks';
 import { IBuiltinPipelineListItem } from '@/interfaces/database/agent';
 import { Copy } from 'lucide-react';
 import type { MouseEvent } from 'react';
@@ -8,9 +13,9 @@ import { useTranslation } from 'react-i18next';
 import { useCopyBuiltinPipeline } from './use-copy-builtin-pipeline';
 
 // BuiltinPipelineCard renders a read-only built-in ingestion pipeline in the
-// agents list. Built-in pipelines are static, non-user resources: they cannot
-// be opened, renamed, or deleted, but can be copied into a user-owned dataflow
-// canvas via the Copy action.
+// agents list. Built-in pipelines are static, non-user resources: clicking the
+// card opens them on the read-only canvas (view only, no editing or autosave),
+// and the Copy action turns them into a user-owned editable dataflow canvas.
 export function BuiltinPipelineCard({
   data,
 }: {
@@ -18,17 +23,12 @@ export function BuiltinPipelineCard({
 }) {
   const { t } = useTranslation();
   const { copy, copying } = useCopyBuiltinPipeline();
+  const { navigateToBuiltinPipeline } = useNavigatePage();
 
   const handleCopyClick = (e: MouseEvent) => {
     e.stopPropagation();
     copy({ id: data.id, title: data.title ?? '' });
   };
-
-  // The built-in marker is rendered as a badge. Use a dedicated translation
-  // key (builtInBadge) rather than the parser dropdown's builtInSuffix, so the
-  // badge label is decoupled from that unrelated feature. Fall back to a plain
-  // label if the locale is missing it.
-  const builtInLabel = t('knowledgeConfiguration.builtInBadge') || 'Built in';
 
   return (
     <HomeCard
@@ -37,26 +37,27 @@ export function BuiltinPipelineCard({
         name: data.title ?? '',
         description: data.description || '',
       }}
-      // Read-only: a built-in pipeline cannot be opened for editing.
-      onClick={undefined}
-      // No rename / delete / edit-tags menu for built-in items.
-      moreDropdown={null}
-      icon={
-        <Badge variant="secondary" data-testid="builtin-badge">
-          {builtInLabel}
-        </Badge>
-      }
-      extra={
-        <Button
-          data-testid="copy-builtin-pipeline"
-          variant="static"
-          size="auto"
-          disabled={copying}
-          onClick={handleCopyClick}
-        >
-          <Copy className="size-4" />
-          {t('common.copy')}
-        </Button>
+      // Read-only: clicking opens the built-in pipeline on the view-only
+      // canvas; the template itself can never be edited.
+      onClick={navigateToBuiltinPipeline(data.id)}
+      // No rename / delete / edit-tags menu for built-in items; the top-right
+      // slot carries the icon-only Copy action instead.
+      moreDropdown={
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              data-testid="copy-builtin-pipeline"
+              variant="static"
+              size="icon-sm"
+              disabled={copying}
+              aria-label={t('common.copy')}
+              onClick={handleCopyClick}
+            >
+              <Copy className="size-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('common.copy')}</TooltipContent>
+        </Tooltip>
       }
     />
   );
