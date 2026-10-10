@@ -159,13 +159,15 @@ func TestTemplateTemperatureComesFromConfig(t *testing.T) {
 	}
 }
 
-// TestShippedConfigIsASingleDirectAnswerTemplate guards conf/agentic_rag.yaml
-// end to end: exactly one template (smart-reasoning), the toolset the code and
-// the prompt agree on, and a DIRECT-ANSWER prompt - no question-decomposition
-// stage, no intermediate deliverable format, no auditor, and the mechanical
-// provenance contract (`chunk_id: <id>`) the chat pipeline turns into
-// citation markers.
-func TestShippedConfigIsASingleDirectAnswerTemplate(t *testing.T) {
+// TestShippedConfigIsADirectAnswerTemplate guards conf/agentic_rag.yaml end to
+// end: exactly one template (smart-reasoning) carrying the direct-answer prompt
+// and the full toolset - the baseline locate/deep-read tools plus the compiled
+// navigation tree (navigate_tree), structure drilldown (navigate_structure) and
+// knowledge-graph walk (graph_explore). The prompt is the direct-answer rewrite
+// - no question-decomposition stage, no intermediate deliverable format, no
+// auditor - and carries the mechanical provenance contract (`chunk_id: <id>`)
+// the chat pipeline turns into citation markers.
+func TestShippedConfigIsADirectAnswerTemplate(t *testing.T) {
 	t.Setenv("AGENTIC_RAG_CONFIG", filepath.Join("..", "..", "conf", "agentic_rag.yaml"))
 	configMu.Lock()
 	cachedFile = nil
@@ -190,6 +192,7 @@ func TestShippedConfigIsASingleDirectAnswerTemplate(t *testing.T) {
 	wantTools := []string{
 		"think", "todo_write", "grep_chunks", "search_bm25_chunks",
 		"search_semantic_chunks", "list_chunks", "run_javascript", "search_metadata",
+		"navigate_tree", "navigate_structure", "graph_explore",
 	}
 	if strings.Join(tmpl.Tools, ",") != strings.Join(wantTools, ",") {
 		t.Fatalf("tools = %v, want %v", tmpl.Tools, wantTools)
