@@ -361,12 +361,18 @@ func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.D
 	if r == nil || r.client == nil {
 		return false, errors.New("kvrocks client is not initialized")
 	}
-	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
+	result, err := r.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  exp,
+	}).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
 	if err != nil {
 		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
 		return false, fmt.Errorf("set key %q if absent: %w", key, err)
 	}
-	return ok, nil
+	return result == "OK", nil
 }
 
 // GetOrCreateKey atomically retrieves an existing key or creates a new one
