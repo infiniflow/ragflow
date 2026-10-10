@@ -184,22 +184,29 @@ func (s *Scheduler) scheduleTimerLocked(ctx context.Context, taskID string, dela
 	}
 	var timer *time.Timer
 	timer = time.AfterFunc(delay, func() {
-		if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
-			common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
-			s.retryTimerIfCurrent(ctx, taskID, timer)
-			return
-		}
-		s.retireTimer(taskID, timer)
+		s.handleTimerWakeup(ctx, taskID, &timer)
 	})
 	s.timers[taskID] = timer
 }
 
+// handleTimerWakeup is also exercised directly by callback-path unit tests.
+// The timer pointer is only read while holding timerMu, which also protects
+// the assignment made by scheduleTimerLocked.
+func (s *Scheduler) handleTimerWakeup(ctx context.Context, taskID string, timer **time.Timer) {
+	if err := s.publish(ctx, taskID, true); err != nil && ctx.Err() == nil {
+		common.Warn("syncer scheduler timer publish failed", zap.String("task_id", taskID), zap.Error(err))
+		s.retryTimerIfCurrent(ctx, taskID, timer)
+		return
+	}
+	s.retireTimer(taskID, timer)
+}
+
 // retryTimerIfCurrent prevents an outdated callback's failure from replacing
 // a newer schedule. The identity check and replacement are one critical section.
-func (s *Scheduler) retryTimerIfCurrent(ctx context.Context, taskID string, timer *time.Timer) {
+func (s *Scheduler) retryTimerIfCurrent(ctx context.Context, taskID string, timer **time.Timer) {
 	s.timerMu.Lock()
 	defer s.timerMu.Unlock()
-	if ctx.Err() != nil || s.timers[taskID] != timer {
+	if ctx.Err() != nil || s.timers[taskID] != *timer {
 		return
 	}
 	s.scheduleTimerLocked(ctx, taskID, 3*time.Second)
@@ -207,10 +214,10 @@ func (s *Scheduler) retryTimerIfCurrent(ctx context.Context, taskID string, time
 
 // retireTimer removes only the timer whose callback finished. A newer
 // schedule for the same task must remain registered for replacement/shutdown.
-func (s *Scheduler) retireTimer(taskID string, timer *time.Timer) {
+func (s *Scheduler) retireTimer(taskID string, timer **time.Timer) {
 	s.timerMu.Lock()
 	defer s.timerMu.Unlock()
-	if s.timers[taskID] == timer {
+	if s.timers[taskID] == *timer {
 		delete(s.timers, taskID)
 	}
 }
