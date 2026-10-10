@@ -192,6 +192,24 @@ func TestMinerULocalCheckConnectionUnreachable(t *testing.T) {
 	}
 }
 
+func TestMinerULocalCheckConnectionUsesMinerUAPIServerFromAPIKeyJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/health" {
+			http.Error(w, "unexpected path "+r.URL.Path, http.StatusNotFound)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	empty := ""
+	apiKey := `{"mineru_apiserver":"` + server.URL + `"}`
+	driver := NewMinerLocalUModel(map[string]string{"default": ""}, URLSuffix{DocumentParse: "file_parse", Task: "tasks"})
+	if err := driver.CheckConnection(context.Background(), &APIConfig{BaseURL: &empty, ApiKey: &apiKey}); err != nil {
+		t.Fatalf("CheckConnection with mineru_apiserver in api_key JSON: %v", err)
+	}
+}
+
 func TestMinerULocalOCRFileDelegatesToCheckConnection(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)

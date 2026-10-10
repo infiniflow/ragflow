@@ -111,3 +111,26 @@ func ResolveMinerUServerURL(setupServerURL, apiKey string) string {
 	}
 	return strings.TrimRight(serverURL, "/")
 }
+
+// ResolveMinerUAPIServer returns the MinerU HTTP API origin used for
+// /health and /file_parse. The provider UI stores the URL as
+// mineru_apiserver inside the api_key JSON and historically submitted
+// extra.base_url as empty, so instance BaseURL is often unusable on its
+// own. Order: instance BaseURL, mineru_apiserver in the api_key JSON,
+// then MINERU_APISERVER.
+func ResolveMinerUAPIServer(apiConfig *APIConfig) string {
+	if apiConfig != nil && apiConfig.BaseURL != nil {
+		if u := strings.TrimRight(strings.TrimSpace(*apiConfig.BaseURL), "/"); u != "" {
+			return u
+		}
+	}
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if u := MinerUProviderConfigFromAPIKey(*apiConfig.ApiKey).APIServer; u != "" {
+			return strings.TrimRight(u, "/")
+		}
+	}
+	if u := strings.TrimSpace(common.GetEnv(common.EnvMineruAPIServer)); u != "" {
+		return strings.TrimRight(u, "/")
+	}
+	return ""
+}
