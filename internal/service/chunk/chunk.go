@@ -1590,6 +1590,12 @@ func snapshotChunkImageMetadata(existing map[string]interface{}) chunkImageMetad
 }
 
 func (s *ChunkService) restoreChunkImageMetadata(ctx context.Context, req *service.UpdateChunkRequest, indexName string, snap chunkImageMetadataSnapshot) error {
+	// The removal path already wrote empty img_id / text. Skip a no-op
+	// rollback so a later storage failure still matches the Python
+	// "index committed, object is an orphan" contract.
+	if strings.TrimSpace(snap.imgID) == "" && (snap.docTypeKwd == "" || snap.docTypeKwd == "text") {
+		return nil
+	}
 	rollback := map[string]interface{}{
 		"id":           req.ChunkID,
 		"img_id":       snap.imgID,
