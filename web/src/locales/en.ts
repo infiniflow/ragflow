@@ -1258,9 +1258,12 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       webSearchApiKeyRequired:
         'An API key is required for the selected provider — without one no Internet search happens and the switch never appears.',
       // The key field's label. {{provider}} is the provider's BRAND name, which is
-      // deliberately not translated, so this single template covers all nine.
+      // deliberately not translated, so this single template covers all providers.
       webSearchApiKeyLabel: '{{provider}} API Key',
       // One Tip/Message pair per provider, alphabetical by provider id.
+      anysearchApiKeyTip:
+        'Optional. AnySearch works without a key; add a key to use your account quota. Service limits apply.',
+      anysearchApiKeyMessage: 'Optional - leave blank for anonymous search',
       braveApiKeyTip:
         'When Brave Search is selected, its web results supplement dataset retrieval. Every Brave endpoint requires a key.',
       braveApiKeyMessage: 'Please enter your Brave Search API Key',

@@ -20,8 +20,10 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -30,11 +32,12 @@ import (
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
-// (brave, exa, firecrawl, linkup, parallel, querit, search1api, serply, tavily,
+// (anysearch, brave, exa, firecrawl, linkup, parallel, querit, search1api, serply, tavily,
 // youcom) so a new provider has exactly one obvious place in each list.
 // Tavily's endpoint lives with its retrieval code in chat_pipeline.go, which is
 // why it has no entry here.
 const (
+	webSearchProviderAnySearch  = "anysearch"
 	webSearchProviderBrave      = "brave"
 	webSearchProviderExa        = "exa"
 	webSearchProviderFirecrawl  = "firecrawl"
@@ -46,8 +49,9 @@ const (
 	webSearchProviderTavily     = "tavily"
 	webSearchProviderYouCom     = "youcom"
 
-	braveWebSearchEndpoint = "https://api.search.brave.com/res/v1/web/search"
-	exaWebSearchEndpoint   = "https://api.exa.ai/search"
+	anySearchWebSearchEndpoint = "https://api.anysearch.com/v1/search"
+	braveWebSearchEndpoint     = "https://api.search.brave.com/res/v1/web/search"
+	exaWebSearchEndpoint       = "https://api.exa.ai/search"
 	// v2 is Firecrawl's current search shape; the v1 endpoint is deprecated.
 	firecrawlWebSearchEndpoint  = "https://api.firecrawl.dev/v2/search"
 	linkupWebSearchEndpoint     = "https://api.linkup.so/v1/search"
@@ -78,6 +82,12 @@ const (
 )
 
 var (
+	anySearchWebSearchHTTPClient = &http.Client{
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
 	braveWebSearchHTTPClient      = &http.Client{Timeout: 30 * time.Second}
 	exaWebSearchHTTPClient        = &http.Client{Timeout: 30 * time.Second}
 	firecrawlWebSearchHTTPClient  = &http.Client{Timeout: 30 * time.Second}
@@ -93,6 +103,7 @@ var (
 	// http.Client per request on a hot path shares no connections at all.
 	tavilyWebSearchHTTPClient    = &http.Client{Timeout: 30 * time.Second}
 	tavilyDeepResearchHTTPClient = &http.Client{Timeout: 15 * time.Second}
+	errWebSearchResponseTooLarge = fmt.Errorf("response body exceeds %d bytes", webSearchMaxResponseBytes)
 )
 
 type webSearchProviderConfig struct {
@@ -115,15 +126,13 @@ func resolveWebSearchProvider(promptConfig map[string]interface{}) *webSearchPro
 	}
 
 	apiKeyField := ""
-	// keyOptional marks providers usable with no key. Only You.com: it serves a
-	// dedicated keyless endpoint (a different path, same response shape, rate
-	// limited per source IP, and it rejects an X-API-Key header — see
-	// youComEndpointFor). A key moves to the keyed endpoint and lifts the limit.
-	//
-	// Free tier != keyless: Exa's free 1,000 requests/month still requires a key
-	// on every call, so it does not get this carve-out.
+	// AnySearch accepts anonymous requests on its search endpoint. You.com uses
+	// a separate keyless endpoint. Other providers still require a saved key.
 	keyOptional := false
 	switch provider {
+	case webSearchProviderAnySearch:
+		apiKeyField = "anysearch_api_key"
+		keyOptional = true
 	case webSearchProviderBrave:
 		apiKeyField = "brave_api_key"
 	case webSearchProviderExa:
@@ -195,6 +204,14 @@ func retrieveWebSearchWithTavily(
 		return nil, fmt.Errorf("web search provider is not configured")
 	}
 	switch provider.Provider {
+	case webSearchProviderAnySearch:
+		return retrieveAnySearchWebSearch(
+			ctx,
+			anySearchWebSearchHTTPClient,
+			anySearchWebSearchEndpoint,
+			provider.APIKey,
+			question,
+		)
 	case webSearchProviderBrave:
 		return retrieveBraveWebSearch(
 			ctx,
@@ -335,11 +352,15 @@ func webSearchPayload(idPrefix string, hits []webSearchHit) map[string]interface
 	}
 }
 
+type webSearchHTTPStatusError int
+
+func (e webSearchHTTPStatusError) Error() string {
+	return fmt.Sprintf("status %d", int(e))
+}
+
 // webSearchRequest performs one provider call and returns the response body.
-// Providers differ only in method, headers and body — the status check and the
-// read are identical everywhere, and a request that never reached the provider
-// must be reported the same way regardless of which one was called. Callers
-// wrap the error with their own provider name.
+// Providers differ only in method, headers and body; the shared helper bounds
+// response size and reports failures for callers to handle.
 func webSearchRequest(
 	ctx context.Context,
 	client *http.Client,
@@ -362,7 +383,7 @@ func webSearchRequest(
 	defer response.Body.Close()
 
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
-		return nil, fmt.Errorf("status %d", response.StatusCode)
+		return nil, webSearchHTTPStatusError(response.StatusCode)
 	}
 	// Cap the body: a misbehaving or compromised provider must not be able to make
 	// the server allocate an unbounded buffer. webSearchMaxResponseBytes is far above
@@ -374,9 +395,112 @@ func webSearchRequest(
 		return nil, fmt.Errorf("read response: %w", err)
 	}
 	if len(responseBody) > webSearchMaxResponseBytes {
-		return nil, fmt.Errorf("response body exceeds %d bytes", webSearchMaxResponseBytes)
+		return nil, errWebSearchResponseTooLarge
 	}
 	return responseBody, nil
+}
+
+// --- AnySearch --------------------------------------------------------------
+
+type anySearchWebSearchResult struct {
+	Title   string `json:"title"`
+	URL     string `json:"url"`
+	Content string `json:"content"`
+	Snippet string `json:"snippet"`
+}
+
+func retrieveAnySearchWebSearch(
+	ctx context.Context,
+	client *http.Client,
+	endpoint string,
+	apiKey string,
+	query string,
+) (map[string]interface{}, error) {
+	requestBody, err := json.Marshal(map[string]interface{}{
+		"query":       query,
+		"max_results": webSearchResultCount,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("anysearch: marshal request failed")
+	}
+	headers := map[string]string{
+		"Accept":       "application/json",
+		"Content-Type": "application/json",
+	}
+	if key := strings.TrimSpace(apiKey); key != "" {
+		headers["Authorization"] = "Bearer " + key
+	}
+	responseBody, err := webSearchRequest(ctx, client, http.MethodPost, endpoint, headers, bytes.NewReader(requestBody))
+	if err != nil {
+		// Transport errors may contain credentials or request data. Only safe
+		// categories and codes reach the host's ordinary web-search logs.
+		var status webSearchHTTPStatusError
+		var networkError net.Error
+		switch {
+		case errors.As(err, &status):
+			return nil, fmt.Errorf("anysearch: HTTP status %d", int(status))
+		case errors.Is(err, context.Canceled):
+			return nil, fmt.Errorf("anysearch: %w", context.Canceled)
+		case errors.Is(err, context.DeadlineExceeded):
+			return nil, fmt.Errorf("anysearch: %w", context.DeadlineExceeded)
+		case errors.As(err, &networkError) && networkError.Timeout():
+			return nil, fmt.Errorf("anysearch: request timed out")
+		case errors.Is(err, errWebSearchResponseTooLarge):
+			return nil, fmt.Errorf("anysearch: %w", errWebSearchResponseTooLarge)
+		default:
+			return nil, fmt.Errorf("anysearch: request failed")
+		}
+	}
+	results, err := decodeAnySearchWebSearchResults(responseBody)
+	if err != nil {
+		return nil, err
+	}
+	hits := make([]webSearchHit, 0, len(results))
+	for _, result := range results {
+		rawURL := strings.TrimSpace(result.URL)
+		parsed, err := url.ParseRequestURI(rawURL)
+		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Hostname() == "" {
+			continue
+		}
+		content := result.Content
+		if strings.TrimSpace(content) == "" {
+			content = result.Snippet
+		}
+		hits = append(hits, webSearchHit{
+			Title: result.Title, URL: rawURL, Content: content,
+		})
+	}
+	return webSearchPayload("anysearch", hits), nil
+}
+
+func decodeAnySearchWebSearchResults(responseBody []byte) ([]anySearchWebSearchResult, error) {
+	var envelope map[string]json.RawMessage
+	if err := json.Unmarshal(responseBody, &envelope); err != nil || envelope == nil {
+		return nil, fmt.Errorf("anysearch: response must be a JSON object")
+	}
+	var code *int
+	if err := json.Unmarshal(envelope["code"], &code); err != nil || code == nil {
+		return nil, fmt.Errorf("anysearch: response code must be an integer")
+	}
+	if *code != 0 {
+		return nil, fmt.Errorf("anysearch: business code %d", *code)
+	}
+	var data map[string]json.RawMessage
+	if err := json.Unmarshal(envelope["data"], &data); err != nil || data == nil {
+		return nil, fmt.Errorf("anysearch: response data must be an object")
+	}
+	var decoded []*anySearchWebSearchResult
+	if err := json.Unmarshal(data["results"], &decoded); err != nil || decoded == nil {
+		return nil, fmt.Errorf("anysearch: response data.results must be an array of objects with string fields")
+	}
+	results := make([]anySearchWebSearchResult, 0, len(decoded))
+	for _, result := range decoded {
+		if result == nil {
+			return nil, fmt.Errorf("anysearch: response result must be an object")
+		}
+		results = append(results, *result)
+	}
+	return results, nil
 }
 
 // --- Brave Search -----------------------------------------------------------
