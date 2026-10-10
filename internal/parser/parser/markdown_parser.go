@@ -32,6 +32,7 @@ import (
 	markdownlib "github.com/gomarkdown/markdown"
 	"github.com/gomarkdown/markdown/ast"
 	mdparser "github.com/gomarkdown/markdown/parser"
+	"ragflow/internal/parser/tableutil"
 )
 
 // dataURIPrefix is the MIME prefix for data URI images.
@@ -438,11 +439,18 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 			// embedded once and its markup does not pollute prose chunks.
 			txt = leafText(n)
 			if isTableHTML(txt) {
-				*out = append(*out, map[string]any{
-					"text":         txt,
+				// Emit the structured TableData contract so the chunker reads
+				// rows directly instead of re-parsing markup. ParseTableHTML
+				// mirrors the legacy chunker extraction. html.Parse is
+				// infallible, so the parse always yields a non-nil TableData
+				// and no legacy HTML `text` is kept.
+				td, _ := tableutil.ParseTableHTML(txt)
+				table := map[string]any{
 					"doc_type_kwd": "table",
 					"ck_type":      "table",
-				})
+					"table":        td,
+				}
+				*out = append(*out, table)
 				continue
 			}
 			// Non-table HTML block: ordinary text, no ck_type.

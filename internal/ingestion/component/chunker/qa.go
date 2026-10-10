@@ -42,6 +42,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -403,8 +404,11 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 	strictCSV := strings.EqualFold(fileType, "csv")
 	for _, item := range items {
 		var tmp []qaPair
+		td := tableDataOf(item)
 		txt, _ := itemText(item)
-		if txt == "" {
+		// A structured table with no markup text still carries rows; only a
+		// truly empty item (no text and no TableData) is skipped.
+		if txt == "" && td == nil {
 			continue
 		}
 		// Route on what the row walker can read, not on the type label.
@@ -423,8 +427,8 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// fall through to the text extractor, so documents from before this
 		// wire must be re-parsed rather than re-chunked.
 		var rows [][]string
-		if isTableHTML(txt) {
-			rows = tableRows(txt)
+		if td != nil {
+			rows = td.Rows
 		}
 		if len(rows) > 0 {
 			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
@@ -454,7 +458,11 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if htmlStr == "" {
 		return nil
 	}
-	return qaPairsFromRows(tableRows(htmlStr), strictPairs, nil, false)
+	td, err := tableutil.ParseTableHTML(htmlStr)
+	if err != nil || td == nil {
+		return nil
+	}
+	return qaPairsFromRows(td.Rows, strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 // TestBuildDOCXJSONSections_FromJSON feeds an office_oxide IR JSON
@@ -30,7 +32,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
-		{"text": "<table><tr><td>cell</td></tr></table>", "image": nil, "doc_type_kwd": "table"},
+		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Rows: [][]string{{"cell"}}, HeaderRows: 1}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -91,8 +93,11 @@ func TestBuildDOCXJSONSections_ExtractsTableCellImages(t *testing.T) {
 	if len(got) != 3 {
 		t.Fatalf("sections = %+v, want table plus two cell image items", got)
 	}
-	if got[0]["doc_type_kwd"] != "table" || got[0]["text"] != "<table><tr><td>beforeafter</td><td></td></tr></table>" || got[0]["source_table_id"] != "docx-table-1" {
+	if got[0]["doc_type_kwd"] != "table" || got[0]["source_table_id"] != "docx-table-1" {
 		t.Fatalf("table item = %+v", got[0])
+	}
+	if _, ok := got[0]["table"].(*entity.TableData); !ok {
+		t.Fatalf("table item missing structured TableData: %+v", got[0])
 	}
 	for i, want := range []string{"aGVsbG8=", "aW1hZ2U="} {
 		item := got[i+1]

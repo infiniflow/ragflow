@@ -23,6 +23,8 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestBuildDOCXJSONSections_Paragraphs(t *testing.T) {
@@ -95,18 +97,23 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 		t.Fatalf("got %d sections, want 1", len(sections))
 	}
 	item := sections[0]
-	html, ok := item["text"].(string)
-	if !ok {
-		t.Fatal("text field missing or not string")
+	td, ok := item["table"].(*entity.TableData)
+	if !ok || td == nil {
+		t.Fatal("table field missing or not *entity.TableData")
 	}
-	if !strings.Contains(html, "<table>") || !strings.Contains(html, "</table>") {
-		t.Errorf("html = %q, missing <table> tags", html)
+	var all strings.Builder
+	for _, row := range td.Rows {
+		for _, c := range row {
+			all.WriteString(c)
+		}
 	}
-	if !strings.Contains(html, "<tr>") || !strings.Contains(html, "</tr>") {
-		t.Errorf("html = %q, missing <tr> tags", html)
+	s := all.String()
+	if !strings.Contains(s, "A1") || !strings.Contains(s, "B1") ||
+		!strings.Contains(s, "A2") || !strings.Contains(s, "B2") {
+		t.Errorf("table rows = %#v, missing cell content", td.Rows)
 	}
-	if !strings.Contains(html, "<td>A1</td>") || !strings.Contains(html, "<td>B2</td>") {
-		t.Errorf("html = %q, missing cell content", html)
+	if len(td.Rows) != 2 {
+		t.Errorf("table rows = %#v, want 2 rows", td.Rows)
 	}
 	if got, ok := item["doc_type_kwd"].(string); !ok || got != "table" {
 		t.Errorf("doc_type_kwd = %q, want %q", got, "table")

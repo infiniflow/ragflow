@@ -25,6 +25,7 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
+	"ragflow/internal/parser/tableutil"
 )
 
 type HTMLParser struct {
@@ -405,10 +406,17 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	if strings.TrimSpace(markup) == "" {
 		return
 	}
+	// Emit the structured TableData contract so the chunker reads rows
+	// directly instead of re-parsing markup. ParseTableHTML mirrors the
+	// legacy chunker extraction, so the recovered rows/caption are identical
+	// to what the old HTML path produced. html.Parse (used by ParseTableHTML)
+	// is infallible, so the parse always yields a non-nil TableData and no
+	// legacy HTML `text` is kept.
+	td, _ := tableutil.ParseTableHTML(markup)
 	table := map[string]any{
-		"text":         markup,
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
+		"table":        td,
 	}
 	tableID := ""
 	if len(images) > 0 {

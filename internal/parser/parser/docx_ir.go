@@ -359,6 +359,7 @@ func buildDOCXJSONSections(irJSON string, budget *embeddedMediaBudget) []map[str
 					"image":        nil,
 					"doc_type_kwd": "table",
 				}
+				projectPDFTable(table)
 				tableID := ""
 				foundImage := false
 				var tableImages []docxTableImage
