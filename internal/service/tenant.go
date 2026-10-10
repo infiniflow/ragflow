@@ -23,7 +23,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 )
 
@@ -806,7 +805,7 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 
 	status := string(entity.StatusValid)
 	ut := &entity.UserTenant{
-		ID:        utility.GenerateUUID(),
+		ID:        common.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,

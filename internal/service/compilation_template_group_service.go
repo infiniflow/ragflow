@@ -25,7 +25,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -132,7 +131,7 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 		return nil, err
 	}
 
-	groupID := utility.GenerateUUID()
+	groupID := common.GenerateUUID()
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		group := &entity.CompilationTemplateGroup{
 			ID:          groupID,
@@ -399,7 +398,7 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 		}
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
-			ID:       utility.GenerateUUID(),
+			ID:       common.GenerateUUID(),
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     name,
@@ -520,7 +519,7 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		newID := utility.GenerateUUID()
+		newID := common.GenerateUUID()
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
 			ID:       newID,

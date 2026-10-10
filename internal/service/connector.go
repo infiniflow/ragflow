@@ -30,7 +30,6 @@ import (
 	"net/url"
 	"ragflow/internal/engine/kvrocks"
 	syncerconnector "ragflow/internal/syncer/connector"
-	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -313,7 +312,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 	}
 
 	connector := &entity.Connector{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		TenantID:    userID,
 		Name:        req.Name,
 		Source:      req.Source,
@@ -540,7 +539,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, sour
 		return nil, common.CodeServerError, err
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
@@ -1344,7 +1343,7 @@ func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, 
 		redirectURI = defaultBoxWebOAuthRedirectURI()
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
 	if err != nil {
 		return nil, common.CodeServerError, err

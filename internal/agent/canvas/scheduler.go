@@ -21,6 +21,7 @@ package canvas
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -696,13 +697,8 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	// tracks start/end membership by these explicit wirings — without
 	// them, Compile() returns "start node not set" / "end node not set".
 	//
-	// Multi-terminal case: eino's END node is stricter than regular
-	// workflow nodes about repeated output mappings. Instead of wiring
-	// multiple terminals directly into END, route them through one
-	// synthetic merge node. The merge node consumes one terminal as its
-	// data input and treats the rest as exec-only dependencies, mirroring
-	// the same "first input carries data; the rest are dependencies"
-	// policy used in Pass 2.
+	// Multiple terminals use distinct field mappings into a gather node.
+	// Branch pruning lets it collect only the leaves selected in this run.
 	//
 	// A "start" node with no upstream gets an empty input from START so
 	// eino registers it as a workflow entry point. FieldMapping is nil
@@ -824,48 +820,29 @@ func wireWorkflowTerminals(
 		return nil
 	}
 
-	// Sub-workflows wire END without field mappings. These multi-terminal
-	// shapes commonly come from mutually exclusive branches (for example a
-	// loop body Switch choosing either continue or exit). We therefore
-	// create a small field-mapped gather node that forwards whichever
-	// branch actually produced output, instead of the outer workflow's
-	// dependency-based merge node that would incorrectly wait for every
-	// terminal to execute in the same run.
-	if !useFieldMapping {
-		gatherNode := wf.AddLambdaNode(
-			terminalMergeNodeID,
-			compose.InvokableLambda[map[string]any, map[string]any](
-				func(_ context.Context, in map[string]any) (map[string]any, error) {
-					for _, terminalID := range terminals {
-						if v, ok := in[terminalID].(map[string]any); ok && v != nil {
-							return v, nil
-						}
-					}
-					return in, nil
-				},
-			),
-			compose.WithNodeName(terminalMergeNodeID),
-		)
-		for _, terminalID := range terminals {
-			gatherNode.AddInput(terminalID, compose.ToField(terminalID))
-		}
-		addEndInput(terminalMergeNodeID)
-		return nil
-	}
-
-	mergeNode := wf.AddLambdaNode(
+	// Keep checkpoint mappings stable across builds. Every terminal has the
+	// same data/control role, regardless of component map enumeration order.
+	terminals = append([]string(nil), terminals...)
+	sort.Strings(terminals)
+	gatherNode := wf.AddLambdaNode(
 		terminalMergeNodeID,
 		compose.InvokableLambda[map[string]any, map[string]any](
 			func(_ context.Context, in map[string]any) (map[string]any, error) {
+				if !useFieldMapping {
+					for _, terminalID := range terminals {
+						if output, ok := in[terminalID].(map[string]any); ok && output != nil {
+							return output, nil
+						}
+					}
+				}
 				return in, nil
 			},
 		),
 		compose.WithNodeName(terminalMergeNodeID),
 	)
-	mergeNode.AddInput(terminals[0])
-	for _, terminalID := range terminals[1:] {
-		mergeNode.AddDependency(terminalID)
+	for _, terminalID := range terminals {
+		gatherNode.AddInput(terminalID, compose.ToField(terminalID))
 	}
-	addEndInput(terminalMergeNodeID)
+	wf.End().AddInput(terminalMergeNodeID)
 	return nil
 }
