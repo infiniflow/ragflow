@@ -57,7 +57,7 @@ dependencies = [
     "groq>=0.30.0,<1.0.0",
     "grpcio-status==1.67.1",
     "html-text==0.6.2",
-    "infinity-sdk==0.7.3",
+    "infinity-sdk==0.7.4",
     "infinity-emb>=0.0.66,<0.0.67",
     "jira==3.10.5",
     "json-repair==0.60.1",
@@ -244,6 +244,10 @@ constraint-dependencies = [
     # CVE-2026-33236, CVE-2026-54293 (HIGH), CVE-2026-33230 (MEDIUM):
     # nltk < 3.10.0 vulnerable; pulled in transitively via crawl4ai, infinity-sdk
     "nltk>=3.10.0",
+    # infinity-sdk 0.7.4's Thrift client needs TBinaryProtocol.increment_recursion_depth
+    # (added in thrift 0.24.0, THRIFT-6043); 0.22.0 lacks it and raises the
+    # "no attribute 'increment_recursion_depth'" error. >=0.24.0 also covers CVE-2026-41606.
+    "thrift>=0.24.0",
     # CVE-2026-0994: protobuf < 5.29.6 vulnerable; pulled in transitively via
     # google-api-core, googleapis-common-protos, grpcio-status, opentelemetry-proto
     "protobuf>=5.29.6",
