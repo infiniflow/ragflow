@@ -309,7 +309,10 @@ func TestConnectorStripAuthHeadersRemovesCredentials(t *testing.T) {
 // Host-type SSRF guards (IMAP / MySQL / PostgreSQL / S3-compatible)
 // ---------------------------------------------------------------------------
 
+// TestAssertConnectorHostSafe checks the strict host guard used by
+// MySQL, PostgreSQL, and IMAP when ALLOW_ANY_HOST is unset.
 func TestAssertConnectorHostSafe(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "")
 	connectorAllowLoopbackForTest = false
 	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
 
@@ -343,7 +346,10 @@ func TestAssertConnectorHostSafe(t *testing.T) {
 	}
 }
 
+// TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback checks that
+// the unit-test loopback hook does not allow other private addresses.
 func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "")
 	withConnectorLoopbackTestHook(t)
 	if _, err := assertConnectorHostSafe("127.0.0.1"); err != nil {
 		t.Fatalf("loopback should be allowed with hook on: %v", err)
@@ -357,6 +363,43 @@ func TestAssertConnectorHostSafeLoopbackHookAllowsOnlyLoopback(t *testing.T) {
 	}
 	if _, err := assertConnectorHostSafe("169.254.169.254"); err == nil {
 		t.Fatalf("metadata address should be rejected even with hook on")
+	}
+}
+
+// TestAssertConnectorHostSafeHonorsAllowAnyHost checks that a private
+// connector host is pinned when ALLOW_ANY_HOST is set, and that URL
+// connector checks stay strict.
+func TestAssertConnectorHostSafeHonorsAllowAnyHost(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	connectorAllowLoopbackForTest = false
+	t.Cleanup(func() { connectorAllowLoopbackForTest = false })
+
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+	}
+	t.Cleanup(func() { common.LookupHost = orig })
+
+	ip, err := assertConnectorHostSafe("host.docker.internal")
+	if err != nil {
+		t.Fatalf("assertConnectorHostSafe(host.docker.internal) = %v, want nil", err)
+	}
+	if ip == nil || ip.String() != "192.168.65.254" {
+		t.Fatalf("assertConnectorHostSafe(host.docker.internal) = %v, want 192.168.65.254", ip)
+	}
+
+	literal, err := assertConnectorHostSafe("10.0.0.5")
+	if err != nil || literal == nil || literal.String() != "10.0.0.5" {
+		t.Fatalf("assertConnectorHostSafe(10.0.0.5) = %v, %v", literal, err)
+	}
+	if _, err = assertConnectorHostSafe("missing.internal"); err == nil {
+		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
+	}
+	if err = validateConnectorURL("http://10.0.0.5/x"); err == nil {
+		t.Fatal("ALLOW_ANY_HOST must not relax URL connector checks")
 	}
 }
 
