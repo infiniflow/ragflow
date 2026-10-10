@@ -84,15 +84,11 @@ For local deployment, see [Local Deployment](#-local-deployment).
 
 ## 🔥 Latest Updates
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 released.
 - 2026-09-10 Added website content ingestion through sitemaps.
 - 2026-08-19 Introduced Knowledge Compilation to generate Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines, and Skills at the document and dataset levels.
 - 2026-08-19 Introduced Agentic RAG with Low, Medium, High, and Ultra thinking modes.
 - 2026-07-02 Added Google BigQuery data source ingestion and incremental synchronization.
-- 2026-06-29 Added chat channels for WhatsApp, DingTalk, and WeCom.
-- 2026-05-26 Added the Browser component, enabling Agents to browse and interact with web pages.
-- 2026-04-21 Added seven built-in data ingestion pipeline templates.
-- 2026-04-21 Added Agent application publishing, sandbox code execution, and chart generation.
-- 2026-04-21 Added user-level memory storage and retrieval.
 
 See the [full release notes](./docs/release_notes.md) for more updates.
 
@@ -130,13 +126,6 @@ releases! 🌟
 - Gather more complete context through multiple rounds of retrieval and reasoning to help generate well-grounded answers.
 - Choose Low, Medium, High, or Ultra thinking modes to control retrieval and reasoning depth according to question complexity.
 
-### ⚙️ **Go-native service architecture**
-
-- API, Admin, Ingestor, and Syncer are provided by a unified Go service.
-- DeepDoc runs within the Go process and handles layout analysis, OCR, and table recognition.
-- Go services use CGO to call native document parsing libraries and ONNX Runtime.
-- MCP and Sandbox Executor are optional capabilities that can be enabled as needed.
-
 ### 🌱 **Grounded citations with reduced hallucinations**
 
 - Visualization of text chunking to allow human intervention.
@@ -169,7 +158,7 @@ releases! 🌟
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
 - [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only when using the Self-Managed container Sandbox.
 
-Docker deployment does not require Go on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
+Docker deployment does not require Go compiler on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
 
 > [!TIP]
 > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -202,34 +191,28 @@ Docker deployment does not require Go on the host. Self-Managed container Sandbo
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Build the Go image and start the server with the Go Compose configuration:
+3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
 
-> [!NOTE]
-> The official Go image build target is `linux/amd64`. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) for platform, resource, and macOS requirements.
+    > [!NOTE]
+    > The `v1.0.0-rc1` tag and later release tags use the Go implementation. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) only if you need to build an image locally.
 
-> Build the Go image before the first deployment. Build time depends on network and machine performance.
+   > ```bash
+   > # Enter the Docker deployment directory.
+   > cd ragflow/docker
+   > # Check out the Go v1.0.0-rc1 release tag.
+   > git checkout v1.0.0-rc1
+   > # Start the Go services and their dependencies in the background.
+   > docker compose -f docker-compose.yml up -d
+   > ```
 
-Set the locally built image in **docker/.env** before starting Compose:
+   > In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
-
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
-
-In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
-
-> In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+   > In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 
 4. Check service status and API readiness after startup:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
    ```
 
    The command above displays dependency status. RAGFlow itself does not define a Compose healthcheck; confirm readiness through its API:
@@ -238,7 +221,7 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker compose --env-file .env -f docker-compose.yml logs --tail 50 <service>`.
+   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker logs --tail 50 <service>`.
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
@@ -246,11 +229,9 @@ In the default MySQL configuration, the Go image entrypoint runs database migrat
    >
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 
-   _The show is on!_
-
 #### ⚙️ Docker Configuration and Adjustment
 
-Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). For platform limitations and macOS requirements, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
+Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). macOS is temporarily not supported by the Go backend (use a Linux x86_64 host); for platform support details, see the [Go Docker image build guide](./docs/develop/build_docker_image.mdx).
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 
@@ -267,16 +248,16 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
    cd ragflow
    ```
 
-2. Prepare native libraries and model files with the [Go dependency download script](./ragflow_deps/download_go_deps.py), then build the Go services:
+2. Prepare native libraries, model files, and tokenizer assets with the [Go dependency download script](./ragflow_deps/download_deps.py), then build the Go services:
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
+   The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
 3. Start the local dependencies and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. Go source services connect to Compose-exposed Kvrocks at `localhost:6379`, while Go Docker services connect to Kvrocks on the container network. If using the default Elasticsearch engine, set `vm.max_map_count` on the Docker host to at least `262144` first.
 

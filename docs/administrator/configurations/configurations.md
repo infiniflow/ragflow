@@ -149,11 +149,6 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 - `HF_ENDPOINT`
   The mirror site for huggingface.co. It is disabled by default. You can uncomment this line if you have limited access to the primary Hugging Face domain.
 
-### macOS
-
-- `MACOS`
-  Optimizations for macOS. It is disabled by default. You can uncomment this line if your OS is macOS.
-
 ### User Registration
 
 - `ENABLE_REGISTER`
@@ -168,7 +163,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
 - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.
-- `trusted_proxies`: The proxy IPs or CIDRs whose `X-Forwarded-For` / `X-Real-IP` headers the Go API server trusts when resolving the client address (used by the agent webhook `ip_whitelist` and login audit records). Defaults to loopback (`['127.0.0.0/8', '::1/128']`), i.e. the nginx bundled in the Docker image. An explicit list *replaces* the default rather than extending it, so keep the loopback entries when adding a further proxy placed in front of nginx, for example `['127.0.0.0/8', '::1/128', '10.0.0.0/8']`; an empty list trusts no proxy headers at all.
+- `trusted_proxies`: The proxy IPs or CIDRs whose `X-Forwarded-For` / `X-Real-IP` headers the Go API server trusts when resolving the client address (used by the agent webhook `ip_whitelist` and login audit records). Defaults to loopback (`['127.0.0.0/8', '::1/128']`), i.e. the nginx bundled in the Docker image. An explicit list *replaces* the default rather than extending it, so keep the loopback entries when adding a proxy placed in front of nginx, for example `['127.0.0.0/8', '::1/128', '10.0.0.0/8']`; an empty list trusts no proxy headers at all.
 
 ### `mysql`
 

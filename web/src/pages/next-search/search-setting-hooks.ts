@@ -38,7 +38,7 @@ export const SearchSettingFormSchema = z
     description: z.string().optional(),
     search_config: z.object({
       kb_ids: z.array(z.string()).min(1, 'At least one dataset is required'),
-      vector_similarity_weight: z.number().min(0).max(1),
+      keywords_similarity_weight: z.number().min(0).max(1),
       web_search: z.boolean(),
       similarity_threshold: z.number(),
       use_kg: z.boolean(),

@@ -1,16 +1,7 @@
 import { transformExtractorConfigToForm } from '@/utils/pipeline-operator';
 import { transformExtractorParams } from '../../utils';
 
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-}));
-
 describe('Extractor parameter transformations & precedence', () => {
-  beforeEach(() => {
-    mockIsGoBackend = true;
-  });
-
   describe('transformExtractorParams', () => {
     it('emits only the LLM settings and the nested groups the Go extractor reads', () => {
       const input: any = {
@@ -215,54 +206,6 @@ describe('Extractor parameter transformations & precedence', () => {
         metadata: [{ key: 'category', type: 'string', enum: ['科技'] }],
         built_in_metadata: [{ key: 'doc_name', type: 'string' }],
       });
-    });
-  });
-
-  describe('python backend keeps the legacy flat shape', () => {
-    beforeEach(() => {
-      mockIsGoBackend = false;
-    });
-
-    it('transformExtractorParams only wraps prompts, without nested configs', () => {
-      const input: any = {
-        field_name: 'summary',
-        sys_prompt: 'sys',
-        prompts: 'user prompt',
-        auto_keywords: 3,
-        auto_questions: 2,
-        auto_tags: 1,
-        tag_file_id: 'tag-1',
-        llm_id: 'gpt-4',
-      };
-
-      const result = transformExtractorParams(input);
-
-      expect(result).toEqual({
-        ...input,
-        prompts: [{ content: 'user prompt', role: 'user' }],
-      });
-      expect(result).not.toHaveProperty('keywords');
-      expect(result).not.toHaveProperty('questions');
-      expect(result).not.toHaveProperty('tags');
-      expect(result).not.toHaveProperty('summary');
-      expect(result).not.toHaveProperty('metadata_config');
-    });
-
-    it('transformExtractorConfigToForm only unwraps prompts, without nested configs', () => {
-      const config = {
-        prompts: [{ content: 'user prompt', role: 'user' }],
-        auto_keywords: 4,
-        auto_tags: 1,
-      };
-
-      const result = transformExtractorConfigToForm(config);
-
-      expect(result.prompts).toBe('user prompt');
-      expect(result).not.toHaveProperty('keywords');
-      expect(result).not.toHaveProperty('summary');
-      expect(result).not.toHaveProperty('metadata_config');
-      expect(result).not.toHaveProperty('enable_summary');
-      expect(result).not.toHaveProperty('enable_metadata');
     });
   });
 });

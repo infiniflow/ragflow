@@ -87,6 +87,8 @@
 
 ## 🔥 آخر التحديثات
 
+- 2026-09-29 إصدار RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 إضافة استيعاب محتوى الويب عبر خرائط المواقع.
 - 2026-08-19 إطلاق Knowledge Compilation لإنشاء Wiki وGraph وTree وPageIndex وMind Map وTimeline وSkills على مستوى المستند ومجموعة البيانات.
 - 2026-08-19 إطلاق Agentic RAG مع أوضاع التفكير Low وMedium وHigh وUltra.
@@ -130,11 +132,6 @@
 
 - يحلل الأسئلة المعقدة، ويقسمها عند الحاجة، ويسترجع المعرفة ويتحقق من الأدلة عبر خطوات متعددة.
 - تدعم أوضاع التفكير Low وMedium وHigh وUltra ضبط عمق الاسترجاع والاستدلال حسب تعقيد السؤال.
-
-### ⚙️ **بنية خدمات Go الأصلية**
-
-- توفر خدمة Go موحدة API وAdmin وIngestor وSyncer. يعمل DeepDoc داخل عملية Go لتحليل التخطيط وOCR والتعرف على الجداول.
-- تستدعي خدمات Go مكتبات تحليل المستندات الأصلية وONNX Runtime عبر CGO. ويمكن تفعيل MCP وSandbox Executor عند الحاجة.
 
 ### 🌱 **استشهادات مؤرضة لتقليل الهلوسة**
 
@@ -202,33 +199,49 @@
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. ابدأ تشغيل الخادم باستخدام صور Docker المعدة مسبقًا:
+3. انتقل إلى وسم إصدار Go وشغّل صورة Go الجاهزة باستخدام Docker Compose:
 
 > [!CAUTION]
 > جميع الصور Docker مصممة لمنصات x86. لا نعرض حاليًا صور Docker لـ ARM64.
 > إذا كنت تستخدم نظامًا أساسيًا ARM64، فاتبع [هذا الدليل](https://ragflow.io/docs/dev/build_docker_image) لإنشاء صورة Docker متوافقة مع نظامك.
 
-> اكتب `RAGFLOW_IMAGE=ragflow:go-local` في **docker/.env** قبل التشغيل. هدف البناء الرسمي لصورة Go هو `linux/amd64`.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
 
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   الدخول إلى دليل نشر Docker.
+
+   ```bash
+   cd ragflow/docker
+   ```
+
+   التبديل إلى وسم إصدار Go v1.0.0-rc1.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   تشغيل خدمات Go وتبعياتها في الخلفية.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
+
+   في إعداد MySQL الافتراضي، تنفّذ نقطة دخول صورة Go ترحيلات قاعدة البيانات أولًا، ثم تشغّل Syncer وAdmin وAPI وIngestor عبر `bin/ragflow_server`.
 
 > يستخدم DeepDoc في الإصدار مفتوح المصدر 1.0 استدلال CPU لتحليل التخطيط وOCR والتعرف على الجداول.
 
-4. التحقق من حالة الخادم بعد تشغيل الخادم:
+4. تحقق من حالة الخدمات وجاهزية API بعد بدء التشغيل:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
+   ```
+
+   يعرض الأمر أعلاه حالة الخدمات التابعة. لا يعرّف RAGFlow فحص صحة Compose؛ تحقق من الجاهزية عبر API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
+
+   تشير استجابة HTTP 200 إلى الجاهزية. إذا غيّرت `SVR_WEB_HTTP_PORT`، فاستخدم ذلك المنفذ في عنوان URL لفحص الصحة. إذا فشل بدء التشغيل، فافحص سجلات الخدمة المعنية باستخدام `docker logs --tail 50 <service>`.
 
 5. في متصفح الويب الخاص بك، أدخل عنوان IP الخاص بالخادم الخاص بك وقم بتسجيل الدخول إلى RAGFlow.
 
@@ -244,7 +257,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
 
 #### ⚙️ إعداد Docker وتعديله
 
-يستخدم نشر Go عبر Docker الملفين `docker/.env` و`docker/docker-compose.yml`، ويستخدم Kvrocks لتخزين ذاكرة التخزين المؤقت ونقاط التحقق، كما يستخدم NATS JetStream كقائمة انتظار للرسائل. لتعديل الصورة والمنافذ وكلمات المرور ومحرك المستندات ومصدر صور النماذج، اتبع [دليل إعداد Docker](./docker/README.md). ولقيود المنصات ومتطلبات macOS، راجع [دليل بناء صورة Go ودعم المنصات](./docs/develop/build_docker_image.mdx).
+يستخدم نشر Go عبر Docker الملفين `docker/.env` و`docker/docker-compose.yml`، ويستخدم Kvrocks لتخزين ذاكرة التخزين المؤقت ونقاط التحقق، كما يستخدم NATS JetStream كقائمة انتظار للرسائل. لتعديل الصورة والمنافذ وكلمات المرور ومحرك المستندات ومصدر صور النماذج، اتبع [دليل إعداد Docker](./docker/README.md). ودعم المنصات (ملاحظة: نظام macOS غير مدعوم مؤقتًا، استخدم مضيف Linux x86_64)، راجع [دليل بناء صورة Go ودعم المنصات](./docs/develop/build_docker_image.mdx).
 
 عند تبديل محرك المستندات أو تعديل الإعدادات وإعادة تشغيل الخدمات أو الاحتفاظ بالبيانات الحالية أو حذفها، اتبع أيضًا دليل إعداد Docker أعلاه.
 
@@ -258,13 +271,16 @@ docker compose --env-file .env -f docker-compose.yml up -d
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   يجهّز البرنامج النصي المكتبات الأصلية وموارد النماذج اللازمة لبناء Go، ويحتاج إلى `requests` و`huggingface-hub`. يمكن تخطي هذه الخطوة إذا جُهزت الموارد نفسها بطريقة أخرى. عند التشغيل من جذر المستودع، تعثر خدمات Go تلقائيًا على `rag/res/deepdoc`؛ وللتشغيل من دليل آخر، اضبط `DEEPDOC_MODEL_DIR` على المسار المطلق لذلك الدليل.
+   يجهّز البرنامج النصي المكتبات الأصلية وموارد النماذج اللازمة لبناء Go، ويحتاج إلى `requests` و`huggingface-hub`. يمكن تخطي هذه الخطوة إذا جُهزت الموارد نفسها بطريقة أخرى. عند التشغيل من جذر المستودع، تعثر خدمات Go تلقائيًا على `internal/rag/res/deepdoc`؛ وللتشغيل من دليل آخر، اضبط `DEEPDOC_MODEL_DIR` على المسار المطلق لذلك الدليل.
 3. ابدأ الخدمات التابعة المطلوبة (Elasticsearch وMySQL وMinIO وNATS وKvrocks وClickHouse) باستخدام Docker Compose:
 
    ```bash
@@ -279,9 +295,21 @@ docker compose --env-file .env -f docker-compose.yml up -d
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
@@ -293,7 +321,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
    - `--syncer`: يشغّل خدمة Syncer لمهام مزامنة البيانات.
    - `--api`: يشغّل خدمة API لواجهة الويب وSDK والعملاء الخارجيين.
 
-   يُستخدم `RAGFLOW_DEV_MODE=true` للتطوير فقط؛ فهو يعطّل فحص الرجوع بين إصدار الكود وإصدار ترحيل قاعدة البيانات، ولا ينفذ الترحيلات أو يغير المخطط. لا تستخدمه في الإنتاج. شغّل Admin قبل الخدمات الأخرى. بعد الترحيل، يشغّل `RAGFLOW_DEV_MODE=true bash build.sh --run` خدمات Admin وIngestor وAPI، لكنه لا يشغّل Syncer؛ شغّل Syncer منفصلًا باستخدام `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` عند الحاجة إلى السلسلة الكاملة.
+   يُستخدم `RAGFLOW_DEV_MODE=true` للتطوير فقط؛ فهو يعطّل فحص الرجوع بين إصدار الكود وإصدار ترحيل قاعدة البيانات، ولا ينفذ الترحيلات أو يغير المخطط. لا تستخدمه في الإنتاج. شغّل Admin قبل الخدمات الأخرى. بعد الترحيل، يشغّل `RAGFLOW_DEV_MODE=true bash build.sh --run` خدمات Admin وIngestor وAPI، لكنه لا يشغّل Syncer؛ شغّل Syncer منفصلًا باستخدام `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` لتشغيل سلسلة الخدمات كاملة.
 5. ثبّت Node.js وnpm وشغّل واجهة React فقط عند تطوير الواجهة الأمامية:
 
    ```bash

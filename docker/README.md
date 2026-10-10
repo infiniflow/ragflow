@@ -21,20 +21,19 @@ The Go image runs the API, Admin, Ingestor, and Syncer modes from the single `bi
 - **docker-compose-base.yml**
   Defines the dependency services. The default Go profile uses Elasticsearch, MySQL, MinIO, Kvrocks, NATS, and ClickHouse. Other document engines and metadata databases are selected through `.env`.
 
-> **Note:** `docker-compose-CN-oc9.yml` and `docker-compose-macos.yml` are not the Go deployment entry points. On Linux and macOS, use `docker-compose.yml`; Apple Silicon runs the current `linux/amd64` Go image through Docker Desktop emulation.
+> **Note:** `docker-compose-macos.yml` are not the Go deployment entry points. Use `docker-compose.yml` on a Linux x86-64 host; macOS is temporarily not supported by the Go backend.
 
 ### Quick start
 
-Run these commands from the repository root. The `.git` directory must remain in the build context because `Dockerfile` uses it to stamp the image version.
+Run the Go release deployment from the repository checkout:
 
 ```bash
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-```
-
-Set the image in `docker/.env`:
-
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
+# Enter the Docker deployment directory.
+cd ragflow/docker
+# Check out the Go v1.0.0-rc1 release tag.
+git checkout v1.0.0-rc1
+# Start the Go services and their dependencies in the background.
+docker compose -f docker-compose.yml up -d
 ```
 
 If you use the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least `262144` on the Docker host:
@@ -43,22 +42,17 @@ If you use the default Elasticsearch document engine on Linux, set `vm.max_map_c
 sudo sysctl -w vm.max_map_count=262144
 ```
 
-This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`. On Docker Desktop, apply the setting inside its Linux virtual machine as described in the [Go image build guide](../docs/develop/build_docker_image.mdx#macos-with-docker-desktop).
+This change is temporary. To preserve it after a reboot, add `vm.max_map_count=262144` to `/etc/sysctl.conf`.
 
-Start the default CPU stack:
+The `v1.0.0-rc1` tag and later release tags use the Go implementation. The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
 
-```bash
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
-
-The entrypoint migrates the default MySQL metadata database first, then starts the Go Syncer, Admin server, API server, and Ingestor. Open `http://localhost` after the HTTP health check succeeds.
+For local image builds, use the [Go image build guide](../docs/develop/build_docker_image.mdx).
 
 Verify the deployment with:
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml ps
-docker compose --env-file .env -f docker-compose.yml logs --tail 100 ragflow-cpu
+docker ps
+docker logs --tail 100 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
@@ -73,7 +67,7 @@ The [.env](./.env) file is the user-facing environment file for the Go deploymen
 - `DB_TYPE`
   The business metadata database type. Defaults to `mysql`. Set it to `oceanbase` when connecting to OceanBase through its MySQL-compatible protocol.
 - `COMPOSE_PROFILES`
-  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE},ragflow-go,clickhouse`.
+  The Docker Compose profiles to enable. By default it contains `${DOC_ENGINE},${DEVICE},metadata-${METADATA_DB_PROFILE}`.
 - `METADATA_DB_PROFILE`
   Defaults to `mysql`, preserving the in-cluster MySQL service.
 
@@ -158,15 +152,9 @@ The Go services use NATS JetStream for ingestion, synchronization, memory, and k
 The optional `tei-cpu` and `tei-gpu` profiles start a local text-embeddings-inference service. Its memory requirement depends on the model, runtime backend, precision, batch-token limit, and concurrency. The `tei-cpu` profile uses system RAM; the `tei-gpu` profile primarily uses GPU memory and also consumes system RAM. Verify model loading and peak request usage on the target hardware, and leave additional host memory for RAGFlow, the document engine, databases, and operating system.
 
 
-> 💡 **Tip:** If you cannot download a Go RAGFlow Docker image, try the following mirrors.
->
-> - For the `nightly` edition:
->   - `RAGFLOW_IMAGE=swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:nightly` or,
->   - `RAGFLOW_IMAGE=registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:nightly`.
-
 ### DeepDoc (in-process)
 
-DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/rag/res/deepdoc`.
+DeepDoc layout analysis (DLA), OCR (text detection/recognition), and table structure recognition (TSR) run **in-process** inside the RAGFlow server using ONNX Runtime — there is no separate DeepDoc service to deploy. ONNX Runtime is statically linked into the server binary (resolved at runtime via dlopen(NULL); no `libonnxruntime.so` is required) and the models are loaded at runtime; `DEEPDOC_MODEL_DIR` overrides the default model directory. `Dockerfile` copies the required model assets into `/ragflow/internal/rag/res/deepdoc`.
 
 In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference.
 
@@ -305,8 +293,8 @@ If you want your instance to be available under `https`, follow these steps:
 
 5. **Restart the services**
    ```bash
-   docker compose --env-file .env -f docker-compose.yml down
-   docker compose --env-file .env -f docker-compose.yml up -d
+   docker compose -f docker-compose.yml down
+   docker compose -f docker-compose.yml up -d
    ```
 
 

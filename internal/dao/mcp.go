@@ -48,7 +48,7 @@ func NewMCPServerDAO() *MCPServerDAO {
 // GetByID returns an MCP server by ID.
 func (dao *MCPServerDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.MCPServer, error) {
 	var server entity.MCPServer
-	if err := db.WithContext(ctx).Where("id = ?", id).First(&server).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&server, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}
@@ -61,7 +61,7 @@ func (dao *MCPServerDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*
 func (dao *MCPServerDAO) ExistsByNameAndTenant(ctx context.Context, db *gorm.DB, name, tenantID string) (bool, error) {
 	var count int64
 	if err := db.WithContext(ctx).Model(&entity.MCPServer{}).
-		Where("name = ? AND tenant_id = ?", name, tenantID).
+		Where("LOWER(name) = LOWER(?) AND tenant_id = ?", name, tenantID).
 		Count(&count).Error; err != nil {
 		return false, err
 	}

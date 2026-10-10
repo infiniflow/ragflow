@@ -38,14 +38,15 @@ const (
 const pagerankExpr = "COALESCE(" + pagerankField + ", 0) / 100.0"
 
 type parsedMatch struct {
-	textQuery    string
-	textTopN     int
-	vectorData   []float64
-	vectorTopN   int
-	vecThreshold float64
-	vectorWeight float64
-	hasText      bool
-	hasVector    bool
+	textQuery       string
+	textTopN        int
+	vectorData      []float64
+	vectorTopN      int
+	vecThreshold    float64
+	hasVecThreshold bool
+	vectorWeight    float64
+	hasText         bool
+	hasVector       bool
 }
 
 // Search runs the fulltext, vector, hybrid-fusion, or filter-only query implied
@@ -101,13 +102,29 @@ func (e *serenedbEngine) Search(ctx context.Context, req *types.SearchRequest) (
 		if err != nil {
 			return nil, fmt.Errorf("serenedb: search %s: %w", tableName, err)
 		}
+		// Taking the threshold out of the WHERE clause moved it here, on the pure-vector
+		// branch only. Elasticsearch applies `similarity` the same way, as a post-filter on
+		// the k nearest. Without this every Go consumer of Search - SearchCompiled among
+		// them - would start seeing rows below the threshold it asked for.
+		if pm.hasVector && !pm.hasText {
+			// Whenever a threshold was GIVEN, not only a positive one: similarity is
+			// -(v <#> q) and is legitimately negative, so 0 and below are real cutoffs.
+			if pm.hasVecThreshold {
+				rows = filterByScore(rows, pm.vecThreshold)
+			} else {
+				// No threshold still means no vectorless rows: the ANN scan sorts a NULL
+				// distance last and returns it when fewer than k rows have a vector.
+				rows = dropNullSim(rows)
+			}
+			stripVecSim(rows)
+		}
 		result.Chunks = append(result.Chunks, rows...)
 	}
 
 	if scored && len(result.Chunks) > 1 {
 		sortByScore(result.Chunks)
 	}
-	if limit > 0 && len(result.Chunks) > limit {
+	if len(result.Chunks) > limit {
 		result.Chunks = result.Chunks[:limit]
 	}
 	if result.Total == 0 {
@@ -197,17 +214,33 @@ func buildFulltextSQL(tableName, fieldsExpr, where, textQuery string, limit, off
 		fieldsExpr, idx, pagerankExpr, idx, where, match, limit, offset)
 }
 
-// buildVectorSQL runs the ANN scan on the normalized shadow column. The
-// similarity threshold goes straight in the WHERE (relies on SereneDB 26.07.4).
+// buildVectorSQL runs the ANN scan on the normalized shadow column.
+//
+// The similarity threshold is deliberately NOT in the WHERE clause. There it
+// compiles to a radius search (`Vector Range / Radius <= -0`) and enumerates
+// every row inside the radius rather than letting the IVF index return top-k:
+// measured 104,095 ms vs 626 ms on 42.8M rows, 166x. No sibling backend does
+// this either - Elasticsearch passes `similarity` as a post-filter on the k
+// nearest, OpenSearch drops it, Infinity hands it to the engine natively - and
+// RAGFlow re-applies it afterwards against the hybrid score anyway.
 func buildVectorSQL(tableName, fieldsExpr, where string, pm parsedMatch, limit, offset int) string {
 	idx := indexRelation(tableName)
 	vecN := normColumn(len(pm.vectorData))
 	qv := vectorLiteral(pm.vectorData)
 	sim := fmt.Sprintf("-(%s <#> %s)", vecN, qv)
+	// _vec_sim is the RAW similarity: _score adds pagerank, so a 0.75 similarity with 0.10 of
+	// pagerank would pass a 0.80 threshold. Subquery so the distance is computed once.
+	// pagerank_fea is itself selectable; adding it twice makes the outer reference ambiguous.
+	innerExtra := ", " + pagerankField
+	if strings.Contains(fieldsExpr, pagerankField) {
+		innerExtra = ""
+	}
 	return fmt.Sprintf(
-		"SELECT %s, %s + %s AS _score FROM %s WHERE %s AND %s >= %s "+
-			"ORDER BY %s <#> %s LIMIT %d OFFSET %d",
-		fieldsExpr, sim, pagerankExpr, idx, where, sim, formatFloat(pm.vecThreshold),
+		"SELECT %s, %s, %s + %s AS _score FROM ("+
+			"SELECT %s%s, %s AS %s FROM %s WHERE %s "+
+			"ORDER BY %s <#> %s LIMIT %d OFFSET %d) t",
+		fieldsExpr, vecSimColumn, vecSimColumn, pagerankExpr,
+		fieldsExpr, innerExtra, sim, vecSimColumn, idx, where,
 		vecN, qv, limit, offset)
 }
 
@@ -237,15 +270,30 @@ func buildFusionSQL(tableName, fieldsExpr string, outputFields []string, where s
 		prefixed[i] = "t." + f
 	}
 	vw := pm.vectorWeight
+	// Top-k first, threshold second. In the WHERE it compiles to a radius search (93.9s
+	// against 0.12s on the 111M-chunk corpus), so it cannot go there. It still has to be
+	// applied though: the branch has only vectorTopN slots, and a sub-threshold candidate
+	// spends one of them before fusion ever sees it, displacing a candidate the caller
+	// would have accepted. Elasticsearch likewise applies `similarity` to the knn clause
+	// of a hybrid query. Filtering the already-limited candidates gets both.
+	vecBranch := fmt.Sprintf(`SELECT id, -(%s <#> %s) AS sim
+    FROM %s WHERE %s
+    ORDER BY %s <#> %s LIMIT %d`, vecN, qv, idx, where, vecN, qv, vN)
+	// Always wrapped, because the normalized vector column is nullable and a NULL
+	// similarity would otherwise reach COALESCE(v.sim, 0) and score as zero. `sim >= t`
+	// excludes NULL on its own under three-valued logic.
+	simCond := "sim IS NOT NULL"
+	if pm.hasVecThreshold {
+		simCond = fmt.Sprintf("sim >= %s", formatFloat(pm.vecThreshold))
+	}
+	vecBranch = fmt.Sprintf(`SELECT id, sim FROM (%s) c WHERE %s`, vecBranch, simCond)
 	return fmt.Sprintf(`WITH lex AS (
     SELECT id, BM25(%s.tableoid) AS s
     FROM %s WHERE %s AND (%s)
     ORDER BY s DESC LIMIT %d),
 lexn AS (SELECT id, s / NULLIF(MAX(s) OVER (), 0) AS sn FROM lex),
 vec AS (
-    SELECT id, -(%s <#> %s) AS sim
-    FROM %s WHERE %s AND -(%s <#> %s) >= %s
-    ORDER BY %s <#> %s LIMIT %d),
+    %s),
 fused AS (
     SELECT COALESCE(l.id, v.id) AS id,
            COALESCE(l.sn, 0) * %s + COALESCE(v.sim, 0) * %s AS fs
@@ -254,7 +302,7 @@ SELECT %s, f.fs + COALESCE(t.%s, 0) / 100.0 AS _score
 FROM fused f JOIN %s t ON t.id = f.id
 ORDER BY _score DESC LIMIT %d OFFSET %d`,
 		idx, idx, where, match, lexN,
-		vecN, qv, idx, where, vecN, qv, formatFloat(pm.vecThreshold), vecN, qv, vN,
+		vecBranch,
 		formatWeight(1.0-vw), formatWeight(vw),
 		strings.Join(prefixed, ", "), pagerankField, tableName, n, offset)
 }
@@ -320,7 +368,7 @@ func parseMatchExprs(exprs []interface{}) parsedMatch {
 			if len(expr.EmbeddingData) > 0 {
 				pm.vectorData = expr.EmbeddingData
 				pm.vectorTopN = expr.TopN
-				pm.vecThreshold = denseThreshold(expr.ExtraOptions)
+				pm.vecThreshold, pm.hasVecThreshold = denseThreshold(expr.ExtraOptions)
 				pm.hasVector = true
 			}
 		case *types.FusionExpr:
@@ -332,22 +380,61 @@ func parseMatchExprs(exprs []interface{}) parsedMatch {
 	return pm
 }
 
-func denseThreshold(opts map[string]interface{}) float64 {
+// vecSimColumn carries the raw ANN similarity from buildVectorSQL to the post-filter.
+const vecSimColumn = "_vec_sim"
+
+// filterByScore drops rows whose raw similarity is below the requested one. The fusion
+// branch does not come through here - its _score is the hybrid score, so it filters its
+// own ANN candidates inside buildFusionSQL instead.
+// dropNullSim removes rows the ANN scan returned with no vector at all.
+func dropNullSim(rows []map[string]interface{}) []map[string]interface{} {
+	kept := rows[:0]
+	for _, row := range rows {
+		if sim, ok := row[vecSimColumn]; ok && sim != nil {
+			kept = append(kept, row)
+		}
+	}
+	return kept
+}
+
+func filterByScore(rows []map[string]interface{}, threshold float64) []map[string]interface{} {
+	kept := rows[:0]
+	for _, row := range rows {
+		sim, ok := row[vecSimColumn]
+		// No similarity means DROPPED: the vector columns are nullable, and a chunk with no
+		// vector must not survive a threshold.
+		if !ok || sim == nil || toFloat64(sim) < threshold {
+			continue
+		}
+		kept = append(kept, row)
+	}
+	return kept
+}
+
+// stripVecSim removes the helper column before the rows leave the engine, so the caller sees
+// exactly the fields it selected.
+func stripVecSim(rows []map[string]interface{}) {
+	for _, row := range rows {
+		delete(row, vecSimColumn)
+	}
+}
+
+func denseThreshold(opts map[string]interface{}) (float64, bool) {
 	if opts == nil {
-		return 0.0
+		return 0.0, false
 	}
 	switch v := opts["similarity"].(type) {
 	case float64:
-		return v
+		return v, true
 	case string:
-		f, _ := strconv.ParseFloat(v, 64)
-		return f
+		f, err := strconv.ParseFloat(v, 64)
+		return f, err == nil
 	}
 	if s, ok := opts["threshold"].(string); ok {
-		f, _ := strconv.ParseFloat(s, 64)
-		return f
+		f, err := strconv.ParseFloat(s, 64)
+		return f, err == nil
 	}
-	return 0.0
+	return 0.0, false
 }
 
 // fusionVectorWeight reads the vector weight (second element of the weights

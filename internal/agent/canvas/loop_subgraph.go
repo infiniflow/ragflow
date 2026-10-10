@@ -75,13 +75,13 @@ type loopExpansion struct {
 // sub-graph, not the outer graph).
 func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExpansion, error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if loopID == "" {
-		return nil, fmt.Errorf("canvas: buildLoopExpansion: empty loopID")
+		return nil, fmt.Errorf("agent: buildLoopExpansion: empty loopID")
 	}
 	if _, ok := c.Components[loopID]; !ok {
-		return nil, fmt.Errorf("canvas: buildLoopExpansion: unknown cpn %q", loopID)
+		return nil, fmt.Errorf("agent: buildLoopExpansion: unknown cpn %q", loopID)
 	}
 
 	loopComp := c.Components[loopID]
@@ -90,19 +90,19 @@ func buildLoopExpansion(ctx context.Context, c *Canvas, loopID string) (*loopExp
 
 	initValues, err := resolveInitialVariables(loopComp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	shouldQuit, err := translateLoopCondition(loopID, loopComp.Obj.Params)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	maxIters := readMaxLoopCount(loopComp.Obj.Params)
 
 	sub, err := buildSubWorkflow(ctx, c, members, loopID, initValues)
 	if err != nil {
-		return nil, fmt.Errorf("canvas: loop %q: %w", loopID, err)
+		return nil, fmt.Errorf("agent: loop %q: %w", loopID, err)
 	}
 
 	return &loopExpansion{
@@ -222,7 +222,7 @@ func buildSubWorkflow(
 					ref, _ := spec.Value.(string)
 					resolved, err := state.GetVar(ref)
 					if err != nil {
-						return nil, fmt.Errorf("canvas: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
+						return nil, fmt.Errorf("agent: loop %q init: variable %q ref %q: %w", loopID, k, ref, err)
 					}
 					v = resolved
 				}
@@ -248,14 +248,14 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
-			return nil, fmt.Errorf("canvas: loop %q member %q has empty component_name", loopID, cpnID)
+			return nil, fmt.Errorf("agent: loop %q member %q has empty component_name", loopID, cpnID)
 		}
 		deferToMessage := directMessageDownstream(c, cpnID)
 		nodeOpts := runtime.ComponentExecutionOptions{
 			DeferAgentToMessage:        deferToMessage,
 			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
 		}
-		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -273,20 +273,9 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		upstreams := c.Components[cpnID].Upstream
 		first := true
-		for _, up := range upstreams {
-			if up == loopID {
-				// Upstream is the parent Loop; in the sub-graph the
-				// data source is the synthetic init node.
-				if first {
-					nodes[cpnID].AddInput(loopInitKey)
-					first = false
-				} else {
-					nodes[cpnID].AddDependency(loopInitKey)
-				}
-				continue
-			}
+		wireMember := func(up string) {
 			if !members[up] {
-				continue
+				return
 			}
 			if first {
 				nodes[cpnID].AddInput(up)
@@ -295,10 +284,31 @@ func buildSubWorkflow(
 				nodes[cpnID].AddDependency(up)
 			}
 		}
+		for _, up := range upstreams {
+			if up == loopID {
+				if first {
+					nodes[cpnID].AddInput(loopInitKey)
+					first = false
+				} else {
+					nodes[cpnID].AddDependency(loopInitKey)
+				}
+				continue
+			}
+			if messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			wireMember(up)
+		}
+		for _, up := range upstreams {
+			if !members[up] || !messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			nodes[cpnID].AddDependency(up)
+		}
 		if first {
-			// No in-subgraph upstream: wire from init (this happens
-			// for body entries whose only upstream in the DSL is the
-			// Loop itself).
+			// No in-subgraph data upstream. The loop input stays the
+			// data source, including when the only body predecessor is
+			// a Message. That edge only orders execution.
 			nodes[cpnID].AddInput(loopInitKey)
 		}
 	}

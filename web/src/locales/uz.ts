@@ -419,7 +419,7 @@ export default {
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): joriy parser konfiguratsiyasi tomonidan qo‘llab-quvvatlanmaydi',
       reselectParserAfterUploadHint:
-        'Yuklashni davom ettiring, so‘ng fayl ro‘yxatida bu fayllar uchun tahlil usulini qayta tanlang.',
+        'Yuklashni davom ettiring; tizim bu fayllarni avtomatik ravishda qo‘llab-quvvatlanadigan ichki tahlil konfiguratsiyasiga o‘tkazadi.',
       reselectParserToParseHint:
         'Ta’sirlangan fayllar uchun tahlil usulini qayta tanlang, so‘ng qayta tahlil qiling.',
       addModelAfterUploadHint:
@@ -671,6 +671,7 @@ export default {
       reRankModelWaring: 'Rerank modeli juda ko‘p vaqt oladi.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Urug‘ — bir xil natijalarning turli ishga tushirishlarda takrorlanuvchanligini ta’minlovchi psevdo-tasodifiy algoritmdir.',
       datasetDescription: 'Ma’lumotlar to‘plamingizni tasvirlab bering',
@@ -2695,8 +2696,6 @@ export default {
       delimiters: 'Ajratgichlar',
       delimitersTip:
         'Har bir qatorga bitta ajratuvchi; ko‘p belgili ajratuvchilar shu holatda yozilishi mumkin (masalan, ##). Bektiklar bilan (masalan, `##`): qattiq bo‘lish — har bir ajratuvchi o‘z bo‘lagini boshlaydi va token hajmiga qo‘shilish qo‘llanilmaydi. Bektiksiz: yumshoq bo‘lish — ajratuvchi faqat bo‘lish nuqtasi bo‘lib, bo‘laklar bo‘lak token hajmiga qadar birlashtiriladi, shuning uchun qisqa hujjatlarda ko‘rinadigan o‘zgarish bo‘lmasligi mumkin.',
-      delimitersTipPython:
-        'Har bir qatorga bitta ajratuvchi. Faqat bektik bilan o‘ralgan yozuvlar (masalan, `##`) kuchga kiradi: har bir ajratuvchi o‘z bo‘lagini boshlaydi va token hajmiga qo‘shilish qo‘llanilmaydi. Bektiksiz yozuvlar e’tiborga olinmaydi.',
       childrenDelimitersTip:
         'Bola bo‘lish: har bir ota bo‘lak bu ajratuvchilar bo‘yicha qidiruvda ishlatiladigan bola bo‘laklarga yana bo‘linadi; bo‘lak token hajmi qo‘llanilmaydi.',
       one: 'Bitta',
@@ -2764,7 +2763,7 @@ export default {
       dataManipulation: 'Ma’lumotlar bilan ishlash',
       flow: 'Flow',
       dialog: 'Dialog',
-      cite: 'Iqtibos',
+      cite: 'Iqtiboslarni koʻrsatish',
       citeTip: 'Iqtibos',
       name: 'Nomi',
       nameMessage: 'Iltimos, nomni kiriting',
@@ -2903,8 +2902,6 @@ export default {
       watermarkText: 'Filigran matni',
       headerText: 'Yuqori kolontitul matni',
       footerText: 'Quyi kolontitul matni',
-      includeDownloadInfoInContent:
-        'Kontentga yuklab olish ma’lumotini qo‘shish',
       contentPlaceholder: 'Markdown kontentini kiriting...',
       filenamePlaceholder: 'document.ext (bo‘sh bo‘lsa avtomatik yaratiladi)',
       contentRequired: 'Kontent majburiy',

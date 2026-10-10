@@ -21,7 +21,7 @@ The bundled `docker/migration.sh` covers only the MySQL, MinIO, Redis, and Elast
 From the repository root, inspect the running deployment and its Docker volumes:
 
 ```bash
-docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+docker ps
 docker volume ls
 ```
 
@@ -29,14 +29,14 @@ Record the Compose project name and the volumes actually mounted by its running 
 
 The default Go stack can use these volumes, depending on the enabled services:
 
-| Service or data | Typical volume |
-| --- | --- |
-| Metadata database | `<project>_mysql_data` |
-| Uploaded objects in bundled MinIO | `<project>_minio_data` |
-| Search index with Elasticsearch | `<project>_esdata01` |
-| Go cache and persistent Redis-protocol data | `<project>_kvrocks_data` |
-| NATS JetStream data | `<project>_nats_data` |
-| ClickHouse analytics data | `<project>_clickhouse_data` |
+| Service or data                             | Typical volume              |
+|---------------------------------------------|-----------------------------|
+| Metadata database                           | `<project>_mysql_data`      |
+| Uploaded objects in bundled MinIO           | `<project>_minio_data`      |
+| Search index with Elasticsearch             | `<project>_esdata01`        |
+| Go cache and persistent Redis-protocol data | `<project>_kvrocks_data`    |
+| NATS JetStream data                         | `<project>_nats_data`       |
+| ClickHouse analytics data                   | `<project>_clickhouse_data` |
 
 Also retain `docker/.env`, the configuration template, and any custom certificates or mounted files. Protect the backup because these files may contain credentials.
 
@@ -69,6 +69,7 @@ Keep the volume name in each archive filename and copy the entire `backup-go` di
 
 ### 3. Restore on the target host
 
+
 Install the matching Go deployment and configuration on the target host. Keep services stopped and put `backup-go` in the repository root.
 
 For each archived Docker volume, restore into a **new, empty volume**. Replace both names in this example and repeat. Keep the source name when reading the archive; use the target Compose project's name when creating its volume:
@@ -96,7 +97,7 @@ Start the Go stack with the target configuration and the same Compose project na
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
-docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+docker ps
 ```
 
 The Go image's entrypoint runs the standalone database migration before starting its enabled server modes. Check the container logs for migration errors before using the service. Confirm that an existing dataset can list and open files and that search still returns its documents.

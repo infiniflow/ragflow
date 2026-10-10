@@ -13,6 +13,8 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 
 	"go.uber.org/zap"
@@ -28,14 +30,13 @@ type datasetPagerankUpdate struct {
 	datasetID string
 }
 
-func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID string, req service.UpdateDatasetRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	tenantID = strings.TrimSpace(tenantID)
+	userID = strings.TrimSpace(userID)
 	if _, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID); err != nil {
 		if dao.IsNotFoundErr(err) {
-			// Match Python: nonexistent and not-owned datasets share the
-			// "lacks permission" error so existence is not revealed (IDOR).
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
@@ -102,19 +103,19 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		simpleUpdates["permission"] = permission
 	}
 
-	if req.ParseType == nil && req.ParserID != nil && req.PipelineID != nil {
-		return nil, common.CodeDataError, errors.New("mutually exclusive")
+	// Validate the parse_type/parser_id/pipeline_id triple. FromRequest rejects
+	// any partial or contradictory combination (e.g. an id without parse_type,
+	// or both ids). A fully-absent block is allowed on update and means "keep
+	// current" — handled below via Resolve.
+	sel, modeErr := service.FromRequest(req.ParseType, req.ParserID, req.PipelineID)
+	if modeErr != nil {
+		return nil, common.CodeDataError, modeErr
 	}
-
-	if req.PipelineID != nil || req.ParseType != nil {
-		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
-		if modeErr != nil {
-			return nil, common.CodeDataError, modeErr
-		}
-		if isBuiltin && req.PipelineID != nil {
+	if sel != nil {
+		if sel.IsBuiltIn() && req.PipelineID != nil {
 			req.PipelineID = nil
 		}
-		if isPipeline && req.ParserID != nil {
+		if sel.IsPipeline() && req.ParserID != nil {
 			req.ParserID = nil
 		}
 	}
@@ -139,10 +140,15 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
-		if err = validateDatasetParserConfig(req.ParserConfig); err != nil {
-			return nil, common.CodeArgumentError, err
+		dropped, err := ValidateParserConfig(req.ParserConfig)
+		if len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("dataset_id", datasetID),
+				zap.String("user_id", userID),
+			)
 		}
-		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
+		if err != nil {
 			return nil, common.CodeArgumentError, err
 		}
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
@@ -174,30 +180,51 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	var scheduledTaskIDs []string
 	var pagerankUpdate *datasetPagerankUpdate
 	err = dao.DB.Transaction(func(tx *gorm.DB) error {
-		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(tx, datasetID, tenantID)
+		lockedKB, code, authErr := d.lockAccessibleDatasetForUpdate(ctx, tx, datasetID, userID)
 		if authErr != nil {
 			txCode = code
 			return authErr
-		}
-
-		if req.Permission != nil && lockedKB.TenantID != tenantID {
-			txCode = common.CodeDataError
-			return errors.New("only dataset owner can change permission")
 		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
 		for key, value := range simpleUpdates {
 			updates[key] = value
 		}
+		if permissionValue, ok := updates["permission"].(string); ok {
+			if permissionValue != lockedKB.Permission {
+				accessErr := permission.NewLockingDatabaseChecker(tx).CheckResource(
+					ctx,
+					permission.Subject{UserID: userID},
+					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+					permission.OperationShare,
+				)
+				if accessErr != nil {
+					txCode, accessErr = permissionresponse.Normalize(accessErr)
+					return accessErr
+				}
+			}
+			if permissionValue == lockedKB.Permission {
+				delete(updates, "permission")
+			}
+		}
 
-		if nameValue, ok := updates["name"].(string); ok && strings.ToLower(nameValue) != strings.ToLower(lockedKB.Name) {
-			var existing entity.Knowledgebase
-			lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", nameValue, tenantID, string(entity.StatusValid)).First(&existing).Error
-			if lookupErr != nil && !dao.IsNotFoundErr(lookupErr) {
+		if nameValue, ok := updates["name"].(string); ok {
+			available, nameErr := common.NameAvailable(lockedKB.Name, nameValue, func(candidate string) (bool, error) {
+				var existing entity.Knowledgebase
+				lookupErr := tx.Where("LOWER(name) = LOWER(?) AND tenant_id = ? AND status = ?", candidate, lockedKB.TenantID, string(entity.StatusValid)).First(&existing).Error
+				if lookupErr != nil {
+					if dao.IsNotFoundErr(lookupErr) {
+						return false, nil
+					}
+					return false, lookupErr
+				}
+				return true, nil
+			})
+			if nameErr != nil {
 				txCode = common.CodeServerError
 				return errors.New("database operation failed")
 			}
-			if lookupErr == nil {
+			if !available {
 				txCode = common.CodeDataError
 				return fmt.Errorf("Dataset name '%s' already exists", nameValue)
 			}
@@ -217,15 +244,16 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			} else {
 				tenantEmbdID = ""
 			}
-			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, tenantID)
+			modelAccess := service.ModelAccess{UserID: userID, TenantID: lockedKB.TenantID}
+			ok, message := d.verifyEmbeddingAvailability(ctx, effectiveEmbdID, modelAccess)
 			if !ok {
 				txCode = common.CodeDataError
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelFactory().ResolveInfo(ctx, modelAccess, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = target.ModelID
+					tenantEmbdID = target.ID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID
@@ -233,13 +261,17 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		if req.ParserConfig != nil && len(req.ParserConfig) > 0 {
-			// Resolve effective mode/IDs once via the shared helper. parse_type
-			// is authoritative; the per-mode req IDs were already cleaned above,
-			// but ResolveParseMode does not rely on that — it ignores the
-			// non-applicable ID for the selected mode.
-			isPipeline, effParserID, effPipelineID := service.ResolveParseMode(
-				req.ParseType, req.ParserID, req.PipelineID,
-				service.ParseModeState{ParserID: lockedKB.ParserID, PipelineID: lockedKB.PipelineID})
+			// Resolve the effective mode/IDs once. sel is the request selection
+			// (nil when the whole selection block was omitted); current is the
+			// persisted selection. Resolve applies PATCH semantics: an omitted
+			// block keeps the current mode so only parser_config changes still
+			// load the correct DSL.
+			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
+			eff, resolveErr := service.Resolve(current, sel)
+			if resolveErr != nil {
+				return resolveErr
+			}
+			isPipeline, effParserID, effPipelineID := eff.Effective()
 			dslJSON, dslErr := service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 			if dslErr != nil {
 				common.Warn("failed to load pipeline DSL for building parser_config",
@@ -408,34 +440,28 @@ func publishDatasetSyncerTasks(taskIDs []string) {
 	}
 }
 
-func (d *DatasetService) lockAccessibleDatasetForUpdate(tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
+func (d *DatasetService) lockAccessibleDatasetForUpdate(ctx context.Context, tx *gorm.DB, datasetID, userID string) (*entity.Knowledgebase, common.ErrorCode, error) {
 	var kb entity.Knowledgebase
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ? AND status = ?", datasetID, string(entity.StatusValid)).
 		First(&kb).Error
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			code, permissionErr := permissionresponse.NormalizeHidden(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 
-	if kb.TenantID == userID {
-		return &kb, common.CodeSuccess, nil
-	}
-	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-	}
-
-	var relation entity.UserTenant
-	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("tenant_id = ? AND user_id = ? AND status = ?", kb.TenantID, userID, "1").
-		First(&relation).Error
+	err = permission.NewLockingDatabaseChecker(tx).CheckResource(
+		ctx,
+		permission.Subject{UserID: userID},
+		permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID},
+		permission.OperationUpdate,
+	)
 	if err != nil {
-		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", userID, datasetID)
-		}
-		return nil, common.CodeServerError, errors.New("database operation failed")
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return nil, code, permissionErr
 	}
 
 	return &kb, common.CodeSuccess, nil

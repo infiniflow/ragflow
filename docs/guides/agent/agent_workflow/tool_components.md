@@ -16,7 +16,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -224,6 +224,94 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 The output contains search entries, summaries, and links returned by Keenable. It can be summarized by the Agent or passed to subsequent retrieval or extraction nodes. Do not set `realtime` for keyless trial runs.
 
 ![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.jpg)
+
+### Sofya
+
+Sofya is a web search API for AI Agents. It returns the text of the result pages, not only a snippet, so results can be used without a separate fetch step. An API key is required and can be created at [sofya.co](https://sofya.co).
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| topic | string | No | general | `general` for web search or `news` for current events. |
+| freshness | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
+| api_key | string | Node configuration | Empty | Sofya API key. |
+| search_depth | string | Node configuration | basic | `basic` returns the content of the result pages. `snippets` returns search snippets only, which is faster and cheaper. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 20. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-sofya-api-key>` |
+| Search Depth | basic |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, and page content returned by Sofya. Results whose page could not be read fall back to the search snippet. It can be summarized by the Agent or passed to subsequent nodes.
+
+### Search1API
+
+Search1API searches the web or the news through one API and lets you choose the search service, such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News, or Reuters. When it is added to an Agent as a tool, the node settings are only defaults: the Agent can pick the channel and the search service for each call, for example GitHub for code questions or Reuters for news. An API key is required and can be created at [app.s1.dev](https://app.s1.dev). See the [Search1API documentation](https://s1.dev/docs) for details.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| channel | string | No | general | `general` for web search or `news` for news search. The Agent can override the node value. |
+| search_service | string | No | google | The search service to query. The Agent can override the node value with any service the channel supports. |
+| time_range | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
+| api_key | string | Node configuration | Empty | Search1API API key. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 50. |
+
+#### Supported Parameter Values
+
+| Channel | Supported Search Services |
+| --- | --- |
+| general | google, bing, bingcn, duckduckgo, yahoo, yandex, youtube, x, reddit, github, arxiv, wechat, bilibili, imdb, wikipedia, baidu, 360, quark |
+| news | google, bing, duckduckgo, yahoo, hackernews, reuters |
+
+If the Agent switches to a channel that does not offer the node's search service, the search uses Search1API's default service for that channel.
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-search1api-api-key>` |
+| Channel | general |
+| Search Service | google |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, and snippets returned by Search1API. `formalized_content` is commonly used as Agent context, while `json` preserves the raw result list.
+
+### Search1API Crawl
+
+Search1API Crawl reads one web page and returns its title and full content. A common workflow is to use Search1API to find links, then let the Agent read the most relevant page with this component. It uses the same API key as Search1API.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page to read. As an Agent tool, the Agent supplies the URL. |
+| api_key | string | Node configuration | Empty | Search1API API key. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| URL | `https://ragflow.io/docs/dev/` |
+| API Key | `<your-search1api-api-key>` |
+
+#### Output Result
+
+`json` contains the page title, link, content, and any metadata returned by Search1API.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
@@ -630,45 +718,45 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 
 #### Parameter Description
 
-| Field | Type | Required | Default Value | Description |
-| --- | --- | --- | --- | --- |
-| content | string | Yes | Empty | Markdown content to generate. Upstream outputs can be referenced. |
-| output_format | string | Yes | pdf | Output format: `pdf`, `docx`, `txt`, `markdown`, or `html`. |
-| filename | string | No | Empty | File name. If empty, it is generated automatically, and illegal file name characters are cleaned. |
-| header_text | string | No | Empty | Header text. Applies to PDF/DOCX. |
-| footer_text | string | No | Empty | Footer text. Applies to PDF/DOCX. |
-| watermark_text | string | No | Empty | Watermark text. Supported by PDF/DOCX/HTML according to the implementation. |
-| add_page_numbers | boolean | No | true | Whether to add page numbers. Mainly used for PDF/DOCX. |
-| add_timestamp | boolean | No | true | Whether to add generation time. |
-| include_download_info_in_content | boolean | No | false | Whether to keep the download information marker in the content. |
-| font_size | number | No | 12 | Font size, which must be greater than or equal to 12. |
+| Field                            | Type    | Required | Default Value | Description                                                                                       |
+|----------------------------------|---------|----------|---------------|---------------------------------------------------------------------------------------------------|
+| content                          | string  | Yes      | Empty         | Markdown content to generate. Upstream outputs can be referenced.                                 |
+| output_format                    | string  | Yes      | pdf           | Output format: `pdf`, `docx`, `txt`, `markdown`, or `html`.                                       |
+| filename                         | string  | No       | Empty         | File name. If empty, it is generated automatically, and illegal file name characters are cleaned. |
+| header_text                      | string  | No       | Empty         | Header text. Applies to PDF/DOCX.                                                                 |
+| footer_text                      | string  | No       | Empty         | Footer text. Applies to PDF/DOCX.                                                                 |
+| watermark_text                   | string  | No       | Empty         | Watermark text. Supported by PDF/DOCX/HTML according to the implementation.                       |
+| add_page_numbers                 | boolean | No       | true          | Whether to add page numbers. Mainly used for PDF/DOCX.                                            |
+| add_timestamp                    | boolean | No       | true          | Whether to add generation time.                                                                   |
+| include_download_info_in_content | boolean | No       | false         | Whether to keep the download information marker in the content.                                   |
+| font_size                        | number  | No       | 12            | Font size, which must be greater than or equal to 12.                                             |
 
 #### Supported Values
 
-| Parameter | Supported Value | Description |
-| --- | --- | --- |
-| Output Format | pdf | PDF document. |
-| Output Format | docx | Word document. |
-| Output Format | html | HTML document. |
-| Output Format | txt | Text file. |
-| Output Format | markdown | Markdown file. |
-| Font Size | >=12 | Font size must be greater than or equal to 12. |
+| Parameter     | Supported Value | Description                                    |
+|---------------|-----------------|------------------------------------------------|
+| Output Format | pdf             | PDF document.                                  |
+| Output Format | docx            | Word document.                                 |
+| Output Format | html            | HTML document.                                 |
+| Output Format | txt             | Text file.                                     |
+| Output Format | markdown        | Markdown file.                                 |
+| Font Size     | >=12            | Font size must be greater than or equal to 12. |
 
 #### Configuration Example
 
-| Configuration Item | Example Value |
-| --- | --- |
-| Content | `# RAGFlow Agent
-Test This document is generated by the DocGenerator component.` |
-| Output Format | pdf |
-| Filename | ragflow-agent-test.pdf |
-| Header Text | RAGFlow |
-| Footer Text | Internal Test |
-| Watermark Text | DRAFT |
-| Add Page Numbers | true |
-| Add Timestamp | true |
-| Include Download Info In Content | false |
-| Font Size | 12 |
+| Configuration Item                                              | Example Value          |
+|-----------------------------------------------------------------|------------------------|
+| Content                                                         | `# RAGFlow Agent       |
+| Test This document is generated by the DocGenerator component.` |                        |
+| Output Format                                                   | pdf                    |
+| Filename                                                        | ragflow-agent-test.pdf |
+| Header Text                                                     | RAGFlow                |
+| Footer Text                                                     | Internal Test          |
+| Watermark Text                                                  | DRAFT                  |
+| Add Page Numbers                                                | true                   |
+| Add Timestamp                                                   | true                   |
+| Include Download Info In Content                                | false                  |
+| Font Size                                                       | 12                     |
 
 #### Output Result
 

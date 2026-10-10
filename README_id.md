@@ -85,6 +85,8 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 
 ## 🔥 Pembaruan Terbaru
 
+- 2026-09-29 RAGFlow 1.0.0-rc1 dirilis.
+
 - 2026-09-10 Menambahkan ingest konten situs web melalui sitemap.
 - 2026-08-19 Memperkenalkan Knowledge Compilation untuk menghasilkan Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills pada tingkat dokumen dan dataset.
 - 2026-08-19 Memperkenalkan Agentic RAG dengan mode berpikir Low, Medium, High, dan Ultra.
@@ -126,11 +128,6 @@ Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 
 - Model menganalisis pertanyaan kompleks dan bila perlu memecahnya, mencari pengetahuan, serta memverifikasi bukti melalui beberapa tahap.
 - Mode Low, Medium, High, dan Ultra menyesuaikan kedalaman pencarian dan penalaran dengan kompleksitas pertanyaan.
-
-### ⚙️ **Arsitektur layanan native Go**
-
-- Satu layanan Go menyediakan API, Admin, Ingestor, dan Syncer. DeepDoc berjalan di dalam proses Go untuk analisis tata letak, OCR, dan pengenalan tabel.
-- Layanan Go memanggil pustaka pengurai dokumen native dan ONNX Runtime melalui CGO. MCP dan Sandbox Executor dapat diaktifkan sesuai kebutuhan.
 
 ### 🌱 **Referensi yang Didasarkan pada Data untuk Mengurangi Hallusinasi**
 
@@ -198,40 +195,56 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Bangun image Docker pre-built dan jalankan server:
+3. Beralih ke tag rilis Go dan jalankan image Go yang telah disiapkan dengan Docker Compose:
 
 > [!CAUTION]
 > Semua gambar Docker dibangun untuk platform x86. Saat ini, kami tidak menawarkan gambar Docker untuk ARM64.
 > Jika Anda menggunakan platform ARM64, [silakan gunakan panduan ini untuk membangun gambar Docker yang kompatibel dengan sistem Anda](https://ragflow.io/docs/dev/build_docker_image).
 
-> Tulis `RAGFLOW_IMAGE=ragflow:go-local` ke **docker/.env** sebelum memulai. Target build resmi image Go adalah `linux/amd64`.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
 
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   Masuk ke direktori deployment Docker.
+
+   ```bash
+   cd ragflow/docker
+   ```
+
+   Beralih ke tag rilis Go v1.0.0-rc1.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Jalankan layanan Go dan dependensinya di latar belakang.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
+
+   Dalam konfigurasi MySQL default, entrypoint image Go menjalankan migrasi database terlebih dahulu, lalu memulai Syncer, Admin, API, dan Ingestor melalui `bin/ragflow_server`.
 
 > Pada RAGFlow open-source 1.0, DeepDoc menggunakan inferensi CPU untuk analisis tata letak, OCR, dan pengenalan tabel.
 
-1. Periksa status server setelah server aktif dan berjalan:
+4. Periksa status layanan dan kesiapan API setelah startup:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
+   ```
+
+   Perintah di atas menampilkan status dependensi. RAGFlow tidak mendefinisikan healthcheck Compose; konfirmasikan kesiapan melalui API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-2. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
+   Respons HTTP 200 menunjukkan bahwa layanan siap. Jika Anda mengubah `SVR_WEB_HTTP_PORT`, gunakan port tersebut dalam URL pemeriksaan kesehatan. Jika startup gagal, periksa log layanan terkait dengan `docker logs --tail 50 <service>`.
+
+5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
 
    > Dengan pengaturan default, Anda hanya perlu memasukkan `http://IP_DEVICE_ANDA` (**tanpa** nomor port) karena
    > port HTTP default `80` bisa dihilangkan saat menggunakan konfigurasi default.
    >
-3. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
+6. Setelah masuk ke RAGFlow, tambahkan LLM, model embedding, dan reranker pada halaman penyedia model, lalu isi nama model, alamat layanan, dan API key yang sesuai.
 
    > Lihat [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) untuk informasi lebih lanjut.
    >
@@ -240,7 +253,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
 
 #### ⚙️ Konfigurasi dan Penyesuaian Docker
 
-Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, dengan Kvrocks untuk cache dan penyimpanan Checkpoint serta NATS JetStream sebagai antrean pesan. Untuk mengatur image, port, kata sandi, mesin dokumen, dan sumber image model, lihat [panduan konfigurasi Docker](./docker/README.md). Untuk batasan platform dan persyaratan macOS, lihat [panduan build image Go dan dukungan platform](./docs/develop/build_docker_image.mdx).
+Deployment Docker Go menggunakan `docker/.env` dan `docker/docker-compose.yml`, dengan Kvrocks untuk cache dan penyimpanan Checkpoint serta NATS JetStream sebagai antrean pesan. Untuk mengatur image, port, kata sandi, mesin dokumen, dan sumber image model, lihat [panduan konfigurasi Docker](./docker/README.md). Untuk dukungan platform (catatan: macOS sementara tidak didukung, gunakan host Linux x86_64), lihat [panduan build image Go dan dukungan platform](./docs/develop/build_docker_image.mdx).
 
 Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, serta mempertahankan atau menghapus data yang ada, ikuti juga panduan konfigurasi Docker tersebut.
 
@@ -254,13 +267,16 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   Skrip tersebut menyiapkan pustaka native dan sumber daya model yang diperlukan untuk build Go serta memerlukan `requests` dan `huggingface-hub`. Lewati langkah ini jika sumber daya yang sama telah disiapkan dengan cara lain. Saat dijalankan dari root repositori, layanan Go otomatis menemukan `rag/res/deepdoc`; untuk menjalankan dari direktori lain, atur `DEEPDOC_MODEL_DIR` ke path absolutnya.
+   Skrip tersebut menyiapkan pustaka native dan sumber daya model yang diperlukan untuk build Go serta memerlukan `requests` dan `huggingface-hub`. Lewati langkah ini jika sumber daya yang sama telah disiapkan dengan cara lain. Saat dijalankan dari root repositori, layanan Go otomatis menemukan `internal/rag/res/deepdoc`; untuk menjalankan dari direktori lain, atur `DEEPDOC_MODEL_DIR` ke path absolutnya.
 3. Jalankan dependensi yang diperlukan (Elasticsearch, MySQL, MinIO, NATS, Kvrocks, dan ClickHouse) menggunakan Docker Compose:
 
    ```bash
@@ -275,9 +291,21 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
 
    ```bash
    ./bin/ragflow_server --migrate
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
@@ -289,7 +317,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    - `--syncer`: Memulai layanan Syncer untuk sinkronisasi data.
    - `--api`: Memulai layanan API untuk Web UI, SDK, dan klien eksternal.
 
-   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk rantai layanan lengkap.
+   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk menjalankan seluruh rantai layanan.
 5. Hanya untuk pengembangan frontend, instal Node.js dan npm, lalu jalankan frontend React:
 
    ```bash

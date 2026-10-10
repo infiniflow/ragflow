@@ -38,7 +38,7 @@
 //   - EMBEDDING MODEL RESOLUTION: mirrored. Python uses
 //     `LLMBundle(tenant_id, embd_id).encode([...])` from
 //     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
-//     through `service.ModelProviderService.GetEmbeddingModel`
+//     through the model solver injected by the ingestion task package
 //     (callers inject the resolver, see `DefaultEmbedderResolver`).
 //     The component does NOT directly construct a model driver —
 //     the resolution path depends on tenant/DAO context that lives
@@ -368,6 +368,9 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("input_chunks", len(chunks)),
 	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
+	if toks := declaredTitleTokens(chunks); len(toks) > 0 {
+		titleStem = strings.TrimSpace(titleStem + " " + strings.Join(toks, " "))
+	}
 
 	// chunk_order_int is the position of the chunk in the (post-filter) reading
 	// sequence. It is set unconditionally on every surviving chunk so that all
@@ -750,6 +753,151 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 	}
 	if len(in.Positions) > 0 {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
+	}
+	return out
+}
+
+// declaredTitleTokens returns the tokens of the title a document declares about itself, when its
+// header block carries one ("title: Pragyan Ojha", "name: Lesley Manyathela", "fullname: ...").
+//
+// Why it exists: a corpus whose files are named by id ("93372.md") otherwise leaves title_tks
+// holding nothing but the id, while the retriever weights title_tks on a par with content_ltks -
+// so the declared title is a ranking signal that costs nothing to index. Label words, the word
+// "wikipedia", English stopwords and pure numbers are dropped: they are noise that would match
+// unrelated queries once the field is weighted.
+//
+// Only the first non-empty chunk is inspected, because the header block (when present at all)
+// belongs to the head of the document.
+//
+// The extraction is script-agnostic. A word that is not pure ASCII — Chinese, Japanese, Korean,
+// Cyrillic, Arabic, Greek, Hebrew, Thai, or Latin carrying diacritics — is kept whole and handed
+// to the analyzer downstream, which is what segments it. Splitting such a word here, on ASCII
+// boundaries, is the older behaviour and it dissolved the whole title into nothing.
+// Tokens that ARE pure ASCII keep the older treatment: englishStopwords are dropped (the
+// tokenizer keeps function words such as "the", "for" and "and" as-is — verified via the ES
+// _analyze API on title_tks and via tokenizer.Tokenize — so they have to be filtered here), and
+// so are the label words and pure numbers. The stopword list stays English-only on purpose: a
+// multilingual one would have to be invented, and getting a language wrong silently deletes real
+// content words from that language's titles.
+// This replaced an earlier length heuristic (keep only tokens >= 5 chars) which also removed real
+// content words such as "icc", "cup", "john", "star", "bros".
+var englishStopwords = map[string]bool{
+	"a": true, "an": true, "and": true, "are": true, "as": true, "at": true, "be": true, "been": true,
+	"but": true, "by": true, "d": true, "for": true, "from": true, "had": true, "has": true, "have": true,
+	"he": true, "her": true, "him": true, "his": true, "i": true, "if": true, "in": true, "into": true,
+	"is": true, "it": true, "its": true, "ll": true, "m": true, "me": true, "my": true, "no": true,
+	"not": true, "of": true, "on": true, "or": true, "our": true, "re": true, "s": true, "she": true,
+	"so": true, "t": true, "that": true, "the": true, "their": true, "them": true, "then": true,
+	"there": true, "these": true, "they": true, "this": true, "to": true, "too": true, "up": true,
+	"us": true, "ve": true, "was": true, "we": true, "were": true, "what": true, "when": true,
+	"where": true, "which": true, "who": true, "will": true, "with": true, "y": true,
+	"you": true, "your": true,
+}
+
+// asciiOnly reports whether s is made of ASCII bytes alone. A pure-ASCII string is the only thing
+// ASCII decoding produces, so a byte scan decides it.
+func asciiOnly(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// allDigits reports whether s is non-empty and made only of decimal digits, in any script.
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// trimWordEdges drops leading and trailing runes that are neither letters nor digits, so the
+// punctuation a title tends to carry — 《三国演义》, «Война и мир», (1917), a trailing comma — does
+// not reach the token stream.
+func trimWordEdges(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func declaredTitleTokens(chunks []schema.ChunkDoc) []string {
+	const (
+		headerLines = 20
+		maxTokens   = 20
+	)
+	var values []string
+	for i := range chunks {
+		head := chunks[i].Text
+		if head == "" {
+			continue
+		}
+		lines := strings.Split(head, "\n")
+		if len(lines) > headerLines {
+			lines = lines[:headerLines]
+		}
+		for _, line := range lines {
+			l := strings.ToLower(strings.TrimSpace(line))
+			for _, key := range []string{"title:", "name:", "fullname:"} {
+				if strings.HasPrefix(l, key) {
+					values = append(values, l[len(key):])
+				}
+			}
+		}
+		break
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	skip := map[string]bool{"title": true, "name": true, "fullname": true, "wikipedia": true}
+	seen := map[string]bool{}
+	var out []string
+	// keep records one accepted token and reports whether the cap is now reached.
+	keep := func(token string) bool {
+		if seen[token] {
+			return false
+		}
+		seen[token] = true
+		out = append(out, token)
+		return len(out) >= maxTokens
+	}
+	for _, v := range values {
+		// Split on whitespace, NOT on ASCII boundaries. A word in another script is a word, and
+		// the analyzer downstream segments it (RAGFlow's tokenizer handles CJK); the
+		// ASCII-boundary splitter dissolved such a word into fragments of length zero.
+		for _, word := range strings.Fields(v) {
+			word = trimWordEdges(word)
+			if word == "" {
+				continue
+			}
+			if !asciiOnly(word) {
+				// Pure numbers stay out of the title channel whichever script writes them: the
+				// corpus file stem is numeric, so a numeric title token matches every document.
+				if !allDigits(word) && keep(word) {
+					return out
+				}
+				continue
+			}
+			for _, w := range strings.FieldsFunc(word, func(r rune) bool {
+				return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+			}) {
+				// Pure numbers stay out (years, ids, and the corpus file stem are all numeric
+				// noise for the title channel); everything else is kept unless it is an English
+				// stopword, a label or a duplicate.
+				if englishStopwords[w] || skip[w] || allDigits(w) {
+					continue
+				}
+				if keep(w) {
+					return out
+				}
+			}
+		}
 	}
 	return out
 }

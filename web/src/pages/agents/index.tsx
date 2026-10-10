@@ -18,11 +18,17 @@ import { useFetchAgentListByPage } from '@/hooks/use-agent-request';
 import { useDeleteCompilationTemplateGroup } from '@/hooks/use-compilation-template-group-request';
 import { Routes } from '@/routes';
 import { pick } from 'lodash';
+import { BuiltinPipelineSection } from './builtin-pipeline-section';
 import { Clipboard, ClipboardPlus, FileInput, Plus } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate, useSearchParams } from 'react-router';
 import { AgentCard } from './agent-card';
+import { BuiltinCatalogProbe } from './builtin-catalog-probe';
+import {
+  resolveAgentsEmptyState,
+  shouldShowBuiltinForRaw,
+} from './builtin-pipeline-list';
 import { CompilationTemplateCard } from './compilation-template-card';
 import { CreateAgentDialog } from './create-agent-dialog';
 import { useCreateAgentOrPipeline } from './hooks/use-create-agent';
@@ -48,7 +54,23 @@ export default function Agents() {
     setFilterValue,
     handleFilterSubmit,
     checkValue,
+    debouncedSearchString,
   } = useFetchAgentListByPage();
+
+  // Built-in pipelines surface only in the "All" and "Pipeline" views. Compute
+  // this from the raw filter value so the section (and its catalog request) is
+  // mounted only when eligible, matching the "fire a query where its data is
+  // rendered" convention.
+  const rawCategory = filterValue?.canvasCategory;
+  const builtinVisible = shouldShowBuiltinForRaw(rawCategory);
+
+  // Lifted filtered built-in catalog state, reported by BuiltinCatalogProbe so
+  // the empty-state decision can use *matched* built-in items rather than just
+  // category eligibility.
+  const [builtinState, setBuiltinState] = useState<{
+    length: number;
+    loading: boolean;
+  }>({ length: 0, loading: false });
 
   const { navigateToAgentTemplates } = useNavigatePage();
   const navigate = useNavigate();
@@ -124,8 +146,24 @@ export default function Agents() {
     }
   }, [isCreate, showCreatingModal, searchUrl, setSearchUrl]);
 
+  const emptyState = resolveAgentsEmptyState({
+    dataLength: data.length,
+    builtinItemsLength: builtinState.length,
+    searchString: debouncedSearchString,
+    listLoading,
+    builtinVisible,
+    builtinLoading: builtinState.loading,
+  });
+
   return (
     <>
+      {builtinVisible && (
+        <BuiltinCatalogProbe
+          rawCategory={rawCategory}
+          searchString={debouncedSearchString}
+          onReport={setBuiltinState}
+        />
+      )}
       <article
         className="size-full min-w-0 flex flex-col"
         data-testid="agents-list"
@@ -174,7 +212,7 @@ export default function Agents() {
           </ListFilterBar>
         </header>
 
-        {data.length ? (
+        {emptyState === 'content' ? (
           <>
             <CardContainer className="flex-1 overflow-auto px-5">
               {data.map((x) =>
@@ -193,28 +231,39 @@ export default function Agents() {
                   />
                 ),
               )}
+
+              {builtinVisible && (
+                <BuiltinPipelineSection
+                  rawCategory={rawCategory}
+                  searchString={debouncedSearchString}
+                  showDivider={data.length > 0}
+                />
+              )}
             </CardContainer>
 
-            <footer className="mt-4 px-5 pb-5">
-              <RAGFlowPagination
-                {...pick(pagination, 'current', 'pageSize')}
-                total={pagination.total}
-                onChange={handlePageChange}
-              />
-            </footer>
+            {data.length > 0 && (
+              <footer className="mt-4 px-5 pb-5">
+                <RAGFlowPagination
+                  {...pick(pagination, 'current', 'pageSize')}
+                  total={pagination.total}
+                  onChange={handlePageChange}
+                />
+              </footer>
+            )}
           </>
-        ) : searchString ? (
+        ) : emptyState === 'search-empty' ? (
           <div className="flex-1 flex items-center justify-center">
             <EmptyAppCard
               showIcon
               size="large"
               className="w-[480px] p-14"
               isSearch
+              testId="agents-search-empty"
               type={EmptyCardType.Agent}
               onClick={() => showCreatingModal()}
             />
           </div>
-        ) : listLoading ? null : (
+        ) : emptyState === 'loading' ? null : (
           <div className="flex-1 flex items-center justify-center">
             <EmptyAppCard
               showIcon

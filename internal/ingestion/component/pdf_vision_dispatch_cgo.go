@@ -9,11 +9,12 @@ import (
 	"image/png"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	"ragflow/internal/utility"
 )
 
 const pdfVisionZoom = 3.0
 
-func defaultRenderPDFVisionPages(binary []byte) ([]pdfVisionPage, error) {
+func defaultRenderPDFVisionPages(binary []byte, ranges [][]int) ([]pdfVisionPage, error) {
 	engine, err := deepdocpdf.NewEngine(binary)
 	if err != nil {
 		return nil, err
@@ -26,6 +27,9 @@ func defaultRenderPDFVisionPages(binary []byte) ([]pdfVisionPage, error) {
 	}
 	pages := make([]pdfVisionPage, 0, pageCount)
 	for pageIdx := 0; pageIdx < pageCount; pageIdx++ {
+		if !utility.PDFPageInRanges(ranges, pageIdx+1) {
+			continue
+		}
 		img, err := deepdocpdf.RenderPageToImage(engine, pageIdx)
 		if err != nil {
 			return nil, fmt.Errorf("page %d: %w", pageIdx+1, err)

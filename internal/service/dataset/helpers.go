@@ -198,204 +198,53 @@ func validateDatasetParserConfigSize(parserConfig map[string]interface{}) error 
 	return nil
 }
 
-func validateDatasetParserConfig(parserConfig map[string]interface{}) error {
+// DropUnscopedParserConfigKeys removes top-level parser_config keys that are
+// not component-scoped (i.e. do not contain ":"), since the Go backend only
+// consumes keys keyed by a component id (e.g. "Parser:abc123" or
+// "Extractor:AutoExtractDefault"). Flat keys are legacy transport artifacts
+// that downstream consumers (CleanComponentParams) never read, so they are
+// dropped rather than rejected. Only top-level keys are affected; a key nested
+// inside a component node (e.g. "Extractor:AutoExtractDefault.metadata") keeps
+// its existing name. It mutates the provided map in place and returns the names
+// of the dropped keys so callers can log the silent drop. A nil or empty map is
+// returned untouched with a nil result.
+func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
+	if len(parserConfig) == 0 {
+		return nil
+	}
+	var dropped []string
 	for key := range parserConfig {
-		if strings.Contains(key, ":") {
-			return nil // Component-scoped DSL parameters are validated by BuildParserConfig.
+		if !strings.Contains(key, ":") {
+			dropped = append(dropped, key)
 		}
 	}
-	allowed := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
-	for key := range parserConfig {
-		if !allowed[key] {
-			return fmt.Errorf("Extra inputs are not permitted: %s", key)
-		}
+	for _, key := range dropped {
+		delete(parserConfig, key)
 	}
-	intBounds := map[string][2]float64{"auto_keywords": {0, 32}, "auto_questions": {0, 10}, "chunk_token_num": {1, 2048}, "topn_tags": {1, 10}, "task_page_size": {1, 100000000}}
-	for key, bounds := range intBounds {
-		if value, ok := parserConfig[key]; ok {
-			if value == nil && key == "task_page_size" {
-				continue
-			}
-			n, ok := value.(float64)
-			if !ok || n != float64(int64(n)) {
-				return errors.New("Input should be a valid integer")
-			}
-			if n < bounds[0] {
-				return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
-			}
-			if n > bounds[1] {
-				return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
-			}
-		}
-	}
-	if value, ok := parserConfig["delimiter"]; ok {
-		s, ok := value.(string)
-		if !ok {
-			return errors.New("Input should be a valid string")
-		}
-		if len(s) == 0 {
-			return errors.New("String should have at least 1 character")
-		}
-	}
-	if value, ok := parserConfig["html4excel"]; ok {
-		if _, ok := value.(bool); !ok {
-			return errors.New("Input should be a valid boolean")
-		}
-	}
-	if value, ok := parserConfig["tag_kb_ids"]; ok {
-		list, ok := value.([]interface{})
-		if !ok {
-			return errors.New("Input should be a valid list")
-		}
-		for _, item := range list {
-			if _, ok := item.(string); !ok {
-				return errors.New("Input should be a valid string")
-			}
-		}
-	}
-	if value, ok := parserConfig["pages"]; ok {
-		if value == nil {
-			return nil
-		}
-		list, ok := value.([]interface{})
-		if !ok {
-			return errors.New("Input should be a valid list")
-		}
-		for _, item := range list {
-			row, ok := item.([]interface{})
-			if !ok || len(row) != 2 {
-				return errors.New("Input should be a valid list")
-			}
-			for _, bound := range row {
-				n, ok := bound.(float64)
-				if !ok || n != float64(int64(n)) {
-					return errors.New("Input should be a valid integer")
-				}
-			}
-		}
-	}
-	if value, ok := parserConfig["filename_embd_weight"]; ok {
-		n, ok := value.(float64)
-		if !ok {
-			return errors.New("Input should be a valid number")
-		}
-		if n < 0 {
-			return errors.New("Input should be greater than or equal to 0")
-		}
-		if n > 1 {
-			return errors.New("Input should be less than or equal to 1")
-		}
-	}
-	for _, key := range []string{"raptor", "graphrag", "parent_child"} {
-		value, ok := parserConfig[key]
-		if !ok {
-			continue
-		}
-		obj, ok := value.(map[string]interface{})
-		if !ok {
-			return errors.New("Input should be a valid dictionary")
-		}
-		if key == "graphrag" {
-			if v, exists := obj["use_graphrag"]; exists {
-				if _, ok := v.(bool); !ok {
-					return errors.New("Input should be a valid boolean")
-				}
-			}
-			if v, exists := obj["entity_types"]; exists {
-				list, ok := v.([]interface{})
-				if !ok {
-					return errors.New("Input should be a valid list")
-				}
-				for _, item := range list {
-					if _, ok := item.(string); !ok {
-						return errors.New("Input should be a valid string")
-					}
-				}
-			}
-			if v, exists := obj["method"]; exists {
-				method, ok := v.(string)
-				if !ok || (method != "light" && method != "general" && method != "ner") {
-					return errors.New("Input should be 'light', 'general' or 'ner'")
-				}
-			}
-			for _, name := range []string{"community", "resolution"} {
-				if v, exists := obj[name]; exists {
-					if _, ok := v.(bool); !ok {
-						return errors.New("Input should be a valid boolean")
-					}
-				}
-			}
-		}
-		if key == "raptor" {
-			if v, exists := obj["use_raptor"]; exists {
-				if _, ok := v.(bool); !ok {
-					return errors.New("Input should be a valid boolean")
-				}
-			}
-			if v, exists := obj["prompt"]; exists {
-				if s, ok := v.(string); !ok || strings.TrimSpace(s) == "" {
-					return errors.New("String should have at least 1 character")
-				}
-			}
-			for name, bounds := range map[string][2]float64{"max_token": {1, 2048}, "max_cluster": {1, 1024}, "random_seed": {0, 9223372036854775807}} {
-				if v, exists := obj[name]; exists {
-					n, ok := v.(float64)
-					if !ok || n != float64(int64(n)) {
-						return errors.New("Input should be a valid integer")
-					}
-					if n < bounds[0] {
-						return fmt.Errorf("Input should be greater than or equal to %v", int(bounds[0]))
-					}
-					if n > bounds[1] {
-						return fmt.Errorf("Input should be less than or equal to %v", int(bounds[1]))
-					}
-				}
-			}
-			if v, exists := obj["clustering_threshold"]; exists {
-				n, ok := v.(float64)
-				if !ok {
-					return errors.New("Input should be a valid number")
-				}
-				if n < 0 {
-					return errors.New("Input should be greater than or equal to 0")
-				}
-				if n > 1 {
-					return errors.New("Input should be less than or equal to 1")
-				}
-			}
-		}
-		if key == "parent_child" {
-			if v, exists := obj["use_parent_child"]; exists {
-				if _, ok := v.(bool); !ok {
-					return errors.New("Input should be a valid boolean")
-				}
-			}
-			if v, exists := obj["children_delimiter"]; exists {
-				if s, ok := v.(string); !ok || s == "" {
-					return errors.New("String should have at least 1 character")
-				}
-			}
-		}
-	}
-	return nil
+	return dropped
 }
 
-// ValidateParserConfig validates the shared REST parser_config schema.
-func ValidateParserConfig(parserConfig map[string]interface{}) error {
-	return validateDatasetParserConfig(parserConfig)
+// ValidateParserConfig validates the shared REST parser_config schema. Flat
+// (non-component-scoped) keys are no longer rejected: they are silently dropped
+// because downstream consumers never read them. The size limit is still
+// enforced. It returns the names of the dropped (unscoped) keys so the caller
+// can log the silent drop; this is the single drop point shared by every entry
+// path, so callers should not call DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
-// ValidateDocumentParserConfig validates known public parser_config fields.
-// Documents retain unknown parser settings for parser-specific consumers.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) error {
-	known := map[string]bool{"layout_recognize": true, "chunk_token_num": true, "delimiter": true, "auto_keywords": true, "auto_questions": true, "html4excel": true, "image_context_size": true, "table_context_size": true, "topn_tags": true, "llm_id": true, "parent_child": true, "children_delimiter": true, "tag_kb_ids": true, "filename_embd_weight": true, "task_page_size": true, "pages": true, "graphrag": true, "raptor": true}
-	config := make(map[string]interface{}, len(parserConfig))
-	for key, value := range parserConfig {
-		if known[key] || strings.Contains(key, ":") {
-			config[key] = value
-		}
-	}
-	return validateDatasetParserConfig(config)
+// ValidateDocumentParserConfig validates the parser_config attached to a
+// document. Documents follow the same component-scoped contract as datasets:
+// every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
+// or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
+// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
+// (not kept) and the size limit is enforced. It returns the dropped key names
+// for logging, mirroring ValidateParserConfig.
+func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	dropped := DropUnscopedParserConfigKeys(parserConfig)
+	return dropped, validateDatasetParserConfigSize(parserConfig)
 }
 
 // NormalizeDatasetID validates the dataset ID format and returns its
@@ -513,31 +362,30 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	var mm map[string]any
 	if incoming != nil {
-		if v, ok := incoming["metadata"].(map[string]any); ok {
-			mm = v
-		}
+		mm = extractorNodeMetadata(incoming)
 	}
 	if mm == nil && existing != nil {
-		if v, ok := existing["metadata"].(map[string]any); ok {
-			mm = v
-		}
+		mm = extractorNodeMetadata(existing)
 	}
 	if mm != nil {
 		next["metadata"] = mm
 	}
-	var parentChild map[string]any
-	if incoming != nil {
-		if value, ok := incoming["parent_child"].(map[string]any); ok {
-			parentChild = value
-		}
-	}
-	if parentChild == nil && existing != nil {
-		if value, ok := existing["parent_child"].(map[string]any); ok {
-			parentChild = value
-		}
-	}
+	// Resolve the dataset-level parent_child setting (component-scoped on a
+	// chunker node) and scope it onto every chunker node in next. There is no
+	// flat aggregation key.
+	parentChild := resolveParentChild(incoming, existing)
 	if parentChild != nil {
-		next["parent_child"] = parentChild
+		for componentID, value := range next {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := value.(map[string]interface{})
+			if !ok {
+				params = map[string]interface{}{}
+				next[componentID] = params
+			}
+			params["parent_child"] = parentChild
+		}
 	}
 	requestedChildren := make(map[string]interface{})
 	for componentID, value := range incoming {
@@ -556,14 +404,14 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 	}
 	// Re-derive delimiters from parent_child, then keep explicit chunker edits
 	// (or an existing chunker setting on a partial update) over that fallback.
-	parentChildConfig := map[string]interface{}{"parent_child": parentChild}
+	parentChildConfig := map[string]interface{}{}
 	for componentID, value := range incoming {
 		if pipelinepkg.IsChunkerComponent(componentID) {
 			parentChildConfig[componentID] = value
 		}
 	}
 	pipelinepkg.ApplyParentChildChunkerConfig(next, parentChildConfig)
-	_, parentChildUpdated := incoming["parent_child"]
+	parentChildUpdated := parentChild != nil
 	for componentID, value := range next {
 		if !pipelinepkg.IsChunkerComponent(componentID) {
 			continue
@@ -589,6 +437,55 @@ func preserveDatasetParserConfigState(next, existing entity.JSONMap, incoming ma
 		}
 	}
 	return next
+}
+
+// extractorNodeMetadata returns the modular metadata object ({enabled, metadata,
+// built_in_metadata}) from the first Extractor node in a parser_config, or nil
+// if none is present. Metadata is component-scoped under Extractor nodes; this
+// helper reads it back for preservation across partial updates.
+func extractorNodeMetadata(parserConfig map[string]interface{}) map[string]any {
+	if parserConfig == nil {
+		return nil
+	}
+	for cpnID, raw := range parserConfig {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if meta, ok := params["metadata"].(map[string]any); ok {
+			return meta
+		}
+	}
+	return nil
+}
+
+// resolveParentChild extracts the dataset-level parent_child setting from one or
+// more parser_configs. It reads the component-scoped "parent_child" sub-object on
+// a chunker node only; flat top-level keys are not accepted. Returns nil when
+// absent.
+func resolveParentChild(configs ...map[string]interface{}) map[string]any {
+	for _, cfg := range configs {
+		if cfg == nil {
+			continue
+		}
+		for componentID, raw := range cfg {
+			if !pipelinepkg.IsChunkerComponent(componentID) {
+				continue
+			}
+			params, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			if pc, ok := params["parent_child"].(map[string]any); ok {
+				return pc
+			}
+		}
+	}
+	return nil
 }
 
 func parserConfigJSONMap(value interface{}) entity.JSONMap {

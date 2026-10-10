@@ -87,6 +87,8 @@
 
 ## 🔥 近期更新
 
+- 2026-09-29 發布 RAGFlow 1.0.0-rc1。
+
 - 2026-09-10 支援透過 Sitemap 接入網站內容。
 - 2026-08-19 推出知識編譯，支援在文件級和知識庫級產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
 - 2026-08-19 推出 Agentic RAG，支援 Low、Medium、High、Ultra 四種思考模式。
@@ -131,13 +133,6 @@
 - 針對複雜問題進行多步檢索：模型會分析問題，並在需要時執行問題拆解、知識檢索和證據核驗。
 - 透過多輪檢索與推理取得更完整的上下文，協助產生有依據的回答。
 - 支援 Low、Medium、High、Ultra 思考模式，可依問題複雜度控制檢索和推理深度。
-
-### ⚙️ **Go 原生服務架構**
-
-- API、Admin、Ingestor 和 Syncer 由 Go 服務統一提供。
-- DeepDoc 在 Go 行程內執行，負責版面分析、OCR 和表格辨識。
-- Go 服務透過 CGO 呼叫原生文件解析程式庫和 ONNX Runtime。
-- MCP 和 Sandbox Executor 是可按需啟用的選用能力。
 
 ### 🌱 **有理有據、最大程度降低幻覺（hallucination）**
 
@@ -204,43 +199,46 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. 建置 Go 版映像，並使用 Go 版 Compose 設定啟動伺服器：
+3. 切換至 Go 版發布標籤，並使用 Docker Compose 啟動伺服器：
 
 > [!NOTE]
-> Go 映像的正式建置目標為 `linux/amd64`。平台限制和 macOS 要求請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+> Go 映像的正式建置目標為 `linux/amd64`。平台支援（注意：macOS 暫不受 Go 後端支援，請使用 Linux x86_64 主機）請參閱[Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
-> 首次部署前需要先建置 Go 映像，建置時間取決於網路和機器效能。
+   進入 Docker 部署目錄。
 
-將以下值寫入 `docker/.env`：
+   ```bash
+   cd ragflow/docker
+   ```
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
+   切換至 Go v1.0.0-rc1 發布標籤。
 
-```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
-```
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   在背景啟動 Go 服務及其相依服務。
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
 
 預設 MySQL 設定下，Go 映像入口會先執行資料庫遷移，再透過 `bin/ragflow_server` 啟動 Syncer、Admin、API 和 Ingestor。
 
 > RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格辨識使用 CPU 推理。
 
-4. 檢查相依服務狀態及 API 是否就緒：
+4. 啟動後檢查服務狀態和 API 是否就緒：
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
    ```
 
-   相依服務顯示健康且 RAGFlow 容器持續執行後，請透過 HTTP 介面確認 RAGFlow 是否就緒（RAGFlow 容器本身未定義 Compose healthcheck）：
+   上述命令會顯示相依服務的狀態。RAGFlow 本身未定義 Compose healthcheck；請透過 API 確認是否就緒：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請將健康檢查網址中的連接埠替換為對應值。啟動異常時，請使用 Compose 查看對應服務日誌。
+   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請在健康檢查網址中使用對應的連接埠。啟動失敗時，請使用 `docker logs --tail 50 <service>` 查看對應服務日誌。
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
    > 上面這個範例中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過設定則無需輸入連接埠（預設的 HTTP 服務連接埠 80）。
@@ -251,7 +249,7 @@ RAGFLOW_IMAGE=ragflow:go-local
 
 #### ⚙️ Docker 設定與調整
 
-Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台限制和 macOS 執行要求，請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
+Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 Kvrocks 儲存快取和 Checkpoint，並使用 NATS JetStream 作為訊息佇列。映像、連接埠、密碼、文件引擎和模型映像來源，請參閱 [Docker 設定說明](./docker/README.md)。平台支援（注意：macOS 暫不受支援），請參閱 [Go Docker 映像建置與平台支援指南](./docs/develop/build_docker_image.mdx)。
 
 切換文件引擎、更新設定、重新啟動服務，以及保留或清除既有資料等操作，也請依照上述 Docker 設定文件執行。
 
@@ -267,16 +265,16 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow
    ```
-2. 使用 [Go 依賴下載腳本](./ragflow_deps/download_go_deps.py)準備原生程式庫和模型檔案，再編譯 Go 服務：
+2. 使用 [Go 依賴下載腳本](./ragflow_deps/download_deps.py)準備原生程式庫、模型檔案和 tokenizer 資源，再編譯 Go 服務：
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+   下載腳本使用 `requests` 和 `huggingface-hub` 來準備 Go 建置所需的原生程式庫和模型資源；如已透過其他方式準備好相同資源，可略過此步驟。從倉庫根目錄啟動時，Go 服務會自動尋找 `internal/rag/res/deepdoc`；如需從其他目錄啟動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
 3. 啟動本機依賴服務，並確認 **conf/service_conf.yaml** 中的主機與連接埠可從主機存取：
 
    ```bash
@@ -288,20 +286,33 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    從原始碼啟動的 Go 服務透過 `localhost:6379` 連線到 Compose 暴露的 Kvrocks；Docker 服務則使用容器網路中的主機名稱。使用提供的設定無需修改 `/etc/hosts`。
 4. 先遷移資料庫，再依序啟動服務。每項命令都要在倉庫根目錄的獨立終端機執行；資料庫遷移完成後可關閉該終端機，其餘四個服務終端機需保持執行：
 
+   終端機 1：遷移資料庫
+
    ```bash
-   # 終端機 1：遷移資料庫
    ./bin/ragflow_server --migrate
+   ```
 
-   # 終端機 2：Admin，目標連接埠 9381
+   終端機 2：Admin，目標連接埠 9381
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
 
-   # 終端機 3：Ingestor
+   終端機 3：Ingestor
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
 
-   # 終端機 4：Syncer
+   終端機 4：Syncer
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
 
-   # 終端機 5：API，目標連接埠 9380
+   終端機 5：API，目標連接埠 9380
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
@@ -313,7 +324,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    - `--syncer`：啟動 Syncer 服務，負責資料同步任務。
    - `--api`：啟動 API 服務，為 Web、SDK 和外部用戶端提供介面。
 
-   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer。
+   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer；如需完整服務鏈，請另外執行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
 5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
    ```bash

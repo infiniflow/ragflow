@@ -69,6 +69,8 @@
 
 ## 🔥 업데이트
 
+- 2026-09-29 RAGFlow 1.0.0-rc1을 출시했습니다.
+
 - 2026-09-10 사이트맵을 통한 웹 콘텐츠 수집을 추가했습니다.
 - 2026-08-19 Knowledge Compilation을 도입했습니다. 문서 및 데이터셋 수준에서 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills를 생성할 수 있습니다.
 - 2026-08-19 Low, Medium, High, Ultra 사고 모드를 지원하는 Agentic RAG를 도입했습니다.
@@ -111,11 +113,6 @@
 
 - 복잡한 질문을 분석하고 필요하면 여러 단계로 질문을 분해하고 지식을 검색하며 근거를 검증합니다.
 - Low, Medium, High, Ultra 사고 모드로 질문 복잡도에 따라 검색 및 추론 깊이를 조절할 수 있습니다.
-
-### ⚙️ **Go 네이티브 서비스 아키텍처**
-
-- 통합 Go 서비스가 API, Admin, Ingestor, Syncer를 제공합니다. DeepDoc은 Go 프로세스 안에서 레이아웃 분석, OCR, 표 인식을 수행합니다.
-- Go 서비스는 CGO를 통해 네이티브 문서 파싱 라이브러리와 ONNX Runtime을 호출합니다. MCP와 Sandbox Executor는 필요할 때 활성화할 수 있습니다.
 
 ### 🌱 **할루시네이션을 줄인 신뢰할 수 있는 인용**
 
@@ -183,37 +180,53 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. 미리 빌드된 Docker 이미지를 생성하고 서버를 시작하세요:
+3. Go 릴리스 태그로 전환하고 사전 빌드된 Go 이미지를 Docker Compose로 시작하세요:
 
 > [!CAUTION]
 > 모든 Docker 이미지는 x86 플랫폼을 위해 빌드되었습니다. 우리는 현재 ARM64 플랫폼을 위한 Docker 이미지를 제공하지 않습니다.
 > ARM64 플랫폼을 사용 중이라면, [시스템과 호환되는 Docker 이미지를 빌드하려면 이 가이드를 사용해 주세요](https://ragflow.io/docs/dev/build_docker_image).
 
-   > 시작하기 전에 **docker/.env**에 `RAGFLOW_IMAGE=ragflow:go-local`을 설정하세요. Go 이미지의 공식 빌드 대상은 `linux/amd64`입니다.
 
-   ```dotenv
-   RAGFLOW_IMAGE=ragflow:go-local
-   ```
+
+   Docker 배포 디렉터리로 이동합니다.
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   cd ragflow/docker
    ```
+
+   Go v1.0.0-rc1 릴리스 태그로 전환합니다.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Go 서비스와 종속 서비스를 백그라운드에서 시작합니다.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
+
+   기본 MySQL 구성에서는 Go 이미지 진입점이 먼저 데이터베이스 마이그레이션을 실행한 다음 `bin/ragflow_server`를 통해 Syncer, Admin, API 및 Ingestor를 시작합니다.
 
 > RAGFlow 오픈 소스 1.0의 DeepDoc은 레이아웃 분석, OCR, 표 인식에 CPU 추론을 사용합니다.
 
-1. 서버가 시작된 후 서버 상태를 확인하세요:
+4. 시작 후 서비스 상태와 API 준비 상태를 확인하세요:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
+   ```
+
+   위 명령은 종속 서비스 상태를 표시합니다. RAGFlow 자체에는 Compose healthcheck가 정의되어 있지 않으므로 API를 통해 준비 상태를 확인하세요:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-2. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
+   HTTP 200 응답은 준비가 완료되었음을 의미합니다. `SVR_WEB_HTTP_PORT`를 변경했다면 상태 확인 URL에 해당 포트를 사용하세요. 시작에 실패하면 `docker logs --tail 50 <service>`로 관련 서비스 로그를 확인하세요.
+
+5. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
-3. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
+6. RAGFlow에 로그인한 뒤 모델 공급자 페이지에서 LLM, 임베딩 모델, 리랭커를 추가하고 모델 이름, 서비스 주소, API 키를 입력하세요.
 
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
@@ -221,7 +234,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
 
 #### ⚙️ Docker 구성 및 조정
 
-Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 제한과 macOS 요구 사항은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
+Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며, 캐시와 Checkpoint 저장에는 Kvrocks를, 메시지 큐에는 NATS JetStream을 사용합니다. 이미지, 포트, 비밀번호, 문서 엔진, 모델 이미지 소스를 변경하려면 [Docker 구성 가이드](./docker/README.md)를 따르세요. 플랫폼 지원(참고: macOS는 현재 지원되지 않음, Linux x86_64 호스트 사용 권장)은 [Go Docker 이미지 빌드 및 플랫폼 지원 가이드](./docs/develop/build_docker_image.mdx)를 참조하세요.
 
 문서 엔진 전환, 구성 변경 후 서비스 재시작, 기존 데이터 보존 또는 삭제 작업도 위 Docker 구성 가이드를 따르세요.
 
@@ -236,13 +249,16 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
+   이 스크립트는 Go 빌드에 필요한 네이티브 라이브러리와 모델 리소스를 준비하며 `requests`와 `huggingface-hub`가 필요합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛸 수 있습니다. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
 
 3. Docker Compose를 사용하여 필요한 의존 서비스(Elasticsearch, MySQL, MinIO, NATS, Kvrocks, ClickHouse)를 시작합니다:
 

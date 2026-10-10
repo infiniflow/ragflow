@@ -87,6 +87,8 @@
 
 ## 🔥 Последние обновления
 
+- 2026-09-29 Выпущен RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 Добавлен сбор веб-контента через sitemap.
 - 2026-08-19 Представлена Knowledge Compilation для создания Wiki, Graph, Tree, PageIndex, Mind Map, Timeline и Skills на уровне документов и наборов данных.
 - 2026-08-19 Представлен Agentic RAG с режимами рассуждения Low, Medium, High и Ultra.
@@ -128,11 +130,6 @@
 
 - Модель анализирует сложные вопросы и при необходимости разбивает их на части, ищет знания и проверяет доказательства в несколько этапов.
 - Режимы Low, Medium, High и Ultra позволяют регулировать глубину поиска и рассуждений в зависимости от сложности вопроса.
-
-### ⚙️ **Нативная Go-архитектура сервисов**
-
-- Единый сервис Go предоставляет API, Admin, Ingestor и Syncer. DeepDoc работает внутри процесса Go и выполняет анализ макета, OCR и распознавание таблиц.
-- Сервисы Go вызывают нативные библиотеки обработки документов и ONNX Runtime через CGO. MCP и Sandbox Executor можно включать по мере необходимости.
 
 ### 🌱 **Обоснованные цитаты с минимальными галлюцинациями**
 
@@ -199,33 +196,47 @@
    git clone https://github.com/infiniflow/ragflow.git
    ```
 
-3. Запустите сервер с помощью готовых Docker-образов:
+3. Переключитесь на тег релиза Go и запустите готовый образ Go с помощью Docker Compose:
 
 > [!CAUTION]
 > Все образы собраны под x86. Образов для ARM64 пока нет.
 > Если вы на ARM64, следуйте [этому руководству](https://ragflow.io/docs/dev/build_docker_image), чтобы собрать образ самостоятельно.
 
-> Перед запуском укажите локально собранный образ в файле **docker/.env**. Официальная целевая платформа сборки Go-образа — `linux/amd64`.
+   Перейдите в каталог развертывания Docker.
 
-```dotenv
-RAGFLOW_IMAGE=ragflow:go-local
-```
+   ```bash
+   cd ragflow/docker
+   ```
 
-```bash
-cd ragflow
-docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
-```
+   Переключитесь на тег релиза Go v1.0.0-rc1.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Запустите службы Go и их зависимости в фоновом режиме.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
+
+   В конфигурации MySQL по умолчанию точка входа Go-образа сначала выполняет миграции базы данных, а затем запускает Syncer, Admin, API и Ingestor через `bin/ragflow_server`.
 
 > В открытой версии RAGFlow 1.0 DeepDoc использует CPU для анализа макета, OCR и распознавания таблиц.
 
-4. Проверьте статус после запуска:
+4. После запуска проверьте состояние сервисов и готовность API:
 
    ```bash
-   docker compose --env-file .env -f docker-compose.yml ps
+   docker ps
+   ```
+
+   Команда выше показывает состояние зависимостей. В RAGFlow не определён Compose healthcheck; подтвердите готовность через API:
+
+   ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
+
+   Ответ HTTP 200 означает готовность. Если вы изменили `SVR_WEB_HTTP_PORT`, используйте этот порт в URL проверки. Если запуск завершился ошибкой, проверьте журналы соответствующего сервиса командой `docker logs --tail 50 <service>`.
 
 5. Откройте в браузере IP-адрес сервера и войдите в RAGFlow.
 
@@ -239,7 +250,7 @@ docker compose --env-file .env -f docker-compose.yml up -d
 
 #### ⚙️ Настройка Docker
 
-Развёртывание Go в Docker использует `docker/.env` и `docker/docker-compose.yml`, Kvrocks для кэша и хранения Checkpoint, а NATS JetStream — в качестве очереди сообщений. Изменяйте образ, порты, пароли, движок документов и источник образов моделей в соответствии с [руководством по настройке Docker](./docker/README.md). Ограничения платформ и требования macOS описаны в [руководстве по сборке Go-образа и поддержке платформ](./docs/develop/build_docker_image.mdx).
+Развёртывание Go в Docker использует `docker/.env` и `docker/docker-compose.yml`, Kvrocks для кэша и хранения Checkpoint, а NATS JetStream — в качестве очереди сообщений. Изменяйте образ, порты, пароли, движок документов и источник образов моделей в соответствии с [руководством по настройке Docker](./docker/README.md). Поддержка платформ (примечание: macOS временно не поддерживается, используйте хост Linux x86_64) описана в [руководстве по сборке Go-образа и поддержке платформ](./docs/develop/build_docker_image.mdx).
 
 При смене движка документов, изменении конфигурации и перезапуске сервисов, а также при сохранении или удалении существующих данных следуйте этому же руководству по настройке Docker.
 
@@ -254,13 +265,16 @@ docker compose --env-file .env -f docker-compose.yml up -d
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   Скрипт подготавливает нативные библиотеки и ресурсы моделей для сборки Go и требует `requests` и `huggingface-hub`. Пропустите этот шаг, если те же ресурсы подготовлены другим способом. При запуске из корня репозитория сервисы Go автоматически находят `rag/res/deepdoc`; для запуска из другого каталога задайте `DEEPDOC_MODEL_DIR` как абсолютный путь к нему.
+   Скрипт подготавливает нативные библиотеки и ресурсы моделей для сборки Go и требует `requests` и `huggingface-hub`. Пропустите этот шаг, если те же ресурсы подготовлены другим способом. При запуске из корня репозитория сервисы Go автоматически находят `internal/rag/res/deepdoc`; для запуска из другого каталога задайте `DEEPDOC_MODEL_DIR` как абсолютный путь к нему.
 
 3. Запустите необходимые зависимости (Elasticsearch, MySQL, MinIO, NATS, Kvrocks и ClickHouse):
 

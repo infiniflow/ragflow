@@ -32,7 +32,6 @@ type Router struct {
 	systemHandler        *handler.SystemHandler
 	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
-	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
 	langfuseHandler      *handler.LangfuseHandler
@@ -71,7 +70,6 @@ func NewRouter(
 	systemHandler *handler.SystemHandler,
 	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
-	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
 	langfuseHandler *handler.LangfuseHandler,
@@ -107,7 +105,6 @@ func NewRouter(
 		systemHandler:        systemHandler,
 		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
 		langfuseHandler:      langfuseHandler,
@@ -343,8 +340,8 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
-				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
-				// replaces the retired RunIndex/TraceIndex/DeleteIndex /index routes.
+				// Scheduler compile-status contract; replaces the retired
+				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
 
 				// Knowledge-compilation wiki artifacts

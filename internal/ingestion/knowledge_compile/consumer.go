@@ -28,6 +28,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	enginetypes "ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/nav"
@@ -377,8 +378,8 @@ func (c *Consumer) RebuildDataset(ctx context.Context, tenant, kb, mode string) 
 	// carry the doc's compile variants so the consumer can route to the correct
 	// dataset-level path (a nil/empty Variants would fall back to the legacy
 	// unified path and tree nav could not be rebuilt). The variants are recovered
-	// from the doc-level compiled products' authoritative `compilation_template_kind_kwd`
-	// (via KindToVariant, O2a whitelist hard-fail), not re-derived from `compile_kwd`.
+	// from the doc-level compiled products' canonical compilation kind
+	// via the shared variant mapping.
 	docs, err := c.docLister(ctx, tenant, kb)
 	if err != nil {
 		return fmt.Errorf("knowledge_compile: rebuild list docs: %w", err)
@@ -421,7 +422,7 @@ func defaultDocLister(ctx context.Context, tenant, kb string) ([]string, error) 
 
 // recoverDocTypes reconstructs the compile-type and frontend task-type sets a
 // document produced by reading its persisted doc-level products and mapping
-// each product's authoritative `compilation_template_kind_kwd` through the
+// each product's canonical compilation kind through the
 // shared kind mappings.
 // It is used by RebuildDataset (B1) so the republished completed events carry
 // the variants needed to route the dataset-level re-compile (tree nav, structure
@@ -444,7 +445,7 @@ func (c *Consumer) recoverDocTypes(ctx context.Context, tenant, kb, docID string
 	seenTaskTypes := map[string]struct{}{}
 	var variants []string
 	for _, p := range products {
-		// Authoritative: product.Kind (compilation_template_kind_kwd) when present.
+		// Use the compilation kind restored by the reader.
 		if p.Kind != "" {
 			v, err := kccommon.KindToVariant(p.Kind)
 			if err != nil {
@@ -717,7 +718,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		c.reportProgress(ctx, tenant, kb, token, taskTypes, 1, "completed", "Document availability changes applied")
 		return nil
 	}
-	deduper, err := c.factory(tenant)
+	deduper, err := c.factory(ctx, tenant)
 	if err != nil || deduper == nil {
 		// A no-op deduper would silently disable dataset-level LLM merging: every
 		// candidate (including e.g. a "吕布" wiki_page) would be written as its own
@@ -884,7 +885,7 @@ func (c *Consumer) processBatch(ctx context.Context, tenant, kb, token string, e
 		for _, cand := range candidates {
 			v := string(cand.Variant)
 			byVariant[v]++
-			if v == "wiki_page" {
+			if cand.Variant == kccommon.VariantWiki {
 				wikiPageSlugs = append(wikiPageSlugs, candidateIdentity(cand))
 			}
 		}
@@ -1291,7 +1292,7 @@ func rewriteMergedWikiPages(ctx context.Context, tenant string, pages []kccommon
 	if len(indexes) == 0 {
 		return nil
 	}
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil {
 		return fmt.Errorf("resolve Wiki page rewrite dependencies: %w", err)
 	}
@@ -1386,7 +1387,7 @@ func refreshWikiProductVectors(ctx context.Context, tenant string, products []kc
 	if len(products) == 0 {
 		return products
 	}
-	deps, err := kccommon.ResolveDeps(tenant, defaultLLMID, defaultEmbedding)
+	deps, err := kccommon.ResolveDeps(ctx, tenant, defaultLLMID, defaultEmbedding)
 	if err != nil || deps.Embed == nil {
 		return products
 	}
@@ -1523,9 +1524,11 @@ func navInputFromProducts(kb string, products []kccommon.Product) []nav.UpsertDo
 		// otherwise use the folded structure/page-index summary. This makes the
 		// result independent of product iteration order.
 		if strings.TrimSpace(a.treeSummary) != "" {
+			a.in.CompileKind = "tree"
 			a.in.Summary = a.treeSummary
 			a.in.Embedd = a.treeEmbedd
 		} else {
+			a.in.CompileKind = "page_index"
 			a.in.Summary = strings.Join(a.structureLines, "\n")
 		}
 		if strings.TrimSpace(a.in.Summary) == "" {
@@ -1585,16 +1588,9 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
 			continue
 		}
-		// Dataset rows carry the SAME compile_kwd as the doc rows (the inferred
-		// compile type / autotype: "hypergraph"/"timeline"/"mindmap"/"list"/…),
-		// mirroring Python dataset_structure_merger._do_build which passes the doc
-		// row's compile_kwd through verbatim. The template kind (p.Kind, restored
-		// from compilation_template_kind_kwd) is stored on the SEPARATE
-		// compilation_template_kind_kwd field and is what read/delete paths match
-		// on — NOT compile_kwd. Do not rewrite compile_kwd to the template kind:
-		// that would diverge from Python (which never does) and split doc vs
-		// dataset rows.
-		ckwd := metaString(p.Meta, "compile_kwd")
+		// Dataset rows retain the producing compilation kind. Extraction shape
+		// is separate metadata and does not determine the stored kind.
+		ckwd := enginetypes.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, metaString(p.Meta, "compile_kwd")))
 		if ckwd == "" {
 			ckwd = compileKwdForVariant(p.Variant)
 		}
@@ -1619,7 +1615,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
 			b := relByKey[k]
 			if b == nil {
-				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, RelationType: relType}
+				b = &StructureBucket{Name: from + " -> " + to, Type: "relation", FromEntity: from, ToEntity: to, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type"), RelationType: relType}
 				relByKey[k] = b
 			}
 			appendBucket(b, p)
@@ -1637,7 +1633,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
-			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind}
+			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
 			entByKey[k] = b
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)
@@ -1675,6 +1671,9 @@ func normalizedStructureEntityName(name string) string {
 func preferredStructureEntityType(existing, incoming string) string {
 	existing = strings.TrimSpace(existing)
 	incoming = strings.TrimSpace(incoming)
+	if existing == "mindmap" && incoming == "mind_map" {
+		return incoming
+	}
 	if existing == "" || strings.EqualFold(existing, "other") {
 		if incoming != "" && !strings.EqualFold(incoming, "other") {
 			return incoming
@@ -1690,7 +1689,7 @@ func structureTemplateIdentity(templateID, templateKind string) string {
 	if templateID = strings.TrimSpace(templateID); templateID != "" {
 		return templateID
 	}
-	return strings.TrimSpace(templateKind)
+	return enginetypes.CanonicalCompilationKind(templateKind)
 }
 
 // appendBucket folds a structure product into a bucket: concatenates its

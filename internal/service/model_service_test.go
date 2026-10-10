@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -36,51 +35,6 @@ func (d *remoteModelProbeDriver) Embed(context.Context, *string, modelModule.Emb
 func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.APIConfig) error {
 	d.checkCalls++
 	return d.checkErr
-}
-
-func TestValidateBedrockAPIKeyAuth(t *testing.T) {
-	tests := []struct {
-		name    string
-		apiKey  string
-		wantErr string
-	}{
-		{
-			name:    "rejects non-string API key",
-			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":[],"bedrock_region":"us-east-1"}`,
-			wantErr: "invalid Bedrock API-key configuration",
-		},
-		{
-			name:    "rejects invalid region",
-			apiKey:  `{"auth_mode":"bedrock_api_key","bedrock_api_key":"test-key","bedrock_region":"us east 1"}`,
-			wantErr: "invalid region",
-		},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			authenticated, _, err := validateBedrockAPIKeyAuth("Bedrock", test.apiKey)
-			if !authenticated || err == nil || !strings.Contains(err.Error(), test.wantErr) {
-				t.Fatalf("validateBedrockAPIKeyAuth() = (%v, %v), want API-key mode error containing %q", authenticated, err, test.wantErr)
-			}
-		})
-	}
-
-	nonAPIKey := `{"auth_mode":"access_key_secret","bedrock_region":"us-east-1"}`
-	authenticated, normalized, err := validateBedrockAPIKeyAuth("Bedrock", nonAPIKey)
-	if authenticated || err != nil || normalized != nonAPIKey {
-		t.Fatalf("non-API-key mode = (%v, %q, %v), want unchanged", authenticated, normalized, err)
-	}
-
-	authenticated, normalized, err = validateBedrockAPIKeyAuth("Bedrock", `{"auth_mode":"bedrock_api_key","bedrock_api_key":" test-key ","bedrock_region":" us-east-1 ","custom":"value"}`)
-	if !authenticated || err != nil {
-		t.Fatalf("valid API-key mode = (%v, %v), want success", authenticated, err)
-	}
-	var config map[string]string
-	if err = json.Unmarshal([]byte(normalized), &config); err != nil {
-		t.Fatalf("decode normalized API key: %v", err)
-	}
-	if config["bedrock_api_key"] != "test-key" || config["bedrock_region"] != "us-east-1" || config["custom"] != "value" {
-		t.Fatalf("normalized API key = %#v", config)
-	}
 }
 
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
@@ -250,16 +204,20 @@ func TestVerifyProviderModelValidatesRemoteEmbeddingMetadata(t *testing.T) {
 func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	factoryMaxDimension := 2048
 	factoryBatchSize := 128
+	factoryContextLength := 8192
+	factoryMaxOutput := 2048
 	modelInfo := &modelModule.Model{
-		Name:         "embedding-3",
-		MaxDimension: &factoryMaxDimension,
-		MaxBatchSize: &factoryBatchSize,
-		Dimensions:   []int{1024, 2048},
-		ModelTypes:   []string{"embedding"},
-		ModelTypeMap: map[string]bool{"embedding": true},
+		Name:          "embedding-3",
+		ContextLength: &factoryContextLength,
+		MaxOutput:     &factoryMaxOutput,
+		MaxDimension:  &factoryMaxDimension,
+		MaxBatchSize:  &factoryBatchSize,
+		Dimensions:    []int{1024, 2048},
+		ModelTypes:    []string{"embedding"},
+		ModelTypeMap:  map[string]bool{"embedding": true},
 	}
 	modelEntity := &entity.TenantModel{
-		Extra: `{"max_dimension":768,"max_batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
+		Extra: `{"max_tokens":4096,"max_dimension":768,"max_batch_size":16,"dimensions":[384,768],"model_types":["embedding"]}`,
 	}
 
 	merged, err := modelInfoWithTenantExtra(modelInfo, modelEntity)
@@ -274,6 +232,12 @@ func TestModelInfoWithTenantExtraAppliesEmbeddingConstraints(t *testing.T) {
 	}
 	if merged.MaxBatchSize == nil || *merged.MaxBatchSize != 16 {
 		t.Fatalf("MaxBatchSize = %v, want 16", merged.MaxBatchSize)
+	}
+	if merged.ContextLength == nil || *merged.ContextLength != 4096 {
+		t.Fatalf("ContextLength = %v, want legacy max_tokens value 4096", merged.ContextLength)
+	}
+	if merged.MaxOutput == nil || *merged.MaxOutput != factoryMaxOutput {
+		t.Fatalf("MaxOutput = %v, want unchanged output cap %d", merged.MaxOutput, factoryMaxOutput)
 	}
 	if len(merged.Dimensions) != 2 || merged.Dimensions[0] != 384 || merged.Dimensions[1] != 768 {
 		t.Fatalf("Dimensions = %v, want [384 768]", merged.Dimensions)
@@ -420,40 +384,6 @@ func TestBedrockAPIKeyInstancePersistsDiscoveredModelsWithoutRuntimeVerification
 		t.Fatalf("CheckConnection calls after alter = %d, want 0", probe.checkCalls)
 	}
 
-	code, err = NewModelProviderService().CreateProviderInstance(
-		t.Context(),
-		"Bedrock",
-		"empty-api-key-instance",
-		apiKey,
-		"",
-		"default",
-		"user-1",
-		nil,
-	)
-	if code != common.CodeBadRequest || err == nil {
-		t.Fatalf("empty model list returned (%v, %v), want bad request", code, err)
-	}
-
-	code, err = NewModelProviderService().CreateProviderInstance(
-		t.Context(),
-		"Bedrock",
-		"empty-model-name-instance",
-		apiKey,
-		"",
-		"default",
-		"user-1",
-		[]CreateInstanceModelInfo{{}},
-	)
-	if code != common.CodeBadRequest || err == nil {
-		t.Fatalf("empty model name returned (%v, %v), want bad request", code, err)
-	}
-	var instanceCount int64
-	if err = db.Model(&entity.TenantModelInstance{}).Where("instance_name = ?", "empty-model-name-instance").Count(&instanceCount).Error; err != nil {
-		t.Fatalf("count instances: %v", err)
-	}
-	if instanceCount != 0 {
-		t.Fatalf("empty model name created %d instances, want 0", instanceCount)
-	}
 }
 
 func TestCreateProviderInstanceRollsBackInstanceWhenModelCreationFails(t *testing.T) {
@@ -518,18 +448,18 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	}
 }
 
-func TestModelSolverResolveModelConfigByID(t *testing.T) {
+func TestModelFactoryResolveModelConfigByID(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
 	ctx := t.Context()
-	target, err := NewModelSolver().ResolveModelConfig(ctx, "user-1", entity.ModelTypeChat, "model-1")
+	target, err := NewModelFactory().resolveConfig(ctx, ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 	if err != nil {
-		t.Fatalf("ResolveModelConfig() error = %v", err)
+		t.Fatalf("resolveConfig() error = %v", err)
 	}
 	if target == nil || target.Driver == nil {
-		t.Fatal("ResolveModelConfig() returned nil target or driver")
+		t.Fatal("resolveConfig() returned nil target or driver")
 	}
 	if target.ModelName != "gpt-test" {
 		t.Fatalf("modelName = %q, want %q", target.ModelName, "gpt-test")
@@ -555,14 +485,14 @@ func TestModelProviderServiceMissingProviderAndInstancePreserveLookupError(t *te
 		"unknown@default@OpenAI",
 	} {
 		t.Run(modelRef, func(t *testing.T) {
-			_, err := NewModelSolver().ResolveModelConfig(
-				t.Context(), "tenant-1", entity.ModelTypeEmbedding, modelRef,
+			_, err := NewModelFactory().resolveConfig(
+				t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeEmbedding, modelRef,
 			)
 			if !errors.Is(err, errModelConfigUnavailable) || !errors.Is(err, gorm.ErrRecordNotFound) {
-				t.Fatalf("ResolveModelConfig() error = %v, want unavailable record-not-found error", err)
+				t.Fatalf("resolveConfig() error = %v, want unavailable record-not-found error", err)
 			}
 			if !strings.Contains(err.Error(), "lookup failed: record not found") {
-				t.Fatalf("ResolveModelConfig() error = %q, want lookup failure contract", err)
+				t.Fatalf("resolveConfig() error = %q, want lookup failure contract", err)
 			}
 		})
 	}
@@ -575,21 +505,21 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 	useModelProviderServiceTestDB(t, db)
 	seedModelProviderServiceScope(t, db)
 
-	solver := NewModelSolver()
+	solver := NewModelFactory()
 	resolvers := []struct {
 		name    string
-		resolve func() (*ModelTarget, error)
+		resolve func() (*modelTarget, error)
 	}{
 		{
 			name: "model ID",
-			resolve: func() (*ModelTarget, error) {
-				return solver.ResolveModelConfig(t.Context(), "user-1", entity.ModelTypeChat, "model-1")
+			resolve: func() (*modelTarget, error) {
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1", UserID: "user-1"}, entity.ModelTypeChat, "model-1")
 			},
 		},
 		{
 			name: "provider instance",
-			resolve: func() (*ModelTarget, error) {
-				return solver.ResolveModelConfig(t.Context(), "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI")
+			resolve: func() (*modelTarget, error) {
+				return solver.resolveConfig(t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI")
 			},
 		},
 	}
@@ -632,18 +562,17 @@ func TestModelProviderServiceDecodesCompatibleInstanceExtra(t *testing.T) {
 	}
 }
 
-func TestMaxTokensFromModelInfo(t *testing.T) {
-	maxTokens := 4096
+func TestModelInfoSeparatesContextLengthAndMaxOutput(t *testing.T) {
+	legacyMaxTokens := 4096
 	maxOutput := 1024
-	modelInfo := &modelModule.Model{MaxTokens: &maxTokens, MaxOutput: &maxOutput}
-	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeRerank); got != maxTokens {
-		t.Fatalf("rerank max tokens = %d, want %d", got, maxTokens)
+	modelInfo := &modelModule.Model{MaxTokens: &legacyMaxTokens, MaxOutput: &maxOutput}
+	for _, modelType := range []entity.ModelType{entity.ModelTypeChat, entity.ModelTypeEmbedding, entity.ModelTypeRerank} {
+		if got := contextLengthFromModelInfo(modelInfo); got != legacyMaxTokens {
+			t.Errorf("context length for %s = %d, want legacy max_tokens %d", modelType, got, legacyMaxTokens)
+		}
 	}
-	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeEmbedding); got != maxTokens {
-		t.Fatalf("embedding max tokens = %d, want %d", got, maxTokens)
-	}
-	if got := maxTokensFromModelInfo(modelInfo, entity.ModelTypeChat); got != maxOutput {
-		t.Fatalf("chat max tokens = %d, want max output %d", got, maxOutput)
+	if got := maxOutputFromModelInfo(modelInfo); got != maxOutput {
+		t.Fatalf("max output = %d, want %d", got, maxOutput)
 	}
 }
 
@@ -691,144 +620,6 @@ func TestModelProviderServiceAlterModelRejectsWrongScopedModelID(t *testing.T) {
 	if code != common.CodeNotFound {
 		t.Fatalf("code = %v, want %v", code, common.CodeNotFound)
 	}
-}
-
-func TestReconcileNvidiaInstanceModelsAddsUpdatesAndDeletes(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", APIKey: "nvapi-test", Status: "active", Extra: "{}"}
-	rows := []interface{}{
-		provider,
-		instance,
-		&entity.TenantModel{
-			ID:         "keep-id",
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			ModelName:  "nvidia/keep",
-			ModelType:  int(entity.ModelTypeChat),
-			Status:     "inactive",
-			Extra:      `{"max_tokens":4096,"verify":"success","custom":"preserved"}`,
-		},
-		&entity.TenantModel{
-			ID:         "stale-id",
-			ProviderID: provider.ID,
-			InstanceID: instance.ID,
-			ModelName:  "nvidia/stale",
-			ModelType:  int(entity.ModelTypeChat),
-			Status:     "active",
-			Extra:      `{}`,
-		},
-	}
-	for _, row := range rows {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	maxTokens := 131072
-	maxDimension := 2048
-	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/keep", MaxOutput: &maxTokens, ModelTypes: []string{"chat", "vision"}},
-		{Name: "nvidia/new-embed", MaxOutput: ptrService(8192), MaxDimension: &maxDimension, Dimensions: []int{1024, 2048}, ModelTypes: []string{"embedding"}},
-	}
-
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
-	if err != nil {
-		t.Fatalf("reconcileNvidiaInstanceModels() error = %v", err)
-	}
-
-	var got []*entity.TenantModel
-	if err = db.Order("model_name").Find(&got).Error; err != nil {
-		t.Fatalf("list models: %v", err)
-	}
-	if len(got) != 2 || got[0].ModelName != "nvidia/keep" || got[1].ModelName != "nvidia/new-embed" {
-		t.Fatalf("models = %#v, want keep and new", got)
-	}
-	if got[0].ID != "keep-id" || got[0].Status != "inactive" {
-		t.Fatalf("retained model identity/status = %q/%q", got[0].ID, got[0].Status)
-	}
-	if got[0].ModelType != int(entity.ModelTypeChat|entity.ModelTypeImage2Text) {
-		t.Fatalf("retained model type = %d", got[0].ModelType)
-	}
-	var keepExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[0].Extra), &keepExtra); err != nil {
-		t.Fatalf("decode retained extra: %v", err)
-	}
-	if keepExtra["custom"] != "preserved" || keepExtra["verify"] != "success" || int(keepExtra["max_tokens"].(float64)) != maxTokens {
-		t.Fatalf("retained extra = %#v", keepExtra)
-	}
-	var newExtra map[string]interface{}
-	if err := json.Unmarshal([]byte(got[1].Extra), &newExtra); err != nil {
-		t.Fatalf("decode new extra: %v", err)
-	}
-	if newExtra["verify"] != entity.ModelVerifyUnknown || int(newExtra["max_dimension"].(float64)) != maxDimension {
-		t.Fatalf("new extra = %#v", newExtra)
-	}
-}
-
-func TestReconcileNvidiaInstanceModelsRejectsEmptyDiscoveryWithoutMutation(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
-	existing := &entity.TenantModel{ID: "keep-id", ProviderID: provider.ID, InstanceID: instance.ID, ModelName: "nvidia/keep", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: "{}"}
-	for _, row := range []interface{}{provider, instance, existing} {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, nil)
-	if err == nil {
-		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want empty discovery error")
-	}
-	var count int64
-	if err := db.Model(&entity.TenantModel{}).Where("id = ?", existing.ID).Count(&count).Error; err != nil {
-		t.Fatalf("count retained model: %v", err)
-	}
-	if count != 1 {
-		t.Fatalf("retained model count = %d, want 1", count)
-	}
-}
-
-func TestReconcileNvidiaInstanceModelsRollsBackPartialRefresh(t *testing.T) {
-	db := setupModelProviderServiceTestDB(t)
-	provider := &entity.TenantModelProvider{ID: "provider-nvidia", TenantID: "tenant-1", ProviderName: "NVIDIA"}
-	instance := &entity.TenantModelInstance{ID: "instance-nvidia", ProviderID: provider.ID, InstanceName: "default", Status: "active", Extra: "{}"}
-	existing := &entity.TenantModel{
-		ID:         "keep-id",
-		ProviderID: provider.ID,
-		InstanceID: instance.ID,
-		ModelName:  "nvidia/keep",
-		ModelType:  int(entity.ModelTypeChat),
-		Status:     "active",
-		Extra:      "{invalid-json",
-	}
-	for _, row := range []interface{}{provider, instance, existing} {
-		if err := db.Create(row).Error; err != nil {
-			t.Fatalf("seed %T: %v", row, err)
-		}
-	}
-
-	remote := []modelModule.ListModelResponse{
-		{Name: "nvidia/new", ModelTypes: []string{"chat"}},
-		{Name: "nvidia/keep", ModelTypes: []string{"chat"}},
-	}
-	err := NewModelProviderService().reconcileNvidiaInstanceModels(t.Context(), db, provider, instance, remote)
-	if err == nil {
-		t.Fatal("reconcileNvidiaInstanceModels() error = nil, want metadata error")
-	}
-
-	var got []*entity.TenantModel
-	if err := db.Order("model_name").Find(&got).Error; err != nil {
-		t.Fatalf("list models: %v", err)
-	}
-	if len(got) != 1 || got[0].ID != existing.ID {
-		t.Fatalf("models after rollback = %#v, want only original model", got)
-	}
-}
-
-func ptrService[T any](value T) *T {
-	return &value
 }
 
 func TestParseModelName(t *testing.T) {
@@ -975,10 +766,10 @@ func TestSplitRightAnchoredModelName(t *testing.T) {
 	}
 }
 
-// TestModelSolverResolveModelConfigReportsToolSupport verifies that the
+// TestModelFactoryResolveModelConfigReportsToolSupport verifies that the
 // resolved target carries tool support and invalid references fail during the
 // same resolution.
-func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
+func TestModelFactoryResolveModelConfigReportsToolSupport(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	activeStatus := "1"
@@ -999,12 +790,11 @@ func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
 		}
 	}
 
-	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := NewModelFactory()
 	ctx := t.Context()
 
 	// A reference that passes validation still reads the persisted flag.
-	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-active")
+	target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-active")
 	if err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("active chat model = (%v, %v), want tool support", target, err)
 	}
@@ -1017,7 +807,7 @@ func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
 		{"not enrolled as chat", "model-embedding"},
 		{"provider owned by another tenant", "model-foreign"},
 	} {
-		target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, tc.modelID)
+		target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, tc.modelID)
 		if err == nil {
 			t.Errorf("%s: err = nil, want a validation error", tc.name)
 		}
@@ -1027,13 +817,13 @@ func TestModelSolverResolveModelConfigReportsToolSupport(t *testing.T) {
 	}
 }
 
-// TestModelSolverResolveModelConfigPrefersTenantToolFlag covers the
+// TestModelFactoryResolveModelConfigPrefersTenantToolFlag covers the
 // composite "<model>@<instance>@<provider>" reference shape (chat.llm_id and the
 // harness ModelID accept both a UUID and a composite ref): the flag persisted on
 // the tenant_model row must beat the provider catalog in both directions,
 // mirroring Python's model_extra.get("is_tools", is_tool), and a disabled row
 // must be rejected instead of falling back to the catalog.
-func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
+func TestModelFactoryResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 	catalog := dao.GetModelProviderManager().FindProvider("OpenAI")
 	if catalog == nil {
 		t.Skip("OpenAI catalog is unavailable")
@@ -1075,11 +865,10 @@ func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		}
 	}
 
-	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := NewModelFactory()
 	ctx := t.Context()
 
-	target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"@default@OpenAI")
+	target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-capable model: err = %v", err)
 	}
@@ -1087,7 +876,7 @@ func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = true, want false: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOff+"@default@OpenAI")
+	target, err = solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOff+"@default@OpenAI")
 	if err != nil {
 		t.Fatalf("tool-incapable model: err = %v", err)
 	}
@@ -1095,15 +884,15 @@ func TestModelSolverResolveModelConfigPrefersTenantToolFlag(t *testing.T) {
 		t.Errorf("tool support = false, want true: the tenant_model flag must win over the catalog")
 	}
 
-	target, err = solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
+	target, err = solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, toolsOn+"-disabled@default@OpenAI")
 	if err == nil || (target != nil && target.SupportsTools) {
 		t.Errorf("disabled model = (%v, %v), want (false, error)", target, err)
 	}
 }
 
-// TestModelSolverResolveModelConfigPropagatesLookupFailure verifies that model
+// TestModelFactoryResolveModelConfigPropagatesLookupFailure verifies that model
 // resolution surfaces database failures instead of returning a partial target.
-func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
+func TestModelFactoryResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	db := setupModelProviderServiceTestDB(t)
 	useModelProviderServiceTestDB(t, db)
 	activeStatus := "1"
@@ -1119,10 +908,9 @@ func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 		}
 	}
 
-	svc := NewModelProviderService()
-	solver := svc.modelSolver()
+	solver := NewModelFactory()
 	ctx := t.Context()
-	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
+	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err != nil || target == nil || !target.SupportsTools {
 		t.Fatalf("baseline = (%v, %v), want tool support", target, err)
 	}
 
@@ -1133,11 +921,11 @@ func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 		t.Fatalf("failed to drop provider table: %v", err)
 	}
 	// Composite refs resolve the provider row directly.
-	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
+	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "gpt-test@default@OpenAI"); err == nil {
 		t.Errorf("composite provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 	// The UUID path too.
-	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("uuid provider lookup failure = (%v, nil), want a propagated error", target)
 	}
 
@@ -1145,7 +933,7 @@ func TestModelSolverResolveModelConfigPropagatesLookupFailure(t *testing.T) {
 	if err := db.Migrator().DropTable(&entity.TenantModel{}); err != nil {
 		t.Fatalf("failed to drop model table: %v", err)
 	}
-	if target, err := solver.ResolveModelConfig(ctx, "tenant-1", entity.ModelTypeChat, "model-1"); err == nil {
+	if target, err := solver.resolveConfig(ctx, ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-1"); err == nil {
 		t.Errorf("model lookup failure = (%v, nil), want a propagated error", target)
 	}
 }

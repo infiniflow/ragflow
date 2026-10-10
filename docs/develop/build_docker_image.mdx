@@ -18,12 +18,12 @@ Build the Go backend and web frontend into a local Docker image for development 
 - Docker &ge; 24.0.0 with Docker Compose &ge; v2.26.1 and BuildKit
 - Access to the `infiniflow/ragflow_deps:latest` and `infiniflow/github_action_runner:latest` images during the build
 
-The documented Go image target is `linux/amd64`. On an Apple Silicon Mac, Docker Desktop builds and runs this image through x86-64 emulation.
+The documented Go image target is `linux/amd64`. macOS is temporarily not supported by the Go backend; use a Linux x86_64 host (or a Linux x86_64 virtual machine) to run the Go services.
 
 ## Platform support
 
-- **Linux x86-64:** This is the supported Docker build target. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
-- **Apple Silicon macOS:** Build and run the `linux/amd64` image through Docker Desktop x86-64 emulation. Document processing and image builds may be slower than on an x86-64 Linux host.
+- **Linux x86-64:** This is the only supported Docker build target. In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
+- **macOS:** Temporarily not supported by the Go backend. The server depends on native libraries published only for Linux x86-64, so the `linux/amd64` image cannot be built or run reliably on macOS (including through Docker Desktop emulation). Use a Linux x86-64 host or a Linux x86-64 virtual machine.
 - **Linux ARM64:** A native Go Docker build is not currently supported. The Go image depends on native libraries that are published for Linux x86-64. Use a Linux x86-64 host for a supported native build.
 - **Document engines:** Elasticsearch is the default engine in the Compose example. Infinity and other supported engines may have different CPU, GPU, and architecture requirements; verify the selected engine before deployment.
 
@@ -43,7 +43,7 @@ docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
 
 ## Start the service
 
-For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host. For macOS, use the Docker Desktop command below instead.
+For the default Elasticsearch document engine on Linux, set `vm.max_map_count` to at least 262144 on the Docker host.
 
 ```bash
 sudo sysctl -w vm.max_map_count=262144
@@ -53,7 +53,7 @@ Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`. That file also controls t
 
 ```bash
 cd docker
-docker compose --env-file .env -f docker-compose.yml up -d
+docker compose -f docker-compose.yml up -d
 ```
 
 The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go DeepDoc backend uses CPU inference.
@@ -61,8 +61,8 @@ The Compose deployment starts the `ragflow-cpu` service. The open-source 1.0 Go 
 ## Verify the service
 
 ```bash
-docker compose --env-file .env -f docker-compose.yml ps
-docker compose --env-file .env -f docker-compose.yml logs --tail 50 ragflow-cpu
+docker ps
+docker logs --tail 50 ragflow-cpu
 curl -f http://localhost/api/v1/system/healthz
 ```
 
@@ -70,32 +70,3 @@ A healthy API returns HTTP 200. If you changed `SVR_WEB_HTTP_PORT` in `.env`, us
 
 For a development checkout, a database version error may require `RAGFLOW_DEV_MODE=true` in `.env`. Use this only for local development; keep it `false` for production.
 
-## macOS with Docker Desktop
-
-The same Go image and Compose file work on macOS. On Apple Silicon, keep `--platform linux/amd64` in the build command so that the x86-64 Go image and native libraries use the same architecture. Emulation can make the build and document processing slower than on an x86-64 Linux host.
-
-1. Start Docker Desktop and build from the repository root:
-
-   ```bash
-   git clone https://github.com/infiniflow/ragflow.git
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   ```
-
-2. If you use the default Elasticsearch document engine, set `vm.max_map_count` inside Docker Desktop's Linux virtual machine:
-
-   ```bash
-   docker run --rm --privileged alpine sysctl -w vm.max_map_count=262144
-   ```
-
-   Repeat this command after restarting Docker Desktop. It is unnecessary when using another document engine such as Infinity.
-
-3. Set `RAGFLOW_IMAGE=ragflow:go-local` in `docker/.env`, then start the Go stack:
-
-   ```bash
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
-   curl -f http://localhost/api/v1/system/healthz
-   ```
-
-   Wait for the health check to return HTTP 200, then open `http://localhost` in a browser. Include `SVR_WEB_HTTP_PORT` in both URLs if you changed its default value.

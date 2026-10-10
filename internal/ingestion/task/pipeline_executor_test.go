@@ -392,7 +392,7 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		Title:  strPtr("My Pipeline"),
 		Avatar: strPtr("a.png"),
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("migrate knowledgebase: %v", err)

@@ -19,7 +19,7 @@ from typing import Any
 
 import pytest
 import requests
-from test.testcases.configs import HOST_ADDRESS, IS_GO_PROXY, VERSION
+from test.testcases.configs import HOST_ADDRESS, VERSION
 
 
 @dataclass
@@ -56,8 +56,22 @@ class RestClient:
             # requests sets multipart boundary automatically.
             req_headers.pop("Content-Type", None)
 
-        timeout = request_kwargs.pop("timeout", self.timeout)
+        # The Go API requires parse_type on dataset creation (it explicitly
+        # selects BuiltIn (1) or Pipeline (2) mode). Historically a missing
+        # parse_type silently defaulted to BuiltIn/general; inject that
+        # previously-implicit default so dataset-create POSTs stay green without
+        # touching every call site. Tests that intentionally omit parse_type to
+        # assert the error path must pass parse_type explicitly.
         normalized_path = f"/{path.lstrip('/')}" if path else "/"
+        if method == "POST" and normalized_path == "/datasets" and isinstance(json, dict) and "parse_type" not in json:
+            # Restore the previously-implicit default (BuiltIn/general) without
+            # clobbering any id the caller already supplied.
+            json = dict(json)
+            json["parse_type"] = 1
+            if "parser_id" not in json and "pipeline_id" not in json:
+                json["parser_id"] = "general"
+
+        timeout = request_kwargs.pop("timeout", self.timeout)
         response = requests.request(
             method=method,
             url=f"{self.api_root}{normalized_path}",
@@ -69,18 +83,17 @@ class RestClient:
             timeout=timeout,
             **request_kwargs,
         )
-        if IS_GO_PROXY:
-            try:
-                payload = response.json()
-            except ValueError:
-                return response
-            if not isinstance(payload, dict):
-                return response
-            message = payload.get("message", "")
-            if payload.get("code") == 500 and "Unknown column 'meta_fields'" in message:
-                pytest.skip("Go deployment database schema is missing document.meta_fields")
-            if payload.get("code") == 500 and "http://localhost:6380/embed" in message and "connect: connection refused" in message:
-                pytest.skip("Go memory embedding service is unavailable on localhost:6380")
+        try:
+            payload = response.json()
+        except ValueError:
+            return response
+        if not isinstance(payload, dict):
+            return response
+        message = payload.get("message", "")
+        if payload.get("code") == 500 and "Unknown column 'meta_fields'" in message:
+            pytest.skip("Go deployment database schema is missing document.meta_fields")
+        if payload.get("code") == 500 and "http://localhost:6380/embed" in message and "connect: connection refused" in message:
+            pytest.skip("Go memory embedding service is unavailable on localhost:6380")
         return response
 
     def get(self, path: str, **kwargs) -> requests.Response:

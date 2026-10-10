@@ -45,12 +45,12 @@ RAGFlow does not directly connect to MCP servers that use `stdio`. To use a `std
 6. Click the refresh button in **Tools available** to test the connection and discover tools.
 7. After the test succeeds and the discovered tools appear, click **Save**.
 
-| Field | Description | Example |
-| --- | --- | --- |
-| Name | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `web_search_tools` |
-| URL | The complete MCP endpoint | `https://example.com/mcp` |
-| Server type | The transport provided by the MCP server | `streamable-http` |
-| Authorization Token | Optional token sent as `Authorization: Bearer <token>` | The server's token |
+| Field               | Description                                                                       | Example                   |
+|---------------------|-----------------------------------------------------------------------------------|---------------------------|
+| Name                | A name containing letters, numbers, underscores, or hyphens (up to 64 characters) | `web_search_tools`        |
+| URL                 | The complete MCP endpoint                                                         | `https://example.com/mcp` |
+| Server type         | The transport provided by the MCP server                                          | `streamable-http`         |
+| Authorization Token | Optional token sent as `Authorization: Bearer <token>`                            | The server's token        |
 
 The **Server type** must match the transport exposed by the MCP server:
 
@@ -65,6 +65,8 @@ sse
 ```
 
 If the MCP server does not require authentication, leave **Authorization Token** empty. The manual form does not expose arbitrary headers, variables, or a description field. For another authentication scheme or custom headers, use a JSON import with a string-to-string `headers` object, as shown in the example below.
+
+When the server supports bearer authentication, keep the URL free of credentials and put the key in **Authorization Token**. RAGFlow's own MCP endpoint uses this header; query-string keys do not authenticate it. Existing third-party query-authentication URLs remain supported because their authentication requirements depend on the server. Ordinary MCP configuration responses mask the authorization token, and unchanged edits and connection tests reuse the saved value server-side. Explicit configuration downloads include credentials so they can be imported again.
 
 Make sure that the path in **URL** matches the endpoint actually exposed by the MCP server. For example, a Streamable HTTP server commonly uses `/mcp`, while an SSE server commonly uses `/sse`.
 
@@ -82,13 +84,13 @@ Consequently, endpoints such as `localhost`, `127.0.0.1`, `::1`, `10.x.x.x`, `17
 
 ## Troubleshoot a failed connection
 
-| Symptom | What to check |
-| --- | --- |
-| `Invalid MCP url` or a disallowed-scheme error | Use a complete `http://` or `https://` endpoint with the correct `/mcp` or `/sse` path. |
-| `URL resolves to a non-public address` | Check DNS from the RAGFlow backend environment. Public hostnames are also rejected if any result is private or synthetic. Proxy tools in Fake-IP mode can cause this result. |
-| Connection or discovery timeout | Check outbound network access, the selected transport, endpoint path, and server availability. The default discovery timeout is 10 seconds. |
-| Authentication failure | Verify the token, or import string-valued custom headers when the server does not use a Bearer token. |
-| Save remains disabled | Test the current settings again and confirm that the server advertises at least one tool. |
+| Symptom                                        | What to check                                                                                                                                                                |
+|------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `Invalid MCP url` or a disallowed-scheme error | Use a complete `http://` or `https://` endpoint with the correct `/mcp` or `/sse` path.                                                                                      |
+| `URL resolves to a non-public address`         | Check DNS from the RAGFlow backend environment. Public hostnames are also rejected if any result is private or synthetic. Proxy tools in Fake-IP mode can cause this result. |
+| Connection or discovery timeout                | Check outbound network access, the selected transport, endpoint path, and server availability. The default discovery timeout is 10 seconds.                                  |
+| Authentication failure                         | Verify the token, or import string-valued custom headers when the server does not use a Bearer token.                                                                        |
+| Save remains disabled                          | Test the current settings again and confirm that the server advertises at least one tool.                                                                                    |
 
 ## Example: add Parallel Search MCP tools
 

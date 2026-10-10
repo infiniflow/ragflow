@@ -85,6 +85,8 @@ Essayez notre service cloud sur [https://cloud.ragflow.io](https://cloud.ragflow
 
 ## 🔥 Dernières mises à jour
 
+- 2026-09-29 Publication de RAGFlow 1.0.0-rc1.
+
 - 2026-09-10 Ajout de l’ingestion de contenus Web à partir de sitemaps.
 - 2026-08-19 Lancement de Knowledge Compilation pour générer des wikis, graphes, arbres, PageIndex, cartes mentales, chronologies et compétences au niveau des documents et des bases de connaissances.
 - 2026-08-19 Lancement d’Agentic RAG avec quatre modes de réflexion : Low, Medium, High et Ultra.
@@ -126,11 +128,6 @@ Consultez les [notes de version complètes](./docs/release_notes.md) pour décou
 
 - Le modèle analyse les questions complexes et peut les décomposer, rechercher des connaissances et vérifier les preuves en plusieurs étapes.
 - Les modes Low, Medium, High et Ultra permettent de régler la profondeur de recherche et de raisonnement selon la complexité de la question.
-
-### ⚙️ **Architecture de services native Go**
-
-- Une implémentation Go unifiée fournit API, Admin, Ingestor et Syncer. DeepDoc s’exécute dans le processus Go pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
-- Les services Go appellent les bibliothèques natives d’analyse de documents et ONNX Runtime via CGO. MCP et Sandbox Executor sont activables à la demande.
 
 ### 🌱 **Citations fondées avec réduction des hallucinations**
 
@@ -197,30 +194,43 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Construisez l’image Go et démarrez le serveur avec la configuration Compose Go. La cible de construction officielle est `linux/amd64`. Consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx) pour connaître les exigences détaillées.
+3. Passez à la balise de version Go et démarrez l’image Go préconstruite avec Docker Compose :
 
-   Avant le premier déploiement, définissez `RAGFLOW_IMAGE=ragflow:go-local` dans **docker/.env**, puis exécutez depuis la racine du dépôt :
 
-   ```dotenv
-   RAGFLOW_IMAGE=ragflow:go-local
-   ```
+
+   Accédez au répertoire de déploiement Docker.
 
    ```bash
-   cd ragflow
-   docker build --platform linux/amd64 -f Dockerfile -t ragflow:go-local .
-   cd docker
-   docker compose --env-file .env -f docker-compose.yml up -d
+   cd ragflow/docker
+   ```
+
+   Basculez vers la balise de version Go v1.0.0-rc1.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Démarrez les services Go et leurs dépendances en arrière-plan.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
    ```
 
    Avec la configuration MySQL par défaut, le point d’entrée de l’image exécute d’abord les migrations, puis démarre Syncer, Admin, API et Ingestor via `bin/ragflow_server`. Dans RAGFlow open-source 1.0, DeepDoc utilise l’inférence CPU pour l’analyse de mise en page, l’OCR et la reconnaissance des tableaux.
 
-4. Vérifiez l’état des dépendances avec `docker compose --env-file .env -f docker-compose.yml ps`, puis confirmez que RAGFlow est prêt avec l’interface HTTP (le conteneur RAGFlow ne définit pas de healthcheck Compose) :
+4. Vérifiez l’état des services et la disponibilité de l’API après le démarrage :
+
+   ```bash
+   docker ps
+   ```
+
+   La commande ci-dessus affiche l’état des dépendances. RAGFlow ne définit pas de healthcheck Compose ; confirmez sa disponibilité via son API :
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Une réponse HTTP 200 indique que le service est prêt. Si `SVR_WEB_HTTP_PORT` a été modifié, utilisez ce port dans l’URL. En cas d’échec du démarrage, consultez les journaux du service concerné avec Compose.
+   Une réponse HTTP 200 indique que le service est prêt. Si `SVR_WEB_HTTP_PORT` a été modifié, utilisez ce port dans l’URL de vérification. En cas d’échec du démarrage, consultez les journaux du service concerné avec `docker logs --tail 50 <service>`.
    >
 5. Dans votre navigateur web, entrez l'adresse IP de votre serveur et connectez-vous à RAGFlow.
 
@@ -235,7 +245,7 @@ Le déploiement Docker ne nécessite pas l’installation de Go sur l’hôte. L
 
 #### ⚙️ Configuration et ajustement de Docker
 
-Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour les limites de plateforme et les exigences macOS, consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
+Le déploiement Docker Go utilise `docker/.env` et `docker/docker-compose.yml`, Kvrocks pour le cache et le stockage des Checkpoints, et NATS JetStream comme file de messages. Pour configurer l’image, les ports, les mots de passe, le moteur de documents et la source des images de modèles, consultez le [guide de configuration Docker](./docker/README.md). Pour la prise en charge des plateformes (note : macOS n'est temporairement pas pris en charge, utilisez un hôte Linux x86_64), consultez le [guide de construction de l’image Go et de prise en charge des plateformes](./docs/develop/build_docker_image.mdx).
 
 Pour changer de moteur de documents, modifier la configuration, redémarrer les services ou conserver/supprimer les données existantes, suivez également le guide de configuration Docker ci-dessus.
 
@@ -249,13 +259,16 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    cd ragflow/
+   ```
+
+   ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
    bash build.sh --all
    ```
 
-   Le script prépare les bibliothèques natives et les ressources de modèles nécessaires à la compilation Go et requiert `requests` et `huggingface-hub`. Ignorez cette étape si vous avez préparé les mêmes ressources autrement. Depuis la racine du dépôt, les services Go trouvent automatiquement `rag/res/deepdoc` ; depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
+   Le script prépare les bibliothèques natives et les ressources de modèles nécessaires à la compilation Go et requiert `requests` et `huggingface-hub`. Ignorez cette étape si vous avez préparé les mêmes ressources autrement. Depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 3. Lancez les dépendances requises (Elasticsearch, MySQL, MinIO, NATS, Kvrocks et ClickHouse) avec Docker Compose :
 
    ```bash
@@ -267,20 +280,33 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    Les services Go lancés depuis les sources se connectent à Kvrocks via `localhost:6379`, tandis que les services Docker utilisent le nom d'hôte du réseau de conteneurs. Aucune modification de `/etc/hosts` n'est nécessaire avec la configuration fournie.
 4. Exécutez d'abord la migration, puis démarrez Admin, Ingestor, Syncer et API dans quatre terminaux distincts depuis la racine du dépôt. Le terminal de migration peut être fermé une fois la commande terminée ; les quatre autres doivent rester ouverts :
 
+   Terminal 1 : migration
+
    ```bash
-   # Terminal 1 : migration
    ./bin/ragflow_server --migrate
+   ```
 
-   # Terminal 2 : Admin, port cible 9381
+   Terminal 2 : Admin, port cible 9381
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ```
 
-   # Terminal 3 : Ingestor
+   Terminal 3 : Ingestor
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ```
 
-   # Terminal 4 : Syncer
+   Terminal 4 : Syncer
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ```
 
-   # Terminal 5 : API, port cible 9380
+   Terminal 5 : API, port cible 9380
+
+   ```bash
    RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
    ```
 
@@ -292,7 +318,7 @@ Pour changer de moteur de documents, modifier la configuration, redémarrer les 
    - `--syncer` : démarre le service Syncer pour la synchronisation des données.
    - `--api` : démarre le service API pour l'interface Web, les SDK et les clients externes.
 
-   `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer.
+   `RAGFLOW_DEV_MODE=true` est réservé au développement. Il désactive le contrôle de rétrogradation entre la version du code et celle des migrations, mais n'exécute aucune migration et ne modifie pas le schéma. Ne l'utilisez pas en production. Après la migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` peut démarrer Admin, Ingestor et API, mais pas Syncer. Pour démarrer la chaîne complète, exécutez séparément `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
 5. Installez Node.js et npm uniquement pour développer le front-end :
 
    ```bash

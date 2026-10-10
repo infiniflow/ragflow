@@ -9,7 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	kvrocks "ragflow/internal/engine/kvrocks"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 
 	"go.uber.org/zap"
@@ -278,14 +278,14 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 
 // PrepareValidatedRun performs the document and run-log initialization only
 // after ReloadAndValidateRunIdentity has accepted the task's captured binding.
+// Committed chunk/token counts must survive redelivery so ApplyDocCounts rolls
+// only the result's delta into the knowledge base aggregate.
 func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *entity.IngestionTask) {
 	if task == nil {
 		return
 	}
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
 		"progress":         float64(0),
-		"chunk_num":        int64(0),
-		"token_num":        int64(0),
 		"process_duration": float64(0),
 		"process_begin_at": time.Now(),
 	}); err != nil {

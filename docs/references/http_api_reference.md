@@ -583,6 +583,7 @@ curl --request POST \
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
+  If the name is already taken, the dataset is created with a numbered suffix such as `test_1(1)`, `test_1(2)`, and so on.
 
 - `"avatar"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
@@ -708,7 +709,7 @@ Success:
         "token_num": 0,
         "update_date": "2025-04-28T18:40:41",
         "update_time": 1745836841611,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
     },
 }
 ```
@@ -1018,7 +1019,7 @@ Success:
             "token_num": 12744,
             "update_date": "Thu, 10 Oct 2024 04:07:23 GMT",
             "update_time": 1728533243536,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -1059,7 +1060,7 @@ Success (with `include_parsing_status=true`):
             "unstart_count": 0,
             "update_date": "2026-03-09T18:59:32",
             "update_time": 1773053972723,
-            "vector_similarity_weight": 0.3
+            "keywords_similarity_weight": 0.7
         }
     ],
     "total_datasets": 1
@@ -2472,7 +2473,8 @@ Retrieves chunks from specified datasets.
   - `"page"`: `integer`
   - `"page_size"`: `integer`
   - `"similarity_threshold"`: `float`
-  - `"vector_similarity_weight"`: `float`
+  - `"keywords_similarity_weight"`: `float`
+  - `"vector_similarity_weight"`: `float` (legacy fallback)
   - `"top_k"`: `integer` (deprecated; use `"knn_top_k"`)
   - `"knn_top_k"`: `integer`
   - `"knn_num_candidates"`: `integer`
@@ -2533,8 +2535,10 @@ curl --request POST \
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`: (*Body parameter*)
   The minimum similarity score. Defaults to `0.2`.
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
 - `"vector_similarity_weight"`: (*Body parameter*), `float`
-  The weight of vector cosine similarity. Defaults to `0.3`. If x represents the weight of vector cosine similarity, then (1 - x) is the term similarity weight.
+  Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: (*Body parameter*), `integer`
   **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
 - `"knn_top_k"`: (*Body parameter*), `integer`
@@ -2676,6 +2680,7 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*
   The name of the chat assistant.
+  If a chat assistant with the same name already exists, the new one gets a numbered suffix such as `new_chat_1(1)`.
 - `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
@@ -2707,13 +2712,20 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
+  - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
+  - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
+  - `"firecrawl_api_key"`: `string` The [Firecrawl](https://www.firecrawl.dev/search) API key. Set `web_search_provider` to `"firecrawl"` when using this field. See the [Firecrawl Search API reference](https://docs.firecrawl.dev/api-reference/endpoint/search) for details.
+  - `"linkup_api_key"`: `string` The Linkup API key. Set `web_search_provider` to `"linkup"` when using this field.
+  - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
+  - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2760,7 +2772,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "prompt_type": "simple",
         "status": "1",
@@ -2777,7 +2789,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "duplicated chat name"
+    "message": "`name` is required"
 }
 ```
 
@@ -2828,7 +2840,7 @@ curl --request PUT \
                "quote":true
           },
           "similarity_threshold":0.2,
-          "vector_similarity_weight":0.3,
+          "keywords_similarity_weight":0.7,
           "top_n":6,
           "top_k":1024,
           "rerank_id":""
@@ -2861,7 +2873,8 @@ curl --request PUT \
     Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
 - `"prompt_config"`: (*Body parameter*), `object`
 - `"similarity_threshold"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
 - `"top_n"`: (*Body parameter*), `int`
 - `"top_k"`: (*Body parameter*), `int`
 - `"rerank_id"`: (*Body parameter*), `string`
@@ -2897,7 +2910,7 @@ Success: returns the full updated chat assistant object.
             "parameters": [{"key": "knowledge", "optional": false}]
         },
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "top_k": 1024,
         "rerank_id": "",
@@ -2977,7 +2990,7 @@ Success:
         },
         "rerank_id": "",
         "similarity_threshold": 0.2,
-        "vector_similarity_weight": 0.3,
+        "keywords_similarity_weight": 0.7,
         "top_n": 6,
         "status": "1",
         "tenant_id": "69736c5e723611efb51b0242ac120007",
@@ -3259,7 +3272,7 @@ Success:
                 },
                 "rerank_id": "",
                 "similarity_threshold": 0.2,
-                "vector_similarity_weight": 0.3,
+                "keywords_similarity_weight": 0.7,
                 "top_n": 6,
                 "prompt_type": "simple",
                 "status": "1",
@@ -3832,13 +3845,11 @@ Starts a chat completion request. The same endpoint supports three modes:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
 
-  - `"messages"`: `list[object]`
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
-  - `"pass_all_history_messages"`: `boolean` (optional)
   - `"legacy"`: `boolean` (optional)
 
 ##### Request example
@@ -3880,10 +3891,8 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `"messages"`: (*Body Parameter*), `list[object]`
-  The latest user message, or the conversation messages sent to the model when `pass_all_history_messages` is `true`. Either `messages` or `question` is required.
 - `"question"`: (*Body Parameter*), `string`
-  Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
+  The user question.
 - `"stream"`: (*Body Parameter*), `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
@@ -3894,8 +3903,6 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
-- `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
-  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 - `"legacy"`: (*Body Parameter*), `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
@@ -5321,6 +5328,7 @@ curl --request POST \
 
 - `title`: (*Body parameter*), `string`, *Required*
   The title of the agent.
+  If an agent with the same title already exists, the new one gets a numbered suffix such as `Test Agent(1)`.
 - `description`: (*Body parameter*), `string`
   The description of the agent. Defaults to `None`.
 - `dsl`: (*Body parameter*), `object`, *Required*
@@ -5342,8 +5350,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Agent with title test already exists."
+    "code": 101,
+    "message": "no DSL data in request"
 }
 ```
 
@@ -5408,7 +5416,16 @@ Success:
 }
 ```
 
-Failure:
+Failure (duplicate title):
+
+```json
+{
+    "code": 102,
+    "message": "Test Agent already exists."
+}
+```
+
+Failure (permission denied):
 
 ```json
 {
@@ -6845,7 +6862,7 @@ curl --request POST \
 ##### Request parameters
 
 - `"name"`: (*Body parameter*), `string`, *Required*
-  The name of the file or folder to create.
+  The name of the file or folder to create. If the name is already taken in the parent folder, the new entry gets a numbered suffix such as `New Folder(1)`.
 - `"parent_id"`: (*Body parameter*), `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
 - `"type"`: (*Body parameter*), `string`
@@ -6875,8 +6892,8 @@ Failure:
 
 ```json
 {
-    "code": 409,
-    "message": "Duplicated folder name in the same folder."
+    "code": 400,
+    "message": "Folder name cannot contain \"/\""
 }
 ```
 
@@ -7296,6 +7313,15 @@ or
 {
     "code": 400,
     "message": "The extension of file can't be changed"
+}
+```
+
+or
+
+```json
+{
+    "code": 400,
+    "message": "duplicated file name in the same folder"
 }
 ```
 

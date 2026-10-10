@@ -38,7 +38,7 @@ RAGFlow supports multiple sandbox providers. Configure the active provider in Ad
 
 ### Tenki
 
-`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterwards. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
+`tenki` runs each code execution in a fresh Tenki microVM and destroys it afterward. It is cloud-hosted, so it needs no local sandbox services, gVisor, or Docker base images — only outbound network access and an API key.
 
 Configure it in **Admin > Sandbox Settings**:
 
@@ -110,7 +110,9 @@ docker tag infiniflow/sandbox-base-nodejs:latest sandbox-base-nodejs:latest
 Then restart the standalone sandbox services:
 
 ```bash
+# Stop the standalone Sandbox services before applying the changes.
 docker compose -f docker-compose.yml down
+# Start the standalone Sandbox services in the background.
 docker compose -f docker-compose.yml up -d
 ```
 
