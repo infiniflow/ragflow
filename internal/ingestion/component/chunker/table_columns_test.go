@@ -284,21 +284,39 @@ func TestTableChunkerManualRejectsMisalignedPositions(t *testing.T) {
 }
 
 // TestTableChunkerManualRejectsRowWiderThanHeader: under manual the roles name
-// columns, so a trailing cell with no column identity has no role to route by
-// and must be reported rather than dropped silently.
+// columns, so a trailing cell with no column identity has no role to route by.
+// The refusal reports how many rows are affected, where the first one is, and
+// both ways out, rather than reading as a defect in the file.
 func TestTableChunkerManualRejectsRowWiderThanHeader(t *testing.T) {
 	item := map[string]any{
-		"text":         "<table><tr><th>ID</th></tr><tr><td>a</td><td>extra</td></tr></table>",
+		"text":         "<table><tr><th>ID</th></tr><tr><td>a</td><td>extra</td></tr><tr><td>b</td><td>extra</td></tr></table>",
 		"doc_type_kwd": "table",
 		"sheet_index":  1,
-		"positions":    [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 2}},
+		"positions":    [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 3}},
 	}
-	msg := tableColumnError(t, map[string]any{
-		"column_mode":  "manual",
-		"column_roles": map[string]any{"ID": "both"},
-	}, "csv", item)
-	if !strings.Contains(msg, "header has 1 columns") {
-		t.Errorf("error %q does not report the width mismatch", msg)
+	for _, tc := range []struct {
+		fileType string
+		hint     string // the repair for that wire: a CSV quotes the cell, a sheet needs a header
+	}{
+		{"csv", "quote the value holding a comma"},
+		{"xlsx", "give those cells header columns"},
+	} {
+		msg := tableColumnError(t, map[string]any{
+			"column_mode":  "manual",
+			"column_roles": map[string]any{"ID": "both"},
+		}, tc.fileType, item)
+		for _, want := range []string{
+			"2 of 2 data row(s)",      // the extent, not only the first offending row
+			"1-column header",         // the width the cells overrun
+			"sheet 1, first at row 2", // where the first one is
+			`column mode "manual"`,    // which setting refused it
+			tc.hint,                   // what to change in the file
+			`column mode "auto"`,      // the way out that keeps the cells
+		} {
+			if !strings.Contains(msg, want) {
+				t.Errorf("%s: error %q does not report %q", tc.fileType, msg, want)
+			}
+		}
 	}
 }
 

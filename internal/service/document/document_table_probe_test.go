@@ -228,12 +228,14 @@ func TestProbeWarnsAboutRowsWiderThanTheHeader(t *testing.T) {
 	}
 	found := false
 	for _, warning := range result.Warnings {
-		if strings.Contains(warning, "more cells than") {
+		if strings.Contains(warning, "1 data row(s) with more cells than its 2-column header") &&
+			strings.Contains(warning, `column mode "manual" refuses`) &&
+			strings.Contains(warning, `column mode "auto" keeps`) {
 			found = true
 		}
 	}
 	if !found {
-		t.Errorf("warnings = %v, want the ragged row reported", result.Warnings)
+		t.Errorf("warnings = %v, want the ragged row reported with both column modes named", result.Warnings)
 	}
 }
 

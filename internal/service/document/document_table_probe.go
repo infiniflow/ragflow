@@ -275,8 +275,8 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, er
 			state.name = name
 		}
 		state.rows += len(rows) - headerCount
-		if wide := dataRowsWiderThan(rows[0], rows[1:]); wide > 0 {
-			ragged[sheetIndex] += wide
+		if wide := utility.TableRowsWiderThanHeader(rows[0], rows[1:]); len(wide) > 0 {
+			ragged[sheetIndex] += len(wide)
 		}
 	}
 
@@ -303,24 +303,11 @@ func collectProbeSheets(items []map[string]any) ([]TableProbeSheet, []string, er
 		sheets = append(sheets, sheet)
 		if count := ragged[index]; count > 0 {
 			warnings = append(warnings, fmt.Sprintf(
-				"sheet %s has %d data row(s) with more cells than its %d-column header; column roles cannot route those cells, and a manual-mode parse refuses the sheet",
-				probeSheetLabel(index, state.name), count, len(state.columns)))
+				"sheet %s has %d data row(s) with more cells than its %d-column header; column roles cannot route those cells, so column mode %q refuses the sheet, while column mode %q keeps them as body text",
+				probeSheetLabel(index, state.name), count, len(state.columns), entity.TableModeManual, entity.TableModeAuto))
 		}
 	}
 	return sheets, warnings, nil
-}
-
-// dataRowsWiderThan counts the data rows carrying more cells than the header of
-// their own sheet segment.
-func dataRowsWiderThan(header []string, dataRows [][]string) int {
-	width := len(header)
-	count := 0
-	for _, row := range dataRows {
-		if len(row) > width {
-			count++
-		}
-	}
-	return count
 }
 
 // probeSheetLabel names a sheet for a warning, falling back to its index when

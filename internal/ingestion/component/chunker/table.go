@@ -219,6 +219,16 @@ func supportsColumnMode(fileType string) bool {
 	return false
 }
 
+// raggedRowHint names the repair for a row carrying more cells than its header.
+// A CSV row is wide because a cell holding a comma was not quoted; a spreadsheet
+// row is wide because the sheet really carries a cell the header does not name.
+func raggedRowHint(fileType string) string {
+	if strings.EqualFold(strings.TrimPrefix(fileType, "."), "csv") {
+		return "quote the value holding a comma"
+	}
+	return "give those cells header columns"
+}
+
 // tableItems returns the per-row records, preferring JSONResult and
 // falling back to Chunks. Each HTML table row becomes exactly one chunk;
 // every other payload record passes through as one chunk — including
@@ -304,6 +314,20 @@ func expandHTMLTableRows(ctx context.Context, item schema.ChunkDoc, profile tabl
 			profile.mode, describeTableItem(item), len(rows), len(matrix))
 	}
 
+	if profile.manual && spreadsheet {
+		// A cell past the last header column has no column identity: no key, no
+		// display name, no data key and no role. Manual mode routes cells by
+		// column, so it cannot route that one. Dropping it would lose a value the
+		// row holds, and keeping it as body text would index a column the roles
+		// never named, which is the one thing manual mode exists to control. The
+		// sheet is therefore refused, and the message carries the extent and the
+		// ways out instead of blaming the file.
+		if wide := utility.TableRowsWiderThanHeader(names, rows[headerCount:]); len(wide) > 0 {
+			return nil, fmt.Errorf("TableChunker: %d of %d data row(s) have more cells than the %d-column header (sheet %d, first at row %d); column mode %q cannot route a cell that has no column: %s, or use column mode %q, which keeps those cells as body text",
+				len(wide), len(rows)-headerCount, len(names), *item.SheetIndex, int(matrix[headerCount+wide[0]][1]), profile.mode, raggedRowHint(fileType), entity.TableModeAuto)
+		}
+	}
+
 	cols := entity.DeriveTableColumns(names)
 	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
@@ -334,20 +358,13 @@ func expandHTMLTableRows(ctx context.Context, item schema.ChunkDoc, profile tabl
 			continue
 		}
 
-		// A row wider than the header has cells no column identity covers. Manual
-		// mode cannot route them — its roles name columns, and a cell past the
-		// last one has no role to route by — so it refuses rather than leaking an
-		// unconfigured column into the body. Auto indexes every column anyway, and
-		// keeping the extra cells' text is what this path did before column modes
-		// existed: a ragged row must not cost the whole document.
-		if len(row) > len(cols) && profile.manual {
-			return nil, fmt.Errorf("TableChunker: data row has %d cells but the header has %d columns (sheet %d, row %d)",
-				len(row), len(cols), *item.SheetIndex, sourceRow)
-		}
 		text, data := projectTableRow(cols, rowRoles, row)
 		if !profile.manual && len(row) > len(cols) {
-			// Body text only: the trailing cells carry no column identity, so
-			// chunk_data's field set stays the header's.
+			// Auto indexes every column anyway, and keeping the extra cells' text
+			// is what this path did before column modes existed: a ragged row must
+			// not cost the whole document. Body text only — the trailing cells
+			// carry no column identity, so chunk_data's field set stays the
+			// header's.
 			if tail := tableRowRecordText(nil, row[len(cols):]); tail != "" {
 				if text == "" {
 					text = tail

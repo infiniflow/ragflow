@@ -70,3 +70,23 @@ func TestLooksLikeTableHTMLCoversWhatTheWalkerReads(t *testing.T) {
 		}
 	}
 }
+
+// TestTableRowsWiderThanHeaderLocatesEveryRaggedRow pins the answer the chunker
+// and the column probe share: the positions of the rows the header cannot cover,
+// so the refusal and the warning are derived from one rule instead of two.
+func TestTableRowsWiderThanHeaderLocatesEveryRaggedRow(t *testing.T) {
+	header := []string{"ID", "名称"}
+	data := [][]string{
+		{"1", "a"},
+		{"2", "b", "unquoted,comma"},
+		{"3"},
+		{"4", "d", "x", "y"},
+	}
+	got := TableRowsWiderThanHeader(header, data)
+	if len(got) != 2 || got[0] != 1 || got[1] != 3 {
+		t.Errorf("positions = %v, want [1 3]", got)
+	}
+	if got := TableRowsWiderThanHeader(header, nil); len(got) != 0 {
+		t.Errorf("positions = %v, want none when there are no data rows", got)
+	}
+}

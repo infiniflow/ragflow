@@ -99,6 +99,22 @@ func HTMLTableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) 
 	return rows, headerCount
 }
 
+// TableRowsWiderThanHeader returns the positions, within dataRows, of the rows
+// carrying more cells than the header names. A cell past the last header column
+// has no column identity — no key, no display name, no data key and no role — so
+// the chunker and the column probe ask the same question and must not answer it
+// differently: the chunker refuses such a sheet under column mode manual, and
+// the probe reports it before the client commits roles to the file.
+func TableRowsWiderThanHeader(header []string, dataRows [][]string) []int {
+	var wide []int
+	for i, row := range dataRows {
+		if len(row) > len(header) {
+			wide = append(wide, i)
+		}
+	}
+	return wide
+}
+
 // IsTableOpeningTag reports whether block text is an outer <table> element
 // (the inlined GFM/HTML table). Only such blocks are emitted as structured
 // table items; other raw HTML (e.g. <div>, <style>) is plain text. The
