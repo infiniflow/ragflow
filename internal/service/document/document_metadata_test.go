@@ -499,7 +499,6 @@ func TestRemoveDocumentKeepFileRevokesTableProfile(t *testing.T) {
 	}
 }
 
-
 // Every user-facing read of document metadata has to exclude the table system's
 // own record, which names the columns the document indexed. This one answers the
 // document's metadata endpoint.

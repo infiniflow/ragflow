@@ -29,4 +29,3 @@ func (d *DatasetService) GetKnowledgebaseByID(ctx context.Context, datasetID str
 	}
 	return d.kbDAO.GetByID(ctx, dao.DB, normalizedID)
 }
-
