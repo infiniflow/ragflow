@@ -77,7 +77,7 @@ type Input struct {
 	// for the rest of the conversation, so the agent stops spending calls on a
 	// tool the corpus cannot satisfy. When empty, the disable is scoped to the
 	// single run (still useful within a ReAct turn). The chat pipeline sets it
-	// from the conversation id; see session_disable.go.
+	// from the conversation id; see nav_tool_enablement.go.
 	ConversationKey string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
