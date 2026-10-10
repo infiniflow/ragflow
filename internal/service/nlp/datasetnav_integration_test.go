@@ -7,7 +7,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"ragflow/internal/common"
@@ -46,9 +45,12 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 		t.Skip("no live document engine")
 	}
 	idx := "ragflow_" + tenantID
+	// The nav row's role marker is type_kwd (nav_doc/nav_cluster). Since the #20587
+	// field-name refactor compile_kwd carries the real compilation kind
+	// ("tree"/"page_index"), so it is no longer the selector that scopes nav rows.
 	req := &types.SearchRequest{
 		IndexNames:   []string{idx},
-		Filter:       map[string]interface{}{"doc_id": []string{docID}, "compile_kwd": []string{"dataset_nav"}},
+		Filter:       map[string]interface{}{"doc_id": []string{docID}, "type_kwd": []string{"nav_doc"}},
 		SelectFields: []string{"available_int", "compile_kwd", "type_kwd"},
 		Limit:        10,
 	}
@@ -71,14 +73,10 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 //
 // Run with: bash build.sh --test-integration ./internal/service/nlp/...
 //
-// Excluded from the integration CI job: this test exercises the DatasetNav flow
-// end-to-end against a live Infinity backend and surfaces several upstream source
-// bugs (Infinity 3013 on pure vector matches, 3052 on empty keyword filters,
-// doc_ids_kwd JSON encoding, NavService.Search available_int pinning,
-// findBestCluster empty-title descent). Those are genuine source fixes that belong
-// in their own PR — this PR only enables the integration-test CI job, so the
-// internal/service/nlp package is excluded from the job's package list until the
-// source fixes land. Re-enable once those are merged.
+// Runs in the integration CI job (infinity). The nav row's role marker is
+// type_kwd (nav_doc/nav_cluster); compile_kwd carries the real compilation kind
+// ("tree"/"page_index") since the #20587 field-name refactor, so the row is
+// located and asserted by type_kwd.
 func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
 	if err := common.InitLogger("info", common.FileOutput{}, ""); err != nil {
 		t.Fatalf("init logger: %v", err)
@@ -115,12 +113,12 @@ func TestDatasetNav_AvailableIntZero_Isolation(t *testing.T) {
 		t.Fatal("NavService.Search returned no hits; nav row is not reachable")
 	}
 
-	// The written nav row must carry compile_kwd=dataset_nav and available_int=0,
-	// so the default retriever (available_int=1 filter) will not surface it.
+	// The written nav row must be a nav_doc with available_int=0, so the default
+	// retriever (available_int=1 filter) will not surface it.
 	row := findNavRow(t, tenantID, kbID, docID)
-	// compile_kwd may come back list-wrapped by the engine, so use firstStrOrSlice.
-	if ck := firstStrOrSlice(row["compile_kwd"]); !strings.Contains(ck, "dataset_nav") {
-		t.Errorf("nav row compile_kwd = %q, want dataset_nav", ck)
+	// type_kwd may come back list-wrapped by the engine, so use firstStrOrSlice.
+	if tk := firstStrOrSlice(row["type_kwd"]); tk != "nav_doc" {
+		t.Errorf("nav row type_kwd = %q, want nav_doc", tk)
 	}
 	avail := intValue(row["available_int"])
 	if avail != 0 {
