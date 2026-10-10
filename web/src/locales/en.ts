@@ -510,6 +510,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       source: 'Source',
       fileName: 'File name',
       datasetLogs: 'Dataset',
+      datasourceLogs: 'Data source',
       fileLogs: 'File',
       overview: 'Logs',
       success: 'Success',

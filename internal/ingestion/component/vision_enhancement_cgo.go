@@ -159,7 +159,7 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if len(single) == 0 {
 		return nil, nil
 	}
-	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxVisionImagePixels)
+	raster := util.CropSectionPositionsRasterLimited(positions, single, deepdoctype.DlaScale, maxVLMCropPixels)
 	if raster == nil {
 		return nil, nil
 	}
@@ -182,12 +182,12 @@ func pdfPagesRasterWithinVisionLimits(engine deepdoctype.PDFEngine, pageNums map
 		if math.IsNaN(widthPixels) || math.IsInf(widthPixels, 0) ||
 			math.IsNaN(heightPixels) || math.IsInf(heightPixels, 0) ||
 			widthPixels <= 0 || heightPixels <= 0 ||
-			widthPixels > maxVisionImageEdge || heightPixels > maxVisionImageEdge ||
-			widthPixels*heightPixels > float64(maxVisionImagePixels) {
+			widthPixels > maxVLMCropEdge || heightPixels > maxVLMCropEdge ||
+			widthPixels*heightPixels > float64(maxVLMCropPixels) {
 			return false
 		}
 		pagePixels := int64(widthPixels * heightPixels)
-		if pagePixels > maxVisionImagePixels-totalPixels {
+		if pagePixels > maxVLMCropPixels-totalPixels {
 			return false
 		}
 		totalPixels += pagePixels

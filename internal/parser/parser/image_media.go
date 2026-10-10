@@ -18,6 +18,10 @@ package parser
 
 import (
 	"context"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
 	"sync"
 
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
@@ -26,11 +30,70 @@ import (
 const (
 	// MaxImagePayloadBytes bounds compressed image data accepted by media paths.
 	MaxImagePayloadBytes = 32 << 20
-	// MaxImagePixels bounds decoded image dimensions before allocating a raster.
-	MaxImagePixels = 40_000_000
-	// MaxImageEdge bounds either decoded image dimension before raster allocation.
-	MaxImageEdge = 12_000
 )
+
+// EnvImageRasterMaxBytes names the environment variable that sets the
+// decoded-raster byte ceiling for image parsing (media dispatch and inline
+// vision images). It mirrors Python's picture.py, which imposes no image size
+// guard at all: length/width are unbounded and the raster-byte ceiling is opt
+// in. A value of 0 (the default when unset, empty, or invalid/negative) means
+// unlimited. When set to N > 0 (bytes), a decoded raster larger than N bytes
+// (modelled as width * height * 4 for an 8-bit RGBA raster) is rejected.
+//
+// Operator guidance: with the default (unlimited) ceiling, a highly
+// compressible image can still exhaust the ingestion worker's heap during
+// decode. For untrusted input sources, set RAGFLOW_IMAGE_RASTER_MAX_BYTES to a
+// budget the deployment can absorb (bounded by DeepDocConcurrency). The 4
+// bytes/pixel model is an 8-bit RGBA estimate; 16-bit formats (e.g. NRGBA64)
+// allocate roughly twice that, so size the ceiling with headroom for such
+// input.
+const EnvImageRasterMaxBytes = "RAGFLOW_IMAGE_RASTER_MAX_BYTES"
+
+var (
+	imageRasterMaxBytesOnce sync.Once
+	imageRasterMaxBytes     int64
+)
+
+// ImageRasterMaxBytes returns the decoded-raster byte ceiling. It is resolved
+// once from EnvImageRasterMaxBytes; negative or unparseable values fall back to
+// 0 (unlimited) so a misconfiguration never silently blocks every image.
+func ImageRasterMaxBytes() int64 {
+	imageRasterMaxBytesOnce.Do(func() {
+		imageRasterMaxBytes = resolveImageRasterMaxBytes()
+	})
+	return imageRasterMaxBytes
+}
+
+func resolveImageRasterMaxBytes() int64 {
+	v := strings.TrimSpace(os.Getenv(EnvImageRasterMaxBytes))
+	if v == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0
+	}
+	return n
+}
+
+// CheckImageRasterLimit returns an error if a w-by-h image's decoded RGBA
+// raster would exceed the opt-in byte ceiling (ImageRasterMaxBytes). Edge
+// (length/width) limits are intentionally absent to match Python's picture.py.
+// A zero ceiling means unlimited and always passes.
+//
+// The raster is modelled as 4 bytes/pixel (8-bit RGBA); see EnvImageRasterMaxBytes
+// for the 16-bit headroom note. The product is computed in uint64 so extreme
+// dimensions cannot silently wrap to 0 under int64 signed overflow and bypass
+// a positive ceiling.
+func CheckImageRasterLimit(w, h int) error {
+	if max := ImageRasterMaxBytes(); max > 0 {
+		const bytesPerPixel = 4
+		if uint64(w)*uint64(h)*bytesPerPixel > uint64(max) {
+			return fmt.Errorf("image raster %dx%d exceeds %d-byte limit", w, h, max)
+		}
+	}
+	return nil
+}
 
 // AcquireImageMedia limits concurrent image materialization across Parser
 // payload encoding and ingestion VLM crop paths. The native analyzer keeps

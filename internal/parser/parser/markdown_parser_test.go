@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
@@ -180,8 +182,7 @@ func TestMarkdownParser_TableKeepsCellsBeyondTheHeader(t *testing.T) {
 	}
 	var joined strings.Builder
 	for _, item := range res.JSON {
-		text, _ := item["text"].(string)
-		joined.WriteString(text)
+		joined.WriteString(renderedText(item))
 		joined.WriteString("\n")
 	}
 	out := joined.String()
@@ -275,8 +276,12 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Errorf("table item ck_type = %q, want \"table\"", ck)
 			}
-			if !strings.Contains(text, "<table") {
-				t.Errorf("table item text is not raw <table> HTML: %q", text)
+			td, ok := item["table"].(*entity.TableData)
+			if !ok || td == nil {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
+			}
+			if !tableRowsContain(td, "Check item") {
+				t.Errorf("table item rows missing header label: %+v", td.Rows)
 			}
 		case "text":
 			if strings.Contains(text, "<table") {
@@ -634,8 +639,8 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
@@ -696,11 +701,11 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 				afterIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(item)
 			tableIdx = i
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
@@ -819,8 +824,8 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("raw table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("raw table item ck_type = %q, want \"table\"", ck)
@@ -882,8 +887,8 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
-	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
+	t1 := renderedText(res.JSON[tableItemIdx[0]])
+	t2 := renderedText(res.JSON[tableItemIdx[1]])
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Fatalf("first table item missing x/y cells: %q", t1)
 	}
@@ -954,4 +959,18 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 			}
 		})
 	}
+}
+
+// tableRowsContain reports whether any cell of the structured table contains
+// the substring want, so table-contract tests can assert cell content without
+// depending on the legacy HTML markup shape.
+func tableRowsContain(td *entity.TableData, want string) bool {
+	for _, row := range td.Rows {
+		for _, cell := range row {
+			if strings.Contains(cell, want) {
+				return true
+			}
+		}
+	}
+	return false
 }

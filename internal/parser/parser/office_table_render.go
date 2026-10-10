@@ -19,7 +19,6 @@ package parser
 import (
 	"encoding/base64"
 	"fmt"
-	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,6 +28,7 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -51,47 +51,32 @@ type spreadsheetSegmentRow struct {
 	colStart int
 }
 
-// renderTableHTML renders one sheet segment in the spreadsheet wire format: a
-// captioned <table> whose header row is <th> cells and whose data rows are
-// <td> cells, one row per line. It is the byte contract every consumer reads —
-// the chunkers parse this shape back row by row (see
-// internal/ingestion/component/chunker/html_rows.go), and the positions matrix
-// emitted next to it is aligned one tuple per <tr>, header included.
-func renderSpreadsheetTable(sheet string, header []string, rows [][]string) string {
-	var builder strings.Builder
-	builder.WriteString("<table><caption>")
-	builder.WriteString(html.EscapeString(sheet))
-	builder.WriteString("</caption>\n<tr>")
-	for _, cell := range header {
-		builder.WriteString("<th>")
-		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		builder.WriteString("</th>")
+// trimCells returns a copy of row with every cell TrimSpace'd. The legacy
+// spreadsheet producer HTML-escaped each TrimSpace'd cell; the structured
+// TableData contract stores the already-TrimSpace'd text, which the chunker
+// re-escapes when it renders chunk text (see tableutil.RenderTableHTML), so
+// the rendered text matches the legacy HTML byte for byte.
+func trimCells(row []string) []string {
+	out := make([]string, len(row))
+	for i, c := range row {
+		out[i] = strings.TrimSpace(c)
 	}
-	builder.WriteString("</tr>\n")
-	for _, row := range rows {
-		builder.WriteString("<tr>")
-		for _, cell := range row {
-			builder.WriteString("<td>")
-			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-			builder.WriteString("</td>")
-		}
-		builder.WriteString("</tr>\n")
-	}
-	builder.WriteString("</table>\n")
-	return builder.String()
+	return out
 }
 
-// buildSheetItems renders one sheet into its wire items: HTML <table>
-// segments split at image anchor boundaries, interleaved with the anchored
-// image items in document order. Every segment repeats the header row (so
-// segment 2+ never loses column names) and carries a row-aligned position
-// matrix — one tuple per <tr> in strict markup order, header included — so
-// row-level consumers index positions by <tr> number with no side channel.
+// buildSheetItems renders one sheet into its wire items: the structured
+// TableData contract (captioned table with a header row and data rows) split
+// at image anchor boundaries, interleaved with the anchored image items in
+// document order. Every segment repeats the header row (so segment 2+ never
+// loses column names) and carries a row-aligned position matrix — one tuple
+// per row in strict order, header included — so row-level consumers index
+// positions by row number with no side channel. The chunker reads the rows
+// directly; no HTML markup is emitted.
 //
 // An image lands after the last row whose (row, colStart) sorts at or before
 // its anchor; rows before the header's anchor keep the header in front of
 // the image (a header-only lead segment); fully empty rows are skipped from
-// both markup and matrix.
+// both rows and matrix.
 //
 // Segmentation is semantic only — sheet boundaries and image anchors, never a
 // size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
@@ -179,14 +164,16 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 
 	items := make([]map[string]any, 0, len(rows)+len(images))
 	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
-		cells := make([][]string, 0, len(body))
 		matrix := make([][]float64, 0, len(body)+1)
 		matrix = append(matrix, headerTuple)
+		rowsOut := make([][]string, 0, len(body)+1)
+		rowsOut = append(rowsOut, trimCells(header))
 		for _, r := range body {
-			cells = append(cells, r.cells)
+			rowsOut = append(rowsOut, trimCells(r.cells))
 			matrix = append(matrix, r.tuple)
 		}
-		item := NewTableJSONItem(renderSpreadsheetTable(sheet, header, cells), sheet, matrix)
+		td := &entity.TableData{Rows: rowsOut, HeaderRows: 1, Caption: sheet}
+		item := NewTableDataJSONItem(td, sheet, matrix)
 		item["sheet_index"] = sheetIndex
 		return item
 	}

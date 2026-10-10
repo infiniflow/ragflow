@@ -35,8 +35,8 @@ func TestCSVParser_EmitsSpreadsheetRows(t *testing.T) {
 		"<tr><td>Alice</td><td>30</td><td>New York</td></tr>\n" +
 		"<tr><td>Bob</td><td>25</td><td>San Francisco</td></tr>\n" +
 		"</table>\n"
-	if item["text"] != wantText {
-		t.Errorf("text = %q, want %q", item["text"], wantText)
+	if rendered := tableItemHTML(t, item); rendered != wantText {
+		t.Errorf("table HTML = %q, want %q", rendered, wantText)
 	}
 	if item["sheet"] != "Data" || item["sheet_index"] != 1 {
 		t.Errorf("sheet metadata = %#v", item)
@@ -69,7 +69,7 @@ func TestCSVParser_UTF8BOM(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %#v, want one table item", res.JSON)
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text := tableItemHTML(t, res.JSON[0])
 	if !strings.Contains(text, "<tr><th>Name</th><th>Age</th></tr>") {
 		t.Errorf("header row = %q", text)
 	}
@@ -177,7 +177,7 @@ func TestCSVParserKeepsVariableRowWidths(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text := tableItemHTML(t, res.JSON[0])
 	if !strings.Contains(text, "<tr><td>Q1</td><td>A1</td></tr>") ||
 		!strings.Contains(text, "<tr><td>Q2</td><td>A2</td><td>extra</td></tr>") {
 		t.Fatalf("row widths not preserved in markup: %q", text)
@@ -201,7 +201,7 @@ func TestCSVParser_ReadsTheSeparatorTheFileWasWrittenWith(t *testing.T) {
 		if len(res.JSON) != 1 {
 			t.Fatalf("separator %q: items = %d, want one HTML table item", sep, len(res.JSON))
 		}
-		text, _ := res.JSON[0]["text"].(string)
+		text := tableItemHTML(t, res.JSON[0])
 		if !strings.Contains(text, "<tr><th>Name</th><th>Region</th><th>Units</th></tr>") ||
 			!strings.Contains(text, "<tr><td>Widget</td><td>EU</td><td>12</td></tr>") {
 			t.Errorf("separator %q: row not split into three columns: %q", sep, text)
@@ -272,7 +272,7 @@ func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text := tableItemHTML(t, res.JSON[0])
 	if !strings.Contains(text, "<tr><td>Widget</td><td></td><td>12</td></tr>") {
 		t.Errorf("empty tab-separated field not kept: %q", text)
 	}

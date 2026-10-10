@@ -1,165 +1,112 @@
+// Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 //
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 package chunker
 
 import (
-	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
-// charTokens approximates a tokenizer for tests: one token per byte.
-func charTokens(s string) int { return len(s) }
+// charTokens counts runes, a cheap deterministic stand-in for a real tokenizer.
+func charTokens(s string) int { return len([]rune(s)) }
 
-func buildTable(header string, data []string) string {
-	var b strings.Builder
-	b.WriteString("<table><caption>cap</caption>\n")
-	b.WriteString("<tr>" + header + "</tr>\n")
-	for _, row := range data {
-		b.WriteString("<tr>" + row + "</tr>\n")
+func makeTable(dataRows int) *entity.TableData {
+	rows := [][]string{{"Name", "Age"}} // header
+	for i := 0; i < dataRows; i++ {
+		rows = append(rows, []string{"person", "30"})
 	}
-	b.WriteString("</table>\n")
-	return b.String()
+	return &entity.TableData{Rows: rows, HeaderRows: 1}
 }
 
-func TestSplitLargeHTMLTableNoSplit(t *testing.T) {
-	small := buildTable("<th>a</th><th>b</th>", []string{"<td>1</td><td>2</td>"})
-	parts, ranges, headerRows := splitLargeHTMLTable(small, len(small)+100, charTokens)
-	if len(parts) != 1 || parts[0] != small || ranges != nil || headerRows != 0 {
-		t.Fatalf("small table must return unchanged with nil ranges, got %d parts ranges=%v headerRows=%d", len(parts), ranges, headerRows)
+func TestSplitLargeTableFitsWhole(t *testing.T) {
+	td := makeTable(3)
+	parts, ranges, headerRows := splitLargeTable(td, 1_000_000, charTokens)
+	if ranges != nil || len(parts) != 0 {
+		t.Fatalf("small table should not split: parts=%v ranges=%v", parts, ranges)
 	}
-	parts, ranges, headerRows = splitLargeHTMLTable("no table here", 1, charTokens)
-	if len(parts) != 1 || parts[0] != "no table here" || ranges != nil || headerRows != 0 {
-		t.Fatalf("non-table text must pass through unchanged")
+	if headerRows != 0 {
+		t.Fatalf("headerRows = %d, want 0 when unsplit", headerRows)
 	}
 }
 
-func TestSplitLargeHTMLTableReplicatesHeaderAndSlicesRanges(t *testing.T) {
-	data := make([]string, 6)
-	for i := range data {
-		data[i] = "<td>d" + string(rune('0'+i)) + "</td><td>x</td>"
-	}
-	text := buildTable("<th>h1</th><th>h2</th>", data)
-	// Budget that holds header + 2 data rows at most.
-	rowLen := len("<td>d0</td><td>x</td>")
-	budget := len("<table><caption>cap</caption><tr><th>h1</th><th>h2</th></tr></table>") + 2*rowLen
-	parts, ranges, headerRows := splitLargeHTMLTable(text, budget, charTokens)
+func TestSplitLargeTableRowGranular(t *testing.T) {
+	td := makeTable(20)
+	// Budget bounded so a part holds ~3 data rows.
+	parts, ranges, headerRows := splitLargeTable(td, 22, charTokens)
 	if headerRows != 1 {
-		t.Fatalf("headerRows = %d, want 1 (the single <th> row)", headerRows)
+		t.Fatalf("headerRows = %d, want 1", headerRows)
 	}
-	if len(parts) < 3 {
-		t.Fatalf("expected several sub-tables, got %d", len(parts))
+	if len(parts) <= 1 {
+		t.Fatalf("expected multiple parts, got %d", len(parts))
 	}
-	if len(ranges) != len(parts) {
-		t.Fatalf("ranges count %d != parts count %d", len(ranges), len(parts))
+	if len(parts) != len(ranges) {
+		t.Fatalf("parts(%d) != ranges(%d)", len(parts), len(ranges))
 	}
+	// Every part replicates the header and holds a whole number of rows; the
+	// data ranges are contiguous and cover all 20 data rows exactly once.
 	seen := 0
-	for i, p := range parts {
-		if !strings.HasPrefix(p, "<table><caption>cap</caption>") {
-			t.Errorf("part %d lost its caption: %q", i, p)
+	for i, part := range parts {
+		if part.HeaderRows != 1 {
+			t.Fatalf("part %d headerRows = %d", i, part.HeaderRows)
 		}
-		if !strings.Contains(p, "<th>h1</th>") {
-			t.Errorf("part %d lost the header row", i)
+		if len(part.Rows) < 2 {
+			t.Fatalf("part %d has <1 data row: %v", i, part.Rows)
 		}
-		lo, hi := ranges[i][0], ranges[i][1]
-		if hi <= lo || hi > len(data) {
-			t.Fatalf("part %d range [%d,%d) out of bounds", i, lo, hi)
+		if part.Rows[0][0] != "Name" {
+			t.Fatalf("part %d missing header row", i)
 		}
-		for r := lo; r < hi; r++ {
-			if !strings.Contains(p, data[r]) {
-				t.Errorf("part %d missing row %d", i, r)
-			}
-			seen++
+		r := ranges[i]
+		if r[0] != seen {
+			t.Fatalf("part %d range start %d != running %d", i, r[0], seen)
 		}
-		// Rows outside the range must not leak into this part.
-		for r := 0; r < len(data); r++ {
-			if (r < lo || r >= hi) && strings.Contains(p, data[r]) {
-				t.Errorf("part %d leaked row %d outside [%d,%d)", i, r, lo, hi)
-			}
-		}
+		seen = r[1]
 	}
-	if seen != len(data) {
-		t.Errorf("rows covered %d, want %d", seen, len(data))
+	if seen != 20 {
+		t.Fatalf("data rows covered = %d, want 20", seen)
 	}
-}
-
-func TestSplitLargeHTMLTableHeaderlessReplicatesFirstRow(t *testing.T) {
-	// Original behaviour: with no <th> row the first row is treated as the
-	// repeating header.
-	var b strings.Builder
-	b.WriteString("<table>")
-	b.WriteString("<tr><td>r0</td></tr>")
-	for i := 1; i < 5; i++ {
-		b.WriteString("<tr><td>row" + string(rune('0'+i)) + "</td></tr>")
+	// The concatenation of every part's data rows must equal the original rows.
+	var rebuilt [][]string
+	for _, part := range parts {
+		rebuilt = append(rebuilt, part.Rows[1:]...)
 	}
-	b.WriteString("</table>")
-	parts, ranges, headerRows := splitLargeHTMLTable(b.String(), len("<table><tr><td>r0</td></tr><tr><td>row1</td></tr></table>")+10, charTokens)
-	if headerRows != 1 {
-		t.Fatalf("headerRows = %d, want 1 (first row treated as header)", headerRows)
-	}
-	if len(parts) < 2 {
-		t.Fatalf("expected split, got %d parts", len(parts))
-	}
-	for i, p := range parts {
-		if !strings.Contains(p, "<td>r0</td>") {
-			t.Errorf("part %d lost replicated first row", i)
-		}
-	}
-	if ranges[0][0] != 0 {
-		t.Errorf("ranges index DATA rows below the treated header, want first range to start at 0, got %v", ranges[0])
-	}
-}
-
-// TestSplitLargeHTMLTableRefusesUncuttableMarkup: an open tag that never
-// closes, a longer tag name, or a nested table is markup this splitter must
-// not cut at a guessed boundary — the text comes back unchanged. The
-// "<table </table>" case used to invert the slice bounds.
-func TestSplitLargeHTMLTableRefusesUncuttableMarkup(t *testing.T) {
-	unchanged := []string{
-		"<table </table>",
-		"<tableau><tr><td>a</td></tr><tr><td>b</td></tr></table>",
-		"<table><tr><td>a</td></tr><table><tr><td>b</td></tr></table></table>",
-	}
-	for _, text := range unchanged {
-		parts, ranges, headerRows := splitLargeHTMLTable(text, 1, charTokens)
-		if len(parts) != 1 || parts[0] != text || ranges != nil || headerRows != 0 {
-			t.Errorf("text %q must pass through unchanged, got %d parts ranges=%v headerRows=%d", text, len(parts), ranges, headerRows)
+	for i, row := range td.Rows[1:] {
+		if len(rebuilt[i]) != len(row) || rebuilt[i][0] != row[0] {
+			t.Fatalf("row %d mismatch: got %v want %v", i, rebuilt[i], row)
 		}
 	}
 }
 
-// TestSplitLargeHTMLTableQuotedAngleBracketStaysInOpenTag: a ">" inside a
-// quoted attribute value must not end the open tag — every part repeats the
-// complete tag instead of being cut at the attribute.
-func TestSplitLargeHTMLTableQuotedAngleBracketStaysInOpenTag(t *testing.T) {
-	text := "<table data-meta=\"a>b\">" +
-		"<tr><td>r0</td></tr><tr><td>r1</td></tr><tr><td>r2</td></tr></table>"
-	parts, ranges, headerRows := splitLargeHTMLTable(text, 60, charTokens)
-	if headerRows != 1 {
-		t.Fatalf("headerRows = %d, want 1 (first row treated as header)", headerRows)
+func TestSplitLargeTableSingleRowOverBudgetKeepsRow(t *testing.T) {
+	// One data row alone exceeds the budget; it must still form its own chunk
+	// (row integrity wins over the budget). A single part means "not split,
+	// emit whole" — the over-budget row becomes one chunk rather than being cut.
+	td := &entity.TableData{
+		Rows:       [][]string{{"H"}, {"x" + string(make([]byte, 200))}},
+		HeaderRows: 1,
 	}
-	if len(parts) < 2 {
-		t.Fatalf("expected a split, got %d parts", len(parts))
+	parts, ranges, _ := splitLargeTable(td, 5, charTokens)
+	if ranges != nil || len(parts) != 0 {
+		t.Fatalf("over-budget single row must emit whole (ranges nil): parts=%v ranges=%v", parts, ranges)
 	}
-	if len(ranges) != len(parts) {
-		t.Fatalf("ranges count %d != parts count %d", len(ranges), len(parts))
-	}
-	for i, p := range parts {
-		if !strings.HasPrefix(p, "<table data-meta=\"a>b\">") {
-			t.Errorf("part %d lost the complete open tag: %q", i, p)
-		}
+}
+
+func TestSplitLargeTableHeaderOnly(t *testing.T) {
+	td := &entity.TableData{Rows: [][]string{{"Name", "Age"}}, HeaderRows: 1}
+	parts, ranges, _ := splitLargeTable(td, 10, charTokens)
+	if ranges != nil || len(parts) != 0 {
+		t.Fatalf("header-only table should not split")
 	}
 }

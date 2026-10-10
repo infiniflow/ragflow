@@ -105,11 +105,9 @@ const ComponentNameTokenizer = "Tokenizer"
 // `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// htmlTableRE matches HTML table-cell tags so the embedded text fed
-// to the embedding model doesn't carry raw markup. Mirrors the python
-// `re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)` at
-// tokenizer.py:79.
-var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+// Table content is no longer carried as HTML markup (the parser emits the
+// structured entity.TableData contract), so there is no table markup to strip
+// from the embedded text. The legacy htmlTableRE was removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
@@ -472,8 +470,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
-		txt := htmlTableRE.ReplaceAllString(raw, " ")
-		txt = strings.TrimSpace(txt)
+		txt := strings.TrimSpace(raw)
 		if txt == "" {
 			continue
 		}
@@ -1077,7 +1074,7 @@ func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
 }
 
 func cleanEmbeddingText(text string) string {
-	return strings.TrimSpace(htmlTableRE.ReplaceAllString(text, " "))
+	return strings.TrimSpace(text)
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {

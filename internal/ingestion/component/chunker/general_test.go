@@ -34,30 +34,25 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/parser/tableutil"
 )
 
 // spreadsheetSegmentItem builds one wire-format spreadsheet table segment:
 // the markup the parser renders (captioned <table>, <th> header, <td> rows)
 // plus the row-aligned positions matrix (one tuple per <tr>, header first).
 // firstRow is the sheet row of the first DATA row; the header tuple covers
-// firstRow-1.
+// firstRow-1. It emits the structured TableData contract a post-migration
+// producer writes (caption = sheet name, header rows, data rows), not HTML
+// markup.
 func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, sheetIndex, firstRow int) map[string]any {
-	var markup strings.Builder
-	markup.WriteString("<table><caption>" + sheet + "</caption>\n<tr>")
-	for _, cell := range header {
-		markup.WriteString("<th>" + cell + "</th>")
+	allRows := make([][]string, 0, len(rows)+1)
+	if len(header) > 0 {
+		allRows = append(allRows, header)
 	}
-	markup.WriteString("</tr>\n")
-	for _, row := range rows {
-		markup.WriteString("<tr>")
-		for _, cell := range row {
-			markup.WriteString("<td>" + cell + "</td>")
-		}
-		markup.WriteString("</tr>\n")
-	}
-	markup.WriteString("</table>\n")
+	allRows = append(allRows, rows...)
 
 	tuple := func(row int) []float64 {
 		return []float64{float64(sheetIndex), float64(row), float64(row), 1, float64(len(header))}
@@ -66,8 +61,16 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 	for i := range rows {
 		matrix = append(matrix, tuple(firstRow+i))
 	}
+	td := &entity.TableData{Rows: allRows, HeaderRows: 1, Caption: sheet}
 	return map[string]any{
-		"text":         markup.String(),
+		"table": map[string]any{
+			"rows":        allRows,
+			"header_rows": 1,
+			"caption":     sheet,
+		},
+		// Mirror what the chunker derives from TableData so text-bound
+		// assertions (e.g. TokenChunker boundary tests) stay valid.
+		"text":         tableutil.RenderTableText(td),
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
@@ -983,7 +986,8 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
 	}
-	if chunks[0]["text"] != item["text"] || chunks[0]["ck_type"] != "table" {
+	text, _ := chunks[0]["text"].(string)
+	if chunks[0]["ck_type"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
@@ -1074,9 +1078,19 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 	}
 	covered := 0
 	for i, chunk := range chunks {
-		text, _ := chunk["text"].(string)
-		if !strings.Contains(text, "<th>Name</th>") {
-			t.Errorf("chunk %d lost the replicated header", i)
+		// New contract: Text is the plain rendering (no markup); the
+		// replicated header lives in the structured TableData, and positions
+		// are sliced to this sub-table when the matrix is row-aligned.
+		tbl, ok := chunk["table"].(map[string]any)
+		if !ok {
+			t.Fatalf("chunk %d missing structured TableData", i)
+		}
+		tblRows, _ := tbl["rows"].([]any)
+		if len(tblRows) < 2 {
+			t.Fatalf("chunk %d has too few rows: %v", i, tblRows)
+		}
+		if !strings.Contains(chunk["text"].(string), "Name") {
+			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
 		}
 		var matrix [][]float64
 		raw, _ := json.Marshal(chunk["positions"])
@@ -1091,11 +1105,11 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if matrix[0][1] != 1 {
 			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
 		}
-		trCount := strings.Count(text, "<tr>")
-		if trCount != len(matrix) {
-			t.Errorf("chunk %d has %d rows but %d position tuples", i, trCount, len(matrix))
+		dataRows := len(tblRows) - 1
+		if dataRows != len(matrix)-1 {
+			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
 		}
-		covered += len(matrix) - 1
+		covered += dataRows
 	}
 	if covered != len(rows) {
 		t.Errorf("sub-tables cover %d data rows, want %d", covered, len(rows))
