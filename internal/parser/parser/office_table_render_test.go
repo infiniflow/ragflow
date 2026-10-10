@@ -4,6 +4,7 @@ import (
 	"html"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -649,6 +650,64 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	}
 }
 
+// TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader reproduces a Kros-style
+// budget spreadsheet where rows 1–5 are narrow metadata labels (e.g.
+// "Stavba:", "DSP MILLHAUS") and row 6 is the real 7-column header. The
+// width-validation heuristic must skip the narrow rows and pick row 6.
+func TestDetectHeaderRow_NarrowMetadataSkipsToWideHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		bold := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		// Row 1: single-cell merged title.
+		mustSetCell(t, f, "Sheet1", "A1", "Rekapitulácia objektov stavby")
+		mustSetCellStyle(t, f, "Sheet1", "A1", "A1", bold)
+		// Row 2: 2-cell metadata (both bold).
+		mustSetCell(t, f, "Sheet1", "A2", "Stavba:")
+		mustSetCell(t, f, "Sheet1", "C2", "DSP MILLHAUS")
+		mustSetCellStyle(t, f, "Sheet1", "A2", "C2", bold)
+		// Row 3: 1-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A3", "Objednávateľ:")
+		// Row 4: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A4", "Zhotoviteľ:")
+		mustSetCell(t, f, "Sheet1", "G4", "Spracoval:")
+		// Row 5: 2-cell metadata.
+		mustSetCell(t, f, "Sheet1", "A5", "Miesto:")
+		mustSetCell(t, f, "Sheet1", "G5", "Dátum:")
+		// Row 6: the REAL header — 7 bold text columns.
+		for i, hdr := range []string{"Kód", "", "Zákazka", "ZRN", "VRN", "Cena bez DPH", "DPH"} {
+			cell := string(rune('A'+i)) + "6"
+			mustSetCell(t, f, "Sheet1", cell, hdr)
+		}
+		mustSetCellStyle(t, f, "Sheet1", "A6", "G6", bold)
+		// Rows 7–20: data rows with 5–7 filled cells each (some have numbers).
+		for r := 7; r <= 20; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "SO01")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), "BYTOVÝ OBJEKT")
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), "17234914")
+			mustSetCell(t, f, "Sheet1", cellRef('E', r), "689480")
+			mustSetCell(t, f, "Sheet1", cellRef('F', r), "17924395")
+			mustSetCell(t, f, "Sheet1", cellRef('G', r), "3584879")
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "budget.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	markup := spreadsheetText(res)
+	if !strings.Contains(markup, "<th>Cena bez DPH</th>") {
+		t.Fatalf("expected real header (row 6) to be detected, got:\n%s", markup[:min(len(markup), 500)])
+	}
+	hdr := spreadsheetHeaderText(res)
+	if !strings.Contains(hdr, "Cena bez DPH") {
+		t.Fatalf("header text = %q, want it to contain 'Cena bez DPH'", hdr)
+	}
+}
+
+// cellRef builds "A7", "C12" etc. for test fixtures.
+func cellRef(col rune, row int) string {
+	return string(col) + strconv.Itoa(row)
+}
+
 // TestInheritMergedHeader unit-tests the merge inheritance helper directly.
 func TestInheritMergedHeader(t *testing.T) {
 	records := [][]string{
@@ -689,6 +748,38 @@ func TestPadRowToWidth(t *testing.T) {
 	padRowToWidth(&row, 2)
 	if len(row) != 5 {
 		t.Fatalf("must not shrink: want 5, got %d", len(row))
+	}
+}
+
+// TestMedianRowWidth verifies the sampling helper.
+func TestMedianRowWidth(t *testing.T) {
+	// Kros-style: 5 narrow rows, then 14 wide rows.
+	records := make([][]string, 20)
+	records[0] = []string{"Title"}
+	records[1] = []string{"Stavba:", "", "DSP MILLHAUS"}
+	records[2] = []string{"Objednávateľ:"}
+	records[3] = []string{"Zhotoviteľ:", "", "", "", "", "", "Spracoval:"}
+	records[4] = []string{"Miesto:", "", "", "", "", "", "Dátum:"}
+	for i := 5; i < 20; i++ {
+		records[i] = []string{"SO01", "", "OBJEKT", "17234914", "689480", "17924395", "3584879"}
+	}
+	got := medianRowWidth(records)
+	if got < 5 || got > 7 {
+		t.Fatalf("medianRowWidth = %d, want 5..7 for Kros-style sheet", got)
+	}
+
+	// Narrow sheet: all 2-cell rows → median = 2.
+	narrow := make([][]string, 10)
+	for i := range narrow {
+		narrow[i] = []string{"a", "b"}
+	}
+	if got := medianRowWidth(narrow); got != 2 {
+		t.Fatalf("medianRowWidth(narrow) = %d, want 2", got)
+	}
+
+	// Too few rows → 0.
+	if got := medianRowWidth([][]string{{"a"}, {"b"}}); got != 0 {
+		t.Fatalf("medianRowWidth(tiny) = %d, want 0", got)
 	}
 }
 
