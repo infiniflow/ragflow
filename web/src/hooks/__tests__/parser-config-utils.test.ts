@@ -53,8 +53,10 @@ describe('normalizeParserConfig backend awareness', () => {
     // chunk_token_num, so the flat key must be gone and the value re-homed.
     expect(out).not.toHaveProperty('chunk_token_num');
     expect(out).not.toHaveProperty('delimiter');
-    expect((out['GeneralChunker:SixApplesFall'] as Record<string, unknown>)
-      .delimiters).toEqual(['\n']);
+    expect(
+      (out['GeneralChunker:SixApplesFall'] as Record<string, unknown>)
+        .delimiters,
+    ).toEqual(['\n']);
     expect(out).not.toHaveProperty('layout_recognize');
     expect(out).not.toHaveProperty('auto_keywords');
     // graphrag/raptor are always stripped.
