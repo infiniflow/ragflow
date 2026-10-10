@@ -356,8 +356,8 @@ func TestWikipedia_CapsExtractOnRuneBoundary(t *testing.T) {
 			t.Errorf("Content carries U+FFFD. The cap cut a rune in half, leaving runes=%d bytes=%d.",
 				utf8.RuneCountInString(content), len(content))
 		}
-		if got := utf8.RuneCountInString(content); got > 10000 {
-			t.Errorf("Content rune count = %d, want at most 10000", got)
+		if got := utf8.RuneCountInString(content); got != 10000 {
+			t.Errorf("Content rune count = %d, want exactly 10000", got)
 		}
 		if strings.Contains(env.FormalizedContent, "\uFFFD") {
 			t.Error("FormalizedContent carries U+FFFD")
