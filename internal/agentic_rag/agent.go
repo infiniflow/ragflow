@@ -384,9 +384,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	// EnableStreaming lives on RunnerConfig, not ChatModelAgentConfig.
 	explorerHead := sess.explorer.head(ctx)
-	question := lastUserQuestion(in.Messages)
+	question := schema.UserMessage(lastUserQuestion(in.Messages))
 	seed := in.Messages
 	if len(seed) > 0 {
+		question = seed[len(seed)-1]
 		// The final user message is the new turn and must be appended exactly
 		// once by turnMessages.
 		seed = seed[:len(seed)-1]
@@ -715,10 +716,12 @@ func finalizeAnswer(
 		"assumption explicitly, and still provide the computed answer. Do not request any tools " +
 		"and do not hedge with \"I would need\" or \"I could not find\".")
 
-	resp, err := m.Generate(ctx, []*schema.Message{{
+	finalMessages := append([]*schema.Message(nil), messages...)
+	finalMessages = append(finalMessages, &schema.Message{
 		Role:    schema.User,
 		Content: body.String(),
-	}})
+	})
+	resp, err := m.Generate(ctx, finalMessages)
 	if err != nil {
 		return "", err
 	}
