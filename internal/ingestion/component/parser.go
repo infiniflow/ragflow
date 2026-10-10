@@ -112,7 +112,17 @@ const pageFormFeed = '\f'
 type ParserComponent struct {
 	setups                  map[string]schema.ParserSetup
 	enableVisionEnhancement bool
-	visionModelID           string
+	vision                  visionSettings
+}
+
+// visionSettings carries the global vision-enhancement choices. They sit at the
+// Parser params top level (vlm) instead of a per-family setup, so one model,
+// language and prompt serve the enhanced file types rather than each family
+// repeating them.
+type visionSettings struct {
+	modelID      string
+	lang         string
+	systemPrompt string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -126,7 +136,7 @@ type ParserComponent struct {
 //
 //	{
 //	  "enable_vision_enhancement": bool,
-//	  "vlm":                  {"llm_id": string},
+//	  "vlm":                  {"llm_id": string, "lang": string, "system_prompt": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -151,16 +161,28 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 			return nil, errors.New("parser: enable_vision_enhancement must be a boolean")
 		}
 	}
-	var visionModelID string
+	var vision visionSettings
 	if raw, exists := params["vlm"]; exists {
 		vlm, ok := raw.(map[string]any)
 		if !ok {
 			return nil, errors.New("parser: vlm must be an object")
 		}
 		if rawID, exists := vlm["llm_id"]; exists {
-			visionModelID, ok = rawID.(string)
+			vision.modelID, ok = rawID.(string)
 			if !ok {
 				return nil, errors.New("parser: vlm.llm_id must be a string")
+			}
+		}
+		if rawLang, exists := vlm["lang"]; exists {
+			vision.lang, ok = rawLang.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.lang must be a string")
+			}
+		}
+		if rawPrompt, exists := vlm["system_prompt"]; exists {
+			vision.systemPrompt, ok = rawPrompt.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.system_prompt must be a string")
 			}
 		}
 	}
@@ -180,7 +202,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 	}
 	normalizeParserOutputFormats(s)
-	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, visionModelID: visionModelID}
+	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
@@ -264,7 +286,7 @@ func (c *ParserComponent) Check() error {
 		// the global vision model and fall back to the dataset language, so a
 		// per-setup language is not required.
 		if !hasOCRFlag && c.enableVisionEnhancement && !strings.EqualFold(pm, "ocr") && pm != "" {
-			if lang, _ := img["lang"].(string); lang == "" {
+			if lang, _ := img["lang"].(string); lang == "" && c.vision.lang == "" {
 				return errors.New("image VLM language does not support empty value")
 			}
 		}
@@ -504,7 +526,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	var handledImage bool
 	if !handledVision && !handledMedia {
 		// Image dispatch: OCR with independently controlled VLM enhancement.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.visionModelID)
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -524,7 +546,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.visionModelID)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups, c.vision.modelID)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or

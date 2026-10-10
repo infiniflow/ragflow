@@ -164,8 +164,9 @@ export const initialParserValues = {
     json: { type: 'Array<object>', value: [] },
   },
   // Global vision enhancement, off by default; the model id is prefilled from
-  // the tenant's image2text default when a node is created.
-  vlm: { llm_id: '' },
+  // the tenant's image2text default when a node is created. Language and prompt
+  // are shared by the vision paths, so they live here rather than per family.
+  vlm: { llm_id: '', lang: '', system_prompt: '' },
   enable_vision_enhancement: false,
   setups: [
     {
@@ -187,7 +188,6 @@ export const initialParserValues = {
       output_format: ImageOutputFormat.Json,
       ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
-      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,

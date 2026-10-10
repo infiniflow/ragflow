@@ -1106,6 +1106,18 @@ func getStringOr(m map[string]any, key, def string) string {
 	return def
 }
 
+// firstNonEmpty returns the first non-empty value, or "" when all are empty.
+// Used to walk a settings precedence chain (global choice → legacy per-family
+// choice).
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
+}
+
 // cloneInputs returns a shallow copy of m with room for one extra key.
 // Used to inject the Globals-resolved `name` into the decode input without
 // mutating the caller's input snapshot.

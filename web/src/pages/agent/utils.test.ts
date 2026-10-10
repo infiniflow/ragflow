@@ -22,7 +22,11 @@ describe('transformParserParams vision settings', () => {
     } as any);
 
     expect(result.enable_vision_enhancement).toBe(true);
-    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+    expect(result.vlm).toEqual({
+      llm_id: 'model-B',
+      lang: '',
+      system_prompt: '',
+    });
     expect(result).not.toHaveProperty(`${FileType.PDF}.vlm`);
     expect(result).toHaveProperty(`${FileType.Audio}.vlm`, {
       llm_id: 'asr-model',
@@ -37,7 +41,11 @@ describe('transformParserParams vision settings', () => {
     } as any);
 
     expect(result.enable_vision_enhancement).toBe(enabled);
-    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+    expect(result.vlm).toEqual({
+      llm_id: 'model-B',
+      lang: '',
+      system_prompt: '',
+    });
   });
 });
 

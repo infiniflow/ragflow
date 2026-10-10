@@ -1,56 +1,32 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
-import { useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { LanguageFormField } from './common-form-fields';
 import { CommonProps } from './interface';
-import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
+// The image setup carries a single switch: run local OCR or not. The vision
+// model, its response language and its description prompt all belong to the
+// global enhancement block (see VisionEnhancementFormFields).
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
 
-  // Vision enhancement is a single global toggle shared by every vision-capable
-  // file type (see VisionEnhancementFormFields); the image setup only carries
-  // the independent OCR switch. Its language and prompt describe the global
-  // VLM pass, so they appear whenever that enhancement is on.
-  const enableVisionEnhancement = useWatch({
-    name: 'enable_vision_enhancement',
-  });
-
-  useSetInitialLanguage({ prefix, languageShown: !!enableVisionEnhancement });
-
   return (
-    <>
-      <RAGFlowFormItem
-        name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
-        label={t('flow.imageOcr')}
-        tooltip={t('flow.imageOcrTip')}
-        horizontal={true}
-        labelClassName="w-full"
-        valueClassName="w-8"
-      >
-        {(field) => (
-          <Switch
-            checked={!!field.value}
-            onCheckedChange={(checked) => {
-              field.onChange?.(checked);
-            }}
-          />
-        )}
-      </RAGFlowFormItem>
-      {enableVisionEnhancement && (
-        <LanguageFormField prefix={prefix}></LanguageFormField>
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
+      label={t('flow.imageOcr')}
+      tooltip={t('flow.imageOcrTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch
+          checked={!!field.value}
+          onCheckedChange={(checked) => {
+            field.onChange?.(checked);
+          }}
+        />
       )}
-      {enableVisionEnhancement && (
-        <RAGFlowFormItem
-          name={buildFieldNameWithPrefix('system_prompt', prefix)}
-          label={t('flow.systemPrompt')}
-        >
-          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
-        </RAGFlowFormItem>
-      )}
-    </>
+    </RAGFlowFormItem>
   );
 }

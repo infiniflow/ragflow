@@ -62,7 +62,11 @@ describe('parser-form utils', () => {
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       });
 
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        lang: '',
+        system_prompt: '',
+      });
       expect(values.enable_vision_enhancement).toBe(false);
 
       const byFileType = new Map(
@@ -98,7 +102,11 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(true);
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        lang: '',
+        system_prompt: '',
+      });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.PDF });
       // Audio keeps its per-setup ASR model.
       expect(values.setups[1]).toEqual({
@@ -116,7 +124,7 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(false);
-      expect(values.vlm).toEqual({ llm_id: '' });
+      expect(values.vlm).toEqual({ llm_id: '', lang: '', system_prompt: '' });
     });
 
     it('treats a non-empty per-setup model as enabled enhancement', () => {
@@ -127,7 +135,11 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(true);
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        lang: '',
+        system_prompt: '',
+      });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.Video });
     });
 
@@ -147,7 +159,7 @@ describe('parser-form utils', () => {
 
       const normalized = normalizeParserFormValues(values);
       expect(normalized).toEqual({
-        vlm: { llm_id: 'gpt-4o@OpenAI' },
+        vlm: { llm_id: 'gpt-4o@OpenAI', lang: '', system_prompt: '' },
         enable_vision_enhancement: true,
         setups: [
           { fileFormat: FileType.PDF },
@@ -164,7 +176,7 @@ describe('parser-form utils', () => {
         setups: [{ fileFormat: FileType.PDF, vlm: { llm_id: 'stale@Model' } }],
       });
 
-      expect(values.vlm).toEqual({ llm_id: '' });
+      expect(values.vlm).toEqual({ llm_id: '', lang: '', system_prompt: '' });
     });
 
     it('migrates a legacy image ocr parse_method onto ocr_enabled', () => {
@@ -192,10 +204,54 @@ describe('parser-form utils', () => {
       });
       // The model is not lost: it becomes the shared vision model, overriding
       // the (empty) global value, and the switch shape drops parse_method.
-      expect(normalized.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(normalized.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        lang: '',
+        system_prompt: '',
+      });
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: false,
+      });
+    });
+
+    it('lifts the image family language and prompt onto the global vlm', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            lang: 'French',
+            system_prompt: 'Describe the chart.',
+          },
+        ],
+      });
+      expect(normalized.vlm).toEqual({
+        llm_id: '',
+        lang: 'French',
+        system_prompt: 'Describe the chart.',
+      });
+      // The image setup keeps only its own switch.
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+      expect(normalizeParserFormValues(normalized)).toEqual(normalized);
+    });
+
+    it('does not let a stale image language override a global choice', () => {
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: '', lang: 'German', system_prompt: '' },
+        setups: [
+          { fileFormat: FileType.Image, lang: 'French', system_prompt: 'old' },
+        ],
+      });
+      // An explicit global language wins; the prompt still lifts because no
+      // global prompt was chosen.
+      expect(normalized.vlm).toEqual({
+        llm_id: '',
+        lang: 'German',
+        system_prompt: 'old',
       });
     });
 
@@ -207,7 +263,11 @@ describe('parser-form utils', () => {
         vlm: { llm_id: 'qwen-vl@DashScope' },
         setups: [{ fileFormat: FileType.Image, ocr_enabled: false }],
       });
-      expect(normalized.vlm).toEqual({ llm_id: 'qwen-vl@DashScope' });
+      expect(normalized.vlm).toEqual({
+        llm_id: 'qwen-vl@DashScope',
+        lang: '',
+        system_prompt: '',
+      });
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: false,

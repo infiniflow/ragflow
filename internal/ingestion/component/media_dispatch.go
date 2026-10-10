@@ -86,7 +86,7 @@ func maybeDispatchImage(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 	enableVisionEnhancement bool,
-	visionModelID string,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
 		return parser.ParseResult{}, false, nil
@@ -135,14 +135,13 @@ func maybeDispatchImage(
 	}
 	if enableVisionEnhancement {
 		// A setup with an explicit ocr_enabled switch always uses the global
-		// vision model. Only legacy setups (no switch) carry the VLM model
+		// vision settings. Only legacy setups (no switch) carry the VLM model
 		// reference in parse_method, which also disabled OCR by construction.
-		modelRef := visionModelID
+		imageVision := vision
 		if !hasOCRFlag && !useOCR {
-			modelRef = method
+			imageVision.modelID = method
 		}
-		}
-		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, modelRef)
+		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, imageVision)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
 			appendItemText(parsed.JSON[0], description)
@@ -204,15 +203,18 @@ func describeImage(
 	tenantID string,
 	setup schema.ParserSetup,
 	inputs map[string]any,
-	modelRef string,
+	vision visionSettings,
 ) (string, []string) {
 	// --- Optional VLM description ---
-	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// The dataset language still wins over an explicitly configured one, which
+	// is how every other vision path resolves its response language.
+	lang := resolveVisionLanguage(inputs, firstNonEmpty(vision.lang, getStringOr(setup, "lang", "")))
 	if tenantID == "" {
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
 
 	// Use the selected description model or the tenant default.
+	modelRef := vision.modelID
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -235,10 +237,11 @@ func describeImage(
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
-	// image family's contract key is system_prompt (parser.go:295),
-	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
-	// here — that key is for the video family, not image.
-	if v, ok := setup["system_prompt"].(string); ok && v != "" {
+	// The global enhancement prompt wins; the image family's legacy
+	// system_prompt (parser.go:295, mirroring Python parser.py:1119) stays as
+	// the fallback for canvases saved before the move. Do NOT read
+	// setup["prompt"] here — that key is for the video family, not image.
+	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{
@@ -248,9 +251,9 @@ func describeImage(
 			map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURI}},
 		},
 	}}
-	vision := true
+	visionFlag := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
-	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
 	if err != nil {
 		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}

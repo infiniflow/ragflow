@@ -23,10 +23,36 @@ jest.mock('@/components/ragflow-form', () => ({
       <Controller
         name={name}
         control={control}
-        render={({ field }) => children(field)}
+        render={({ field }) =>
+          typeof children === 'function' ? children(field) : children
+        }
       />
     );
   },
+}));
+
+jest.mock('@/components/cross-language-form-field', () => ({
+  useCrossLanguageOptions: () => [
+    { value: 'English', label: 'English' },
+    { value: 'Chinese', label: 'Chinese' },
+  ],
+}));
+
+jest.mock('@/components/originui/select-with-search', () => ({
+  SelectWithSearch: ({ value, onChange, options }: any) => (
+    <select
+      aria-label="Vision language"
+      value={value ?? ''}
+      onChange={(event) => onChange?.(event.target.value)}
+    >
+      <option value="">Unset</option>
+      {options.map((option: any) => (
+        <option key={option.value} value={option.value}>
+          {option.label}
+        </option>
+      ))}
+    </select>
+  ),
 }));
 
 jest.mock('@/components/model-tree-select', () => ({
@@ -55,7 +81,10 @@ jest.mock('@/components/model-tree-select', () => ({
 
 function ParserVisionForm({ model = '' }: { model?: string }) {
   const form = useForm({
-    defaultValues: { enable_vision_enhancement: false, vlm: { llm_id: model } },
+    defaultValues: {
+      enable_vision_enhancement: false,
+      vlm: { llm_id: model, lang: '', system_prompt: '' },
+    },
   });
   return (
     <FormProvider {...form}>
@@ -65,6 +94,18 @@ function ParserVisionForm({ model = '' }: { model?: string }) {
 }
 
 describe('global vision model selection', () => {
+  it('exposes the shared language and prompt only while enhancement is on', () => {
+    render(<ParserVisionForm />);
+    expect(screen.queryByLabelText('Vision language')).toBeNull();
+
+    fireEvent.click(screen.getByRole('switch'));
+
+    expect(screen.getByLabelText('Vision language')).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText('flow.systemPromptPlaceholder'),
+    ).toBeInTheDocument();
+  });
+
   it('selects default A on first enable and preserves user-selected B across toggles', () => {
     render(<ParserVisionForm />);
     fireEvent.click(screen.getByRole('switch'));

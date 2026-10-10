@@ -25,25 +25,27 @@ export const VisionEnhancementFileTypes: FileType[] = [
 ];
 
 // Lifts the legacy per-setup vision options (vlm.llm_id / flatten_media_to_text)
-// onto the top level and migrates the image family off parse_method. Idempotent,
-// so every boundary (form defaults, canvas save, dataset load) can apply it:
-// values already carrying a top-level enable_vision_enhancement keep it, and
-// per-setup leftovers are always stripped (except Audio's vlm, which holds the
-// ASR model). A legacy image parse_method value that is neither "ocr" nor empty
-// is treated as a VLM model reference: it lifts onto vlm.llm_id, the switch
-// turns into ocr_enabled=false, and parse_method disappears so the next
-// normalization is a no-op.
+// onto the top level and migrates the image family onto its own contract:
+// `ocr_enabled` replaces parse_method, and the language/prompt the image setup
+// used to own move into the global vlm block. Idempotent, so every boundary
+// (form defaults, canvas save, dataset load) can apply it: values already
+// carrying a top-level enable_vision_enhancement keep it, and per-setup
+// leftovers are always stripped (except Audio's vlm, which holds the ASR model).
+// A legacy image parse_method that is neither "ocr" nor empty is a VLM model
+// reference: it lifts onto vlm.llm_id and the switch turns off.
 export function normalizeParserFormValues<T extends Record<string, any>>(
   values: T,
-): T & { vlm: { llm_id: string }; enable_vision_enhancement: boolean } {
+): T & {
+  vlm: { llm_id: string; lang: string; system_prompt: string };
+  enable_vision_enhancement: boolean;
+} {
   const setups = Array.isArray(values?.setups) ? values.setups : [];
   const visionSetups = setups.filter((x) =>
     VisionEnhancementFileTypes.includes(x?.fileFormat),
   );
 
-  const legacyImageMethod = setups.find(
-    (x) => x?.fileFormat === FileType.Image,
-  )?.parse_method;
+  const imageSetup = setups.find((x) => x?.fileFormat === FileType.Image);
+  const legacyImageMethod = imageSetup?.parse_method;
   const legacyImageModel =
     typeof legacyImageMethod === 'string' &&
     !isEmpty(legacyImageMethod) &&
@@ -68,7 +70,7 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
     if (x?.fileFormat === FileType.Audio) return x;
     const stripped = omit(x, ['vlm', 'flatten_media_to_text']);
     if (x?.fileFormat !== FileType.Image) return stripped;
-    const { parse_method, ...rest } = stripped;
+    const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
     if (parse_method === undefined) return rest;
     const derived =
       isEmpty(parse_method) || String(parse_method).toLowerCase() === 'ocr';
@@ -77,7 +79,15 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
 
   return {
     ...values,
-    vlm: { ...values?.vlm, llm_id: llmId },
+    vlm: {
+      ...values?.vlm,
+      llm_id: llmId,
+      // The lifted image values only fill an unset global choice, so a choice
+      // made in the global block is never overwritten by a stale family value.
+      lang: values?.vlm?.lang || imageSetup?.lang || '',
+      system_prompt:
+        values?.vlm?.system_prompt || imageSetup?.system_prompt || '',
+    },
     enable_vision_enhancement: enableVisionEnhancement,
     setups: nextSetups,
   };
@@ -115,7 +125,11 @@ export function buildInitialParserValues(
 ) {
   return {
     ...initialParserValues,
-    vlm: { llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '' },
+    vlm: {
+      llm_id: defaultModelDictionary[ModelTypeToField.vision] ?? '',
+      lang: '',
+      system_prompt: '',
+    },
     setups: initialParserValues.setups.map(
       (setup) =>
         buildInitialParserSetup(

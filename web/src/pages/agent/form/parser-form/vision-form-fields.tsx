@@ -4,6 +4,9 @@ import {
 } from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
+import { useCrossLanguageOptions } from '@/components/cross-language-form-field';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
+import { Textarea } from '@/components/ui/textarea';
 import { ModelTypeToField } from '@/constants/llm';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useCallback } from 'react';
@@ -42,13 +45,14 @@ function VisionEnhancementSwitch({
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
 }
 
-// Global vision enhancement: one switch + img2txt model shared by every
-// vision-capable file type. The fields live at the form's top level
-// (`enable_vision_enhancement` and `vlm.llm_id`) alongside `setups`, matching
-// the backend Parser component's params contract.
+// Global vision enhancement: one switch + img2txt model + response language +
+// description prompt shared by the vision paths. The fields live at the form's
+// top level (`enable_vision_enhancement` and `vlm.{llm_id, lang, system_prompt}`)
+// alongside `setups`, matching the backend Parser component's params contract.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
+  const languageOptions = useCrossLanguageOptions();
   const enabled = useWatch({ name: 'enable_vision_enhancement' });
 
   return (
@@ -76,6 +80,30 @@ export function VisionEnhancementFormFields() {
           allowClear
           ownerTenantId={ownerTenantId}
         />
+      )}
+      {enabled && (
+        <RAGFlowFormItem
+          name="vlm.lang"
+          label={t('flow.lang')}
+          tooltip={t('flow.visionEnhancementLangTip')}
+        >
+          {(field) => (
+            <SelectWithSearch
+              options={languageOptions}
+              value={field.value}
+              onChange={field.onChange}
+            />
+          )}
+        </RAGFlowFormItem>
+      )}
+      {enabled && (
+        <RAGFlowFormItem
+          name="vlm.system_prompt"
+          label={t('flow.systemPrompt')}
+          tooltip={t('flow.visionEnhancementPromptTip')}
+        >
+          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
+        </RAGFlowFormItem>
       )}
     </>
   );
