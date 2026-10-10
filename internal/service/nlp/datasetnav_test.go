@@ -1501,7 +1501,7 @@ func TestNavService_MaybeSplitCluster_SplitsOverfull(t *testing.T) {
 	if _, err := eng.InsertChunks(t.Context(), rows, idx, "kb1"); err != nil {
 		t.Fatal(err)
 	}
-	if err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {
+	if _, err := ns.maybeSplitCluster(t.Context(), "t1", "kb1", clusterName, ""); err != nil {
 		t.Fatal(err)
 	}
 	splitA := clusterName + ":A"
@@ -1867,7 +1867,7 @@ func TestNavService_MaybeSplitClusterRefusesUnidentifiableChild(t *testing.T) {
 	}
 	ns := newTestNav(eng)
 
-	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+	if _, err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
 		t.Fatal("a child without a row id or document id must abort the split")
 	}
 	// Nothing may be reparented, and the original cluster must still be there.
@@ -1920,7 +1920,7 @@ func TestNavService_MaybeSplitClusterValidatesEveryChildFirst(t *testing.T) {
 	}
 	ns := newTestNav(eng)
 
-	if err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
+	if _, err := ns.maybeSplitCluster(context.Background(), "t1", "kb1", clusterName, ""); err == nil {
 		t.Fatal("an unaddressable child must abort the split")
 	}
 	for _, row := range eng.rows {
