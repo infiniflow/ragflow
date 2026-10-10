@@ -502,10 +502,15 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 	}
 
 	// A TOC is a document prefix, so the box-shape signal is only meaningful
-	// when this parse covers the document's first page.
-	coversDocumentStart := len(pages) > 0 && pages[0] == 0
+	// when this parse begins in the document's front matter. Pass the first
+	// parsed page (0-based) so RemoveTOCBoxes can decide; -1 when nothing was
+	// parsed.
+	firstParsedPage := -1
+	if len(pages) > 0 {
+		firstParsedPage = pages[0]
+	}
 	if err := p.buildLayout(ctx, result, boxes, pageChars,
-		medianHeights, medianWidths, pageEnglish, coversDocumentStart, totalPages); err != nil {
+		medianHeights, medianWidths, pageEnglish, firstParsedPage, totalPages); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
 	return result, nil
@@ -516,17 +521,19 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 // AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, table
 // merge, figure consolidation, BoxesToSections, and caption merge.
 //
-// coversDocumentStart reports whether `pages` started at the document's first
-// page, which is what the TOC box-shape signal requires (see RemoveTOCBoxes).
+// firstParsedPage is the first 0-based page of the parsed subset, or -1 when
+// unknown; RemoveTOCBoxes uses it to gate the TOC box-shape signal (see that
+// function's doc comment).
 // totalPages is the document's full page count, forwarded to
-// RemoveHeaderFooterBoxes so its document-level judgments are not derived from
-// the parsed page subset (see that function's doc comment).
+// RemoveHeaderFooterBoxes and RemoveTOCBoxes so their document-level judgments
+// are not derived from the parsed page subset (see those functions' doc
+// comments).
 func (p *Parser) buildLayout(ctx context.Context,
 	result *pdf.ParseResult,
 	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
 	medianHeights, medianWidths map[int]float64,
 	pageEnglish map[int]bool,
-	coversDocumentStart bool,
+	firstParsedPage int,
 	totalPages int,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
@@ -574,10 +581,10 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// exactly on that threshold can fall below it and be kept — a missed TOC
 	// page, which is the direction this detector errs in regardless.
 	//
-	// coversDocumentStart gates the TOC box-shape signal: a TOC is a document
+	// firstParsedPage gates the TOC box-shape signal: a TOC is a document
 	// prefix, so a parse restricted to a later page range must not read its own
-	// first page as one. The outline signal uses absolute page numbers and needs
-	// no such gate.
+	// first page as one (RemoveTOCBoxes allows it only inside the front-matter
+	// window). The outline signal uses absolute page numbers and needs no gate.
 	boxesBefore := len(boxes)
 	if p.Config.RemoveHeaderFooter {
 		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight, totalPages)
@@ -585,7 +592,7 @@ func (p *Parser) buildLayout(ctx context.Context,
 		boxesBefore = len(boxes)
 	}
 	if p.Config.RemoveTOC {
-		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), coversDocumentStart)
+		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), firstParsedPage, totalPages)
 		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
 	}
 
