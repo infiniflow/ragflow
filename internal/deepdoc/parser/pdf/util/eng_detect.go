@@ -1,7 +1,6 @@
 package util
 
 import (
-	"math/rand/v2"
 	"strings"
 
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
@@ -32,25 +31,22 @@ func IsASCIIPrintable(r rune) bool {
 	return false
 }
 
-// DefaultSampleChars returns a random sample of up to n character texts,
-// concatenated.  Matches Python's random.choices([c["text"] for c in
-// page_chars], k=min(100, len(page_chars))).
+// DefaultSampleChars returns up to n character texts, concatenated.
+// The page is split into that many equal spans, in page order, and one
+// character is taken from each span. The offset inside a span cycles so a
+// periodic mix is not stuck on one phase. The same page always yields the
+// same sample. Python's random.choices is still unseeded and jitters; do
+// not chase that difference in the parity harness.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
 	}
 	m := min(n, len(chars))
-	// Fisher-Yates shuffle on indices, then take first m.
-	indices := make([]int, len(chars))
-	for i := range indices {
-		indices[i] = i
-	}
-	rand.Shuffle(len(indices), func(i, j int) {
-		indices[i], indices[j] = indices[j], indices[i]
-	})
 	var buf strings.Builder
-	for i := 0; i < m; i++ {
-		buf.WriteString(chars[indices[i]].Text)
+	for i := range m {
+		start := i * len(chars) / m
+		width := (i+1)*len(chars)/m - start
+		buf.WriteString(chars[start+i%width].Text)
 	}
 	return buf.String()
 }
@@ -67,7 +63,7 @@ func FullTextFromChars(pageChars map[int][]pdf.TextChar) string {
 }
 
 // DetectEnglishPage reports whether one page contains a run of 30+
-// consecutive ASCII-printable characters in a random sample of up to 100
+// consecutive ASCII-printable characters in a sample of up to 100
 // extracted character texts.
 func DetectEnglishPage(chars []pdf.TextChar, sample pdf.SampleFunc) bool {
 	if len(chars) == 0 {

@@ -52,6 +52,73 @@ func TestDefaultSampleChars(t *testing.T) {
 	}
 }
 
+func TestDefaultSampleCharsStable(t *testing.T) {
+	chars := make([]pdf.TextChar, 40)
+	for i := range chars {
+		chars[i] = pdf.TextChar{Text: string(rune('a' + i%26))}
+	}
+	// Span offsets cycle: indexes 0,5,10,15,16,21,26,31,32,37.
+	const want = "afkpqvafgl"
+	var first string
+	for range 30 {
+		got := DefaultSampleChars(chars, 10)
+		if first == "" {
+			first = got
+			continue
+		}
+		if got != first {
+			t.Fatalf("DefaultSampleChars changed across calls: %q vs %q", first, got)
+		}
+	}
+	if first != want {
+		t.Fatalf("DefaultSampleChars = %q, want %q", first, want)
+	}
+}
+
+func TestDetectEnglishPageStable(t *testing.T) {
+	// 29 ASCII, one CJK, 29 ASCII. In page order the longest ASCII run is 29,
+	// so the page is not English. A shuffle of the same characters usually
+	// builds a run of 30 and flips the vote.
+	chars := make([]pdf.TextChar, 59)
+	for i := range chars {
+		if i == 29 {
+			chars[i] = pdf.TextChar{Text: "你"}
+			continue
+		}
+		chars[i] = pdf.TextChar{Text: "A"}
+	}
+	first := DetectEnglishPage(chars, nil)
+	for range 20 {
+		if got := DetectEnglishPage(chars, nil); got != first {
+			t.Fatalf("DetectEnglishPage flipped: %v then %v", first, got)
+		}
+	}
+	if first {
+		t.Fatal("DetectEnglishPage = true, want false")
+	}
+}
+
+func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
+	// 200 glyphs, A / 你 / A / 你. A fixed stride of len/n == 2 samples only
+	// the A phase and DetectEnglishPage returns true. There is no adjacent
+	// ASCII run on the page, so the vote must stay false.
+	chars := make([]pdf.TextChar, 200)
+	for i := range chars {
+		if i%2 == 0 {
+			chars[i] = pdf.TextChar{Text: "A"}
+			continue
+		}
+		chars[i] = pdf.TextChar{Text: "你"}
+	}
+	sample := DefaultSampleChars(chars, 100)
+	if !strings.Contains(sample, "A") || !strings.Contains(sample, "你") {
+		t.Fatalf("DefaultSampleChars = %q, want both A and 你", sample)
+	}
+	if DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage = true, want false")
+	}
+}
+
 func TestFullTextFromChars(t *testing.T) {
 	chars := map[int][]pdf.TextChar{
 		0: {{Text: "Hello"}, {Text: " "}, {Text: "World"}},
