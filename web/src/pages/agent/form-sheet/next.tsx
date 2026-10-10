@@ -29,6 +29,7 @@ interface IProps {
   hideSingleDebugDrawer: IModalProps<any>['hideModal'];
   showSingleDebugDrawer: IModalProps<any>['showModal'];
   chatVisible: boolean;
+  readOnly?: boolean;
 }
 
 const EmptyContent = () => <div></div>;
@@ -48,6 +49,7 @@ const FormSheet = ({
   chatVisible,
   hideSingleDebugDrawer,
   showSingleDebugDrawer,
+  readOnly = false,
 }: IModalProps<any> & IProps) => {
   const operatorName: Operator = node?.data.label as Operator;
   const { clickedToolId, getAgentToolById } = useGraphStore();
@@ -79,8 +81,10 @@ const FormSheet = ({
               <OperatorIcon
                 name={toolComponentName || operatorName}
               ></OperatorIcon>
-              <TitleInput node={node}></TitleInput>
-              {needsSingleStepDebugging(operatorName) && (
+              <TitleInput node={node} readOnly={readOnly}></TitleInput>
+              {/* Single-step debugging saves the graph before running, so it
+                  must stay hidden on a read-only canvas. */}
+              {!readOnly && needsSingleStepDebugging(operatorName) && (
                 <RunTooltip>
                   <Button
                     variant="ghost"
@@ -126,9 +130,23 @@ const FormSheet = ({
 
         <section className="pt-4 overflow-auto flex-1">
           {visible && (
-            <AgentFormContext.Provider value={node}>
-              <OperatorForm node={node} key={node?.id}></OperatorForm>
-            </AgentFormContext.Provider>
+            // fieldset disabled natively covers every button-type control
+            // (input, select trigger, switch, checkbox, segmented, buttons);
+            // pointer-events-none additionally blocks mouse interaction with
+            // non-native controls like the Radix slider. min-w-0 overrides the
+            // fieldset's default min-width: min-content so the sheet keeps its
+            // horizontal layout. Store write-back is separately gated in
+            // useWatchFormChange, so no change can leave the local form state.
+            <fieldset
+              disabled={readOnly || undefined}
+              className={cn('border-0 p-0 m-0 min-w-0', {
+                'pointer-events-none': readOnly,
+              })}
+            >
+              <AgentFormContext.Provider value={node}>
+                <OperatorForm node={node} key={node?.id}></OperatorForm>
+              </AgentFormContext.Provider>
+            </fieldset>
           )}
         </section>
       </SheetContent>

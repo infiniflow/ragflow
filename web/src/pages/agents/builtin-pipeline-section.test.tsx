@@ -1,6 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BuiltinPipelineSection } from './builtin-pipeline-section';
 import { AgentCategory } from '@/constants/agent';
@@ -12,6 +11,15 @@ jest.mock('@/hooks/use-agent-request', () => ({
 const mockCopy = jest.fn();
 jest.mock('./use-copy-builtin-pipeline', () => ({
   useCopyBuiltinPipeline: () => ({ copy: mockCopy, copying: false }),
+}));
+
+// The card navigates via useNavigatePage; mock it so the test never loads
+// routes.tsx (its top-level createBrowserRouter needs the `Request` global
+// that jsdom lacks).
+jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
+  useNavigatePage: () => ({
+    navigateToBuiltinPipeline: () => jest.fn(),
+  }),
 }));
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -77,7 +85,7 @@ describe('BuiltinPipelineSection', () => {
     expect(screen.getByTestId('builtin-pipeline-section')).toBeInTheDocument();
     expect(screen.getAllByTestId('copy-builtin-pipeline')).toHaveLength(1);
     expect(
-      container.querySelector('[data-testid="builtin-badge"]'),
+      container.querySelector('[data-testid="builtin-pipeline-card"]'),
     ).toBeTruthy();
   });
 

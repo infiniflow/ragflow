@@ -18,6 +18,15 @@ export const OwnerTenantIdContext = createContext<string | undefined>(
 // oxlint-disable-next-line react-refresh/only-export-components
 export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
 
+// CanvasReadonlyContext marks the canvas as view-only (e.g. the built-in
+// pipeline preview page). Node/toolbar/form components consume it to disable
+// every editing entry point while keeping viewing interactions (pan, zoom,
+// selection highlight, opening the parameter sheet) intact.
+export const CanvasReadonlyContext = createContext(false);
+
+// oxlint-disable-next-line react-refresh/only-export-components
+export const useCanvasReadonly = () => useContext(CanvasReadonlyContext);
+
 type AgentInstanceContextType = Pick<
   ReturnType<typeof useAddNode>,
   'addCanvasNode'

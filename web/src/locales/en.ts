@@ -51,6 +51,7 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      readOnly: 'Read-only',
       viewMore: 'View more',
       viewLess: 'View less',
       comingSoon: 'Coming soon',
