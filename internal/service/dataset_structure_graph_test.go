@@ -141,3 +141,34 @@ func TestBuildDocumentGraphTemplateShells_PreservesTemplateMetadata(t *testing.T
 		t.Fatal("empty template collections must be non-nil")
 	}
 }
+
+// TestStructureRowSourceOrder_MinChunkOrder verifies a row's source position is
+// the smallest chunk_order_int among its source_chunk_ids, and that a row with
+// no resolvable chunks reports ok=false (so it sorts to the end).
+func TestStructureRowSourceOrder_MinChunkOrder(t *testing.T) {
+	order := map[string]int{"c1": 5, "c2": 2, "c3": 9}
+	row := map[string]interface{}{"source_chunk_ids": []interface{}{"c1", "c2", "c3"}}
+	got, ok := structureRowSourceOrder(row, order)
+	if !ok || got != 2 {
+		t.Fatalf("structureRowSourceOrder = (%d,%v), want (2,true)", got, ok)
+	}
+	if _, ok := structureRowSourceOrder(map[string]interface{}{"source_chunk_ids": []string{"zz"}}, order); ok {
+		t.Fatal("expected ok=false when no source chunk resolves")
+	}
+}
+
+// TestNormalizeRelationEndpoints_WhitespaceInsensitive verifies an endpoint that
+// differs from the entity name only by the space character (half-width U+0020
+// vs ideographic U+3000) is still aligned to the entity, so the exact-name map
+// lookup downstream (frontend tree building) matches it.
+func TestNormalizeRelationEndpoints_WhitespaceInsensitive(t *testing.T) {
+	entities := []StructureGraphNode{{"name": "第一章 文忠公", "type": "title"}}
+	relations := []StructureGraphRelation{{"from": "第一章\u3000文忠公", "to": "某句", "type": "include"}}
+	out := normalizeRelationEndpoints(entities, relations)
+	if out[0]["from"] != "第一章 文忠公" {
+		t.Errorf("from = %q, want the entity name 第一章 文忠公", out[0]["from"])
+	}
+	if out[0]["to"] != "某句" {
+		t.Errorf("to = %q, want unchanged when no entity matches", out[0]["to"])
+	}
+}
