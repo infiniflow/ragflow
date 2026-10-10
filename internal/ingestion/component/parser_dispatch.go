@@ -78,6 +78,13 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
 func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parser.ParseResult {
+	if fileType == utility.FileTypePDF {
+		if setup, ok := setups["pdf"]; ok {
+			if resolved, err := maybeResolveAutoPDFLayout(setup, filename, data); err == nil {
+				setups["pdf"] = resolved
+			}
+		}
+	}
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no

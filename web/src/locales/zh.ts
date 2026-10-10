@@ -536,8 +536,15 @@ export default {
       pageRangeFromInvalid: '起始页码必须为大于 0 的整数',
       pageRangeToInvalid: '结束页码必须为不小于起始页码的整数',
       layoutRecognize: 'PDF解析器',
+      layoutRecognizeAuto: '自动（按文档）',
+      layoutRecognizeAutoTitle: '自动解析子选项',
+      layoutRecognizeAutoText: '文本 PDF 解析器',
+      layoutRecognizeAutoScanned: '扫描 PDF 解析器',
+      layoutRecognizeAutoMinChars: '文本层阈值（字符/页）',
+      layoutRecognizeAutoMinCharsTip:
+        '当每页非空白字符平均数达到或超过该阈值时使用文本解析器，否则使用扫描解析器。',
       layoutRecognizeTip:
-        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。',
+        '使用视觉模型进行 PDF 布局分析，以更好地识别文档结构，找到标题、文本块、图像和表格的位置。 如果选择 Naive 选项，则只能获取 PDF 的纯文本。请注意该功能只适用于 PDF 文档，对其他文档不生效。选择“自动”时，会按文档探测 PDF 文本层并分别选用文本或扫描解析器。欲了解更多信息，请参阅 https://ragflow.io/docs/dataset_configuration#document-parsing-configuration。'
       taskPageSize: '任务页面大小',
       taskPageSizeMessage: '请输入任务页面大小！',
       taskPageSizeTip: `如果使用布局识别，PDF 文件将被分成连续的组。 布局分析将在组之间并行执行，以提高处理速度。 “任务页面大小”决定组的大小。 页面大小越大，将页面之间的连续文本分割成不同块的机会就越低。`,

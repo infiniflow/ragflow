@@ -77,6 +77,14 @@ func maybeDispatchPDFVision(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
+	if resolved, err := maybeResolveAutoPDFLayout(setup, filename, binary); err != nil {
+		common.Warn("Auto PDF layout probe failed; using configured layout",
+			zap.String("filename", filename),
+			zap.Error(err))
+	} else {
+		setup = resolved
+		setups["pdf"] = setup
+	}
 
 	method := getStringOr(setup, "parse_method", "")
 	layout := getStringOr(setup, "layout_recognizer", "")
