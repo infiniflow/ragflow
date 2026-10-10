@@ -21,8 +21,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"ragflow/internal/engine"
-	"ragflow/internal/engine/types"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,9 +28,12 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
+	document "ragflow/internal/service/document"
 )
 
 // DatasetsHandler handles the RESTful dataset endpoints.
@@ -271,7 +272,7 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		TenantID: user.ID,
 	})
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		writeDatasetError(c, code, err)
 		return
 	}
 
@@ -457,7 +458,7 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 
 	result, code, err := h.datasetsService.UpdateDataset(ctx, datasetID, userID, req)
 	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
+		writeDatasetError(c, code, err)
 		return
 	}
 	if code != common.CodeSuccess {
@@ -1374,4 +1375,47 @@ func numericValue(value interface{}) float64 {
 	default:
 		return 0
 	}
+}
+
+// writeDatasetError answers a dataset request failure. A parser_config
+// rejection the column contract produced carries the business code its clients
+// branch on, the same one the upload and document paths answer with; every
+// other failure keeps the generic envelope.
+func writeDatasetError(c *gin.Context, code common.ErrorCode, err error) {
+	if dataset.IsTableConfigError(err) {
+		common.ResponseWithCodeData(c, code, tableErrorData(dataset.TableConfigInvalid), err.Error())
+		return
+	}
+	common.ErrorWithCode(c, code, err.Error())
+}
+
+// GetDatasetTableSchema serves GET /datasets/:dataset_id/table-schema: which
+// structured columns the indexed documents of this dataset can actually answer
+// with. It reads the published per-document records rather than the request
+// configuration or the source files, so a client can tell "the file has these
+// columns" apart from "the index can be queried on these".
+func (h *DatasetsHandler) GetDatasetTableSchema(c *gin.Context) {
+	datasetID := c.Param("dataset_id")
+	userID := c.GetString("user_id")
+	ctx := c.Request.Context()
+
+	if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableErrorData(document.TableAccessDenied),
+			fmt.Sprintf("You don't own the dataset %s.", datasetID))
+		return
+	}
+
+	fieldMap, docIDs, err := h.metadataService.TableFieldMap(ctx, []string{datasetID})
+	if err != nil {
+		common.Error("read dataset table schema failed", err)
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, "The indexed table schema could not be read.")
+		return
+	}
+	engineName := h.metadataService.EngineType()
+	common.SuccessWithData(c, gin.H{
+		"engine":         engineName,
+		"document_count": len(docIDs),
+		"sql_supported":  service.SupportsStructuredTableSQL(engineName),
+		"field_map":      fieldMap,
+	}, "success")
 }

@@ -27,6 +27,7 @@ import (
 	"context"
 	"encoding/csv"
 	"fmt"
+	"io"
 	"strings"
 	"unicode/utf8"
 )
@@ -98,6 +99,9 @@ func (p *CSVParser) ConfigureFromSetup(setup map[string]any) {
 // When TCADP parse_method is configured, the file is dispatched to
 // the Tencent Cloud Document Parsing API.
 func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	method := normalizeXLSXParseMethod(p.ParseMethod)
 	switch method {
 	case "tcadp":
@@ -131,9 +135,20 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	records, err := newCSVReader(text, detectCSVDelimiter(text)).ReadAll()
-	if err != nil {
-		return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
+	reader := newCSVReader(text, detectCSVDelimiter(text))
+	var records [][]string
+	for {
+		if err := ctx.Err(); err != nil {
+			return ParseResult{Err: err}
+		}
+		row, err := reader.Read()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return ParseResult{Err: fmt.Errorf("csv parse: %w", err)}
+		}
+		records = append(records, row)
 	}
 
 	// Clean illegal control characters from all cells.

@@ -19,276 +19,65 @@ package infinity
 import (
 	"errors"
 	"fmt"
+	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"path/filepath"
+	"ragflow/internal/utility"
 	"reflect"
 	"strings"
 	"testing"
 )
 
-// -----------------------------------------------------------------------------
-// preprocessSQL — mirrors infinity_conn_base.py:788-789.
-// -----------------------------------------------------------------------------
-
-func TestPreprocessSQL_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		// The regex collapses ALL runs of spaces/backticks — including
-		// leading and trailing whitespace. Trimming is a separate step
-		// in RunSQL (strings.TrimSpace before the preprocessing pass).
-		{"  leading and trailing  ", " leading and trailing "},
+func TestPrepareSQLPreservesLiteralsAndRewritesFields(t *testing.T) {
+	aliases := map[string]string{"docnm_kwd": "docnm", "title_tks": "docnm", "content_ltks": "content"}
+	for _, tc := range []struct{ name, sql, want string }{
+		{"literal", "select count(docnm_kwd) as label from ragflow_t1 where docnm_kwd = 'docnm_kwd  50% \x60value\x60' and docnm_kwd = 'where docnm_kwd'", "select count ( docnm ) as label from ragflow_t1 where docnm = 'docnm_kwd  50% \x60value\x60' and docnm = 'where docnm_kwd'"},
+		{"quoted fields", "select \x60docnm_kwd\x60 from \x60ragflow_t1\x60 where docnm_kwd like '%a  \x60b\x60%'", "select \"docnm\" from \"ragflow_t1\" where docnm like '%a  \x60b\x60%'"},
+		{"all expressions", "select docnm_kwd, count(content_ltks) as docnm_kwd from ragflow_t1 where docnm_kwd = 'x' group by docnm_kwd having count(content_ltks) > 0 order by title_tks", "select docnm, count ( content ) as docnm_kwd from ragflow_t1 where docnm = 'x' group by docnm having count ( content ) > 0 order by docnm"},
+		{"qualified name", "select ragflow_t1.docnm_kwd from ragflow_t1", "select ragflow_t1.docnm from ragflow_t1"},
+		{"whole name", "select title_sm_tks from ragflow_t1", "select title_sm_tks from ragflow_t1"},
+		{"JSON path", "select json_extract_string(chunk_data, '$.c_docnm_kwd') from ragflow_t1;", "select json_extract_string ( chunk_data, '$.c_docnm_kwd' ) from ragflow_t1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareSQL(tc.sql, aliases)
+			if err != nil || got != tc.want {
+				t.Fatalf("got=%q err=%v want=%q", got, err, tc.want)
+			}
+		})
 	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
+}
+
+func TestPrepareSQLRejectsUnanalyzableQuery(t *testing.T) {
+	for _, sqlText := range []string{"select doc_id from t; select doc_id from u", "select doc_id from t where docnm = 'unterminated", "select doc_id from t -- filter"} {
+		if _, err := prepareSQL(sqlText, nil); err == nil {
+			t.Fatalf("accepted %q", sqlText)
 		}
 	}
 }
 
-func TestPreprocessSQL_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
+func TestToRowMapsPreservesCellValues(t *testing.T) {
+	res := &pgconn.Result{
+		FieldDescriptions: []pgconn.FieldDescription{{Name: "value"}},
+		Rows:              [][][]byte{{[]byte("A|B")}, {[]byte("A\nB")}, {[]byte("  中文  ")}, {[]byte{}}, {nil}},
 	}
-	for _, c := range cases {
-		if got := preprocessSQL(c.in); got != c.want {
-			t.Errorf("preprocessSQL(%q) = %q, want %q", c.in, got, c.want)
-		}
+	want := []map[string]interface{}{{"value": "A|B"}, {"value": "A\nB"}, {"value": "  中文  "}, {"value": ""}, {"value": nil}}
+	if got := toRowMaps(res); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %#v want %#v", got, want)
 	}
 }
 
-func TestPreprocessSQL_Combined(t *testing.T) {
-	in := "SELECT   docnm_kwd  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	got := preprocessSQL(in)
-	want := "SELECT docnm_kwd FROM ragflow_t1 WHERE count > 0 "
-	if got != want {
-		t.Errorf("preprocessSQL(%q) = %q, want %q", in, got, want)
+func TestResolveSQLHostPort_DefaultsWhenConfigEmpty(t *testing.T) {
+	host, port := resolveSQLHostPort("", 0)
+	if host != defaultSQLHost {
+		t.Errorf("host: got %q, want %q", host, defaultSQLHost)
+	}
+	if port != defaultSQLPort {
+		t.Errorf("port: got %q, want %q", port, defaultSQLPort)
 	}
 }
 
-// -----------------------------------------------------------------------------
-// rewriteFieldAliases — mirrors infinity_conn_base.py:809-830.
-// -----------------------------------------------------------------------------
-
-func TestRewriteFieldAliases_SelectClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":    "docnm",
-		"title_tks":    "docnm",
-		"title_sm_tks": "docnm",
-		"content_ltks": "content",
-	}
-	in := "select docnm_kwd, title_tks, content_ltks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select docnm, docnm, content from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_WhereClause(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select doc_id from ragflow_t1 where docnm_kwd = 'foo'"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 where docnm = 'foo'"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_OrderGroupHaving(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd":     "docnm",
-		"important_kwd": "important_keywords",
-	}
-	in := "select doc_id from ragflow_t1 order by docnm_kwd group by important_kwd having important_kwd > 0"
-	got := rewriteFieldAliases(in, aliases)
-	want := "select doc_id from ragflow_t1 order by docnm group by important_keywords having important_keywords > 0"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_EmptyMapIsNoop(t *testing.T) {
-	in := "select docnm_kwd from ragflow_t1"
-	if got := rewriteFieldAliases(in, map[string]string{}); got != in {
-		t.Errorf("empty alias map should not modify SQL; got %q", got)
-	}
-}
-
-func TestRewriteFieldAliases_WordBoundaryProtected(t *testing.T) {
-	// "title" is an alias; "title_sm_tks" should NOT match because
-	// word boundary is enforced.
-	aliases := map[string]string{
-		"title": "docnm",
-	}
-	in := "select title_sm_tks from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	// "title" inside "title_sm_tks" should NOT be rewritten.
-	want := "select title_sm_tks from ragflow_t1"
-	if got != want {
-		t.Errorf("rewriteFieldAliases(%q) = %q, want %q (title_sm_tks must NOT be touched)", in, got, want)
-	}
-}
-
-func TestRewriteFieldAliases_NoAliasMatchLeavesSQLAlone(t *testing.T) {
-	aliases := map[string]string{
-		"docnm_kwd": "docnm",
-	}
-	in := "select content_with_weight from ragflow_t1"
-	got := rewriteFieldAliases(in, aliases)
-	if got != in {
-		t.Errorf("unrelated SQL should be unchanged; got %q", got)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// parsePsqlTable — mirrors infinity_conn_base.py:894-934.
-// -----------------------------------------------------------------------------
-
-func TestParsePsqlTable_StandardOutput(t *testing.T) {
-	// Sample psql table output for `select 1 as a, 2 as b;`
-	out := ` a | b
----+---
- 1 | 2
-(1 row)`
-
-	res := parsePsqlTable(out)
-	wantCols := []string{"a", "b"}
-	if !reflect.DeepEqual(res.Columns, wantCols) {
-		t.Errorf("columns: got %v, want %v", res.Columns, wantCols)
-	}
-	wantRows := [][]string{{"1", "2"}}
-	if !reflect.DeepEqual(res.Rows, wantRows) {
-		t.Errorf("rows: got %v, want %v", res.Rows, wantRows)
-	}
-}
-
-func TestParsePsqlTable_EmptyOutput(t *testing.T) {
-	res := parsePsqlTable("")
-	if len(res.Columns) != 0 || len(res.Rows) != 0 {
-		t.Errorf("empty output should yield (0 cols, 0 rows); got %+v", res)
-	}
-}
-
-func TestParsePsqlTable_NoSeparatorLine(t *testing.T) {
-	// Some psql configurations skip the separator line; the parser
-	// should still recover (data starts at line 1 in that case).
-	out := "a | b\n1 | 2"
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 1 {
-		t.Errorf("rows: got %d, want 1", len(res.Rows))
-	}
-}
-
-func TestParsePsqlTable_MultipleRowsAndRowCountFooter(t *testing.T) {
-	out := ` id | name
-----+------
-  1 | foo
-  2 | bar
-(2 rows)`
-	res := parsePsqlTable(out)
-	wantCols := []string{"id", "name"}
-	if !reflect.DeepEqual(res.Columns, wantCols) {
-		t.Errorf("columns: got %v, want %v", res.Columns, wantCols)
-	}
-	if len(res.Rows) != 2 {
-		t.Errorf("rows: got %d, want 2", len(res.Rows))
-	}
-	if res.Rows[0][0] != "1" || res.Rows[0][1] != "foo" {
-		t.Errorf("row[0]: got %v, want [1 foo]", res.Rows[0])
-	}
-	if res.Rows[1][0] != "2" || res.Rows[1][1] != "bar" {
-		t.Errorf("row[1]: got %v, want [2 bar]", res.Rows[1])
-	}
-}
-
-func TestParsePsqlTable_PadsAndTruncatesRows(t *testing.T) {
-	// Row with fewer cells → pad with empty strings.
-	// Row with more cells → truncate.
-	out := ` a | b | c
----+---+---
- 1 | 2
- 1 | 2 | 3 | 4
-(2 rows)`
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 2 {
-		t.Fatalf("rows: got %d, want 2", len(res.Rows))
-	}
-	// First row: ["1", "2", ""] (padded)
-	if !reflect.DeepEqual(res.Rows[0], []string{"1", "2", ""}) {
-		t.Errorf("padded row: got %v, want [1 2 ]", res.Rows[0])
-	}
-	// Second row: ["1", "2", "3"] (truncated)
-	if !reflect.DeepEqual(res.Rows[1], []string{"1", "2", "3"}) {
-		t.Errorf("truncated row: got %v, want [1 2 3]", res.Rows[1])
-	}
-}
-
-func TestParsePsqlTable_SkipsRowCountFooter(t *testing.T) {
-	out := " a \n---\n 1 \n(1 row)"
-	res := parsePsqlTable(out)
-	if len(res.Rows) != 1 {
-		t.Errorf("row count footer should be skipped; got %d rows", len(res.Rows))
-	}
-}
-
-// -----------------------------------------------------------------------------
-// toRowMaps — chunk-shape conversion.
-// -----------------------------------------------------------------------------
-
-func TestToRowMaps_EmptyResultsReturnsNil(t *testing.T) {
-	if rows := toRowMaps(nil); rows != nil {
-		t.Errorf("nil result: got %v, want nil", rows)
-	}
-	if rows := toRowMaps(&psqlResult{}); rows != nil {
-		t.Errorf("empty result: got %v, want nil", rows)
-	}
-}
-
-func TestToRowMaps_ConvertsToRowMaps(t *testing.T) {
-	res := &psqlResult{
-		Columns: []string{"id", "name"},
-		Rows: [][]string{
-			{"1", "foo"},
-			{"2", "bar"},
-		},
-	}
-	got := toRowMaps(res)
-	want := []map[string]interface{}{
-		{"id": "1", "name": "foo"},
-		{"id": "2", "name": "bar"},
-	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("toRowMaps: got %v, want %v", got, want)
-	}
-}
-
-// -----------------------------------------------------------------------------
-// resolvePsqlHostPort — mirrors infinity_conn_base.py:838-858.
-// -----------------------------------------------------------------------------
-
-func TestResolvePsqlHostPort_DefaultsWhenConfigEmpty(t *testing.T) {
-	host, port := resolvePsqlHostPort("", 0)
-	if host != defaultPsqlHost {
-		t.Errorf("host: got %q, want %q", host, defaultPsqlHost)
-	}
-	if port != defaultPsqlPort {
-		t.Errorf("port: got %q, want %q", port, defaultPsqlPort)
-	}
-}
-
-func TestResolvePsqlHostPort_OverridesFromConfig(t *testing.T) {
-	host, port := resolvePsqlHostPort("10.0.0.1:23817", 5433)
+func TestResolveSQLHostPort_OverridesFromConfig(t *testing.T) {
+	host, port := resolveSQLHostPort("10.0.0.1:23817", 5433)
 	if host != "10.0.0.1" {
 		t.Errorf("host: got %q, want 10.0.0.1", host)
 	}
@@ -297,14 +86,14 @@ func TestResolvePsqlHostPort_OverridesFromConfig(t *testing.T) {
 	}
 }
 
-func TestResolvePsqlHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
+func TestResolveSQLHostPort_EmptyHostInURIFallsBackToDefault(t *testing.T) {
 	// ":23817" parses via strings.Cut to ("", "23817") — the empty
 	// host doesn't override the default, matching Python's
 	// `re.search(r"host=(\S+)", ...)` which only matches a non-empty
 	// value.
-	host, port := resolvePsqlHostPort(":23817", 5432)
-	if host != defaultPsqlHost {
-		t.Errorf("host: got %q, want default %q (empty host in URI should not override)", host, defaultPsqlHost)
+	host, port := resolveSQLHostPort(":23817", 5432)
+	if host != defaultSQLHost {
+		t.Errorf("host: got %q, want default %q (empty host in URI should not override)", host, defaultSQLHost)
 	}
 	if port != "5432" {
 		t.Errorf("port: got %q, want 5432", port)
@@ -332,7 +121,7 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 		t.Fatalf("write conf/mapping: %v", err)
 	}
 
-	a2a, r2a, err := loadFieldMapping("test_mapping.json")
+	a2a, err := loadFieldMapping("test_mapping.json")
 	if err != nil {
 		t.Fatalf("loadFieldMapping: %v", err)
 	}
@@ -348,38 +137,23 @@ func TestLoadFieldMapping_ParsesAliases(t *testing.T) {
 	if !reflect.DeepEqual(a2a, expectedAliases) {
 		t.Errorf("aliasToActual: got %v, want %v", a2a, expectedAliases)
 	}
-
-	// actual → first alias (mirrors Python at line 807)
-	if r2a["docnm"] != "docnm_kwd" {
-		t.Errorf("actualToFirstAlias[docnm]: got %q, want docnm_kwd", r2a["docnm"])
-	}
-	if r2a["content"] != "content_with_weight" {
-		t.Errorf("actualToFirstAlias[content]: got %q, want content_with_weight", r2a["content"])
-	}
-	// "plain" has no comment, so it shouldn't appear in the reverse map.
-	if _, ok := r2a["plain"]; ok {
-		t.Errorf("actualToFirstAlias should not include fields without comments")
-	}
 }
 
 func TestLoadFieldMapping_EmptyNameDefaultsToInfinityMappingJSON(t *testing.T) {
-	// Ensure the test runs in an isolated project base so any repo file
-	// named "infinity_mapping.json" doesn't get picked up.
 	dir := t.TempDir()
-	os.Setenv("RAG_PROJECT_BASE", dir)
-	defer os.Unsetenv("RAG_PROJECT_BASE")
-
-	// Empty name → defaults to "infinity_mapping.json" (line 145).
-	// We just verify the function doesn't panic and the file-not-found
-	// path is taken silently.
-	t.Setenv("RAG_PROJECT_BASE", t.TempDir())
-
-	a2a, r2a, err := loadFieldMapping("")
-	if err != nil {
-		t.Fatalf("empty name: %v", err)
+	t.Setenv("RAG_PROJECT_BASE", dir)
+	if err := os.MkdirAll(filepath.Join(dir, "conf"), 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if len(a2a) == 0 || len(r2a) == 0 {
-		t.Errorf("empty name + no file should yield empty maps; got a2a=%v r2a=%v", a2a, r2a)
+	if err := os.WriteFile(filepath.Join(dir, "conf", "infinity_mapping.json"), []byte(`{"native":{"comment":"alias"}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	aliases, err := loadFieldMapping("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(aliases, map[string]string{"alias": "native"}) {
+		t.Fatalf("default mapping aliases: %v", aliases)
 	}
 }
 
@@ -774,5 +548,146 @@ func TestKeywordFilterRenderingBothPaths(t *testing.T) {
 	}
 	if got := buildFilterFromCondition(allBlank, nil); got != "1=1" {
 		t.Errorf("update/delete path with only blank entries = %q, want '1=1'", got)
+	}
+}
+
+// The table name the chat path builds is longer than one identifier: "ragflow_"
+// plus a 32-character tenant id, an underscore, and a 32-character dataset id.
+// The rewrite has to carry it through, which only holds while the range check
+// and this rewrite agree on the name.
+func TestPrepareSQLKeepsAGeneratedTableName(t *testing.T) {
+	table := "ragflow_" + strings.Repeat("a1", 16) + "_" + strings.Repeat("b2", 16)
+	path := "'$.c_" + strings.Repeat("b2", 32) + "'"
+	got, err := prepareSQL("select doc_id, json_extract_string(chunk_data, "+path+") from "+table+
+		" where doc_id IN ( 'doc-one' ) and available_int = 1 and table_row_int = 1", nil)
+	if err != nil {
+		t.Fatalf("prepareSQL: %v", err)
+	}
+	for _, want := range []string{table, path, "available_int = 1", "table_row_int = 1"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("the rewrite lost %q: %s", want, got)
+		}
+	}
+	if len(table) <= 64 {
+		t.Fatalf("the fixture no longer exceeds the id bound: %d", len(table))
+	}
+}
+
+func TestPrepareSQLRejectsCaseExpressions(t *testing.T) {
+	for _, query := range []string{
+		"SELECT CASE WHEN doc_id = 'x' THEN 'yes' ELSE 'no' END FROM chunks",
+		"SELECT CASE WHEN doc_id = 'x' THEN json_extract_string(chunk_data, '$.k_abc') ELSE 'other' END AS label FROM chunks ORDER BY label",
+	} {
+		if _, err := prepareSQL(query, nil); err == nil || !strings.Contains(err.Error(), "CASE") {
+			t.Fatalf("CASE query accepted: %v", err)
+		}
+	}
+	if _, err := prepareSQL("SELECT 'case' AS label FROM chunks", nil); err != nil {
+		t.Fatalf("literal rejected: %v", err)
+	}
+}
+
+func TestJSONResultsPreserveSelectModifiers(t *testing.T) {
+	for _, modifier := range []string{"DISTINCT", "ALL"} {
+		tokens, err := utility.SQLScan("SELECT " + modifier + " json_extract_string(chunk_data, '$.amount') AS amount FROM t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, columns, err := prepareJSONResults(tokens)
+		if err != nil || !columns[0] {
+			t.Fatalf("%s projection lost JSON decoding: %v (%v)", modifier, columns, err)
+		}
+	}
+}
+func TestProjectionDoesNotTreatAllAsAnInputColumn(t *testing.T) {
+	sql, err := prepareSQL("SELECT ALL CAST(json_extract_string(chunk_data, '$.amount') AS DOUBLE) AS amount FROM t ORDER BY amount", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToUpper(sql), ", ALL FROM") {
+		t.Fatalf("ALL became an inner column: %s", sql)
+	}
+}
+func TestNumericChecksRejectUnsupportedConversions(t *testing.T) {
+	for _, expr := range []string{"CAST(doc_id AS DECIMAL)", "CAST(doc_id AS NUMERIC)", "CAST(doc_id AS DECIMAL(10,2))", "TRY_CAST(doc_id AS DOUBLE)"} {
+		tokens, err := utility.SQLScan("SELECT " + expr + " FROM t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		shape, err := utility.SQLSplitSelect(tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := numericSQLChecks(tokens, shape.Clauses, nil); err == nil {
+			t.Fatalf("unchecked conversion accepted: %s", expr)
+		}
+	}
+}
+
+func TestRewriteSQLNormalizesDoubleEqualsInProductionPath(t *testing.T) {
+	tokens, err := utility.SQLScan("SELECT count(*) FROM ragflow_t1 WHERE json_extract_isnull(chunk_data, '$.c_value') == false")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens, clauses, _, err := prepareJSONResults(tokens)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := rewriteSQL(tokens, clauses, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, ") = false") || strings.Contains(got, "= =") {
+		t.Fatalf("invalid equality in SQL: %s", got)
+	}
+}
+
+func TestJSONOrderingMatchesProjectionWithoutChangingNumericCasts(t *testing.T) {
+	for _, tc := range []struct{ order, want string }{
+		{"json_extract_string(chunk_data,'$.value')", "json_extract ( chunk_data, '$.value' )"},
+		{"CAST(json_extract_string(chunk_data,'$.value') AS DOUBLE)", "CAST ( json_extract_string ( chunk_data, '$.value' ) AS DOUBLE )"},
+	} {
+		tokens, err := utility.SQLScan("SELECT json_extract_string(chunk_data,'$.value') FROM t ORDER BY " + tc.order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, clauses, _, err := prepareJSONResults(tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := utility.SQLRender(clauses.OrderBy, '"')
+		if got != tc.want {
+			t.Errorf("order %s: got %s want %s", tc.order, got, tc.want)
+		}
+	}
+}
+
+func TestProjectionExcludesAggregateAliasesFromSource(t *testing.T) {
+	for _, tc := range []struct{ name, query, unwanted string }{
+		{"order", "SELECT json_extract_string(chunk_data, '$.region') AS region, SUM(CAST(json_extract_string(chunk_data, '$.amount') AS DOUBLE)) AS total FROM t GROUP BY json_extract_string(chunk_data, '$.region') ORDER BY total DESC", ", total FROM"},
+		{"having", "SELECT json_extract_string(chunk_data, '$.region') AS region, COUNT(*) AS n FROM t GROUP BY json_extract_string(chunk_data, '$.region') HAVING n > 1", ", n FROM"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := prepareSQL(tc.query, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(got, tc.unwanted) {
+				t.Fatalf("aggregate alias became a source column: %s", got)
+			}
+		})
+	}
+}
+
+func TestProjectionPreservesSourceColumnShadowedByAlias(t *testing.T) {
+	got, err := prepareSQL("SELECT SUM(total) AS total, CAST(amount AS DOUBLE) AS amount FROM t ORDER BY total", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, ", total FROM t") {
+		t.Fatalf("native aggregate input lost: %s", got)
+	}
+	if strings.Count(got, ", total FROM") != 1 {
+		t.Fatalf("native input duplicated: %s", got)
 	}
 }

@@ -31,24 +31,71 @@ package chunker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"ragflow/internal/agent/runtime"
-	"ragflow/internal/ingestion/component/schema"
-
 	"gorm.io/gorm"
+
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 )
 
 const ComponentNameTableChunker = "TableChunker"
 
-type tableChunkerParam struct{}
+type tableChunkerParam struct {
+	schema.TableChunkerParam
+	updateErr error
+}
 
-func (p *tableChunkerParam) Update(conf map[string]any) {}
+func (p *tableChunkerParam) Update(conf map[string]any) {
+	if conf == nil {
+		return
+	}
+	if v, ok := conf["column_mode"]; ok {
+		mode, err := entity.ValidateTableMode(v)
+		if err != nil {
+			p.updateErr = errors.Join(p.updateErr, err)
+		} else {
+			p.ColumnMode = mode
+		}
+	}
+	if v, ok := conf["column_roles"]; ok {
+		roles, err := entity.ValidateTableRoles(v)
+		if err != nil {
+			p.updateErr = errors.Join(p.updateErr, err)
+		} else {
+			p.ColumnRoles = roles
+		}
+	}
+}
 
-func (tableChunkerParam) Defaults() tableChunkerParam { return tableChunkerParam{} }
+func (tableChunkerParam) Defaults() tableChunkerParam {
+	return tableChunkerParam{
+		TableChunkerParam: schema.TableChunkerParam{
+			ColumnMode:  entity.TableModeAuto,
+			ColumnRoles: map[string]string{},
+		},
+	}
+}
 
-func (tableChunkerParam) Validate() error { return nil }
+func (p tableChunkerParam) Validate() error {
+	if p.updateErr != nil {
+		return p.updateErr
+	}
+	if p.ColumnMode != entity.TableModeAuto && p.ColumnMode != entity.TableModeManual {
+		return fmt.Errorf("column_mode %q is invalid: only %q and %q are allowed",
+			p.ColumnMode, entity.TableModeAuto, entity.TableModeManual)
+	}
+	for key, role := range p.ColumnRoles {
+		if !entity.IsValidTableRole(role) {
+			return fmt.Errorf("column_roles[%q] has an invalid role %q", key, role)
+		}
+	}
+	return nil
+}
 
 type TableChunkerComponent struct {
 	name  string
@@ -74,17 +121,59 @@ func (c *TableChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs 
 	return c.invoke(ctx, inputs)
 }
 
-func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
+// tableProfile is the column configuration one TableChunker node applies to
+// the spreadsheet rows it emits, resolved once per run.
+type tableProfile struct {
+	mode   string
+	roles  map[string]string
+	manual bool
+}
+
+func (p tableProfile) roleFor(key string) string {
+	if !p.manual {
+		return entity.TableRoleBoth
+	}
+	if role, ok := p.roles[key]; ok {
+		return role
+	}
+	return entity.TableRoleBoth
+}
+
+// effectiveRoles resolves each column's role for building a row. An unset
+// manual column behaves as both.
+func (p tableProfile) effectiveRoles(cols []entity.TableColumn) map[string]string {
+	roles := make(map[string]string, len(cols))
+	for _, col := range cols {
+		roles[col.Key] = p.roleFor(col.Key)
+	}
+	return roles
+}
+
+// declaredRoles carries explicit roles to the aggregation step. Only explicitly
+// configured metadata/both columns contribute document metadata in manual mode.
+func (p tableProfile) declaredRoles() map[string]string {
+	if !p.manual {
+		return nil
+	}
+	return p.roles
+}
+
+func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]any) (map[string]any, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return nil, fmt.Errorf("TableChunker input: %w", err)
+	}
+
+	profile := tableProfile{
+		mode:   c.param.ColumnMode,
+		roles:  c.param.ColumnRoles,
+		manual: c.param.ColumnMode == entity.TableModeManual,
 	}
 
 	switch upstream.OutputFormat {
@@ -105,12 +194,39 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 		return emitOne(*upstream.HTMLResult, "text"), nil
 	default:
 		// Row-structured payload: one chunk per upstream record.
-		items := tableItems(upstream.JSONResult, upstream.Chunks)
+		items, err := tableItems(ctx, upstream.JSONResult, upstream.Chunks, profile, upstream.FileType)
+		if err != nil {
+			return nil, err
+		}
 		if len(items) == 0 {
 			return emptyOutputs(), nil
 		}
 		return chunkOutputs(items), nil
 	}
+}
+
+// supportsColumnMode reports whether a parsed file reaches the chunker on the
+// canonical spreadsheet wire that column roles are defined against. The
+// spreadsheet parsers emit segmented HTML tables with a row-aligned position
+// matrix and a 1-based sheet index; TSV is not routed to the CSV parser at all,
+// and a .xls extension alone does not prove the bytes went through a real OLE
+// XLS reader. Manual roles are therefore only honoured for csv/xlsx.
+func supportsColumnMode(fileType string) bool {
+	switch strings.ToLower(strings.TrimPrefix(fileType, ".")) {
+	case "csv", "xlsx":
+		return true
+	}
+	return false
+}
+
+// raggedRowHint names the repair for a row carrying more cells than its header.
+// A CSV row is wide because a cell holding a comma was not quoted; a spreadsheet
+// row is wide because the sheet really carries a cell the header does not name.
+func raggedRowHint(fileType string) string {
+	if strings.EqualFold(strings.TrimPrefix(fileType, "."), "csv") {
+		return "quote the value holding a comma"
+	}
+	return "give those cells header columns"
 }
 
 // tableItems returns the per-row records, preferring JSONResult and
@@ -119,32 +235,59 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 // pre-upgrade row-IR records (ck_type: table_row/table_header with cells),
 // which hold no markup and therefore keep no per-row positions; documents
 // from before this wire must be re-parsed rather than re-chunked.
-func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
+func tableItems(ctx context.Context, items, chunks []schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
 	source := items
 	if len(source) == 0 {
 		source = chunks
 	}
 	if len(source) == 0 {
-		return nil
+		return nil, nil
 	}
 	filtered := make([]schema.ChunkDoc, 0, len(source))
 	for _, item := range source {
-		filtered = append(filtered, expandHTMLTableRows(item)...)
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		expanded, err := expandHTMLTableRows(ctx, item, profile, fileType)
+		if err != nil {
+			return nil, err
+		}
+		filtered = append(filtered, expanded...)
 	}
-	return filtered
+	return filtered, nil
 }
 
 // expandHTMLTableRows turns one HTML <table> payload into one chunk per data
 // row. Non-table payloads pass through unchanged. A table whose only row is
 // the header keeps the whole markup as its single chunk: the header line is
 // then the only searchable representation.
-func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
-	if !isTableHTML(item.Text) {
-		return []schema.ChunkDoc{item}
+//
+// On the spreadsheet wire each row additionally carries its structured cells
+// (chunk_data) and its source identity, so a row stays addressable even when
+// column roles leave its body text empty. In manual mode a row set that
+// filters down to nothing emits no chunk rather than falling back to the whole
+// table markup, which would leak every excluded column back into the index.
+func expandHTMLTableRows(ctx context.Context, item schema.ChunkDoc, profile tableProfile, fileType string) ([]schema.ChunkDoc, error) {
+	if !utility.LooksLikeTableHTML(item.Text) {
+		return []schema.ChunkDoc{item}, nil
 	}
-	rows, headerCount := tableRowsWithHeader(item.Text)
+	rows, headerCount := utility.HTMLTableRowsWithHeader(item.Text)
+	spreadsheet := item.SheetIndex != nil && headerCount >= 1
+	if profile.manual {
+		if !supportsColumnMode(fileType) {
+			return nil, fmt.Errorf("TableChunker: column mode %q is not supported for file type %q; column roles apply to csv and xlsx only", profile.mode, fileType)
+		}
+		if !spreadsheet {
+			return nil, fmt.Errorf("TableChunker: column mode %q needs the spreadsheet table wire, which this item (%s) does not carry", profile.mode, describeTableItem(item))
+		}
+	}
 	if len(rows) <= headerCount {
-		return []schema.ChunkDoc{item}
+		if profile.manual && spreadsheet {
+			// Header only: no data row to index, and the whole-table
+			// fallback would publish the unfiltered markup.
+			return nil, nil
+		}
+		return []schema.ChunkDoc{item}, nil
 	}
 	names := rows[0]
 	// R1: a row chunk must carry only its own tuple. That is only sound when
@@ -166,27 +309,138 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 			}
 		}
 	}
+	if profile.manual && spreadsheet && !aligned {
+		return nil, fmt.Errorf("TableChunker: column mode %q needs one row-aligned position tuple per <tr>; item (%s) has %d rows and %d tuples",
+			profile.mode, describeTableItem(item), len(rows), len(matrix))
+	}
+
+	if profile.manual && spreadsheet {
+		// A cell past the last header column has no column identity: no key, no
+		// display name, no data key and no role. Manual mode routes cells by
+		// column, so it cannot route that one. Dropping it would lose a value the
+		// row holds, and keeping it as body text would index a column the roles
+		// never named, which is the one thing manual mode exists to control. The
+		// sheet is therefore refused, and the message carries the extent and the
+		// ways out instead of blaming the file.
+		if wide := utility.TableRowsWiderThanHeader(names, rows[headerCount:]); len(wide) > 0 {
+			return nil, fmt.Errorf("TableChunker: %d of %d data row(s) have more cells than the %d-column header (sheet %d, first at row %d); column mode %q cannot route a cell that has no column: %s, or use column mode %q, which keeps those cells as body text",
+				len(wide), len(rows)-headerCount, len(names), *item.SheetIndex, int(matrix[headerCount+wide[0]][1]), profile.mode, raggedRowHint(fileType), entity.TableModeAuto)
+		}
+	}
+
+	cols := entity.DeriveTableColumns(names)
+	rowRoles := profile.effectiveRoles(cols)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
-		text := tableRowRecordText(names, row)
-		if text == "" {
-			continue
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		sourceRow := 0
+		if aligned {
+			sourceRow = int(matrix[headerCount+i][1])
+		}
+		var tuple json.RawMessage
+		if aligned {
+			if raw, err := json.Marshal([][]float64{matrix[headerCount+i]}); err == nil {
+				tuple = raw
+			}
 		}
 		doc := item
-		doc.Text = text
 		doc.TKNums = nil
-		doc.Positions = nil
-		if aligned {
-			if tuple, err := json.Marshal([][]float64{matrix[headerCount+i]}); err == nil {
-				doc.Positions = tuple
+		doc.Positions = tuple
+
+		if !spreadsheet {
+			doc.Text = tableRowRecordText(names, row)
+			if doc.Text == "" {
+				continue
 			}
+			out = append(out, doc)
+			continue
+		}
+
+		text, data := projectTableRow(cols, rowRoles, row)
+		if !profile.manual && len(row) > len(cols) {
+			// Auto indexes every column anyway, and keeping the extra cells' text
+			// is what this path did before column modes existed: a ragged row must
+			// not cost the whole document. Body text only — the trailing cells
+			// carry no column identity, so chunk_data's field set stays the
+			// header's.
+			if tail := tableRowRecordText(nil, row[len(cols):]); tail != "" {
+				if text == "" {
+					text = tail
+				} else {
+					text += "\n" + tail
+				}
+			}
+		}
+		if text == "" && len(data) == 0 {
+			continue
+		}
+		if text == "" {
+			// Every visible column is metadata-only: the row still has to
+			// carry text the tokenizer can work on, and it must not repeat
+			// the cell values that are excluded from the body.
+			text = fmt.Sprintf("Sheet %d, row %d", *item.SheetIndex, sourceRow)
+		}
+		doc.Text = text
+		doc.ChunkData = data
+		doc.TableRowInt = 1
+		doc.TableRowSource = &schema.TableRowSource{
+			SheetIndex: *item.SheetIndex,
+			SourceRow:  sourceRow,
+			Mode:       profile.mode,
+			Columns:    cols,
+			Roles:      profile.declaredRoles(),
 		}
 		out = append(out, doc)
 	}
 	if len(out) == 0 {
-		return []schema.ChunkDoc{item}
+		if profile.manual && spreadsheet {
+			return nil, nil
+		}
+		return []schema.ChunkDoc{item}, nil
 	}
-	return out
+	return out, nil
+}
+
+// projectTableRow renders one spreadsheet row under its effective column
+// roles: body text carries the columns visible to indexing, chunk_data carries
+// the columns readable as structured values, with an empty cell written as an
+// empty string so the row's field set stays the sheet's field set. A row whose
+// cells are all empty yields nothing.
+func projectTableRow(cols []entity.TableColumn, roles map[string]string, cells []string) (string, map[string]any) {
+	lines := make([]string, 0, len(cells))
+	data := make(map[string]any, len(cols))
+	hasValue := false
+	for j, col := range cols {
+		value := ""
+		if j < len(cells) {
+			value = strings.TrimSpace(cells[j])
+		}
+		if value != "" {
+			hasValue = true
+		}
+		role := roles[col.Key]
+		if role != entity.TableRoleMetadata && value != "" {
+			lines = append(lines, "- "+col.DisplayName+": "+value)
+		}
+		if role != entity.TableRoleIndexing {
+			data[col.DataKey] = value
+		}
+	}
+	if !hasValue {
+		return "", nil
+	}
+	return strings.Join(lines, "\n"), data
+}
+
+// describeTableItem names an item in a column-mode error by the identity a
+// reader would recognise: sheet and table id rather than a dump of the markup.
+func describeTableItem(item schema.ChunkDoc) string {
+	if item.SheetIndex != nil {
+		return fmt.Sprintf("sheet_index=%d, sheet=%q", *item.SheetIndex, item.Sheet)
+	}
+	return fmt.Sprintf("ck_type=%q, sheet=%q", item.CKType, item.Sheet)
 }
 
 // tableRowRecordText renders one row in the Python table chunker's line format:

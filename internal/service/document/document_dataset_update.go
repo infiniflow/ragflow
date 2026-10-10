@@ -6,9 +6,10 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strconv"
 	"strings"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -16,9 +17,8 @@ import (
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
-
-	"go.uber.org/zap"
 )
 
 func (s *DocumentService) BatchUpdateDocumentStatus(ctx context.Context, userID, datasetID, status string, documentIDs []string) (map[string]interface{}, common.ErrorCode, error) {
@@ -184,28 +184,51 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
-		var dslJSON []byte
-		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
-		if err != nil {
-			common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
-				zap.Error(err))
-			if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
+		if pipelinepkg.IsTableColumnOnlyConfig(req.ParserConfig) {
+			// A column-only patch edits the document's own configuration. The
+			// general path rebuilds parser_config from the current DSL, which
+			// would drop every parameter this request never mentioned: changing
+			// a role is not a reason to reset the rest of the canvas.
+			merged, mergeErr := applyColumnOverride(doc.ParserConfig, req.ParserConfig)
+			if mergeErr != nil {
+				return nil, common.CodeArgumentError, mergeErr
+			}
+			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+				"parser_config": merged,
+			}); err != nil {
 				return nil, common.CodeDataError, err
 			}
 		} else {
-			cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
-			pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
-			tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
-			if tenantErr == nil && tenant != nil {
-				cleaned = service.ApplyComponentScopedParserConfig(
-					cleaned,
-					tenant.LLMID,
-				)
-			}
-			if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
-				"parser_config": cleaned,
-			}); err != nil {
-				return nil, common.CodeDataError, err
+			var dslJSON []byte
+			dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
+			if err != nil {
+				common.Warn("cleanAndUpdateDocumentParserConfig: failed to load DSL, falling back to merge",
+					zap.Error(err))
+				if err = s.updateDocumentParserConfig(ctx, doc.ID, req.ParserConfig); err != nil {
+					return nil, common.CodeDataError, err
+				}
+			} else {
+				cleaned := pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
+				// A TableChunker parameter this request set but the DSL does not
+				// declare is dropped by the rebuild without a word. The upload path
+				// refuses the same input as a misspelling, so say what was lost.
+				for _, field := range pipelinepkg.TableChunkerParamsLostInBuild(req.ParserConfig, cleaned) {
+					common.Warn("parser_config: the pipeline DSL does not declare this TableChunker parameter, so the rebuild dropped it",
+						zap.String("parameter", field))
+				}
+				pipelinepkg.ApplyParentChildChunkerConfig(cleaned, req.ParserConfig)
+				tenant, tenantErr := dao.NewTenantDAO().GetByID(ctx, dao.DB, kb.TenantID)
+				if tenantErr == nil && tenant != nil {
+					cleaned = service.ApplyComponentScopedParserConfig(
+						cleaned,
+						tenant.LLMID,
+					)
+				}
+				if err = s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{
+					"parser_config": cleaned,
+				}); err != nil {
+					return nil, common.CodeDataError, err
+				}
 			}
 		}
 	}

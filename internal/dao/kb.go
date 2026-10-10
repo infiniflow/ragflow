@@ -407,29 +407,6 @@ func (dao *KnowledgebaseDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]stri
 	return kbIDs, err
 }
 
-// GetFieldMap retrieves field mappings from multiple knowledge bases
-// This matches the Python get_field_map method
-func (dao *KnowledgebaseDAO) GetFieldMap(ctx context.Context, db *gorm.DB, ids []string) (map[string]interface{}, error) {
-	conf := make(map[string]interface{})
-	kbs, err := dao.GetByIDs(ctx, db, ids)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, kb := range kbs {
-		if kb.ParserConfig != nil {
-			if fieldMap, ok := kb.ParserConfig["field_map"]; ok {
-				if fm, ok := fieldMap.(map[string]interface{}); ok {
-					for k, v := range fm {
-						conf[k] = v
-					}
-				}
-			}
-		}
-	}
-	return conf, nil
-}
-
 // GetByNameInUserTenants returns dataset candidates whose tenant the user belongs to.
 // Callers must authorize each candidate before using it.
 func (dao *KnowledgebaseDAO) GetByNameInUserTenants(ctx context.Context, db *gorm.DB, kbName, userID string) ([]*entity.Knowledgebase, error) {

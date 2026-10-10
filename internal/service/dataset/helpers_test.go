@@ -286,7 +286,7 @@ func TestValidateParserConfig_DropsFlatKeys(t *testing.T) {
 	}
 }
 
-func TestValidateDocumentParserConfig_DropsFlatKeys(t *testing.T) {
+func TestValidateParserConfig_DropsUnscopedValues(t *testing.T) {
 	for _, flat := range []map[string]any{
 		{"parser_specific": "value"},
 		{"delimiter": float64(1)},
@@ -299,7 +299,7 @@ func TestValidateDocumentParserConfig_DropsFlatKeys(t *testing.T) {
 		for k, v := range flat {
 			cfg[k] = v
 		}
-		dropped, err := ValidateDocumentParserConfig(cfg)
+		dropped, err := ValidateParserConfig(cfg)
 		if err != nil {
 			t.Fatalf("expected nil after dropping flat key %#v, got %v", flat, err)
 		}
@@ -337,35 +337,6 @@ func TestValidateParserConfig_ReturnsDroppedKeys(t *testing.T) {
 		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
 	}
 }
-
-// TestValidateDocumentParserConfig_ReturnsDroppedKeys mirrors the dataset
-// variant for the document path: the function drops the flat keys and reports
-// them, preserving component-scoped nodes.
-func TestValidateDocumentParserConfig_ReturnsDroppedKeys(t *testing.T) {
-	cfg := map[string]any{
-		"metadata":                     map[string]any{},
-		"parent_child":                 map[string]any{},
-		"File":                         map[string]any{},
-		"Extractor:AutoExtractDefault": map[string]any{"metadata": map[string]any{}},
-	}
-	dropped, err := ValidateDocumentParserConfig(cfg)
-	if err != nil {
-		t.Fatalf("expected nil error, got %v", err)
-	}
-	sort.Strings(dropped)
-	want := []string{"File", "metadata", "parent_child"}
-	if !reflect.DeepEqual(dropped, want) {
-		t.Fatalf("dropped = %#v, want %#v", dropped, want)
-	}
-	if _, ok := cfg["Extractor:AutoExtractDefault"]; !ok {
-		t.Error("component-scoped Extractor was dropped")
-	}
-	if len(cfg) != 1 {
-		t.Fatalf("expected 1 surviving key, got %d: %#v", len(cfg), cfg)
-	}
-}
-
-// --- normalizeDatasetID ---
 
 func TestNormalizeDatasetID_Invalid(t *testing.T) {
 	_, err := normalizeDatasetID("not-a-uuid")

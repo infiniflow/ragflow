@@ -26,10 +26,6 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
-	"ragflow/internal/entity"
-	"ragflow/internal/permission"
-	"ragflow/internal/utility"
 	"reflect"
 	"strconv"
 	"strings"
@@ -38,10 +34,15 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/dataset"
 	"ragflow/internal/service/document"
+	"ragflow/internal/utility"
 )
 
 var IMG_BASE64_PREFIX = "data:image/png;base64,"
@@ -80,6 +81,8 @@ type documentServiceIface interface {
 	BatchUpdateDocumentMetadatas(ctx context.Context, datasetID string, selector *document.MetadataSelector, updates []document.MetadataUpdate, deletes []document.MetadataDelete) (*document.BatchUpdateMetadatasResponse, common.ErrorCode, error)
 	ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error)
 	IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error)
+	ProbeTableColumns(ctx context.Context, filename string, data []byte) (*document.TableProbeResult, error)
+	ProbeDocumentTableColumns(ctx context.Context, datasetID, documentID string) (*document.TableProbeResult, error)
 	StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error)
 	Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error)
 	RemoveIngestionTasks(ctx context.Context, tasks []string, userID string) ([]map[string]string, error)
@@ -1041,22 +1044,44 @@ func (h *DocumentHandler) uploadLocalDocuments(c *gin.Context, kb *entity.Knowle
 		}
 	}
 
-	// Optional parser_config override — only the allow-listed table column keys.
-	// Python ignores malformed or non-object input here instead of failing the
-	// whole upload request.
+	// Optional parser_config override carries column settings on TableChunker
+	// nodes. Invalid JSON and retired flat keys are rejected so an upload
+	// cannot succeed while silently ignoring its settings.
 	var override map[string]interface{}
 	if raw := strings.TrimSpace(c.PostForm("parser_config")); raw != "" {
 		var parsed map[string]interface{}
-		if err = json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			override = map[string]interface{}{}
-			for _, k := range []string{"table_column_mode", "table_column_roles"} {
-				if v, ok := parsed[k]; ok {
-					override[k] = v
-				}
+		if err = json.Unmarshal([]byte(raw), &parsed); err != nil || parsed == nil {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+				"parser_config must be a JSON object")
+			return
+		}
+		if legacy := pipeline.CheckRetiredTableColumnKeys(parsed); len(legacy) > 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+				fmt.Sprintf("parser_config carries the retired keys %s; set column_mode and column_roles on a %s:<node> component instead",
+					strings.Join(legacy, ", "), pipeline.TableChunkerNodePrefix))
+			return
+		}
+		cleaned := map[string]interface{}{}
+		for key, value := range parsed {
+			if !pipeline.IsTableChunkerNodeKey(key) {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid), fmt.Sprintf("parser_config[%q]: upload overrides only accept TableChunker:<node> keys", key))
+				return
 			}
-			if len(override) == 0 {
-				override = nil
+			params, ok := value.(map[string]interface{})
+			if !ok {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+					fmt.Sprintf("parser_config[%q] must be an object of component parameters", key))
+				return
 			}
+			if _, _, err = pipeline.ValidateTableColumnOverride(params); err != nil {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid),
+					fmt.Sprintf("parser_config[%q]: %v", key, err))
+				return
+			}
+			cleaned[key] = params
+		}
+		if len(cleaned) > 0 {
+			override = cleaned
 		}
 	}
 	ctx := c.Request.Context()
@@ -1851,7 +1876,7 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 		return
 	}
 	if present["parser_config"] && req.ParserConfig != nil {
-		dropped, err := dataset.ValidateDocumentParserConfig(req.ParserConfig)
+		dropped, err := dataset.ValidateParserConfig(req.ParserConfig)
 		if len(dropped) > 0 {
 			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
 				zap.Strings("keys", dropped),
@@ -1861,6 +1886,13 @@ func (h *DocumentHandler) UpdateDatasetDocument(c *gin.Context) {
 			)
 		}
 		if err != nil {
+			// A rejection the column contract produced answers with its documented
+			// code; the validator's other rejections (the size limit) keep the
+			// generic shape.
+			if dataset.IsTableConfigError(err) {
+				common.ResponseWithCodeData(c, common.CodeArgumentError, tableErrorData(dataset.TableConfigInvalid), err.Error())
+				return
+			}
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 			return
 		}

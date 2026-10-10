@@ -296,13 +296,17 @@ func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]
 		visibility = VisibilityTenant
 	}
 	return Resource{
-		Ref:             ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID},
-		TenantID:        dataset.TenantID,
-		CreatedBy:       dataset.CreatedBy,
-		OwnerUserID:     ownerUserID,
-		Visibility:      visibility,
-		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
-		Active:          dataset.Status != nil && *dataset.Status == string(entity.StatusValid),
+		Ref:         ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID},
+		TenantID:    dataset.TenantID,
+		CreatedBy:   dataset.CreatedBy,
+		OwnerUserID: ownerUserID,
+		Visibility:  visibility,
+		// A team dataset is readable by every member of its tenant, its owner
+		// and admins included. The default requirement admits normal members
+		// only, which would lock a tenant admin out of the datasets it manages.
+		TenantRequirement: TenantMember,
+		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
+		Active:            dataset.Status != nil && *dataset.Status == string(entity.StatusValid),
 	}
 }
 

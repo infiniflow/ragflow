@@ -509,6 +509,18 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 	}
 
 	switch task.Status {
+	case common.STOPPING:
+		if !e.claimTask(task.ID) {
+			e.renewDuplicateHandle(hb, handle, task.ID)
+			return
+		}
+		defer e.releaseTask(task.ID)
+		if e.markStopped(e.ctx, task.ID) {
+			e.ackHandle(hb, handle, task.ID)
+		} else {
+			e.nackHandle(hb, handle, task.ID)
+		}
+		return
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
@@ -759,6 +771,15 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 	})
 }
 
+// terminalWriteBudget bounds one status write on the stop/failure path.
+const terminalWriteBudget = 5 * time.Second
+
+// revokeTableProfileBudget sizes the stop path's derived-state revoke. It is
+// longer than the document metadata lock's own acquisition budget, so a
+// contended lock is decided by the lock's deadline rather than by the shorter
+// terminal-write deadline.
+const revokeTableProfileBudget = 20 * time.Second
+
 // markStopped transitions the task to STOPPED (terminal). It first calls
 // RequestStop to handle RUNNING → STOPPING, then MarkStopped for the final
 // STOPPING → STOPPED transition. Finally it cleans up the Redis cancel flag
@@ -768,21 +789,41 @@ func (e *Ingestor) executeTaskWithHeartbeat(ctx context.Context, taskCtx *taskpk
 // cancelled, and a contaminated context would make the terminal write fail
 // exactly when it matters most.
 func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
-	defer cancel()
-	if _, err := e.ingestionTaskSvc.RequestStop(ctx, taskID); err != nil {
+	// Each step is bounded on its own detached budget: a slow step must not
+	// consume the deadline of the terminal write that follows it.
+	stopCtx, stopCancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteBudget)
+	task, err := e.ingestionTaskSvc.RequestStop(stopCtx, taskID)
+	stopCancel()
+	if err != nil {
 		common.Error(fmt.Sprintf("markStopped: RequestStop task %s: %v", taskID, err), err)
 		return false
 	}
-	if err := e.ingestionTaskSvc.MarkStopped(ctx, taskID); err != nil {
+	// Keep STOPPING until the last publisher has returned and its derived
+	// columns are revoked; a new parse may start as soon as we write STOPPED.
+	if task.Status == common.STOPPING && task.DocumentID != "" && e.docState != nil {
+		// Revoking takes the document metadata lock, whose own acquisition budget is
+		// longer than a terminal write's. Sizing this by the terminal deadline would
+		// make it lose the lock to a concurrent publish and leave the task unsettled.
+		revokeCtx, revokeCancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTableProfileBudget)
+		err := e.docState.docSvc.RevokeTableProfile(revokeCtx, task.DocumentID)
+		revokeCancel()
+		if err != nil {
+			common.Error(fmt.Sprintf("markStopped: revoke table profile for %s: %v", task.DocumentID, err), err)
+			return false
+		}
+	}
+	writeCtx, writeCancel := context.WithTimeout(context.WithoutCancel(ctx), terminalWriteBudget)
+	defer writeCancel()
+	if err := e.ingestionTaskSvc.MarkStopped(writeCtx, taskID); err != nil {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
-	if rc := kvrocks.Get(); rc != nil {
-		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
-			rc.Delete(ctx, fmt.Sprintf("%s-cancel", taskID))
-			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
-		})
+
+	// Keep the operation log open until its terminal write can include the
+	// final document snapshot. All stop paths, including completion races,
+	// converge here after revocation and the task transition.
+	if task.Status == common.STOPPING {
+		e.recordTerminalPipelineLog(writeCtx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
 	}
 	return true
 }
@@ -815,9 +856,6 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markTerminalProgress(task)
 		stopped := e.markStopped(context.Background(), task.ID)
-		if stopped {
-			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel), "Task stopped by user.")
-		}
 		return stopped
 	default:
 	}
@@ -846,9 +884,6 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markTerminalProgress(task)
 			stopped := e.markStopped(ctx, task.ID)
-			if stopped {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
-			}
 			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -1058,7 +1093,7 @@ func (e *Ingestor) defaultCancelCheck(ctx context.Context, taskID string) bool {
 	if err != nil {
 		return false
 	}
-	return task.Status == common.STOPPING
+	return task.Status == common.STOPPING || task.Status == common.STOPPED
 }
 
 const pollCancelInterval = 500 * time.Millisecond
@@ -1225,8 +1260,40 @@ func (e *Ingestor) defaultRunDocumentTask(ctx context.Context, ingestionTask *en
 	if err != nil {
 		return err
 	}
-	e.stagePendingCompileEvent(ingestionTask.ID, docTaskCtx.Tenant.ID, result)
-	e.docState.apply(ctx, result)
+	return e.finishDocumentTask(ctx, ingestionTask, docTaskCtx.Tenant.ID, result)
+}
+
+func (e *Ingestor) finishDocumentTask(ctx context.Context, ingestionTask *entity.IngestionTask, tenantID string, result *taskpkg.PipelineResult) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if e.cancelCheck(ctx, ingestionTask.ID) {
+		return context.Canceled
+	}
+	e.stagePendingCompileEvent(ingestionTask.ID, tenantID, result)
+	// A spreadsheet run that cannot publish its derived profile leaves columns
+	// the retriever would quote without rows behind them, so the failure is the
+	// task's failure rather than a warning.
+	if err := e.docState.apply(ctx, result, func(ctx context.Context) error {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if e.cancelCheck(ctx, ingestionTask.ID) {
+			return context.Canceled
+		}
+		if e.ingestionTaskSvc != nil {
+			current, err := e.ingestionTaskSvc.GetTask(ctx, ingestionTask.ID)
+			if err != nil {
+				return err
+			}
+			if current.Status != common.RUNNING || !samePipelineLogID(current.PipelineLogID, ingestionTask.PipelineLogID) {
+				return context.Canceled
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -1287,6 +1354,14 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
 	}
+	// A completion racing a stop must not append a contradictory terminal
+	// event after cancellation already finalized this run's snapshot.
+	switch run.OperationStatus {
+	case string(entity.TaskStatusDone), string(entity.TaskStatusFail), string(entity.TaskStatusCancel):
+		if run.OperationStatus != status {
+			return
+		}
+	}
 	input := taskpkg.PipelineLogInput{
 		KbID:          ingestionTask.DatasetID,
 		DocumentID:    ingestionTask.DocumentID,
@@ -1337,4 +1412,11 @@ func (e *Ingestor) Stop(ctx context.Context) {
 	// unblocks (the admin graceful-shutdown path). Guarded by stopOnce: a
 	// repeated Stop must not double-close the channel.
 	e.stopOnce.Do(func() { close(e.ShutdownCh) })
+}
+
+func samePipelineLogID(a, b *string) bool {
+	if a == nil || b == nil {
+		return a == nil && b == nil
+	}
+	return *a == *b
 }

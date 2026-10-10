@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -37,8 +39,6 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
-
-	"gorm.io/gorm"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -67,6 +67,11 @@ type PipelineResult struct {
 	// it from the run response and polls GET /agents/:id/logs/:message_id to
 	// render progress; it is empty for non-debug (persist) runs.
 	MessageID string
+	// TableProfile records which spreadsheet columns this run indexed and under
+	// which configuration. The document-state finalizer publishes it into the
+	// document's metadata record; a run with no table rows leaves it nil, which
+	// also clears any profile an earlier run published.
+	TableProfile *entity.TableProfile
 }
 
 type PipelineExecutor struct {
@@ -265,6 +270,17 @@ func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutpu
 	}, nil
 }
 
+// activeEngineName names the index engine for the derived table profile. A run
+// without a configured engine — canvas debug — indexes nothing, so its profile
+// names no engine and no later query can read it back.
+func activeEngineName() string {
+	docEngine := engine.Get()
+	if docEngine == nil {
+		return ""
+	}
+	return docEngine.GetType()
+}
+
 func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
 	if pipelineOutput == nil {
 		return nil, nil
@@ -279,6 +295,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 
 	embeddingTokenConsumption := indexdoc.GetEmbeddingTokenConsumption(pipelineOutput)
+	// Read before ProcessChunksForPipeline: the derived profile and the document
+	// column values are collected off the row source information that the index
+	// boundary drops.
+	tableProfile, tableValues := indexdoc.ProjectTableChunks(chunks, activeEngineName())
 	metadata, err := indexdoc.ProcessChunksForPipeline(
 		chunks,
 		s.taskCtx.Doc.ID,
@@ -290,16 +310,22 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 	}
 	parentChunks := indexdoc.MaterializeParentChunks(s.taskCtx.Doc.KbID, chunks)
 
-	tableMeta := indexdoc.AggregateTableDocMetadata(chunks, map[string]interface{}(s.taskCtx.Doc.ParserConfig))
-	if tableMeta != nil {
+	if tableProfile != nil && len(tableValues) > 0 {
 		if metadata == nil {
 			metadata = make(map[string]any)
 		}
-		for k, v := range tableMeta {
-			if _, exists := metadata[k]; !exists {
-				metadata[k] = v
+		owned := make([]string, 0, len(tableValues))
+		for key, value := range tableValues {
+			// A key the document already carries from another source is not
+			// taken over: the table contributes only what it actually wrote.
+			if _, exists := metadata[key]; exists {
+				continue
 			}
+			metadata[key] = value
+			owned = append(owned, key)
 		}
+		sort.Strings(owned)
+		tableProfile.OwnedMetadata = owned
 	}
 
 	// Per-document compiled knowledge products (those emitted by the
@@ -384,6 +410,7 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		AutoMetadataEnabled:   autoMetaEnabled,
 		CompiledVariants:      eventVariants,
 		CompiledTaskTypes:     eventTaskTypes,
+		TableProfile:          tableProfile,
 	}, nil
 }
 

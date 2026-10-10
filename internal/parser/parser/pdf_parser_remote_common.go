@@ -3,6 +3,8 @@ package parser
 import (
 	"fmt"
 	"strings"
+
+	"ragflow/internal/utility"
 )
 
 func pdfFileMeta(filename string, pageCount int) map[string]any {
@@ -112,7 +114,7 @@ func collectPDFPageNumbers(raw any) map[int]struct{} {
 // markup, because consumers of that label read the text as HTML rows. Free
 // text recognized inside a table region is labelled "text".
 func pdfTableDocType(text string) string {
-	if isTableHTML(text) {
+	if utility.IsTableOpeningTag(text) {
 		return "table"
 	}
 	return "text"

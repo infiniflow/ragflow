@@ -25,9 +25,9 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -93,7 +93,7 @@ const sampleESResponse = `{
 
 // TestRunSQL_NoFilterAdded verifies the request body is exactly
 // {"query": <sql>} — the redundant `filter` field that the previous
-// implementation added is gone. (service.addKBFilter is the source of
+// implementation added is gone. (service.tableSQLPolicy is the source of
 // truth for kb_id scoping upstream of RunSQL.)
 func TestRunSQL_NoFilterAdded(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
@@ -116,63 +116,31 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
 	}
 	if _, has := body["filter"]; has {
-		t.Errorf("RunSQL request must NOT include top-level filter (addKBFilter is the source of truth upstream). body=%v", body)
+		t.Errorf("RunSQL request must NOT include top-level filter (tableSQLPolicy scopes the statement upstream). body=%v", body)
 	}
 	if _, has := body["query"]; !has {
 		t.Errorf("RunSQL request must include query. body=%v", body)
 	}
 }
 
-// TestRunSQL_WhitespaceNormalizedAndPercentStripped verifies the Python
-// preprocessing step `re.sub(r"[ `]+", " ", sql)` + `sql.replace("%", "")`
-// is applied. Without these, the LLM-generated SQL with stray backticks
-// or `%` characters (e.g. from JSON decoding glitches) would fail to
-// parse in ES.
-func TestRunSQL_WhitespaceNormalizedAndPercentStripped(t *testing.T) {
-	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
+func TestRunSQLPreservesStringValues(t *testing.T) {
+	srv, captured := newCapturingServer(t, http.StatusOK, sampleESResponse)
 	e := newTestEngine(t, srv.URL)
-	ctx := t.Context()
-
-	// Input SQL has multiple backticks/spaces and trailing % characters.
-	in := "SELECT   doc_id  FROM  `ragflow_t1`  WHERE  count  >  0  %"
-	_, err := e.RunSQL(ctx, "ragflow_t1", in, nil, "json")
-	if err != nil {
-		t.Fatalf("RunSQL: %v", err)
+	query := "SELECT doc_id FROM ragflow_t1 WHERE docnm_kwd = '50%  `price`'"
+	if _, err := e.RunSQL(t.Context(), "ragflow_t1", query, nil, "json"); err != nil {
+		t.Fatal(err)
 	}
-	cap.mu.Lock()
-	got := cap.body
-	cap.mu.Unlock()
-
-	var body map[string]interface{}
-	if err := json.Unmarshal([]byte(got), &body); err != nil {
-		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
+	captured.mu.Lock()
+	defer captured.mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(captured.body), &body); err != nil {
+		t.Fatal(err)
 	}
-	q, _ := body["query"].(string)
-	if strings.Contains(q, "  ") {
-		t.Errorf("query still has multiple spaces (whitespace not normalized): %q", q)
-	}
-	if strings.Contains(q, "`") {
-		t.Errorf("query still has backticks (whitespace+backtick regex not applied): %q", q)
-	}
-	if strings.Contains(q, "%") {
-		t.Errorf("query still has %% (percent strip not applied): %q", q)
+	if !strings.Contains(body["query"].(string), "'50%  `price`'") {
+		t.Fatalf("query value changed: %v", body["query"])
 	}
 }
 
-// TestRunSQL_PerAttemptTimeout verifies the derived context has a 2s
-// deadline. We send a hanging response from the test server and assert
-// the call returns well before 30s (the Go ES client's default
-// transport-level timeout). With the retry loop in place, the total
-// time is 2s (first attempt) + 3s (sleep) + 2s (second attempt) = ~7s.
-//
-// The load-bearing assertion is the LOWER bound on elapsed wall-clock
-// time: it proves the timeout actually fired AND a retry was issued
-// (a single attempt that bailed at 2s would fail the lower bound). The
-// UPPER bound is a regression guard against a hang; rather than a
-// fragile absolute threshold, we use a generous outer-context budget
-// (15s) and a watchdog. The error message check is the contract-level
-// assertion ("timeout after 2 attempts") that the retry path produced
-// the right error.
 func TestRunSQL_PerAttemptTimeout(t *testing.T) {
 	hang := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -385,105 +353,6 @@ func TestMain(m *testing.M) {
 	m.Run()
 }
 
-func TestPreprocess_WhitespaceAndBackticks(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"a  b", "a b"},
-		{"a   b   c", "a b c"},
-		{"a`b`c", "a b c"},
-		{"a `` b", "a b"},
-		{"  leading and trailing  ", " leading and trailing "},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_StripsPercent(t *testing.T) {
-	cases := []struct {
-		in, want string
-	}{
-		{"count > 0 %", "count > 0 "},
-		{"100% match", "100 match"},
-		{"%%%", ""},
-	}
-	for _, c := range cases {
-		if got := Preprocess(c.in); got != c.want {
-			t.Errorf("Preprocess(%q) = %q, want %q", c.in, got, c.want)
-		}
-	}
-}
-
-func TestPreprocess_LktksRewrite(t *testing.T) {
-	cases := []struct {
-		name   string
-		in     string
-		field  string
-		expect string
-	}{
-		{
-			"like with single-token value (ltks suffix)",
-			"select content_ltks like 'weather'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"= with multi-word value (ltks suffix)",
-			"select content_ltks = 'final report'",
-			"content_ltks",
-			"MATCH(content_ltks,",
-		},
-		{
-			"tks (no l) suffix",
-			"select title_tks = 'hello'",
-			"title_tks",
-			"MATCH(title_tks,",
-		},
-		{
-			"leading-space anchor: no leading space means no match (mirrors Python regex)",
-			"content_ltks like 'weather'",
-			"content_ltks",
-			"content_ltks like 'weather'",
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			got := Preprocess(c.in)
-			isAnchorTest := c.expect == c.in
-			if isAnchorTest {
-				if got != c.in {
-					t.Errorf("Preprocess(%q) = %q, want unchanged (leading-space anchor should prevent match)", c.in, got)
-				}
-				return
-			}
-			if strings.Contains(got, c.field+" ") {
-				pattern := regexp.MustCompile(c.field + `( like | ?= ?)`)
-				if pattern.MatchString(got) {
-					t.Errorf("Preprocess(%q) = %q, still contains the original `<field> like/=` pattern", c.in, got)
-				}
-			}
-			if !strings.Contains(got, c.expect) {
-				t.Errorf("Preprocess(%q) = %q, want substring %q", c.in, got, c.expect)
-			}
-			if !strings.Contains(got, "minimum_should_match=30") {
-				t.Errorf("Preprocess(%q) = %q, want substring minimum_should_match=30", c.in, got)
-			}
-		})
-	}
-}
-
-func TestPreprocess_NoMatchLeavesSQLAlone(t *testing.T) {
-	in := "SELECT doc_id FROM ragflow_t1"
-	got := Preprocess(in)
-	if got != in {
-		t.Errorf("Preprocess(%q) = %q, want unchanged", in, got)
-	}
-}
-
-// fakeNetTimeoutErr implements net.Error with Timeout()==true.
 type fakeNetTimeoutErr struct{}
 
 func (fakeNetTimeoutErr) Error() string   { return "i/o timeout" }
@@ -523,5 +392,193 @@ func TestIsTimeoutError_NonTimeoutNetError(t *testing.T) {
 	}
 	if isTimeoutError(e) {
 		t.Errorf("isTimeoutError(connection-refused) = true, want false")
+	}
+}
+
+func TestRunSQLBuildsRuntimeTableFields(t *testing.T) {
+	key := "c_" + strings.Repeat("a", 64)
+	srv, captured := newCapturingServer(t, http.StatusOK, sampleESResponse)
+	query := "SELECT json_extract_string(chunk_data, '$." + key + "') AS value FROM ragflow_t1 WHERE json_extract_isnull(chunk_data, '$." + key + "') == false LIMIT 5"
+	if _, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", query, nil, "json"); err != nil {
+		t.Fatal(err)
+	}
+	captured.mu.Lock()
+	defer captured.mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(captured.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	runtime, ok := body["runtime_mappings"].(map[string]any)
+	if !ok {
+		t.Fatalf("no runtime fields: %v", body)
+	}
+	field, ok := runtime[key].(map[string]any)
+	if !ok || len(runtime) != 1 || field["type"] != "keyword" {
+		t.Fatalf("runtime fields = %v", runtime)
+	}
+	script := field["script"].(map[string]any)
+	if script["params"].(map[string]any)["key"] != key {
+		t.Fatalf("column key not parameterized: %v", script)
+	}
+	rendered := body["query"].(string)
+	if strings.Contains(rendered, "= =") || strings.Contains(rendered, "json_extract") || !strings.Contains(rendered, "IS NULL") || !strings.Contains(rendered, "\""+key+"\"") {
+		t.Fatalf("query not translated: %s", rendered)
+	}
+}
+
+func TestRunSQLReadsPagesAndClosesCursorAtLimit(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Error(err)
+			return
+		}
+		call := calls.Add(1)
+		switch call {
+		case 1:
+			if body["query"] == nil {
+				t.Error("first request missing query")
+			}
+			fmt.Fprint(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[["d1"],["d2"]],"cursor":"first"}`)
+		case 2:
+			if body["cursor"] != "first" {
+				t.Errorf("page request = %v", body)
+			}
+			fmt.Fprint(w, `{"rows":[["d3"],["d4"]],"cursor":"second"}`)
+		case 3:
+			if r.URL.Path != "/_sql/close" || body["cursor"] != "second" {
+				t.Errorf("cursor not closed: %s %v", r.URL.Path, body)
+			}
+			fmt.Fprint(w, `{"succeeded":true}`)
+		default:
+			t.Errorf("unexpected request: %v", body)
+		}
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1 LIMIT 3", nil, "json")
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("rows=%v err=%v", rows, err)
+	}
+	if calls.Load() != 3 {
+		t.Fatalf("requests=%d, want query, page, close", calls.Load())
+	}
+}
+
+func TestRunSQLPageFailureReturnsNoPartialRowsAndClosesCursor(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		call := calls.Add(1)
+		switch call {
+		case 1:
+			fmt.Fprint(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[["d1"]],"cursor":"first"}`)
+		case 2:
+			w.WriteHeader(http.StatusBadRequest)
+			fmt.Fprint(w, `{"error":"failed page"}`)
+		case 3:
+			if r.URL.Path != "/_sql/close" {
+				t.Errorf("missing cursor cleanup: %s", r.URL.Path)
+			}
+			fmt.Fprint(w, `{"succeeded":true}`)
+		default:
+			t.Errorf("unexpected request")
+		}
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1 LIMIT 3", nil, "json")
+	if err == nil || rows != nil || calls.Load() != 3 {
+		t.Fatalf("rows=%v err=%v calls=%d", rows, err, calls.Load())
+	}
+}
+
+func TestRunSQLRejectsInvalidTablePathsBeforeRequest(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		fmt.Fprint(w, sampleESResponse)
+	}))
+	defer srv.Close()
+	e := newTestEngine(t, srv.URL)
+	for _, expression := range []string{"json_extract_string(content, '$.c_bad')", "json_extract_string(chunk_data, '$.raw_name')", "json_extract_string(chunk_data, doc_id)"} {
+		if _, err := e.RunSQL(t.Context(), "ragflow_t1", "SELECT "+expression+" FROM ragflow_t1 LIMIT 100", nil, "json"); err == nil {
+			t.Errorf("accepted %s", expression)
+		}
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("bad JSON path sent %d requests", calls.Load())
+	}
+}
+
+func TestRunSQLDefaultsMissingAvailabilityToEnabled(t *testing.T) {
+	srv, captured := newCapturingServer(t, http.StatusOK, sampleESResponse)
+	if _, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", "SELECT COUNT(*) FROM ragflow_t1 WHERE available_int = 1 LIMIT 100", nil, "json"); err != nil {
+		t.Fatal(err)
+	}
+	captured.mu.Lock()
+	defer captured.mu.Unlock()
+	var body map[string]any
+	if err := json.Unmarshal([]byte(captured.body), &body); err != nil {
+		t.Fatal(err)
+	}
+	runtime, ok := body["runtime_mappings"].(map[string]any)
+	if !ok {
+		t.Fatalf("missing default availability: %v", body)
+	}
+	availability, ok := runtime["available_int"].(map[string]any)
+	if !ok || availability["type"] != "long" || !strings.Contains(availability["script"].(string), "1L") {
+		t.Fatalf("missing default availability: %v", runtime)
+	}
+}
+
+func TestRunSQLStopsEmptyPageWithLiveCursor(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		calls.Add(1)
+		if r.URL.Path == "/_sql/close" {
+			fmt.Fprint(w, `{"succeeded":true}`)
+			return
+		}
+		if calls.Load() > 1 {
+			t.Error("empty page was fetched again")
+			w.WriteHeader(400)
+			return
+		}
+		fmt.Fprint(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[],"cursor":"empty"}`)
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).RunSQL(t.Context(), "ragflow_t1", "SELECT doc_id FROM ragflow_t1 LIMIT 3", nil, "json")
+	if err != nil || len(rows) != 0 || calls.Load() != 2 {
+		t.Fatalf("rows=%v err=%v calls=%d", rows, err, calls.Load())
+	}
+}
+
+func TestRunSQLBudgetCoversMultiplePages(t *testing.T) {
+	var pages atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		if r.URL.Path == "/_sql/close" {
+			fmt.Fprint(w, `{"succeeded":true}`)
+			return
+		}
+		n := pages.Add(1)
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(750 * time.Millisecond):
+		}
+		cursor := "next"
+		if n == 3 {
+			cursor = ""
+		}
+		fmt.Fprintf(w, `{"columns":[{"name":"doc_id","type":"keyword"}],"rows":[["d%d"]],"cursor":%q}`, n, cursor)
+	}))
+	defer srv.Close()
+	rows, err := newTestEngine(t, srv.URL).runSQLOnce(t.Context(), "SELECT doc_id FROM ragflow_t1 LIMIT 3", "json")
+	if err != nil || len(rows) != 3 {
+		t.Fatalf("valid paginated query timed out: rows=%v err=%v", rows, err)
 	}
 }

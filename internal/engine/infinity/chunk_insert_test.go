@@ -14,7 +14,9 @@
 
 package infinity
 
-import "testing"
+import (
+	"testing"
+)
 
 // TestParserIDFromChunks pins the table-parser detection that gates the
 // chunk_data column reconcile: only a batch that carries chunk_data needs the
@@ -46,5 +48,35 @@ func TestParserIDFromChunks(t *testing.T) {
 				t.Fatalf("parserIDFromChunks() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestApplyTableRowMarkers covers both directions of the column check: a batch
+// that mixes table rows with ordinary chunks has to state the marker on every
+// row, and a table without the column must not be sent one at all.
+func TestApplyTableRowMarkers(t *testing.T) {
+	batch := []map[string]interface{}{
+		{"id": "row-1", "table_row_int": 1},
+		{"id": "chunk-2", "content_with_weight": "prose"},
+	}
+	applyTableRowMarkers(batch, true)
+
+	if batch[1]["table_row_int"] != 0 {
+		t.Errorf("a non-row chunk must state 0, got %v", batch[1]["table_row_int"])
+	}
+	if batch[0]["table_row_int"] != 1 {
+		t.Errorf("the row's own markers were overwritten: %v", batch[0])
+	}
+}
+
+func TestApplyTableRowMarkersWithoutTheColumns(t *testing.T) {
+	batch := []map[string]interface{}{{"id": "row-1", "table_row_int": 1}}
+	applyTableRowMarkers(batch, false)
+
+	if _, ok := batch[0]["table_row_int"]; ok {
+		t.Error("Infinity rejects an insert naming a column the table lacks")
+	}
+	if batch[0]["id"] != "row-1" {
+		t.Errorf("unrelated fields changed: %v", batch[0])
 	}
 }

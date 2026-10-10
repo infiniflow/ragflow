@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -35,6 +36,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
+	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
@@ -136,6 +139,8 @@ type fakeDocumentService struct {
 	stopErr                error
 	stopIngestionTasks     []*entity.IngestionTask
 	stopIngestionTaskErr   error
+	tableProbeResult       *document.TableProbeResult
+	tableProbeErr          error
 	removeIngestionTasks   []map[string]string
 	removeIngestionTaskErr error
 	thumbnails             map[string]string
@@ -369,6 +374,12 @@ func (f *fakeDocumentService) ListIngestionTasks(ctx context.Context, userID str
 }
 func (f *fakeDocumentService) IngestDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
 	return nil, nil
+}
+func (f *fakeDocumentService) ProbeTableColumns(ctx context.Context, filename string, data []byte) (*document.TableProbeResult, error) {
+	return f.tableProbeResult, f.tableProbeErr
+}
+func (f *fakeDocumentService) ProbeDocumentTableColumns(ctx context.Context, datasetID, documentID string) (*document.TableProbeResult, error) {
+	return f.tableProbeResult, f.tableProbeErr
 }
 func (f *fakeDocumentService) StopIngestionTasks(ctx context.Context, tasks []string, userID string) ([]*entity.IngestionTask, error) {
 	return f.stopIngestionTasks, f.stopIngestionTaskErr
@@ -872,7 +883,7 @@ func TestDeleteDocumentsHandler_Success(t *testing.T) {
 	}
 }
 
-func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *testing.T) {
+func TestUploadDocumentsHandler_LocalUsesFullKB(t *testing.T) {
 	db := setupUploadHandlerDB(t, "normal")
 	orig := dao.DB
 	dao.DB = db
@@ -889,8 +900,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 	}
 
 	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents?type=local", map[string]string{
-		"parent_path":   "nested/path",
-		"parser_config": "{bad json",
+		"parent_path": "nested/path",
 	}, "a.txt", []byte("abc"))
 
 	h.UploadDocuments(c)
@@ -908,7 +918,7 @@ func TestUploadDocumentsHandler_LocalUsesFullKBAndIgnoresBadParserConfig(t *test
 		t.Fatalf("parent path=%q, want nested/path", fake.uploadLocalPath)
 	}
 	if fake.uploadOverride != nil {
-		t.Fatalf("bad parser_config should be ignored, got %v", fake.uploadOverride)
+		t.Fatalf("absent parser_config produced an override: %v", fake.uploadOverride)
 	}
 }
 
@@ -951,8 +961,8 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	}
 }
 
-func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
-	db := setupUploadHandlerDB(t, "admin")
+func TestUploadDocumentsHandler_DeniesInvitedTeamMember(t *testing.T) {
+	db := setupUploadHandlerDB(t, "invite")
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
@@ -2309,5 +2319,394 @@ func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
 	}
 	if resp["message"] != "Resource not found" {
 		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+func uploadWithParserConfig(t *testing.T, parserConfig string) (*fakeDocumentService, *http.Response) {
+	t.Helper()
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{uploadLocalData: []map[string]interface{}{
+		{"id": "doc-1", "kb_id": uploadTestDatasetID, "name": "sales.csv"},
+	}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+
+	fields := map[string]string{"type": "local"}
+	if parserConfig != "" {
+		fields["parser_config"] = parserConfig
+	}
+	c, w := setupUploadContext(t, "/api/v1/datasets/"+uploadTestDatasetID+"/documents?type=local",
+		fields, "sales.csv", []byte("订单,金额\nDD-1,100\n"))
+	h.UploadDocuments(c)
+
+	return fake, w.Result()
+}
+
+func decodeResponseBody(t *testing.T, resp *http.Response) map[string]any {
+	t.Helper()
+	var body map[string]any
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	return body
+}
+
+// TestUploadDocumentsAcceptsComponentScopedColumns is the shape the API accepts:
+// the column settings live on the TableChunker node, in the same form the
+// pipeline reads them.
+func TestUploadDocumentsAcceptsComponentScopedColumns(t *testing.T) {
+	fake, resp := uploadWithParserConfig(t, `{"TableChunker:FastFoxesJump":{"column_mode":"manual","column_roles":{"金额":"metadata"}}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d", resp.StatusCode)
+	}
+	override, ok := fake.uploadOverride["TableChunker:FastFoxesJump"].(map[string]any)
+	if !ok {
+		t.Fatalf("override lost the node: %v", fake.uploadOverride)
+	}
+	if override["column_mode"] != "manual" {
+		t.Errorf("column_mode = %v", override["column_mode"])
+	}
+}
+
+// TestUploadDocumentsRefusesRetiredFlatKeys: these uploads used to report
+// success while the roles did nothing, which is worse than an error.
+// Column settings live on a TableChunker node; the retired flat keys are
+// refused rather than read.
+func TestUploadDocumentsRefusesRetiredFlatKeys(t *testing.T) {
+	fake, resp := uploadWithParserConfig(t, `{"table_column_mode":"manual","table_column_roles":{"金额":"metadata"}}`)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want the JSON error envelope", resp.StatusCode)
+	}
+	body := decodeResponseBody(t, resp)
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	data, _ := body["data"].(map[string]interface{})
+	if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+		t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
+	}
+	message, _ := body["message"].(string)
+	if !strings.Contains(message, "TableChunker") {
+		t.Errorf("message does not name the shape to use: %q", message)
+	}
+	if fake.uploadOverride != nil {
+		t.Errorf("a refused upload still reached the service: %v", fake.uploadOverride)
+	}
+}
+
+func TestUploadDocumentsRefusesInvalidColumnValues(t *testing.T) {
+	cases := map[string]string{
+		"unknown role":   `{"TableChunker:FastFoxesJump":{"column_roles":{"金额":"keyword"}}}`,
+		"unknown mode":   `{"TableChunker:FastFoxesJump":{"column_mode":"assist"}}`,
+		"roles not json": `{"TableChunker:FastFoxesJump":{"column_roles":"金额"}}`,
+		"malformed JSON": `{"TableChunker:X":{"column_mode":"manual",}}`,
+		"array":          `[]`,
+		"null":           `null`,
+		"scalar":         `42`,
+	}
+	for name, payload := range cases {
+		t.Run(name, func(t *testing.T) {
+			fake, resp := uploadWithParserConfig(t, payload)
+			body := decodeResponseBody(t, resp)
+			if code := body["code"]; code != float64(common.CodeArgumentError) {
+				t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+			}
+			data, _ := body["data"].(map[string]interface{})
+			if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+				t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
+			}
+			if fake.uploadLocalKB != nil {
+				t.Errorf("a refused upload still reached the service: %v", fake.uploadLocalKB)
+			}
+		})
+	}
+}
+
+// TestProbeTableColumnsReportsStableBusinessCodes: the client branches on
+// data.error, not on the wording of a message.
+func TestProbeTableColumnsReportsStableBusinessCodes(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{tableProbeErr: &document.TableProbeError{
+		Code:    document.TableProbeUnsupportedFormat,
+		Message: `"notes.tsv" cannot be probed`,
+	}}
+	h := &DocumentHandler{documentService: fake, datasetService: dataset.NewDatasetService()}
+
+	c, w := setupUploadContext(t, "/api/v1/datasets/ds-1/documents/probe-table",
+		map[string]string{}, "notes.tsv", []byte("a\tb\n1\t2\n"))
+	// The access check matches the stored dataset id, which the upload fixture
+	// keeps without dashes.
+	c.Params = gin.Params{{Key: "dataset_id", Value: "123e4567e89b12d3a456426614174000"}}
+	h.ProbeTableColumns(c)
+
+	body := decodeResponseBody(t, w.Result())
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["error"] != document.TableProbeUnsupportedFormat {
+		t.Errorf("data = %v, want the business code", body["data"])
+	}
+}
+
+// A parser_config rejection the column contract produced answers with its
+// documented business code, so a client reads a table rejection the same way
+// wherever it was raised; the validator's other rejections, such as the
+// parser_config size limit, keep the generic shape.
+func TestUpdateDatasetDocumentHandler_TableConfigRejectionCarriesBusinessCode(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+
+	h := &DocumentHandler{
+		documentService: &fakeDocumentService{},
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("PUT", "/api/v1/datasets/ds-1/documents/doc-1",
+		`{"parser_config":{"table_column_mode":"manual"}}`)
+	c.Params = gin.Params{
+		{Key: "dataset_id", Value: "ds-1"},
+		{Key: "document_id", Value: "doc-1"},
+	}
+	h.UpdateDatasetDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want the JSON error envelope", w.Code)
+	}
+	body := decodeResponseBody(t, w.Result())
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	data, _ := body["data"].(map[string]interface{})
+	if got := data["error"]; got != "INVALID_TABLE_CONFIG" {
+		t.Errorf("data.error = %v, want %q", got, "INVALID_TABLE_CONFIG")
+	}
+}
+
+// A body that is not a multipart form is a malformed request, not a size limit:
+// clients branch on data.error, and "send a smaller file" is the wrong thing to
+// show for a request that never was a form.
+func TestProbeTableColumnsReportsAMalformedBodyAsAnArgumentError(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	h := &DocumentHandler{documentService: &fakeDocumentService{}, datasetService: dataset.NewDatasetService()}
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/v1/datasets/"+uploadTestDatasetID+"/documents/probe-table",
+		strings.NewReader(`{"not":"multipart"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Set("user_id", "user-1")
+	c.Params = gin.Params{{Key: "dataset_id", Value: strings.ReplaceAll(uploadTestDatasetID, "-", "")}}
+
+	h.ProbeTableColumns(c)
+
+	body := decodeResponseBody(t, w.Result())
+	if code := body["code"]; code != float64(common.CodeArgumentError) {
+		t.Errorf("code = %v, want %d", code, common.CodeArgumentError)
+	}
+	if data, ok := body["data"].(map[string]interface{}); ok {
+		if got := data["error"]; got != nil {
+			t.Errorf("data.error = %v, want none: a malformed body is not a size limit", got)
+		}
+	}
+}
+
+func TestTableEndpointsDenyAccessBeforeReading(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	previous := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previous })
+	datasetID := "123e4567e89b12d3a456426614174000"
+	for _, endpoint := range []string{"probe", "columns", "schema"} {
+		t.Run(endpoint, func(t *testing.T) {
+			c, w := setupUploadContext(t, "/table", nil, "sales.csv", []byte("name\nvalue\n"))
+			c.Set("user_id", "outsider")
+			reader := &tableProbeReadCounter{ReadCloser: c.Request.Body}
+			c.Request.Body = reader
+			c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: "doc-1"}}
+			// Nil downstream services make any unauthorized read fail immediately.
+			switch endpoint {
+			case "probe":
+				(&DocumentHandler{datasetService: dataset.NewDatasetService()}).ProbeTableColumns(c)
+			case "columns":
+				(&DocumentHandler{datasetService: dataset.NewDatasetService()}).GetDocumentTableColumns(c)
+			case "schema":
+				(&DatasetsHandler{datasetsService: dataset.NewDatasetService()}).GetDatasetTableSchema(c)
+			}
+			body := decodeResponseBody(t, w.Result())
+			if body["code"] != float64(common.CodePermissionError) {
+				t.Fatalf("unauthorized response: %v", body)
+			}
+			if reader.reads != 0 {
+				t.Fatalf("unauthorized request body read %d times", reader.reads)
+			}
+		})
+	}
+}
+
+// Counts actual request-body reads, including multipart parsing.
+type tableProbeReadCounter struct {
+	io.ReadCloser
+	reads int
+}
+
+func (r *tableProbeReadCounter) Read(p []byte) (int, error) {
+	r.reads++
+	return r.ReadCloser.Read(p)
+}
+
+func TestProbeTableColumnsWrongFileCountIsArgumentError(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	previous := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previous })
+	for _, count := range []int{0, 2} {
+		t.Run(fmt.Sprint(count), func(t *testing.T) {
+			var body bytes.Buffer
+			writer := multipart.NewWriter(&body)
+			for i := 0; i < count; i++ {
+				part, err := writer.CreateFormFile("file", fmt.Sprintf("sales%d.csv", i))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := part.Write([]byte("name\nvalue\n")); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				t.Fatal(err)
+			}
+			w := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(w)
+			c.Request = httptest.NewRequest(http.MethodPost, "/probe-table", &body)
+			c.Request.Header.Set("Content-Type", writer.FormDataContentType())
+			c.Set("user_id", "user-1")
+			c.Params = gin.Params{{Key: "dataset_id", Value: strings.ReplaceAll(uploadTestDatasetID, "-", "")}}
+			(&DocumentHandler{datasetService: dataset.NewDatasetService()}).ProbeTableColumns(c)
+			response := decodeResponseBody(t, w.Result())
+			if response["code"] != float64(common.CodeArgumentError) {
+				t.Fatalf("response: %v", response)
+			}
+			if data, ok := response["data"].(map[string]any); ok && data["error"] != nil {
+				t.Fatalf("file count reported as business error: %v", response)
+			}
+		})
+	}
+}
+
+func TestTableProbeHidesInternalFailures(t *testing.T) {
+	c, w := setupGinContextWithUser("GET", "/probe", "")
+	writeTableProbeError(c, errors.New("MinIO private-bucket internal-host doc-secret"))
+	body := decodeResponseBody(t, w.Result())
+	if strings.Contains(fmt.Sprint(body), "private-bucket") || strings.Contains(fmt.Sprint(body), "doc-secret") {
+		t.Fatalf("internal error exposed: %v", body)
+	}
+	if body["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected code: %v", body)
+	}
+}
+
+func TestUploadRejectsNonTableOverrideKeys(t *testing.T) {
+	fake, resp := uploadWithParserConfig(t, `{"TokenChunker:node":{"chunk_token_size":512},"TableChunker:node":{"column_mode":"auto"}}`)
+	body := decodeResponseBody(t, resp)
+	if body["code"] != float64(common.CodeArgumentError) || fake.uploadLocalKB != nil {
+		t.Fatalf("unknown override silently accepted: %v", body)
+	}
+	data, _ := body["data"].(map[string]any)
+	if data["error"] != dataset.TableConfigInvalid {
+		t.Fatalf("business code: %v", body)
+	}
+}
+
+type schemaHandlerEngine struct {
+	engine.DocEngine
+	record map[string]interface{}
+}
+
+func (*schemaHandlerEngine) GetType() string { return "elasticsearch" }
+func (e *schemaHandlerEngine) SearchMetadata(context.Context, *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{e.record}, Total: 1}, nil
+}
+func schemaHandlerForTest(t *testing.T, raw string) *DatasetsHandler {
+	t.Helper()
+	setupDocumentPermissionDB(t, true)
+	if err := dao.DB.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	name, status := "sales.csv", string(entity.StatusValid)
+	if err := dao.DB.Create(&entity.Document{ID: "doc-1", KbID: "kb-owner", Name: &name, Status: &status, Suffix: "csv", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	e := &schemaHandlerEngine{record: map[string]interface{}{"id": "doc-1", "kb_id": "kb-owner", "meta_fields": map[string]interface{}{entity.TableProfileMetadataField: raw}}}
+	return &DatasetsHandler{datasetsService: dataset.NewDatasetService(), metadataService: service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), e)}
+}
+func TestTableSchemaHidesMalformedProfileDetails(t *testing.T) {
+	h := schemaHandlerForTest(t, `{malformed private-profile`)
+	c, w := setupGinContextWithUser("GET", "/table-schema", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+	h.GetDatasetTableSchema(c)
+	body := decodeResponseBody(t, w.Result())
+	if body["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected response: %v", body)
+	}
+	if strings.Contains(fmt.Sprint(body), "doc-1") || strings.Contains(fmt.Sprint(body), "invalid character") {
+		t.Fatalf("internal schema detail exposed: %v", body)
+	}
+}
+func TestTableSchemaReturnsPublishedColumns(t *testing.T) {
+	columns := entity.DeriveTableColumns([]string{"地区"})
+	raw, err := (&entity.TableProfile{Engine: "elasticsearch", Columns: columns}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := schemaHandlerForTest(t, raw)
+	c, w := setupGinContextWithUser("GET", "/table-schema", "")
+	c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+	h.GetDatasetTableSchema(c)
+	body := decodeResponseBody(t, w.Result())
+	data, _ := body["data"].(map[string]any)
+	fields, _ := data["field_map"].(map[string]any)
+	if body["code"] != float64(common.CodeSuccess) || data["document_count"] != float64(1) || data["sql_supported"] != true || fields[columns[0].DataKey] != "地区" {
+		t.Fatalf("unexpected schema response: %v", body)
+	}
+}
+func TestTableProbeEndpointsReturnColumns(t *testing.T) {
+	for _, stored := range []bool{false, true} {
+		t.Run(fmt.Sprint(stored), func(t *testing.T) {
+			setupDocumentPermissionDB(t, true)
+			result := &document.TableProbeResult{Source: "file", Sheets: []document.TableProbeSheet{{SheetIndex: 1, Name: "sheet", RowCount: 2, Columns: entity.DeriveTableColumns([]string{"地区"})}}}
+			h := &DocumentHandler{datasetService: dataset.NewDatasetService(), documentService: &fakeDocumentService{tableProbeResult: result}}
+			var c *gin.Context
+			var w *httptest.ResponseRecorder
+			if stored {
+				c, w = setupGinContextWithUser("GET", "/table-columns", "")
+			} else {
+				c, w = setupUploadContext(t, "/probe-table", map[string]string{}, "sales.csv", []byte("地区\n北京\n"))
+			}
+			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}, {Key: "document_id", Value: "doc-1"}}
+			if stored {
+				h.GetDocumentTableColumns(c)
+			} else {
+				h.ProbeTableColumns(c)
+			}
+			body := decodeResponseBody(t, w.Result())
+			data, _ := body["data"].(map[string]any)
+			if body["code"] != float64(common.CodeSuccess) || data["source"] != "file" || len(data["sheets"].([]any)) != 1 {
+				t.Fatalf("unexpected probe response: %v", body)
+			}
+		})
 	}
 }

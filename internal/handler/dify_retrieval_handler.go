@@ -348,7 +348,10 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 			}
 			metaFields, err := service.ExtractMetaFields(metadata)
 			if err == nil {
-				metaMap[docID] = metaFields
+				// The table system's own record names the columns the document
+				// indexed; it is read through the dataset schema endpoint, not
+				// handed to a caller as one of the document's fields.
+				metaMap[docID] = entity.WithoutTableProfileField(metaFields)
 			}
 		}
 	}

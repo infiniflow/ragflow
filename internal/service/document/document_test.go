@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -97,6 +98,14 @@ func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantI
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+func (f *fakeUploadStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	data, ok := f.objects[f.key(bucket, fnm)]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 type imageOwnershipEngine struct {
@@ -244,7 +253,7 @@ func (fakeChatDocEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, [
 }
 
 type failingDeleteMetadataEngine struct {
-	fakeChatDocEngine
+	*metadataDocEngine
 	deleteErr    error
 	updateCalled bool
 }
@@ -558,6 +567,7 @@ func testDocumentService(t *testing.T) *DocumentService {
 	t.Helper()
 	// Use nil engine since we test DB cleanup only; engine ops are nil-guarded.
 	return &DocumentService{
+		metadataLocks:    &memoryMetadataLocks{},
 		documentDAO:      dao.NewDocumentDAO(),
 		kbDAO:            dao.NewKnowledgebaseDAO(),
 		taskDAO:          dao.NewTaskDAO(),
@@ -1133,6 +1143,49 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenUpdateFails(t *testing.T) {
 	}
 }
 
+func TestUploadLocalDocumentsColumnOverrideSkipsNonSpreadsheet(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	blobs := newFakeUploadStorage()
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	factory.SetStorage(blobs)
+	t.Cleanup(func() { factory.SetStorage(previous) })
+	pipelineID := "pipe-mixed"
+	kb := &entity.Knowledgebase{ID: "kb-mixed", TenantID: "tenant-1", Name: "mixed", ParserID: "table", PipelineID: &pipelineID,
+		ParserConfig: entity.JSONMap{"TableChunker:Rows": map[string]any{"column_mode": "auto"}},
+	}
+	if err := db.Create(kb).Error; err != nil {
+		t.Fatal(err)
+	}
+	files := []*multipart.FileHeader{
+		makeTestFileHeader(t, "file", "rows.csv", []byte("name\nAlice\n")),
+		makeTestFileHeader(t, "file", "rows.xlsx", []byte("spreadsheet content")),
+		makeTestFileHeader(t, "file", "report.pdf", []byte("pdf content")),
+		makeTestFileHeader(t, "file", "report.docx", []byte("document content")),
+	}
+	docs, errs := testDocumentService(t).UploadLocalDocuments(t.Context(), kb, "user-1", files, "", map[string]any{
+		"TableChunker:Rows": map[string]any{"column_mode": "manual"},
+	})
+	if len(errs) != 0 || len(docs) != 4 {
+		t.Fatalf("mixed upload: docs=%v errors=%v", docs, errs)
+	}
+	for _, doc := range docs {
+		want := "auto"
+		if doc["name"] == "rows.csv" || doc["name"] == "rows.xlsx" {
+			want = "manual"
+		}
+		cfg := doc["parser_config"].(map[string]any)
+		node := cfg["TableChunker:Rows"].(map[string]any)
+		if node["column_mode"] != want {
+			t.Errorf("%s: column mode=%v, want %s", doc["name"], node["column_mode"], want)
+		}
+		if _, err := blobs.Get(t.Context(), kb.ID, doc["location"].(string)); err != nil {
+			t.Errorf("upload blob missing: %v", err)
+		}
+	}
+}
+
 func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1152,6 +1205,10 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		PipelineID: &pipelineID,
 		ParserConfig: entity.JSONMap{
 			"existing": "value",
+			"TableChunker:FastFoxesJump": map[string]interface{}{
+				"column_mode":  "auto",
+				"column_roles": map[string]interface{}{},
+			},
 		},
 		DocNum: 1,
 	}
@@ -1163,7 +1220,7 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		KbID:         kb.ID,
 		ParserID:     "naive",
 		ParserConfig: entity.JSONMap{},
-		Name:         sptr("deck.pptx"),
+		Name:         sptr("deck.csv"),
 		Status:       sptr("1"),
 	}).Error; err != nil {
 		t.Fatalf("insert existing doc: %v", err)
@@ -1171,9 +1228,9 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 
 	ctx := t.Context()
 	svc := testDocumentService(t)
-	fh := makeTestFileHeader(t, "file", "deck.pptx", []byte("abc"))
+	fh := makeTestFileHeader(t, "file", "deck.csv", []byte("abc"))
 	got, errs := svc.UploadLocalDocuments(ctx, kb, "user-1", []*multipart.FileHeader{fh}, "nested/path", map[string]interface{}{
-		"table_column_mode": "assist",
+		"TableChunker:FastFoxesJump": map[string]interface{}{"column_mode": "manual"},
 	})
 	if len(errs) != 0 {
 		t.Fatalf("unexpected errs: %v", errs)
@@ -1182,11 +1239,11 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("expected 1 uploaded doc, got %d", len(got))
 	}
 	doc := got[0]
-	if doc["name"] != "deck(1).pptx" {
-		t.Fatalf("name=%v, want deck(1).pptx", doc["name"])
+	if doc["name"] != "deck(1).csv" {
+		t.Fatalf("name=%v, want deck(1).csv", doc["name"])
 	}
-	if doc["location"] != "nested/path/deck(1).pptx" {
-		t.Fatalf("location=%v, want nested/path/deck(1).pptx", doc["location"])
+	if doc["location"] != "nested/path/deck(1).csv" {
+		t.Fatalf("location=%v, want nested/path/deck(1).csv", doc["location"])
 	}
 	if doc["parser_id"] != "" {
 		t.Fatalf("parser_id=%v, want empty (canvas pipeline mode)", doc["parser_id"])
@@ -1195,11 +1252,23 @@ func TestUploadLocalDocuments_MirrorsPythonCoreFields(t *testing.T) {
 		t.Fatalf("content_hash=%v", doc["content_hash"])
 	}
 	cfg := doc["parser_config"].(map[string]interface{})
-	if cfg["existing"] != "value" || cfg["table_column_mode"] != "assist" {
-		t.Fatalf("parser_config=%v", cfg)
+	if cfg["existing"] != "value" {
+		t.Fatalf("dataset config lost: %v", cfg)
+	}
+	// The upload override is component-scoped: it lands on the node it names and
+	// does not add flat keys the pipeline no longer reads.
+	node, ok := cfg["TableChunker:FastFoxesJump"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("upload override did not reach its node: %v", cfg)
+	}
+	if node["column_mode"] != "manual" {
+		t.Fatalf("node = %v, want the uploaded column_mode", node)
+	}
+	if _, flat := cfg["table_column_mode"]; flat {
+		t.Fatalf("a flat column key was written: %v", cfg)
 	}
 
-	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).pptx")
+	storedBlob, err := mockStorage.Get(ctx, kb.ID, "nested/path/deck(1).csv")
 	if err != nil {
 		t.Fatalf("blob not stored: %v", err)
 	}
@@ -3088,10 +3157,13 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 0, 0)
 
-	engine := &failingDeleteMetadataEngine{deleteErr: errors.New("delete failed")}
+	engine := &failingDeleteMetadataEngine{
+		metadataDocEngine: newMetadataDocEngine(nil, nil),
+		deleteErr:         errors.New("delete failed"),
+	}
 	svc := testDocumentService(t)
 	svc.docEngine = engine
-	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 	ctx := t.Context()
 	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},
@@ -3110,7 +3182,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
-func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+func TestSetDocumentMetadataReplacesMetadataRow(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -3134,8 +3206,8 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
-	if got := engine.records["doc-1"]["author"]; got != "alice" {
-		t.Fatalf("author = %#v, want alice", got)
+	if got, exists := engine.records["doc-1"]["author"]; exists {
+		t.Fatalf("omitted author survived replacement: %v", got)
 	}
 	if got := engine.records["doc-1"]["category"]; got != "tech" {
 		t.Fatalf("category = %#v, want tech", got)
@@ -4509,5 +4581,98 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
 	if err == nil {
 		t.Fatal("document should have been deleted but still exists")
+	}
+}
+
+// TestUpdateDatasetDocumentColumnPatchKeepsOtherParameters: changing a column
+// role is a narrow edit. The general parser_config path rebuilds the document's
+// configuration from the current DSL, which would reset every parameter this
+// request never mentioned — including ones the document had set for itself.
+func TestUpdateDatasetDocumentColumnPatchKeepsOtherParameters(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "sales.xlsx", 0, 0)
+
+	before := entity.JSONMap{
+		"TableChunker:FastFoxesJump": map[string]interface{}{
+			"column_mode":     "manual",
+			"column_roles":    map[string]interface{}{"金额": "metadata"},
+			"enable_children": true,
+		},
+		"Tokenizer:SomeNode": map[string]interface{}{"chunk_token_size": 512},
+	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Update("parser_config", before).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	svc := testDocumentService(t)
+	_, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+		&UpdateDatasetDocumentRequest{ParserConfig: map[string]interface{}{
+			"TableChunker:FastFoxesJump": map[string]interface{}{
+				"column_roles": map[string]interface{}{"金额": "indexing"},
+			},
+		}},
+		map[string]bool{"parser_config": true})
+	if err != nil {
+		t.Fatalf("UpdateDatasetDocument: code=%v err=%v", code, err)
+	}
+
+	var stored entity.Document
+	if err := db.Where("id = ?", "doc-1").First(&stored).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	node, ok := stored.ParserConfig["TableChunker:FastFoxesJump"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("node lost: %v", stored.ParserConfig)
+	}
+	roles, _ := node["column_roles"].(map[string]interface{})
+	if roles["金额"] != "indexing" {
+		t.Errorf("role not replaced: %v", node["column_roles"])
+	}
+	if node["enable_children"] != true {
+		t.Errorf("a parameter the patch never mentioned was reset: %v", node)
+	}
+	if node["column_mode"] != "manual" {
+		t.Errorf("column_mode changed without being sent: %v", node["column_mode"])
+	}
+	tokenizerNode, ok := stored.ParserConfig["Tokenizer:SomeNode"].(map[string]interface{})
+	if !ok || tokenizerNode["chunk_token_size"] == nil {
+		t.Errorf("another node lost: %v", stored.ParserConfig)
+	}
+}
+
+func TestUpdateDatasetDocumentColumnPatchRefusesBadValues(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "sales.xlsx", 0, 0)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").
+		Update("parser_config", entity.JSONMap{
+			"TableChunker:FastFoxesJump": map[string]interface{}{"column_mode": "auto"},
+		}).Error; err != nil {
+		t.Fatalf("seed parser_config: %v", err)
+	}
+
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	svc := testDocumentService(t)
+	_, _, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
+		&UpdateDatasetDocumentRequest{ParserConfig: map[string]interface{}{
+			"TableChunker:FastFoxesJump": map[string]interface{}{"column_roles": map[string]interface{}{"金额": "keyword"}},
+		}},
+		map[string]bool{"parser_config": true})
+	if err == nil {
+		t.Fatal("an unknown role was accepted")
+	}
+
+	var stored entity.Document
+	if err := dao.DB.Where("id = ?", "doc-1").First(&stored).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	node := stored.ParserConfig["TableChunker:FastFoxesJump"].(map[string]interface{})
+	if node["column_mode"] != "auto" {
+		t.Errorf("a refused patch still changed the row: %v", node)
 	}
 }

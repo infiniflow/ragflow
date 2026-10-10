@@ -21,6 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
 	"time"
@@ -548,4 +549,14 @@ func isS3BucketNotFound(err error) bool {
 		return apiErr.ErrorCode() == "NotFound" || apiErr.ErrorCode() == "404" || apiErr.ErrorCode() == "NoSuchBucket"
 	}
 	return false
+}
+
+// Open returns an object stream without buffering its contents.
+func (s *S3Storage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	bucket, fnm = s.resolveBucketAndPath(bucket, fnm)
+	result, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
+	if err != nil {
+		return nil, err
+	}
+	return result.Body, nil
 }

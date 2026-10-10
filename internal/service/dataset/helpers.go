@@ -8,13 +8,14 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/google/uuid"
+
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/component/schema"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
-
-	"github.com/google/uuid"
 )
 
 // keepDatasetOrderTerms narrows the requested terms to the columns the dataset
@@ -55,6 +56,9 @@ var (
 	indexTypeToTaskType    = map[string]string{"graph": "graphrag", "raptor": "raptor", "mindmap": "mindmap"}
 	indexTypeToDisplayName = map[string]string{"graph": "Graph", "raptor": "RAPTOR", "mindmap": "Mindmap"}
 )
+
+// TableConfigInvalid identifies a rejection of the table column configuration.
+const TableConfigInvalid = "INVALID_TABLE_CONFIG"
 
 const (
 	maximumTaskPageNumber    = int64(100000000)
@@ -228,25 +232,55 @@ func DropUnscopedParserConfigKeys(parserConfig map[string]any) []string {
 	return dropped
 }
 
-// ValidateParserConfig validates the shared REST parser_config schema. Flat
-// (non-component-scoped) keys are no longer rejected: they are silently dropped
-// because downstream consumers never read them. The size limit is still
-// enforced. It returns the names of the dropped (unscoped) keys so the caller
-// can log the silent drop; this is the single drop point shared by every entry
-// path, so callers should not call DropUnscopedParserConfigKeys again.
-func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
-	dropped := DropUnscopedParserConfigKeys(parserConfig)
-	return dropped, validateDatasetParserConfigSize(parserConfig)
+// TableConfigError marks a parser_config rejection the table column contract
+// produced, so a transport can answer with its documented business code rather
+// than a generic argument error. Rejections this validator does not own — the
+// parser_config size limit, for one — stay plain errors and keep the generic
+// shape.
+type TableConfigError struct{ Message string }
+
+func (e *TableConfigError) Error() string { return e.Message }
+
+// IsTableConfigError reports whether err came from the table column contract.
+func IsTableConfigError(err error) bool {
+	var target *TableConfigError
+	return errors.As(err, &target)
 }
 
-// ValidateDocumentParserConfig validates the parser_config attached to a
-// document. Documents follow the same component-scoped contract as datasets:
-// every key must be scoped under a node id (e.g. "Extractor:AutoExtractDefault"
-// or "GeneralChunker:SixApplesFall"). A document's Extractor/GeneralChunker
-// nodes come from the same pipeline DSL as the dataset, so flat keys are dropped
-// (not kept) and the size limit is enforced. It returns the dropped key names
-// for logging, mirroring ValidateParserConfig.
-func ValidateDocumentParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+func validateTableColumnConfig(parserConfig map[string]any) error {
+	if retired := pipelinepkg.CheckRetiredTableColumnKeys(parserConfig); len(retired) > 0 {
+		return &TableConfigError{Message: fmt.Sprintf("parser_config key %q must be configured on a TableChunker node", retired[0])}
+	}
+	for key, value := range parserConfig {
+
+		if !pipelinepkg.IsTableChunkerNodeKey(key) {
+			continue
+		}
+		params, ok := value.(map[string]interface{})
+		if !ok {
+			return &TableConfigError{Message: fmt.Sprintf("parser_config[%q] must be an object of component parameters", key)}
+		}
+		// Only the column fields are checked here; the node's other parameters
+		// belong to their own components and are filtered against the DSL.
+		if _, _, err := schema.ValidateTableColumnFields(params); err != nil {
+			return &TableConfigError{Message: fmt.Sprintf("parser_config[%q]: %v", key, err)}
+		}
+	}
+	return nil
+}
+
+// ValidateParserConfig validates the shared REST parser_config schema. Flat
+// (non-component-scoped) keys are dropped because downstream consumers never
+// read them, with one exception: the retired table column keys are refused (see
+// validateTableColumnConfig), because those uploads used to report success while
+// the roles did nothing. The size limit is still enforced. It returns the names
+// of the dropped (unscoped) keys so the caller can log the drop; this is the
+// single drop point shared by every entry path, so callers should not call
+// DropUnscopedParserConfigKeys again.
+func ValidateParserConfig(parserConfig map[string]interface{}) ([]string, error) {
+	if err := validateTableColumnConfig(parserConfig); err != nil {
+		return nil, err
+	}
 	dropped := DropUnscopedParserConfigKeys(parserConfig)
 	return dropped, validateDatasetParserConfigSize(parserConfig)
 }

@@ -80,11 +80,7 @@ func (c *PageChunkerComponent) invoke(_ context.Context, inputs map[string]any) 
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return nil, fmt.Errorf("PageChunker input: %w", err)
 	}
 
 	// The Page chunker preserves one incoming JSON item per output chunk.

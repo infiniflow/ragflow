@@ -24,18 +24,20 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/tokenizer"
+	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 
 	"github.com/elastic/go-elasticsearch/v8/esapi"
 	"go.uber.org/zap"
 )
 
 const (
+	esSQLQueryTimeout   = 10 * time.Second
 	esSQLRequestTimeout = 2 * time.Second
 	esSQLFetchSize      = 128
 )
@@ -43,45 +45,70 @@ const (
 const esSQLRetryAttempts = 2
 const esSQLRetryDelay = 3 * time.Second
 
-var whitespaceRe = regexp.MustCompile("[ `]+")
-var lktksMatchRe = regexp.MustCompile(` ([a-z_]+_l?tks)( like | ?= ?)'([^']+)'`)
-
-// Preprocess normalizes SQL for ES: collapses whitespace/backticks,
-// strips '%', and rewrites `<field>_l?tks like/= 'value'` into a
-// tokenized MATCH() call.
-func Preprocess(sql string) string {
-	sql = whitespaceRe.ReplaceAllString(sql, " ")
-	sql = strings.ReplaceAll(sql, "%", "")
-
-	// Collect replacements so we don't re-scan tokens we've already rewritten
-	type replacement struct {
-		old, new string
+// prepareSQL renders checked JSON field expressions as request-local keyword
+// fields. Reading _source preserves strings that dynamic keyword mapping omits.
+func prepareSQL(sqlText string) (string, map[string]interface{}, int, error) {
+	tokens, err := utility.SQLScan(sqlText)
+	if err != nil {
+		return "", nil, 0, err
 	}
-	var replaces []replacement
-	for _, m := range lktksMatchRe.FindAllStringSubmatchIndex(sql, -1) {
-		match := sql[m[0]:m[1]]
-		fld := sql[m[2]:m[3]]
-		val := sql[m[6]:m[7]]
-		tokenized, err := tokenizer.Tokenize(val)
-		if err != nil {
-			continue
+	runtime := make(map[string]interface{})
+	limit := esSQLFetchSize
+	depth := 0
+	for i := 0; i < len(tokens); i++ {
+		token := tokens[i]
+		if token.IsPunct("(") {
+			depth++
 		}
-		fine, err := tokenizer.FineGrainedTokenize(tokenized)
-		if err != nil {
-			continue
+		if token.IsPunct(")") {
+			depth--
 		}
-		replaces = append(replaces, replacement{
-			old: match,
-			// fine comes from tokenizer.FineGrainedTokenize, which strips
-			// non-alphanumerics; defense-in-depth escape just in case a
-			// future tokenizer change reintroduces a quote.
-			new: fmt.Sprintf(" MATCH(%s, '%s', 'operator=OR;minimum_should_match=30%%') ", fld, strings.ReplaceAll(fine, "'", "''")),
-		})
+		if depth == 0 && token.IsWord("limit") {
+			if i+1 >= len(tokens) || tokens[i+1].Kind != utility.SQLNumber {
+				return "", nil, 0, errors.New("LIMIT must be a non-negative integer")
+			}
+			limit, err = strconv.Atoi(tokens[i+1].Text)
+			if err != nil || limit < 0 || limit > 1000 {
+				return "", nil, 0, errors.New("LIMIT must be between 0 and 1000")
+			}
+		}
+		switch {
+		case token.IsWord("available_int"):
+			// ES retrieval considers an omitted availability flag enabled.
+			// Query-local defaulting also handles indices without its mapping.
+			runtime["available_int"] = map[string]interface{}{
+				"type":   "long",
+				"script": "def value=params._source.available_int; emit(value == null ? 1L : ((Number)value).longValue());",
+			}
+		case token.IsWord("json_extract_string"), token.IsWord("json_extract"), token.IsWord("json_value"), token.IsWord("json_extract_isnull"):
+			args, next, err := utility.SQLCallArguments(tokens, i)
+			if err != nil || len(args) != 2 || len(args[0]) != 1 || !args[0][0].IsWord("chunk_data") || len(args[1]) != 1 || args[1][0].Kind != utility.SQLString {
+				return "", nil, 0, errors.New("table JSON extraction requires chunk_data and a quoted column path")
+			}
+			key, ok := entity.TableDataKeyFromPath(args[1][0].Value)
+			if !ok {
+				return "", nil, 0, errors.New("table JSON extraction requires a canonical column key")
+			}
+			runtime[key] = map[string]interface{}{
+				"type": "keyword",
+				"script": map[string]interface{}{
+					"source": "def cells=params._source.chunk_data; if (cells != null && cells[params.key] != null) emit(cells[params.key]);",
+					"params": map[string]interface{}{"key": key},
+				},
+			}
+			expression := strconv.Quote(key)
+			if token.IsWord("json_extract_isnull") {
+				expression = "( " + expression + " IS NULL )"
+			}
+			replacement, err := utility.SQLScan(expression)
+			if err != nil {
+				return "", nil, 0, err
+			}
+			tokens = append(append(append([]utility.SQLToken(nil), tokens[:i]...), replacement...), tokens[next:]...)
+			i += len(replacement) - 1
+		}
 	}
-	for _, r := range replaces {
-		sql = strings.Replace(sql, r.old, r.new, 1)
-	}
-	return sql
+	return utility.SQLRender(tokens, '"'), runtime, limit, nil
 }
 
 // RunSQL posts SQL to `/_sql`, translates the response into chunk-shaped maps.
@@ -95,8 +122,6 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 	}
 
 	common.Debug("ESConnection.sql get sql", zap.String("sql", sqlText))
-	sqlText = Preprocess(sqlText)
-	common.Debug("ESConnection.sql to es", zap.String("sql", sqlText))
 
 	var lastErr error
 	for attempt := 0; attempt < esSQLRetryAttempts; attempt++ {
@@ -128,59 +153,97 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 }
 
 func (e *Engine) runSQLOnce(ctx context.Context, sqlText string, format string) ([]map[string]interface{}, error) {
-	ctx, cancel := context.WithTimeout(ctx, esSQLRequestTimeout)
+	ctx, cancel := context.WithTimeout(ctx, esSQLQueryTimeout)
 	defer cancel()
-
-	body := map[string]interface{}{
-		"query":      sqlText,
-		"fetch_size": esSQLFetchSize,
-	}
-	buf, err := json.Marshal(body)
+	normalized, runtime, limit, err := prepareSQL(sqlText)
 	if err != nil {
-		return nil, fmt.Errorf("marshal body: %w", err)
+		return nil, err
 	}
-
-	req := esapi.SQLQueryRequest{
-		Body:   bytes.NewReader(buf),
-		Format: format,
-	}
-	res, err := req.Do(ctx, e.client)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		errBody, _ := io.ReadAll(res.Body)
-		return nil, fmt.Errorf("status=%d body=%s", res.StatusCode, string(errBody))
-	}
-
-	// Parse the SQL response.
-	var resp struct {
-		Columns []struct {
-			Name string `json:"name"`
-			Type string `json:"type"`
-		} `json:"columns"`
-		Rows [][]interface{} `json:"rows"`
-	}
-	if err := json.NewDecoder(res.Body).Decode(&resp); err != nil {
-		return nil, fmt.Errorf("decode response: %w", err)
-	}
-
-	if len(resp.Rows) == 0 {
+	if limit == 0 {
 		return nil, nil
 	}
-
-	// Convert to chunk-shaped maps. Column names map 1:1 to JSON keys.
-	out := make([]map[string]interface{}, 0, len(resp.Rows))
-	for _, row := range resp.Rows {
-		cm := make(map[string]interface{}, len(resp.Columns))
-		for i, col := range resp.Columns {
-			if i < len(row) {
-				cm[col.Name] = row[i]
+	body := map[string]interface{}{"query": normalized, "fetch_size": min(esSQLFetchSize, limit)}
+	if len(runtime) > 0 {
+		body["runtime_mappings"] = runtime
+	}
+	cursor := ""
+	defer func() {
+		if cursor == "" {
+			return
+		}
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), esSQLRequestTimeout)
+		defer cancel()
+		encoded, _ := json.Marshal(map[string]string{"cursor": cursor})
+		request := esapi.SQLClearCursorRequest{Body: bytes.NewReader(encoded)}
+		response, err := request.Do(cleanupCtx, e.client)
+		if err != nil {
+			common.Warn("ES SQL cursor cleanup failed", zap.Error(err))
+			return
+		}
+		defer response.Body.Close()
+		if response.IsError() {
+			common.Warn("ES SQL cursor cleanup failed", zap.Int("status", response.StatusCode))
+		}
+	}()
+	var names []string
+	out := make([]map[string]interface{}, 0, min(esSQLFetchSize, limit))
+	for {
+		encoded, err := json.Marshal(body)
+		if err != nil {
+			return nil, fmt.Errorf("marshal body: %w", err)
+		}
+		request := esapi.SQLQueryRequest{Body: bytes.NewReader(encoded), Format: format}
+		pageCtx, pageCancel := context.WithTimeout(ctx, esSQLRequestTimeout)
+		response, err := request.Do(pageCtx, e.client)
+		if err != nil {
+			pageCancel()
+			return nil, fmt.Errorf("request failed: %w", err)
+		}
+		var page struct {
+			Columns []struct {
+				Name string `json:"name"`
+			} `json:"columns"`
+			Rows   [][]interface{} `json:"rows"`
+			Cursor string          `json:"cursor"`
+		}
+		if response.IsError() {
+			message, _ := io.ReadAll(response.Body)
+			response.Body.Close()
+			pageCancel()
+			return nil, fmt.Errorf("status=%d body=%s", response.StatusCode, string(message))
+		}
+		err = json.NewDecoder(response.Body).Decode(&page)
+		response.Body.Close()
+		pageCancel()
+		if err != nil {
+			return nil, fmt.Errorf("decode response: %w", err)
+		}
+		cursor = page.Cursor
+		if len(page.Columns) > 0 {
+			names = names[:0]
+			for _, column := range page.Columns {
+				names = append(names, column.Name)
 			}
 		}
-		out = append(out, cm)
+		for _, row := range page.Rows {
+			chunk := make(map[string]interface{}, len(names))
+			for i, name := range names {
+				if i < len(row) {
+					chunk[name] = row[i]
+				}
+			}
+			out = append(out, chunk)
+			if len(out) == limit {
+				break
+			}
+		}
+		if len(out) == limit || cursor == "" || len(page.Rows) == 0 {
+			break
+		}
+		body = map[string]interface{}{"cursor": cursor}
+	}
+	if len(out) == 0 {
+		return nil, nil
 	}
 	return out, nil
 }

@@ -21,6 +21,8 @@ import (
 	"math"
 	"strconv"
 	"strings"
+
+	"ragflow/internal/entity"
 )
 
 // ChunkerFromUpstream is the shared upstream payload consumed by the chunker
@@ -350,6 +352,50 @@ func (p *TokenChunkerParam) Validate() error {
 		return errInvalidValue{Field: "image_context_size", Value: fmt.Sprintf("%d", p.ImageContextSize)}
 	}
 	return nil
+}
+
+// ---------------------------------------------------------------------------
+// TableChunkerParam
+// ---------------------------------------------------------------------------
+
+// TableChunkerParam carries the column-mode configuration of TableChunker.
+// ColumnMode is "auto" or "manual"; ColumnRoles maps normalized column keys
+// to "indexing", "metadata" or "both". Validation lives in
+// internal/entity, shared with the column probe.
+
+type TableChunkerParam struct {
+	// ColumnMode selects column routing. auto puts every column in body
+	// text and chunk_data; manual routes each column by its configured
+	// role, defaulting to "both" for columns without an entry.
+	ColumnMode string `json:"column_mode"`
+
+	// ColumnRoles maps normalized column keys to their configured role.
+	ColumnRoles map[string]string `json:"column_roles"`
+}
+
+// ValidateTableColumnFields checks the column fields wherever they appear. Other
+// parameters of the node are left for their own owners: a saved node carries
+// outputs, labels and everything else a canvas holds, and refusing those here
+// would break unrelated configuration.
+func ValidateTableColumnFields(params map[string]any) (mode string, roles map[string]string, err error) {
+	mode = entity.TableModeAuto
+	roles = map[string]string{}
+	if params == nil {
+		return mode, roles, nil
+	}
+	if v, ok := params["column_mode"]; ok {
+		mode, err = entity.ValidateTableMode(v)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	if v, ok := params["column_roles"]; ok {
+		roles, err = entity.ValidateTableRoles(v)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	return mode, roles, nil
 }
 
 // ---------------------------------------------------------------------------

@@ -96,6 +96,7 @@ type ChunkService struct {
 	// Production uses service.DocumentService.CancelDocParse; tests inject
 	// a fake to avoid the MQ publisher.
 	cancelIngestionTaskFunc func(ctx context.Context, doc *entity.Document) error
+	revokeTableProfileFunc  func(context.Context, string) error
 	getEmbeddingModelFunc   func(string, string) (*models.EmbeddingModel, error)
 	incrementChunkStatsFunc func(string, string, int64, int64, float64) error
 	decrementChunkStatsFunc func(string, string, int64, int64, float64) error
@@ -110,14 +111,15 @@ type ChunkService struct {
 // NewChunkService creates chunk service
 func NewChunkService() *ChunkService {
 	return &ChunkService{
-		docEngine:        engine.Get(),
-		embeddingCache:   utility.NewEmbeddingLRU(1000), // default capacity
-		kbDAO:            dao.NewKnowledgebaseDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
-		documentDAO:      dao.NewDocumentDAO(),
-		taskDAO:          dao.NewTaskDAO(),
-		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
-		searchService:    service.NewSearchService(),
+		docEngine:              engine.Get(),
+		embeddingCache:         utility.NewEmbeddingLRU(1000), // default capacity
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		userTenantDAO:          dao.NewUserTenantDAO(),
+		documentDAO:            dao.NewDocumentDAO(),
+		taskDAO:                dao.NewTaskDAO(),
+		ingestionTaskDAO:       dao.NewIngestionTaskDAO(),
+		searchService:          service.NewSearchService(),
+		revokeTableProfileFunc: document.NewDocumentService().RevokeTableProfile,
 	}
 }
 
@@ -1021,6 +1023,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("document does not belong to this dataset")
 	}
 
+	switched := 0
 	for _, cid := range chunkIDs {
 		indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
 
@@ -1031,12 +1034,22 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 			"id":            cid,
 			"available_int": availableInt,
 		}, indexName, datasetID); err != nil {
-			return err
+			break
+		}
+		switched++
+	}
+	if switched > 0 {
+		// Revoking is a consequence of the switch, not a step of it: the ids
+		// above are already flipped, so the derived state goes last. A loop that
+		// stopped early still changed the index, so it revokes too, and the Wiki
+		// mark and the revoke must not skip each other — the engine's error is
+		// what the caller sees unless the revoke failed first.
+		s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
+		if revokeErr := s.revokeTableProfile(ctx, documentID); revokeErr != nil && err == nil {
+			err = revokeErr
 		}
 	}
-	s.markWikiDirty(ctx, targetTenantID, datasetID, documentID, chunkIDs)
-
-	return nil
+	return err
 }
 
 func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
@@ -1086,6 +1099,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// Content - use new value or existing
 	if req.Content != nil {
 		d["content_with_weight"] = *req.Content
+		if marker, ok := existing["table_row_int"]; ok && fmt.Sprint(marker) == "1" {
+			d["table_row_int"] = 0
+		}
 	} else {
 		if v, ok := existing["content_with_weight"].(string); ok {
 			d["content_with_weight"] = v
@@ -1200,16 +1216,31 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// not skip the Wiki refresh for a content/availability change in the same
 	// request. The request still answers with the removal error (the Python
 	// reference does the same); the stored object is an orphan by then.
+	// The index edit committed above, so every follow-up is a consequence of it
+	// and none may skip another: the Wiki mark, the derived-state revoke and the
+	// image cleanup all run, and the first failure the request reports is the
+	// revoke's unless the image cleanup failed.
+	var revokeErr error
 	if req.Content != nil || req.Available != nil {
 		s.markWikiDirty(ctx, targetTenantID, req.DatasetID, req.DocumentID, []string{req.ChunkID})
+		revokeErr = s.revokeTableProfile(ctx, req.DocumentID)
 	}
 	if removeImageAfterUpdate {
 		if err = s.removeChunkImage(ctx, req.DatasetID, req.ChunkID); err != nil {
 			common.Error("failed to remove chunk image", err,
 				zap.String("dataset_id", req.DatasetID),
 				zap.String("chunk_id", req.ChunkID))
+			if revokeErr != nil {
+				// The removal error is what the caller sees; the revoke failure
+				// would otherwise go unreported.
+				common.Warn("UpdateChunk: revoke table profile failed before the image removal error",
+					zap.String("document_id", req.DocumentID), zap.Error(revokeErr))
+			}
 			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 		}
+	}
+	if revokeErr != nil {
+		return revokeErr
 	}
 
 	return nil
@@ -1264,10 +1295,26 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	if deletedCount > 0 {
+		// The chunks are already gone from the index, so the counters, the Wiki
+		// refresh and the derived-state revoke are all consequences of a delete
+		// that cannot be undone. Neither may skip the other: the first failure is
+		// reported, and the caller still sees the count.
+		var firstErr error
 		if err = s.decrementChunkStats(req.DocID, doc.KbID, 0, deletedCount, 0); err != nil {
-			return deletedCount, fmt.Errorf("failed to update chunk stats: %w", err)
+			firstErr = fmt.Errorf("failed to update chunk stats: %w", err)
 		}
 		s.markWikiDirty(ctx, targetTenantID, doc.KbID, req.DocID, req.ChunkIDs)
+		if err := s.revokeTableProfile(ctx, req.DocID); err != nil {
+			if firstErr == nil {
+				firstErr = err
+			} else {
+				// The counter failure is what the caller sees; this one still has
+				// to be visible, because it means the derived state is stale.
+				common.Warn("RemoveChunks: revoke table profile failed after a counter failure",
+					zap.String("document_id", req.DocID), zap.Error(err))
+			}
+		}
+		return deletedCount, firstErr
 	}
 
 	return deletedCount, nil
@@ -1803,4 +1850,21 @@ func releaseChunkImageLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageLocks.locks, key)
 	}
+}
+
+// revokeTableProfileBudget sizes the derived-state revoke that follows a chunk
+// mutation. The mutation is what the request asked for and it is already
+// committed, so the revoke runs on a detached context with its own budget: the
+// metadata lock it takes polls for an acquisition budget of its own, and a
+// request cancelled in the interval would otherwise skip the revoke and leave
+// columns published for rows the index no longer answers for.
+const revokeTableProfileBudget = 20 * time.Second
+
+func (s *ChunkService) revokeTableProfile(ctx context.Context, docID string) error {
+	revokeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), revokeTableProfileBudget)
+	defer cancel()
+	if s.revokeTableProfileFunc != nil {
+		return s.revokeTableProfileFunc(revokeCtx, docID)
+	}
+	return fmt.Errorf("table profile revocation dependency is not initialized")
 }

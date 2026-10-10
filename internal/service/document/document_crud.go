@@ -331,6 +331,17 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
+	// The document row is about to go, so the derived table state it published goes
+	// with it: nothing can re-derive it afterwards, and leaving it would keep the
+	// columns of a deleted document readable. This runs before the row is deleted
+	// because revoking reads the record it removes.
+	//
+	// Best effort: the field map and the SQL range are already gated on live
+	// documents, so a revoke that cannot take the metadata lock leaves a record
+	// nothing queries rather than a reason to refuse deleting the file.
+	if err := s.RevokeTableProfile(ctx, docID); err != nil {
+		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: revoked derived table state for %s: %v", docID, err))
+	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
 	}
@@ -419,7 +430,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	if len(variants) == 0 {
 		if s.metadataSvc != nil {
-			_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+			_ = s.deleteDocumentAllMetadata(ctx, docID) // logs internally
 		}
 		return nil
 	}
@@ -436,7 +447,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
-		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+		_ = s.deleteDocumentAllMetadata(ctx, docID) // logs internally
 	}
 	return nil
 }

@@ -4,12 +4,43 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 )
+
+func TestStopAfterPublishRevokesTableBeforeSettling(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	raw, err := tableProfileForTest([]string{"金额"}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "金额": []string{"100"}, "作者": "用户"}}
+	ingestor := newUnitIngestor("test", 1, []string{"xlsx"})
+	ingestor.docState = &docStateUpdater{docSvc: svc}
+	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+		_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+		return err
+	}
+	if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID}) {
+		t.Fatal("stopped task did not settle")
+	}
+	if _, ok := svc.metaData[entity.TableProfileMetadataField]; ok {
+		t.Fatal("stopped task retained its published table")
+	}
+	if _, ok := svc.metaData["金额"]; ok {
+		t.Fatal("stopped task retained column values")
+	}
+	if svc.metaData["作者"] != "用户" {
+		t.Fatal("stopping removed unrelated metadata")
+	}
+}
 
 // TestRunTask_ContextCancelledBeforePipeline makes a cancelled context settle
 // the task as STOPPED without entering the pipeline.
@@ -280,5 +311,110 @@ func TestRunTask_SuccessfulCompletion(t *testing.T) {
 	}
 	if task.Status != common.COMPLETED {
 		t.Fatalf("task status = %s, want COMPLETED", task.Status)
+	}
+}
+
+// deadlineRecordingDocState records the deadline the stop path gives the
+// derived-state revoke.
+type deadlineRecordingDocState struct {
+	docStateSvc
+	revokeDeadline time.Time
+}
+
+func (d *deadlineRecordingDocState) RevokeTableProfile(ctx context.Context, docID string) error {
+	d.revokeDeadline, _ = ctx.Deadline()
+	return d.docStateSvc.RevokeTableProfile(ctx, docID)
+}
+
+// Revoking on the stop path takes the document metadata lock, which has its own
+// acquisition budget. Sizing the revoke by the terminal-write deadline would
+// make it lose the lock to a concurrent publish and leave the task unsettled
+// for no reason.
+func TestStopSizesTheRevokeByTheLockNotByTheTerminalWrite(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	_, kbID, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+
+	svc := &deadlineRecordingDocState{docStateSvc: &stubDocStateSvc{}}
+	ingestor := newUnitIngestor("test", 1, []string{"xlsx"})
+	ingestor.docState = &docStateUpdater{docSvc: svc}
+	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+		_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+		return err
+	}
+	if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID}) {
+		t.Fatal("stopped task did not settle")
+	}
+	if svc.revokeDeadline.IsZero() {
+		t.Fatal("the stop path never revoked the derived state")
+	}
+	// A terminal status write gets five seconds; a revoke sized by that same
+	// deadline loses the lock to a concurrent publish.
+	if budget := time.Until(svc.revokeDeadline); budget <= 5*time.Second {
+		t.Errorf("revoke budget %v is not longer than a terminal write's five seconds", budget)
+	}
+}
+
+func TestStoppedRunRecordsFinalSnapshot(t *testing.T) {
+	for _, path := range []string{"stop", "settle", "cancelled-pipeline", "stop-after-pipeline"} {
+		t.Run(path, func(t *testing.T) {
+			db := testutil.SetupTestDB(t)
+			cleanup := testutil.ReplaceDBForTest(t, db)
+			defer cleanup()
+			_, kbID, docID, taskID := testutil.SeedTestData(t, db)
+			if err := db.Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]any{
+				"name": "final.xlsx", "suffix": "xlsx", "progress": -1, "process_duration": 37.5,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			ingestor := newUnitIngestor("stop-snapshot", 1, []string{"xlsx"})
+			ingestor.docState = &docStateUpdater{docSvc: &stubDocStateSvc{}}
+			switch path {
+			case "stop":
+				if !ingestor.markStopped(t.Context(), taskID) {
+					t.Fatal("stop did not settle")
+				}
+			case "settle":
+				if _, err := ingestor.ingestionTaskSvc.RequestStop(t.Context(), taskID); err != nil {
+					t.Fatal(err)
+				}
+				if err := ingestor.settleToTerminal(t.Context(), taskID); err != nil {
+					t.Fatal(err)
+				}
+			case "cancelled-pipeline", "stop-after-pipeline":
+				ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+					if path == "stop-after-pipeline" {
+						_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+						return err
+					}
+					return context.Canceled
+				}
+				runID := "run-" + taskID
+				if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID, PipelineLogID: &runID}) {
+					t.Fatal("cancel did not settle")
+				}
+			}
+			var run entity.PipelineOperationLog
+			if err := db.Take(&run, "id = ?", "run-"+taskID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if run.OperationStatus != string(entity.TaskStatusCancel) || run.Progress != -1 || run.ProcessDuration != 37.5 || run.DocumentName != "final.xlsx" || run.DocumentSuffix != "xlsx" {
+				t.Fatalf("stop lost final snapshot: %+v", run)
+			}
+			events, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			terminalCount := 0
+			for _, event := range events {
+				if event.EventType == dao.EventTypeTerminal {
+					terminalCount++
+				}
+			}
+			if terminalCount != 1 {
+				t.Fatalf("terminal events = %d, want 1", terminalCount)
+			}
+		})
 	}
 }

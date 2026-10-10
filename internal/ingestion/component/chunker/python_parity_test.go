@@ -167,17 +167,6 @@ func TestChunker_DropsContentWithWeightOnlyItems(t *testing.T) {
 	}
 }
 
-// TestChunker_EmptyInputProducesNoChunks pins the empty-input
-// behaviour. An empty items slice should produce an empty chunks
-// list (mirrors python `_build_json_chunks` for an empty input).
-func TestChunker_EmptyInputProducesNoChunks(t *testing.T) {
-	out := invokeAsTokenChunker(t, nil)
-	chunks := chunksFromOutput(t, out)
-	if len(chunks) != 0 {
-		t.Errorf("empty input produced %d chunks, want 0", len(chunks))
-	}
-}
-
 // chunksFromOutput pulls the chunks list out of a TokenChunker
 // output. The component emits output_format=chunks with the list
 // under "chunks".

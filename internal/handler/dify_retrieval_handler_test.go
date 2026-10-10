@@ -495,3 +495,38 @@ func TestDifyRetrieval_RetrievalNotFound(t *testing.T) {
 		t.Errorf("expected 404 for not_found, got %d", w.Code)
 	}
 }
+
+// The table system's own record must not reach a caller as one of the document's
+// fields: it names the columns the document indexed and is read through the
+// dataset schema endpoint instead.
+func TestDifyRetrieval_OmitsTableProfile(t *testing.T) {
+	h, r := setupDifyTest("user1")
+	h.metadataSvc = &mockMetadataService{
+		searchMetadataByKBs: func(ctx context.Context, kbIDs []string, size int) (*service.SearchMetadataResponse, error) {
+			return &service.SearchMetadataResponse{
+				MetadataRecords: []map[string]interface{}{
+					{"id": "doc1", "meta_fields": map[string]interface{}{
+						"author":                         "Zhang San",
+						entity.TableProfileMetadataField: `{"engine":"infinity","columns":[{"key":"\u91d1\u989d"}]}`,
+					}},
+				},
+			}, nil
+		},
+	}
+	body := `{"knowledge_id": "kb1", "query": "test question"}`
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/api/v1/dify/retrieval", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	meta := firstRecordMetadata(t, w.Body.Bytes())
+	if got, leaked := meta[entity.TableProfileMetadataField]; leaked {
+		t.Errorf("the table profile reached the response: %v", got)
+	}
+	if got := meta["author"]; got != "Zhang San" {
+		t.Errorf("author = %v, want %q", got, "Zhang San")
+	}
+}

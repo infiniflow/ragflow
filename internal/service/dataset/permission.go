@@ -29,8 +29,3 @@ func (d *DatasetService) GetKnowledgebaseByID(ctx context.Context, datasetID str
 	}
 	return d.kbDAO.GetByID(ctx, dao.DB, normalizedID)
 }
-
-// GetFieldMap returns the field map for the given knowledge base IDs.
-func (d *DatasetService) GetFieldMap(ctx context.Context, ids []string) (map[string]interface{}, error) {
-	return d.kbDAO.GetFieldMap(ctx, dao.DB, ids)
-}

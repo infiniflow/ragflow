@@ -65,10 +65,7 @@
                                 "xlsx",
                                 "csv"
                             ],
-                            "vlm": {},
-                            "column_mode": "auto",
-                            "column_roles": {},
-                            "column_names": []
+                            "vlm": {}
                         },
                         "text&code": {
                             "output_format": "json",
@@ -92,6 +89,8 @@
                 "obj": {
                     "component_name": "TableChunker",
                     "params": {
+                        "column_mode": "auto",
+                        "column_roles": {},
                         "outputs": {
                             "chunks": {
                                 "type": "Array<Object>",
@@ -240,7 +239,9 @@
                                     "type": "Array<Object>",
                                     "value": []
                                 }
-                            }
+                            },
+                            "column_mode": "auto",
+                            "column_roles": {}
                         },
                         "label": "TableChunker",
                         "name": "Table Chunker"

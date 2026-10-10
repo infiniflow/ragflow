@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/server/config"
@@ -525,3 +526,9 @@ func (m *MinioStorage) Move(ctx context.Context, srcBucket, srcPath, destBucket,
 }
 
 func (m *MinioStorage) Close() error { return nil }
+
+// Open returns an object stream without buffering its contents.
+func (m *MinioStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	bucket, fnm = m.resolveBucketAndPath(bucket, fnm)
+	return m.client.GetObject(ctx, bucket, fnm, minio.GetObjectOptions{})
+}

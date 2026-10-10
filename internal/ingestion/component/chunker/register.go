@@ -28,11 +28,12 @@ package chunker
 import (
 	"context"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
-
-	"gorm.io/gorm"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // MustRegisterChunker registers a single chunker component under
@@ -102,6 +103,13 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 	// deriving it here from the already-finalized text.
 	for _, ck := range chunks {
 		if id, ok := ck["id"]; ok && id != "" {
+			continue
+		}
+		// A spreadsheet row is identified by where it came from, not by what
+		// it says: two source rows can render identical text, and a re-parse
+		// with different column roles must still land on the same chunk.
+		if identity, ok := schema.TableRowIdentity(ck); ok {
+			ck["id"] = common.ChunkID(docID, identity)
 			continue
 		}
 		text, err := requireChunkText(ck)

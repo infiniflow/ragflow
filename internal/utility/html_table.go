@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-package chunker
+package utility
 
 import (
 	"strings"
@@ -23,16 +23,16 @@ import (
 )
 
 // ---------------------------------------------------------------------------
-// HTML table row extraction (shared by the Table, QA and General chunkers)
+// HTML table row extraction
 // ---------------------------------------------------------------------------
 
-// tableRows returns every row's cell text, header rows included.
-func tableRows(htmlStr string) [][]string {
-	rows, _ := tableRowsWithHeader(htmlStr)
+// HTMLTableRows returns every row's cell text, header rows included.
+func HTMLTableRows(htmlStr string) [][]string {
+	rows, _ := HTMLTableRowsWithHeader(htmlStr)
 	return rows
 }
 
-// tableRowsWithHeader returns every row's cell text in document order, plus
+// HTMLTableRowsWithHeader returns every row's cell text in document order, plus
 // the number of leading header rows. A row counts as a header row when any of
 // its cells is a <th>. When no row uses <th> at all the first row is treated
 // as the header — the convention spreadsheet and markup tables are read with.
@@ -45,7 +45,7 @@ func tableRows(htmlStr string) [][]string {
 // early — that row keeps its own cells, with the nested table's text folded
 // into the cell holding it — and a row or cell missing its closing tag is
 // recovered rather than dropped.
-func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
+func HTMLTableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 	// A <tr> outside a <table> is discarded by the HTML5 "in body" insertion
 	// mode, so a bare row fragment would yield nothing. Give the parser the
 	// table context it needs instead of dropping the rows silently.
@@ -99,22 +99,38 @@ func tableRowsWithHeader(htmlStr string) (rows [][]string, headerCount int) {
 	return rows, headerCount
 }
 
-// isTableStrictHTML reports whether block text is an outer <table> element
+// TableRowsWiderThanHeader returns the positions, within dataRows, of the rows
+// carrying more cells than the header names. A cell past the last header column
+// has no column identity — no key, no display name, no data key and no role — so
+// the chunker and the column probe ask the same question and must not answer it
+// differently: the chunker refuses such a sheet under column mode manual, and
+// the probe reports it before the client commits roles to the file.
+func TableRowsWiderThanHeader(header []string, dataRows [][]string) []int {
+	var wide []int
+	for i, row := range dataRows {
+		if len(row) > len(header) {
+			wide = append(wide, i)
+		}
+	}
+	return wide
+}
+
+// IsTableOpeningTag reports whether block text is an outer <table> element
 // (the inlined GFM/HTML table). Only such blocks are emitted as structured
 // table items; other raw HTML (e.g. <div>, <style>) is plain text. The
 // spreadsheet wire is the markup this reports on (see the parser's
 // renderSpreadsheetTable), so callers that slice a positions matrix use
 // this strict form rather than the candidate filter.
-func isTableStrictHTML(s string) bool {
+func IsTableOpeningTag(s string) bool {
 	return strings.HasPrefix(strings.TrimSpace(strings.ToLower(s)), "<table")
 }
 
-// isTableHTML is the cheap candidate filter for table-vs-prose routing: text
+// LooksLikeTableHTML is the cheap candidate filter for table-vs-prose routing: text
 // that opens an outer <table> element, or a bare-row fragment holding <tr>.
-// It only narrows the candidates — the caller decides on tableRows' result —
+// It only narrows the candidates — the caller decides on HTMLTableRows' result —
 // so a block that merely opens with "<table" text and holds no row stays on
 // the prose path instead of silently pairing nothing.
-func isTableHTML(s string) bool {
+func LooksLikeTableHTML(s string) bool {
 	lower := strings.ToLower(s)
 	return strings.HasPrefix(strings.TrimSpace(lower), "<table") || strings.Contains(lower, "<tr")
 }

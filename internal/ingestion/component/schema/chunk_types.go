@@ -16,7 +16,12 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"fmt"
+
+	"ragflow/internal/entity"
+)
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
 // wire payloads.
@@ -99,34 +104,58 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text          string                     `json:"text,omitempty"`
-	DocType       string                     `json:"doc_type_kwd,omitempty"`
-	CKType        string                     `json:"ck_type,omitempty"`
-	TKNums        *int                       `json:"tk_nums,omitempty"`
-	Mom           string                     `json:"mom,omitempty"`
-	ImgID         string                     `json:"img_id,omitempty"`
-	ID            string                     `json:"id,omitempty"`
-	Layout        string                     `json:"layout,omitempty"`
-	LayoutType    string                     `json:"layout_type,omitempty"`
-	LayoutNo      string                     `json:"layoutno,omitempty"`
-	Image         string                     `json:"image,omitempty"`
-	ContextAbove  string                     `json:"context_above,omitempty"`
-	ContextBelow  string                     `json:"context_below,omitempty"`
-	Questions     string                     `json:"questions,omitempty"`
-	Keywords      string                     `json:"keywords,omitempty"`
-	Summary       string                     `json:"summary,omitempty"`
-	ChunkOrderInt *int                       `json:"chunk_order_int,omitempty"`
-	TitleTks      string                     `json:"title_tks,omitempty"`
-	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
-	ContentLtks   string                     `json:"content_ltks,omitempty"`
-	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	PageNumber    *int                       `json:"page_number,omitempty"`
-	TopInt        []int                      `json:"top_int,omitempty"`
-	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
-	Positions     json.RawMessage            `json:"positions,omitempty"`
-	Sheet         string                     `json:"sheet,omitempty"`
-	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Extra         map[string]json.RawMessage `json:"-"`
+	Text           string                     `json:"text,omitempty"`
+	DocType        string                     `json:"doc_type_kwd,omitempty"`
+	CKType         string                     `json:"ck_type,omitempty"`
+	TKNums         *int                       `json:"tk_nums,omitempty"`
+	Mom            string                     `json:"mom,omitempty"`
+	ImgID          string                     `json:"img_id,omitempty"`
+	ID             string                     `json:"id,omitempty"`
+	Layout         string                     `json:"layout,omitempty"`
+	LayoutType     string                     `json:"layout_type,omitempty"`
+	LayoutNo       string                     `json:"layoutno,omitempty"`
+	Image          string                     `json:"image,omitempty"`
+	ContextAbove   string                     `json:"context_above,omitempty"`
+	ContextBelow   string                     `json:"context_below,omitempty"`
+	Questions      string                     `json:"questions,omitempty"`
+	Keywords       string                     `json:"keywords,omitempty"`
+	Summary        string                     `json:"summary,omitempty"`
+	ChunkOrderInt  *int                       `json:"chunk_order_int,omitempty"`
+	TitleTks       string                     `json:"title_tks,omitempty"`
+	TitleSmTks     string                     `json:"title_sm_tks,omitempty"`
+	ContentLtks    string                     `json:"content_ltks,omitempty"`
+	ContentSmLtks  string                     `json:"content_sm_ltks,omitempty"`
+	PageNumber     *int                       `json:"page_number,omitempty"`
+	TopInt         []int                      `json:"top_int,omitempty"`
+	PDFPositions   json.RawMessage            `json:"_pdf_positions,omitempty"`
+	Positions      json.RawMessage            `json:"positions,omitempty"`
+	Sheet          string                     `json:"sheet,omitempty"`
+	SheetIndex     *int                       `json:"sheet_index,omitempty"`
+	ChunkData      map[string]any             `json:"chunk_data,omitempty"`
+	TableRowInt    int                        `json:"table_row_int,omitempty"`
+	TableRowSource *TableRowSource            `json:"table_row_source,omitempty"`
+	Extra          map[string]json.RawMessage `json:"-"`
+}
+
+// TableRowSource records which sheet row a spreadsheet chunk came from
+// and which column roles were in force for it. Row identity has to outlive
+// body-text filtering: two source rows can render identical text, and a re-parse with changed roles must still land on
+// the same chunk. It is pipeline-only bookkeeping — indexdoc reads it at the
+// index boundary and drops it, so it never becomes a chunk-store column.
+type TableRowSource struct {
+	// SheetIndex is the 1-based sheet index the row came from.
+	SheetIndex int `json:"sheet_index"`
+	// SourceRow is the 1-based spreadsheet row number of the data row.
+	SourceRow int `json:"source_row"`
+	// Mode is the column mode actually applied to this row.
+	Mode string `json:"mode"`
+	// Columns is the sheet's column identity in header order.
+	Columns []entity.TableColumn `json:"columns"`
+	// Roles holds only the roles the configuration states — empty for auto,
+	// and never the resolved default. A column missing from it under manual was
+	// indexed as "both", which is the difference between a column whose values
+	// belong in document metadata and one whose values only live in the row.
+	Roles map[string]string `json:"roles,omitempty"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -149,7 +178,8 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index",
+		"sheet", "sheet_index", "chunk_data", "table_row_int",
+		"table_row_source",
 	} {
 		delete(raw, key)
 	}
@@ -158,6 +188,37 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		d.Extra = raw
 	}
 	return nil
+}
+
+// TableRowIdentity returns the hash input that identifies a spreadsheet row
+// chunk by where it came from, or ok=false for any other chunk. Two different
+// source rows that render the same text, and the same row re-parsed under
+// different column roles, both keep this identity.
+func TableRowIdentity(ck map[string]any) (string, bool) {
+	src, ok := ck["table_row_source"].(map[string]any)
+	if !ok {
+		return "", false
+	}
+	sheet, okSheet := jsonNumber(src["sheet_index"])
+	row, okRow := jsonNumber(src["source_row"])
+	if !okSheet || !okRow || row == 0 {
+		return "", false
+	}
+	return fmt.Sprintf("table-row:v1:%d:%d", sheet, row), true
+}
+
+// jsonNumber reads a number that reaches this layer either as an int (in the
+// same process) or as a float64 (after a JSON round trip through the Tokenizer
+// or a checkpoint).
+func jsonNumber(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case float64:
+		return int(n), true
+	default:
+		return 0, false
+	}
 }
 
 func (d ChunkDoc) MarshalJSON() ([]byte, error) {

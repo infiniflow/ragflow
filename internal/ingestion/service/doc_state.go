@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
 	"ragflow/internal/utility"
@@ -32,15 +33,19 @@ import (
 // can inject a stub without constructing a real DocumentService (which depends
 // on initialized server config).
 type docStateSvc interface {
-	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]any, error)
-	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error
+	WithDocumentMetadataLock(context.Context, string, func(context.Context) error) error
+	RevokeTableProfile(ctx context.Context, docID string) error
+	GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]any, error)
+	SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error
+	DeleteDocumentMetadataRaw(ctx context.Context, docID string, keys []string) error
 	ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error
 }
 
 // docStateUpdater applies a pipeline run's results to document state: it
-// merges the pipeline-produced metadata (filling only keys not already present)
-// and bumps the document/dataset chunk and token counters. Both steps are
-// best-effort; failures are logged and do not fail the task.
+// publishes the run's metadata, then bumps the document/dataset chunk and token
+// counters. Publishing carries the document's derived table profile, so a run
+// that indexes spreadsheet rows fails when that write fails; counters stay
+// best-effort.
 type docStateUpdater struct {
 	docSvc docStateSvc
 }
@@ -53,84 +58,202 @@ func newDocStateUpdater() *docStateUpdater {
 	}
 }
 
-func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult) {
+func (u *docStateUpdater) apply(ctx context.Context, r *taskpkg.PipelineResult, check func(context.Context) error) error {
 	if r == nil {
-		return
+		return nil
 	}
-	if len(r.Metadata) > 0 {
-		if err := mergeDocMetadata(ctx, u.docSvc, r.DocID, r.Metadata); err != nil {
-			common.Warn(fmt.Sprintf("failed to update document metadata: %v", err))
-		}
+	if err := ctx.Err(); err != nil {
+		return err
 	}
-	// Built-in metadata (update_time / file_name) is applied on top of the
-	// LLM-extracted metadata, mirroring Python apply_built_in_metadata
-	// (task_executor_refactor/chunk_post_processor.py): it runs when
-	// auto-metadata is enabled and built-in fields are configured, and its
-	// values overwrite whatever is already stored.
-	if r.AutoMetadataEnabled && len(r.BuiltInMetadataConfig) > 0 {
-		if err := applyBuiltInMetadata(ctx, u.docSvc, r.DocID, r.DocName, r.BuiltInMetadataConfig); err != nil {
-			common.Warn(fmt.Sprintf("failed to apply built-in metadata: %v", err))
-		}
+	if err := publishDocMetadata(ctx, u.docSvc, r, check); err != nil {
+		return err
 	}
 	if err := u.docSvc.ApplyDocCounts(ctx, r.DocID, r.KbID, r.ChunkCount, r.TokenConsumption, r.Duration); err != nil {
 		common.Warn(fmt.Sprintf("failed to apply doc counts: %v", err))
 	}
+	return nil
 }
 
-// mergeDocMetadata reads existing metadata, unions it with the freshly
-// aggregated doc metadata (list values merged + de-duplicated, scalars from the
-// stored map winning — matching Python task_executor.py:572
-// update_metadata_to(metadata, existing_meta)), then splits combined values
-// before writing the merged map back (Python doc_metadata_service.py:468
-// _split_combined_values). A read failure aborts the merge: SetDocumentMetadata
-// is a full overwrite, so writing with an empty baseline would destroy existing
-// keys.
-func mergeDocMetadata(ctx context.Context, svc docStateSvc, docID string, metadata map[string]any) error {
-	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
-	if err != nil {
-		return err
-	}
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	merged := utility.UpdateMetadataTo(metadata, existing)
-	merged = common.SplitCombinedMetadataValues(merged)
-	return svc.SetDocumentMetadata(ctx, docID, merged)
-}
-
-// applyBuiltInMetadata writes the configured built-in metadata fields into the
-// document's metadata, overwriting existing values. Mirrors Python
-// apply_built_in_metadata (task_executor_refactor/chunk_post_processor.py):
-//   - update_time -> current timestamp "2006-01-02 15:04:05"
-//   - file_name   -> the document name
-func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName string, config []any) error {
+// publishDocMetadata writes one run's metadata into the document record in a
+// single write: the engines replace the whole field map, so splitting the table
+// contributions from the rest would leave the record briefly holding half of it.
+//
+// A spreadsheet run replaces rather than accumulates: the values the previous
+// run published are dropped first, using the ownership list in the profile it
+// left behind, so re-parsing narrows a column to the values the document now
+// holds instead of unioning in rows that no longer exist. Every other key keeps
+// the long-standing behaviour where a stored scalar wins over a freshly
+// extracted one and lists merge.
+//
+// A run with no table profile publishes none, which also clears the record an
+// earlier run left: those rows are gone, so their columns are not queryable.
+func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, check func(context.Context) error) error {
 	builtIn := make(map[string]any, 2)
-	for _, raw := range config {
-		item, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		key, _ := item["key"].(string)
-		switch key {
-		case "update_time":
-			builtIn["update_time"] = time.Now().Format("2006-01-02 15:04:05")
-		case "file_name":
-			if docName != "" {
-				builtIn["file_name"] = docName
+	if r.AutoMetadataEnabled {
+		for _, raw := range r.BuiltInMetadataConfig {
+			item, ok := raw.(map[string]any)
+			if !ok {
+				continue
+			}
+			key, _ := item["key"].(string)
+			switch key {
+			case "update_time":
+				builtIn["update_time"] = time.Now().Format("2006-01-02 15:04:05")
+			case "file_name":
+				if r.DocName != "" {
+					builtIn["file_name"] = r.DocName
+				}
 			}
 		}
 	}
-	if len(builtIn) == 0 {
+	if len(r.Metadata) == 0 && r.TableProfile == nil && len(builtIn) == 0 {
+		// This completed run has nothing to publish. Its empty output cannot
+		// race a write of its own; every actual revoke still rechecks under lock.
+		existing, err := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+		if err != nil {
+			return err
+		}
+		if _, present := existing[entity.TableProfileMetadataField]; !present {
+			return nil
+		}
+		return svc.RevokeTableProfile(ctx, r.DocID)
+	}
+	tableState := r.TableProfile != nil
+	readOK, guardFailed := false, false
+	err := svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {
+		if check != nil {
+			if err := check(ctx); err != nil {
+				guardFailed = true
+				return err
+			}
+		}
+		existing, err := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+		if err != nil {
+			return fmt.Errorf("read metadata of document %s: %w", r.DocID, err)
+		}
+		readOK = true
+		_, previous := existing[entity.TableProfileMetadataField]
+		tableState = tableState || previous
+		return publishDocMetadataLocked(ctx, svc, r, builtIn, existing)
+	})
+	if err != nil && !tableState && !guardFailed && ctx.Err() == nil {
+		// A failed lock never entered the callback. Check whether an earlier run
+		// left a profile before treating this ordinary metadata write as best-effort.
+		if !readOK {
+			existing, readErr := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+			if readErr != nil {
+				return err
+			}
+			if _, present := existing[entity.TableProfileMetadataField]; present {
+				return err
+			}
+		}
+		common.Warn(fmt.Sprintf("failed to publish ordinary document metadata: %v", err))
 		return nil
 	}
-	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
-	if err != nil {
-		return err
-	}
+	return err
+}
+
+func publishDocMetadataLocked(ctx context.Context, svc docStateSvc, r *taskpkg.PipelineResult, builtIn, existing map[string]any) error {
 	if existing == nil {
 		existing = map[string]any{}
 	}
-	merged := utility.UpdateMetadataTo(existing, builtIn)
+
+	previous, _, _ := entity.DecodeTableProfile(existing[entity.TableProfileMetadataField])
+	owned := make(map[string]struct{}, len(r.TableProfile.OwnedKeys()))
+	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, exists := existing[key]; exists && (previous == nil || !ownsKey(previous, key)) {
+			continue
+		}
+		owned[key] = struct{}{}
+	}
+
+	// Keys this run no longer produces are deleted, not merely left out of the
+	// write: Infinity folds an update into the stored map, so an omitted key
+	// keeps its old value and the next read would quote rows that no longer
+	// exist.
+	if previous != nil {
+		stale := make([]string, 0, len(previous.OwnedMetadata)+1)
+		for _, key := range previous.OwnedMetadata {
+			if _, produced := owned[key]; !produced {
+				stale = append(stale, key)
+			}
+		}
+		if r.TableProfile == nil {
+			stale = append(stale, entity.TableProfileMetadataField)
+		}
+		if len(stale) > 0 {
+			if err := svc.DeleteDocumentMetadataRaw(ctx, r.DocID, stale); err != nil {
+				return fmt.Errorf("revoke retired metadata of document %s: %w", r.DocID, err)
+			}
+		}
+	}
+
+	baseline := make(map[string]any, len(existing))
+	for key, value := range existing {
+		if key == entity.TableProfileMetadataField || (previous != nil && ownsKey(previous, key)) {
+			continue
+		}
+		baseline[key] = value
+	}
+
+	incoming := make(map[string]any, len(r.Metadata))
+	for key, value := range r.Metadata {
+		incoming[key] = value
+	}
+	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, accepted := owned[key]; !accepted {
+			delete(incoming, key)
+		}
+	}
+	merged := utility.UpdateMetadataTo(incoming, baseline)
+	// A column this run produced keeps exactly this run's values: merging would
+	// fold in whatever the same-named key held before, which for a narrowed
+	// re-parse means rows that no longer exist stay queryable.
+	for key := range owned {
+		if value, ok := r.Metadata[key]; ok {
+			merged[key] = value
+		}
+	}
 	merged = common.SplitCombinedMetadataValues(merged)
-	return svc.SetDocumentMetadata(ctx, docID, merged)
+	// A rejected table contribution must preserve the user value verbatim,
+	// including empty values that the ordinary metadata merge drops.
+	for _, key := range r.TableProfile.OwnedKeys() {
+		if _, accepted := owned[key]; !accepted {
+			merged[key] = existing[key]
+		}
+	}
+	// Built-in values are authoritative and relinquish table ownership.
+	for key, value := range builtIn {
+		merged[key] = value
+		delete(owned, key)
+	}
+	if r.TableProfile != nil {
+		profile := *r.TableProfile
+		profile.OwnedMetadata = make([]string, 0, len(owned))
+		for key := range owned {
+			profile.OwnedMetadata = append(profile.OwnedMetadata, key)
+		}
+		encoded, err := profile.Encode()
+		if err != nil {
+			return fmt.Errorf("encode table profile of document %s: %w", r.DocID, err)
+		}
+		merged[entity.TableProfileMetadataField] = encoded
+	}
+	if err := svc.SetDocumentMetadataRaw(ctx, r.DocID, merged); err != nil {
+		return fmt.Errorf("publish metadata of document %s: %w", r.DocID, err)
+	}
+	return nil
+}
+
+// ownsKey reports whether a metadata key still belongs to the table system. A
+// key a user or the LLM took over is absent from the published list, so their
+// value survives the next re-parse instead of being replaced by a column.
+func ownsKey(profile *entity.TableProfile, key string) bool {
+	for _, owned := range profile.OwnedMetadata {
+		if owned == key {
+			return true
+		}
+	}
+	return false
 }

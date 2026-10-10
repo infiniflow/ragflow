@@ -5,17 +5,20 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/dao"
-	"ragflow/internal/service"
 	"reflect"
 	"regexp"
 	"sort"
 	"strconv"
 	"strings"
-
-	"ragflow/internal/common"
+	"time"
 
 	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/engine/kvrocks"
+	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 // GetMetadataSummary get metadata summary for documents
@@ -34,8 +37,73 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
-// SetDocumentMetadata sets metadata for a document in the document engine
+// SetDocumentMetadata replaces visible metadata while retaining the internal
+// table profile. Replacing the complete visible map transfers its ownership.
 func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		merged := cloneDocumentMetadata(meta)
+		touched := cloneDocumentMetadata(existing)
+		var removed []string
+		for key := range existing {
+			if key == entity.TableProfileMetadataField {
+				continue
+			}
+			if _, kept := meta[key]; !kept {
+				removed = append(removed, key)
+			}
+		}
+		for key, value := range meta {
+			touched[key] = value
+		}
+		delete(touched, entity.TableProfileMetadataField)
+		if profile, present := existing[entity.TableProfileMetadataField]; present {
+			merged[entity.TableProfileMetadataField] = profile
+		}
+		if err := relinquishTableMetadata(merged, touched); err != nil {
+			return err
+		}
+		// Infinity merges engine updates, so omission alone does not remove keys.
+		if len(removed) > 0 {
+			if err := s.DeleteDocumentMetadataRaw(ctx, docID, removed); err != nil {
+				return err
+			}
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, merged)
+	})
+}
+
+// mergeSyncDocumentMetadata applies source fields without replacing metadata
+// added by the user or ingestion. Only submitted fields transfer ownership.
+func (s *DocumentService) mergeSyncDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(existing)
+		for key, value := range meta {
+			after[key] = value
+		}
+		if err := relinquishTableMetadata(after, meta); err != nil {
+			return err
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
+}
+
+// SetDocumentMetadataRaw writes a publisher's complete record, including its
+// table profile. Explicit metadata edits must use SetDocumentMetadata.
+func (s *DocumentService) SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -64,6 +132,38 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 
 // DeleteDocumentMetadata deletes metadata keys for a document in the document engine
 func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		touched := make(map[string]any, len(keys))
+		for _, key := range keys {
+			if key == entity.TableProfileMetadataField {
+				return errors.New("_table_profile is reserved")
+			}
+			touched[key] = nil
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(existing)
+		for _, key := range keys {
+			delete(after, key)
+		}
+		if err := relinquishTableMetadata(after, touched); err != nil {
+			return err
+		}
+		if err := s.DeleteDocumentMetadataRaw(ctx, docID, keys); err != nil {
+			return err
+		}
+		if len(after) == 0 {
+			return nil
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
+}
+
+// DeleteDocumentMetadataRaw removes publisher-owned fields. API edits must use
+// DeleteDocumentMetadata to preserve the indexed profile and transfer ownership.
+func (s *DocumentService) DeleteDocumentMetadataRaw(ctx context.Context, docID string, keys []string) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -87,6 +187,10 @@ func (s *DocumentService) DeleteDocumentMetadata(ctx context.Context, docID stri
 
 // DeleteDocumentAllMetadata deletes all metadata for a document in the document engine
 func (s *DocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
+	return s.replaceDocumentMetadata(ctx, docID, map[string]any{})
+}
+
+func (s *DocumentService) deleteDocumentAllMetadata(ctx context.Context, docID string) error {
 	// Get document to find kb_id
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
 	if err != nil {
@@ -134,11 +238,44 @@ func (s *DocumentService) GetDocumentMetadataByID(ctx context.Context, docID str
 
 	// Return metadata if found
 	if len(searchResult.MetadataRecords) > 0 {
-		metadata := searchResult.MetadataRecords[0]
-		return service.ExtractMetaFields(metadata)
+		fields, err := s.documentMetadataRaw(searchResult.MetadataRecords[0])
+		if err != nil {
+			return nil, err
+		}
+		return entity.WithoutTableProfileField(fields), nil
 	}
 
 	return make(map[string]interface{}), nil
+}
+
+// GetDocumentMetadataRaw reads a document's metadata including the keys no
+// reader should see, for a caller that is about to write the record back.
+// Filtering the system record out of that baseline would delete it on the next
+// read-modify-write round trip, because the engines write the field map whole.
+func (s *DocumentService) GetDocumentMetadataRaw(ctx context.Context, docID string) (map[string]interface{}, error) {
+	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+	if err != nil {
+		return nil, fmt.Errorf("document not found: %w", err)
+	}
+
+	tenantID, err := s.metadataSvc.GetTenantIDByKBID(ctx, doc.KbID)
+	if err != nil {
+		return nil, err
+	}
+
+	searchResult, err := s.metadataSvc.SearchMetadata(ctx, doc.KbID, tenantID, []string{docID}, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(searchResult.MetadataRecords) == 0 {
+		return make(map[string]interface{}), nil
+	}
+	return s.documentMetadataRaw(searchResult.MetadataRecords[0])
+}
+
+// documentMetadataRaw extracts a search record's metadata fields untouched.
+func (s *DocumentService) documentMetadataRaw(record map[string]interface{}) (map[string]interface{}, error) {
+	return service.ExtractMetaFields(record)
 }
 
 // GetMetadataByKBs get metadata for knowledge bases
@@ -207,6 +344,9 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 		// Process each metadata field
 		for fieldName, fieldValue := range metaFields {
 			if fieldName == "kb_id" || fieldName == "id" {
+				continue
+			}
+			if fieldName == entity.TableProfileMetadataField {
 				continue
 			}
 
@@ -364,6 +504,9 @@ func aggregateMetadata(chunks []map[string]interface{}) map[string]interface{} {
 
 		// Now iterate over the extracted metadata fields
 		for k, v := range metaFields {
+			if k == entity.TableProfileMetadataField {
+				continue
+			}
 			// Skip nil values
 			if v == nil {
 				continue
@@ -511,10 +654,27 @@ func (s *DocumentService) replaceDocumentMetadata(ctx context.Context, docID str
 	if s.docEngine == nil || s.metadataSvc == nil {
 		return nil
 	}
-	if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
-		return err
-	}
-	return s.SetDocumentMetadata(ctx, docID, meta)
+
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(meta)
+		if raw, ok := existing[entity.TableProfileMetadataField]; ok {
+			after[entity.TableProfileMetadataField] = raw
+		}
+		if err := relinquishTableMetadata(after, existing); err != nil {
+			return err
+		}
+		if err := s.deleteDocumentAllMetadata(ctx, docID); err != nil {
+			return err
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
 }
 
 func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID string, before, after map[string]interface{}) error {
@@ -529,7 +689,7 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 		}
 	}
 	if len(deleteKeys) > 0 {
-		if err := s.DeleteDocumentMetadata(ctx, docID, deleteKeys); err != nil {
+		if err := s.DeleteDocumentMetadataRaw(ctx, docID, deleteKeys); err != nil {
 			return err
 		}
 	}
@@ -554,7 +714,7 @@ func (s *DocumentService) patchDocumentMetadata(ctx context.Context, docID strin
 
 	// Send the complete 'after' map — UpdateMetadata does a full replace,
 	// not a merge, so a partial delta would wipe unchanged keys.
-	return s.SetDocumentMetadata(ctx, docID, after)
+	return s.SetDocumentMetadataRaw(ctx, docID, after)
 }
 
 // BatchUpdateDocumentMetadatas implements the shared logic for
@@ -648,31 +808,46 @@ func (s *DocumentService) BatchUpdateDocumentMetadatas(
 	// semantics instead of a simple merge-then-delete.
 	updated := 0
 	for _, docID := range ids {
-		currentMeta, err := s.GetDocumentMetadataByID(ctx, docID)
-		if err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: get metadata failed",
-				zap.String("docID", docID), zap.Error(err))
-			continue
-		}
+		changed := false
+		err := s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+			currentMeta, err := s.GetDocumentMetadataRaw(ctx, docID)
+			if err != nil {
+				return err
+			}
 
-		meta := cloneDocumentMetadata(currentMeta)
-		originalMeta := cloneDocumentMetadata(meta)
+			meta := cloneDocumentMetadata(currentMeta)
+			originalMeta := cloneDocumentMetadata(meta)
 
-		changed := applyDocumentMetadataUpdates(meta, updates)
-		if applyDocumentMetadataDeletes(meta, deletes) {
+			applyDocumentMetadataUpdates(meta, updates)
+			applyDocumentMetadataDeletes(meta, deletes)
+			touched := make(map[string]any, len(updates)+len(deletes))
+			for _, update := range updates {
+				touched[update.Key] = nil
+			}
+			for _, deletion := range deletes {
+				touched[deletion.Key] = nil
+			}
+			if err := relinquishTableMetadata(meta, touched); err != nil {
+				return err
+			}
+
+			if reflect.DeepEqual(originalMeta, meta) {
+				return nil
+			}
+
+			if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
+				return err
+			}
 			changed = true
-		}
-
-		if !changed || reflect.DeepEqual(originalMeta, meta) {
+			return nil
+		})
+		if err != nil {
+			common.Warn("BatchUpdateDocumentMetadata: update failed", zap.String("docID", docID), zap.Error(err))
 			continue
 		}
-
-		if err = s.patchDocumentMetadata(ctx, docID, originalMeta, meta); err != nil {
-			common.Warn("BatchUpdateDocumentMetadata: patch metadata failed",
-				zap.String("docID", docID), zap.Error(err))
-			continue
+		if changed {
+			updated++
 		}
-		updated++
 	}
 
 	return &BatchUpdateMetadatasResponse{Updated: updated, MatchedDocs: len(ids)}, common.CodeSuccess, nil
@@ -684,11 +859,17 @@ func validateBatchUpdateDocumentMetadatasRequest(
 	deletes []MetadataDelete,
 ) (common.ErrorCode, error) {
 	for _, upd := range updates {
+		if upd.Key == entity.TableProfileMetadataField {
+			return common.CodeDataError, errors.New("_table_profile is reserved")
+		}
 		if strings.TrimSpace(upd.Key) == "" || upd.Value == nil {
 			return common.CodeDataError, errors.New("each update requires key and value")
 		}
 	}
 	for _, del := range deletes {
+		if del.Key == entity.TableProfileMetadataField {
+			return common.CodeDataError, errors.New("_table_profile is reserved")
+		}
 		if strings.TrimSpace(del.Key) == "" {
 			return common.CodeDataError, errors.New("each delete requires key")
 		}
@@ -1013,4 +1194,114 @@ func firstScalarMetadataValue(value interface{}) (interface{}, bool) {
 		return nil, false
 	}
 	return value, true
+}
+
+func relinquishTableMetadata(meta, touched map[string]any) error {
+	profile, ok, err := entity.DecodeTableProfile(meta[entity.TableProfileMetadataField])
+	if err != nil || !ok {
+		return err
+	}
+	remaining := make([]string, 0, len(profile.OwnedMetadata))
+	for _, key := range profile.OwnedMetadata {
+		if _, edited := touched[key]; !edited {
+			remaining = append(remaining, key)
+		}
+	}
+	if len(remaining) == len(profile.OwnedMetadata) {
+		return nil
+	}
+	profile.OwnedMetadata = remaining
+	raw, err := profile.Encode()
+	if err != nil {
+		return err
+	}
+	meta[entity.TableProfileMetadataField] = raw
+	return nil
+}
+
+// RevokeTableProfile drops the derived column record a spreadsheet run published,
+// together with the document-metadata values that run wrote.
+//
+// It belongs to every path that discards a document's indexed output: the rows
+// those columns describe are going away, and a query that still named them would
+// resolve against nothing. Deleting the record here rather than waiting for the
+// next successful run also means a re-parse that fails leaves the document
+// unqueryable instead of queryable against stale data.
+//
+// Metadata keys the table system never owned — written by a user or the LLM, or
+// taken over since — are left alone; only the published ownership list is
+// removed.
+func (s *DocumentService) RevokeTableProfile(ctx context.Context, docID string) error {
+	if s.docEngine == nil || s.metadataSvc == nil {
+		return nil
+	}
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		return s.revokeTableProfileLocked(ctx, docID)
+	})
+}
+
+func (s *DocumentService) revokeTableProfileLocked(ctx context.Context, docID string) error {
+	existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+	if err != nil {
+		return err
+	}
+	profile, ok, err := entity.DecodeTableProfile(existing[entity.TableProfileMetadataField])
+	if err != nil {
+		// An unreadable record still has to go: it makes the document look
+		// queryable when nothing can resolve the columns it claims.
+		return s.DeleteDocumentMetadataRaw(ctx, docID, []string{entity.TableProfileMetadataField})
+	}
+	if !ok {
+		return nil
+	}
+	keys := make([]string, 0, len(profile.OwnedMetadata)+1)
+	keys = append(keys, entity.TableProfileMetadataField)
+	keys = append(keys, profile.OwnedMetadata...)
+	return s.DeleteDocumentMetadataRaw(ctx, docID, keys)
+}
+
+type metadataLockStore interface {
+	SetNX(context.Context, string, string, time.Duration) bool
+	DeleteIfEqual(context.Context, string, string) bool
+}
+
+// WithDocumentMetadataLock serializes metadata read-modify-write operations
+// across API and ingestor processes using their existing Kvrocks connection.
+// The operation deadline is shorter than the lease, including acquisition.
+func (s *DocumentService) WithDocumentMetadataLock(ctx context.Context, docID string, update func(context.Context) error) error {
+	store := s.metadataLocks
+	if store == nil {
+		client := kvrocks.Get()
+		if client == nil {
+			return errors.New("metadata lock store is not initialized")
+		}
+		store = client
+	}
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	key, owner := "document-metadata:"+docID, common.GenerateUUID()
+	ticker := time.NewTicker(25 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if store.SetNX(ctx, key, owner, 30*time.Second) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
+	defer func() {
+		releaseCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		store.DeleteIfEqual(releaseCtx, key, owner)
+	}()
+	// The update's own error is the outcome. Reporting an expired deadline after
+	// a write that completed would turn a successful publish into a failure, and
+	// the caller would retry or leave the task unsettled.
+	return update(ctx)
 }
