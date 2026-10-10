@@ -506,9 +506,9 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
-// MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
-// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model by POSTing
+// to /file_parse with streaming enabled (mineruStreamParse) and unpacking the
+// returned ZIP into markdown sections.
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -668,10 +668,9 @@ func dispatchMonkeyOCRPDF(
 	}
 	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
-	parseMethod := getStringOr(setup, "parse_method", "raw")
-	if strings.EqualFold(parseMethod, "monkeyocr") {
-		parseMethod = "raw"
-	}
+	// parse_method in setup selects the dispatch path; the /file_parse API mode
+	// is monkeyocr_parse_method (auto, txt, ocr), mirroring mineru_parse_method.
+	parseMethod := mineruAPIParseMethod(getStringOr(setup, "monkeyocr_parse_method", ""))
 	lang := getStringOr(setup, "lang", "")
 	if lang == "" {
 		lang = getStringOr(setup, "monkeyocr_lang", "Chinese")

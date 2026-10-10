@@ -1008,17 +1008,24 @@ func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 func TestDispatch_PDFMonkeyOCRMarkdown_UsesFileParseEndpoint(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
-			buf := new(bytes.Buffer)
-			zw := zip.NewWriter(buf)
-			f, _ := zw.Create("content_list.json")
-			_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR title\n\nBody\n"}]`))
-			_ = zw.Close()
-			w.Header().Set("Content-Type", "application/zip")
-			_, _ = w.Write(buf.Bytes())
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
 			return
 		}
-		http.NotFound(w, r)
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR title\n\nBody\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
 	}))
 	defer server.Close()
 
@@ -1064,17 +1071,24 @@ func TestDispatch_PDFMonkeyOCRMarkdown_UsesFileParseEndpoint(t *testing.T) {
 func TestDispatch_PDFMonkeyOCR_CompositeSelectorInParseMethod(t *testing.T) {
 	withSSRFBypass(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
-			buf := new(bytes.Buffer)
-			zw := zip.NewWriter(buf)
-			f, _ := zw.Create("content_list.json")
-			_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR composite\n"}]`))
-			_ = zw.Close()
-			w.Header().Set("Content-Type", "application/zip")
-			_, _ = w.Write(buf.Bytes())
+		if r.Method != http.MethodPost || r.URL.Path != "/file_parse" {
+			http.NotFound(w, r)
 			return
 		}
-		http.NotFound(w, r)
+		if err := r.ParseMultipartForm(1 << 20); err != nil {
+			t.Errorf("parse form: %v", err)
+			return
+		}
+		if got, want := r.FormValue("parse_method"), "auto"; got != want {
+			t.Errorf("parse_method form value = %q, want %q", got, want)
+		}
+		buf := new(bytes.Buffer)
+		zw := zip.NewWriter(buf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR composite\n"}]`))
+		_ = zw.Close()
+		w.Header().Set("Content-Type", "application/zip")
+		_, _ = w.Write(buf.Bytes())
 	}))
 	defer server.Close()
 
