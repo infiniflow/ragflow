@@ -28,7 +28,7 @@ Choose the steps for your task:
 From the repository root, first list the containers in the RAGFlow Compose project. This shows which services are enabled:
 
 ```bash
-docker compose -f docker/docker-compose.yml ps
+docker compose -f docker/docker-compose.yml ps --all
 ```
 
 Next, list the Docker volumes on the host. You will compare this inventory with the services shown by the first command:
@@ -41,7 +41,7 @@ Display the mounts of every container in the Compose project. The output shows w
 
 ```bash
 project_name=docker
-for container_id in $(docker compose -p "$project_name" -f docker/docker-compose.yml ps -q); do
+for container_id in $(docker compose -p "$project_name" -f docker/docker-compose.yml ps --all -q); do
   docker inspect "$container_id" --format '{{.Name}}{{range .Mounts}}{{println "" .Type .Source .Name .Destination}}{{end}}'
 done
 ```
@@ -49,7 +49,7 @@ done
 If the deployment was started with a project name, include the same `-p` value in every Compose command. The migration script supports `-p` only in `v0.25.x` and later; step 3 provides the safe alternative for earlier releases. For example:
 
 ```bash
-docker compose -p ragflow -f docker/docker-compose.yml ps
+docker compose -p ragflow -f docker/docker-compose.yml ps --all
 ```
 
 The project name determines the volume-name prefix. A default project named `docker` commonly uses these volumes:
@@ -67,7 +67,7 @@ Also retain `docker/.env`, the configuration template, custom certificates, and 
 
 Before stopping the deployment, run `df -h` and `docker system df`. Make sure the host has enough free space for the volume archives and temporary backup files.
 
-For an offline host, make sure that the `alpine:3.20` image is available before stopping RAGFlow.
+For an offline host, cache the image required by the chosen method before stopping RAGFlow: `alpine` for `docker/migration.sh`, or `alpine:3.20` for the manual commands below.
 
 ## 2. Stop RAGFlow
 

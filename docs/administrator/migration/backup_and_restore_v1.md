@@ -25,7 +25,7 @@ First, set `project_name` to the Compose project name used by the deployment. Th
 
 ```bash
 project_name=docker
-docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps
+docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all
 ```
 
 Next, list the Docker volumes available on the host. You will use this list together with the container mounts to find the volumes that belong to RAGFlow:

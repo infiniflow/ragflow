@@ -14,6 +14,10 @@ sidebar_custom_props: {
 This document applies to RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md).
 :::
 
+:::warning GaussDB deployments
+The automatic database migration described below does not run when `DB_TYPE` is `gaussdb` or `gauss`. Before upgrading such a deployment, obtain a GaussDB-compatible migration procedure and verify it in a separate test environment.
+:::
+
 The commands below start one application instance. For a custom multi-replica deployment, reduce it to one application instance before migration and restore the remaining instances only after migration succeeds.
 
 ## Before upgrading
@@ -53,7 +57,7 @@ Install the target release files, merge the required settings into its `docker/.
 docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml up -d
 ```
 
-This starts the target release. The RAGFlow startup process runs the required database migration before starting the application.
+This starts the target release. For supported metadata databases, the RAGFlow startup process runs the required database migration before starting the application.
 
 ### 4. Monitor the migration
 
