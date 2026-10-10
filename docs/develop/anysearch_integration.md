@@ -2,59 +2,107 @@
 sidebar_position: 21
 ---
 
-# AnySearch Agent integration design
+# AnySearch web search
 
-This draft proposes a native Go Agent integration for early maintainer feedback.
-The skeleton PR contains this design document only. No implementation or tests are
-included in the proposed PR.
+AnySearch is a built-in web search provider for the Go Chat backend. Select it in
+Chat settings and enable **Internet** in the message composer. An API key is
+optional: anonymous requests use the same search endpoint with lower
+service-controlled limits.
 
-## Intended behavior
+## Configuration
 
-Users add AnySearch tools to an Agent or Canvas workflow using the existing editor.
-General search works with an optional API key; anonymous requests omit Authorization.
-Vertical search uses the live capability catalog and preserves provider parameters.
-Parallel search accepts one to five queries, preserving input order and individual
-failures. Extraction fetches a single HTTP(S) page through AnySearch.
+1. Open the Chat application's settings and select **AnySearch** as the web search provider.
+2. Leave the API key empty for anonymous access, or enter a key from the
+   [AnySearch console](https://anysearch.com/console/api-keys).
+3. Save the settings and enable **Internet** before sending a message.
 
-The proposed tools are `anysearch_search`, `anysearch_get_sub_domains`,
-`anysearch_batch_search` and `anysearch_extract`, backed by Canvas components
-`AnySearchSearch`, `AnySearchGetSubDomains`, `AnySearchBatchSearch` and
-`AnySearchExtract`.
+![AnySearch selected with the optional API key left blank](images/anysearch-settings.png)
 
-## Ownership and data flow
+The saved settings use these fields:
 
-`internal/anysearch` will own fixed-endpoint HTTP requests, bounded responses, optional
-Bearer authentication, provider status validation and request IDs. It uses the Go
-standard library and adds no dependency or database migration.
+```json
+{
+  "web_search_provider": "anysearch",
+  "anysearch_api_key": ""
+}
+```
 
-`internal/agent/tool` will own Eino argument schemas, saved node configuration and
-RAGFlow result/reference mapping. Credentials belong to saved configuration, not
-model-visible arguments. Tools will use the existing registry and the single
-`ToolBackedComponent` Canvas adapter. The editor will provide tool/node selection,
-configuration, output presentation and credential removal from exported workflows.
+Only the selected provider's saved key is used. A blank or whitespace-only key
+sends no Authorization header. There is no AnySearch environment-variable
+fallback, and another provider's saved key is not used. Clearing the provider
+disables web search even when old keys remain saved.
 
-Execution is through the existing Agent runtime and
-`POST /api/v1/agents/chat/completions`. Dedicated provider HTTP routes are outside
-this change. Ordinary-chat provider support is a separate proposed PR using the
-same client.
+For a web-only Chat, retain the system prompt's `{knowledge}` placeholder and
+its dynamic `knowledge` parameter, keep the empty-response text blank and select
+a usable chat model. The current retrieval path requires that parameter even
+when no datasets are selected. Internet being enabled or a model producing an
+answer alone does not demonstrate a search request.
 
-HTTP/business failures remain explicit, including authentication, quota, timeout,
-cancellation and malformed responses. POST requests are not retried automatically.
-Batch item failures retain their positions. Provider page content and catalog text
-are external data, not instructions.
+## Requests and results
 
-## Validation
+The provider sends one `POST https://api.anysearch.com/v1/search` request per
+query with `Content-Type: application/json`:
 
-Planned client unit tests use local HTTP servers and cover request mapping, anonymous/keyed
-headers, live-schema validation, empty required parameter values, extraction,
-bounded responses, invalid envelopes, cancellation and concurrent partial failure.
+```json
+{"query": "the actual search query", "max_results": 6}
+```
 
-Integration completion requires registry/component tests, editor validation and
-credential-export tests, frontend type-check/build, and real-service evidence from
-saved workflows through the UI and existing Agent HTTP API. Tests contacting real
-services must use the repository's integration/e2e build tags. A direct provider
-probe does not establish RAGFlow integration success.
+A nonblank saved key adds `Authorization: Bearer <key>`. Requests have a
+30-second timeout, honor caller cancellation and refuse redirects. POST requests
+are not retried, including after authentication or quota failures.
 
-The repository's build/test wrapper remains the required native validation path.
-An isolated standard-library client check does not validate the Agent runtime,
-native dependencies, frontend or full server startup.
+A successful response must contain an integer `code` equal to zero, an object
+`data` and an array `data.results`. Each result's title, URL and content are
+mapped to Chat's native chunks and document references. Nonblank `content`
+takes precedence over `snippet`; the existing payload builder trims text and
+keeps at most six usable results after filtering blank URLs or text. Empty
+results are a successful empty retrieval. Invalid envelopes or field types
+are errors, not empty success.
+
+HTTP failures, nonzero business codes, timeouts, cancellation, malformed responses
+and responses larger than 4 MiB return provider errors. Diagnostics retain safe
+status/code/category information without raw upstream bodies, messages or
+credential-bearing transport errors. Invalid keys are not retried anonymously.
+The existing Chat and reasoning paths may log a search failure and continue
+generating an answer; this does not mean AnySearch succeeded.
+
+## Maintenance and validation
+
+Registration, transport and decoding live in
+`internal/service/web_search_provider.go`. Deterministic tests are in
+`internal/service/web_search_anysearch_test.go` alongside the existing provider
+regressions. The frontend reuses the Chat provider catalog, saved-setting schema
+and optional-key policy.
+
+Run through the repository's prepared native build environment:
+
+```bash
+bash build.sh --test -run AnySearch ./internal/service/...
+bash build.sh --test ./internal/service/...
+RAGFLOW_TEST_ANYSEARCH=1 bash build.sh --test-integration-go -run TestAnySearchLiveProvider -v ./internal/service/...
+bash build.sh --go
+./bin/ragflow_server --api --help
+cd web
+npm run type-check
+npm run build
+```
+
+Verify the binary output path against the current build script. Frontend tests
+cover selection, key validation, settings round trips and Internet availability.
+For real-service validation, use the normal saved Chat configuration and record
+the actual request, HTTP/business status, returned URLs, delivered references and
+`request_id` when available. Keep credentials out of evidence. Tests contacting
+real services belong in the integration/e2e tier.
+
+The opt-in live provider test calls the real endpoint and correlates its returned
+text, titles and URLs with native chunks. Set `ANYSEARCH_TEST_API_KEY` privately
+to include a keyed request in that test; this variable is test-only and does not
+configure Chat. The live provider test does not replace normal Chat validation.
+
+This Chat provider exposes general search. Agent/Canvas tools, capability
+discovery, explicit vertical/source controls, parallel search and URL extraction
+are separate follow-up integrations. Chat registration does not register Canvas
+tools. Merge and release inclusion are separate from local implementation and
+validation.
+
+Protocol source: [official REST specification](https://github.com/anysearch-ai/anysearch-skill/blob/main/scripts/shared/doc_spec.md).
