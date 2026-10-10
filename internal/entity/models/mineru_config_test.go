@@ -71,3 +71,37 @@ func TestResolveMinerUBackendAndServerURL(t *testing.T) {
 		t.Fatalf("setup should win, backend = %q", got)
 	}
 }
+
+func TestMinerUTierFromBackend(t *testing.T) {
+	cases := map[string]string{
+		"pipeline":           "basic",
+		"basic":              "basic",
+		"vlm-engine":         "advanced",
+		"vlm-http-client":    "advanced",
+		"hybrid-engine":      "standard",
+		"hybrid-http-client": "standard",
+		"flash":              "flash",
+		"standard":           "standard",
+		"":                   "standard",
+	}
+	for in, want := range cases {
+		if got := MinerUTierFromBackend(in); got != want {
+			t.Errorf("MinerUTierFromBackend(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func TestValidateMinerUConfigAcceptsTiersOnV1(t *testing.T) {
+	if err := ValidateMinerUConfigForAPI("standard", "", true); err != nil {
+		t.Fatalf("V1 standard: %v", err)
+	}
+	if err := ValidateMinerUConfigForAPI("pipeline", "", true); err != nil {
+		t.Fatalf("V1 pipeline: %v", err)
+	}
+	if err := ValidateMinerUConfigForAPI("flash", "", false); err == nil {
+		t.Fatal("3.x flash tier should fail")
+	}
+	if err := ValidateMinerUConfig("vlm-http-client", ""); err == nil {
+		t.Fatal("3.x vlm-http-client without server_url should fail")
+	}
+}

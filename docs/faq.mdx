@@ -503,16 +503,16 @@ To improve response speed:
 
 RAGFlow sends PDF documents to a remote MinerU service and polls for the parsed result. To use it:
 
-1. Prepare a reachable MinerU API service that provides the `/file_parse` and `/tasks` endpoints used by RAGFlow.
+1. Prepare a reachable MinerU API service:
+   - **MinerU 4.0** (`mineru-kit api-server`): the V1 API (`/v1/health`, `/v1/uploads`, `/v1/parse/jobs`, `/v1/files`). RAGFlow probes `/v1/health` and uses this cycle automatically. Legacy `/file_parse` and `/tasks` are **not** provided by MinerU 4.
+   - **MinerU 3.x**: `/file_parse` and `/tasks` (RAGFlow falls back to this when `/v1/health` is missing).
 2. In **docker/.env** or on the **Model providers** page in the UI, configure RAGFlow as a remote client to MinerU:
-   - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8886`).
+   - `MINERU_APISERVER`: The MinerU API endpoint (e.g., `http://mineru-host:8000`).
    - `MINERU_API_KEY`: An API key if the MinerU service requires one.
-   - `MINERU_BACKEND`: The MinerU backend (matches current MinerU API / CLI `-b` values):
-      - `"pipeline"` (default)
-      - `"vlm-engine"`
-      - `"hybrid-engine"`
-      - `"vlm-http-client"`
-      - `"hybrid-http-client"`.
+   - `MINERU_BACKEND`: On MinerU 3.x this is the `/file_parse` `backend` field. On MinerU 4.0 it is mapped to a V1 **tier** (`pipeline` → `basic`, `hybrid-*` → `standard`, `vlm-*` → `advanced`). You can also set a 4.0 tier directly:
+      - `"pipeline"` (default for 3.x)
+      - `"vlm-engine"` / `"hybrid-engine"` / `"vlm-http-client"` / `"hybrid-http-client"` (3.x)
+      - `"basic"` / `"standard"` / `"advanced"` / `"flash"` (MinerU 4).
 3. In the web UI, navigate to your dataset's **Configuration** page and find the **Ingestion pipeline** section:
    - If you decide to use a chunking method from the **Built-in** dropdown, ensure it supports PDF parsing, then select **MinerU** from the **PDF parser** dropdown.
    - If you use a custom ingestion pipeline instead, select **MinerU** in the **PDF parser** section of the **Parser** component.
@@ -531,7 +531,7 @@ Use the following environment variables when MinerU is not configured directly i
 | ---------------------- | ---------------------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
 | `MINERU_APISERVER`     | URL of the MinerU API service      | _unset_                             | `MINERU_APISERVER=http://your-mineru-server:8886`                                              |
 | `MINERU_API_KEY`       | API key, when required by MinerU   | _unset_                             | `MINERU_API_KEY=your-key`                                                                       |
-| `MINERU_BACKEND`       | MinerU parsing backend             | `pipeline`                          | `MINERU_BACKEND=pipeline\|vlm-engine\|hybrid-engine\|vlm-http-client\|hybrid-http-client` |
+| `MINERU_BACKEND`       | MinerU 3.x backend or 4.0 tier     | `pipeline`                          | `MINERU_BACKEND=pipeline\|standard\|vlm-http-client` |
 
 1. Set `MINERU_APISERVER` to point RAGFlow to your MinerU API server.
 2. Set `MINERU_API_KEY` if your MinerU service requires authentication.
