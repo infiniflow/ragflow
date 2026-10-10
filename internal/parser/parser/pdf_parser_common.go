@@ -44,8 +44,8 @@ var ErrPDFEngineUnavailable = errors.New("parser: PDF backend unavailable in thi
 
 // supportedPDFParseMethods is the set of canonical tokens PDFParser can
 // execute; see pdfParseMethodSpellings for the accepted spellings and
-// TestPDFParseMethodTablesAgree for the two intentional divergences
-// ("" sentinel, dispatcher-handled monkeyocrv2).
+// TestPDFParseMethodTablesAgree for the intentional divergences
+// ("" sentinel, dispatcher-handled monkeyocr and monkeyocrv2).
 var supportedPDFParseMethods = map[string]struct{}{
 	"":               {},
 	"deepdoc":        {},
@@ -306,6 +306,7 @@ var pdfParseMethodSpellings = map[string]string{
 	"plaintext":      "plain_text",
 	"plain text":     "plain_text",
 	"mineru":         "mineru",
+	"monkeyocr":      "monkeyocr",
 	"monkeyocrv2":    "monkeyocrv2",
 	"docling":        "docling",
 	"opendataloader": "opendataloader",
@@ -327,6 +328,8 @@ func normalizePDFParseMethod(raw string) string {
 	switch {
 	case strings.HasSuffix(method, "@mineru"):
 		return "mineru"
+	case strings.HasSuffix(method, "@monkeyocr"):
+		return "monkeyocr"
 	case strings.HasSuffix(method, "@paddleocr"):
 		return "paddleocr"
 	case strings.HasSuffix(method, "@somark"):
