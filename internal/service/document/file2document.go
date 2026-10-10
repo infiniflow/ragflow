@@ -229,7 +229,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			parserID, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
-				ID:           utility.GenerateUUID(),
+				ID:           common.GenerateUUID(),
 				KbID:         kb.ID,
 				ParserID:     parserID,
 				ParserConfig: parserConfig,
@@ -256,7 +256,7 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 
 			mapping := &entity.File2Document{
-				ID:         utility.GenerateUUID(),
+				ID:         common.GenerateUUID(),
 				FileID:     &fileID,
 				DocumentID: &doc.ID,
 			}

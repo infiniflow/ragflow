@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 
 	"slices"
 	"sort"
@@ -523,7 +522,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
-	newID := utility.GenerateUUID()
+	newID := common.GenerateUUID()
 
 	memory := &entity.Memory{
 		ID:               newID,

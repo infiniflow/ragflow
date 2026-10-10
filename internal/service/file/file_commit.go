@@ -28,7 +28,6 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"sync"
@@ -72,7 +71,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	}
 
 	// 3. Create commit record
-	commitID := utility.GenerateUUID()
+	commitID := common.GenerateUUID()
 	nowMs := time.Now().UnixMilli()
 
 	commit := &entity.FileCommit{
@@ -112,7 +111,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 		for _, change := range changes {
 			item := &entity.FileCommitItem{
-				ID:        utility.GenerateUUID(),
+				ID:        common.GenerateUUID(),
 				CommitID:  commitID,
 				FileID:    change.FileID,
 				Operation: change.Operation,
@@ -280,7 +279,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	// Parent chain: previous commit that touched the same page file key.
 	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
 
-	commitID := utility.GenerateUUID()
+	commitID := common.GenerateUUID()
 
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
 	if diffText == "" {
@@ -295,7 +294,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	}
 
 	item := &entity.FileCommitItem{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		CommitID:    commitID,
 		FileID:      fileID,
 		Operation:   operation,
