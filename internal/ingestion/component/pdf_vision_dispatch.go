@@ -771,9 +771,16 @@ func mineruExtractJSONItems(zipBytes []byte) ([]map[string]any, error) {
 	for _, f := range zipReader.File {
 		if strings.HasSuffix(f.Name, "content_list.json") && len(contentList) == 0 {
 			rc, openErr := f.Open()
-			if openErr == nil {
-				contentList, _ = io.ReadAll(rc)
-				rc.Close()
+			if openErr != nil {
+				return nil, fmt.Errorf("open %s: %w", f.Name, openErr)
+			}
+			var readErr error
+			contentList, readErr = io.ReadAll(rc)
+			if closeErr := rc.Close(); readErr == nil {
+				readErr = closeErr
+			}
+			if readErr != nil {
+				return nil, fmt.Errorf("read %s: %w", f.Name, readErr)
 			}
 		}
 		if strings.HasPrefix(strings.ToLower(mime.TypeByExtension(path.Ext(f.Name))), "image/") {

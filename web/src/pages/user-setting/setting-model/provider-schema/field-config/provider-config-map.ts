@@ -718,7 +718,10 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       const obj = parseApiKeyAsObject(instance.api_key) ?? {};
       const rawDelete = obj.mineru_delete_output;
       return {
-        mineru_apiserver: obj.mineru_apiserver ?? instance.base_url ?? '',
+        mineru_apiserver:
+          typeof instance.base_url === 'string' && instance.base_url.trim()
+            ? instance.base_url
+            : (obj.mineru_apiserver ?? ''),
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',
