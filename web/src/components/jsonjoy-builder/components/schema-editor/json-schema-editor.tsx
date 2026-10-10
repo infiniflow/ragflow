@@ -27,7 +27,7 @@ const JsonSchemaEditor: FC<JsonSchemaEditorProps> = ({
 }) => {
   // Handle schema changes and propagate to parent if needed
   const handleSchemaChange = (newSchema: JSONSchema) => {
-    setSchema(newSchema);
+    setSchema?.(newSchema);
   };
 
   const t = useTranslation();

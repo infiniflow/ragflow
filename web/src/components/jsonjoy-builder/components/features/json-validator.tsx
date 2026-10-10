@@ -35,7 +35,7 @@ export function JsonValidator({
   const [validationResult, setValidationResult] =
     useState<ValidationResult | null>(null);
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
-  const debounceTimerRef = useRef<number | null>(null);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const monacoRef = useRef<typeof Monaco | null>(null);
   const schemaMonacoRef = useRef<typeof Monaco | null>(null);
   const {
@@ -178,12 +178,12 @@ export function JsonValidator({
                 <>
                   <AlertCircle className="h-5 w-5 text-red-500 mr-2" />
                   <p className="text-red-700 font-medium">
-                    {validationResult.errors.length === 1
-                      ? validationResult.errors[0].path === '/'
+                    {validationResult.errors?.length === 1
+                      ? validationResult.errors?.[0]?.path === '/'
                         ? t.validatorErrorInvalidSyntax
                         : t.validatorErrorSchemaValidation
                       : formatTranslation(t.validatorErrorCount, {
-                          count: validationResult.errors.length,
+                          count: validationResult.errors?.length ?? 0,
                         })}
                   </p>
                 </>

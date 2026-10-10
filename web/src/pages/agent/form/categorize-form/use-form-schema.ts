@@ -7,8 +7,8 @@ export function useCreateCategorizeFormSchema() {
 
   const FormSchema = z.object({
     query: z.string().optional(),
-    parameter: z.string().optional(),
     ...LlmSettingSchema,
+    parameter: z.string().optional(),
     message_history_window_size: z.coerce.number(),
     items: z.array(
       z

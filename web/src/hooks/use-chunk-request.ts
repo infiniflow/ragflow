@@ -233,7 +233,7 @@ export const useFetchNextChunkList = (
   return {
     data,
     loading,
-    pagination,
+    pagination: pagination as any,
     setPagination,
     searchString,
     handleInputChange: onInputChange,

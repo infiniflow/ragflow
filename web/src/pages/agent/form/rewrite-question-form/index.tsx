@@ -14,7 +14,7 @@ import { INextOperatorForm } from '../../interface';
 import { useOwnerTenantId } from '../../context';
 import { GoogleLanguageOptions } from '../../options';
 
-const RewriteQuestionForm = ({ form }: INextOperatorForm) => {
+const RewriteQuestionForm = ({ form }: INextOperatorForm & { form: any }) => {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
 

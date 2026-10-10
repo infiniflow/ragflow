@@ -11,10 +11,21 @@ function refineRangeConsistency(
   if (min !== undefined && max !== undefined && min > max) {
     return false;
   }
-  if (isMinExclusive && isMaxExclusive && max - min < 2) {
+  if (
+    isMinExclusive &&
+    isMaxExclusive &&
+    max !== undefined &&
+    min !== undefined &&
+    max - min < 2
+  ) {
     return false;
   }
-  if ((isMinExclusive || isMaxExclusive) && max - min < 1) {
+  if (
+    (isMinExclusive || isMaxExclusive) &&
+    max !== undefined &&
+    min !== undefined &&
+    max - min < 1
+  ) {
     return false;
   }
   return true;
@@ -200,7 +211,7 @@ export function getTypeValidation(type: string, t: Translation) {
 
 export interface TypeValidationResult {
   success: boolean;
-  errors?: z.core.$ZodIssue[];
+  errors?: z.ZodIssue[];
 }
 
 export function validateSchemaByType(
@@ -255,7 +266,7 @@ export function buildValidationTree(
                 code: 'custom',
                 message: t.validatorErrorSchemaValidation,
                 path: [],
-              } as unknown as z.core.$ZodIssue,
+              } as unknown as z.ZodIssue,
             ],
           };
 
@@ -275,7 +286,7 @@ export function buildValidationTree(
   const sch = schema as Record<string, unknown>;
   const currentType = deriveType(sch);
 
-  const validation = validateSchemaByType(schema, currentType, t);
+  const validation = validateSchemaByType(schema, currentType ?? '', t);
 
   const children: Record<string, ValidationTreeNode> = {};
 
@@ -369,7 +380,7 @@ export function buildValidationTree(
   );
 
   return {
-    name: currentType,
+    name: currentType ?? '',
     validation,
     children,
     cumulativeChildrenErrors: ownErrors + childrenErrors,

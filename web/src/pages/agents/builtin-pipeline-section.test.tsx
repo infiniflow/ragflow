@@ -1,6 +1,5 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { renderHook } from '@testing-library/react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { BuiltinPipelineSection } from './builtin-pipeline-section';
 import { AgentCategory } from '@/constants/agent';
@@ -97,7 +96,9 @@ describe('BuiltinPipelineSection', () => {
   it('hides the section for a structured (non-string) category filter', () => {
     render(
       <BuiltinPipelineSection
-        rawCategory={{ operator: 'or', values: [AgentCategory.DataflowCanvas] }}
+        rawCategory={
+          { operator: 'or', values: [AgentCategory.DataflowCanvas] } as any
+        }
         searchString=""
       />,
       { wrapper },
@@ -137,7 +138,6 @@ describe('BuiltinPipelineSection', () => {
         searchString=""
         showDivider
       />,
-      { wrapper },
     );
     expect(document.querySelector('.border-t')).not.toBeNull();
   });

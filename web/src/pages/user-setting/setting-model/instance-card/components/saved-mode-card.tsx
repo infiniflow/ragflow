@@ -23,7 +23,6 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
-import { LLMFactory } from '@/constants/llm';
 import { useTranslate } from '@/hooks/common-hooks';
 import { ListChevronsDownUp, ListChevronsUpDown, Trash2 } from 'lucide-react';
 import {
@@ -36,7 +35,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import { DRAFT_INSTANCE_SENTINEL, SavedModeCardProps } from '../interface';
 import { ModelsSection } from '../models-section';
-import VerifyButton from '../verify-button';
 import { cn } from '@/lib/utils';
 
 /**
@@ -54,7 +52,6 @@ export function SavedModeCard({
   formFields,
   formDefaultValues,
   formRef,
-  handleVerify,
   handleDelete,
   handleInstanceModelsEdited,
   providerName,
@@ -96,11 +93,6 @@ export function SavedModeCard({
       return () => cancelAnimationFrame(id);
     }
   }, [renaming]);
-
-  const startRename = () => {
-    setRenameValue(editedInstanceName);
-    setRenaming(true);
-  };
 
   const commitRename = () => {
     setRenaming(false);

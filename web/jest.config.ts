@@ -7,6 +7,12 @@ const config: Config = {
     // see jest-esbuild-transformer.cjs
     '^.+\\.(ts|tsx|js|jsx)$': '<rootDir>/jest-esbuild-transformer.cjs',
   },
+  // Some dependencies ship ESM only (the unified/remark/rehype markdown stack).
+  // Jest ignores node_modules by default, so allow-list those packages through
+  // the esbuild transformer or their `import`/`export` fails to parse.
+  transformIgnorePatterns: [
+    '/node_modules/(?!(hast-util-.*|rehype-.*|remark-.*|micromark.*|mdast-util-.*|unist-util-.*|devlop|property-information|space-separated-tokens|comma-separated-tokens|zwitch|html-void-elements|web-namespaces|ccount|escape-string-regexp|markdown-table|longest-streak|trim-lines|parse-entities|character-entities.*|decode-named-character-reference|vfile.*|bail|is-plain-obj|trough|extend)/)',
+  ],
   moduleNameMapper: {
     // Asset/style stubs must precede the `@/` alias — the alias rewrites
     // `@/assets/x.png` to a real path and only the first matching mapper runs.

@@ -70,7 +70,7 @@ describe('applyExcelSourceLocate', () => {
         }
         return '';
       },
-    } as CSSStyleDeclaration);
+    } as unknown as unknown as CSSStyleDeclaration);
   });
 
   afterEach(() => {
@@ -111,7 +111,7 @@ describe('applyExcelSourceLocate', () => {
 
   it('falls back to resetData when clickSwap2 is missing', () => {
     const previewer = mockPreviewer();
-    delete previewer.xs.bottombar.clickSwap2;
+    delete (previewer.xs.bottombar as any).clickSwap2;
     applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
     expect(previewer.xs.sheet.resetData).toHaveBeenCalledWith(
       previewer.xs.datas[0],
@@ -121,7 +121,7 @@ describe('applyExcelSourceLocate', () => {
   it('uses hex fallbacks when theme tokens are empty', () => {
     jest.spyOn(window, 'getComputedStyle').mockReturnValue({
       getPropertyValue: () => '  ',
-    } as CSSStyleDeclaration);
+    } as unknown as CSSStyleDeclaration);
     const previewer = mockPreviewer();
     applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
     expect(previewer.xs.datas[0].addStyle).toHaveBeenCalledWith({

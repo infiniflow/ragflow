@@ -1008,7 +1008,7 @@ export const useFetchKnowledgeList = (
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
-        // ownerTenantId,
+        ownerTenantId,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1019,7 +1019,7 @@ export const useFetchKnowledgeList = (
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
           // Viewing a shared canvas: list the canvas owner's datasets.
-          // ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+          ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1085,7 +1085,7 @@ export const useFetchDatasetsByIds = (
     [ids],
   );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
-    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    queryKey: KnowledgeListKeys.byIds(sortedIds, ownerTenantId),
     enabled: sortedIds.length > 0,
     gcTime: 0,
     // Hold the previous result across id-list changes so consumers rendering
@@ -1093,7 +1093,7 @@ export const useFetchDatasetsByIds = (
     // flight.
     placeholderData: keepPreviousData,
     queryFn: async () => {
-      const { data } = await listDatasetByIds(sortedIds);
+      const { data } = await listDatasetByIds(sortedIds, ownerTenantId);
       return (data?.data ?? []) as IDataset[];
     },
   });

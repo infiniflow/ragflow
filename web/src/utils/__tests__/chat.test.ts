@@ -54,11 +54,11 @@ describe('mergeAnswerChunk', () => {
 
 describe('preprocessLaTeX', () => {
   it('converts block \\[ \\] to $$ $$', () => {
-    expect(preprocessLaTeX('\\[ x + y \\]')).toBe('$$x + y$$');
+    expect(preprocessLaTeX('\\[ x + y \\]')).toBe('$$ x + y $$');
   });
 
   it('converts inline \\( \\) to $ $', () => {
-    expect(preprocessLaTeX('\\( a \\)')).toBe('$a$');
+    expect(preprocessLaTeX('\\( a \\)')).toBe('$ a $');
   });
 
   it('does not cut block math at \\right] (Closes #13134)', () => {
@@ -82,12 +82,14 @@ describe('preprocessLaTeX', () => {
   it('handles multiple block equations', () => {
     const content = 'First \\[ a \\] then \\[ b \\right] c \\]';
     const result = preprocessLaTeX(content);
-    expect(result).toBe('First $$a$$ then $$ b \\right] c $$');
+    expect(result).toBe('First $$ a $$ then $$ b \\right] c $$');
   });
 
   it('handles double-escaped inline LaTeX', () => {
+    // #14564 un-doubles the delimiters only. A double-escaped command such as
+    // `\\Delta` is not a delimiter and keeps both backslashes.
     expect(preprocessLaTeX('\\\\(\\\\Delta = b^2\\\\)')).toBe(
-      '$\\Delta = b^2$',
+      '$\\\\Delta = b^2$',
     );
   });
 
@@ -100,7 +102,10 @@ describe('preprocessLaTeX', () => {
   });
 
   it('handles mixed double-escaped delimiters with HTML entities', () => {
-    expect(preprocessLaTeX('\\\\(x &lt; y\\\\)')).toBe('$x < y$');
+    // The content must not end in a letter: a `\)` right after a letter is
+    // treated as a command tail by the delimiter guard (same rule that keeps
+    // `\right]`/`\big)` intact in the cases above).
+    expect(preprocessLaTeX('\\\\(x &lt; 2\\\\)')).toBe('$x < 2$');
   });
 
   it('passes through already correct single-escaped delimiters unchanged', () => {

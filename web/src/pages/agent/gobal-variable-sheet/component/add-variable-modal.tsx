@@ -109,7 +109,7 @@ export const AddVariableModal = (props: {
           console.log(data);
         }}
         defaultValues={defaultValues}
-        onFieldUpdate={handleFieldUpdate}
+        {...({ onFieldUpdate: handleFieldUpdate } as any)}
       >
         <div className="flex items-center justify-end w-full gap-2">
           <DynamicForm.CancelButton

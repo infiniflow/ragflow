@@ -119,9 +119,7 @@ describe('TokenChunker delimiter seeding on load', () => {
 });
 
 describe('Parser nested setups compatibility', () => {
-  beforeEach(() => {
-    mockIsGoBackend = true;
-  });
+  beforeEach(() => {});
 
   it('lifts a legacy nested "setups" object into file families', () => {
     const form = transformApiConfigToForm('Parser', {

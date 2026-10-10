@@ -300,7 +300,7 @@ export const generateSchema = (fields: FormFieldConfig[]): ZodSchema<any> => {
         nestedSchemas[firstKey] = {};
       }
 
-      let currentSchema = nestedSchemas[firstKey];
+      let currentSchema: any = nestedSchemas[firstKey];
       for (let i = 1; i < keys.length - 1; i++) {
         const key = keys[i];
         if (!currentSchema[key]) {
@@ -400,7 +400,7 @@ export const RenderField = ({
 }) => {
   if (field.render) {
     if (field.type === FormFieldType.Custom && field.hideLabel) {
-      return <div className="w-full">{field.render({})}</div>;
+      return <div className="w-full">{field.render({} as any)}</div>;
     }
     return (
       <RAGFlowFormItem
@@ -758,7 +758,7 @@ const DynamicForm = {
 
           for (const key in combinedErrors) {
             if (Array.isArray(combinedErrors[key])) {
-              combinedErrors[key] = combinedErrors[key][0];
+              (combinedErrors as any)[key] = (combinedErrors as any)[key][0];
             }
           }
           return {
@@ -784,7 +784,7 @@ const DynamicForm = {
         });
 
         const subscriptions = Object.keys(dependencyMap).map((depField) => {
-          return form.watch((values: any, { name }) => {
+          return form.watch((_values: any, { name }) => {
             if (name === depField && dependencyMap[depField]) {
               dependencyMap[depField].forEach((dependentField) => {
                 form.trigger(dependentField as any);
@@ -1030,6 +1030,6 @@ const DynamicForm = {
   },
 };
 
-DynamicForm.Root.displayName = 'DynamicFormRoot';
+(DynamicForm.Root as any).displayName = 'DynamicFormRoot';
 
 export { DynamicForm };

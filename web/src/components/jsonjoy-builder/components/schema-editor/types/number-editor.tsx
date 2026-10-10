@@ -232,9 +232,9 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
           <Label
             htmlFor={minimumId}
             className={
-              minimum !== undefined &&
-              (!!minMaxError || !!redundantMinError) &&
-              'text-destructive'
+              minimum !== undefined && (!!minMaxError || !!redundantMinError)
+                ? 'text-destructive'
+                : undefined
             }
           >
             {t.numberMinimumLabel}
@@ -262,9 +262,9 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
           <Label
             htmlFor={maximumId}
             className={
-              maximum !== undefined &&
-              (!!minMaxError || !!redundantMaxError) &&
-              'text-destructive'
+              maximum !== undefined && (!!minMaxError || !!redundantMaxError)
+                ? 'text-destructive'
+                : undefined
             }
           >
             {t.numberMaximumLabel}
@@ -295,8 +295,9 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
             htmlFor={exclusiveMinimumId}
             className={
               exclusiveMinimum !== undefined &&
-              (!!minMaxError || !!redundantMinError) &&
-              'text-destructive'
+              (!!minMaxError || !!redundantMinError)
+                ? 'text-destructive'
+                : undefined
             }
           >
             {t.numberExclusiveMinimumLabel}
@@ -325,8 +326,9 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
             htmlFor={exclusiveMaximumId}
             className={
               exclusiveMaximum !== undefined &&
-              (!!minMaxError || !!redundantMaxError) &&
-              'text-destructive'
+              (!!minMaxError || !!redundantMaxError)
+                ? 'text-destructive'
+                : undefined
             }
           >
             {t.numberExclusiveMaximumLabel}
@@ -354,7 +356,7 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
       <div className="space-y-2">
         <Label
           htmlFor={multipleOfId}
-          className={!!multipleOfError && 'text-destructive'}
+          className={!!multipleOfError ? 'text-destructive' : undefined}
         >
           {t.numberMultipleOfLabel}
         </Label>
@@ -379,7 +381,7 @@ const NumberEditor: React.FC<NumberEditorProps> = ({
       </div>
 
       <div className="space-y-2 pt-2 border-t border-border/40">
-        <Label className={!!enumError && 'text-destructive'}>
+        <Label className={!!enumError ? 'text-destructive' : undefined}>
           {t.numberAllowedValuesEnumLabel}
         </Label>
 

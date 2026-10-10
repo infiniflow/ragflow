@@ -371,7 +371,11 @@ const AgentLogPage: React.FC = () => {
                       <TableCell key={column.dataIndex}>
                         {column.render
                           ? column.render(
-                              item[column.dataIndex as keyof IAgentLogResponse],
+                              String(
+                                item[
+                                  column.dataIndex as keyof IAgentLogResponse
+                                ],
+                              ),
                               item,
                             )
                           : (item[

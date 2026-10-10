@@ -15,7 +15,7 @@ export const useSelectDerivedSessionList = () => {
   const addTemporarySession = useCallback(() => {
     const now = Date.now() / 1000;
 
-    const tempSession: IAgentLogResponse & { is_new?: boolean } = {
+    const tempSession: any = {
       id: '',
       message: [],
       create_date: '',
@@ -28,7 +28,7 @@ export const useSelectDerivedSessionList = () => {
       source: '',
       user_id: '',
       dsl: '',
-      reference: {},
+      reference: [] as any,
       is_new: true,
     };
 

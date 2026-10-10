@@ -460,8 +460,8 @@ export const useGetComponentLabelByValue = (nodeId: string) => {
   return getLabel;
 };
 
-export function flatOptions(options: DefaultOptionType[]) {
-  return options.reduce<DefaultOptionType[]>((pre, cur) => {
+export function flatOptions(options: any[]) {
+  return options.reduce<any[]>((pre, cur) => {
     return [...pre, ...cur.options];
   }, []);
 }
@@ -517,7 +517,7 @@ export function useGetVariableLabelOrTypeByValue({
       if (item) {
         return (
           <div>
-            {item.parentLabel} / {item.label}
+            {(item as any).parentLabel} / {item.label}
           </div>
         );
       }
@@ -529,7 +529,8 @@ export function useGetVariableLabelOrTypeByValue({
   const getType = useCallback(
     (val?: string) => {
       const currentType =
-        getItem(val)?.type || findAgentStructuredOutputTypeByValue(val);
+        (getItem(val) as any)?.type ||
+        findAgentStructuredOutputTypeByValue(val);
 
       if (currentType && currentType in BeginQueryTypeMap) {
         return BeginQueryTypeMap[currentType as BeginQueryType];

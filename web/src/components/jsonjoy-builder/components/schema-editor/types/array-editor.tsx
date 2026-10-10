@@ -109,7 +109,9 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
         <div className="space-y-2">
           <Label
             htmlFor={minItemsId}
-            className={(!!minMaxError || !!minItemsError) && 'text-destructive'}
+            className={
+              !!minMaxError || !!minItemsError ? 'text-destructive' : undefined
+            }
           >
             {t.arrayMinimumLabel}
           </Label>
@@ -132,7 +134,9 @@ const ArrayEditor: React.FC<TypeEditorProps> = ({
         <div className="space-y-2">
           <Label
             htmlFor={maxItemsId}
-            className={(!!minMaxError || !!maxItemsError) && 'text-destructive'}
+            className={
+              !!minMaxError || !!maxItemsError ? 'text-destructive' : undefined
+            }
           >
             {t.arrayMaximumLabel}
           </Label>

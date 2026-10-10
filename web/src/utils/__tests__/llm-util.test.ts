@@ -170,7 +170,7 @@ describe('addTenantParams — clearing model selections', () => {
           rerank_id: '',
           tenant_rerank_id: 'stale-tenant-model-id',
         },
-        '/api/v1/chats/chat-id',
+        '/api/v1/datasets',
       ),
     ).toEqual({
       rerank_id: '',

@@ -92,19 +92,19 @@ const TaskCountdown = ({ row, now }: { row: IDataSourceLog; now: number }) => {
 };
 
 const getSummary = (row: IDataSourceLog, now: number) => {
-  if (row.status === RunningStatus.SCHEDULE || row.status === '5') {
+  if (row.status === RunningStatus.SCHEDULE || (row.status as string) === '5') {
     return <TaskCountdown row={row} now={now} />;
   }
 
-  if (row.status === RunningStatus.RUNNING || row.status === '1') {
+  if (row.status === RunningStatus.RUNNING || (row.status as string) === '1') {
     return row.task_type === 'prune' ? 'Prune in progress' : 'Sync in progress';
   }
 
-  if (row.status === RunningStatus.FAIL || row.status === '4') {
+  if (row.status === RunningStatus.FAIL || (row.status as string) === '4') {
     return row.error_msg || 'Task failed';
   }
 
-  if (row.status === RunningStatus.CANCEL || row.status === '2') {
+  if (row.status === RunningStatus.CANCEL || (row.status as string) === '2') {
     return '';
   }
 

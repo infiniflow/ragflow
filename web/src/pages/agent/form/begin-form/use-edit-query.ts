@@ -16,7 +16,7 @@ export const useEditQueryRecord = ({
   });
 
   const otherThanCurrentQuery = useMemo(() => {
-    return inputs.filter((item, idx) => idx !== index);
+    return inputs.filter((_item, idx) => idx !== index);
   }, [index, inputs]);
 
   const handleEditRecord = useCallback(
@@ -24,7 +24,9 @@ export const useEditQueryRecord = ({
       const inputs: BeginQuery[] = form?.getValues('inputs') || [];
 
       const nextQuery: BeginQuery[] =
-        index > -1 ? inputs.toSpliced(index, 1, record) : [...inputs, record];
+        index > -1
+          ? [...inputs.slice(0, index), record, ...inputs.slice(index + 1)]
+          : [...inputs, record];
 
       form.setValue('inputs', nextQuery);
 
@@ -46,7 +48,7 @@ export const useEditQueryRecord = ({
     (idx: number) => {
       const inputs = form?.getValues('inputs') || [];
       const nextInputs = inputs.filter(
-        (item: BeginQuery, index: number) => index !== idx,
+        (_item: BeginQuery, index: number) => index !== idx,
       );
 
       form.setValue('inputs', nextInputs);

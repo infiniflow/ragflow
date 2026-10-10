@@ -122,7 +122,7 @@ export function useSendSingleMessage({
 
       addNewestQuestion({
         content: value,
-        files: files,
+        files: files as any,
         id,
         role: MessageType.User,
         conversationId: targetConversationId,
@@ -137,7 +137,7 @@ export function useSendSingleMessage({
             id,
             content: value.trim(),
             role: MessageType.User,
-            files: files,
+            files: files as any,
             conversationId: targetConversationId,
           },
           enableInternet,

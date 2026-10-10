@@ -41,7 +41,7 @@ export function Datasets() {
           </div>
         ) : (
           <>
-            {kbs?.length > 0 && (
+            {(kbs?.length ?? 0) > 0 && (
               <CardSineLineContainer>
                 {kbs?.slice(0, 6).map((dataset) => (
                   <DatasetCard

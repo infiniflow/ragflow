@@ -53,7 +53,7 @@ export function SessionList({
             key={session.id}
             session={session}
             selected={session.id === selectedSessionId}
-            onClick={() => onSelectSession(session.id, session.is_new)}
+            onClick={() => onSelectSession(session.id, (session as any).is_new)}
             removeTemporarySession={removeTemporarySession}
           />
         ))}

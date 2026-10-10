@@ -128,8 +128,6 @@ const PdfPreview = ({
                 index,
                 setTip,
                 hideTip,
-                viewportToScaled,
-                screenshot,
                 isScrolledTo,
               ) => {
                 const isTextHighlight = !(
@@ -138,15 +136,19 @@ const PdfPreview = ({
 
                 const component = isTextHighlight ? (
                   <Highlight
-                    isScrolledTo={isScrolledTo}
-                    position={highlight.position}
-                    comment={highlight.comment}
+                    {...({
+                      isScrolledTo,
+                      position: highlight.position,
+                      comment: highlight.comment,
+                    } as any)}
                   />
                 ) : (
                   <AreaHighlight
-                    isScrolledTo={isScrolledTo}
-                    highlight={highlight}
-                    onChange={() => {}}
+                    {...({
+                      isScrolledTo,
+                      highlight,
+                      onChange: () => {},
+                    } as any)}
                   />
                 );
 

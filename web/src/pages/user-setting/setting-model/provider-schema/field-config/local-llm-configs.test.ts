@@ -27,7 +27,7 @@ describe('FunASR local provider configuration', () => {
       config.fields.find((field) => field.name === 'base_url'),
     ).toMatchObject({
       required: true,
-      defaultValue: 'http://localhost:8000/v1',
+      defaultValue: '',
     });
     expect(
       config.fields.find((field) => field.name === 'api_key'),
@@ -60,9 +60,9 @@ describe('MWS provider configuration', () => {
     expect(
       config.fields.find((field) => field.name === 'api_key'),
     ).toMatchObject({ label: 'mwsToken', required: true });
-    expect(
-      config.fields.some((field) => field.name === 'provider_order'),
-    ).toBe(false);
+    expect(config.fields.some((field) => field.name === 'provider_order')).toBe(
+      false,
+    );
 
     expect(
       config.submitTransform?.({

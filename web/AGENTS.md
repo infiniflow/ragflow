@@ -16,11 +16,12 @@ RAGFlow frontend is a React/TypeScript application built with Vite:
 
 ```bash
 npm install
-npm run dev        # Development server
-npm run build      # Production build
-npm run lint       # oxlint
-npm run format     # oxfmt
-npm run test       # Jest tests
+npm run dev         # Development server
+npm run build       # Production build
+npm run lint        # oxlint
+npm run format      # oxfmt
+npm run test        # Jest tests
+npm run type-check  # tsc --noEmit
 ```
 
 ## Development Conventions
@@ -43,7 +44,7 @@ When fixing CSS/layout issues (especially flex truncation, ellipsis, or element 
 
 ### Color Tokens
 
-When writing or modifying styles, **use the project-defined color tokens from `src/tailwind.css`** (e.g., `bg-bg-base`, `text-text-primary`, `text-text-secondary`, `text-text-disabled`, `border-border-button`, `bg-bg-card`). Do not use arbitrary hex/RGB values or Tailwind's default palette colors (e.g., `emerald-500`, `blue-400`) directly in component class names. These tokens are defined for both light and dark modes and keep the UI consistent with the design system.
+When writing or modifying styles, **use the project-defined color tokens from `tailwind.css`** at the web root (imported by `src/main.tsx` as `../tailwind.css`; e.g., `bg-bg-base`, `text-text-primary`, `text-text-secondary`, `text-text-disabled`, `border-border-button`, `bg-bg-card`). Do not use arbitrary hex/RGB values or Tailwind's default palette colors (e.g., `emerald-500`, `blue-400`) directly in component class names. These tokens are defined for both light and dark modes and keep the UI consistent with the design system.
 
 ### Scope and Boundaries
 

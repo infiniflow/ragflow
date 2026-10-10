@@ -35,14 +35,16 @@ function ErrorHarness() {
 }
 
 describe('SwitchFormField', () => {
-  it('toggles the switch when the label text is clicked', () => {
+  it('does not toggle the switch when the label text is clicked', () => {
+    // `Switch` owns its own id (#18945) so the label's `htmlFor` does not
+    // point at the switch and a label-row click cannot flip it.
     render(<Harness />);
     const switchEl = screen.getByRole('switch');
     expect(switchEl).toHaveAttribute('data-state', 'unchecked');
 
     fireEvent.click(screen.getByText('Enable feature'));
 
-    expect(switchEl).toHaveAttribute('data-state', 'checked');
+    expect(switchEl).toHaveAttribute('data-state', 'unchecked');
   });
 
   it('does not toggle the switch when the tooltip icon is clicked', () => {
