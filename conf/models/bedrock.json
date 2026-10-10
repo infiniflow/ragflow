@@ -12,7 +12,8 @@
       "context_length": 200000,
       "max_output": 8192,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -28,7 +29,8 @@
       "context_length": 200000,
       "max_output": 4096,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -36,7 +38,8 @@
       "context_length": 200000,
       "max_output": 4096,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -44,7 +47,8 @@
       "context_length": 200000,
       "max_output": 4096,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -92,7 +96,8 @@
       "context_length": 300000,
       "max_output": 5000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {
@@ -100,7 +105,8 @@
       "context_length": 300000,
       "max_output": 5000,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ]
     },
     {

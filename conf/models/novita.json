@@ -72,7 +72,8 @@
       "context_length": 98304,
       "max_output": 16384,
       "model_types": [
-        "chat"
+        "chat",
+        "vision"
       ],
       "tools": {
         "support": true

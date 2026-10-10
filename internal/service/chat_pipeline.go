@@ -438,6 +438,17 @@ func (s *ChatPipelineService) AsyncChat(
 				zap.Int("attachment_bytes", len(attachments)))
 		}
 
+		var historyImageFiles []string
+		for _, previous := range messages[:len(messages)-1] {
+			if previous["role"] == "user" && previous["files"] != nil {
+				_, images := s.splitChatAttachments(ctx, userID, previous["files"])
+				modelType, _ := llmModelConfig["model_type"].(string)
+				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				historyImageFiles = append(historyImageFiles, images...)
+			}
+		}
+		hasImageAttachments = hasImageAttachments || len(historyImageFiles) > 0
+
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
@@ -862,11 +873,12 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
+				harnessImages := append(historyImageFiles, imageFiles...)
 				var history []map[string]interface{}
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
 					TopN:                   int(chat.TopN),
 					SimilarityThreshold:    chat.SimilarityThreshold,
 					VectorSimilarityWeight: chat.VectorSimilarityWeight,
@@ -1161,12 +1173,16 @@ func (s *ChatPipelineService) AsyncChat(
 		if factoryName == "" {
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
-		for _, m := range messages {
+		modelType, _ := llmModelConfig["model_type"].(string)
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
+			if i < len(messages)-1 {
+				llmMessage["files"] = m["files"]
+			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
@@ -1182,6 +1198,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
+		for i := range llmMessages[:len(llmMessages)-1] {
+			llmMessages[i] = s.chatHistoryMessage(ctx, userID, llmMessages[i], modelType, factoryName)
+		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
 			zap.Int("used_token_count", usedTokenCount),
@@ -1652,10 +1671,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
-		for _, m := range messages {
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && config["store_history_messages"] != false {
 				continue
+			}
+			if i < len(messages)-1 {
+				m = s.chatHistoryMessage(ctx, userID, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -2841,6 +2863,21 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, userID string, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+	if message["role"] != "user" || message["files"] == nil {
+		return message
+	}
+	_, images := s.splitChatAttachments(ctx, userID, message["files"])
+	images, _ = gateImageAttachments("", modelType, images)
+	msg := normalizeLLMMessage(message)
+	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
+	if err != nil {
+		common.Warn("chat history multimodal conversion failed", zap.Error(err))
+		return msg
+	}
+	return converted
 }
 
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {

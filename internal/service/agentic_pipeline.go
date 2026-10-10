@@ -112,6 +112,24 @@ func (s *ChatPipelineService) agenticRag(
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
 		}
+		modelType := "chat"
+		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+			modelType = "image2text"
+		}
+		agentMessages := s.convertMessagesToEino(runCtx, userID, modelType, messages)
+		// Image-bearing turns cannot fail over to a text-only model.
+		for _, msg := range agentMessages {
+			if len(msg.UserInputMultiContent) > 0 {
+				visionChain := chain[:0]
+				for _, candidate := range chain {
+					if info := candidate.Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+						visionChain = append(visionChain, candidate)
+					}
+				}
+				chain = visionChain
+				break
+			}
+		}
 
 		// Apply the dialog's LLM settings with per-request overrides exactly
 		// like the regular AsyncChat path does, then let the template pin its
@@ -160,7 +178,7 @@ func (s *ChatPipelineService) agenticRag(
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
 			Model:          model,
 			SynthModel:     synth,
-			Messages:       convertMessagesToEino(messages),
+			Messages:       agentMessages,
 			TemplateID:     mode,
 			TenantID:       chat.TenantID,
 			DatasetIDs:     chatDatasetIDs(chat),
@@ -346,16 +364,30 @@ func (s *ChatPipelineService) agenticWebSearch(promptConfig map[string]interface
 }
 
 // convertMessagesToEino converts pre-filtered user/assistant messages into
-// eino schema messages. Only string content is supported; multimodal parts are
-// not carried into the ReAct loop.
-func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message {
+// eino schema messages, resolving uploaded attachments throughout the history.
+func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
 		switch role {
 		case "user":
-			out = append(out, schema.UserMessage(content))
+			text, images := s.splitChatAttachments(ctx, userID, m["files"])
+			if text != "" {
+				content += "\n\n" + text
+			}
+			msg := schema.UserMessage(content)
+			images, _ = gateImageAttachments("", modelType, images)
+			if len(images) > 0 {
+				msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: content})
+				for _, uri := range images {
+					msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: new(uri)}},
+					})
+				}
+			}
+			out = append(out, msg)
 		case "assistant":
 			out = append(out, schema.AssistantMessage(content, nil))
 		default:

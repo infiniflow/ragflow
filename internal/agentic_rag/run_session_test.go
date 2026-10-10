@@ -139,7 +139,7 @@ func TestConversationRestartWhenNothingCommitted(t *testing.T) {
 		t.Error("a restarted conversation must re-seed the caller's history")
 	}
 	base := []*schema.Message{schema.UserMessage("who signed?")}
-	got := conv.turnMessages(base, "Final Answer: **1897**", "FIX IT")
+	got := conv.turnMessages(base, "Final Answer: **1897**", schema.UserMessage("FIX IT"))
 	if len(got) != 3 || got[0].Content != "who signed?" || got[2].Content != "FIX IT" {
 		t.Fatalf("reseeded turn = %v, want history + final + directive", got)
 	}
@@ -153,15 +153,29 @@ func TestConversationRestartWhenNothingCommitted(t *testing.T) {
 
 // The caller's chat history belongs to ONE turn: later turns hand over nothing
 // but their own message.
+func TestConversationTurnMessagesPreservesImages(t *testing.T) {
+	conv := newTestConversation()
+	uri := "data:image/jpeg;base64,AAAA"
+	question := schema.UserMessage("describe")
+	question.UserInputMultiContent = []schema.MessageInputPart{{
+		Type:  schema.ChatMessagePartTypeImageURL,
+		Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: &uri}},
+	}}
+	got := conv.turnMessages(nil, "", question)
+	if len(got) != 1 || len(got[0].UserInputMultiContent) != 1 {
+		t.Fatalf("got %#v, want image-bearing user turn", got)
+	}
+}
+
 func TestConversationTurnMessagesSeedsOnce(t *testing.T) {
 	conv := newTestConversation()
 	base := []*schema.Message{schema.UserMessage("who signed?")}
 
-	first := conv.turnMessages(base, "", "FIX IT")
+	first := conv.turnMessages(base, "", schema.UserMessage("FIX IT"))
 	if len(first) != 2 || first[0].Content != "who signed?" || first[1].Content != "FIX IT" {
 		t.Fatalf("unseeded turn = %v, want history + directive", first)
 	}
-	second := conv.turnMessages(base, "Final Answer: **1897**", "AGAIN")
+	second := conv.turnMessages(base, "Final Answer: **1897**", schema.UserMessage("AGAIN"))
 	if len(second) != 1 || second[0].Content != "AGAIN" {
 		t.Fatalf("seeded turn = %v, want the directive alone", second)
 	}
