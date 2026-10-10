@@ -326,21 +326,25 @@ func TestTableChunkerManualRejectsRowWiderThanHeader(t *testing.T) {
 // cost every other row with it, and chunk_data must not grow a field the
 // header never named.
 func TestTableChunkerAutoKeepsCellsPastTheHeader(t *testing.T) {
-	segment := spreadsheetSegmentItem("orders", []string{"ID"}, [][]string{{"A-1", "extra"}}, 1, 2)
-	chunks := tableColumnChunks(t, nil, "xlsx", segment)
-	if len(chunks) != 1 {
-		t.Fatalf("got %d chunks, want 1", len(chunks))
-	}
-	ck := chunks[0]
-	if got := ck["text"]; got != "- ID: A-1\n- extra" {
-		t.Errorf("text = %v, want the extra cell kept in the body", got)
-	}
-	data := chunkDataRow(t, ck)
-	if _, ok := data[entity.TableDataKey("ID")]; !ok {
-		t.Errorf("chunk_data lost the header's column: %v", data)
-	}
-	if len(data) != 1 {
-		t.Errorf("chunk_data = %v, want only the columns the header named", data)
+	// Both wires the review named: a dirty CSV or XLSX must not cost the whole
+	// document just because one row is wider than its header.
+	for _, fileType := range []string{"csv", "xlsx"} {
+		segment := spreadsheetSegmentItem("orders", []string{"ID"}, [][]string{{"A-1", "extra"}}, 1, 2)
+		chunks := tableColumnChunks(t, nil, fileType, segment)
+		if len(chunks) != 1 {
+			t.Fatalf("%s: got %d chunks, want 1", fileType, len(chunks))
+		}
+		ck := chunks[0]
+		if got := ck["text"]; got != "- ID: A-1\n- extra" {
+			t.Errorf("%s: text = %v, want the extra cell kept in the body", fileType, got)
+		}
+		data := chunkDataRow(t, ck)
+		if _, ok := data[entity.TableDataKey("ID")]; !ok {
+			t.Errorf("%s: chunk_data lost the header's column: %v", fileType, data)
+		}
+		if len(data) != 1 {
+			t.Errorf("%s: chunk_data = %v, want only the columns the header named", fileType, data)
+		}
 	}
 }
 
