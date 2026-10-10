@@ -552,17 +552,17 @@ func main() {
 		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	case "deepdoc":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
 		}
 	case "migrate":
@@ -1448,7 +1448,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%s", utility.GenerateUUID()[:8]),
+		fmt.Sprintf("ragflow-server-%s", common.GenerateUUID()[:8]),
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {

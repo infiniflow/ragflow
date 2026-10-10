@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"sync"
@@ -464,7 +463,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := utility.GenerateToken()
+		id := common.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),

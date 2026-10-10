@@ -20,7 +20,6 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
-	"ragflow/internal/utility"
 	"sync"
 	"time"
 
@@ -95,7 +94,7 @@ func GetSecretKey(ctx context.Context, store VariableStore) (string, error) {
 		return globalConfig.GetSecretKey(), nil
 	}
 
-	generatedKey, err := utility.GenerateSecretKey()
+	generatedKey, err := common.GenerateSecretKey()
 	if err != nil {
 		return "", fmt.Errorf("failed to generate secret key: %w", err)
 	}

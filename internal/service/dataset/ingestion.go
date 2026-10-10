@@ -228,6 +228,37 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 	return log.RunCount == nil || *log.RunCount > 0
 }
 
+// ListSyncLogs returns paginated sync logs for connectors currently linked to an accessible dataset.
+func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
+	}
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	logs, total, err := d.connectorDAO.ListLogsByDatasetID(ctx, dao.DB, datasetID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connector sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	return map[string]interface{}{
+		"total": total,
+		"logs":  logs,
+	}, common.CodeSuccess, nil
+}
+
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
@@ -235,6 +266,9 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
+	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
 	}
 
 	if page <= 0 {

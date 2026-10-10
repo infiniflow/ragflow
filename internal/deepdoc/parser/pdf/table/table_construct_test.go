@@ -730,8 +730,7 @@ func TestMergeCaptions_NeedsCaptionLayoutType(t *testing.T) {
 		{LayoutType: "text", Text: "公司领导班子成员、出差地",
 			Positions: []pdf.Position{{Left: 100, Right: 500, Top: 180, Bottom: 198}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	// BUG: "text" layout type is NOT matched by mergeCaptions (only "table caption"/"figure caption").
 	// The caption text survives as a separate section instead of being prepended to the table.
 	for _, s := range result {
