@@ -1290,9 +1290,8 @@ type ChatCompletionsResponse struct {
 	OutputFormat OutputFormat        `json:"-"`
 	// raw HTTP body for "raw" output.
 	raw []byte
-	// streamed skips the "Answer:" line in PrintOut to avoid duplication
-	// (used by the streaming path which prints chunk-by-chunk).
-	streamed bool
+	// answerPrinted suppresses only answers already displayed while reading the stream.
+	answerPrinted bool
 }
 
 type chatCompletionData struct {
@@ -1307,6 +1306,7 @@ func (r *ChatCompletionsResponse) Type() string                   { return "chat
 func (r *ChatCompletionsResponse) TimeCost() float64              { return r.Duration }
 func (r *ChatCompletionsResponse) SetOutputFormat(f OutputFormat) { r.OutputFormat = f }
 
+// PrintOut writes any undisplayed answer, followed by references and timing.
 func (r *ChatCompletionsResponse) PrintOut() {
 	if r.OutputFormat == "raw" && r.raw != nil {
 		fmt.Println(string(r.raw))
@@ -1321,7 +1321,7 @@ func (r *ChatCompletionsResponse) PrintOut() {
 		fmt.Println("(no data)")
 		return
 	}
-	if !r.streamed {
+	if !r.answerPrinted {
 		if r.Data.Answer != "" {
 			fmt.Printf("Answer: %s\n", r.Data.Answer)
 		}
