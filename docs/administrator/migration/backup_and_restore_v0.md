@@ -2,7 +2,7 @@
 sidebar_position: 2
 title: Backup and Restore (v0.x)
 sidebar_label: Backup and Restore (v0.x)
-slug: /backup_and_migration_v0
+slug: /backup_and_restore_v0
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
@@ -28,31 +28,18 @@ Choose the steps for your task:
 From the repository root, first list the containers in the RAGFlow Compose project. This shows which services are enabled:
 
 ```bash
-docker compose -f docker/docker-compose.yml ps --all
+docker compose -p docker -f docker/docker-compose.yml ps --all
 ```
 
-Next, list the Docker volumes on the host. You will compare this inventory with the services shown by the first command:
+Display the mounts of every container in the Compose project:
 
 ```bash
-docker volume ls
-```
-
-Display the mounts of every container in the Compose project. The output shows whether each mount is a Docker volume or a host directory, its source, and its location inside the container:
-
-```bash
-project_name=docker
-for container_id in $(docker compose -p "$project_name" -f docker/docker-compose.yml ps --all -q); do
+for container_id in $(docker compose -p docker -f docker/docker-compose.yml ps --all -q); do
   docker inspect "$container_id" --format '{{.Name}}{{range .Mounts}}{{println "" .Type .Source .Name .Destination}}{{end}}'
 done
 ```
 
-If the deployment was started with a project name, include the same `-p` value in every Compose command. The migration script supports `-p` only in `v0.25.x` and later; step 3 provides the safe alternative for earlier releases. For example:
-
-```bash
-docker compose -p ragflow -f docker/docker-compose.yml ps --all
-```
-
-The project name determines the volume-name prefix. A default project named `docker` commonly uses these volumes:
+The `docker` project commonly uses these volumes:
 
 | Data | Typical volume |
 |------|----------------|
@@ -61,7 +48,11 @@ The project name determines the volume-name prefix. A default project named `doc
 | Redis data | `docker_redis_data` |
 | Elasticsearch index | `docker_esdata01` |
 
-Use these four default volumes as the starting point. Add every named volume and persistent host directory shown by the mount check. Back up external MySQL, object storage, and search services with the corresponding provider's procedure.
+Use these four default volumes as the starting point. If the deployment uses Infinity instead of Elasticsearch, include its persistent data. Add every named volume and persistent host directory shown by the mount check.
+
+If any RAGFlow data is stored outside the Docker volumes listed above, back it up at the same time.
+
+For a non-standard storage layout, identify the required data by following the Docker documentation for [volumes](https://docs.docker.com/engine/storage/volumes/) and [bind mounts](https://docs.docker.com/engine/storage/bind-mounts/).
 
 Also retain `docker/.env`, the configuration template, custom certificates, and custom-mounted files. Protect these files because they can contain credentials.
 
@@ -74,16 +65,10 @@ For an offline host, cache the image required by the chosen method before stoppi
 Stop RAGFlow and its bundled services. This keeps the database, object storage, and search index at the same point in time while the backup is created:
 
 ```bash
-docker compose -f docker/docker-compose.yml down
+docker compose -p docker -f docker/docker-compose.yml down
 ```
 
-For a custom Compose project name:
-
-```bash
-docker compose -p ragflow -f docker/docker-compose.yml down
-```
-
-The command above stops and removes the containers while preserving their Docker volumes. Wait until it finishes before continuing, and create every archive from this stopped deployment.
+Wait until the command finishes before creating the archives.
 
 ## 3. Back up the persistent volumes
 
@@ -96,40 +81,26 @@ mkdir "$backup_dir"
 
 The `date` command adds the current time to the directory name so that files from different backups are not mixed.
 
-The available backup command depends on the source release and its Compose project name:
+Choose one backup method:
 
-| Source release | Default Compose project named `docker` | Custom Compose project name |
-|----------------|----------------------------------------|-----------------------------|
-| `v0.20.0` | Use the manual volume procedure below. This release does not contain `docker/migration.sh`. | Use the manual volume procedure below. |
-| `v0.20.1` through `v0.24.x` | The bundled script can back up the four default volumes. | Use the manual volume procedure below. The script in these releases does not support `-p` and always reads `docker_*` volumes. |
-| `v0.25.x` and later `v0.x` | The bundled script can back up the four default volumes. | Pass the project name with `-p`. |
+| Deployment | Backup method |
+|------------|---------------|
+| `v0.20.1` or later with the four default MySQL, MinIO, Redis, and Elasticsearch volumes | Use the bundled script. |
+| `v0.20.0`, Infinity, or any non-default volume set | Use the manual procedure for every recorded volume. |
 
-For a supported script-based backup, first display the syntax of the script in the checked-out release:
-
-```bash
-bash docker/migration.sh help
-```
-
-For the default `docker` project, create the four archives in a new backup directory:
+For a deployment with the four default volumes, create the archives with:
 
 ```bash
 bash docker/migration.sh backup "$backup_dir"
 ```
 
-On `v0.25.x` or later, a deployment with a custom Compose project name can use:
+Otherwise, do not use the script. Repeat the following commands for **every exact volume name recorded in step 1**:
 
 ```bash
-bash docker/migration.sh -p ragflow backup "$backup_dir"
-```
-
-Do not pass `-p` to the script from `v0.20.1` through `v0.24.x`. For `v0.20.0`, for a custom project on an earlier release, or whenever a recorded volume is not covered by the script, repeat the following commands for **each exact volume name recorded in step 1**:
-
-```bash
-volume_name=ragflow_mysql_data
-docker volume inspect "$volume_name" > /dev/null
-docker run --rm -v "$volume_name":/source:ro -v "$PWD/$backup_dir":/backup alpine:3.20 \
-  tar czf "/backup/$volume_name.tar.gz" -C /source .
-tar tzf "$backup_dir/$volume_name.tar.gz" > /dev/null
+volume_name=docker_mysql_data
+docker volume inspect "$volume_name" >/dev/null &&
+  docker run --rm -v "$volume_name":/source:ro -v "$PWD/$backup_dir":/backup alpine:3.20 \
+    tar czf "/backup/$volume_name.tar.gz" -C /source .
 ```
 
 After all required volumes have been processed, list its contents:
@@ -139,11 +110,11 @@ for archive in "$backup_dir"/*.tar.gz; do tar tzf "$archive" > /dev/null || exit
 ls -lh "$backup_dir"
 ```
 
-Confirm that every volume recorded in step 1 has a corresponding readable archive. A script-based backup is complete only for a deployment using all four default MySQL, MinIO, Redis, and Elasticsearch volumes. If the deployment uses another document engine, external storage, or additional persistent services, back up those volumes or services now. Keep all of them together as one backup set.
+Confirm that every recorded volume has a readable archive and keep all files in the same backup set.
 
 ## 4. Transfer the backup
 
-Copy the complete backup directory and retained configuration files to the target host. Keep archive filenames unchanged. You can transfer them with `scp`, `rsync`, removable storage, or another file-transfer method appropriate for your environment.
+Copy the complete backup directory and retained configuration files to the target host. Keep archive filenames unchanged. Use a transfer method appropriate for your environment.
 
 On the target host, list the transferred directory and confirm that its files and sizes match the source. Keep the source deployment and the backup available until the restored deployment passes the checks in step 6.
 
@@ -159,50 +130,40 @@ backup_dir="<backup-directory-name>"
 
 Restore only into target volumes that do not yet exist. Both the bundled script and the manual procedure extract files without removing files already present in a volume. Restoring into a used volume can therefore mix old and restored data.
 
-Use the bundled restore command only when the backup was created by a compatible version of the script and contains all four default archives. For a default `docker` project, run:
+Use the bundled restore command only when the backup was created by a compatible version of the script and contains all four default archives:
 
 ```bash
 bash docker/migration.sh restore "$backup_dir"
 ```
 
-On `v0.25.x` or later, a target with a custom Compose project name can use:
+If the backup was created manually, set `volume_name` to each saved volume and repeat the following procedure:
 
 ```bash
-bash docker/migration.sh -p ragflow restore "$backup_dir"
-```
-
-Do not use `-p` with the script from `v0.20.1` through `v0.24.x`. Use the following manual procedure for a `v0.20.0` backup, a custom project on an earlier release, a backup whose archive names are the recorded volume names, or a deployment that does not have all four script archives. Repeat it for every saved volume, changing `source_volume` and `target_volume` when the target project uses a different prefix:
-
-```bash
-source_volume=ragflow_mysql_data
-target_volume=ragflow_mysql_data
-if docker volume inspect "$target_volume" > /dev/null 2>&1; then
-  echo "Target volume already exists; stop and inspect it: $target_volume"
+volume_name=docker_mysql_data
+if ! test -f "$backup_dir/$volume_name.tar.gz"; then
+  echo "Missing archive: $backup_dir/$volume_name.tar.gz"
+elif docker volume inspect "$volume_name" > /dev/null 2>&1; then
+  echo "Target volume already exists; stop and inspect it: $volume_name"
 else
-  docker volume create "$target_volume"
-  docker run --rm -v "$target_volume":/target -v "$PWD/$backup_dir":/backup:ro alpine:3.20 \
-    tar xzf "/backup/$source_volume.tar.gz" -C /target
+  docker volume create "$volume_name" &&
+    docker run --rm -v "$volume_name":/target -v "$PWD/$backup_dir":/backup:ro alpine:3.20 \
+      tar xzf "/backup/$volume_name.tar.gz" -C /target
 fi
 ```
 
-Restore Infinity, OpenSearch, SereneDB, or another document engine from its saved volume or with its storage-specific procedure. Restore any additional volumes and external services from the same backup set before continuing.
+If the deployment uses Infinity, restore it from its saved volume or with its storage-specific procedure. Restore any additional volumes and external services from the same backup set before continuing.
 
-If the restore script reports that any target volume already exists, enter `n` and stop. Check the Compose project name and the contents of the listed volumes. Continue only after choosing a new project name or, after separately confirming that the existing volumes contain no data that must be retained, replacing them with new empty volumes. Do not use the script's confirmation prompt to restore over a previously used volume. When the script finishes, confirm that it reports a successful restore for all four archives.
+If a manual restore fails, do not use the incomplete target volume. After confirming that it contains no data that must be retained, replace it with a new empty volume before retrying the restore.
+
+If the restore script reports that a target volume already exists, enter `n` and stop. Restore only after replacing it with a confirmed empty volume.
 
 ## 6. Start and verify the restored release
 
 Start the same RAGFlow version that created the backup. The first command starts the containers; the second displays their current state:
 
 ```bash
-docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps
-```
-
-For a custom Compose project name:
-
-```bash
-docker compose -p ragflow -f docker/docker-compose.yml up -d
-docker compose -p ragflow -f docker/docker-compose.yml ps
+docker compose -p docker -f docker/docker-compose.yml up -d
+docker compose -p docker -f docker/docker-compose.yml ps
 ```
 
 Wait until the services report a running or healthy state. Then confirm that:
@@ -215,6 +176,6 @@ Wait until the services report a running or healthy state. Then confirm that:
 - The configured model providers and default models are available.
 - Agents and enabled data-source synchronization still work.
 
-When this backup is part of a version upgrade, first verify the restored source version. Then follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md), starting and validating every intermediate version in the selected route.
+When this backup is part of a version upgrade, first verify the restored source version. Then follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md), starting and validating every intermediate version in the standard route.
 
-After all checks pass, the backup and restore are complete. Keep the application version, Compose files, configuration, database, object data, and search index together so that the same recovery point can be used again when needed.
+After all checks pass, the backup and restore are complete.
