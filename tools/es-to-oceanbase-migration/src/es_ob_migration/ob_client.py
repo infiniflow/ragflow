@@ -188,7 +188,11 @@ class OBClient:
         if is_array or ob_type.startswith("ARRAY"):
             # Extract inner type
             if "String" in ob_type:
-                inner_type = String(256)
+                import re
+
+                match = re.search(r"\((\d+)\)", ob_type)
+                length = int(match.group(1)) if match else 256
+                inner_type = String(length)
             elif "Integer" in ob_type:
                 inner_type = Integer
             else:
