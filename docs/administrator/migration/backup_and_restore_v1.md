@@ -1,20 +1,25 @@
 ---
 sidebar_position: 4
-title: "Backup and Migration (v1.0.0-rc1 and Later)"
-sidebar_label: "Backup and Migration (v1.0.0-rc1+)"
+title: "Backup and Restore (v1.x)"
+sidebar_label: "Backup and Restore (v1.x)"
 slug: /migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Backup and Migration (v1.0.0-rc1 and Later)
+# Backup and Restore (v1.x)
 
-This guide explains how to back up a RAGFlow `v1.0.0-rc1` or later Docker deployment and restore it on another host. Complete the four steps in order. The procedure backs up the Docker volumes used by the deployment, including Kvrocks and any enabled optional services.
+:::info Backup and host migration only
+This guide creates or restores a same-version recovery point and can move a deployment to another host. To upgrade an existing v1 deployment to another release, create this backup first and then follow [Database Migration for v1.x](./database_migration_v1.md).
+:::
 
-## Move a deployment to another host
+Choose the steps for your task:
 
-### 1. Find the data to back up
+- **Create an upgrade recovery point:** Complete [steps 1–2](#1-find-the-data-to-back-up), verify every archive, and keep the backup unchanged.
+- **Move to another host:** Complete all four steps, including restore and verification.
+
+## 1. Find the data to back up
 
 First, set `project_name` to the Compose project name used by the deployment. The default project name is usually `docker`; if the deployment was started with `-p ragflow`, use `ragflow`. Then list the containers in that project to identify the services that are currently enabled:
 
@@ -29,13 +34,13 @@ Next, list the Docker volumes available on the host. You will use this list toge
 docker volume ls
 ```
 
-For each RAGFlow container shown by the first command, run the following command. It prints the volume name and the location where that volume is mounted in the container:
+For each RAGFlow container shown by the first command, run the following command. It prints the mount type, host source, volume name, and location inside the container:
 
 ```bash
-docker inspect <container-name> --format '{{range .Mounts}}{{println .Name .Destination}}{{end}}'
+docker inspect <container-name> --format '{{range .Mounts}}{{println .Type .Source .Name .Destination}}{{end}}'
 ```
 
-Write down every RAGFlow volume name. Use the container mounts as the backup list; `docker volume ls` is an inventory of all volumes on the host and may include unrelated volumes. Also record the Compose project name. Its volume names normally start with the same project-name prefix. Use the same `project_name` value in every Compose command in this guide.
+Write down every RAGFlow volume name and every persistent host directory shown in the output. Use the container mounts as the backup list; `docker volume ls` is an inventory of all volumes on the host and may include unrelated volumes. Also record the Compose project name. Its volume names normally start with the same project-name prefix. Use the same `project_name` value in every Compose command in this guide.
 
 Use the following table to check the list you recorded. Include each service enabled in your deployment, together with any additional or externally managed storage used in your environment.
 
@@ -47,14 +52,16 @@ Use the following table to check the list you recorded. Include each service ena
 | OpenSearch index | `<project>_osdata01` |
 | Infinity index | `<project>_infinity_data` |
 | SereneDB data | `<project>_serenedb_data` |
+| Vastbase data | `<project>_vastbase_data` |
 | Kvrocks cache and checkpoint data | `<project>_kvrocks_data` |
-| Redis data, when the Redis service is enabled | `<project>_redis_data` |
 | NATS JetStream data | `<project>_nats_data` |
 | ClickHouse analytics data | `<project>_clickhouse_data` |
 | Kibana data, when Kibana is enabled | `<project>_kibana_data` |
-| Text Embeddings Inference model cache, when enabled | `<project>_tei_data` |
+| RAGFlow logs | `docker/ragflow-logs` bind mount |
 | OceanBase data and configuration | `docker/oceanbase/data` and `docker/oceanbase/conf` bind mounts |
 | SeekDB data | `docker/seekdb` bind mount |
+
+This table is a checklist. Always use the mounts reported by `docker inspect` as the final backup scope.
 
 If the deployment uses external MySQL, object storage, a search service, or another external dependency, back it up with the provider's supported procedure and keep it at the same recovery point as the Docker volumes.
 
@@ -62,7 +69,9 @@ Also retain `docker/.env`, the configuration template, and any custom certificat
 
 Before stopping the deployment, run `df -h` and `docker system df`. Make sure the host has enough free space for the volume archives and temporary backup files.
 
-### 2. Stop RAGFlow and create the backup
+For an offline host, make sure that the `alpine:3.20` image is available before stopping RAGFlow.
+
+## 2. Stop RAGFlow and create the backup
 
 First, stop RAGFlow and its bundled services. This prevents the database, object storage, and search index from changing while their archives are being created:
 
@@ -74,17 +83,18 @@ docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compos
 After all containers have stopped, create a new directory for this backup. The volume archives created below will be stored in this directory:
 
 ```bash
-mkdir backup-ragflow
+backup_dir="backup-ragflow-v1-$(date +%Y%m%d-%H%M%S)"
+mkdir "$backup_dir"
 ```
 
-Use a new, empty `backup-ragflow` directory for each backup. Then repeat the following commands for **each volume you recorded**. Set `volume_name` to the exact Docker volume name. The example archives `docker_mysql_data` as `backup-ragflow/docker_mysql_data.tar.gz`:
+The `date` command adds the current time to the directory name so that files from different backups are not mixed. Then repeat the following commands for **each volume you recorded**. Set `volume_name` to the exact Docker volume name:
 
 ```bash
 volume_name=docker_mysql_data
 if docker volume inspect "$volume_name" >/dev/null 2>&1; then
-  if docker run --rm -v "$volume_name":/source:ro -v "$PWD/backup-ragflow":/backup alpine:3.20 \
+  if docker run --rm -v "$volume_name":/source:ro -v "$PWD/$backup_dir":/backup alpine:3.20 \
     tar czf "/backup/$volume_name.tar.gz" -C /source .; then
-    tar tzf "backup-ragflow/$volume_name.tar.gz" > /dev/null
+    tar tzf "$backup_dir/$volume_name.tar.gz" > /dev/null
   else
     echo "Backup failed: $volume_name"
   fi
@@ -98,43 +108,47 @@ The command performs three checks and actions in sequence: it confirms that the 
 If the list in step 1 includes OceanBase, archive its data and configuration directories. The first command archives the database files; the second archives the OceanBase configuration:
 
 ```bash
-tar czf backup-ragflow/oceanbase-data.tar.gz -C docker/oceanbase data
-tar czf backup-ragflow/oceanbase-conf.tar.gz -C docker/oceanbase conf
+tar czf "$backup_dir/oceanbase-data.tar.gz" -C docker/oceanbase data
+tar czf "$backup_dir/oceanbase-conf.tar.gz" -C docker/oceanbase conf
 ```
 
 If the list includes SeekDB, archive its data directory:
 
 ```bash
-tar czf backup-ragflow/seekdb.tar.gz -C docker seekdb
+tar czf "$backup_dir/seekdb.tar.gz" -C docker seekdb
 ```
 
-Apply the same method to any other bind-mounted data directory recorded in step 1: create one archive for the directory and store it in `backup-ragflow`.
+Apply the same method to any other bind-mounted data directory recorded in step 1 and store its archive in `"$backup_dir"`.
 
 After processing all volumes, list the archives:
 
 ```bash
-ls -lh backup-ragflow
+ls -lh "$backup_dir"
 ```
 
-Confirm that every recorded volume has a corresponding `.tar.gz` file. Copy the entire `backup-ragflow` directory, `docker/.env`, the configuration template, certificates, and other custom-mounted files to the target host.
+Confirm that every recorded volume has a corresponding `.tar.gz` file. Copy the entire backup directory, `docker/.env`, the configuration template, certificates, and other custom-mounted files to the target host.
 
-### 3. Restore the backup on the target host
+## 3. Restore the backup on the target host
 
 
-Install the same RAGFlow release on the target host, copy the saved configuration into place, and put `backup-ragflow` in the repository root. Keep the target services stopped while restoring the volumes.
+Install the same RAGFlow release on the target host, copy the saved configuration into place, and put the backup directory in the repository root. Keep the target services stopped while restoring the volumes. Set `backup_dir` to the transferred directory name:
+
+```bash
+backup_dir="<backup-directory-name>"
+```
 
 For each archive, run the following commands. `source_volume` is the volume name contained in the archive filename. `target_volume` is the volume name expected by the Compose project on the target host. The commands create a new volume and extract the archive into it:
 
 ```bash
 source_volume=docker_mysql_data
 target_volume=docker_mysql_data
-if ! test -f "backup-ragflow/$source_volume.tar.gz"; then
-  echo "Missing archive: backup-ragflow/$source_volume.tar.gz"
+if ! test -f "$backup_dir/$source_volume.tar.gz"; then
+  echo "Missing archive: $backup_dir/$source_volume.tar.gz"
 elif docker volume inspect "$target_volume" >/dev/null 2>&1; then
   echo "Target volume already exists; inspect it before restoring: $target_volume"
 else
   if docker volume create "$target_volume"; then
-    docker run --rm -v "$target_volume":/target -v "$PWD/backup-ragflow":/backup:ro alpine:3.20 \
+    docker run --rm -v "$target_volume":/target -v "$PWD/$backup_dir":/backup:ro alpine:3.20 \
       tar xzf "/backup/$source_volume.tar.gz" -C /target
   fi
 fi
@@ -148,19 +162,19 @@ If the backup contains OceanBase directory archives, recreate the parent directo
 
 ```bash
 mkdir -p docker/oceanbase
-tar xzf backup-ragflow/oceanbase-data.tar.gz -C docker/oceanbase
-tar xzf backup-ragflow/oceanbase-conf.tar.gz -C docker/oceanbase
+tar xzf "$backup_dir/oceanbase-data.tar.gz" -C docker/oceanbase
+tar xzf "$backup_dir/oceanbase-conf.tar.gz" -C docker/oceanbase
 ```
 
 If the backup contains the SeekDB directory archive, extract it into `docker` to restore `docker/seekdb`:
 
 ```bash
-tar xzf backup-ragflow/seekdb.tar.gz -C docker
+tar xzf "$backup_dir/seekdb.tar.gz" -C docker
 ```
 
 Restore any other bind-mounted directory archive to the same relative location used on the source host.
 
-### 4. Start and verify
+## 4. Start and verify
 
 Start RAGFlow with the restored volumes. The first command creates and starts the containers; the second displays their current state:
 
@@ -170,16 +184,13 @@ docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compos
 docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps
 ```
 
-Wait until the services report a running or healthy state. Then identify the application service and display its logs. The command below selects the created CPU or GPU service, including an exited service whose startup failed, instead of assuming a service name:
+Wait until the services report a running or healthy state. In the output of `docker compose ps --all`, copy the RAGFlow application service name from the `SERVICE` column and set `application_service` to that value:
 
 ```bash
 project_name=docker
-application_service="$(docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all --services | sed -n '/^ragflow-\(cpu\|gpu\)$/p' | head -n 1)"
-if test -z "$application_service"; then
-  echo "No RAGFlow application service was found"
-else
-  docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs --tail=200 "$application_service"
-fi
+docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all
+application_service="<application-service-name-shown-above>"
+docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs --tail=200 "$application_service"
 ```
 
 Finally, sign in and confirm that existing knowledge bases and files are present, files can be opened, and retrieval returns content from previously parsed documents. After these checks pass, the backup and restore are complete.

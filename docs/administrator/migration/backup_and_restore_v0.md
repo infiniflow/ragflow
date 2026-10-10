@@ -1,20 +1,27 @@
 ---
 sidebar_position: 2
-title: Backup and Migration (v0.x)
-sidebar_label: Backup and Migration (v0.x)
+title: Backup and Restore (v0.x)
+sidebar_label: Backup and Restore (v0.x)
 slug: /backup_and_migration_v0
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Backup and Migration (v0.x)
+# Backup and Restore (v0.x)
 
 :::info Version scope
-This document applies to RAGFlow `v0.x` Docker deployments. For `v1.0.0-rc1` and later, see [Backup and Migration (v1.0.0-rc1 and Later)](./backup_and_migration.md).
+This document applies to RAGFlow `v0.x` Docker deployments. For `v1.0.0-rc1` and later, see [Backup and Restore (v1.x)](./backup_and_restore_v1.md).
 :::
 
-Use this guide to move a `v0.x` deployment to another host or create a recovery point before upgrading it. Complete the six steps in order. At the end, you will have a backup of the metadata database, uploaded objects, search index, cache data, and deployment configuration, together with a verified restored deployment.
+:::warning This guide does not upgrade RAGFlow
+This guide creates or restores a same-version recovery point and can move a deployment to another host. To upgrade from `v0.x` to `v1.x`, complete this backup first and then follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md). The upgrade must pass through `v0.27.2` and then `v1.0.0-rc1`; that step is irreversible.
+:::
+
+Choose the steps for your task:
+
+- **Create an upgrade recovery point:** Complete [steps 1–3](#1-find-the-data-to-back-up), verify every archive, and keep the backup unchanged.
+- **Move to another host:** Complete all six steps, including transfer, restore, and verification.
 
 ## 1. Find the data to back up
 
@@ -28,6 +35,15 @@ Next, list the Docker volumes on the host. You will compare this inventory with 
 
 ```bash
 docker volume ls
+```
+
+Display the mounts of every container in the Compose project. The output shows whether each mount is a Docker volume or a host directory, its source, and its location inside the container:
+
+```bash
+project_name=docker
+for container_id in $(docker compose -p "$project_name" -f docker/docker-compose.yml ps -q); do
+  docker inspect "$container_id" --format '{{.Name}}{{range .Mounts}}{{println "" .Type .Source .Name .Destination}}{{end}}'
+done
 ```
 
 If the deployment was started with a project name, include the same `-p` value in every Compose command. The migration script supports `-p` only in `v0.25.x` and later; step 3 provides the safe alternative for earlier releases. For example:
@@ -45,11 +61,13 @@ The project name determines the volume-name prefix. A default project named `doc
 | Redis data | `docker_redis_data` |
 | Elasticsearch index | `docker_esdata01` |
 
-Use these four default volumes as the starting point. Check the mounts of every active container and add the volumes for Infinity, OpenSearch, SereneDB, OceanBase, SeekDB, NATS, or any other enabled service. Back up external MySQL, object storage, and search services with the corresponding provider's procedure.
+Use these four default volumes as the starting point. Add every named volume and persistent host directory shown by the mount check. Back up external MySQL, object storage, and search services with the corresponding provider's procedure.
 
 Also retain `docker/.env`, the configuration template, custom certificates, and custom-mounted files. Protect these files because they can contain credentials.
 
 Before stopping the deployment, run `df -h` and `docker system df`. Make sure the host has enough free space for the volume archives and temporary backup files.
+
+For an offline host, make sure that the `alpine:3.20` image is available before stopping RAGFlow.
 
 ## 2. Stop RAGFlow
 
@@ -69,12 +87,21 @@ The command above stops and removes the containers while preserving their Docker
 
 ## 3. Back up the persistent volumes
 
+Create a timestamped backup directory:
+
+```bash
+backup_dir="backup-ragflow-v0-$(date +%Y%m%d-%H%M%S)"
+mkdir "$backup_dir"
+```
+
+The `date` command adds the current time to the directory name so that files from different backups are not mixed.
+
 The available backup command depends on the source release and its Compose project name:
 
 | Source release | Default Compose project named `docker` | Custom Compose project name |
 |----------------|----------------------------------------|-----------------------------|
-| `v0.20.x` | Use the manual volume procedure below. This release does not contain `docker/migration.sh`. | Use the manual volume procedure below. |
-| `v0.21.x` through `v0.24.x` | The bundled script can back up the four default volumes. | Use the manual volume procedure below. The script in these releases does not support `-p` and always reads `docker_*` volumes. |
+| `v0.20.0` | Use the manual volume procedure below. This release does not contain `docker/migration.sh`. | Use the manual volume procedure below. |
+| `v0.20.1` through `v0.24.x` | The bundled script can back up the four default volumes. | Use the manual volume procedure below. The script in these releases does not support `-p` and always reads `docker_*` volumes. |
 | `v0.25.x` and later `v0.x` | The bundled script can back up the four default volumes. | Pass the project name with `-p`. |
 
 For a supported script-based backup, first display the syntax of the script in the checked-out release:
@@ -86,30 +113,30 @@ bash docker/migration.sh help
 For the default `docker` project, create the four archives in a new backup directory:
 
 ```bash
-bash docker/migration.sh backup my_ragflow_backup
+bash docker/migration.sh backup "$backup_dir"
 ```
 
 On `v0.25.x` or later, a deployment with a custom Compose project name can use:
 
 ```bash
-bash docker/migration.sh -p ragflow backup my_ragflow_backup
+bash docker/migration.sh -p ragflow backup "$backup_dir"
 ```
 
-Do not pass `-p` to the script from `v0.21.x` through `v0.24.x`. For `v0.20.x`, for a custom project on an earlier release, or whenever a recorded volume is not covered by the script, create a new directory and repeat the following commands for **each exact volume name recorded in step 1**:
+Do not pass `-p` to the script from `v0.20.1` through `v0.24.x`. For `v0.20.0`, for a custom project on an earlier release, or whenever a recorded volume is not covered by the script, repeat the following commands for **each exact volume name recorded in step 1**:
 
 ```bash
-mkdir my_ragflow_backup
 volume_name=ragflow_mysql_data
 docker volume inspect "$volume_name" > /dev/null
-docker run --rm -v "$volume_name":/source:ro -v "$PWD/my_ragflow_backup":/backup alpine:3.20 \
+docker run --rm -v "$volume_name":/source:ro -v "$PWD/$backup_dir":/backup alpine:3.20 \
   tar czf "/backup/$volume_name.tar.gz" -C /source .
-tar tzf "my_ragflow_backup/$volume_name.tar.gz" > /dev/null
+tar tzf "$backup_dir/$volume_name.tar.gz" > /dev/null
 ```
 
-Use a new directory for each backup. After all required volumes have been processed, list its contents:
+After all required volumes have been processed, list its contents:
 
 ```bash
-ls -lh my_ragflow_backup
+for archive in "$backup_dir"/*.tar.gz; do tar tzf "$archive" > /dev/null || exit 1; done
+ls -lh "$backup_dir"
 ```
 
 Confirm that every volume recorded in step 1 has a corresponding readable archive. A script-based backup is complete only for a deployment using all four default MySQL, MinIO, Redis, and Elasticsearch volumes. If the deployment uses another document engine, external storage, or additional persistent services, back up those volumes or services now. Keep all of them together as one backup set.
@@ -124,21 +151,27 @@ On the target host, list the transferred directory and confirm that its files an
 
 Install the same RAGFlow release on the target host and place the backup directory in the repository root. Keep all target services stopped.
 
+Set `backup_dir` to the transferred directory name:
+
+```bash
+backup_dir="<backup-directory-name>"
+```
+
 Restore only into target volumes that do not yet exist. Both the bundled script and the manual procedure extract files without removing files already present in a volume. Restoring into a used volume can therefore mix old and restored data.
 
 Use the bundled restore command only when the backup was created by a compatible version of the script and contains all four default archives. For a default `docker` project, run:
 
 ```bash
-bash docker/migration.sh restore my_ragflow_backup
+bash docker/migration.sh restore "$backup_dir"
 ```
 
 On `v0.25.x` or later, a target with a custom Compose project name can use:
 
 ```bash
-bash docker/migration.sh -p ragflow restore my_ragflow_backup
+bash docker/migration.sh -p ragflow restore "$backup_dir"
 ```
 
-Do not use `-p` with the script from `v0.21.x` through `v0.24.x`. Use the following manual procedure for a `v0.20.x` backup, a custom project on an earlier release, a backup whose archive names are the recorded volume names, or a deployment that does not have all four script archives. Repeat it for every saved volume, changing `source_volume` and `target_volume` when the target project uses a different prefix:
+Do not use `-p` with the script from `v0.20.1` through `v0.24.x`. Use the following manual procedure for a `v0.20.0` backup, a custom project on an earlier release, a backup whose archive names are the recorded volume names, or a deployment that does not have all four script archives. Repeat it for every saved volume, changing `source_volume` and `target_volume` when the target project uses a different prefix:
 
 ```bash
 source_volume=ragflow_mysql_data
@@ -147,7 +180,7 @@ if docker volume inspect "$target_volume" > /dev/null 2>&1; then
   echo "Target volume already exists; stop and inspect it: $target_volume"
 else
   docker volume create "$target_volume"
-  docker run --rm -v "$target_volume":/target -v "$PWD/my_ragflow_backup":/backup:ro alpine:3.20 \
+  docker run --rm -v "$target_volume":/target -v "$PWD/$backup_dir":/backup:ro alpine:3.20 \
     tar xzf "/backup/$source_volume.tar.gz" -C /target
 fi
 ```
@@ -182,6 +215,6 @@ Wait until the services report a running or healthy state. Then confirm that:
 - The configured model providers and default models are available.
 - Agents and enabled data-source synchronization still work.
 
-When this backup is part of a version upgrade, first verify the restored source version. Then follow [Upgrade to v1.0.0-rc1](./upgrade_guide.md), starting and validating every intermediate version in the selected route.
+When this backup is part of a version upgrade, first verify the restored source version. Then follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md), starting and validating every intermediate version in the selected route.
 
 After all checks pass, the backup and restore are complete. Keep the application version, Compose files, configuration, database, object data, and search index together so that the same recovery point can be used again when needed.

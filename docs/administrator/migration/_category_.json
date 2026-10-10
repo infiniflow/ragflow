@@ -2,7 +2,7 @@
   "label": "Migration",
   "position": 2,
   "link": {
-    "type": "generated-index",
-    "description": "Guides for upgrading, backing up, restoring, and migrating RAGFlow deployments."
+    "type": "doc",
+    "id": "administrator/migration/migration_overview"
   }
 }

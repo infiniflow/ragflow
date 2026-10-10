@@ -1,25 +1,25 @@
 ---
 sidebar_position: 3
-title: Database Migration for Docker Deployments (v1.0.0-rc1 and Later)
-sidebar_label: Docker Database Migration (v1.0.0-rc1+)
+title: Database Migration for v1.x Docker Deployments
+sidebar_label: Database Migration (v1.x)
 slug: /database_schema_and_migration
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Database Migration for Docker Deployments (v1.0.0-rc1 and Later)
+# Database Migration for v1.x Docker Deployments
 
 :::info Version scope
-This document applies to RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade to v1.0.0-rc1](./upgrade_guide.md).
+This document applies to RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md).
 :::
 
-The standard Docker startup process runs the required database migration before starting the RAGFlow services. Start one application replica first and wait for its migration to finish before starting additional replicas.
+The commands below start one application instance. For a custom multi-replica deployment, reduce it to one application instance before migration and restore the remaining instances only after migration succeeds.
 
 ## Before upgrading
 
 1. Stop document imports, parsing jobs, data-source synchronization, and other processes that can write data.
-2. Back up the metadata database and all other persistent data from the same stopped deployment. Verify that the backup can be restored. See [Backup and Migration (v1.0.0-rc1 and Later)](./backup_and_migration.md).
+2. Back up the metadata database and all other persistent data from the same stopped deployment. Verify that the backup can be restored. See [Backup and Restore (v1.x)](./backup_and_restore_v1.md).
 3. Use the Docker Compose files, environment template, and image shipped with the target release. Copy the required settings from the existing deployment into the new template.
 4. Keep enough free time in the maintenance window for schema changes and data backfills. Large databases can take longer to migrate.
 
@@ -53,19 +53,16 @@ Install the target release files, merge the required settings into its `docker/.
 docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml up -d
 ```
 
-This starts the target release. The container entrypoint runs the required database migration before starting the application. In a deployment with multiple replicas, allow one migration attempt to finish before starting the remaining replicas.
+This starts the target release. The RAGFlow startup process runs the required database migration before starting the application.
 
 ### 4. Monitor the migration
 
-Identify the application service and follow its logs while the deployment starts. The command selects the created CPU or GPU service, including an exited service whose startup failed, instead of assuming a service name:
+Display all service states. Copy the RAGFlow application service name from the `SERVICE` column and set `application_service` to that value:
 
 ```bash
-application_service="$(docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all --services | sed -n '/^ragflow-\(cpu\|gpu\)$/p' | head -n 1)"
-if test -z "$application_service"; then
-  echo "No RAGFlow application service was found"
-else
-  docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f "$application_service"
-fi
+docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml ps --all
+application_service="<application-service-name-shown-above>"
+docker compose -p "$project_name" --env-file docker/.env -f docker/docker-compose.yml logs -f "$application_service"
 ```
 
 Keep the log view open until the migration finishes and the application starts. Press `Ctrl+C` to leave the log view; the containers continue running. Review warnings as well as errors before allowing users, ingestion workers, or synchronization jobs to write data.
