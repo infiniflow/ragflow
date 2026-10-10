@@ -302,7 +302,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// Shared per-run duration tally: every tool invocation is timed and
 	// accumulated here for per-question usage accounting.
 	if in.ToolCallDurations == nil {
-		in.ToolCallDurations = NewDurationAccumulator()
+		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
 	tools := in.Tools
