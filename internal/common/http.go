@@ -24,6 +24,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"slices"
 	"sort"
 	"strconv"
@@ -437,6 +438,36 @@ func allowAnyHost() bool {
 	return AllowAnyHostForTest
 }
 
+// allowedPrivateHosts returns hostnames that the operator explicitly
+// allows to resolve to non-public addresses. Comma-separated list read
+// from RAGFLOW_ALLOWED_PRIVATE_HOSTS.
+func allowedPrivateHosts() map[string]struct{} {
+	raw := strings.TrimSpace(os.Getenv("RAGFLOW_ALLOWED_PRIVATE_HOSTS"))
+	if raw == "" {
+		return nil
+	}
+	hosts := strings.Split(raw, ",")
+	out := make(map[string]struct{}, len(hosts))
+	for _, h := range hosts {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h != "" {
+			out[h] = struct{}{}
+		}
+	}
+	return out
+}
+
+// isAllowedPrivateHost reports whether hostname is in the operator
+// allowlist for non-public addresses.
+func isAllowedPrivateHost(hostname string) bool {
+	hosts := allowedPrivateHosts()
+	if hosts == nil {
+		return false
+	}
+	_, ok := hosts[strings.ToLower(strings.TrimSpace(hostname))]
+	return ok
+}
+
 // AssertURLSchemeSafe is a lenient SSRF guard for drivers that may legitimately
 // target private networks or loopback addresses (e.g. self-hosted Ollama, vLLM,
 // Xinference). It only rejects dangerous schemes and empty hosts; it does not
@@ -494,7 +525,7 @@ var AssertURLSafe = func(rawURL string) (hostname, resolvedIP string, err error)
 		if ip == nil {
 			return "", "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, hostname)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !isAllowedPrivateHost(hostname) && !isGlobalIP(effectiveIP(ip)) {
 			return "", "", fmt.Errorf("URL resolves to a non-public address (%s), which is not allowed", ip.String())
 		}
 		if resolvedIP == "" {
@@ -542,7 +573,7 @@ var AssertHostSafe = func(host string) (resolvedIP string, err error) {
 		if ip == nil {
 			return "", fmt.Errorf("could not parse resolved address '%s' for hostname '%s'", addr, host)
 		}
-		if !allowAny && !isGlobalIP(effectiveIP(ip)) {
+		if !allowAny && !isAllowedPrivateHost(host) && !isGlobalIP(effectiveIP(ip)) {
 			return "", fmt.Errorf("hostname '%s' resolves to a non-public address (%s), which is not allowed", host, ip.String())
 		}
 		if resolvedIP == "" {

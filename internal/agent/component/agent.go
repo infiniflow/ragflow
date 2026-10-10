@@ -1667,13 +1667,35 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 
 	rawParams, _ := item["params"].(map[string]any)
 	toolParams := cloneMap(rawParams)
-	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
-		if toolParams == nil {
-			toolParams = make(map[string]any)
-		}
-		toolParams["function_name"] = strings.TrimSpace(fn)
+	if toolParams == nil {
+		toolParams = make(map[string]any)
 	}
-	return toolName, toolParams, true
+	toolParams["component_name"] = toolName
+
+	// Some Canvas DSLs store function_name/description inside params rather
+	// than as top-level tool object fields.
+	functionName, _ := stringFrom(item, "function_name")
+	functionName = strings.TrimSpace(functionName)
+	if functionName == "" {
+		functionName, _ = stringFrom(toolParams, "function_name")
+		functionName = strings.TrimSpace(functionName)
+	}
+	if functionName == "" {
+		functionName = toolName
+	}
+	toolParams["function_name"] = functionName
+
+	description, _ := stringFrom(item, "description")
+	description = strings.TrimSpace(description)
+	if description == "" {
+		description, _ = stringFrom(toolParams, "description")
+		description = strings.TrimSpace(description)
+	}
+	if description != "" {
+		toolParams["description"] = description
+	}
+
+	return functionName, toolParams, true
 }
 
 func cloneMap(in map[string]any) map[string]any {

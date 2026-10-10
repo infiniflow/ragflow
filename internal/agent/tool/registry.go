@@ -110,12 +110,48 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	}
 	factory, ok := registry[key]
 	if !ok {
-		return nil, fmt.Errorf("agent tool: unsupported tool %q", name)
+		// Canvas DSLs often give each retrieval instance a unique
+		// function_name while keeping the component_name as "Retrieval".
+		// Fall back to the component_name when the agent-visible name is
+		// not itself a registered tool.
+		if params != nil {
+			if componentName, _ := params["component_name"].(string); componentName != "" {
+				canonical := normalizeToolName(componentName)
+				if canonical != "" {
+					factory, ok = registry[canonical]
+					key = canonical
+				}
+			}
+		}
+		if !ok {
+			return nil, fmt.Errorf("agent tool: unsupported tool %q", name)
+		}
 	}
 	if factory == nil {
 		return nil, fmt.Errorf("agent tool: nil factory for %q", name)
 	}
-	return factory(params)
+	// component_name, function_name and description are DSL metadata, not
+	// constructor arguments for most tools. Strip them before handing the
+	// params to the factory; keep function_name/description only for
+	// retrieval so each instance can advertise its DSL-defined name.
+	cleanParams := params
+	if cleanParams != nil {
+		cleanParams = cloneToolParams(cleanParams)
+		delete(cleanParams, "component_name")
+		if key != "retrieval" {
+			delete(cleanParams, "function_name")
+			delete(cleanParams, "description")
+		}
+	}
+	return factory(cleanParams)
+}
+
+func cloneToolParams(in map[string]any) map[string]any {
+	out := make(map[string]any, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
 }
 
 // BuildAll resolves a list of tool names into Eino BaseTool instances.
@@ -410,6 +446,13 @@ func buildRetrievalTool(params map[string]any) (einotool.BaseTool, error) {
 		default:
 			return nil, fmt.Errorf("agent tool: retrieval tool does not accept node-level param %s", key)
 		}
+	}
+
+	if v, ok := stringParam(params, "function_name"); ok {
+		defaults.FunctionName = v
+	}
+	if v, ok := stringParam(params, "description"); ok {
+		defaults.Description = v
 	}
 
 	if ids, ok, err := stringSliceParam(params, "dataset_ids"); err != nil {
