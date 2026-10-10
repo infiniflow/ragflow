@@ -93,13 +93,8 @@
 - 2026-08-19 Представлена Knowledge Compilation для создания Wiki, Graph, Tree, PageIndex, Mind Map, Timeline и Skills на уровне документов и наборов данных.
 - 2026-08-19 Представлен Agentic RAG с режимами рассуждения Low, Medium, High и Ultra.
 - 2026-07-02 Добавлены источник данных Google BigQuery и инкрементальная синхронизация.
-- 2026-06-29 Добавлены каналы чата WhatsApp, DingTalk и WeCom.
-- 2026-05-26 Добавлен компонент Browser для просмотра и взаимодействия агентов с веб-страницами.
-- 2026-04-21 Добавлены семь встроенных шаблонов конвейеров ingest данных.
-- 2026-04-21 Добавлены публикация приложений Agent, выполнение кода в sandbox и генерация диаграмм.
-- 2026-04-21 Добавлены хранение и поиск пользовательской памяти.
 
-Другие обновления см. в [полных примечаниях к выпускам](./docs/release_notes.md).
+Другие обновления см. в [полных примечаниях к выпускам](https://ragflow.io/docs/dev/release_notes).
 
 ## 🎉 Следите за обновлениями
 
@@ -155,15 +150,14 @@
 
 ## 🎬 Самостоятельное развёртывание
 
+Локальное развёртывание поддерживает Docker и запуск из исходников. Docker подходит для быстрой оценки, интеграционного тестирования и production, а запуск из исходников — для разработки и отладки RAGFlow. Для Docker компилятор Go не требуется; для запуска из исходников нужна версия Go из `go.mod`, а для разработки frontend также нужны Node.js и npm.
+
 ### 🐳 Развёртывание с Docker
 
 #### 📝 Требования к развёртыванию с Docker
 
 - Рекомендуемая начальная конфигурация: 4 ядра CPU, 16 ГБ RAM и 50 ГБ свободного места на диске. Фактические требования зависят от движка документов, объёма данных, задач анализа и параллельной нагрузки. Для локальных моделей и других дополнительных компонентов могут потребоваться дополнительные ресурсы.
 - Docker ≥ 24.0.0 и Docker Compose ≥ v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/) — требуется только для Self-Managed контейнерной Sandbox.
-
-Для Docker-развёртывания не требуется устанавливать Go на хост. Для Self-Managed контейнерной Sandbox необходимо установить и настроить gVisor; другим провайдерам Sandbox gVisor на хосте RAGFlow не требуется.
 
 > [!TIP]
 > Если Docker ещё не установлен (Windows, Mac или Linux), см. [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -236,7 +230,7 @@
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Ответ HTTP 200 означает готовность. Если вы изменили `SVR_WEB_HTTP_PORT`, используйте этот порт в URL проверки. Если запуск завершился ошибкой, проверьте журналы соответствующего сервиса командой `docker logs --tail 50 <service>`.
+   Ответ HTTP 200 означает готовность. Если вы изменили `SVR_WEB_HTTP_PORT`, используйте этот порт. При ошибке проверьте журналы командой `docker logs --tail 50 ragflow-cpu`.
 
 5. Откройте в браузере IP-адрес сервера и войдите в RAGFlow.
 
@@ -247,6 +241,8 @@
    > Подробнее: [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
 
    _Готово!_
+
+Подробнее см. в [кратком руководстве](./docs/quickstart.mdx).
 
 #### ⚙️ Настройка Docker
 
@@ -281,7 +277,7 @@
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    Сервисы Go, запущенные из исходного кода, подключаются к Kvrocks через `localhost:6379`; предоставленная конфигурация не требует изменения `/etc/hosts`.
@@ -291,10 +287,10 @@
 
    ```bash
    ./bin/ragflow_server --migrate
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --admin
+   ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --api
    ```
 
    Режимы запуска работают следующим образом:
@@ -305,13 +301,11 @@
    - `--syncer`: запускает сервис Syncer для синхронизации данных.
    - `--api`: запускает API для веб-интерфейса, SDK и внешних клиентов.
 
-   `RAGFLOW_DEV_MODE=true` предназначен только для разработки. Он отключает проверку отката между версиями кода и миграций базы данных, но не запускает миграции и не изменяет схему. Не используйте его в production. Запускайте Admin раньше остальных сервисов. После миграции `RAGFLOW_DEV_MODE=true bash build.sh --run` запускает Admin, Ingestor и API, но не Syncer; для полной цепочки отдельно выполните `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
 5. Только для разработки фронтенда установите Node.js и npm, затем запустите React-фронтенд:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    В другом терминале проверьте готовность Go API:
@@ -320,7 +314,7 @@
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   Ответ HTTP 200 означает, что API отвечает. После разработки нажмите `Ctrl+C` в каждом терминале сервиса. Чтобы остановить зависимости, сохранив контейнеры, выполните `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Чтобы удалить контейнеры зависимостей и сеть Compose, сохранив именованные тома, выполните `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+   Ответ HTTP 200 означает, что API отвечает.
 
 Подробнее см. [Запуск сервиса из исходников](./docs/develop/launch_ragflow_from_source.md).
 

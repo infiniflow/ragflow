@@ -75,13 +75,8 @@
 - 2026-08-19 Knowledge Compilation을 도입했습니다. 문서 및 데이터셋 수준에서 Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, Skills를 생성할 수 있습니다.
 - 2026-08-19 Low, Medium, High, Ultra 사고 모드를 지원하는 Agentic RAG를 도입했습니다.
 - 2026-07-02 Google BigQuery 데이터 소스 수집 및 증분 동기화를 추가했습니다.
-- 2026-06-29 WhatsApp, DingTalk, WeCom 채팅 채널을 추가했습니다.
-- 2026-05-26 Agent가 웹 페이지를 탐색하고 조작할 수 있는 Browser 구성 요소를 추가했습니다.
-- 2026-04-21 기본 제공 데이터 수집 파이프라인 템플릿 7종을 추가했습니다.
-- 2026-04-21 Agent 애플리케이션 게시, Sandbox 코드 실행, 차트 생성을 추가했습니다.
-- 2026-04-21 사용자 수준 메모리 저장 및 검색을 추가했습니다.
 
-자세한 내용은 [전체 릴리스 노트](./docs/release_notes.md)를 참조하세요.
+자세한 내용은 [전체 릴리스 노트](https://ragflow.io/docs/dev/release_notes)를 참조하세요.
 
 
 ## 🎉 계속 지켜봐 주세요
@@ -138,15 +133,14 @@
 
 ## 🎬 자체 호스팅
 
+로컬 배포는 Docker 배포와 소스 코드 실행을 지원합니다. Docker는 빠른 평가, 통합 테스트 및 프로덕션 배포에 적합하며, 소스 실행은 RAGFlow 개발과 디버깅에 적합합니다. Docker 배포에는 Go 컴파일러가 필요하지 않습니다. 소스 실행에는 `go.mod`에 지정된 Go 버전이 필요하며 프런트엔드 개발에는 Node.js와 npm도 필요합니다.
+
 ### 🐳 Docker 배포
 
 #### 📝 Docker 배포 사전 요구 사항
 
 - 권장 시작 구성: CPU 4코어, RAM 16 GB, 사용 가능한 디스크 공간 50 GB. 실제 요구 사항은 문서 엔진, 데이터 양, 파싱 작업, 동시 실행 수에 따라 달라집니다. 로컬 모델과 기타 선택적 구성 요소에는 추가 리소스가 필요할 수 있습니다.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-Managed 컨테이너 Sandbox를 사용하는 경우에만 필요합니다.
-
-Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Managed 컨테이너 Sandbox는 gVisor 설치와 설정이 필요하지만, 다른 Sandbox 공급자는 RAGFlow 호스트에 gVisor를 설치할 필요가 없습니다.
 
 > [!TIP]
 > 로컬 머신(Windows, Mac, Linux)에 Docker가 설치되지 않은 경우, [Docker 엔진 설치](https://docs.docker.com/engine/install/)를 참조하세요.
@@ -222,7 +216,7 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   HTTP 200 응답은 준비가 완료되었음을 의미합니다. `SVR_WEB_HTTP_PORT`를 변경했다면 상태 확인 URL에 해당 포트를 사용하세요. 시작에 실패하면 `docker logs --tail 50 <service>`로 관련 서비스 로그를 확인하세요.
+   HTTP 200 응답은 준비가 완료되었음을 의미합니다. `SVR_WEB_HTTP_PORT`를 변경했다면 해당 포트를 사용하세요. 시작에 실패하면 `docker logs --tail 50 ragflow-cpu`로 로그를 확인하세요.
 
 5. 웹 브라우저에 서버의 IP 주소를 입력하고 RAGFlow에 로그인하세요.
    > 기본 설정을 사용할 경우, `http://IP_OF_YOUR_MACHINE`만 입력하면 됩니다 (포트 번호는 제외). 기본 HTTP 서비스 포트 `80`은 기본 구성으로 사용할 때 생략할 수 있습니다.
@@ -231,6 +225,8 @@ Docker 배포에는 호스트에 Go를 설치할 필요가 없습니다. Self-Ma
    > 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
    _이제 쇼가 시작됩니다!_
+
+자세한 내용은 [빠른 시작 가이드](./docs/quickstart.mdx)를 참조하세요.
 
 #### ⚙️ Docker 구성 및 조정
 
@@ -265,7 +261,7 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    소스에서 실행하는 Go 서비스는 `localhost:6379`로 Kvrocks에 연결하므로 제공된 구성에서는 `/etc/hosts`를 수정할 필요가 없습니다.
@@ -275,10 +271,10 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
 
    ```bash
    ./bin/ragflow_server --migrate
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --admin
+   ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --api
    ```
 
    시작 모드의 역할은 다음과 같습니다:
@@ -289,13 +285,11 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    - `--syncer`: 데이터 동기화 작업을 위한 Syncer 서비스를 시작합니다.
    - `--api`: Web UI, SDK 및 외부 클라이언트를 위한 API 서비스를 시작합니다.
 
-   `RAGFLOW_DEV_MODE=true`는 개발 전용입니다. 코드 버전과 데이터베이스 마이그레이션 버전 사이의 다운그레이드 검사를 비활성화하지만 마이그레이션을 실행하거나 스키마를 변경하지 않습니다. 프로덕션에서는 설정하지 마세요. Admin을 다른 서비스보다 먼저 시작하세요. 마이그레이션 후 `RAGFLOW_DEV_MODE=true bash build.sh --run`은 Admin, Ingestor, API를 시작하지만 Syncer는 시작하지 않습니다. 전체 서비스 체인에는 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`를 별도로 실행하세요.
 5. 프론트엔드를 개발할 때만 Node.js와 npm을 설치한 다음 React 프론트엔드를 시작합니다:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    다른 터미널에서 Go API가 준비되었는지 확인합니다:
@@ -304,7 +298,7 @@ Go Docker 배포는 `docker/.env`와 `docker/docker-compose.yml`을 사용하며
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   HTTP 200 응답은 API가 정상적으로 응답함을 의미합니다. 개발이 끝나면 각 서비스 터미널에서 `Ctrl+C`를 누릅니다. 컨테이너를 유지한 채 의존 서비스를 중지하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`를 실행합니다. 명명된 볼륨을 유지하면서 의존 컨테이너와 Compose 네트워크를 삭제하려면 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`을 실행합니다.
+   HTTP 200 응답은 API가 정상적으로 응답함을 의미합니다.
 
 자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 

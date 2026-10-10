@@ -93,13 +93,8 @@
 - 2026-08-19 إطلاق Knowledge Compilation لإنشاء Wiki وGraph وTree وPageIndex وMind Map وTimeline وSkills على مستوى المستند ومجموعة البيانات.
 - 2026-08-19 إطلاق Agentic RAG مع أوضاع التفكير Low وMedium وHigh وUltra.
 - 2026-07-02 إضافة استيعاب مصادر بيانات Google BigQuery والمزامنة التدريجية.
-- 2026-06-29 إضافة قنوات دردشة WhatsApp وDingTalk وWeCom.
-- 2026-05-26 إضافة مكوّن Browser لتمكين Agents من تصفح صفحات الويب والتفاعل معها.
-- 2026-04-21 إضافة سبعة قوالب مضمّنة لخطوط استيعاب البيانات.
-- 2026-04-21 إضافة نشر تطبيقات Agent وتنفيذ التعليمات البرمجية في Sandbox وإنشاء المخططات.
-- 2026-04-21 إضافة تخزين الذاكرة واسترجاعها على مستوى المستخدم.
 
-راجع [ملاحظات الإصدار الكاملة](./docs/release_notes.md) لمزيد من التحديثات.
+راجع [ملاحظات الإصدار الكاملة](https://ragflow.io/docs/dev/release_notes) لمزيد من التحديثات.
 
 ## 🎉 تابعونا
 
@@ -157,15 +152,14 @@
 
 ## 🎬 الاستضافة الذاتية
 
+يدعم النشر المحلي النشر باستخدام Docker والتشغيل من المصدر. يناسب Docker التقييم السريع واختبارات التكامل والإنتاج، بينما يناسب التشغيل من المصدر تطوير RAGFlow وتصحيح أخطائه. لا يتطلب Docker مترجم Go، بينما يتطلب التشغيل من المصدر إصدار Go المحدد في `go.mod`، ويتطلب تطوير الواجهة الأمامية Node.js وnpm.
+
 ### 🐳 نشر Docker
 
 #### 📝 متطلبات نشر Docker
 
 - التكوين الابتدائي الموصى به: 4 أنوية CPU وذاكرة RAM بسعة 16 GB ومساحة قرص متاحة تبلغ 50 GB. تختلف المتطلبات الفعلية حسب محرك المستندات وحجم البيانات ومهام التحليل والتزامن؛ وقد تتطلب النماذج المحلية والمكونات الاختيارية الأخرى موارد إضافية.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): مطلوب فقط عند استخدام Sandbox للحاويات Self-Managed.
-
-لا يتطلب نشر Docker تثبيت Go على المضيف. يتطلب Self-Managed container Sandbox تثبيت gVisor وإعداده؛ أما موفرو Sandbox الآخرون فلا يتطلبون تثبيت gVisor على مضيف RAGFlow.
 
 > [!TIP]
 > إذا لم تقم بتثبيت Docker على جهازك المحلي (Windows أو Mac أو Linux)، راجع [تثبيت Docker Engine](https://docs.docker.com/engine/install/).
@@ -241,7 +235,7 @@
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   تشير استجابة HTTP 200 إلى الجاهزية. إذا غيّرت `SVR_WEB_HTTP_PORT`، فاستخدم ذلك المنفذ في عنوان URL لفحص الصحة. إذا فشل بدء التشغيل، فافحص سجلات الخدمة المعنية باستخدام `docker logs --tail 50 <service>`.
+   تشير استجابة HTTP 200 إلى الجاهزية. إذا غيّرت `SVR_WEB_HTTP_PORT`، فاستخدم ذلك المنفذ في عنوان URL لفحص الصحة. إذا فشل بدء التشغيل، فافحص السجلات باستخدام `docker logs --tail 50 ragflow-cpu`.
 
 5. في متصفح الويب الخاص بك، أدخل عنوان IP الخاص بالخادم الخاص بك وقم بتسجيل الدخول إلى RAGFlow.
 
@@ -254,6 +248,8 @@
    >
 
    _العرض بدأ!_
+
+راجع [دليل البدء السريع](./docs/quickstart.mdx) لمزيد من التفاصيل.
 
 #### ⚙️ إعداد Docker وتعديله
 
@@ -286,7 +282,7 @@
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    تتصل خدمات Go التي تعمل من المصدر بـ Kvrocks عبر `localhost:6379`، ولا يتطلب التكوين المرفق تعديل `/etc/hosts`.
@@ -298,19 +294,19 @@
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ./bin/ragflow_server --admin
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --ingestor
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --syncer
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --api
    ```
 
    تعمل أوضاع التشغيل كما يلي:
@@ -321,13 +317,11 @@
    - `--syncer`: يشغّل خدمة Syncer لمهام مزامنة البيانات.
    - `--api`: يشغّل خدمة API لواجهة الويب وSDK والعملاء الخارجيين.
 
-   يُستخدم `RAGFLOW_DEV_MODE=true` للتطوير فقط؛ فهو يعطّل فحص الرجوع بين إصدار الكود وإصدار ترحيل قاعدة البيانات، ولا ينفذ الترحيلات أو يغير المخطط. لا تستخدمه في الإنتاج. شغّل Admin قبل الخدمات الأخرى. بعد الترحيل، يشغّل `RAGFLOW_DEV_MODE=true bash build.sh --run` خدمات Admin وIngestor وAPI، لكنه لا يشغّل Syncer؛ شغّل Syncer منفصلًا باستخدام `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` لتشغيل سلسلة الخدمات كاملة.
 5. ثبّت Node.js وnpm وشغّل واجهة React فقط عند تطوير الواجهة الأمامية:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    تحقق من جاهزية Go API من نافذة طرفية أخرى:
@@ -336,7 +330,7 @@
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   تعني استجابة HTTP 200 أن API يستجيب. عند انتهاء التطوير، اضغط `Ctrl+C` في كل نافذة خدمة. لإيقاف الخدمات التابعة مع الاحتفاظ بالحاويات، شغّل `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. ولإزالة حاويات الخدمات التابعة وشبكة Compose مع الاحتفاظ بوحدات التخزين المسماة، شغّل `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+   تعني استجابة HTTP 200 أن API يستجيب.
 
 راجع [تشغيل الخدمة من المصدر](./docs/develop/launch_ragflow_from_source.md) لمزيد من التفاصيل.
 

@@ -90,7 +90,7 @@ For local deployment, see [Local Deployment](#-local-deployment).
 - 2026-08-19 Introduced Agentic RAG with Low, Medium, High, and Ultra thinking modes.
 - 2026-07-02 Added Google BigQuery data source ingestion and incremental synchronization.
 
-See the [full release notes](./docs/release_notes.md) for more updates.
+See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more updates.
 
 ## 🎉 Stay Tuned
 
@@ -133,7 +133,7 @@ releases! 🌟
 
 ### 🍔 **Compatibility with heterogeneous data sources**
 
-- Supports Word, Slides, Excel, TXT, images, scanned copies, structured data, web pages, and more.
+- Supports Word documents, PowerPoint presentations, Excel spreadsheets, TXT files, images, PDFs, scanned copies, structured data, web pages, and more.
 
 ### 🛀 **Automated and effortless RAG workflow**
 
@@ -150,15 +150,14 @@ releases! 🌟
 
 ## 🏠 Local Deployment
 
+Local deployment supports both Docker deployment and launching from source. Docker is suitable for quick evaluation, integration testing, and production deployment, while launching from source is intended for RAGFlow development and debugging. Docker deployment does not require a Go compiler. Launching from source requires the Go version specified in `go.mod`; frontend development additionally requires Node.js and npm.
+
 ### 🐳 Docker Deployment
 
 #### 📝 Docker Deployment Prerequisites
 
 - Recommended starting configuration: 4 CPU cores, 16 GB RAM, and 50 GB of available disk space. Actual requirements depend on the document engine, data volume, parsing tasks, and concurrency. Local models and other optional components may require additional resources.
-- Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Required only when using the Self-Managed container Sandbox.
-
-Docker deployment does not require Go compiler on the host. Self-Managed container Sandbox requires gVisor; other Sandbox providers do not require gVisor on the RAGFlow host.
+- Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
 
 > [!TIP]
 > If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -191,37 +190,45 @@ Docker deployment does not require Go compiler on the host. Self-Managed contain
    ```bash
    git clone https://github.com/infiniflow/ragflow.git
    ```
-3. Check out the Go release tag and start the prebuilt Go image with Docker Compose:
+3. Check out the release tag and start the server with Docker Compose:
 
-    > [!NOTE]
-    > The `v1.0.0-rc1` tag and later release tags use the Go implementation. See the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx) only if you need to build an image locally.
+   Enter the Docker deployment directory.
 
-   > ```bash
-   > # Enter the Docker deployment directory.
-   > cd ragflow/docker
-   > # Check out the Go v1.0.0-rc1 release tag.
-   > git checkout v1.0.0-rc1
-   > # Start the Go services and their dependencies in the background.
-   > docker compose -f docker-compose.yml up -d
-   > ```
+   ```bash
+   cd ragflow/docker
+   ```
 
-   > In the default MySQL configuration, the Go image entrypoint runs database migrations before starting Syncer, Admin, API, and Ingestor through `bin/ragflow_server`.
+   Check out the `v1.0.0-rc1` release tag.
+
+   ```bash
+   git checkout v1.0.0-rc1
+   ```
+
+   Start the RAGFlow services and their dependencies.
+
+   ```bash
+   docker compose -f docker-compose.yml up -d
+   ```
+
+   With the default MySQL configuration, the image entrypoint runs database migrations before starting Admin, Syncer, Ingestor, API, and other services.
 
    > In the RAGFlow open-source 1.0 release, DeepDoc uses CPU inference for layout analysis, OCR, and table recognition.
 
-4. Check service status and API readiness after startup:
+4. Check the server status after startup:
 
-   ```bash
-   docker ps
-   ```
-
-   The command above displays dependency status. RAGFlow itself does not define a Compose healthcheck; confirm readiness through its API:
+   Use `docker ps` to check the dependency services. After the dependencies show `healthy` and the RAGFlow container remains running, use the HTTP endpoint to determine whether RAGFlow is ready. The RAGFlow container itself does not define a Compose healthcheck.
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   An HTTP 200 response indicates readiness. If you changed `SVR_WEB_HTTP_PORT`, use that port in the health-check URL. If startup fails, inspect the relevant service logs with `docker logs --tail 50 <service>`.
+   After receiving an HTTP 200 response, open the Web UI. If you changed `SVR_WEB_HTTP_PORT`, replace the port in the health-check URL accordingly.
+
+   If startup fails, inspect the container logs:
+
+   ```bash
+   docker logs --tail 50 ragflow-cpu
+   ```
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
    > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
@@ -229,17 +236,21 @@ Docker deployment does not require Go compiler on the host. Self-Managed contain
    >
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 
+   > For details, see [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
+
+   _The show is on!_
+
+See the [Quickstart guide](./docs/quickstart.mdx) for details.
+
 #### ⚙️ Docker Configuration and Adjustment
 
-Go Docker deployment uses `docker/.env` and `docker/docker-compose.yml`, uses Kvrocks for cache and Checkpoint storage, and uses NATS JetStream as the message queue. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). macOS is temporarily not supported by the Go backend (use a Linux x86_64 host); for platform support details, see the [Go Docker image build guide](./docs/develop/build_docker_image.mdx).
+Docker deployment uses `docker/.env` and `docker/docker-compose.yml`. Configure the image, ports, passwords, document engine, and model image source as described in the [Docker configuration guide](./docker/README.md). For platform support (note that macOS is not currently supported), see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx). To build the Docker image from source, see the [Go Docker image build and platform support guide](./docs/develop/build_docker_image.mdx).
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 
 ### 🔨 Launch Go Services from Source
 
 #### 📝 Source Build Prerequisites
-
-Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 development files, and the native libraries required by CGO. Node.js and npm are required only when developing the React frontend.
 
 1. Clone the repository and install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 20, CMake ≥ 4.0, and PCRE2 development files. Go services depend on CGO and native static libraries; [build.sh](./build.sh) sets the required build parameters.
 
@@ -248,55 +259,60 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
    cd ragflow
    ```
 
-2. Prepare native libraries, model files, and tokenizer assets with the [Go dependency download script](./ragflow_deps/download_deps.py), then build the Go services:
+2. Run the [dependency download script](./ragflow_deps/download_deps.py) to download the static libraries and model files:
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   bash build.sh --all
+   ./build.sh --all
    ```
 
    The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
-3. Start the local dependencies and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. Go source services connect to Compose-exposed Kvrocks at `localhost:6379`, while Go Docker services connect to Kvrocks on the container network. If using the default Elasticsearch engine, set `vm.max_map_count` on the Docker host to at least `262144` first.
+3. Build the services:
+
+   ```bash
+   ./build.sh --all
+   ```
+
+4. Start the local dependency services and make sure the hosts and ports in **conf/service_conf.yaml** point to addresses accessible from the host. If using Elasticsearch, first set `vm.max_map_count` on the Docker host to at least `262144`.
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144
-   docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+   docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-4. Migrate the database first, then start the Go services in order in five separate terminals. Run each command below from the repository root. Keep the four service terminals running. The migration command does not need `RAGFLOW_DEV_MODE`; set `RAGFLOW_DEV_MODE=true` for Admin, Ingestor, Syncer, and API in a development environment. Close the migration terminal after the migration completes.
-
-   Terminal 1: migrate the database.
+5. Migrate the database:
 
    ```bash
    ./bin/ragflow_server --migrate
    ```
 
-   Terminal 2: start Admin (target port `9381`).
+6. Start the four services in four separate terminals:
+
+   Terminal 1: start Admin on port `9381`.
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ./bin/ragflow_server --admin
    ```
 
-   Terminal 3: start Ingestor.
+   Terminal 2: start Ingestor.
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --ingestor
    ```
 
-   Terminal 4: start Syncer.
+   Terminal 3: start Syncer.
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --syncer
    ```
 
-   Terminal 5: start API (target port `9380`).
+   Terminal 4: start API on port `9380`.
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --api
    ```
 
    The startup modes work as follows:
@@ -307,25 +323,20 @@ Install the Go version specified in `go.mod` (currently Go 1.27), Clang 20, LLD 
    - `--syncer`: Starts the Syncer service for data synchronization tasks.
    - `--api`: Starts the API service for the Web UI, SDKs, and external clients.
 
-   `RAGFLOW_DEV_MODE=true` is only for development; it disables the downgrade check between code and database migration versions, but does not run migrations or change the database schema. Do not set it in production. Start Admin before the other services. After database migration, `RAGFLOW_DEV_MODE=true bash build.sh --run` can conveniently start Admin, Ingestor, and API. It does not start Syncer; start it separately with `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` for the complete service chain.
-
-5. Only when developing the frontend, install Node.js and npm, then start the React frontend:
+7. Only when developing the frontend, install Node.js and npm, then start the React frontend:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
-   In another terminal, confirm that the Go API is ready:
+   After the services start, confirm that the API is ready:
 
    ```bash
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   An HTTP 200 response indicates that the API is responding. See [Launch Service from Source](./docs/develop/launch_ragflow_from_source.md#5-verify-the-startup) for complete frontend, ClickHouse, and DeepDoc verification steps.
-
-   When development is complete, press `Ctrl+C` in each service terminal to stop the processes. To stop dependencies but keep the containers for next time, run `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. To remove the dependency containers and Compose network while keeping named data volumes, run `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+   An HTTP 200 response indicates that the API is responding. See [Launch Service from Source](./docs/develop/launch_ragflow_from_source.md#5-verify-the-startup) for complete frontend and DeepDoc verification steps.
 
 See [Launch Service from Source](./docs/develop/launch_ragflow_from_source.md) for details.
 
@@ -341,7 +352,7 @@ See [Launch Service from Source](./docs/develop/launch_ragflow_from_source.md) f
 
 ## 📜 Roadmap
 
-See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241)
+See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241).
 
 ## 🏄 Community
 
