@@ -716,6 +716,9 @@ func (s *ChatPipelineService) AsyncChat(
 			"doc_aggs": []interface{}{},
 		}
 		var knowledges []string
+		// vectorRetrieved records that standard vector retrieval returned chunks,
+		// as opposed to web search or knowledge graph chunks added afterwards.
+		vectorRetrieved := false
 		rerankCandidatesCount := int(chat.RerankCandidatesCount)
 		if rerankCandidatesCount <= 0 {
 			rerankCandidatesCount = 64
@@ -959,6 +962,7 @@ func (s *ChatPipelineService) AsyncChat(
 								"chunks":   result.Chunks,
 								"doc_aggs": docAggs,
 							}
+							vectorRetrieved = len(result.Chunks) > 0
 						}
 					}
 					if err != nil {
@@ -1299,10 +1303,10 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		// The notice describes a vector-search answer, so it is only added when
-		// retrieval ran and produced knowledge. An LLM-only answer (no knowledge
-		// parameter) or the empty_response fallback (no knowledge) is left as is.
+		// vector retrieval returned chunks. LLM-only answers, the empty_response
+		// fallback and web-search-only answers are left as is.
 		var sqlNoticeKBs []string
-		if hasKnowledgeParam && len(knowledges) > 0 {
+		if vectorRetrieved && len(knowledges) > 0 {
 			sqlNoticeKBs = sqlUnavailableKBs
 		}
 
