@@ -1154,7 +1154,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	// index update and dropped from storage only after it, so a failed update
 	// never leaves the index pointing at a deleted image.
 	removeImageAfterUpdate := false
-	if req.ImageUpdateMode != nil || req.ImageBase64 != nil {
+	priorImageMeta := snapshotChunkImageMetadata(existing)
+	if req.TouchChunkImageFields || req.ImageUpdateMode != nil || req.ImageBase64 != nil {
 		imageMode, err := parseImageUpdateMode(req.ImageUpdateMode)
 		if err != nil {
 			return updateChunkError{code: common.CodeDataError, message: err.Error()}
@@ -1208,6 +1209,9 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 			common.Error("failed to remove chunk image", err,
 				zap.String("dataset_id", req.DatasetID),
 				zap.String("chunk_id", req.ChunkID))
+			if restoreErr := s.restoreChunkImageMetadata(ctx, req, indexName, priorImageMeta); restoreErr != nil {
+				return fmt.Errorf("failed to remove chunk image: %w (failed to restore chunk image metadata: %v)", err, restoreErr)
+			}
 			return updateChunkError{code: common.CodeDataError, message: "Failed to remove chunk image"}
 		}
 	}
@@ -1567,6 +1571,41 @@ func parseImageUpdateMode(raw *string) (string, error) {
 	default:
 		return "", fmt.Errorf("`image_update_mode` must be one of: append, replace, remove")
 	}
+}
+
+type chunkImageMetadataSnapshot struct {
+	imgID      string
+	docTypeKwd string
+}
+
+func snapshotChunkImageMetadata(existing map[string]interface{}) chunkImageMetadataSnapshot {
+	snap := chunkImageMetadataSnapshot{docTypeKwd: "text"}
+	if v, ok := existing["img_id"].(string); ok {
+		snap.imgID = v
+	}
+	if v, ok := existing["doc_type_kwd"].(string); ok && strings.TrimSpace(v) != "" {
+		snap.docTypeKwd = v
+	}
+	return snap
+}
+
+func (s *ChunkService) restoreChunkImageMetadata(ctx context.Context, req *service.UpdateChunkRequest, indexName string, snap chunkImageMetadataSnapshot) error {
+	// The removal path already wrote empty img_id / text. Skip a no-op
+	// rollback so a later storage failure still matches the Python
+	// "index committed, object is an orphan" contract.
+	if strings.TrimSpace(snap.imgID) == "" && (snap.docTypeKwd == "" || snap.docTypeKwd == "text") {
+		return nil
+	}
+	rollback := map[string]interface{}{
+		"id":           req.ChunkID,
+		"img_id":       snap.imgID,
+		"doc_type_kwd": snap.docTypeKwd,
+	}
+	condition := map[string]interface{}{
+		"id":     req.ChunkID,
+		"doc_id": req.DocumentID,
+	}
+	return s.docEngine.UpdateChunks(ctx, condition, rollback, indexName, req.DatasetID)
 }
 
 func mergeChunkEmbeddings(a, b []float64) ([]float64, error) {
