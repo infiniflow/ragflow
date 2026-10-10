@@ -371,17 +371,23 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
+          # Build-slot lock: MUST be on HOST-LOCAL (non-NFS) storage shared by
+          # every runner container on the SAME host. A lock on the shared NFS can
+          # be orphaned when a runner crashes (NLM lease recovery), and being on
+          # NFS also makes it a fleet-wide lock. Per-host keeps a stuck build
+          # from blocking builds on other hosts.
+          BUILD_LOCK_DIR=${BUILD_LOCK_DIR:-/var/run/ragflow-ci}
+          BUILD_LOCK_FILE=${BUILD_LOCK_DIR}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
           # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           (
-            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -898,17 +904,23 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
+          # Build-slot lock: MUST be on HOST-LOCAL (non-NFS) storage shared by
+          # every runner container on the SAME host. A lock on the shared NFS can
+          # be orphaned when a runner crashes (NLM lease recovery), and being on
+          # NFS also makes it a fleet-wide lock. Per-host keeps a stuck build
+          # from blocking builds on other hosts.
+          BUILD_LOCK_DIR=${BUILD_LOCK_DIR:-/var/run/ragflow-ci}
+          BUILD_LOCK_FILE=${BUILD_LOCK_DIR}/docker-build.lock
           mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
           # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           (
-            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
