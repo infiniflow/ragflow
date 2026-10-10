@@ -1353,8 +1353,8 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     second_delete_res = rest_client.delete("/datasets", json=repeated_delete_payload)
     assert second_delete_res.status_code == 200
     second_delete_payload = second_delete_res.json()
-    assert second_delete_payload["code"] == 102, second_delete_payload
-    assert "lacks permission for dataset" in second_delete_payload["message"], second_delete_payload
+    assert second_delete_payload["code"] == 403, second_delete_payload
+    assert second_delete_payload["message"] == "Permission denied", second_delete_payload
 
     unsupported_field_res = rest_client.delete("/datasets", json={"unknown_field": "unknown_field"})
     assert unsupported_field_res.status_code == 200
