@@ -1048,6 +1048,129 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	}
 }
 
+func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	now := time.Now()
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "version-old",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("owner_Test Agent_old"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to create old version: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "version-newest",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("owner_Test Agent_newest"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.UnixMilli()),
+			UpdateTime: ptr(now.UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to create newest version: %v", err)
+	}
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	session, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+		Name:    "hello",
+	})
+	if err != nil {
+		t.Fatalf("CreateAgentSession failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if session.VersionTitle == nil {
+		t.Fatal("expected version_title to be set")
+	}
+	if *session.VersionTitle != "owner_Test Agent_newest" {
+		t.Fatalf("expected newest version title, got %q", *session.VersionTitle)
+	}
+
+	stored, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(ctx, dao.DB, session.ID, "canvas-1")
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if stored == nil || stored.VersionTitle == nil {
+		t.Fatalf("expected persisted version_title, got %+v", stored)
+	}
+	if *stored.VersionTitle != "owner_Test Agent_newest" {
+		t.Fatalf("expected persisted newest title, got %q", *stored.VersionTitle)
+	}
+
+	// The list surface used by the agent log page must expose it too.
+	resp, code, err := svc.ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListAgentSessions failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(resp.Data))
+	}
+	listed, _ := resp.Data[0]["version_title"].(*string)
+	if listed == nil || *listed != "owner_Test Agent_newest" {
+		t.Fatalf("expected list version_title newest, got %v", resp.Data[0]["version_title"])
+	}
+}
+
+func TestCreateAgentSessionNoVersionLeavesTitleNil(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	ctx := t.Context()
+	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateAgentSession failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if session.VersionTitle != nil {
+		t.Fatalf("expected nil version_title, got %q", *session.VersionTitle)
+	}
+}
+
+func TestCreateAgentSessionVersionLookupErrorReturnsServerError(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	if err := dao.DB.Exec("DROP TABLE user_canvas_version").Error; err != nil {
+		t.Fatalf("failed to drop user_canvas_version: %v", err)
+	}
+
+	ctx := t.Context()
+	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+	})
+	if err == nil {
+		t.Fatal("expected version lookup error")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("expected code %d, got %d", common.CodeServerError, code)
+	}
+	if session != nil {
+		t.Fatalf("expected nil session, got %+v", session)
+	}
+}
+
 func TestGetAgentSessionServiceNotFoundWhenSessionBelongsToAnotherAgent(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 
