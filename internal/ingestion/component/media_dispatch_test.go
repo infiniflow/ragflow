@@ -257,6 +257,17 @@ func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelNa
 	return &modelModule.ChatResponse{Answer: &ans}, nil
 }
 
+// blankAnswerVisionDriver models a vision model that answers successfully but
+// with no usable text, which must still leave a trace behind.
+type blankAnswerVisionDriver struct {
+	modelModule.ModelDriver
+}
+
+func (blankAnswerVisionDriver) ChatWithMessages(context.Context, string, []modelModule.Message, *modelModule.APIConfig, *modelModule.ChatConfig, *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	blank := "   "
+	return &modelModule.ChatResponse{Answer: &blank}, nil
+}
+
 // firstUserText extracts the text of the first "text" content part from the
 // first captured user message. It scans parts by the "type" discriminator so
 // the test stays valid regardless of part ordering (image_url may precede text).
@@ -297,7 +308,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	// image family's contract key is system_prompt (parser.go:295).
+	// The image family's contract key is system_prompt.
 	// Also set a legacy `prompt` sentinel to assert system_prompt wins
 	// when both keys are present (regression guard against re-reading
 	// setup["prompt"], which is the video-family key, not image).
@@ -383,10 +394,6 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 	}
 }
 
-// TestMaybeDispatchImage_GlobalVisionSettingsDriveImage locks the moved
-// contract: the image description reads its language and prompt from the global
-// vlm block, and a legacy per-family value only applies when the global one is
-// unset.
 // TestMaybeDispatchImage_GlobalVisionPromptDrivesImage locks the moved
 // contract: the image description reads its prompt from the global vlm block,
 // and a legacy per-family value only applies when the global one is unset.
@@ -1024,6 +1031,47 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 			t.Fatalf("ocr_enabled:false must override stale parse_method, got text %v", res.JSON[0]["text"])
 		}
 	})
+}
+
+// TestMaybeDispatchImageBlankVisionDescriptionWarns covers the third way an
+// image can end up with no text: enhancement is permitted, OCR is off, and the
+// model answers with nothing usable. The chunk is discarded downstream, so the
+// dispatch has to say so rather than return a silent empty item.
+func TestMaybeDispatchImageBlankVisionDescriptionWarns(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	origAnalyzer := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() {
+		resolveTenantModelByType = origResolver
+		deepdoctype.NativeDocAnalyzerFactory = origAnalyzer
+	})
+	// OCR is off, so the analyzer must never run.
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		panic("OCR analyzer must not be used with the switch off")
+	}
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return blankAnswerVisionDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+
+	res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		map[string]any{"tenant_id": "t1"}, imageSwitchSetups(t, false), true, visionSettings{})
+	if err != nil || !handled {
+		t.Fatalf("err = %v, handled = %v", err, handled)
+	}
+	if text, _ := res.JSON[0]["text"].(string); strings.TrimSpace(text) != "" {
+		t.Fatalf("text = %q, want empty", text)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+		t.Fatalf("blank description must warn, got %v", res.Warnings)
+	}
+}
+
+// imageSwitchSetups returns the image family in the new contract shape: the
+// OCR choice lives in ocr_enabled and parse_method is gone.
+func imageSwitchSetups(_ *testing.T, ocrEnabled bool) map[string]schema.ParserSetup {
+	setups := defaultSetups()
+	delete(setups["image"], "parse_method")
+	setups["image"]["ocr_enabled"] = ocrEnabled
+	return setups
 }
 
 func picturePNG(t *testing.T) []byte {

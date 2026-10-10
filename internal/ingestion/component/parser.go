@@ -64,9 +64,8 @@
 //     the upload step is the responsibility of a separate
 //     side-effect component (out of scope for Phase 2.2).
 //
-//   - The Python _param.check() business validation
-//     (parse_method whitelist, conditional lang checks) is mirrored
-//     by (*ParserComponent).Check() below, which NewParserComponent
+//   - The Python _param.check() business validation (parse_method whitelist)
+//     is mirrored by (*ParserComponent).Check() below, which NewParserComponent
 //     runs at construction time. Neither backend validates
 //     audio/video vlm.llm_id: Python's check() has no such branch,
 //     and the audio model is resolved at dispatch time with a

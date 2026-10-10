@@ -154,6 +154,13 @@ func maybeDispatchImage(
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
 			appendItemText(parsed.JSON[0], description)
+		} else if strings.TrimSpace(text) == "" {
+			// Enhancement was permitted and the model produced nothing usable,
+			// so the item still has no text at all. Without this the chunk is
+			// dropped downstream with no trace, which is what the two other
+			// empty-text warnings above exist to prevent.
+			parsed.Warnings = append(parsed.Warnings,
+				"image has no searchable text: the vision model returned no description, so the Tokenizer will discard this item")
 		}
 	}
 	return parsed, true, nil
@@ -220,7 +227,7 @@ func describeImage(
 	// setup's lang is not consulted here: it is an OCR engine input (see
 	// pdf_vision_dispatch.go) and its old implicit default was the subject of
 	// issue #20727.
-	lang := resolveVisionLanguage(inputs, "")
+	lang := resolveVisionLanguage(inputs)
 	if tenantID == "" {
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
@@ -249,10 +256,10 @@ func describeImage(
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
-	// The global enhancement prompt wins; the image family's legacy
-	// system_prompt (parser.go:295, mirroring Python parser.py:1119) stays as
-	// the fallback for canvases saved before the move. Do NOT read
-	// setup["prompt"] here — that key is for the video family, not image.
+	// The global enhancement prompt wins; the image family's legacy system_prompt
+	// (the key the Python parser's image branch used) stays readable for canvases
+	// saved before the move. Do NOT read setup["prompt"] here — that key is for
+	// the video family, not image.
 	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}

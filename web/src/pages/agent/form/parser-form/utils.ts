@@ -32,9 +32,11 @@ export const VisionEnhancementFileTypes: FileType[] = [
 // top-level enable_vision_enhancement keep it, and per-setup leftovers are always
 // stripped (except Audio's vlm, which holds the ASR model). A legacy image
 // parse_method that is neither "ocr" nor empty is a VLM model reference: it
-// lifts onto vlm.llm_id and the switch turns off. Language is never lifted; the
-// family value stays as a legacy fallback because a stored language cannot be
-// told apart from the default that wrote it (issue #20727).
+// lifts onto vlm.llm_id — deliberately beating an already-set global model, so
+// the choice a saved canvas encodes is not lost — and the switch turns off.
+// The family language is dropped outright: nothing reads it for images any
+// more, and a stored value cannot be told apart from the hardcoded default that
+// used to write it (issue #20727).
 export function normalizeParserFormValues<T extends Record<string, any>>(
   values: T,
 ): T & {
@@ -77,11 +79,17 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
     if (x?.fileFormat === FileType.Audio) return x;
     const stripped = omit(x, ['vlm', 'flatten_media_to_text']);
     if (x?.fileFormat !== FileType.Image) return stripped;
-    const { parse_method, ...rest } = omit(stripped, ['system_prompt']);
-    if (parse_method === undefined) return rest;
-    const derived =
-      isEmpty(parse_method) || String(parse_method).toLowerCase() === 'ocr';
-    return { ...rest, ocr_enabled: rest.ocr_enabled ?? derived };
+    const { parse_method, ...rest } = omit(stripped, ['lang', 'system_prompt']);
+    // Materialize the switch either way. Absent or "ocr" both mean "run local
+    // OCR", matching the backend's legacy inference, so the toggle can never
+    // display the opposite of what will run. The family language is dropped
+    // because nothing reads it any more: captions follow the knowledge base and
+    // the only engine that takes a language is MinerU, on the pdf family.
+    const runsOCR =
+      parse_method === undefined ||
+      isEmpty(parse_method) ||
+      String(parse_method).toLowerCase() === 'ocr';
+    return { ...rest, ocr_enabled: rest.ocr_enabled ?? runsOCR };
   });
 
   return {

@@ -23,34 +23,30 @@ import (
 
 func TestResolveVisionLanguage(t *testing.T) {
 	tests := []struct {
-		name     string
-		inputs   map[string]any
-		fallback string
-		want     string
+		name   string
+		inputs map[string]any
+		want   string
 	}{
 		{
-			name:     "dataset language takes precedence",
-			inputs:   map[string]any{"lang": " Japanese "},
-			fallback: "Chinese",
-			want:     "Japanese",
+			name:   "dataset language wins and is trimmed",
+			inputs: map[string]any{"lang": " Japanese "},
+			want:   "Japanese",
 		},
 		{
-			name:     "configured fallback is used",
-			inputs:   map[string]any{"lang": ""},
-			fallback: " Korean ",
-			want:     "Korean",
+			name:   "empty values default to English",
+			inputs: map[string]any{"lang": ""},
+			want:   defaultVisionLanguage,
 		},
 		{
-			name:     "empty values default to English",
-			inputs:   nil,
-			fallback: "",
-			want:     defaultVisionLanguage,
+			name:   "absent language defaults to English",
+			inputs: nil,
+			want:   defaultVisionLanguage,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := resolveVisionLanguage(tt.inputs, tt.fallback); got != tt.want {
+			if got := resolveVisionLanguage(tt.inputs); got != tt.want {
 				t.Fatalf("resolveVisionLanguage() = %q, want %q", got, tt.want)
 			}
 		})

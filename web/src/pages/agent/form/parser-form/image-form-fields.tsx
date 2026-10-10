@@ -5,8 +5,9 @@ import { CommonProps } from './interface';
 import { buildFieldNameWithPrefix } from './utils';
 
 // The image setup carries a single switch: run local OCR or not. The vision
-// model, its response language and its description prompt all belong to the
-// global enhancement block (see VisionEnhancementFormFields).
+// model and its description prompt belong to the global enhancement block (see
+// VisionEnhancementFormFields); response language is not a setting anywhere and
+// follows the knowledge base, which also drives tokenization.
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
 

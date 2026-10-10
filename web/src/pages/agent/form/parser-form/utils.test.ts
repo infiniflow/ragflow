@@ -222,8 +222,8 @@ describe('parser-form utils', () => {
           { fileFormat: FileType.PDF },
         ],
       });
-      // The model is not lost: it becomes the shared vision model, overriding
-      // the (empty) global value, and the switch shape drops parse_method.
+      // Deliberate precedence: the canvas encodes a model choice, so it wins
+      // even over an already-selected global model rather than being dropped.
       expect(normalized.vlm).toEqual({
         llm_id: 'gpt-4o@OpenAI',
         system_prompt: '',
@@ -234,7 +234,7 @@ describe('parser-form utils', () => {
       });
     });
 
-    it('lifts the image prompt but never the language', () => {
+    it('drops a legacy image language: nothing reads it any more', () => {
       const normalized = normalizeParserFormValues({
         setups: [
           {
@@ -249,15 +249,28 @@ describe('parser-form utils', () => {
         llm_id: '',
         system_prompt: 'Describe the chart.',
       });
-      // Language stays in the family setup as the legacy fallback the backend
-      // still reads. Lifting it would promote a value that cannot be told apart
-      // from the hardcoded default (issue #20727).
+      // Captions follow the knowledge base and the only engine that takes a
+      // language is MinerU on the pdf family, so an image language has no
+      // reader: drop it rather than let it masquerade as a user choice
+      // (issue #20727).
       expect(normalized.setups[0]).toEqual({
         fileFormat: FileType.Image,
         ocr_enabled: true,
-        lang: 'French',
       });
       expect(normalizeParserFormValues(normalized)).toEqual(normalized);
+    });
+
+    it('materializes the switch so it matches what the backend will run', () => {
+      // An image setup with neither key runs local OCR in the backend (absent
+      // parse_method falls back to the legacy inference), so the toggle must
+      // read as on instead of showing an unchecked box.
+      const normalized = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image }],
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
     });
 
     it('drops a stale vlm.lang left by an earlier draft of the contract', () => {

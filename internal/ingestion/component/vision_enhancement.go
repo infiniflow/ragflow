@@ -177,7 +177,7 @@ func maybeDispatchVisionEnhancement(
 	// Captions follow the knowledge base language, which also drives
 	// tokenization. The family setup's lang is an OCR engine parameter
 	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
-	language := resolveVisionLanguage(inputs, "")
+	language := resolveVisionLanguage(inputs)
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
