@@ -635,18 +635,28 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	}
 	req.TagKwd = tagKwd
 	req.TagFeas = rawBody["tag_feas"]
-	imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a non-empty string")
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
-		return
+	if _, ok := rawBody["image_base64"]; ok {
+		req.TouchChunkImageFields = true
+		imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a string")
+		if err != nil {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+			return
+		}
+		req.ImageBase64 = imageBase64
 	}
-	imageUpdateMode, err := optionalBodyString(rawBody, "image_update_mode", "`image_update_mode` must be a string")
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
-		return
+	if _, ok := rawBody["image_update_mode"]; ok {
+		req.TouchChunkImageFields = true
+		imageUpdateMode, err := optionalBodyString(rawBody, "image_update_mode", "`image_update_mode` must be a string")
+		if err != nil {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+			return
+		}
+		if imageUpdateMode != nil && strings.TrimSpace(*imageUpdateMode) == "" {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "`image_update_mode` must be one of: append, replace, remove")
+			return
+		}
+		req.ImageUpdateMode = imageUpdateMode
 	}
-	req.ImageBase64 = imageBase64
-	req.ImageUpdateMode = imageUpdateMode
 
 	// Set path parameters
 	req.DatasetID = datasetID
