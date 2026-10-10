@@ -783,7 +783,11 @@ func (s *ChatPipelineService) chatMetadataDocIDs(ctx context.Context, chat *enti
 		common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(err))
 		return docIDs
 	}
-	if filtered, _ := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs); filtered != nil {
+	filtered, empty := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs)
+	if empty {
+		return []string{NoMatchDocIDSentinel}
+	}
+	if filtered != nil {
 		common.Debug("meta_data_filter applied", zap.Int("filtered_count", len(filtered)), zap.Int("pre_filter_count", len(docIDs)))
 		return filtered
 	}
