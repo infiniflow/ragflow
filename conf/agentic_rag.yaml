@@ -16,9 +16,6 @@ templates:
       - list_chunks
       - run_javascript
       - search_metadata
-      - navigate_tree
-      - navigate_structure
-      - graph_explore
     content: |
       ### Role
       You are RAGFlow, an intelligent retrieval assistant powered by agentic RAG over a private document corpus. Your core philosophy is "Evidence-First": you never rely on internal parametric knowledge for facts about the corpus - you construct answers solely from data you retrieved and read.

@@ -30,17 +30,17 @@ func TestRun_NilModel(t *testing.T) {
 	}
 }
 
-// TestPrompt: the fallback prompt must declare the toolset the template ships
-// and carry the mechanical provenance contract, with no removed tool
-// references (get_document_info / query_knowledge_graph), no leftover
-// placeholders and no trace of the removed intermediate deliverable.
+// TestPrompt: the fallback prompt is a minimal, tool-agnostic safety net used
+// only when a template declares no content of its own; the shipped toolset and
+// its per-tool guidance live in conf/agentic_rag.yaml (guarded by the config
+// test below). This asserts it is non-empty, keeps the evidence-first contract,
+// and carries no removed references, placeholders or intermediate deliverable.
 func TestPrompt(t *testing.T) {
 	p := Prompt()
-	for _, want := range []string{
-		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks", "search_metadata",
-		"list_chunks", "navigate_tree", "navigate_structure", "graph_explore",
-		"todo_write", "think", "run_javascript", "[ID:", "Evidence-First",
-	} {
+	if strings.TrimSpace(p) == "" {
+		t.Fatal("fallback prompt must not be empty")
+	}
+	for _, want := range []string{"RAGFlow", "evidence-first"} {
 		if !strings.Contains(p, want) {
 			t.Errorf("prompt must mention %q", want)
 		}

@@ -12,6 +12,7 @@
 //  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 //  See the License for the specific language governing permissions and
 //  limitations under the License.
+//
 
 package agentic_rag
 
@@ -23,14 +24,16 @@ import (
 
 // conversationKey carries the per-conversation identifier through the request
 // context so the compiled-knowledge tools (navigate_tree / navigate_structure /
-// graph_explore) can record, and later honor, a session-level disable decision
-// without changing their constructors or the tool registry. The caller (the chat
-// pipeline) sets it from the conversation id; when it is absent Run assigns a
-// unique per-run key so the disable still works within a single ReAct turn.
+// graph_explore) can record, and later honor, a per-conversation availability
+// decision without changing their constructors or the tool registry. The caller
+// (the chat pipeline) sets it from the conversation id; when it is absent Run
+// assigns a unique per-run key so availability still holds within a single ReAct
+// turn.
 type conversationKeyT struct{}
 
 // WithConversationKey returns a copy of ctx carrying the conversation id. An empty
-// key is a no-op (a stable identity is what makes the disable meaningful).
+// key is a no-op (a stable identity is what makes the availability tracking
+// meaningful).
 func WithConversationKey(ctx context.Context, key string) context.Context {
 	if key == "" {
 		return ctx
@@ -46,76 +49,80 @@ func conversationKeyFrom(ctx context.Context) string {
 	return ""
 }
 
-// navDisableStore records, per conversation, which compiled-knowledge tools have
-// been PROVEN unavailable for the bound datasets, so the agent stops spending
-// calls on them for the rest of the conversation.
+// navAvailabilityStore records, per conversation, which compiled-knowledge tools
+// have been PROVEN unavailable for the bound datasets, so the agent stops
+// spending calls on them for the rest of the conversation. Every tool starts out
+// enabled; a tool leaves that set only on evidence.
 //
-// A tool is disabled only on a DATASET-LEVEL absence - navigate_tree reporting
-// "no compiled navigation tree", navigate_structure "no structure", graph_explore
-// "no compiled knowledge graph" - which is a fact that does not change within a
-// conversation. A query-level miss (the structure exists, but THIS query reached
-// nothing) is NOT a disable trigger: a better-phrased query may still hit.
+// A tool is marked unavailable only on a DATASET-LEVEL absence - navigate_tree
+// reporting "no compiled navigation tree", navigate_structure "no structure",
+// graph_explore "no compiled knowledge graph" - which is a fact that does not
+// change within a conversation. A query-level miss (the structure exists, but
+// THIS query reached nothing) is NOT a trigger: a better-phrased query may still
+// hit.
 //
 // The store is process-local and best-effort: a process restart or a TTL expiry
 // simply makes the tool re-detect on its next call (one cheap backend read), not
 // a correctness regression.
-type navDisableStore struct {
-	mu  sync.Mutex
-	m   map[string]map[string]time.Time // convKey -> tool -> disabled-until
-	ttl time.Duration
+type navAvailabilityStore struct {
+	mu      sync.Mutex
+	unavail map[string]map[string]time.Time // convKey -> tool -> unavailable-until
+	ttl     time.Duration
 }
 
-var navDisable = &navDisableStore{
-	m:   map[string]map[string]time.Time{},
-	ttl: 30 * time.Minute,
+var navAvailability = &navAvailabilityStore{
+	unavail: map[string]map[string]time.Time{},
+	ttl:     30 * time.Minute,
 }
 
-// disableNavTool records tool as unavailable for the conversation carried by ctx.
-// A missing/empty conversation key or tool is a no-op.
-func disableNavTool(ctx context.Context, tool string) {
+// markNavToolUnavailable records tool as unavailable for the conversation carried
+// by ctx. A missing/empty conversation key or tool is a no-op.
+func markNavToolUnavailable(ctx context.Context, tool string) {
 	key := conversationKeyFrom(ctx)
 	if key == "" || tool == "" {
 		return
 	}
-	navDisable.mu.Lock()
-	defer navDisable.mu.Unlock()
-	if navDisable.m[key] == nil {
-		navDisable.m[key] = map[string]time.Time{}
+	navAvailability.mu.Lock()
+	defer navAvailability.mu.Unlock()
+	if navAvailability.unavail[key] == nil {
+		navAvailability.unavail[key] = map[string]time.Time{}
 	}
-	navDisable.m[key][tool] = time.Now().Add(navDisable.ttl)
+	navAvailability.unavail[key][tool] = time.Now().Add(navAvailability.ttl)
 }
 
-// navToolDisabled reports whether tool has been disabled for the conversation
-// carried by ctx, honoring the TTL.
-func navToolDisabled(ctx context.Context, tool string) bool {
+// navToolEnabled reports whether tool is still usable for the conversation
+// carried by ctx: true unless it was marked unavailable and that mark has not yet
+// expired. A missing/empty conversation key leaves every tool enabled.
+func navToolEnabled(ctx context.Context, tool string) bool {
 	key := conversationKeyFrom(ctx)
 	if key == "" || tool == "" {
-		return false
+		return true
 	}
-	navDisable.mu.Lock()
-	defer navDisable.mu.Unlock()
-	until, ok := navDisable.m[key][tool]
+	navAvailability.mu.Lock()
+	defer navAvailability.mu.Unlock()
+	until, ok := navAvailability.unavail[key][tool]
 	if !ok {
-		return false
+		return true
 	}
 	if time.Now().After(until) {
-		delete(navDisable.m[key], tool)
-		return false
+		delete(navAvailability.unavail[key], tool)
+		return true
 	}
-	return true
+	return false
 }
 
-// navDisabledToolSet returns the set of compiled-knowledge tools disabled for the
-// conversation carried by ctx (honoring the TTL). It is used to drop those tools
-// from the agent's tool list so the model cannot keep calling them.
-func navDisabledToolSet(ctx context.Context) map[string]bool {
+// navUnavailableToolSet returns the set of compiled-knowledge tools proven
+// unavailable for the conversation carried by ctx (honoring the TTL). It is used
+// to drop those tools from the agent's tool list so the model cannot keep calling
+// them.
+func navUnavailableToolSet(ctx context.Context) map[string]bool {
 	key := conversationKeyFrom(ctx)
 	if key == "" {
 		return nil
 	}
-	navDisable.mu.Lock()
-	defer navDisable.mu.Unlock()
-	raw, ok := navDisable.m[key]
+	navAvailability.mu.Lock()
+	defer navAvailability.mu.Unlock()
+	raw, ok := navAvailability.unavail[key]
 	if !ok {
 		return nil
 	}
@@ -123,13 +130,13 @@ func navDisabledToolSet(ctx context.Context) map[string]bool {
 	out := make(map[string]bool, len(raw))
 	for tool, until := range raw {
 		if now.After(until) {
-			delete(navDisable.m[key], tool)
+			delete(navAvailability.unavail[key], tool)
 			continue
 		}
 		out[tool] = true
 	}
 	if len(out) == 0 {
-		delete(navDisable.m, key)
+		delete(navAvailability.unavail, key)
 	}
 	return out
 }

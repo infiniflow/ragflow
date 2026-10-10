@@ -116,11 +116,11 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if query == "" {
 		return "", fmt.Errorf("graph_explore: query is required and must be a non-empty string")
 	}
-	if navToolDisabled(ctx, graphExploreToolName) {
-		// Session-level disable: this conversation's bound datasets were proven
-		// to have no compiled knowledge graph, so skip the backend and return
-		// the same "no graph" note the caller falls back from.
-		common.DebugCtx(ctx, "graph_explore: session-disabled; skipping backend (no compiled knowledge graph)")
+	if !navToolEnabled(ctx, graphExploreToolName) {
+		// Marked unavailable for this conversation (bound datasets have no
+		// compiled knowledge graph): skip the backend and return the same
+		// "no graph" note the caller falls back from.
+		common.DebugCtx(ctx, "graph_explore: marked unavailable; skipping backend (no compiled knowledge graph)")
 		return renderKgExplore(ctx, query, KgExploreResult{}), nil
 	}
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
@@ -146,8 +146,8 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 		// A DATASET-level absence (no compiled knowledge graph in scope): disable
 		// the tool for the rest of the conversation so the agent stops spending
 		// calls on it and falls back to the text tools.
-		disableNavTool(ctx, graphExploreToolName)
-		common.DebugCtx(ctx, "graph_explore: disabling for conversation (no compiled knowledge graph)")
+		markNavToolUnavailable(ctx, graphExploreToolName)
+		common.DebugCtx(ctx, "graph_explore: marking unavailable for conversation (no compiled knowledge graph)")
 	}
 	return renderKgExplore(ctx, query, result), nil
 }

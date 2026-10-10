@@ -1079,11 +1079,11 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	if query == "" {
 		return "", fmt.Errorf("navigate_structure: query is required and must be a non-empty string")
 	}
-	if navToolDisabled(ctx, navigateStructureToolName) {
-		// Session-level disable: this conversation's bound datasets were proven
-		// to have no compiled structure, so skip the backend and return the same
-		// verdict the caller falls back from.
-		common.DebugCtx(ctx, "navigate_structure: session-disabled; skipping backend (no structure)")
+	if !navToolEnabled(ctx, navigateStructureToolName) {
+		// Marked unavailable for this conversation (bound datasets have no
+		// compiled structure): skip the backend and return the same verdict the
+		// caller falls back from.
+		common.DebugCtx(ctx, "navigate_structure: marked unavailable; skipping backend (no structure)")
 		return navStructEmpty(navStructReasonNoStructure, "no structure"), nil
 	}
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)

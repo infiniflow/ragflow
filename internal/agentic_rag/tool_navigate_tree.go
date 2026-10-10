@@ -137,11 +137,11 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if err != nil {
 		return "", fmt.Errorf("navigate_tree: %w", err)
 	}
-	if navToolDisabled(ctx, navigateTreeToolName) {
-		// Session-level disable: this conversation's bound datasets were proven
-		// to have no compiled navigation tree, so skip the backend and return the
-		// same verdict the caller falls back from.
-		common.DebugCtx(ctx, "navigate_tree: session-disabled; skipping backend (no compiled navigation tree)")
+	if !navToolEnabled(ctx, navigateTreeToolName) {
+		// Marked unavailable for this conversation (bound datasets have no
+		// compiled navigation tree): skip the backend and return the same verdict
+		// the caller falls back from.
+		common.DebugCtx(ctx, "navigate_tree: marked unavailable; skipping backend (no compiled navigation tree)")
 		return navTreeEmpty(navTreeReasonNoStructure, "no compiled navigation tree"), nil
 	}
 	if len(datasetIDs) == 0 {
@@ -195,8 +195,8 @@ func (g *NavigateTreeTool) invokableRun(ctx context.Context, argumentsInJSON str
 		// No compiled tree in any bound dataset: a DATASET-level fact, so the
 		// caller falls back to the text tools. No retrieval fallback here. Record
 		// it so this conversation stops spending calls on the tool.
-		disableNavTool(ctx, navigateTreeToolName)
-		common.DebugCtx(ctx, "navigate_tree: disabling for conversation (no compiled navigation tree)")
+		markNavToolUnavailable(ctx, navigateTreeToolName)
+		common.DebugCtx(ctx, "navigate_tree: marking unavailable for conversation (no compiled navigation tree)")
 		return navTreeEmpty(navTreeReasonNoStructure, "no compiled navigation tree"), nil
 	}
 	if len(ordered) == 0 {

@@ -161,9 +161,10 @@ func TestTemplateTemperatureComesFromConfig(t *testing.T) {
 
 // TestShippedConfigIsADirectAnswerTemplate guards conf/agentic_rag.yaml end to
 // end: exactly one template (smart-reasoning) carrying the direct-answer prompt
-// and the full toolset - the baseline locate/deep-read tools plus the compiled
-// navigation tree (navigate_tree), structure drilldown (navigate_structure) and
-// knowledge-graph walk (graph_explore). The prompt is the direct-answer rewrite
+// and the baseline locate/deep-read toolset. The compiled-knowledge tools
+// (navigate_tree / navigate_structure / graph_explore) are intentionally NOT
+// listed here - Run injects them when the bound datasets carry compilation
+// products (see compiled_knowledge.go). The prompt is the direct-answer rewrite
 // - no question-decomposition stage, no intermediate deliverable format, no
 // auditor - and carries the mechanical provenance contract (`chunk_id: <id>`)
 // the chat pipeline turns into citation markers.
@@ -189,10 +190,12 @@ func TestShippedConfigIsADirectAnswerTemplate(t *testing.T) {
 	if tmpl.ID != "smart-reasoning" {
 		t.Fatalf("template id = %q, want smart-reasoning", tmpl.ID)
 	}
+	// The compiled-knowledge tools (navigate_tree / navigate_structure /
+	// graph_explore) are NOT declared here: Run injects them only when the bound
+	// datasets actually carry compilation products (see compiled_knowledge.go).
 	wantTools := []string{
 		"think", "todo_write", "grep_chunks", "search_bm25_chunks",
 		"search_semantic_chunks", "list_chunks", "run_javascript", "search_metadata",
-		"navigate_tree", "navigate_structure", "graph_explore",
 	}
 	if strings.Join(tmpl.Tools, ",") != strings.Join(wantTools, ",") {
 		t.Fatalf("tools = %v, want %v", tmpl.Tools, wantTools)

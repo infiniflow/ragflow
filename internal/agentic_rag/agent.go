@@ -307,9 +307,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 		return "", errNilModel
 	}
 
-	// Conversation identity for the session-level nav-tool disable: the chat
-	// pipeline passes the chat id; when absent, a unique per-run key keeps the
-	// disable scoped to this turn and isolated from concurrent runs.
+	// Conversation identity for per-conversation compiled-knowledge tool
+	// availability: the chat pipeline passes the chat id; when absent, a unique
+	// per-run key keeps any availability decision scoped to this turn and
+	// isolated from concurrent runs.
 	convKey := in.ConversationKey
 	if convKey == "" {
 		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
@@ -339,6 +340,13 @@ func Run(ctx context.Context, in Input) (string, error) {
 		// describes the corpus toolset, and a conversation whose context
 		// carries a provider gets one extra tool at run time.
 		tools = append(tools, webSearchTools(ctx)...)
+		// The compiled-knowledge tools are injected, never declared: they only
+		// make sense when the bound datasets have produced knowledge-compilation
+		// products (navigation tree / compiled structure / knowledge graph), so
+		// an uncompiled corpus never offers - or pays for - them.
+		if datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
+			tools = append(tools, compiledKnowledgeTools(in.TenantID, in.DatasetIDs)...)
+		}
 	}
 
 	maxIter := in.MaxIterations
@@ -366,11 +374,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// Drop compiled-knowledge tools this conversation has already proven
 	// unusable (dataset-level absence), so the model cannot keep calling them
 	// and wasting turns. The tool still short-circuits on its own for any call
-	// that slips through, but removing it from the list is the clean disable.
-	if disabled := navDisabledToolSet(ctx); len(disabled) > 0 {
+	// that slips through, but removing it from the list is the clean stop.
+	if unavailable := navUnavailableToolSet(ctx); len(unavailable) > 0 {
 		kept := tools[:0]
 		for _, t := range tools {
-			if info, ierr := t.Info(ctx); ierr == nil && info != nil && disabled[info.Name] {
+			if info, ierr := t.Info(ctx); ierr == nil && info != nil && unavailable[info.Name] {
 				continue
 			}
 			kept = append(kept, t)
