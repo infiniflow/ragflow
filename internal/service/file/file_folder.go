@@ -140,7 +140,7 @@ func (s *FileService) initSkillsFolder(ctx context.Context, rootID, tenantID str
 	}
 
 	folder := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   rootID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
