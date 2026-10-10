@@ -2071,6 +2071,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// DSL → *Canvas.
 		c, err := decodeCanvasFromDSL(dsl)
 		if err != nil {
+			s.markAgentSessionFailed(ctx, canvasID, userID, sessionID, "decode: "+err.Error())
 			s.markRunFailed(ctx, runID, "decode: "+err.Error())
 			return nil, err
 		}
@@ -2150,6 +2151,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
 			files, ferr := fileSvc.ParseAgentUploads(ctx, userID, rawFiles, beginLayoutRecognize(c))
 			if ferr != nil {
+				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "parse files: "+ferr.Error())
 				s.markRunFailed(ctx2, runID, "parse files: "+ferr.Error())
 				return nil, fmt.Errorf("parse agent files: %w", ferr)
 			}
@@ -2207,6 +2209,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("run", runID),
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "compile: "+err.Error())
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
 			if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
 				return nil, runtime.NewUserFacingError("ExeSQL configuration is incomplete. Set the database connection details before running the agent.")
@@ -2350,6 +2353,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			if shouldTreatAsCompletedLoopRun(err, answer) {
 				appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
+					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, canvas.NewInternalRunError(
 						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2389,6 +2393,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					visibleAnswer = failureText
 				}
 				if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, visibleAnswer, thinking, referencePayload, dsl, state, visibleAnswer != ""); persistErr != nil {
+					s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
 					s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 					return nil, canvas.NewInternalRunError(
 						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2401,9 +2406,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					})
 					emit("message_end", string(meData))
 				}
+				s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "invoke: "+err.Error())
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
 		}
@@ -2414,6 +2421,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// reproduce and amplify those literals on later turns.
 		appendAssistantHistory(state, partialAssistantOutput(answer, downloads, attachment))
 		if persistErr := s.persistAgentRunSession(ctx, canvasID, userID, sessionID, messageID, userInput, answer, thinking, referencePayload, dsl, state, true); persistErr != nil {
+			s.markAgentSessionFailed(ctx2, canvasID, userID, sessionID, "persist session: "+persistErr.Error())
 			s.markRunFailed(ctx2, runID, "persist session: "+persistErr.Error())
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
@@ -2618,7 +2626,10 @@ func (s *AgentService) persistAgentRunSession(
 	if appendAssistantMessage {
 		history.Message = map[string]interface{}{"role": "assistant", "content": agentSessionMessageContent(answer, thinking), "id": messageID, "created_at": now}
 	}
-	updates := map[string]interface{}{"round": gorm.Expr("COALESCE(round, 0) + 1")}
+	updates := map[string]interface{}{
+		"round":  gorm.Expr("COALESCE(round, 0) + 1"),
+		"errors": nil,
+	}
 	if state != nil {
 		updates["dsl"] = buildPersistedAgentDSL(runDSL, state)
 	}
@@ -3006,6 +3017,20 @@ func (s *AgentService) markRunFailed(ctx context.Context, runID, reason string) 
 			zap.String("run_id", runID),
 			zap.String("reason", reason),
 			zap.Error(err))
+	}
+}
+
+// markAgentSessionFailed keeps the persisted agent log state aligned with the
+// run tracker. A streamed failure may still return a user-facing message, but
+// it must remain a failed execution in the session history.
+func (s *AgentService) markAgentSessionFailed(ctx context.Context, canvasID, userID, sessionID, reason string) {
+	if s == nil || s.api4ConversationDAO == nil || dao.DB == nil || sessionID == "" {
+		return
+	}
+	if err := s.api4ConversationDAO.UpdateHistory(ctx, dao.DB, sessionID, canvasID, userID,
+		map[string]interface{}{"errors": reason}, dao.ConversationHistoryUpdate{}); err != nil {
+		common.Warn("agent run: persist failed session status failed",
+			zap.String("session_id", sessionID), zap.Error(err))
 	}
 }
 
