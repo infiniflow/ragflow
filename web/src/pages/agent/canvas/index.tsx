@@ -1,4 +1,5 @@
 import { useTheme } from '@/components/theme-provider';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import {
   Tooltip,
   TooltipContent,
@@ -28,18 +29,25 @@ import {
 } from '../context';
 
 import FormSheet from '../form-sheet/next';
+import { useIsPipeline } from '../hooks/use-is-pipeline';
+import {
+  hasPipelineNextOperators,
+} from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
+import { Operator } from '../constant';
 import { useDropdownPosition } from '../hooks/use-dropdown-position';
+import useGraphStore from '../store';
 import { useMoveNote } from '../hooks/use-move-note';
 import { usePlaceholderManager } from '../hooks/use-placeholder-manager';
 import { useDropdownManager } from './context';
 
 import { AgentBackground } from '@/components/canvas/background';
 import Spotlight from '@/components/spotlight';
+import { useNodeFocusRequest } from '../hooks/use-node-focus-request';
 import { useNodeLoading } from '../hooks/use-node-loading';
 import {
   useHideFormSheetOnNodeDeletion,
@@ -156,6 +164,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     hideRunOrChatDrawer,
     showChatModal,
     showFormDrawer,
+    showFormDrawerById,
     logSheetVisible,
     showLogSheet,
     hideLogSheet,
@@ -208,6 +217,11 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
 
   useHideFormSheetOnNodeDeletion({ hideFormDrawer });
 
+  // Focus requests posted through the store (e.g. by the canvas checklist in
+  // the page header): select + center the node, and open its form sheet unless
+  // the caller only wants the highlight (orphan-step issues).
+  useNodeFocusRequest({ reactFlowInstance, showFormDrawerById });
+
   const { visible, hideModal, showModal } = useSetModalState();
   const [dropdownPosition, setDropdownPosition] = useState({ x: 0, y: 0 });
 
@@ -221,6 +235,29 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
   } = usePlaceholderManager(reactFlowInstance);
 
   const { calculateDropdownPosition } = useDropdownPosition(reactFlowInstance);
+
+  const isGoBackend = useIsGoBackend();
+  const isPipeline = useIsPipeline();
+  const { findNodeByName, getOperatorTypeFromId } = useGraphStore(
+    (state) => state,
+  );
+
+  // Whether the "next step" menu offers anything for the drag source. On a
+  // pipeline, single-instance operators already on canvas plus the Go
+  // topology rules can leave the menu empty; such a drag is aborted.
+  const hasNextStepOperators = useCallback(
+    (sourceNodeId: string) => {
+      if (!isPipeline) {
+        return true;
+      }
+      return hasPipelineNextOperators(
+        getOperatorTypeFromId(sourceNodeId) as Operator | undefined,
+        isGoBackend,
+        (operator) => !!findNodeByName(operator),
+      );
+    },
+    [findNodeByName, getOperatorTypeFromId, isGoBackend, isPipeline],
+  );
 
   const {
     onConnectStart,
@@ -241,6 +278,7 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
     clearActiveDropdown,
     checkAndRemoveExistingPlaceholder,
     reactFlowInstance,
+    hasNextStepOperators,
   );
 
   const onPaneClick = useCallback(() => {

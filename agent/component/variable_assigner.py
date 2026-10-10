@@ -109,6 +109,13 @@ class VariableAssigner(ComponentBase, ABC):
         elif isinstance(variable, str):
             return self._canvas.get_value_with_variable(parameter)
         elif isinstance(variable, bool):
+            # Accept yes/true and no/false spellings case-insensitively.
+            if isinstance(parameter, str):
+                normalized = parameter.lower()
+                if normalized in {"yes", "true"}:
+                    return True
+                elif normalized in {"no", "false"}:
+                    return False
             return parameter
         elif isinstance(variable, int):
             return parameter

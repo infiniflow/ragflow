@@ -119,6 +119,10 @@ export const AgentKeys = {
       : ([AgentApiAction.FetchAgentTags, canvasCategory] as const),
   detail: (agentId?: string) =>
     [AgentApiAction.FetchAgentDetail, agentId] as const,
+  versionList: (agentId?: string) =>
+    [AgentApiAction.FetchVersionList, agentId] as const,
+  version: (agentId?: string, versionId?: string) =>
+    [AgentApiAction.FetchVersion, agentId, versionId] as const,
 };
 
 export const useFetchAgentTemplates = () => {
@@ -176,7 +180,7 @@ export const useFetchAgentListByPage = () => {
     useHandleSearchChange();
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
-  const { filterValue, setFilterValue, handleFilterSubmit } =
+  const { filterValue, setFilterValue, handleFilterSubmit, checkValue } =
     useHandleFilterSubmit();
   const canvasCategoryIds = Array.isArray(filterValue.canvasCategory)
     ? (filterValue.canvasCategory as string[])
@@ -240,26 +244,40 @@ export const useFetchAgentListByPage = () => {
     filterValue,
     setFilterValue,
     handleFilterSubmit,
+    checkValue,
   };
+};
+
+export const fetchAllAgents = async (): Promise<AgentListItem[]> => {
+  const all: AgentListItem[] = [];
+  let page = 1;
+  let total = Number.POSITIVE_INFINITY;
+  while (all.length < total) {
+    const { data } = await agentService.listAgents(
+      {
+        params: buildAgentListParams({
+          page,
+          pageSize: 100,
+          canvasCategoryIds: [AgentCategory.AgentCanvas],
+        }),
+      },
+      true,
+    );
+    const canvas: AgentListItem[] = data?.data?.canvas ?? [];
+    all.push(...canvas);
+    total = data?.data?.total ?? all.length;
+    if (canvas.length === 0) {
+      break;
+    }
+    page += 1;
+  }
+  return all;
 };
 
 export function useFetchAllAgentList() {
   const { data, isFetching: loading } = useQuery<AgentListItem[]>({
     queryKey: AgentKeys.all(),
-    queryFn: async () => {
-      const { data } = await agentService.listAgents(
-        {
-          params: buildAgentListParams({
-            page: 1,
-            pageSize: 100000,
-            canvasCategoryIds: [AgentCategory.AgentCanvas],
-          }),
-        },
-        true,
-      );
-
-      return data?.data?.canvas;
-    },
+    queryFn: fetchAllAgents,
   });
 
   return { data, loading };
@@ -534,6 +552,14 @@ export const useSetAgent = (
         queryClient.invalidateQueries({
           queryKey: AgentKeys.list(),
         });
+        // Every save can prune the oldest unpublished versions server-side,
+        // so the version history list must refetch even when autosave skips
+        // detail invalidation.
+        if (agentId) {
+          queryClient.invalidateQueries({
+            queryKey: AgentKeys.versionList(agentId),
+          });
+        }
         if (!agentId) {
           queryClient.invalidateQueries({
             queryKey: AgentKeys.filters(),
@@ -765,7 +791,7 @@ export const useFetchVersionList = () => {
   const { data, isFetching: loading } = useQuery<
     Array<{ created_at: string; title: string; id: string; release?: boolean }>
   >({
-    queryKey: [AgentApiAction.FetchVersionList],
+    queryKey: AgentKeys.versionList(id),
     initialData: [],
     gcTime: 0,
     queryFn: async () => {
@@ -783,26 +809,44 @@ export const useFetchVersion = (
 ): {
   data?: IFlow;
   loading: boolean;
+  isError: boolean;
 } => {
   const { id } = useParams();
-  const { data, isFetching: loading } = useQuery({
-    queryKey: [AgentApiAction.FetchVersion, id, version_id],
+  const {
+    data,
+    isFetching: loading,
+    isError,
+  } = useQuery({
+    queryKey: AgentKeys.version(id, version_id),
     initialData: undefined,
     gcTime: 0,
+    // A pruned version never recovers on retry, and each attempt would
+    // re-fire the global error notification.
+    retry: false,
     enabled: !!id && !!version_id,
     queryFn: async () => {
       if (!id || !version_id) return undefined;
 
-      const { data } = await agentService.fetchVersion({
-        agentId: id,
-        versionId: version_id,
-      });
+      // The dialog renders its own error state, so suppress the global
+      // notification whose "no permission" wording misleads here.
+      const { data } = await agentService.fetchVersion(
+        {
+          agentId: id,
+          versionId: version_id,
+          skipGlobalErrorNotification: true,
+        },
+        true,
+      );
+
+      if (data?.code !== 0) {
+        throw new Error(data?.message);
+      }
 
       return data?.data ?? undefined;
     },
   });
 
-  return { data, loading };
+  return { data, loading, isError };
 };
 
 export const useFetchAgentLog = (searchParams: IAgentLogsRequest) => {
@@ -1167,9 +1211,10 @@ export function useCreateAgentSession() {
         queryClient.invalidateQueries({
           queryKey: [AgentApiAction.FetchSessionsByCanvasId],
         });
+        return data.data;
       }
 
-      return data?.data ?? {};
+      throw new Error(data.message);
     },
   });
 

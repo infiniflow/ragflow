@@ -31,6 +31,8 @@ from api.db.services.document_service import DocumentService
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, get_format_time
 from common.constants import StatusEnum, TaskStatus, MAXIMUM_PAGE_NUMBER, MAXIMUM_TASK_PAGE_NUMBER
+from common.parser_config_utils import normalize_layout_recognizer
+from common.llm_request_context import normalize_llm_user_id
 from deepdoc.parser.excel_parser import RAGFlowExcelParser
 from rag.utils.redis_conn import REDIS_CONN
 from common import settings
@@ -40,6 +42,8 @@ CANVAS_DEBUG_DOC_ID = "dataflow_x"
 GRAPH_RAPTOR_FAKE_DOC_ID = "graph_raptor_x"
 TASK_MAX_LOG_LENGTH = int(os.environ.get("TASK_MAX_LOG_LENGTH", 3000))  # TEXT MAX is 64 KiB bytes!
 DOC_CHUNKING_COUNTER_TTL_SECONDS = 7 * 24 * 3600
+# Lowercased names from normalize_layout_recognizer, the same keys rag.app.naive.PARSERS uses.
+UNSPLIT_TASK_PARSERS = {"mineru", "paddleocr", "somark", "tcadp parser"}
 
 
 def _doc_chunking_pending_key(doc_id: str) -> str:
@@ -440,7 +444,7 @@ class TaskService(CommonService):
         return cls.model.delete().where(cls.model.doc_id.in_(doc_ids)).execute()
 
 
-def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
+def queue_tasks(doc: dict, bucket: str, name: str, priority: int, user_id: str | None = None):
     """Create and queue document processing tasks.
 
     This function creates processing tasks for a document based on its type and configuration.
@@ -453,9 +457,14 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
         bucket (str): Storage bucket name where the document is stored.
         name (str): File name of the document.
         priority (int, optional): Priority level for task queueing (default is 0).
+        user_id (str, optional): End-user identifier forwarded on embedding HTTP
+            calls as the OpenAI ``user`` field. Stored on the Redis message only
+            (Task rows have no ``user_id`` column).
 
     Note:
-        - For PDF documents, tasks are created per page range based on configuration
+        - For PDF documents, tasks are created per page range based on configuration.
+          A resume PDF and a MinerU PDF are the two exceptions. Each gets one task that
+          covers every configured range
         - For Excel documents, tasks are created per row range
         - Task digests are calculated for optimization and reuse
         - Previous task chunks may be reused if available
@@ -483,24 +492,35 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
             page_size = doc["parser_config"].get("task_page_size") or 22
 
         # Splitting MinerU parsing into page-based tasks would repeatedly upload the entire PDF to the MinerU API server, increasing network bandwidth usage without improving parsing speed. The MinerU API server would also store duplicate copies of these files, wasting disk space.
-        is_mineru = False
+        # PaddleOCR, SoMark and TCADP ignore from_page/to_page and send the whole PDF on every task, so each extra task is a full repeat of the paid parse.
+        is_unsplit = False
         layout_recognizer = doc["parser_config"].get("layout_recognize", "")
         if isinstance(layout_recognizer, str) and len(layout_recognizer) == 32:
             try:
                 layout_recognizer = get_composite_model_name_by_id(layout_recognizer)
-                if layout_recognizer.lower().endswith("@mineru"):
-                    is_mineru = True
             except LookupError:
                 pass
-        if is_mineru:
-            logging.info("Document %s selected MinerU unsplit-task mode with page size %s", doc["id"], MAXIMUM_TASK_PAGE_NUMBER)
-        if doc["parser_id"] in ["one", "knowledge_graph", "resume"] or doc["parser_config"].get("toc_extraction", False) or is_mineru:
+        if isinstance(layout_recognizer, str):
+            layout_recognizer, _ = normalize_layout_recognizer(layout_recognizer)
+            is_unsplit = layout_recognizer.strip().lower() in UNSPLIT_TASK_PARSERS
+        if is_unsplit:
+            logging.info("Document %s selected %s unsplit-task mode with page size %s", doc["id"], layout_recognizer, MAXIMUM_TASK_PAGE_NUMBER)
+        if doc["parser_id"] in ["one", "knowledge_graph", "resume"] or doc["parser_config"].get("toc_extraction", False) or is_unsplit:
             page_size = MAXIMUM_TASK_PAGE_NUMBER
         page_ranges = doc["parser_config"].get("pages") or [(1, MAXIMUM_PAGE_NUMBER)]
         if doc["parser_id"] == "resume":
             # The resume parser ignores from_page and to_page, so every task parses the whole
             # file. Collapse the configured ranges into one range to keep a resume document at a single task.
+            logging.info("Document %s uses the resume parser, so one task covers the whole file instead of the ranges %s", doc["id"], page_ranges)
             page_ranges = [(1, MAXIMUM_PAGE_NUMBER)]
+        if is_unsplit and len(page_ranges) > 1:
+            # One task per configured range means one full upload per range, which is
+            # the cost unsplit-task mode exists to remove. Cover every range with a
+            # single span instead. MinerUParser._select_configured_pages then drops
+            # the blocks that fall in the gaps between the ranges.
+            merged = [(min(s for s, _ in page_ranges), max(e for _, e in page_ranges))]
+            logging.info("Document %s merged unsplit-task page ranges %s into one task span %s", doc["id"], page_ranges, merged)
+            page_ranges = merged
         for s, e in page_ranges:
             s -= 1
             s = max(0, s)
@@ -563,8 +583,15 @@ def queue_tasks(doc: dict, bucket: str, name: str, priority: int):
     if chunking_n > 0:
         assert seed_doc_chunking_counter(doc["id"], chunking_n), "Can't access Redis. Please check the Redis' status."
     try:
+        llm_user_id = normalize_llm_user_id(user_id) or normalize_llm_user_id(doc.get("llm_user_id"))
         for unfinished_task in unfinished_task_array:
-            assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, suffix), message=unfinished_task), "Can't access Redis. Please check the Redis' status."
+            message = dict(unfinished_task)
+            if llm_user_id:
+                # Redis-only: Task rows have no user_id column. The worker copies
+                # this onto the in-memory task and installs it as LLM request context
+                # so embedding HTTP calls can forward OpenAI ``user``.
+                message["user_id"] = llm_user_id
+            assert REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, suffix), message=message), "Can't access Redis. Please check the Redis' status."
     except Exception:
         abort_doc_chunking_counter(doc["id"])
         raise
@@ -634,7 +661,16 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CANVAS_DEBUG_DOC_ID, file: dict = None, priority: int = 0, rerun: bool = False) -> tuple[bool, str]:
+def queue_dataflow(
+    tenant_id: str,
+    flow_id: str,
+    task_id: str,
+    doc_id: str = CANVAS_DEBUG_DOC_ID,
+    file: dict = None,
+    priority: int = 0,
+    rerun: bool = False,
+    user_id: str | None = None,
+) -> tuple[bool, str]:
 
     task = dict(
         id=task_id,
@@ -654,6 +690,9 @@ def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CAN
     task["tenant_id"] = tenant_id
     task["dataflow_id"] = flow_id
     task["file"] = file
+    llm_user_id = normalize_llm_user_id(user_id)
+    if llm_user_id:
+        task["user_id"] = llm_user_id
 
     if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, "common"), message=task):
         return False, "Can't access Redis. Please check the Redis' status."

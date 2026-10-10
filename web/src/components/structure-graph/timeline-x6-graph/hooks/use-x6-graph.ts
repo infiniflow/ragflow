@@ -71,9 +71,13 @@ export function useX6Graph(
     const dagreLayout = new DagreLayout({
       type: 'dagre',
       rankdir: 'LR',
-      ranksep: 240,
-      nodesep: 200,
-      edgeMinLen: 2,
+      // DagreLayout does not read each node's own width/height; without
+      // nodeSize it treats every node as 0x0, so ranksep/nodesep end up
+      // being node-center distances and nodes overlap their edges.
+      nodeSize: (node) => [node.width, node.height],
+      // With real node sizes these are border-to-border gaps.
+      ranksep: 80,
+      nodesep: 120,
       controlPoints: false,
     });
 

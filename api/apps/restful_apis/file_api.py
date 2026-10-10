@@ -141,7 +141,7 @@ async def list_files(tenant_id: str = None):
         return get_error_argument_result(err)
 
     try:
-        success, result = file_api_service.list_files(tenant_id, args)
+        success, result = await thread_pool_exec(file_api_service.list_files, tenant_id, args)
         if success:
             return get_result(data=result)
         else:

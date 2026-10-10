@@ -9,6 +9,41 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v0.27.2
+
+Released on Sep 10, 2026.
+
+### New features
+- Agentic RAG: Refactored the Agentic RAG retrieval framework, significantly improving reasoning speed and benchmark performance. ([#19046](https://github.com/infiniflow/ragflow/pull/19046), [#19112](https://github.com/infiniflow/ragflow/pull/19112), [#19172](https://github.com/infiniflow/ragflow/pull/19172), [#19209](https://github.com/infiniflow/ragflow/pull/19209), [#19424](https://github.com/infiniflow/ragflow/pull/19424), [#19459](https://github.com/infiniflow/ragflow/pull/19459))
+- Knowledge compilation runtime settings ([#19254](https://github.com/infiniflow/ragflow/pull/19254))
+- Enforce a rate limit on the knowledge compilation pipeline ([#19156](https://github.com/infiniflow/ragflow/pull/19156))
+- Knowledge graph shows total and current node counts ([#19142](https://github.com/infiniflow/ragflow/pull/19142),[#19095](https://github.com/infiniflow/ragflow/pull/19095), [#19114](https://github.com/infiniflow/ragflow/pull/19114))
+- Graph search highlights the node when pressing Enter on an entity name ([#19320](https://github.com/infiniflow/ragflow/pull/19320))
+- New Sitemap data source for sitemap.xml-based web ingestion ([#19344](https://github.com/infiniflow/ragflow/pull/19344))
+- WebDAV connector supports custom CA certificates ([#16901](https://github.com/infiniflow/ragflow/pull/16901))
+- MonkeyOCRv2 parsing support ([#18887](https://github.com/infiniflow/ragflow/pull/18887))
+- Self-hosted PaddleOCR-VL deployment support ([#19011](https://github.com/infiniflow/ragflow/pull/19011))
+- New Sofya search tool for agent ([#19323](https://github.com/infiniflow/ragflow/pull/19323))
+- EPUB document preview ([#19242](https://github.com/infiniflow/ragflow/pull/19242))
+- Excel citation sources located in document preview ([#18853](https://github.com/infiniflow/ragflow/pull/18853))
+
+### Model Support
+- New Hubris model provider ([#19341](https://github.com/infiniflow/ragflow/pull/19341))
+- New llmman model provider ([#19030](https://github.com/infiniflow/ragflow/pull/19030))
+
+### Improvements
+- New RERANK_TOKEN_LIMIT_MODE configuration ([#19404](https://github.com/infiniflow/ragflow/pull/19404))
+- Highlight in retrieval testing and search ([#18981](https://github.com/infiniflow/ragflow/pull/18981))
+- Similarity threshold displayed as a percentage ([#18974](https://github.com/infiniflow/ragflow/pull/18974))
+
+### UI/UX
+- Completed Turkish locale ([#19009](https://github.com/infiniflow/ragflow/pull/19009))
+- Search match highlighting in Team settings tables ([#15985](https://github.com/infiniflow/ragflow/pull/15985))
+
+### Bug fixes
+- Fixed images uploaded in chat being ignored by vision models ([#18884](https://github.com/infiniflow/ragflow/pull/18884))
+- Fixed non-UTF-8 encodings in CSV/TXT preview and document decoding ([#19222](https://github.com/infiniflow/ragflow/pull/19222), [#19253](https://github.com/infiniflow/ragflow/pull/19253))
+
 ## v0.27.1
 
 Released on Aug 28, 2026.
@@ -476,7 +511,7 @@ Released on February 10, 2026.
   - Outputs Memory extraction log to the console.
 - Dataset
   - Supports batch metadata management.
-  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/dataset/advanced/extract_table_of_contents.md).
+  - Renames "ToC (Table of Contents)" to "PageIndex". See [here](./guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#pageindex).
 - Agent
   - Launches a new Chat-like Agent conversation management interface that retains sessions and dialogue history.
   - Introduces a multi-Sandbox mechanism supporting local gVisor and Alibaba Cloud, with compatibility for mainstream Sandbox APIs (configurable in the Admin page).
@@ -680,7 +715,7 @@ Released on October 15, 2025.
 
 - Orchestratable ingestion pipeline: Supports customized data ingestion and cleansing workflows, enabling users to flexibly design their data flows or directly apply the official data flow templates on the canvas.
 - GraphRAG & RAPTOR write process optimized: Replaces the automatic incremental build process with manual batch building, significantly reducing construction overhead.
-- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/dataset/advanced/extract_table_of_contents.md).
+- Long-context RAG: Automatically generates document-level table of contents (TOC) structures to mitigate context loss caused by inaccurate or excessive chunking, substantially improving retrieval quality. This feature is now available via a TOC extraction template. See [here](./guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#pageindex).
 - Video file parsing: Expands the system's multimodal data processing capabilities by supporting video file parsing.
 - Admin CLI: Introduces a new command-line tool for system administration, allowing users to manage and monitor RAGFlow's service status via command line.
 
@@ -935,8 +970,8 @@ From this release onwards, built-in rerank models have been removed because they
 #### Added documents
 
 - [Set page rank](./guides/dataset/configuration.md#basic-information)
-- [Enable RAPTOR](./guides/dataset/advanced/enable_raptor.md)
-- [Set variables for your chat assistant](./guides/chat/set_chat_variables.md)
+- Enable RAPTOR
+- Set variables for your chat assistant
 - [Launch RAGFlow MCP server](./develop/mcp/launch_mcp_server.md)
 
 ## v0.17.2
@@ -1047,12 +1082,12 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/dataset/advanced/construct_knowledge_graph.md).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph).
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
 - Upgrades RAGFlow's document engine [Infinity](https://github.com/infiniflow/infinity) to v0.6.0.dev3.
-- Supports GPU acceleration for DeepDoc (see [docker-compose-gpu.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose-gpu.yml)).
+- Supports GPU acceleration for DeepDoc (see [docker-compose.yml](https://github.com/infiniflow/ragflow/blob/main/docker/docker-compose.yml)).
 - Supports creating and referencing a **Tag** dataset as a key milestone towards bridging the semantic gap between query and response.
 
 :::danger IMPORTANT

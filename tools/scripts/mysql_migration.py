@@ -1613,7 +1613,8 @@ class ModelTypeMergeStage(MigrationStage):
             return 0, []
 
         # Create temporary table with model_type as INTEGER
-        self.create_target_table()
+        if not self.dry_run:
+            self.create_target_table()
 
         if self.create_table_only:
             logger.info("[CREATE TABLE ONLY] Temporary table created, skipping data merge")
@@ -2149,10 +2150,10 @@ Examples:
   python mysql_migration.py --list-stages
 
   # Check whether migration is needed for a target version
-  python mysql_migration.py --check-database-version --database-version v0.27.1 --config /path/to/config.yaml
+  python mysql_migration.py --check-database-version --database-version v0.27.2 --config /path/to/config.yaml
 
   # Mark database version separately
-  python mysql_migration.py --mark-database-version --database-version v0.27.1 --config /path/to/config.yaml
+  python mysql_migration.py --mark-database-version --database-version v0.27.2 --config /path/to/config.yaml
 
   # Dry run (default - check only, no write) with config file
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml
@@ -2166,11 +2167,11 @@ Examples:
   # Execute full migration (create tables and migrate data)
   python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute
 
-  # Execute migration only when database version is lower than v0.27.1
-  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.27.1
+  # Execute migration only when database version is lower than v0.27.2
+  python mysql_migration.py --stages tenant_model_provider --config /path/to/config.yaml --execute --database-version v0.27.2
 
   # Execute migration and mark the database version when all stages succeed
-  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.27.1 --mark-database-version-on-success
+  python mysql_migration.py --stages tenant_model_provider,tenant_model_instance,tenant_model,model_id_config --config /path/to/config.yaml --execute --database-version v0.27.2 --mark-database-version-on-success
 
   # Normalize legacy model IDs in stored configs
   python mysql_migration.py --stages model_id_config --config /path/to/config.yaml --execute

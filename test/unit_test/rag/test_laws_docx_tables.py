@@ -37,6 +37,12 @@ class _DummyBase:
     def __init__(self, *a, **k):
         pass
 
+    @staticmethod
+    def extract_text_boxes(paragraph):
+        # These tests are about tables; text boxes have their own suite in
+        # test_docx_text_boxes.py, which loads the real DocxParser.
+        return []
+
 
 @pytest.fixture(scope="module")
 def docx_chunker():

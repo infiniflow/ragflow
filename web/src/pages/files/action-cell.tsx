@@ -9,6 +9,7 @@ import { UseRowSelectionType } from '@/hooks/logic-hooks/use-row-selection';
 import { useDownloadFile } from '@/hooks/use-file-request';
 import { IFile } from '@/interfaces/database/file-manager';
 import { cn } from '@/lib/utils';
+import { useIsGoBackend } from '@/utils/backend-variant';
 import {
   getExtension,
   isSupportedPreviewDocumentType,
@@ -51,8 +52,10 @@ export function ActionCell({
   const type = record.type;
 
   const { downloadFile } = useDownloadFile();
+  const isSkillsEnabled = useIsGoBackend();
   const isFolder = isFolderType(record.type);
-  const isSkillsFolder = isFolder && record.name.toLowerCase() === 'skills';
+  const isSkillsFolder =
+    isSkillsEnabled && isFolder && record.name.toLowerCase() === 'skills';
   const extension = getExtension(record.name);
   const isKnowledgeBase = isKnowledgeBaseType(record.source_type);
 

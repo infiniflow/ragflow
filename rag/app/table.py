@@ -35,6 +35,7 @@ from common.constants import MAXIMUM_TASK_PAGE_NUMBER
 from deepdoc.parser.utils import get_text
 from rag.nlp import rag_tokenizer, tokenize, tokenize_table
 from deepdoc.parser import ExcelParser
+from deepdoc.parser.excel_parser import detect_csv_delimiter
 from common import settings
 
 logger = logging.getLogger(__name__)
@@ -74,7 +75,7 @@ class Excel(ExcelParser):
         lang="English",
         **kwargs,
     ):
-        if not binary:
+        if binary is None:
             wb = Excel._load_excel_to_workbook(fnm)
         else:
             wb = Excel._load_excel_to_workbook(BytesIO(binary))
@@ -443,7 +444,8 @@ def column_data_type(arr):
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
     """
     Excel and csv(txt) format files are supported.
-    For csv or txt file, the delimiter between columns is TAB.
+    For a txt file the delimiter between columns is TAB; for a csv file it is
+    detected from the file itself, and can be forced with the `delimiter` kwarg.
     The first line must be column headers.
     Column headers must be meaningful terms inorder to make our NLP model understanding.
     It's good to enumerate some synonyms using slash '/' to separate, and even better to
@@ -497,7 +499,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
     elif re.search(r"\.csv$", filename, re.IGNORECASE):
         callback(0.1, "Start to parse.")
         txt = get_text(filename, binary)
-        delimiter = kwargs.get("delimiter", ",")
+        # A .csv is not always comma separated, and reading one with the wrong
+        # separator does not fail -- every row becomes a single column holding
+        # the whole line.
+        delimiter = kwargs.get("delimiter") or detect_csv_delimiter(txt)
 
         reader = csv.reader(io.StringIO(txt), delimiter=delimiter)
         all_rows = list(reader)
@@ -635,14 +640,10 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_TASK_PAGE_NUMBER, 
                         fld = clmns_map[j][0]
                         if clmn_tys[j] != "text":
                             val = row[col_name]
-                            # If a string value ended up in a non-text column,
-                            # it was preserved from a failed conversion in
-                            # column_data_type. Skip storing in the typed ES
-                            # field to avoid type mapping errors; the value is
-                            # already in text_fields for chunk content.
-                            if isinstance(val, str):
-                                pass
-                            else:
+                            # Valid datetime and bool conversions are strings;
+                            # other strings in typed columns are failed conversions.
+                            valid_typed_string = isinstance(val, str) and (clmn_tys[j] == "datetime" and trans_datatime(val) or clmn_tys[j] == "bool" and trans_bool(val))
+                            if not isinstance(val, str) or valid_typed_string:
                                 stored[fld] = val
                         else:
                             cell = row[col_name]

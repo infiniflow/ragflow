@@ -911,7 +911,7 @@ def append_context2table_image4pdf(sections: list, tabls: list, table_context_si
             else:
                 poss = []
         if isinstance(txt, str) and "@@" in txt:
-            txt = re.sub(r"@@[0-9-]+\t[0-9.\t]+##", "", txt).strip()
+            txt = re.sub(r"@@[0-9-]+\t[-0-9.\t]+##", "", txt).strip()
         for page, left, right, top, bottom in poss:
             if isinstance(page, list):
                 page = page[0] if page else 0
@@ -1042,7 +1042,7 @@ def remove_contents_table(sections, eng=False):
             nonlocal sections
             return (sections[i] if isinstance(sections[i], str) else sections[i][0]).strip()
 
-        if not re.match(r"(contents|目录|目次|table of contents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0], flags=re.IGNORECASE)):
+        if not re.match(r"(contents|目录|目次|tableofcontents|致谢|acknowledge)$", re.sub(r"( | |\u3000)+", "", get(i).split("@@")[0]), flags=re.IGNORECASE):
             i += 1
             continue
         sections.pop(i)
@@ -1117,7 +1117,7 @@ def not_title(txt):
     return re.search(r"[,;，。；！!]", txt)
 
 
-def tree_merge(bull, sections, depth):
+def tree_merge(bull, sections, depth, chunk_token_num=0):
     if not sections or bull < 0:
         return sections
     if isinstance(sections[0], str):
@@ -1158,7 +1158,7 @@ def tree_merge(bull, sections, depth):
     if target_level == len(BULLET_PATTERN[bull]) + 2:
         target_level = sorted_levels[-2] if len(sorted_levels) > 1 else sorted_levels[0]
 
-    root = Node(level=0, depth=target_level, texts=[])
+    root = Node(level=0, depth=target_level, chunk_token_num=chunk_token_num, texts=[])
     root.build_tree(lines)
 
     return [element for element in root.get_tree() if element]
@@ -1372,12 +1372,18 @@ def merge_paragraphs(paragraphs, token_size, strategy=MergeStrategy.OVER_CAP, si
     time (not captured at definition) so tests can monkeypatch the tokenizer
     deterministically via ``rag.nlp.num_tokens_from_string``.
 
-    Chunking contract (refs #17799)
+    Chunking contract (refs #17799, #20276)
     --------------------------------
-    * **Delimiter is a chunk boundary.** The delimiter text specified by the
-      user never enters a chunk. ``naive_merge`` / ``naive_merge_with_images``
-      split every section on the delimiter (except the empty-delimiter
-      size-only mode) so boundary text cannot leak into a chunk.
+    * **Bare delimiters are retained losslessly.** ``naive_merge`` /
+      ``naive_merge_with_images`` split every section on the delimiter and
+      attach each *bare* delimiter to the paragraph that precedes it, so
+      concatenating the emitted chunks reproduces the source exactly
+      (sentence punctuation such as `。；！？` / `.` / `!` is kept, and no
+      spurious newline is synthesized — Python parity with the Go TokenChunker,
+      #20276).
+    * **Custom (backtick-wrapped) delimiters are dropped.** When the delimiter
+      field contains a backtick-wrapped token, every segment becomes its own
+      chunk and the delimiter text is not retained.
     * **``token_size`` is a soft target + merge strategy.** There is no
       atom-split: a paragraph larger than ``token_size`` stands alone as its own
       chunk and is truncated later by the model layer.
@@ -1447,6 +1453,36 @@ def _apply_overlap_unconditional(chunks, overlapped_percent):
     return out
 
 
+def _split_segments_retain_delimiter(sec, dels):
+    """Split ``sec`` on the delimiter pattern, keeping each bare delimiter.
+
+    The delimiter that ends a piece is attached to that piece, so the pieces
+    reproduce ``sec`` when concatenated (lossless — #20276 Python parity with
+    the Go TokenChunker). Consecutive delimiters and whitespace-only pieces are
+    folded into an adjacent piece so no empty chunk is emitted and source blank
+    lines survive.
+
+    ``dels`` is the compiled delimiter pattern (empty means no split).
+    """
+    if not dels:
+        return [sec]
+    parts = re.split(r"(" + dels + r")", sec, flags=re.DOTALL)
+    segs = []
+    cur = ""
+    for i, part in enumerate(parts):
+        cur += part
+        # Odd indices are the delimiter captures; a capture closes the current
+        # piece. Even indices are text pieces (the final one is flushed below).
+        if i % 2 == 1 and cur.strip():
+            segs.append(cur)
+            cur = ""
+        # When the capture so far is whitespace-only (e.g. a blank line), fold
+        # it into the next piece by leaving `cur` accumulating.
+    if cur.strip():
+        segs.append(cur)
+    return segs
+
+
 def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DELIMITER, overlapped_percent=0, strategy=MergeStrategy.OVER_CAP):
     """Split sections into chunks. Chunking contract: see ``merge_paragraphs`` (refs #17799)."""
     if not sections:
@@ -1484,25 +1520,31 @@ def naive_merge(sections: str | list, chunk_token_num=128, delimiter=DEFAULT_DEL
                 cks.append(text)
         return cks
 
-    # Default path: split every section on the delimiter into paragraphs (no
-    # delimiter text), then group paragraphs with the chosen merge strategy.
-    # No atom-split is performed: a paragraph larger than ``chunk_token_num``
-    # becomes its own chunk; the model layer truncates oversize units.
+    # Default path: split every section on the delimiter into paragraphs,
+    # retaining each bare delimiter by attaching it to the paragraph that
+    # precedes it (#20276 Python parity with the Go TokenChunker). A paragraph
+    # is the text up to and including the delimiter that ends it; the final
+    # paragraph carries no trailing delimiter. Concatenating the emitted chunks
+    # therefore reproduces the source exactly, instead of dropping sentence
+    # punctuation (e.g. `。；！？` / `.` / `!`) and synthesizing spurious "\n".
     #
-    # A section is split on the delimiter whenever one is present -- even when
-    # the whole section already fits ``chunk_token_num``. The delimiter is a
-    # chunk boundary and its text must never leak into a chunk; only the
-    # empty-delimiter (size-only) mode below skips splitting.
+    # Only the first paragraph of each section is prefixed with "\n" so that the
+    # paragraph break between original sections survives; within a section the
+    # retained delimiter already separates the pieces, so no extra newline is
+    # injected. Bare delimiters are kept; custom (backtick-wrapped) delimiters
+    # are dropped by the `has_custom` branch above.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos)
-    for sec, pos in sections:
+    for sec_idx, (sec, pos) in enumerate(sections):
         if not dels:
+            # Empty delimiter: size-only mode. The whole section is one
+            # paragraph; every section keeps its leading "\n" so the
+            # inter-section separation survives (matches naive_merge_with_images).
             paragraphs.append(("\n" + sec, pos))
             continue
-        for sub_sec in re.split(r"(%s)" % dels, sec, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            paragraphs.append(("\n" + sub_sec, pos))
+        for j, ptext in enumerate(_split_segments_retain_delimiter(sec, dels)):
+            prefix = "\n" if j == 0 else ""
+            paragraphs.append((prefix + ptext, pos))
 
     groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks = [_reconstruct_text_chunk(paragraphs, g) for g in groups]
@@ -1545,11 +1587,11 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAUL
                 result_images.append(image)
         return cks, result_images
 
-    # Default path: split every text on the delimiter into paragraphs (no
-    # delimiter text) carrying its image, then group with the merge strategy.
-    # Images of merged paragraphs are concatenated; no atom-split is performed.
-    # As in ``naive_merge``, a small text is still split on the delimiter so
-    # the boundary text never leaks into a chunk; only empty-delimiter skips.
+    # Default path: split every text on the delimiter into paragraphs,
+    # retaining each bare delimiter (lossless — #20276 Python parity). Only the
+    # first paragraph of each text is prefixed with "\n"; the retained
+    # delimiter already separates pieces within a text, so no extra newline is
+    # synthesized. Images of merged paragraphs are concatenated; no atom-split.
     dels = compile_delimiter_pattern(parsed_dels)
     paragraphs = []  # list of (text, pos, image)
     for text, image in zip(texts, images):
@@ -1564,10 +1606,9 @@ def naive_merge_with_images(texts, images, chunk_token_num=128, delimiter=DEFAUL
         if not dels:
             paragraphs.append(("\n" + text_str, text_pos, image))
             continue
-        for sub_sec in re.split(r"(%s)" % dels, text_str, flags=re.DOTALL):
-            if not sub_sec or re.fullmatch(dels, sub_sec):
-                continue
-            paragraphs.append(("\n" + sub_sec, text_pos, image))
+        for j, ptext in enumerate(_split_segments_retain_delimiter(text_str, dels)):
+            prefix = "\n" if j == 0 else ""
+            paragraphs.append((prefix + ptext, text_pos, image))
 
     groups = _merge_paragraph_groups([p[0] for p in paragraphs], chunk_token_num, strategy, num_tokens_from_string, overlapped_percent)
     cks, result_images = [], []
@@ -1645,6 +1686,15 @@ def concat_img(img1, img2):
 
 
 def _build_cks(sections, delimiter):
+    """Split ``(text, image, table)`` sections into typed chunks.
+
+    Text is buffered and split on the parsed ``delimiter`` field; each table
+    or image section becomes its own chunk. A *bare* delimiter is retained by
+    attaching it to the text segment that precedes it (lossless, #20276 parity
+    with the Go TokenChunker — sentence punctuation such as `。；！？` is kept);
+    a *custom* (backtick-wrapped) delimiter is dropped. Returns
+    ``(cks, tables, images, has_custom)``.
+    """
     cks = []
     tables = []
     images = []
@@ -1659,6 +1709,29 @@ def _build_cks(sections, delimiter):
     pattern = r"(%s)" % split_pattern if split_pattern else ""
 
     seg = ""
+
+    def _flush_seg():
+        """Emit pending text before a table/image chunk is appended.
+
+        Plain text is buffered in ``seg`` and only flushed when a delimiter
+        matches, whereas table/image chunks are appended immediately. Without
+        this flush the buffered text lands *after* the table/image, breaking
+        document order and swapping context_above / context_below in
+        _add_context() (which decides "above"/"below" by array position).
+        """
+        nonlocal seg
+        if seg and seg.strip():
+            s = seg.strip()
+            cks.append(
+                {
+                    "text": s,
+                    "image": None,
+                    "ck_type": "text",
+                    "tk_nums": num_tokens_from_string(s),
+                }
+            )
+        seg = ""
+
     for text, image, table in sections:
         # normalize text: ensure string and prepend newline for continuity
         if not text:
@@ -1668,6 +1741,7 @@ def _build_cks(sections, delimiter):
 
         if table:
             # table chunk
+            _flush_seg()
             ck_text = text + str(table)
             idx = len(cks)
             cks.append(
@@ -1683,6 +1757,7 @@ def _build_cks(sections, delimiter):
 
         if image:
             # image chunk (text kept as-is for context)
+            _flush_seg()
             idx = len(cks)
             cks.append(
                 {
@@ -1705,32 +1780,66 @@ def _build_cks(sections, delimiter):
                 # ① matched delimiter (exact capture; do not strip — wrapped
                 # whitespace delimiters such as `` ` ` `` or `\n` must match here)
                 if re.fullmatch(split_pattern, sub_sec):
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter: drop it and flush the preceding
+                        # buffer as its own chunk (matches naive_merge's
+                        # custom-delimiter path).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter: retain it by emitting the preceding
+                        # text together with the delimiter as a chunk (lossless,
+                        # the #20276 parity with the Go TokenChunker — sentence
+                        # punctuation such as `。；！？` is kept), then reset the
+                        # buffer so the next segment starts a fresh chunk.
+                        # #20384 attached the delimiter to `seg` but never
+                        # flushed, which collapsed the whole section into a
+                        # single chunk (the docx "不分块" regression). Flushing
+                        # here restores the per-delimiter split; _merge_cks
+                        # still merges small chunks up to chunk_token_num.
+                        if seg and seg.strip():
+                            s = (seg + sub_sec).strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
                     continue
 
-                # ② empty or whitespace-only ordinary segment → flush current buffer
+                # ② empty or whitespace-only ordinary segment
                 if not sub_sec.strip():
-                    if seg and seg.strip():
-                        s = seg.strip()
-                        cks.append(
-                            {
-                                "text": s,
-                                "image": None,
-                                "ck_type": "text",
-                                "tk_nums": num_tokens_from_string(s),
-                            }
-                        )
-                    seg = ""
+                    if has_custom:
+                        # Custom delimiter mode: drop the buffered text between
+                        # delimiters (matches the flush above).
+                        if seg and seg.strip():
+                            s = seg.strip()
+                            cks.append(
+                                {
+                                    "text": s,
+                                    "image": None,
+                                    "ck_type": "text",
+                                    "tk_nums": num_tokens_from_string(s),
+                                }
+                            )
+                        seg = ""
+                    else:
+                        # Bare delimiter mode: fold the whitespace into the
+                        # buffer so it is not lost between consecutive
+                        # delimiters (lossless).
+                        seg += sub_sec
                     continue
 
                 # ③ normal text content → accumulate
@@ -1894,9 +2003,10 @@ def extract_between(text: str, start_tag: str, end_tag: str) -> list[str]:
 
 
 class Node:
-    def __init__(self, level, depth=-1, texts=None):
+    def __init__(self, level, depth=-1, chunk_token_num=0, texts=None):
         self.level = level
         self.depth = depth
+        self.chunk_token_num = chunk_token_num
         self.texts = texts or []
         self.children = []
 
@@ -1953,22 +2063,67 @@ class Node:
         texts = node.get_texts()
         child = node.get_children()
 
-        if level == 0 and texts:
-            tree_list.append("\n".join(titles + texts))
+        def _tok(s):
+            # Position tags (@@page\tx0\t...##) are not body content, so strip
+            # them before counting, matching hierarchical_merge's budget
+            # accounting.
+            return num_tokens_from_string(re.sub(r"@@[0-9]+.*", "", s))
 
-        # Titles within configured depth are accumulated into the current path
+        def _emit(title_parts, body_parts):
+            # Split an over-long accumulation into chunk_token_num-budgeted
+            # pieces instead of joining it whole, mirroring hierarchical_merge's
+            # overflow split for a hierarchy group: title_parts is repeated on
+            # every emitted piece (its tokens count against that piece's
+            # budget) so a continuation chunk never loses the heading path. A
+            # non-positive chunk_token_num (unset) preserves today's
+            # single-chunk behaviour.
+            if not self.chunk_token_num or self.chunk_token_num <= 0 or not body_parts:
+                tree_list.append("\n".join(title_parts + body_parts))
+                return
+            title_n = sum(_tok(t) for t in title_parts)
+            cur, cur_n = [], title_n
+            for t in body_parts:
+                n = _tok(t)
+                if cur and cur_n + n > self.chunk_token_num:
+                    tree_list.append("\n".join(title_parts + cur))
+                    cur, cur_n = [], title_n
+                cur.append(t)
+                cur_n += n
+            if cur:
+                tree_list.append("\n".join(title_parts + cur))
+
+        if level == 0 and texts:
+            _emit(titles, texts)
+
+        # Titles within configured depth are accumulated into the current path.
+        # Only the node's own heading (texts[:1]) is carried forward: any body
+        # text merged onto this node before its first child appeared
+        # (build_tree attaches beyond-depth lines onto the current stack top)
+        # is emitted as its own budgeted chunk below instead of being folded,
+        # unsplit, into every descendant chunk's title prefix.
         if 1 <= level <= self.depth:
-            path_titles = titles + texts
+            path_titles = titles + texts[:1]
         else:
             path_titles = titles
 
         # Body outside the depth limit becomes its own chunk under the current title path
         if level > self.depth and texts:
-            tree_list.append("\n".join(path_titles + texts))
+            _emit(path_titles, texts)
 
-        # A leaf title within depth emits its title path as a chunk (header-only section)
+        # A leaf title within depth emits its title path as a chunk (header-only section).
+        # texts[0] is this node's own heading and texts[1:] is any overflow body merged
+        # onto it; split only the body and repeat the heading path on every piece so a
+        # continuation chunk never loses the title.
         elif not child and (1 <= level <= self.depth):
-            tree_list.append("\n".join(path_titles))
+            _emit(titles + texts[:1], texts[1:])
+
+        # A node with children can still carry body text of its own, accumulated
+        # before its first child appeared. Emit that overflow as its own
+        # budgeted chunk under this node's title path, same as a leaf's own
+        # body, instead of folding it unsplit into path_titles for every
+        # descendant chunk (which duplicated it, uncapped, into every split).
+        elif child and (1 <= level <= self.depth) and len(texts) > 1:
+            _emit(titles + texts[:1], texts[1:])
 
         # Recurse into children with the updated title path
         for c in child:

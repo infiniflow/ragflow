@@ -15,7 +15,6 @@
 #
 import gc
 import logging
-import copy
 import time
 import os
 
@@ -34,6 +33,11 @@ import onnxruntime as ort
 from .postprocess import build_post_process
 
 loaded_models = {}
+
+# OpenCV remap (used by cv2.warpPerspective) asserts src/dst width and height
+# are strictly less than SHRT_MAX (32767). Oversized PDF page renders can
+# exceed that and crash chunking.
+_OPENCV_REMAP_MAX_DIM = 32766
 
 
 def transform(data, ops=None):
@@ -558,7 +562,19 @@ class OCR:
         self.drop_score = 0.5
         self.crop_image_res_index = 0
 
-    def get_rotate_crop_image(self, img, points):
+    @staticmethod
+    def _prepare_crop_source(img):
+        img_h, img_w = img.shape[:2]
+        max_src_side = max(img_w, img_h)
+        if max_src_side <= _OPENCV_REMAP_MAX_DIM:
+            return img, 1.0
+
+        scale = _OPENCV_REMAP_MAX_DIM / max_src_side
+        new_w = max(1, int(img_w * scale))
+        new_h = max(1, int(img_h * scale))
+        return cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA), scale
+
+    def _get_rotate_crop_image(self, img, points, scale=1.0):
         """
         img_height, img_width = img.shape[0:2]
         left = int(np.min(points[:, 0]))
@@ -570,8 +586,23 @@ class OCR:
         points[:, 1] = points[:, 1] - top
         """
         assert len(points) == 4, "shape of points must be 4*2"
+        points = np.asarray(points, dtype=np.float32).copy()
+        points *= scale
+        img_h, img_w = img.shape[:2]
+        if img_h <= 0 or img_w <= 0:
+            channels = img.shape[2] if img.ndim == 3 else 1
+            return np.zeros((1, 1, channels), dtype=img.dtype) if img.ndim == 3 else np.zeros((1, 1), dtype=img.dtype)
+
+        # Clamp detector quads to the source image so out-of-range coordinates
+        # cannot inflate the warp destination.
+        points[:, 0] = np.clip(points[:, 0], 0, max(img_w - 1, 0))
+        points[:, 1] = np.clip(points[:, 1], 0, max(img_h - 1, 0))
+
         img_crop_width = int(max(np.linalg.norm(points[0] - points[1]), np.linalg.norm(points[2] - points[3])))
         img_crop_height = int(max(np.linalg.norm(points[0] - points[3]), np.linalg.norm(points[1] - points[2])))
+        img_crop_width = max(img_crop_width, 1)
+        img_crop_height = max(img_crop_height, 1)
+
         pts_std = np.float32([[0, 0], [img_crop_width, 0], [img_crop_width, img_crop_height], [0, img_crop_height]])
         M = cv2.getPerspectiveTransform(points, pts_std)
         dst_img = cv2.warpPerspective(img, M, (img_crop_width, img_crop_height), borderMode=cv2.BORDER_REPLICATE, flags=cv2.INTER_CUBIC)
@@ -601,6 +632,14 @@ class OCR:
             # Use the best image
             dst_img = best_img
         return dst_img
+
+    def get_rotate_crop_image(self, img, points):
+        src, scale = self._prepare_crop_source(img)
+        return self._get_rotate_crop_image(src, points, scale)
+
+    def get_rotate_crop_images(self, img, boxes):
+        src, scale = self._prepare_crop_source(img)
+        return [self._get_rotate_crop_image(src, points, scale) for points in boxes]
 
     def sorted_boxes(self, dt_boxes):
         """
@@ -701,14 +740,8 @@ class OCR:
             time_dict["all"] = end - start
             return None, None, time_dict
 
-        img_crop_list = []
-
         dt_boxes = self.sorted_boxes(dt_boxes)
-
-        for bno in range(len(dt_boxes)):
-            tmp_box = copy.deepcopy(dt_boxes[bno])
-            img_crop = self.get_rotate_crop_image(ori_im, tmp_box)
-            img_crop_list.append(img_crop)
+        img_crop_list = self.get_rotate_crop_images(ori_im, dt_boxes)
 
         rec_res, elapse = self.text_recognizer[device_id](img_crop_list)
 

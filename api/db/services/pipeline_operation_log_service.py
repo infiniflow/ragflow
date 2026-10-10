@@ -18,6 +18,7 @@ import logging
 import os
 import re
 from datetime import datetime, timedelta
+from functools import lru_cache
 
 from peewee import fn
 
@@ -29,9 +30,102 @@ from api.db.services.document_service import DocumentService
 from api.db.services.knowledgebase_service import KnowledgebaseService
 from api.db.services.task_service import GRAPH_RAPTOR_FAKE_DOC_ID, TaskService
 from common.constants import PipelineTaskType, TaskStatus
+
+logger = logging.getLogger(__name__)
+
+
+@lru_cache(maxsize=1)
+def _parser_setup_key_by_suffix() -> dict[str, str]:
+    """Map document suffixes to the DSL "setups" key the flow Parser uses
+    to pick the per-type parser config (issue #18306).
+
+    Derived from ``ParserParam().setups`` (the source of truth used by
+    the runtime dispatch loop at rag/flow/parser/parser.py:1425-1426) so
+    the map can never diverge from the runtime — adding a new family or
+    suffix in ``ParserParam.setups`` flows through automatically.
+
+    Lazily evaluated on first call so importing this module does not pull
+    in ``rag.flow.parser.parser`` (which transitively imports deepdoc,
+    numpy, PIL) at API server startup. The first lookup happens only
+    when ``PipelineOperationLogService.create`` resolves a PARSE task's
+    pipeline parser.
+    """
+    from rag.flow.parser.parser import ParserParam
+
+    mapping: dict[str, str] = {}
+    for setup_key, conf in ParserParam().setups.items():
+        for suffix in conf.get("suffix", []):
+            mapping[suffix] = setup_key
+    return mapping
+
+
+def _load_dsl_mapping(dsl_str) -> dict | None:
+    """Decode + validate a pipeline DSL string into a mapping.
+
+    Returns None for missing, malformed, or non-mapping input so callers
+    can fall back to ``document.parser_id`` (issue #18306). An empty
+    mapping (``{}``) is a valid result and is returned as such so callers
+    can persist it on the log row. The PipelineOperationLog create path
+    decodes the DSL exactly once and reuses the parsed mapping for both
+    parser extraction and the persisted ``dsl`` column — avoids a
+    second ``json.loads`` that would re-raise on the same malformed
+    input.
+    """
+    if dsl_str is None or dsl_str == "":
+        return None
+    if isinstance(dsl_str, dict):
+        return dsl_str
+    try:
+        parsed = json.loads(dsl_str)
+    except (TypeError, ValueError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parser_for_document_from_dsl(dsl_mapping: dict | None, document_suffix: str) -> str | None:
+    """Return the parse_method the flow Parser would use for this document.
+
+    The Pipeline's Parser component configures ``parse_method`` per file
+    family (PDF, spreadsheet, slides, ...). For a dataflow task, the
+    PipelineOperationLog should record what the pipeline actually used,
+    not ``document.parser_id`` which may carry the KB default (e.g.
+    "DeepDOC") even when the Pipeline Parser component is set to
+    "Docling" — see issue #18306.
+
+    ``dsl_mapping`` must already be a decoded JSON object — callers
+    should run the raw DSL through :func:`_load_dsl_mapping` first so
+    malformed input is handled in one place.
+    """
+    if not isinstance(dsl_mapping, dict):
+        return None
+    components = dsl_mapping.get("components") or {}
+    if not isinstance(components, dict):
+        return None
+    setup_key = _parser_setup_key_by_suffix().get((document_suffix or "").lower())
+    if not setup_key:
+        return None
+    for cpn in components.values():
+        if not isinstance(cpn, dict):
+            continue
+        obj = cpn.get("obj")
+        if not isinstance(obj, dict) or obj.get("component_name") != "Parser":
+            continue
+        params = obj.get("params")
+        if not isinstance(params, dict):
+            continue
+        setups = params.get("setups")
+        if not isinstance(setups, dict):
+            continue
+        cfg = setups.get(setup_key)
+        if isinstance(cfg, dict):
+            method = cfg.get("parse_method")
+            if isinstance(method, str) and method:
+                return method
+    return None
+
+
 from common.misc_utils import get_uuid
 from common.time_utils import current_timestamp, datetime_format
-
 
 # KB-level fan-out pipeline task types (task row carries a fake doc_id; the real
 # participants live in task["doc_ids"]) → the KB ``<type>_task_finish_at`` column
@@ -145,13 +239,13 @@ class PipelineOperationLogService(CommonService):
         if task_type not in _PIPELINE_TASK_TYPE_TO_FINISH_FIELD:
             ok, document = DocumentService.get_by_id(referred_document_id)
             if not ok:
-                logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+                logger.warning(f"Document for referred_document_id {referred_document_id} not found")
                 return None
             DocumentService.update_progress_immediately([document.to_dict()])
 
         ok, document = DocumentService.get_by_id(referred_document_id)
         if not ok:
-            logging.warning(f"Document for referred_document_id {referred_document_id} not found")
+            logger.warning(f"Document for referred_document_id {referred_document_id} not found")
             return None
 
         # From document
@@ -163,6 +257,20 @@ class PipelineOperationLogService(CommonService):
         progress_msg = document.progress_msg
         process_begin_at = document.process_begin_at
         process_duration = document.process_duration
+        parser_id = document.parser_id
+
+        # Closes #18306: decode the DSL exactly once and reuse the parsed
+        # mapping for both parser extraction and the persisted ``dsl``
+        # column — avoids a second ``json.loads`` that would re-raise on
+        # the same malformed input. If the DSL is malformed or missing we
+        # fall back to an empty mapping instead of crashing, and the
+        # warning below tells the operator why the parser resolution
+        # fell back to ``document.parser_id``.
+        dsl_mapping = _load_dsl_mapping(dsl)
+        if dsl_mapping is None:
+            dsl_for_log = {}
+        else:
+            dsl_for_log = _remove_embedding_vectors(dsl_mapping)
 
         if pipeline_id:
             ok, user_pipeline = UserCanvasService.get_by_id(pipeline_id)
@@ -171,6 +279,41 @@ class PipelineOperationLogService(CommonService):
             tenant_id = user_pipeline.user_id
             title = user_pipeline.title
             avatar = user_pipeline.avatar
+            if task_type == PipelineTaskType.PARSE:
+                pipeline_parser = _parser_for_document_from_dsl(
+                    dsl_mapping,
+                    document.suffix or "",
+                )
+                if pipeline_parser:
+                    parser_id = pipeline_parser
+                elif dsl_mapping is None:
+                    # The pipeline's DSL is missing or malformed (None
+                    # from _load_dsl_mapping for None/""/invalid JSON/
+                    # non-mapping input). We can't recover the configured
+                    # parser from the DSL, so log the gap explicitly
+                    # before falling back to document.parser_id (which
+                    # may carry the KB default like "DeepDOC" — see
+                    # #18306).
+                    logger.warning(
+                        "[PipelineOperationLog] Pipeline DSL is missing or malformed for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
+                elif dsl and dsl != "":
+                    # This is not necessarily an error — many pipelines
+                    # legitimately have no Parser component (e.g. they
+                    # process already-chunked text from a prior stage).
+                    # Demoted to DEBUG so the warning channel isn't noisy
+                    # on every PARSE task where the pipeline just doesn't
+                    # happen to configure a Parser component (issue #18306
+                    # review follow-up).
+                    logger.debug(
+                        "[PipelineOperationLog] Could not resolve pipeline parser from DSL for document_id=%s suffix=%s; falling back to document.parser_id=%s.",
+                        document_id,
+                        document.suffix,
+                        parser_id,
+                    )
         else:
             ok, kb_info = KnowledgebaseService.get_by_id(document.kb_id)
             if not ok:
@@ -194,7 +337,7 @@ class PipelineOperationLogService(CommonService):
             process_duration = task.process_duration
 
             if not cls._is_final_state(progress, operation_status):
-                logging.info("Skip non-final dataset pipeline operation log task_id=%s task_type=%s progress=%s", task_id, task_type, progress)
+                logger.info("Skip non-final dataset pipeline operation log task_id=%s task_type=%s progress=%s", task_id, task_type, progress)
                 return None
 
             finish_at = process_begin_at + timedelta(seconds=process_duration)
@@ -203,32 +346,32 @@ class PipelineOperationLogService(CommonService):
                 {_PIPELINE_TASK_TYPE_TO_FINISH_FIELD[task_type]: finish_at},
             )
         elif not cls._is_final_state(progress, operation_status):
-            logging.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
+            logger.info("Skip non-final file pipeline operation log document_id=%s task_type=%s progress=%s", document_id, task_type, progress)
             return None
 
-        log = dict(
-            id=get_uuid(),
-            document_id=document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
-            tenant_id=tenant_id,
-            kb_id=document.kb_id,
-            pipeline_id=pipeline_id,
-            pipeline_title=title,
-            parser_id=document.parser_id,
-            document_name=document_name,
-            document_suffix=document.suffix,
-            document_type=document.type,
-            source_from=document.source_type.split("/")[0],
-            progress=progress,
-            progress_msg=progress_msg,
-            process_begin_at=process_begin_at,
-            process_duration=process_duration,
-            dsl=_remove_embedding_vectors(json.loads(dsl)),
-            task_type=task_type,
-            operation_status=operation_status,
-            avatar=avatar,
-        )
+        log = {
+            "id": get_uuid(),
+            "document_id": document_id,  # GRAPH_RAPTOR_FAKE_DOC_ID or real document_id
+            "tenant_id": tenant_id,
+            "kb_id": document.kb_id,
+            "pipeline_id": pipeline_id,
+            "pipeline_title": title,
+            "parser_id": parser_id,
+            "document_name": document_name,
+            "document_suffix": document.suffix,
+            "document_type": document.type,
+            "source_from": document.source_type.split("/")[0],
+            "progress": progress,
+            "progress_msg": progress_msg,
+            "process_begin_at": process_begin_at,
+            "process_duration": process_duration,
+            "dsl": dsl_for_log,
+            "task_type": task_type,
+            "operation_status": operation_status,
+            "avatar": avatar,
+        }
         timestamp = current_timestamp()
-        datetime_now = datetime_format(datetime.now())
+        datetime_now = datetime_format(datetime.now())  # noqa: DTZ005
         log["create_time"] = timestamp
         log["create_date"] = datetime_now
         log["update_time"] = timestamp
@@ -256,7 +399,7 @@ class PipelineOperationLogService(CommonService):
                     .first()
                 )
                 if existing:
-                    logging.debug(
+                    logger.debug(
                         "Skip duplicate pipeline operation log document_id=%s pipeline_id=%s task_type=%s process_begin_at=%s existing_id=%s",
                         document_id,
                         pipeline_id,
@@ -268,14 +411,14 @@ class PipelineOperationLogService(CommonService):
 
             obj = cls.save(**log)
 
-            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", 1000))
+            limit = int(os.getenv("PIPELINE_OPERATION_LOG_LIMIT", "1000"))
             total = cls.model.select().where(cls.model.kb_id == document.kb_id).count()
 
             if total > limit:
                 keep_ids = [m.id for m in cls.model.select(cls.model.id).where(cls.model.kb_id == document.kb_id).order_by(cls.model.create_time.desc()).limit(limit)]
 
                 deleted = cls.model.delete().where(cls.model.kb_id == document.kb_id, cls.model.id.not_in(keep_ids)).execute()
-                logging.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
+                logger.info(f"[PipelineOperationLogService] Cleaned {deleted} old logs, kept latest {limit} for {document.kb_id}")
 
         return obj
 

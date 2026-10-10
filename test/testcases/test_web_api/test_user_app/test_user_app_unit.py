@@ -606,6 +606,19 @@ def test_oauth_callback_matrix_unit(monkeypatch):
     monkeypatch.setattr(module, "get_auth_client", lambda _config: async_new_user)
     monkeypatch.setattr(module.UserService, "query", lambda **_kwargs: [])
 
+    module.settings.OAUTH_AUTO_REGISTER = False
+    register_calls = []
+    monkeypatch.setattr(module, "user_register", lambda *args: register_calls.append(args))
+    avatar_calls = []
+    monkeypatch.setattr(module, "download_img", lambda url: avatar_calls.append(url))
+    module.session.clear()
+    module.session["oauth_state"] = "blocked-state"
+    _set_request_args(monkeypatch, module, {"state": "blocked-state", "code": "code"})
+    res = _run(module.oauth_callback("github"))
+    assert res["redirect"] == "/?error=registration_disabled"
+    assert not register_calls and not avatar_calls
+    module.settings.OAUTH_AUTO_REGISTER = True
+
     def _raise_download(_url):
         raise RuntimeError("download explode")
 

@@ -48,10 +48,6 @@ The [.env](./.env) file contains important environment variables for Docker.
 
 - `KIBANA_PORT`
   The port used to expose the Kibana service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `6601`.
-- `KIBANA_USER`
-  The username for Kibana. Defaults to `rag_flow`.
-- `KIBANA_PASSWORD`
-  The password for Kibana. Defaults to `infini_rag_flow`.
 
 ### Resource management
 
@@ -90,7 +86,7 @@ The [.env](./.env) file contains important environment variables for Docker.
 - `SVR_HTTP_PORT`
   The port used to expose RAGFlow's HTTP API service to the host machine, allowing **external** access to the service running inside the Docker container. Defaults to `9380`.
 - `RAGFLOW_IMAGE`
-  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.1`. The RAGFlow Docker image does not include embedding models.
+  The Docker image edition. Defaults to `infiniflow/ragflow:v0.27.2`. The RAGFlow Docker image does not include embedding models.
 
 
 > [!TIP]

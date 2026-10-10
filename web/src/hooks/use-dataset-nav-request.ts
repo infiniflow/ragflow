@@ -27,8 +27,8 @@ export const DatasetNavKeys = {
   all: (kbId: string) => ['dataset_nav', kbId] as const,
   list: (kbId: string, keywords = '') =>
     ['dataset_nav', kbId, 'list', keywords] as const,
-  children: (kbId: string, name: string) =>
-    ['dataset_nav', kbId, 'children', name] as const,
+  children: (kbId: string, name: string, keywords = '') =>
+    ['dataset_nav', kbId, 'children', name, keywords] as const,
 };
 
 type DatasetNavResponse<T> = {
@@ -85,8 +85,12 @@ export function useFetchDatasetNav(keywords = '') {
   return { data, loading, isError, error, refetch };
 }
 
-export function useFetchDatasetNavChildren(parentName: string | null) {
+export function useFetchDatasetNavChildren(
+  parentName: string | null,
+  keywords = '',
+) {
   const kbId = useKnowledgeBaseId();
+  const trimmedKeywords = trim(keywords);
   const enabled = !!kbId && !!parentName;
 
   const {
@@ -96,7 +100,7 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
     error,
     refetch,
   } = useQuery<DatasetNavList | null>({
-    queryKey: DatasetNavKeys.children(kbId, parentName ?? ''),
+    queryKey: DatasetNavKeys.children(kbId, parentName ?? '', trimmedKeywords),
     initialData: null,
     enabled,
     gcTime: 0,
@@ -105,6 +109,7 @@ export function useFetchDatasetNavChildren(parentName: string | null) {
       const { data } = await datasetNavService.getNavChildren({
         datasetId: kbId,
         name: parentName!,
+        keywords: trimmedKeywords,
       });
       return unwrapDatasetNavResponse(data);
     },

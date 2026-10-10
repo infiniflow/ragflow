@@ -97,8 +97,6 @@ sql_command: login_user
            | search_on_datasets
            | get_chunk
            | list_chunks
-           | insert_dataset_from_file
-           | insert_metadata_from_file
            | update_chunk
            | set_metadata
            | remove_tags
@@ -223,11 +221,9 @@ TABLE: "TABLE"i
 CHUNK: "CHUNK"i
 CHUNKS: "CHUNKS"i
 GET: "GET"i
-INSERT: "INSERT"i
 PAGE: "PAGE"i
 KEYWORDS: "KEYWORDS"i
 AVAILABLE: "AVAILABLE"i
-FILE: "FILE"i
 UPDATE: "UPDATE"i
 REMOVE: "REMOVE"i
 TAGS: "TAGS"i
@@ -377,8 +373,6 @@ create_dataset_table: CREATE DATASET TABLE quoted_string VECTOR SIZE NUMBER ";"
 drop_dataset_table: DROP DATASET TABLE quoted_string ";"
 create_metadata_table: CREATE METADATA TABLE ";"
 drop_metadata_table: DROP METADATA TABLE ";"
-insert_dataset_from_file: INSERT DATASET FROM FILE quoted_string ";"
-insert_metadata_from_file: INSERT METADATA FROM FILE quoted_string ";"
 generate_nav_for_dataset: GENERATE NAVIGATION OF DATASET quoted_string ";"
 navigation_search: NAVIGATION SEARCH quoted_string IN DATASET quoted_string MODE quoted_string (TOPK NUMBER)? ";"
 update_chunk: UPDATE CHUNK quoted_string OF DATASET quoted_string SET quoted_string ";"
@@ -787,14 +781,6 @@ class RAGFlowCLITransformer(Transformer):
     def get_chunk(self, items):
         chunk_id = items[2].children[0].strip("'\"")
         return {"type": "get_chunk", "chunk_id": chunk_id}
-
-    def insert_dataset_from_file(self, items):
-        file_path = items[4].children[0].strip("'\"")
-        return {"type": "insert_dataset_from_file", "file_path": file_path}
-
-    def insert_metadata_from_file(self, items):
-        file_path = items[4].children[0].strip("'\"")
-        return {"type": "insert_metadata_from_file", "file_path": file_path}
 
     def generate_nav_for_dataset(self, items):
         dataset_id = items[4].children[0].strip("'\"")

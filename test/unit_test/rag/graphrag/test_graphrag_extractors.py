@@ -15,6 +15,7 @@
 #
 
 import asyncio
+import types
 from types import SimpleNamespace
 
 import networkx as nx
@@ -27,6 +28,21 @@ from rag.graphrag.general.graph_extractor import GraphExtractor
 
 def _build_llm_stub():
     return SimpleNamespace(llm_name="test-llm", max_length=4096)
+
+
+class _RecordingAsyncio(types.ModuleType):
+    """`asyncio` as a module sees it, with the timeouts handed to `wait_for` recorded."""
+
+    def __init__(self):
+        super().__init__("asyncio")
+        self.timeouts = []
+
+    def __getattr__(self, name):
+        return getattr(asyncio, name)
+
+    def wait_for(self, awaitable, timeout):
+        self.timeouts.append(timeout)
+        return asyncio.wait_for(awaitable, timeout)
 
 
 class TestGraphExtractor:
@@ -91,3 +107,52 @@ class TestCommunityReportsExtractor:
 
         assert len(result.structured_output) == 1
         assert result.structured_output[0]["title"] == "Community"
+
+
+class TestCommunityReportsTimeoutFlag:
+    """`ENABLE_TIMEOUT_ASSERTION` decides the per-report LLM timeout.
+
+    It was read with `os.environ.get`, so any non-empty value, `false` and `0`
+    included, armed the 180 s timeout.
+    """
+
+    async def _report_timeouts(self, monkeypatch, raw):
+        extractor = CommunityReportsExtractor(_build_llm_stub())
+        graph = nx.Graph()
+        graph.add_node("A", description="alpha")
+        graph.add_node("B", description="beta")
+        graph.add_edge("A", "B", description="related")
+        if raw is None:
+            monkeypatch.delenv("ENABLE_TIMEOUT_ASSERTION", raising=False)
+        else:
+            monkeypatch.setenv("ENABLE_TIMEOUT_ASSERTION", raw)
+
+        async def fast_async_chat(*_args, **_kwargs):
+            return '{"title":"Community","summary":"Summary","findings":[],"rating":1.0,"rating_explanation":"Clear"}'
+
+        recording = _RecordingAsyncio()
+        monkeypatch.setattr(community_reports_module, "asyncio", recording)
+        monkeypatch.setattr(
+            community_reports_module.leiden,
+            "run",
+            lambda *_args, **_kwargs: {0: {"0": {"weight": 1.0, "nodes": ["A", "B"]}}},
+        )
+        monkeypatch.setattr(community_reports_module, "add_community_info2graph", lambda *_args, **_kwargs: None)
+        monkeypatch.setattr(extractor, "_async_chat", fast_async_chat)
+
+        await extractor(graph)
+        return recording.timeouts
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("raw", ["false", "0", "off", "no", ""])
+    async def test_a_disabling_value_leaves_the_report_untimed(self, monkeypatch, raw):
+        assert await self._report_timeouts(monkeypatch, raw) == [1000000000]
+
+    @pytest.mark.p2
+    async def test_an_unset_flag_leaves_the_report_untimed(self, monkeypatch):
+        assert await self._report_timeouts(monkeypatch, None) == [1000000000]
+
+    @pytest.mark.p2
+    @pytest.mark.parametrize("raw", ["1", "true", "on"])
+    async def test_an_enabling_value_times_the_report(self, monkeypatch, raw):
+        assert await self._report_timeouts(monkeypatch, raw) == [180]

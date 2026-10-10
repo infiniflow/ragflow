@@ -23,6 +23,8 @@ from io import BytesIO
 from common.decorator import singleton
 from common import settings
 
+MAX_ATTEMPTS = 3
+
 
 @singleton
 class RAGFlowS3:
@@ -72,7 +74,7 @@ class RAGFlowS3:
             if self.conn:
                 self.__close__()
         except Exception:
-            pass
+            self.conn = None
 
         try:
             s3_params = {}
@@ -100,8 +102,11 @@ class RAGFlowS3:
                 s3_params["config"] = Config(**config_kwargs)
 
             self.conn = [boto3.client("s3", **s3_params)]
+            return True
         except Exception:
+            self.conn = None
             logging.exception(f"Fail to connect at region {self.region_name} or endpoint {self.endpoint_url}")
+            return False
 
     def __close__(self):
         del self.conn[0]
@@ -138,19 +143,33 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def put(self, bucket, fnm, binary, *args, **kwargs):
+        """Upload bytes, creating a missing bucket in the client's region.
+
+        Omit the location constraint for the default AWS region and services
+        that use ``auto`` to select their own location.
+        """
         logging.debug(f"bucket name {bucket}; filename :{fnm}:")
-        for _ in range(1):
+        for attempt in range(MAX_ATTEMPTS):
             try:
                 if not self.bucket_exists(bucket):
-                    self.conn[0].create_bucket(Bucket=bucket)
+                    bucket_config = {"Bucket": bucket}
+                    region = self.conn[0].meta.region_name
+                    # AWS requires a location constraint outside us-east-1.
+                    # "auto" lets globally distributed S3 services choose it.
+                    if region and region not in ("us-east-1", "auto"):
+                        bucket_config["CreateBucketConfiguration"] = {"LocationConstraint": region}
+                    self.conn[0].create_bucket(**bucket_config)
                     logging.info(f"create bucket {bucket} ********")
                 r = self.conn[0].upload_fileobj(BytesIO(binary), bucket, fnm)
 
                 return r
             except Exception:
-                logging.exception(f"Fail put {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
+                logging.exception(f"Fail put {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
 
     @use_prefix_path
     @use_default_bucket
@@ -163,16 +182,30 @@ class RAGFlowS3:
     @use_prefix_path
     @use_default_bucket
     def get(self, bucket, fnm, *args, **kwargs):
-        for _ in range(1):
+        for attempt in range(MAX_ATTEMPTS):
             try:
                 r = self.conn[0].get_object(Bucket=bucket, Key=fnm)
                 object_data = r["Body"].read()
                 return object_data
+            except ClientError as e:
+                response = e.response if isinstance(e.response, dict) else {}
+                error = response.get("Error", {})
+                code = error.get("Code") if isinstance(error, dict) else None
+                if code in ("404", "NoSuchKey", "NotFound"):
+                    return None
+                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
             except Exception:
-                logging.exception(f"fail get {bucket}/{fnm}")
-                self.__open__()
-                time.sleep(1)
-        return None
+                logging.exception(f"fail get {bucket}/{fnm}, attempt {attempt + 1}/{MAX_ATTEMPTS}")
+                if attempt == MAX_ATTEMPTS - 1:
+                    raise
+                if not self.__open__():
+                    raise
+                time.sleep(2**attempt)
 
     @use_prefix_path
     @use_default_bucket

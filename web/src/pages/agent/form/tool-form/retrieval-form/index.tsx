@@ -37,9 +37,11 @@ export const FormSchema = z.object({
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
+  const ownerTenantId = useOwnerTenantId();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
+    { ownerTenantId },
   );
 
   const form = useForm({
@@ -53,8 +55,6 @@ const RetrievalForm = () => {
   useWatchFormChange(form);
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
-
-  const ownerTenantId = useOwnerTenantId();
 
   return (
     <Form {...form}>

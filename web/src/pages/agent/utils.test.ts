@@ -1,16 +1,11 @@
+import { RAGFlowNodeType } from '@/interfaces/database/agent';
 import { Operator } from './constant';
 import {
-  getEmptyMessageNodeNames,
+  generateNodeNamesWithIncreasingIndex,
   isEmptyMessageContent,
+  receiveMessageError,
   transformTokenChunkerParams,
 } from './utils';
-
-const createMessageNode = (name: string, content: unknown) => ({
-  id: `${Operator.Message}:${name}`,
-  type: 'ragNode',
-  position: { x: 0, y: 0 },
-  data: { label: Operator.Message, name, form: { content } },
-});
 
 describe('transformTokenChunkerParams', () => {
   it('keeps overlapped_percent and delimiters when delimiter_mode is one', () => {
@@ -50,6 +45,25 @@ describe('transformTokenChunkerParams', () => {
   });
 });
 
+describe('receiveMessageError', () => {
+  it('accepts successful SSE events without an application code', () => {
+    expect(
+      receiveMessageError({
+        response: { status: 200 },
+        data: { event: 'workflow_finished' },
+      }),
+    ).toBe(false);
+  });
+  it('rejects application errors returned with HTTP 200', () => {
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 102 } }),
+    ).toBe(true);
+    expect(
+      receiveMessageError({ response: { status: 200 }, data: { code: 0 } }),
+    ).toBe(false);
+  });
+});
+
 describe('Message component content validation', () => {
   describe('isEmptyMessageContent', () => {
     it('treats missing, non-array and blank-only content as empty', () => {
@@ -68,21 +82,69 @@ describe('Message component content validation', () => {
       expect(isEmptyMessageContent(['  text  '])).toBe(false);
     });
   });
+});
 
-  describe('getEmptyMessageNodeNames', () => {
-    it('flags only Message nodes whose content is empty', () => {
-      const nodes = [
-        createMessageNode('回复消息_0', ['']),
-        createMessageNode('回复消息_1', ['ok']),
-        {
-          id: `${Operator.Agent}:x`,
-          type: 'ragNode',
-          position: { x: 0, y: 0 },
-          data: { label: Operator.Agent, name: '智能体_0', form: {} },
-        },
-      ];
+describe('generateNodeNamesWithIncreasingIndex', () => {
+  const createNamedNode = (name: string) =>
+    ({
+      id: `${Operator.Retrieval}:${name}`,
+      type: 'ragNode',
+      position: { x: 0, y: 0 },
+      data: { label: Operator.Retrieval, name, form: {} },
+    }) as RAGFlowNodeType;
 
-      expect(getEmptyMessageNodeNames(nodes as any)).toEqual(['回复消息_0']);
-    });
+  it('uses the bare name for the first operator of a type', () => {
+    expect(generateNodeNamesWithIncreasingIndex('Retrieval', [])).toBe(
+      'Retrieval',
+    );
+  });
+
+  it('appends an index only from the second operator on', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+      ]),
+    ).toBe('Retrieval_1');
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('fills the gap between existing indexes', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval'),
+        createNamedNode('Retrieval_2'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('does not backfill index 0 when only suffixed names exist', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_1'),
+      ]),
+    ).toBe('Retrieval_2');
+  });
+
+  it('treats a legacy _0 name as the first operator', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Retrieval_0'),
+      ]),
+    ).toBe('Retrieval_1');
+  });
+
+  it('ignores nodes of other types and non-indexed names', () => {
+    expect(
+      generateNodeNamesWithIncreasingIndex('Retrieval', [
+        createNamedNode('Message'),
+        createNamedNode('Retrieval_beta'),
+        createNamedNode('Retrieval_1_extra'),
+      ]),
+    ).toBe('Retrieval');
   });
 });

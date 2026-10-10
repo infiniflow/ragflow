@@ -469,6 +469,65 @@ class Canvas(Graph):
                 langfuse_run_attrs.set(None)
             reset_llm_request_context(_req_ctx_token)
 
+    def _schedulable(self, f: int, t: int) -> int:
+        """Reorder the batch window ``path[f:t]`` so it only holds runnable nodes.
+
+        Everything in the window is dispatched concurrently, so a node may only read
+        output a component produced in an earlier batch. A node waiting on another
+        member of the window is moved behind it and runs in the next batch; a node
+        waiting on something that was never scheduled is dropped, as before, and so
+        is anything left waiting on what was dropped. A cycle, where every candidate
+        left waits on another candidate, is failed rather than run. Returns the new
+        end of the window.
+        """
+        if self.path[0].lower().find("userfillup") >= 0:
+            return t
+
+        finished = set(self.path[:f])
+        window = set(self.path[f:t])
+        waiting_on = {}
+        for cpn_id in self.path[f:t]:
+            cpn = self.get_component_obj(cpn_id)
+            if cpn.component_name.lower() in ["begin", "userfillup"]:
+                waiting_on[cpn_id] = []
+            else:
+                waiting_on[cpn_id] = [c for c in cpn.get_dependency_ids() if c != cpn_id]
+
+        while True:
+            # A dependency that is neither finished nor still in the window will never
+            # produce output, so its dependents cannot run either.
+            unavailable = {c for c in window if any(d not in finished and d not in window for d in waiting_on[c])}
+            if not unavailable:
+                break
+            window -= unavailable
+
+        ready, deferred = [], []
+        for cpn_id in self.path[f:t]:
+            if cpn_id not in window:
+                _logger.debug("[Canvas] Dropping '%s', upstream %s never ran", cpn_id, [d for d in waiting_on[cpn_id] if d not in finished])
+                continue
+            if any(c in window for c in waiting_on[cpn_id]):
+                _logger.debug("[Canvas] Holding '%s' for the next batch, it reads %s", cpn_id, [c for c in waiting_on[cpn_id] if c in window])
+                deferred.append(cpn_id)
+            else:
+                ready.append(cpn_id)
+
+        if not ready and deferred:
+            # Every candidate waits on another candidate, which takes a cycle in the
+            # canvas. Dispatching them would have each read the other's output
+            # before it is written, so both would run on an empty value and an LLM
+            # node would spend a real request on an empty prompt. Fail them
+            # instead: the window still advances, so the run terminates, and the
+            # reason reaches whoever reads the node.
+            for cpn_id in deferred:
+                blocked_by = [c for c in waiting_on[cpn_id] if c in window]
+                self.get_component_obj(cpn_id).set_unrunnable(f"'{cpn_id}' and {blocked_by} reference each other, so neither can be given its input.")
+            _logger.debug("[Canvas] %s reference each other, none of them can run", deferred)
+            ready, deferred = deferred, []
+
+        self.path[f:t] = ready + deferred
+        return f + len(ready)
+
     async def _run_impl(self, **kwargs):
         self.globals["sys.date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         st = time.perf_counter()
@@ -569,33 +628,18 @@ class Canvas(Graph):
                     call_ctx = contextvars.copy_context()
                     await loop.run_in_executor(self._thread_pool, partial(call_ctx.run, bound_call))
 
-            i = f
-            while i < t:
+            for i in range(f, t):
                 cpn = self.get_component_obj(self.path[i])
-                task_fn = None
-                call_kwargs = None
 
                 if cpn.component_name.lower() in ["begin", "userfillup"]:
                     call_kwargs = {"inputs": kwargs.get("inputs", {})}
-                    task_fn = cpn.invoke
-                    i += 1
                 else:
-                    for _, ele in cpn.get_input_elements().items():
-                        if isinstance(ele, dict) and ele.get("_cpn_id") and ele.get("_cpn_id") not in self.path[:i] and self.path[0].lower().find("userfillup") < 0:
-                            self.path.pop(i)
-                            t -= 1
-                            break
-                    else:
-                        call_kwargs = cpn.get_input()
-                        task_fn = cpn.invoke
-                        i += 1
-
-                if task_fn is None:
-                    continue
+                    call_kwargs = cpn.get_input()
+                task_fn = cpn.invoke
 
                 _logger.debug(
                     "[Canvas] Invoking component '%s' (%s) with inputs: %s",
-                    self.get_component_name(self.path[i - 1]),
+                    self.get_component_name(self.path[i]),
                     cpn.component_name,
                     json.dumps(call_kwargs, ensure_ascii=False, default=str)[:500],
                 )
@@ -638,7 +682,7 @@ class Canvas(Graph):
         partials = []
         tts_mdl = None
         while idx < len(self.path):
-            to = len(self.path)
+            to = self._schedulable(idx, len(self.path))
             for i in range(idx, to):
                 yield decorate(
                     "node_started",
@@ -652,7 +696,6 @@ class Canvas(Graph):
                     },
                 )
             await _run_batch(idx, to)
-            to = len(self.path)
             # post-processing of components invocation
             for i in range(idx, to):
                 cpn = self.get_component(self.path[i])
@@ -827,7 +870,7 @@ class Canvas(Graph):
                     nonlocal other_branch
                     if other_branch:
                         return
-                    if self.path[-1] == cpn_id:
+                    if self.path[-1] == cpn_id or cpn_id in self.path[to:]:
                         return
                     self.path.append(cpn_id)
 

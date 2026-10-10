@@ -36,7 +36,7 @@ def _load_pdf_parser(monkeypatch):
         AscendLayoutRecognizer=object,
         LayoutRecognizer=object,
         Recognizer=_FakeRecognizer,
-        TableStructureRecognizer=object,
+        TableStructureRecognizer=SimpleNamespace(is_caption=lambda _box: False),
     )
 
     rag_mod = _stub_module(monkeypatch, "rag")
@@ -99,6 +99,13 @@ class _FakeRecognizer:
             best = overlap
             best_reverse = reverse
         return best_i
+
+    @staticmethod
+    def find_overlapped(box, boxes, naive=False):
+        for i, candidate in enumerate(boxes):
+            if _FakeRecognizer.overlapped_area(box, candidate) > 0.1:
+                return i
+        return 0 if boxes else None
 
     @staticmethod
     def find_horizontally_tightest_fit(box, boxes):
@@ -345,3 +352,58 @@ def test_table_transformer_keeps_rotated_ocr_and_tsr_coordinates_aligned(monkeyp
     assert [box["R_top"] for box in parser.boxes] == [210, 240]
     assert [box["C"] for box in parser.boxes] == [0, 1]
     assert [box["C_left"] for box in parser.boxes] == [105, 170]
+
+
+@pytest.mark.p1
+def test_extract_table_figure_preserves_textless_figures(monkeypatch):
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser.__new__(module.RAGFlowPdfParser)
+    parser.page_from = 0
+    parser.page_cum_height = [0]
+    parser.page_images = [_FakeImage()]
+    parser.page_layout = [[{"type": "figure", "x0": 50, "top": 50, "x1": 200, "bottom": 200}]]
+    parser.tbl_det = SimpleNamespace(construct_table=lambda *args, **kwargs: "")
+    parser.is_english = False
+
+    # Figure box with empty OCR text (e.g. textless diagram, chart, or photo)
+    parser.boxes = [
+        {
+            "text": "",
+            "layout_type": "figure",
+            "layoutno": "figure-0",
+            "page_number": 0,
+            "x0": 50,
+            "x1": 200,
+            "top": 50,
+            "bottom": 200,
+        }
+    ]
+
+    items = parser._extract_table_figure(need_image=True, ZM=1, return_html=False, need_position=True)
+    assert len(items) == 1
+    (img, descriptions), poss = items[0]
+    assert img is not None
+    assert isinstance(descriptions, list)
+    assert descriptions == [""]
+    assert poss == [(0, 50, 200, 50, 200)]
+
+
+def test_extract_positions_accepts_negative_coordinates(monkeypatch):
+    """A content box may extend above the page origin (top < 0).
+
+    ``_line_tag`` writes such tags (``top`` is offset by ``page_cum_height``),
+    so ``extract_positions`` must parse them instead of silently dropping the
+    section image -- mirrors the Go-side fix in #19945.
+    """
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser
+    tag = "@@50\t45.0\t549.7\t-3.0\t737.9##"
+    assert parser.extract_positions(tag) == [([49], 45.0, 549.7, -3.0, 737.9)]
+    assert parser.remove_tag(f"body {tag} tail") == "body  tail"
+
+
+def test_extract_positions_accepts_negative_coordinates_with_page_range(monkeypatch):
+    module = _load_pdf_parser(monkeypatch)
+    parser = module.RAGFlowPdfParser
+    tag = "@@3-4\t1.5\t2.5\t-0.5\t3.5##"
+    assert parser.extract_positions(tag) == [([2, 3], 1.5, 2.5, -0.5, 3.5)]

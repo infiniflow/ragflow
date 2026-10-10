@@ -31,9 +31,11 @@ from zai import ZhipuAiClient
 from common import settings
 from common.aimlapi_utils import attribution_headers
 from common.exceptions import ModelException
+from common.llm_request_context import openai_user_kwargs
 from common.token_utils import num_tokens_from_string, truncate, total_token_count_from_response
-from rag.llm.key_utils import _normalize_replicate_key
+from rag.llm.key_utils import _normalize_replicate_key, _resolve_bedrock_credentials
 from rag.llm.mws_utils import mws_api_url, require_mws_token
+from rag.llm.ollama_utils import resolve_ollama_keep_alive
 from rag.utils.url_utils import append_api_path, ensure_v1
 import logging
 import base64
@@ -266,13 +268,20 @@ class OpenAIEmbed(Base):
         self.client = OpenAI(api_key=key, base_url=self.base_url)
         self.model_name = model_name
 
+    def _extra_body(self):
+        return None
+
     def _call(self, batch):
-        # extra_body is forwarded verbatim to the provider. \`drop_params\` is
-        # an OpenRouter-specific convention; Together AI (and any strict
-        # OpenAI-compatible provider) rejects it with HTTP 400
-        # "Unrecognized request arguments supplied: drop_params". Send only
-        # fields that every OpenAI-compatible provider accepts.
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float")
+        # `user` is OpenAI-standard and is only sent when LLM request context
+        # is active. Local servers that reject unknown fields (LocalAI,
+        # LM Studio, Xinference) use their own embed classes and omit it.
+        kwargs = {"input": batch, "model": self.model_name, "encoding_format": "float", **openai_user_kwargs()}
+        if urlparse(str(self.client.base_url)).hostname == "oai.endpoints.kepler.ai.cloud.ovh.net":
+            kwargs.pop("user", None)
+        extra_body = self._extra_body()
+        if extra_body is not None:
+            kwargs["extra_body"] = extra_body
+        res = self.client.embeddings.create(**kwargs)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):
@@ -295,6 +304,7 @@ class LocalAIEmbed(Base):
         self.model_name = model_name.split("___")[0]
 
     def _call(self, batch):
+        # Local servers often reject OpenAI's optional `user` field.
         res = self.client.embeddings.create(input=batch, model=self.model_name)
         # Local servers (LocalAI / LM Studio) usually omit usage data; fall back
         # to a local tiktoken count rather than fabricating a fixed number.
@@ -499,7 +509,7 @@ class OllamaEmbed(Base):
         self.base_url = kwargs["base_url"].rstrip("/")
         self.client = Client(host=self.base_url) if not key or key == "x" else Client(host=self.base_url, headers={"Authorization": f"Bearer {key}"})
         self.model_name = model_name
-        self.keep_alive = kwargs.get("ollama_keep_alive", int(os.environ.get("OLLAMA_KEEP_ALIVE", -1)))
+        self.keep_alive = resolve_ollama_keep_alive(kwargs)
 
     @classmethod
     def _strip_special(cls, text: str) -> str:
@@ -539,6 +549,7 @@ class XinferenceEmbed(Base):
         self.model_name = model_name
 
     def _call(self, batch):
+        # Xinference's OpenAI-compatible server may reject unknown fields such as `user`.
         res = self.client.embeddings.create(input=batch, model=self.model_name)
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
@@ -689,7 +700,7 @@ class BedrockEmbed(Base):
         #   - "iam_role": requires `aws_role_arn` and assumes role via STS.
         #   - "assume_role": uses the default AWS credential chain.
         #   - "bedrock_api_key": uses a request-scoped Bearer token.
-        key = json.loads(key)
+        key = _resolve_bedrock_credentials(key)
         mode = key.get("auth_mode")
         if not mode:
             logging.error("Bedrock auth_mode is not provided in the key")
@@ -753,6 +764,8 @@ class BedrockEmbed(Base):
                 body = {"inputText": text}
             elif self.is_cohere:
                 body = {"texts": [text], "input_type": "search_document"}
+            else:
+                raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
             # Bedrock does not report token usage; count locally.
@@ -767,6 +780,8 @@ class BedrockEmbed(Base):
             body = {"inputText": text}
         elif self.is_cohere:
             body = {"texts": [text], "input_type": "search_query"}
+        else:
+            raise EmbeddingError(f"BedrockEmbed: unsupported embedding model '{self.model_name}' (expected an 'amazon.' or 'cohere.' model)")
         try:
             response = self.client.invoke_model(modelId=self.model_name, body=json.dumps(body))
             model_response = json.loads(response["body"].read())
@@ -907,6 +922,37 @@ class LmStudioEmbed(LocalAIEmbed):
 
 class LlmmanEmbed(LocalAIEmbed):
     _FACTORY_NAME = "llmman"
+
+
+class HubrisEmbed(OpenAIEmbed):
+    """Hubris embeddings.
+
+    The endpoint is fixed rather than configurable, matching HubrisChat. Hubris
+    is a hosted gateway on one known host, so a tenant-supplied ``base_url``
+    would have no legitimate use and would send the tenant's key elsewhere.
+    """
+
+    _FACTORY_NAME = "Hubris"
+
+    _BASE_URL = "https://api.hubris.pw/v1"
+
+    def __init__(self, key, model_name, base_url=None):
+        super().__init__(key, model_name, self._BASE_URL)
+
+
+class ApiRouteEmbed(OpenAIEmbed):
+    """API-Route embeddings.
+
+    The endpoint is fixed rather than configurable, matching ApiRouteChat.
+    """
+
+    _FACTORY_NAME = "API-Route"
+
+    _BASE_URL = "https://global.api-route.com/v1"
+
+    def __init__(self, key, model_name, base_url=None):
+        """Initialize the API-Route embedding model."""
+        super().__init__(key, model_name, self._BASE_URL)
 
 
 class OpenAI_APIEmbed(OpenAIEmbed):
@@ -1121,8 +1167,8 @@ class ReplicateEmbed(Base):
         return np.array(ress), token_count
 
     def encode_queries(self, text):
-        res = self.client.embed(self.model_name, input={"texts": [text]})
-        return np.array(res), num_tokens_from_string(text)
+        vectors, token_count = self.encode([text])
+        return vectors[0], token_count
 
 
 class BaiduYiyanEmbed(Base):
@@ -1144,27 +1190,20 @@ class BaiduYiyanEmbed(Base):
             self.client = qianfan.Embedding(access_token=key_obj)
         self.model_name = model_name
 
+    def _call(self, batch):
+        res = self.client.do(model=self.model_name, texts=batch).body
+        return [r["embedding"] for r in res["data"]], total_token_count_from_response(res)
+
     def encode(self, texts: list, batch_size=16):
-        try:
-            res = self.client.do(model=self.model_name, texts=texts).body
-            return (
-                np.array([r["embedding"] for r in res["data"]]),
-                total_token_count_from_response(res),
-            )
-        except Exception as _e:
-            logger.exception("BaiduYiyanEmbed: embedding request failed")
-            raise EmbeddingError(f"Embedding request failed for BaiduYiyanEmbed. Error: {_e}") from _e
+        # `batch_size` has been part of this signature since the class was added but the
+        # request went out whole, so a document with more chunks than the provider accepts
+        # per call failed as a whole. Drive the shared template instead, as every other
+        # OpenAI-style provider here does.
+        return self._batched_encode(texts, self._call, batch_size=batch_size)
 
     def encode_queries(self, text):
-        try:
-            res = self.client.do(model=self.model_name, texts=[text]).body
-            return (
-                np.array(res["data"][0]["embedding"]),
-                total_token_count_from_response(res),
-            )
-        except Exception as _e:
-            logger.exception("BaiduYiyanEmbed: query embedding request failed")
-            raise EmbeddingError(f"Embedding request failed for BaiduYiyanEmbed. Error: {_e}") from _e
+        vectors, token_count = self._batched_encode([text], self._call, batch_size=1)
+        return vectors[0], token_count
 
 
 class VoyageEmbed(Base):
@@ -1365,7 +1404,7 @@ class RAGconEmbed(OpenAIEmbed):
     """
     RAGcon Embedding Provider - routes through LiteLLM proxy
 
-    Default Base URL: https://connect.ragcon.ai/v1
+    Default Base URL: https://connect.ragcon.com/v1
     """
 
     _FACTORY_NAME = "RAGcon"
@@ -1375,6 +1414,12 @@ class RAGconEmbed(OpenAIEmbed):
             base_url = "https://connect.ragcon.com/v1"
 
         super().__init__(key, model_name, base_url)
+
+    def _extra_body(self):
+        host = (urlparse(self.base_url).hostname or "").lower()
+        if host in {"connect.ragcon.com", "connect.ragcon.ai"} or host.endswith((".connect.ragcon.com", ".connect.ragcon.ai")):
+            return {"drop_params": True}
+        return None
 
 
 class PerplexityEmbed(Base):
@@ -1451,6 +1496,18 @@ class PerplexityEmbed(Base):
         return np.array(embds[0]), cnt
 
 
+class DaoXEEmbed(OpenAIEmbed):
+    """DaoXE OpenAI-compatible embeddings."""
+
+    _FACTORY_NAME = "DaoXE"
+
+    def __init__(self, key, model_name, base_url):
+        if not base_url:
+            raise ValueError("url cannot be None")
+        self.client = OpenAI(api_key=key, base_url=base_url)
+        self.model_name = model_name.split("___")[0]
+
+
 class NewAPIEmbed(OpenAIEmbed):
     _FACTORY_NAME = "New API"
 
@@ -1489,7 +1546,7 @@ class OpenRouterEmbed(Base):
         if self.provider_order:
             order = [s.strip() for s in self.provider_order.split(",") if s.strip()]
             extra_body["provider"] = {"order": order, "allow_fallbacks": False}
-        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body)
+        res = self.client.embeddings.create(input=batch, model=self.model_name, encoding_format="float", extra_body=extra_body, **openai_user_kwargs())
         return [d.embedding for d in _sorted_by_index(res.data)], total_token_count_from_response(res)
 
     def encode(self, texts: list):

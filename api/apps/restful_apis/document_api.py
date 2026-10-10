@@ -72,6 +72,7 @@ from api.utils.validation_utils import (
 
 from common import settings
 from common.constants import ParserType, RetCode, TaskStatus, SANDBOX_ARTIFACT_BUCKET
+from common.llm_request_context import normalize_llm_user_id
 from common.metadata_utils import convert_conditions, meta_filter, turn2jsonschema
 from common.misc_utils import get_uuid, thread_pool_exec, thread_pool_exec_long_time
 from api.utils.file_utils import filename_type, thumbnail
@@ -79,6 +80,7 @@ from api.utils.file_response import apply_preview_file_response_headers
 from api.utils.web_utils import CONTENT_TYPE_MAP, html2pdf, is_valid_url, apply_safe_file_response_headers
 from common.ssrf_guard import assert_url_is_safe
 from rag.nlp import search
+from rag.utils.base64_image import parse_storage_composite_id
 
 
 def _normalize_legacy_raptor_config(req: dict) -> None:
@@ -842,7 +844,7 @@ def list_docs(dataset_id, tenant_id):
     renamed_doc_list = [map_doc_keys(doc) for doc in payload]
     for doc_item in renamed_doc_list:
         if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-            doc_item["thumbnail"] = f"/api/v1/documents/images/{dataset_id}-{doc_item['thumbnail']}"
+            doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
         if doc_item.get("source_type"):
             doc_item["source_type"] = doc_item["source_type"].split("/")[0]
         if doc_item["parser_config"].get("metadata"):
@@ -1323,10 +1325,10 @@ def list_thumbnails():
         return get_error_argument_result(str(e))
 
     try:
-        docs = DocumentService.get_thumbnails(doc_ids)
+        docs = [doc for doc in DocumentService.get_thumbnails(doc_ids) if DocumentService.accessible(doc["id"], current_user.id)]
         for doc_item in docs:
             if doc_item["thumbnail"] and not doc_item["thumbnail"].startswith(IMG_BASE64_PREFIX):
-                doc_item["thumbnail"] = f"/api/v1/documents/images/{doc_item['kb_id']}-{doc_item['thumbnail']}"
+                doc_item["thumbnail"] = f"/api/v1/documents/{doc_item['id']}/thumbnail"
 
         return get_json_result(data={d["id"]: d["thumbnail"] for d in docs})
     except Exception as e:
@@ -1532,7 +1534,7 @@ def _run_sync(user_id: str, req):
                 doc.parser_config["metadata"] = kb.parser_config.get("metadata", {})
                 DocumentService.update_parser_config(doc.id, doc.parser_config)
             doc_dict = doc.to_dict()
-            DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map)
+            DocumentService.run(doc_tenant_id, doc_dict, kb_table_num_map, user_id=normalize_llm_user_id(req.get("user_id")))
 
     return None, None
 
@@ -1571,6 +1573,9 @@ async def parse_documents(tenant_id, dataset_id):
               items:
                 type: string
               description: List of document IDs to parse.
+            user_id:
+              type: string
+              description: Optional end-user identifier forwarded as the OpenAI user field on embedding requests.
     responses:
       200:
         description: Successful operation.
@@ -1587,6 +1592,7 @@ async def parse_documents(tenant_id, dataset_id):
         return get_error_data_result(message="`document_ids` is required")
     if len(document_ids) == 0:
         return get_error_data_result(message="`document_ids` is required")
+    llm_user_id = normalize_llm_user_id(req.get("user_id"))
 
     # Check for duplicate document IDs
     unique_doc_ids, duplicate_messages = check_duplicate_ids(document_ids, "document")
@@ -1636,7 +1642,7 @@ async def parse_documents(tenant_id, dataset_id):
                     settings.docStoreConn.delete({"doc_id": doc_id}, search.index_name(tenant_id), doc.kb_id)
 
                 doc_dict = doc.to_dict()
-                DocumentService.run(tenant_id, doc_dict, kb_table_num_map)
+                DocumentService.run(tenant_id, doc_dict, kb_table_num_map, user_id=llm_user_id)
                 success_count += 1
 
             result = {"success_count": success_count}
@@ -1781,8 +1787,8 @@ async def stop_parse_documents(tenant_id, dataset_id):
 def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
     """Split a composite document image ID into storage bucket and object key.
 
-    Thumbnail URLs use ``{dataset_id}-{thumbnail}``. Only the first hyphen
-    separates the dataset/kb id (bucket) from the object key, which may
+    Legacy chunk image IDs use ``{dataset_id}-{object_key}``. Only the first
+    hyphen separates the dataset/kb id (bucket) from the object key, which may
     contain additional hyphens (e.g. ``page-1.png``).
 
     Args:
@@ -1792,7 +1798,7 @@ def _parse_document_image_id(image_id: str) -> tuple[str, str] | None:
         ``(bucket, object_key)`` when valid, otherwise ``None``.
     """
     parts = image_id.split("-", 1)
-    if len(parts) != 2 or not parts[0] or not parts[1]:
+    if len(parts) != 2 or not re.fullmatch(r"[0-9a-fA-F]{32}", parts[0]) or not parts[1]:
         return None
     return parts[0], parts[1]
 
@@ -1811,16 +1817,57 @@ def _detect_image_content_type_from_bytes(data):
     return None
 
 
-def _content_type_for_document_image(object_name, data):
-    ext_match = re.search(r"\.([^.]+)$", object_name.lower())
-    if ext_match:
-        content_type = CONTENT_TYPE_MAP.get(ext_match.group(1))
-        if content_type and content_type.startswith("image/"):
-            return content_type
-    detected = _detect_image_content_type_from_bytes(data)
-    if detected:
-        return detected
-    return "application/octet-stream"
+async def _document_image_response(data):
+    content_type = _detect_image_content_type_from_bytes(data)
+    if not content_type:
+        return get_data_error_result(message="Image not found.")
+    response = await make_response(data)
+    response.headers.set("Content-Type", content_type)
+    response.headers.set("Cache-Control", "no-store")
+    return response
+
+
+async def _get_document_image_bytes(bucket, object_name):
+    try:
+        return await thread_pool_exec(settings.STORAGE_IMPL.get, bucket, object_name)
+    except Exception:
+        logging.warning("Failed to retrieve authorized document image")
+        return None
+
+
+@manager.route("/documents/<doc_id>/thumbnail", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+async def get_document_thumbnail(doc_id):
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Image not found.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        if not e or not doc.thumbnail or doc.thumbnail.startswith(IMG_BASE64_PREFIX):
+            return get_data_error_result(message="Image not found.")
+        data = await _get_document_image_bytes(doc.kb_id, doc.thumbnail)
+        if not data:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
+    except Exception as e:
+        return server_error_response(e)
+
+
+@manager.route("/documents/<doc_id>/images/<image_id>", methods=["GET"])  # noqa: F821
+@login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA])
+async def get_document_image_for_document(doc_id, image_id):
+    try:
+        if not DocumentService.accessible(doc_id, current_user.id):
+            return get_data_error_result(message="Image not found.")
+        e, doc = DocumentService.get_by_id(doc_id)
+        parsed = parse_storage_composite_id(image_id)
+        if not e or not parsed or not DocumentService.image_belongs_to_document(doc, image_id):
+            return get_data_error_result(message="Image not found.")
+        data = await _get_document_image_bytes(*parsed)
+        if not data:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
+    except Exception as e:
+        return server_error_response(e)
 
 
 @manager.route("/documents/images/<image_id>", methods=["GET"])  # noqa: F821
@@ -1852,13 +1899,13 @@ async def get_document_image(image_id):
         if not parsed:
             return get_data_error_result(message="Image not found.")
         bkt, nm = parsed
-        data = await thread_pool_exec(settings.STORAGE_IMPL.get, bkt, nm)
-        if not data:
+        e, doc = DocumentService.get_by_image_id(bkt, image_id)
+        if not e or not DocumentService.accessible(doc.id, current_user.id):
             return get_data_error_result(message="Image not found.")
-        content_type = _content_type_for_document_image(nm, data)
-        response = await make_response(data)
-        response.headers.set("Content-Type", content_type)
-        return response
+        data = await _get_document_image_bytes(bkt, nm)
+        if data is None:
+            return get_data_error_result(message="Image not found.")
+        return await _document_image_response(data)
     except Exception as e:
         return server_error_response(e)
 
@@ -2105,8 +2152,9 @@ async def get(doc_id):
 
         b, n = File2DocumentService.get_storage_address(doc_id=doc_id)
         data = await thread_pool_exec(settings.STORAGE_IMPL.get, b, n)
-        if not data:
-            return get_data_error_result(message="This file is empty.")
+        if data is None:
+            logging.warning("get document preview: storage miss doc_id: %s, bucket: %s, key: %s", doc_id, b, n)
+            return get_data_error_result(message="Document not found!")
         response = await make_response(data)
 
         ext = re.search(r"\.([^.]+)$", doc.name.lower())

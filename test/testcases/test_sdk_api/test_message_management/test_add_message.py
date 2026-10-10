@@ -41,7 +41,7 @@ class TestAuthorization:
 
 @pytest.mark.usefixtures("add_empty_raw_type_memory")
 class TestAddRawMessage:
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_add_raw_message(self, client):
         memory_id = self.memory_id
         agent_id = uuid.uuid4().hex
@@ -111,7 +111,7 @@ Are you asking about the fruit itself, or its use in a specific context?
 
 @pytest.mark.usefixtures("add_2_multiple_type_memory")
 class TestAddToMultipleMemory:
-    @pytest.mark.p1
+    @pytest.mark.p3
     def test_add_to_multiple_memory(self, client):
         memory_ids = self.memory_ids
         agent_id = uuid.uuid4().hex

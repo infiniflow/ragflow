@@ -15,56 +15,60 @@
 #
 
 import logging
-import re
 import os
+import re
+from collections.abc import Callable
 from functools import reduce
+from html import escape as html_escape
 from io import BytesIO
 from timeit import default_timer as timer
-from typing import Any, Callable
+from typing import Any
+
 from docx import Document
-from docx.opc.pkgreader import _SerializedRelationships, _SerializedRelationship
+from docx.opc.oxml import parse_xml
+from docx.opc.pkgreader import _SerializedRelationship, _SerializedRelationships
 from docx.table import Table as DocxTable
 from docx.text.paragraph import Paragraph
-from docx.opc.oxml import parse_xml
 from markdown import markdown
 from PIL import Image
-from common.token_utils import num_tokens_from_string
 
-from common.constants import LLMType, MAXIMUM_PAGE_NUMBER
-from api.db.services.llm_service import LLMBundle
 from api.db.joint_services.tenant_model_service import (
     ensure_mineru_from_env,
     ensure_opendataloader_from_env,
     ensure_paddleocr_from_env,
     get_composite_model_name_by_id,
     get_first_provider_model_name,
-    resolve_model_config,
     get_tenant_default_model_by_type,
+    resolve_model_config,
 )
-from rag.utils.file_utils import extract_embed_file, extract_links_from_pdf, extract_links_from_docx, extract_html
-from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
-from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
-from deepdoc.parser.pdf_parser import PlainParser, VisionParser
-from deepdoc.parser.docling_parser import DoclingParser
-from deepdoc.parser.tcadp_parser import TCADPParser
+from api.db.services.llm_service import LLMBundle
+from common.constants import MAXIMUM_PAGE_NUMBER, LLMType
 from common.float_utils import normalize_overlapped_percent
-from common.parser_config_utils import has_mineru_options, normalize_layout_recognizer
+from common.parser_config_utils import has_mineru_options, is_tenant_model_id, normalize_layout_recognizer
 from common.text_utils import normalize_arabic_presentation_forms
+from common.token_utils import num_tokens_from_string
+from deepdoc.parser import DocxParser, EpubParser, ExcelParser, HtmlParser, JsonParser, MarkdownElementExtractor, MarkdownParser, PdfParser, TxtParser
+from deepdoc.parser.docling_parser import DoclingParser
+from deepdoc.parser.figure_parser import VisionFigureParser, vision_figure_parser_docx_wrapper_naive, vision_figure_parser_pdf_wrapper
+from deepdoc.parser.monkeyocrv2_parser import MonkeyOCRv2Parser
+from deepdoc.parser.pdf_parser import PlainParser, VisionParser
+from deepdoc.parser.tcadp_parser import TCADPParser
 from rag.nlp import (
-    concat_img,
     DEFAULT_DELIMITER,
+    append_context2table_image4pdf,
+    concat_img,
     decode_text,
+    doc_tokenize_chunks_with_images,
     naive_merge,
-    naive_merge_with_images,
     naive_merge_docx,
+    naive_merge_with_images,
     rag_tokenizer,
     tokenize_chunks,
-    tokenize_chunks_with_positions,
-    doc_tokenize_chunks_with_images,
-    tokenize_table,
-    append_context2table_image4pdf,
     tokenize_chunks_with_images,
-)  # noqa: F401
+    tokenize_chunks_with_positions,
+    tokenize_table,
+)
+from rag.utils.file_utils import extract_embed_file, extract_html, extract_links_from_docx, extract_links_from_pdf
 
 
 def _is_short_header(text, max_tokens=50):
@@ -213,21 +217,19 @@ def _dispatch_pdf_parser(parser_config: dict, opendataloader_llm_name=None, layo
     name = layout_recognizer.strip().lower()
     parser = PARSERS.get(name, by_plaintext)
 
-    # Closes #17114: when the document's layout_recognize is a model id
-    # (e.g. a TenantModel UUID) that does not match any known parser name,
-    # the previous dispatch fell through to by_plaintext, which tried to
-    # resolve the id as an IMAGE2TEXT vision model and failed with
-    # ``Provider <empty> not found for model <id>``. If mineru-specific
-    # options are set in parser_config, the operator clearly intended the
-    # MinerU parser, so route there instead and surface a clear log line
-    # rather than masking the misconfiguration silently.
-    # Guard: only fall back when the parser name is NOT a known keyword
-    # (e.g. "DeepDOC", "Plain Text"). A configuration like
-    # ``{"layout_recognize": "Plain Text", "mineru_lang": "English"}``
-    # must keep honoring PlainText, not be silently rerouted to MinerU.
-    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config):
+    # Closes #17114: a *stale* TenantModel UUID (model deleted) that does not
+    # match any known parser name used to fall through to by_plaintext, which
+    # tried to resolve the id as an IMAGE2TEXT vision model and crashed.
+    # If mineru_* options are set, recover by routing to by_mineru.
+    #
+    # Only apply this for unresolved tenant_model ids. Frontend defaults often
+    # persist mineru_* even when the operator selected a vision LLM
+    # (e.g. ``qwen3.6-plus@tongyi@Tongyi-Qianwen``); those composite names must
+    # keep going to by_plaintext, not be silently rerouted to MinerU.
+    # Same for known keywords: ``{"layout_recognize": "Plain Text", "mineru_lang": ...}``.
+    if name not in PARSERS and parser is by_plaintext and has_mineru_options(parser_config) and is_tenant_model_id(str(layout_recognizer).strip()):
         logging.warning(
-            "[naive] layout_recognize=%r does not match a known parser; falling back to MinerU because mineru_* options are set (see issue #17114).",
+            "[naive] layout_recognize=%r is an unresolved tenant model id; falling back to MinerU because mineru_* options are set (see issue #17114).",
             layout_recognizer,
         )
         parser = by_mineru
@@ -291,6 +293,15 @@ def by_mineru(
                 raise
 
     raise RuntimeError("MinerU model not found or not configured.")
+
+
+def by_monkeyocrv2(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
+    server_url = kwargs.get("monkeyocrv2_server_url") or os.environ.get("MONKEYOCRV2_SERVER_URL", "")
+    if not server_url:
+        raise RuntimeError("MONKEYOCRV2_SERVER_URL is not configured")
+    parser = MonkeyOCRv2Parser(server_url)
+    sections, tables = parser.parse_pdf(filename, binary=binary, callback=callback, page_from=from_page, page_to=min(to_page, MAXIMUM_PAGE_NUMBER))
+    return sections, tables, parser
 
 
 def by_docling(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, pdf_cls=None, **kwargs):
@@ -403,6 +414,9 @@ def by_paddleocr(
                 return sections, tables, pdf_parser
             except Exception as e:
                 logging.error(f"Failed to parse pdf via LLMBundle PaddleOCR ({paddleocr_llm_name}): {e}")
+                if callback:
+                    callback(-1, f"Failed to parse pdf via PaddleOCR ({paddleocr_llm_name}): {e}")
+                raise
 
         return None, None, None
 
@@ -540,6 +554,7 @@ def by_plaintext(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER
 PARSERS = {
     "deepdoc": by_deepdoc,
     "mineru": by_mineru,
+    "monkeyocrv2": by_monkeyocrv2,
     "docling": by_docling,
     "opendataloader": by_opendataloader,
     "tcadp parser": by_tcadp,
@@ -549,10 +564,41 @@ PARSERS = {
     "plaintext": by_plaintext,  # default
 }
 
+# ---------------------------------------------------------------------------
+# Table of contents (TOC) detection
+# ---------------------------------------------------------------------------
+# Word-generated TOC entries are pure navigation noise for retrieval: they only
+# repeat section titles and add a page number. Indexing them wastes top_k slots
+# and, because an entry is a short string that literally matches the section
+# title, it often outranks the real content block in vector search.
+#
+# Word marks TOC entries with the built-in styles ``toc 1`` / ``TOC 1`` / ...
+# When a document loses its styles (e.g. converted from PDF), an entry usually
+# still looks like "1.1<TAB>title<TAB>1" — section number, tab, page number.
+_TOC_STYLE_RE = re.compile(r"^toc(?:[\s\d]|$)")
+_TOC_LINE_RE = re.compile(r"^[\d.]+[\s\u3000]*(?:[^\t]*\t)?[^\t]*\t\s*\d+\s*$")
+
+
+def _is_toc_paragraph(text: str, style_name: str, paragraph=None) -> bool:
+    """Return True when a paragraph looks like a table-of-contents entry."""
+    if not text:
+        return False
+    if style_name and _TOC_STYLE_RE.match(style_name.strip().lower()):
+        return True
+    # Fallback for documents whose TOC styles were renamed or dropped. The text
+    # shape alone cannot tell an entry ("1.1 Introduction<TAB>1") from a
+    # tab-separated data row ("1. Price<TAB>100"), and dropping the latter loses
+    # real content, so require the PAGEREF field Word writes into every TOC
+    # entry. The cheap shape check runs first so body text never pays for the
+    # XML scan.
+    if paragraph is None or not _TOC_LINE_RE.match(text):
+        return False
+    return "PAGEREF" in paragraph._element.xml
+
 
 class Docx(DocxParser):
     def __init__(self):
-        pass
+        """Initialize the naive DOCX parser."""
 
     def __clean(self, line):
         line = re.sub(r"\u3000", " ", line).strip()
@@ -561,6 +607,7 @@ class Docx(DocxParser):
     def __get_nearest_title(self, table_index, filename):
         """Get the hierarchical title structure before the table"""
         import re
+
         from docx.text.paragraph import Paragraph
 
         titles = []
@@ -607,7 +654,7 @@ class Docx(DocxParser):
             if block_type != "p":
                 continue
 
-            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+            if block.style and block.style.name and re.search(r"Heading\s*(\d+)", block.style.name, re.IGNORECASE):
                 try:
                     level_match = re.search(r"(\d+)", block.style.name)
                     if level_match:
@@ -636,7 +683,7 @@ class Docx(DocxParser):
                     if block_type != "p":
                         continue
 
-                    if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.I):
+                    if block.style and re.search(r"Heading\s*(\d+)", block.style.name, re.IGNORECASE):
                         try:
                             level_match = re.search(r"(\d+)", block.style.name)
                             if level_match:
@@ -664,6 +711,11 @@ class Docx(DocxParser):
         return ""
 
     def __call__(self, filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER):
+        """Parse a DOCX file into ordered (text, image, table) triples.
+
+        Each element is a plain-text paragraph, an image, or an HTML table,
+        preserving document order. Table-of-contents entries are skipped.
+        """
         self.doc = Document(filename) if binary is None else Document(BytesIO(binary))
         pn = 0
         lines = []
@@ -688,7 +740,12 @@ class Docx(DocxParser):
                     style_name = p.style.name if p.style else ""
 
                     if text:
-                        if style_name == "Caption":
+                        # Skip table-of-contents entries: they are navigation
+                        # noise that pollutes retrieval (see _is_toc_paragraph).
+                        if _is_toc_paragraph(text, style_name, p):
+                            pass
+
+                        elif style_name == "Caption":
                             former_image = None
 
                             if lines and lines[-1].get("image") and lines[-1].get("style") != "Caption":
@@ -733,6 +790,11 @@ class Docx(DocxParser):
                             flush_last_image()
                             last_image = current_image
 
+                    # Text boxes are anchored in a paragraph but keep their text out of
+                    # `Paragraph.text`; emit each of them as a block of its own.
+                    for box_text in self.extract_text_boxes(p):
+                        lines.append({"text": self.__clean(box_text), "image": None, "table": None})
+
                 for run in p.runs:
                     xml = run._element.xml
                     if "lastRenderedPageBreak" in xml:
@@ -751,7 +813,7 @@ class Docx(DocxParser):
                 title = self.__get_nearest_title(table_idx, filename)
                 html = "<table>"
                 if title:
-                    html += f"<caption>Table Location: {title}</caption>"
+                    html += f"<caption>Table Location: {html_escape(title)}</caption>"
                 for r in tb.rows:
                     html += "<tr>"
                     col_idx = 0
@@ -766,7 +828,8 @@ class Docx(DocxParser):
                                 else:
                                     break
                             col_idx += 1
-                            html += f"<td>{c.text}</td>" if span == 1 else f"<td colspan='{span}'>{c.text}</td>"
+                            cell = html_escape(c.text)
+                            html += f"<td>{cell}</td>" if span == 1 else f"<td colspan='{span}'>{cell}</td>"
                     except Exception as e:
                         logging.warning(f"Error parsing table, ignore: {e}")
                     html += "</tr>"
@@ -788,7 +851,8 @@ class Docx(DocxParser):
         import uuid
 
         import mammoth
-        from markdownify import markdownify
+
+        from common.markdown_utils import html_to_markdown
 
         docx_file = BytesIO(binary) if binary is not None else open(filename, "rb")
 
@@ -815,7 +879,7 @@ class Docx(DocxParser):
 
             html = result.value
 
-            markdown_text = markdownify(html)
+            markdown_text = html_to_markdown(html)
             return markdown_text
 
         finally:
@@ -832,25 +896,25 @@ class Pdf(PdfParser):
         first_start = start
         callback(msg="OCR started")
         self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
-        callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
-        logging.info("OCR({}~{}): {:.2f}s".format(from_page, to_page, timer() - start))
+        callback(msg=f"OCR finished ({timer() - start:.2f}s)")
+        logging.info(f"OCR({from_page}~{to_page}): {timer() - start:.2f}s")
 
         start = timer()
         self._layouts_rec(zoomin)
-        callback(0.63, "Layout analysis ({:.2f}s)".format(timer() - start))
+        callback(0.63, f"Layout analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._table_transformer_job(zoomin)
-        callback(0.65, "Table analysis ({:.2f}s)".format(timer() - start))
+        callback(0.65, f"Table analysis ({timer() - start:.2f}s)")
 
         start = timer()
         self._text_merge(zoomin=zoomin)
-        callback(0.67, "Text merged ({:.2f}s)".format(timer() - start))
+        callback(0.67, f"Text merged ({timer() - start:.2f}s)")
 
         if separate_tables_figures:
             tbls, figures = self._extract_table_figure(True, zoomin, True, True, True)
             self._concat_downward()
-            logging.info("layouts cost: {}s".format(timer() - first_start))
+            logging.info(f"layouts cost: {timer() - first_start}s")
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls, figures
         else:
             tbls = self._extract_table_figure(True, zoomin, True, True)
@@ -858,7 +922,7 @@ class Pdf(PdfParser):
             self._concat_downward()
             # self._final_reading_order_merge()
             # self._filter_forpages()
-            logging.info("layouts cost: {}s".format(timer() - first_start))
+            logging.info(f"layouts cost: {timer() - first_start}s")
             return [(b["text"], self._line_tag(b, zoomin)) for b in self.boxes], tbls
 
 
@@ -871,9 +935,9 @@ class Markdown(MarkdownParser):
     def md_to_html(self, sections):
         if not sections:
             return []
-        if isinstance(sections, type("")):
+        if isinstance(sections, str):
             text = sections
-        elif isinstance(sections[0], type("")):
+        elif isinstance(sections[0], str):
             text = sections[0]
         else:
             return []
@@ -930,15 +994,15 @@ class Markdown(MarkdownParser):
                     urls.append({"url": src, "line": line_no})
                     seen.add((src, line_no))
         except Exception as e:
-            logging.error("Failed to extract image urls: {}".format(e))
-            pass
+            logging.error(f"Failed to extract image urls: {e}")
 
         return urls
 
     def load_images_from_urls(self, urls, cache=None):
-        import requests
         from pathlib import Path
         from urllib.parse import urljoin
+
+        import requests
 
         from common.ssrf_guard import assert_url_is_safe, pin_dns
 
@@ -1147,7 +1211,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         st = timer()
 
         res.extend(doc_tokenize_chunks_with_images(chunks, doc, is_english, child_delimiters_pattern=child_deli, language=lang))
-        logging.info("naive_merge({}): {}".format(filename, timer() - st))
+        logging.info(f"naive_merge({filename}): {timer() - st}")
         res.extend(embed_res)
         res.extend(url_res)
         return res
@@ -1206,7 +1270,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sections,
                 tables,
                 image_context_size,
-                section_page_offset=from_page if name == "mineru" else 0,
+                section_page_offset=from_page if name in {"mineru", "monkeyocrv2"} else 0,
             )
 
         if name in ["tcadp", "docling", "mineru", "paddleocr", "opendataloader", "somark", "mistral ocr"]:
@@ -1447,7 +1511,7 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
                 sub_url_res = chunk(f"{index}.html", html_bytes, callback=callback, lang=lang, is_root=False, **kwargs)
             url_res.extend(sub_url_res)
 
-    logging.info("naive_merge({}): {}".format(filename, timer() - st))
+    logging.info(f"naive_merge({filename}): {timer() - st}")
 
     if embed_res:
         res.extend(embed_res)

@@ -1,4 +1,9 @@
-import { buildOperatorNode } from '@/utils/pipeline-operator';
+import {
+  buildOperatorNode,
+  getOperatorType,
+  transformApiConfigToForm,
+  transformFormConfigToApi,
+} from '@/utils/pipeline-operator';
 
 let mockIsGoBackend = true;
 jest.mock('@/utils/backend-runtime', () => ({
@@ -9,6 +14,42 @@ const extractorNode = {
   id: 'Extractor:AutoExtractDefault',
   data: { form: {} },
 } as any;
+
+describe('GeneralChunker operator bridge', () => {
+  it('recognizes and transforms the built-in general chunker config', () => {
+    expect(getOperatorType('GeneralChunker:SixApplesFall')).toBe(
+      'GeneralChunker',
+    );
+
+    const form = transformApiConfigToForm('GeneralChunker', {
+      chunk_token_size: 512,
+      delimiters: ['\n', ';'],
+      overlapped_percent: 0.1,
+      table_context_size: 2,
+      image_context_size: 3,
+    });
+    expect(form.delimiters).toEqual([{ value: '\n' }, { value: ';' }]);
+    expect(form.table_context_size).toBe(2);
+    expect(form.image_context_size).toBe(3);
+    expect(form).not.toHaveProperty('image_table_context_window');
+    expect(form).not.toHaveProperty('delimiter_mode');
+
+    const api = transformFormConfigToApi('GeneralChunker', {
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      delimiters: [{ value: '\n' }, { value: ';' }],
+      children_delimiters: [],
+      enable_children: false,
+      overlapped_percent: 10,
+      table_context_size: 2,
+      image_context_size: 3,
+    });
+    expect(api.delimiters).toEqual(['\n', ';']);
+    expect(api.table_context_size).toBe(2);
+    expect(api.image_context_size).toBe(3);
+    expect(api).not.toHaveProperty('delimiter_mode');
+  });
+});
 
 describe('buildOperatorNode dataset-level metadata precedence', () => {
   beforeEach(() => {

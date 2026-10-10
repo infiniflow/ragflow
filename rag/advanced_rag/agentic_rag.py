@@ -217,6 +217,61 @@ def _cache_similar(
     return shared / min(len(aw), len(bw)) >= _RAG_CACHE_MIN_OVERLAP
 
 
+_SLOT_CITATION_RE = re.compile(r"(?i)\[\s*ID\s*[:： ]*\s*slot\s*(\d+)\s*\]")
+_RANGE_CITATION_RE = re.compile(r"(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)\s*[-–—~～]\s*([0-9]+)\s*\]")
+
+
+def _repair_slot_citation_markers(answer, slot_evidence, cite_chunk_ids):
+    """Rewrite [ID:Slot N] markers into real [ID:k] citations.
+
+    DESIGN ENHANCEMENT (Go parity: internal/service/citation.go
+    RepairSlotCitations): the model occasionally cites slot-table rows —
+    internal markers that cannot be located in the source document. Each
+    marker is rewritten to the [ID:k] of the slot's first evidence chunk that
+    is present in the citation pool (1-based kb_prompt numbering); slots
+    without pool-resident evidence have the marker removed — an internal
+    marker must not reach the answer.
+    """
+    if not answer or not slot_evidence or not cite_chunk_ids:
+        return answer
+    pos_by_id = {}
+    for i, cid in enumerate(cite_chunk_ids):
+        if cid and cid not in pos_by_id:
+            pos_by_id[cid] = i + 1
+
+    def _repl(m):
+        meta = slot_evidence.get(m.group(1)) or {}
+        for eid in meta.get("evidence_ids") or []:
+            pos = pos_by_id.get(str(eid))
+            if pos is not None:
+                return f"[ID:{pos}]"
+        return ""  # unresolvable internal marker: drop
+
+    return _SLOT_CITATION_RE.sub(_repl, answer)
+
+
+def _expand_range_citation_markers(answer, pool_size):
+    """Expand range-merged citations back into individual ones.
+
+    DESIGN ENHANCEMENT (Go parity: ExpandRangeCitations): models sometimes
+    compress consecutive [ID:1][ID:2][ID:3] into [ID:1-3]; a range cannot be
+    resolved to a single source, so it is expanded when both bounds are valid
+    1-based citation-pool positions and dropped otherwise.
+    """
+    if not answer or pool_size <= 0:
+        return answer
+
+    def _repl(m):
+        a, b = int(m.group(1)), int(m.group(2))
+        if a > b:
+            a, b = b, a
+        if a < 1 or b > pool_size:
+            return ""  # out of range: unresolvable, drop
+        return "".join(f"[ID:{i}]" for i in range(a, b + 1))
+
+    return _RANGE_CITATION_RE.sub(_repl, answer)
+
+
 class RAGTools:
     def __init__(
         self,
@@ -667,6 +722,7 @@ class RAGTools:
             doc_ids=doc_scope,
             rank_feature=label_question(question, self.kbs),
             rerank_candidates_count=rerank_candidates_count,
+            allow_dense_fallback=False,
         )
         if not kbinfos:
             return {"chunks": [], "doc_aggs": []}
@@ -883,6 +939,19 @@ class RAGTools:
                 if self.answer_sink is not None:
                     self.answer_sink(delta, kind == "think")
             final = re.sub(r"\(\**(ID:\d+)\**\)", r"[\1]", final)
+
+            # DESIGN ENHANCEMENT (Go parity: internal/service/citation.go
+            # RepairSlotCitations / ExpandRangeCitations): the model sometimes
+            # cites slot-table rows ("[ID:Slot 0]") — internal markers that
+            # cannot be located in the source document — and occasionally
+            # compresses consecutive [ID:n] citations into ranges. Both forms
+            # are unresolvable and must never reach the answer.
+            final = _repair_slot_citation_markers(
+                final,
+                getattr(self, "_rag_slot_evidence", None) or {},
+                getattr(self, "_rag_cite_chunk_ids", None) or [],
+            )
+            final = _expand_range_citation_markers(final, len(getattr(self, "_rag_cite_chunk_ids", None) or []))
 
             # Cache the freshly produced answer for later near-identical questions.
             if question and final and not self.text_attachments_content:

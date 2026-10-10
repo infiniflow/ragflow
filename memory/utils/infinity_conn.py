@@ -279,6 +279,11 @@ class InfinityConnection(InfinityConnectionBase):
         return res, total_hits_count
 
     def get_forgotten_messages(self, select_fields: list[str], index_name: str, memory_id: str, limit: int = 512):
+        """Return forgotten messages ordered by their forgetting timestamp.
+
+        The DataFrame includes document IDs for field conversion, even when
+        empty, without modifying the caller's requested fields.
+        """
         condition = {"memory_id": memory_id, "exists": "forget_at_flt"}
         order_by = OrderByExpr()
         order_by.asc("forget_at_flt")
@@ -289,7 +294,7 @@ class InfinityConnection(InfinityConnectionBase):
             table_name = f"{index_name}_{memory_id}"
             table_instance = db_instance.get_table(table_name)
             column_name_list = [r[0] for r in table_instance.show_columns().rows()]
-            output_fields = [self.convert_message_field_to_infinity(f, column_name_list) for f in select_fields]
+            output_fields = self.convert_select_fields([*select_fields, "id"], column_name_list)
             builder = table_instance.output(output_fields)
             filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
             builder.filter(filter_cond)
@@ -303,14 +308,17 @@ class InfinityConnection(InfinityConnectionBase):
                         order_by_expr_list.append((order_field_name, SortType.Desc))
             builder.sort(order_by_expr_list)
             builder.offset(0).limit(limit)
-            mem_res, _ = builder.option({"total_hits_count": True}).to_df()
-            res = self.concat_dataframes(mem_res, output_fields)
-            res.head(limit)
+            res, _ = builder.option({"total_hits_count": True}).to_df()
         finally:
             self.connPool.release_conn(inf_conn)
         return res
 
     def get_missing_field_message(self, select_fields: list[str], index_name: str, memory_id: str, field_name: str, limit: int = 512):
+        """Return messages whose field still equals its schema default.
+
+        Order by validity timestamp and include document IDs in the DataFrame
+        so callers can convert both populated and empty results.
+        """
         condition = {"memory_id": memory_id, "must_not": {"exists": field_name}}
         order_by = OrderByExpr()
         order_by.asc("valid_at_flt")
@@ -321,7 +329,7 @@ class InfinityConnection(InfinityConnectionBase):
             table_name = f"{index_name}_{memory_id}"
             table_instance = db_instance.get_table(table_name)
             column_name_list = [r[0] for r in table_instance.show_columns().rows()]
-            output_fields = [self.convert_message_field_to_infinity(f, column_name_list) for f in select_fields]
+            output_fields = self.convert_select_fields([*select_fields, "id"], column_name_list)
             builder = table_instance.output(output_fields)
             filter_cond = self.equivalent_condition_to_str(condition, db_instance.get_table(table_name))
             builder.filter(filter_cond)
@@ -335,9 +343,7 @@ class InfinityConnection(InfinityConnectionBase):
                         order_by_expr_list.append((order_field_name, SortType.Desc))
             builder.sort(order_by_expr_list)
             builder.offset(0).limit(limit)
-            mem_res, _ = builder.option({"total_hits_count": True}).to_df()
-            res = self.concat_dataframes(mem_res, output_fields)
-            res.head(limit)
+            res, _ = builder.option({"total_hits_count": True}).to_df()
         finally:
             self.connPool.release_conn(inf_conn)
         return res

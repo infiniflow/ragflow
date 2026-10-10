@@ -1,5 +1,5 @@
 ---
-sidebar_position: 2
+sidebar_position: 12
 title: RAGFlow MCP Tools
 sidebar_label: RAGFlow MCP Tools
 slug: /mcp_tools

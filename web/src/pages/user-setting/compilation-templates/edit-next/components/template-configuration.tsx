@@ -16,12 +16,12 @@
 
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { SwitchFormField } from '@/components/switch-fom-field';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ICompilationTemplateBuiltin } from '@/interfaces/database/compilation-template';
-import { startCase } from 'lodash';
+import { isEmpty, startCase } from 'lodash';
 import { ReactNode, useCallback } from 'react';
 import { UseFormReturn, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
@@ -214,8 +214,14 @@ export function TemplateConfiguration({
                   onChange={field.onChange}
                   disabled={field.disabled}
                   options={[
-                    { label: t('knowledgeCompilation.entityMode'), value: 'entity' },
-                    { label: t('knowledgeCompilation.topicMode'), value: 'topic' },
+                    {
+                      label: t('knowledgeCompilation.entityMode'),
+                      value: 'entity',
+                    },
+                    {
+                      label: t('knowledgeCompilation.topicMode'),
+                      value: 'topic',
+                    },
                   ]}
                 />
               )}
@@ -226,7 +232,7 @@ export function TemplateConfiguration({
             <TreeTemplateFields index={selectedTemplateIndex} />
           ) : (
             <>
-              {kind !== CompilationTemplateKind.Artifacts && (
+              {kind !== CompilationTemplateKind.Artifacts && !isEmpty(kind) && (
                 <>
                   <SwitchFormField
                     name={`templates.${selectedTemplateIndex}.config.rechunk`}
@@ -240,7 +246,9 @@ export function TemplateConfiguration({
                       label={t('knowledgeCompilation.rechunkRules')}
                     >
                       <Textarea
-                        placeholder={t('knowledgeCompilation.rechunkRulesPlaceholder')}
+                        placeholder={t(
+                          'knowledgeCompilation.rechunkRulesPlaceholder',
+                        )}
                         rows={6}
                         resize="vertical"
                       />

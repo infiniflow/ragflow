@@ -11,6 +11,7 @@
 #  limitations under the License.
 #
 
+import csv
 import logging
 import re
 import sys
@@ -25,6 +26,66 @@ from rag.utils.lazy_image import LazyImage
 # copied from `/openpyxl/cell/cell.py`
 ILLEGAL_CHARACTERS_RE = re.compile(r"[\000-\010]|[\013-\014]|[\016-\037]")
 
+# The separators a spreadsheet actually writes into a file named ".csv". Excel
+# writes the list separator of the machine's locale, which is a semicolon across
+# most of Europe, and a tab separated export is routinely saved as .csv.
+CSV_DELIMITERS = (",", ";", "\t", "|")
+
+# How much of the file the detection looks at. A separator that holds for the
+# first rows holds for the file.
+CSV_SAMPLE_CHARS = 64 * 1024
+CSV_SAMPLE_ROWS = 20
+
+
+def _consistent_column_count(sample, delimiter, truncated):
+    """Columns per row under `delimiter`, or 0 when the rows disagree.
+
+    A separator the file was not written with either does not occur at all (one
+    column) or occurs by accident, and then the rows do not line up. Requiring
+    the same count on every row is what keeps a comma inside a sentence, or a
+    semicolon inside a quoted field, from being read as a separator.
+
+    When `truncated` is set, the sample is a prefix of a longer file, so the row
+    it ends in stops wherever the read did, between two fields or inside a
+    quoted one. That row is left out rather than counted as having fewer columns,
+    also when it is the last of the CSV_SAMPLE_ROWS rows sampled.
+    """
+    rows = []
+    reader = csv.reader(StringIO(sample, newline=""), delimiter=delimiter)
+    try:
+        for row in reader:
+            if any(cell.strip() for cell in row):  # a blank or whitespace-only line says nothing
+                rows.append(row)
+                if len(rows) == CSV_SAMPLE_ROWS:
+                    break
+    except csv.Error:
+        return 0
+    if truncated and len(rows) > 1 and reader.line_num == len(StringIO(sample, newline="").readlines()):
+        rows.pop()
+    count = 0
+    for row in rows:
+        if count and len(row) != count:
+            return 0
+        count = len(row)
+    return count if count > 1 else 0
+
+
+def detect_csv_delimiter(text):
+    """The separator `text` was written with, defaulting to a comma.
+
+    `pandas.read_csv` and `csv.reader` both default to a comma, and reading a
+    semicolon separated export with one does not fail: it returns a single
+    column holding the whole row, separators included.
+    """
+    truncated = len(text) > CSV_SAMPLE_CHARS
+    sample = text[:CSV_SAMPLE_CHARS]
+    best_delimiter, best_columns = ",", 0
+    for delimiter in CSV_DELIMITERS:
+        columns = _consistent_column_count(sample, delimiter, truncated)
+        if columns > best_columns:
+            best_delimiter, best_columns = delimiter, columns
+    return best_delimiter
+
 
 class RAGFlowExcelParser:
     @staticmethod
@@ -36,7 +97,7 @@ class RAGFlowExcelParser:
             file_like_object.seek(0)
             binary = file_like_object.read()
         text, _ = decode_text(binary, document_type="CSV document")
-        return pd.read_csv(StringIO(text), on_bad_lines="skip")
+        return pd.read_csv(StringIO(text), sep=detect_csv_delimiter(text), on_bad_lines="skip")
 
     @staticmethod
     def _load_excel_to_workbook(file_like_object):
@@ -94,7 +155,10 @@ class RAGFlowExcelParser:
 
     @staticmethod
     def _dataframe_to_workbook(df):
-        if isinstance(df, dict) and len(df) > 1:
+        # `pd.read_excel(sheet_name=None)` returns a dict whatever the sheet count,
+        # and a one-entry dict has no `.apply`, so it must not fall through to the
+        # single-frame path below.
+        if isinstance(df, dict):
             return RAGFlowExcelParser._dataframes_to_workbook(df)
 
         df = RAGFlowExcelParser._clean_dataframe(df)
@@ -172,37 +236,23 @@ class RAGFlowExcelParser:
 
         max_col = min(ws.max_column or 1, 50)
 
-        def row_has_data(row_idx):
-            for col_idx in range(1, max_col + 1):
-                cell = ws.cell(row=row_idx, column=col_idx)
-                if cell.value is not None and str(cell.value).strip():
-                    return True
-            return False
+        # max_row is often inflated by styling far below real data. Scan only
+        # materialized cells so we do not call ws.cell() on every empty row.
+        highest = 0
+        for (row_idx, col_idx), cell in ws._cells.items():
+            if col_idx > max_col:
+                continue
+            if cell.value is not None and str(cell.value).strip():
+                highest = max(highest, row_idx)
 
-        if not any(row_has_data(i) for i in range(1, min(101, max_row + 1))):
-            return 0
-
-        left, right = 1, max_row
-        last_data_row = 1
-
-        while left <= right:
-            mid = (left + right) // 2
-            found = False
-            for r in range(mid, min(mid + 10, max_row + 1)):
-                if row_has_data(r):
-                    found = True
-                    last_data_row = max(last_data_row, r)
-                    break
-            if found:
-                left = mid + 1
-            else:
-                right = mid - 1
-
-        for r in range(last_data_row, min(last_data_row + 500, max_row + 1)):
-            if row_has_data(r):
-                last_data_row = r
-
-        return last_data_row
+        if highest:
+            logging.debug(
+                "Excel row scan: max_row=%s max_col=%s detected_highest_data_row=%s",
+                max_row,
+                max_col,
+                highest,
+            )
+        return highest
 
     @staticmethod
     def _get_rows_limited(ws):
@@ -245,6 +295,14 @@ class RAGFlowExcelParser:
             # when the data-row count is an exact multiple of chunk_rows and emits
             # a spurious header-only chunk.
             n_data_rows = len(rows) - 1
+            if n_data_rows <= 0:
+                # A template sheet holds only its header row. Emit it as a
+                # captioned table instead of dropping the sheet, which is what
+                # Go does (recordsToHTMLTableChunkList, nData == 0). Without
+                # this the column schema of a blank template is lost.
+                tb = f"<table><caption>{sheetname}</caption>" + tb_rows_0 + "</table>"
+                tb_chunks.append((tb, (sheet_idx, 1, 1, 1, col_max)))
+                continue
             for chunk_i in range((n_data_rows + chunk_rows - 1) // chunk_rows):
                 row_start = 2 + chunk_i * chunk_rows
                 row_end = min(1 + (chunk_i + 1) * chunk_rows, len(rows))
@@ -303,7 +361,9 @@ class RAGFlowExcelParser:
                     col = i + 1
                     col_min = col if col_min is None else min(col_min, col)
                     col_max = col if col_max is None else max(col_max, col)
-                    t = str(ti[i].value) if i < len(ti) else ""
+                    # A blank header cell is not a label: str(None) is "None", which is truthy,
+                    # so it defeats the separator guard below and lands "None：" in the chunk text.
+                    t = str(ti[i].value) if i < len(ti) and ti[i].value is not None else ""
                     t += ("：" if t else "") + str(c.value)
                     fields.append(t)
                 if not fields:

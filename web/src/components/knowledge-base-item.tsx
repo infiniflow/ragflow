@@ -43,7 +43,10 @@ function DatasetLabel({ text }: { text: string }) {
   );
 }
 
-export function useDisableDifferenceEmbeddingDataset(name: string) {
+export function useDisableDifferenceEmbeddingDataset(
+  name: string,
+  ownerTenantId?: string,
+) {
   const form = useFormContext();
   const datasetId = useWatch({ name, control: form.control });
   const [searchString, setSearchString] = useState('');
@@ -53,7 +56,12 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(false, debouncedSearchString);
+  } = useFetchKnowledgeList(
+    false,
+    debouncedSearchString,
+    undefined,
+    ownerTenantId,
+  );
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],
@@ -63,7 +71,10 @@ export function useDisableDifferenceEmbeddingDataset(name: string) {
   // pages, filtered out by the search box), so resolve them by ID to echo
   // their names back in the form field. A dataset that has been deleted
   // comes back missing and its badge falls back to the raw id.
-  const { data: selectedDatasets } = useFetchDatasetsByIds(selectedDatasetIds);
+  const { data: selectedDatasets } = useFetchDatasetsByIds(
+    selectedDatasetIds,
+    ownerTenantId,
+  );
 
   const datasetList = useMemo(() => {
     return Array.from(
@@ -139,10 +150,12 @@ export function KnowledgeBaseFormField({
   showVariable = false,
   name = 'dataset_ids',
   required = false,
+  ownerTenantId,
 }: {
   showVariable?: boolean;
   name?: string;
   required?: boolean;
+  ownerTenantId?: string;
 }) {
   const { t } = useTranslation();
 
@@ -153,7 +166,7 @@ export function KnowledgeBaseFormField({
     searchString,
     handleScroll,
     hasNextPage,
-  } = useDisableDifferenceEmbeddingDataset(name);
+  } = useDisableDifferenceEmbeddingDataset(name, ownerTenantId);
 
   const nextOptions = buildQueryVariableOptionsByShowVariable(showVariable)();
 

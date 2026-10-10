@@ -1,6 +1,6 @@
 # Auth
 
-The Auth module provides implementations of OAuth2 and OpenID Connect (OIDC) authentication for integration with third-party identity providers. 
+The Auth module provides implementations of OAuth2 and OpenID Connect (OIDC) authentication for integration with third-party identity providers.
 
 **Features**
 

@@ -91,9 +91,11 @@ def _install_scholarly_stub():
 _install_rag_llm_stubs()
 _install_scholarly_stub()
 
+import time
+
 import pytest
 import requests
-from test.testcases.configs import API_PROXY_SCHEME, EMAIL, HOST_ADDRESS, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
+from test.testcases.configs import API_PROXY_SCHEME, EMAIL, HOST_ADDRESS, IS_GO_PROXY, PASSWORD, SILICONFLOW_API_KEY, VERSION, ZHIPU_AI_API_KEY
 
 MARKER_EXPRESSIONS = {
     "p1": "p1",
@@ -148,14 +150,42 @@ def login():
     return auth
 
 
+_ADMIN_BOOTSTRAP_REASON = "admin server not connected"
+
+
+def _auth_with_admin_bootstrap_retry():
+    deadline = time.monotonic() + 120
+    last_error = None
+    while time.monotonic() < deadline:
+        try:
+            register()
+        except Exception as exc:
+            message = str(exc)
+            if _ADMIN_BOOTSTRAP_REASON in message:
+                last_error = exc
+                time.sleep(2)
+                continue
+            print(exc)
+        try:
+            return login()
+        except Exception as exc:
+            if _ADMIN_BOOTSTRAP_REASON in str(exc):
+                last_error = exc
+                time.sleep(2)
+                continue
+            raise
+    raise last_error or Exception("Timed out waiting for admin server during auth bootstrap")
+
+
 @pytest.fixture(scope="session")
 def auth():
+    if IS_GO_PROXY:
+        return _auth_with_admin_bootstrap_retry()
     try:
         register()
     except Exception as e:
         print(e)
-    auth = login()
-    return auth
+    return login()
 
 
 @pytest.fixture(scope="session")

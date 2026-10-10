@@ -20,7 +20,7 @@ from common import bulk_upload_documents, list_all_documents
 
 
 class TestDocumentsDeletion:
-    @pytest.mark.p1
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload, expected_message, remaining",
         [
@@ -54,7 +54,7 @@ class TestDocumentsDeletion:
         documents = dataset.list_documents()
         assert len(documents) == remaining, str(documents)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     @pytest.mark.parametrize(
         "payload",
         [
@@ -74,7 +74,7 @@ class TestDocumentsDeletion:
         documents = dataset.list_documents()
         assert len(documents) == 3, str(documents)
 
-    @pytest.mark.p2
+    @pytest.mark.p3
     def test_repeated_deletion(self, add_documents_func):
         dataset, documents = add_documents_func
         document_ids = [document.id for document in documents]

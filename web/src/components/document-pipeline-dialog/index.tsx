@@ -128,6 +128,7 @@ export function DocumentPipelineDialog({
                     | Record<string, FieldErrors | undefined>
                     | undefined
                 }
+                fixedFileFormats
               />
             )}
           </form>

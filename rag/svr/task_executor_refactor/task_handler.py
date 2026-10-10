@@ -469,26 +469,6 @@ class TaskHandler:
                 if cleaned_chunks:
                     ctx.progress_cb(msg=f"Cleaned up {cleaned_chunks} stale RAPTOR chunks.")
 
-                # Build the per-doc RAPTOR tree graph from the just-
-                # inserted summaries. Each chunk in ``chunks`` carries
-                # the doc_id it was written under (real doc id for
-                # scope="file"; GRAPH_RAPTOR_FAKE_DOC_ID for the
-                # dataset-scope path). We materialize one graph row per
-                # distinct doc_id so the dataset structure-graph
-                # endpoint can surface a RAPTOR tab per document.
-                # Failure here is best-effort — the summaries are
-                # already persisted; the tab just won't render.
-                raptor_doc_ids = {str(c.get("doc_id")) for c in chunks if c.get("doc_id")}
-                for raptor_doc_id in raptor_doc_ids:
-                    try:
-                        await raptor_service._persist_raptor_graph_to_es(raptor_doc_id)
-                    except Exception:
-                        logging.exception(
-                            "raptor_graph: build failed for kb=%s doc=%s",
-                            task_dataset_id,
-                            raptor_doc_id,
-                        )
-
                 # Update document stats
                 if ctx.write_interceptor:
                     ctx.write_interceptor.intercept("DocumentService.increment_chunk_num")

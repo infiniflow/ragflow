@@ -85,7 +85,7 @@ export function LlmWikiView() {
   return (
     <Card className="flex-1 min-h-0 overflow-hidden flex border-border-button rounded-xl flex-col">
       <ResizablePanelGroup direction="horizontal" className="flex-1">
-        <ResizablePanel defaultSize={33} minSize={20} maxSize={50}>
+        <ResizablePanel id="wiki-left" order={1} defaultSize={50}>
           <WikiLeftPanel
             tab={leftTab}
             onTabChange={handleLeftTabChange}
@@ -98,15 +98,19 @@ export function LlmWikiView() {
             traceData={artifactRunData}
           />
         </ResizablePanel>
-        <ResizableHandle withHandle />
-        <ResizablePanel>
-          <WikiDetailContent
-            selectedArtifact={selectedArtifact}
-            selectedVersion={selectedVersion}
-            onSelectVersion={selectVersion}
-            onSelectArtifact={handleSelectArtifact}
-          />
-        </ResizablePanel>
+        {selectedArtifact && (
+          <>
+            <ResizableHandle withHandle />
+            <ResizablePanel id="wiki-detail" order={2}>
+              <WikiDetailContent
+                selectedArtifact={selectedArtifact}
+                selectedVersion={selectedVersion}
+                onSelectVersion={selectVersion}
+                onSelectArtifact={handleSelectArtifact}
+              />
+            </ResizablePanel>
+          </>
+        )}
       </ResizablePanelGroup>
     </Card>
   );

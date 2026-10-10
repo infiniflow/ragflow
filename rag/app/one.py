@@ -38,7 +38,7 @@ class Pdf(PdfParser):
 
         start = timer()
         callback(msg="OCR started")
-        self.__images__(filename if not binary else binary, zoomin, from_page, to_page, callback)
+        self.__images__(filename if binary is None else binary, zoomin, from_page, to_page, callback)
         callback(msg="OCR finished ({:.2f}s)".format(timer() - start))
 
         start = timer()
@@ -176,7 +176,12 @@ def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang=
         if doc_parsed.get("content", None) is not None:
             sections = doc_parsed["content"].split("\n")
             sections = [s for s in sections if s]
-        callback(0.8, "Finish parsing.")
+            callback(0.8, "Finish parsing.")
+        else:
+            error_msg = f"tika.parser got empty content from {filename}."
+            callback(0.8, error_msg)
+            logging.warning(error_msg)
+            return []
 
     else:
         raise NotImplementedError("file type not supported yet(doc, docx, pdf, txt supported)")

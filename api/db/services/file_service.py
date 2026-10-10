@@ -575,9 +575,18 @@ class FileService(CommonService):
         DocumentService.delete_by_id(doc.id)
         return True
 
+    @staticmethod
+    def _is_sync_cancelled(should_cancel) -> bool:
+        if should_cancel is None:
+            return False
+        is_set = getattr(should_cancel, "is_set", None)
+        if callable(is_set):
+            return bool(is_set())
+        return bool(should_cancel())
+
     @classmethod
     @DB.connection_context()
-    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None):
+    def upload_document(self, kb, file_objs, user_id, src="local", parent_path: str | None = None, parser_config_override: dict | None = None, should_cancel=None):
         root_folder = self.get_root_folder(user_id)
         pf_id = root_folder["id"]
         self.init_knowledgebase_docs(pf_id, user_id)
@@ -595,6 +604,8 @@ class FileService(CommonService):
 
         err, files = [], []
         for file in file_objs:
+            if self._is_sync_cancelled(should_cancel):
+                break
             doc_id = file.id if hasattr(file, "id") else get_uuid()
             e, doc = DocumentService.get_by_id(doc_id)
             if e and str(doc.kb_id) != str(kb.id):

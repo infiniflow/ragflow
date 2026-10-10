@@ -504,6 +504,52 @@ async def test_current_chunk_doc_ids_propagates_search_errors(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_current_structure_product_doc_ids_only_returns_document_scoped_products(monkeypatch):
+    module, _, _ = _load_list_datasets_module(
+        monkeypatch,
+        kbs=[],
+        parsing_status_by_kb={},
+    )
+
+    captured = {}
+
+    async def _paged(_index, dataset_id, condition, field, from_list, *, raise_on_error):
+        captured.update(dataset_id=dataset_id, condition=condition, field=field, from_list=from_list)
+        assert raise_on_error is True
+        return {"doc-with-product"}
+
+    monkeypatch.setattr(module, "_involved_doc_ids_paged", _paged)
+
+    result = await module._current_structure_product_doc_ids(
+        "tenant-index",
+        "kb-1",
+        "graph",
+        {"doc-with-product", "doc-without-product"},
+    )
+
+    assert result == {"doc-with-product"}
+    assert captured == {
+        "dataset_id": "kb-1",
+        "condition": {
+            "doc_id": ["doc-with-product", "doc-without-product"],
+            "scope_kwd": ["doc"],
+            "knowledge_graph_kwd": ["entity", "relation"],
+            "compilation_template_kind_kwd": ["knowledge_graph"],
+        },
+        "field": "doc_id",
+        "from_list": False,
+    }
+
+    await module._current_structure_product_doc_ids(
+        "tenant-index",
+        "kb-1",
+        "tree",
+        {"doc-with-product"},
+    )
+    assert captured["condition"]["compilation_template_kind_kwd"] == ["page_index", "tree"]
+
+
+@pytest.mark.asyncio
 async def test_wiki_involved_ids_use_active_map_state_when_pages_are_missing(monkeypatch):
     """Use MAP provenance even when a participating document has no page row."""
     module, _, _ = _load_list_datasets_module(

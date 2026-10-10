@@ -1,5 +1,5 @@
 ---
-sidebar_position: 3
+sidebar_position: 13
 title: RAGFlow MCP Client Examples
 sidebar_label: RAGFlow MCP Client Examples
 slug: /mcp_client
@@ -10,6 +10,8 @@ sidebar_custom_props: {
 # RAGFlow MCP Client Examples
 
 Python and curl MCP client examples.
+
+To use third-party tools inside a RAGFlow agent, see [Connect external MCP tools](./connect_external_mcp_servers.md).
 
 ------
 

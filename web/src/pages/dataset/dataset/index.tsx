@@ -260,10 +260,6 @@ export default function Dataset() {
         )}
         {reparseDialogVisible && (
           <ReparseDialog
-            hidden={
-              chunkNum === 0 && !knowledgeBase?.parser_config?.enable_metadata
-            }
-            // hidden={false}
             enable_metadata={knowledgeBase?.parser_config?.enable_metadata}
             handleOperationIconClick={handleOperationIconClick}
             chunk_num={chunkNum}

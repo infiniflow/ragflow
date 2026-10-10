@@ -177,8 +177,6 @@ class EmbeddingUtils:
         """
         if title_weight is None:
             title_weight = cls.DEFAULT_TITLE_WEIGHT
-        if not title_weight:
-            title_weight = cls.DEFAULT_TITLE_WEIGHT
 
         if title_vecs is not None and content_vecs.ndim == 2 and title_vecs.shape == content_vecs.shape:
             return title_weight * title_vecs + (1 - title_weight) * content_vecs
