@@ -31,7 +31,11 @@
 
 package parser
 
-import "context"
+import (
+	"context"
+
+	"ragflow/internal/entity"
+)
 
 // ParseResult is the structured return value of a parse operation. JSON holds
 // structured backend output when available; the rendered fields carry
@@ -108,10 +112,14 @@ func NewTextJSONItem(text string) map[string]any {
 	}
 }
 
-// NewTableJSONItem constructs a canonical table JSON item for parser output.
-func NewTableJSONItem(html string, sheet string, positions [][]float64) map[string]any {
+// NewTableDataJSONItem constructs a canonical structured table JSON item for
+// parser output. It carries the parsed TableData contract (caption, header
+// rows, cell text already normalized the same way the legacy chunker
+// normalized HTML <td>/<th> text) instead of the legacy HTML markup string,
+// so the chunker reads rows directly without re-parsing any markup.
+func NewTableDataJSONItem(td *entity.TableData, sheet string, positions [][]float64) map[string]any {
 	item := map[string]any{
-		"text":     html,
+		"table":    td,
 		DocTypeKey: DocTypeTable,
 		"ck_type":  DocTypeTable,
 	}

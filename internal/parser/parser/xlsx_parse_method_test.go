@@ -80,7 +80,7 @@ func TestXLSXParser_DeepDocParseMethod(t *testing.T) {
 			if len(res.JSON) != 1 {
 				t.Fatalf("JSON item count = %d, want header-only result", len(res.JSON))
 			}
-			text, _ := res.JSON[0]["text"].(string)
+			text := tableItemHTML(t, res.JSON[0])
 			if !strings.Contains(text, tc.cellValue) {
 				t.Fatalf("JSON = %#v, want it to contain cell content %q", res.JSON, tc.cellValue)
 			}
