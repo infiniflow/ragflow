@@ -46,6 +46,7 @@ const (
 // that applies its result to the doc + KB counters, as docState.apply does after
 // Execute returns.
 func applyResult(ingestor *Ingestor, docID, kbID string) func(context.Context, *entity.IngestionTask) error {
+	ingestor.docState.docSvc = &counterDocStateSvc{docStateSvc: ingestor.docState.docSvc}
 	return func(ctx context.Context, _ *entity.IngestionTask) error {
 		ingestor.docState.apply(ctx, &taskpkg.PipelineResult{
 			DocID:            docID,
@@ -131,4 +132,11 @@ func TestRunTask_RedeliveryAfterIncompleteRunCountsOnce(t *testing.T) {
 	}
 
 	assertCountersAppliedOnce(t, db, kbID, docID)
+}
+
+// Counter-only runs publish no table metadata; retain the real counter writer.
+type counterDocStateSvc struct{ docStateSvc }
+
+func (*counterDocStateSvc) GetDocumentMetadataRaw(context.Context, string) (map[string]any, error) {
+	return nil, nil
 }

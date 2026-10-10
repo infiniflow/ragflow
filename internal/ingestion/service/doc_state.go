@@ -107,6 +107,15 @@ func publishDocMetadata(ctx context.Context, svc docStateSvc, r *taskpkg.Pipelin
 		}
 	}
 	if len(r.Metadata) == 0 && r.TableProfile == nil && len(builtIn) == 0 {
+		// This completed run has nothing to publish. Its empty output cannot
+		// race a write of its own; every actual revoke still rechecks under lock.
+		existing, err := svc.GetDocumentMetadataRaw(ctx, r.DocID)
+		if err != nil {
+			return err
+		}
+		if _, present := existing[entity.TableProfileMetadataField]; !present {
+			return nil
+		}
 		return svc.RevokeTableProfile(ctx, r.DocID)
 	}
 	return svc.WithDocumentMetadataLock(ctx, r.DocID, func(ctx context.Context) error {

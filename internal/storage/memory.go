@@ -17,9 +17,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"ragflow/internal/common"
 	"sync"
 	"time"
@@ -301,4 +303,18 @@ func (m *MemoryStorage) Inspect() []MemoryEntry {
 		}
 	}
 	return out
+}
+
+// Open returns an object stream without buffering its contents.
+func (m *MemoryStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	data, ok := m.objects[bucket][fnm]
+	if !ok {
+		return nil, fmt.Errorf("memory storage: object %q in bucket %q: %w", fnm, bucket, ErrMemoryNotFound)
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }

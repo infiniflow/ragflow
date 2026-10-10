@@ -93,7 +93,7 @@ const sampleESResponse = `{
 
 // TestRunSQL_NoFilterAdded verifies the request body is exactly
 // {"query": <sql>} — the redundant `filter` field that the previous
-// implementation added is gone. (service.addKBFilter is the source of
+// implementation added is gone. (service.tableSQLPolicy is the source of
 // truth for kb_id scoping upstream of RunSQL.)
 func TestRunSQL_NoFilterAdded(t *testing.T) {
 	srv, cap := newCapturingServer(t, http.StatusOK, sampleESResponse)
@@ -116,7 +116,7 @@ func TestRunSQL_NoFilterAdded(t *testing.T) {
 		t.Fatalf("body is not JSON: %v\nbody=%q", err, got)
 	}
 	if _, has := body["filter"]; has {
-		t.Errorf("RunSQL request must NOT include top-level filter (addKBFilter is the source of truth upstream). body=%v", body)
+		t.Errorf("RunSQL request must NOT include top-level filter (tableSQLPolicy scopes the statement upstream). body=%v", body)
 	}
 	if _, has := body["query"]; !has {
 		t.Errorf("RunSQL request must include query. body=%v", body)

@@ -301,3 +301,22 @@ func TestCallArguments(t *testing.T) {
 		t.Errorf("json call args = %v", inner)
 	}
 }
+
+func TestSQLQuoteLiteralRejectsBackslash(t *testing.T) {
+	if _, err := SQLQuoteLiteral(`a\b`); err == nil {
+		t.Fatal("literal accepted a character the scanner rejects")
+	}
+}
+func TestSQLSplitSelectRejectsSemicolon(t *testing.T) {
+	if _, err := SQLSplitSelect(mustScan(t, "SELECT id FROM t;")); err == nil {
+		t.Fatal("semicolon accepted")
+	}
+}
+func TestSQLCallArgumentsRejectsInvalidIndex(t *testing.T) {
+	tokens := mustScan(t, "f(1)")
+	for _, index := range []int{-2, -1, len(tokens), len(tokens) + 1} {
+		if _, _, err := SQLCallArguments(tokens, index); err == nil {
+			t.Fatalf("index %d accepted", index)
+		}
+	}
+}

@@ -285,3 +285,8 @@ func (m *GCSStorage) Close() error {
 	common.Info("Closing GCS client")
 	return m.client.Close()
 }
+
+// Open returns an object stream without buffering its contents.
+func (m *GCSStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	return m.client.Bucket(bucket).Object(fnm).NewReader(ctx)
+}

@@ -37,8 +37,8 @@ func (s *DocumentService) GetMetadataSummary(ctx context.Context, kbID string, d
 	return aggregateMetadata(searchResult.MetadataRecords), nil
 }
 
-// SetDocumentMetadata merges explicit metadata edits and transfers touched keys
-// from the table publisher to the caller, including edits that retain a value.
+// SetDocumentMetadata replaces visible metadata while retaining the internal
+// table profile. Replacing the complete visible map transfers its ownership.
 func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
 	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
 		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
@@ -48,12 +48,32 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 		if err != nil {
 			return err
 		}
-		merged := cloneDocumentMetadata(existing)
-		for key, value := range meta {
-			merged[key] = value
+		merged := cloneDocumentMetadata(meta)
+		touched := cloneDocumentMetadata(existing)
+		var removed []string
+		for key := range existing {
+			if key == entity.TableProfileMetadataField {
+				continue
+			}
+			if _, kept := meta[key]; !kept {
+				removed = append(removed, key)
+			}
 		}
-		if err := relinquishTableMetadata(merged, meta); err != nil {
+		for key, value := range meta {
+			touched[key] = value
+		}
+		delete(touched, entity.TableProfileMetadataField)
+		if profile, present := existing[entity.TableProfileMetadataField]; present {
+			merged[entity.TableProfileMetadataField] = profile
+		}
+		if err := relinquishTableMetadata(merged, touched); err != nil {
 			return err
+		}
+		// Infinity merges engine updates, so omission alone does not remove keys.
+		if len(removed) > 0 {
+			if err := s.DeleteDocumentMetadataRaw(ctx, docID, removed); err != nil {
+				return err
+			}
 		}
 		return s.SetDocumentMetadataRaw(ctx, docID, merged)
 	})

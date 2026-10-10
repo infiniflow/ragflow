@@ -51,24 +51,23 @@ func tableColumnChunks(t *testing.T, params map[string]any, fileType string, ite
 	return chunks
 }
 
-// tableColumnError returns the _ERROR message a column configuration produces.
+// tableColumnError returns the invocation failure for invalid column routing.
 func tableColumnError(t *testing.T, params map[string]any, fileType string, items ...map[string]any) string {
 	t.Helper()
 	comp, err := NewTableChunker(params)
 	if err != nil {
 		t.Fatalf("NewTableChunker: %v", err)
 	}
-	out, err := comp.Invoke(t.Context(), nil, map[string]any{
+	_, err = comp.Invoke(t.Context(), nil, map[string]any{
 		"name":          "orders." + fileType,
 		"file_type":     fileType,
 		"output_format": "json",
 		"json":          items,
 	})
-	if err != nil {
-		t.Fatalf("Invoke: %v", err)
+	if err == nil {
+		t.Fatal("invalid column routing returned success")
 	}
-	msg, _ := out["_ERROR"].(string)
-	return msg
+	return err.Error()
 }
 
 func chunkDataRow(t *testing.T, ck map[string]any) map[string]any {

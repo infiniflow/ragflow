@@ -254,20 +254,7 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 		}
 		return task, nil
 	case common.STOPPING:
-		task, err = s.transition(ctx, taskID, common.STOPPED)
-		if err != nil {
-			return nil, err
-		}
-		// The stop is finalized here without a worker (e.g. MQ redelivery of
-		// a task that was nacked before execution), so the Redis cancel flag
-		// that RequestStop set would otherwise leak until TTL and cancel the
-		// next run of this task at the worker's pre-start check.
-		clearCancelFlag(ctx, taskID)
-		// Same reason as RequestStop's CREATED/SCHEDULED branch: the stop
-		// finalizes without a worker, so no terminal pipeline-log writer will
-		// close the open row. Close it here or it stays RUNNING forever.
-		s.advanceOpenLog(ctx, task, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
-		s.recordRunTerminal(ctx, task, "Task stopped by user.")
+		// The worker must revoke derived metadata before finalizing this stop.
 		return task, nil
 	case common.RUNNING, common.COMPLETED, common.STOPPED, common.FAILED:
 		return task, nil
@@ -388,8 +375,13 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
 		return nil
 	}
-	_, err = s.transition(ctx, taskID, common.STOPPED)
-	return err
+	stopped, err := s.transition(ctx, taskID, common.STOPPED)
+	if err != nil {
+		return err
+	}
+	clearCancelFlag(ctx, taskID)
+	s.advanceOpenLog(ctx, stopped, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
+	return nil
 }
 
 func (s *IngestionTaskService) Remove(ctx context.Context, taskID string, userID *string) (*dao.TaskInfo, error) {

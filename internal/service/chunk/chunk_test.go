@@ -9,6 +9,7 @@ import (
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
+	"io"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
@@ -2157,6 +2158,9 @@ func (s *chunkImageStorage) Put(ctx context.Context, bucket, fnm string, binary 
 }
 func (s *chunkImageStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
 	return s.oldBinary, nil
+}
+func (s *chunkImageStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	return io.NopCloser(bytes.NewReader(s.oldBinary)), nil
 }
 func (s *chunkImageStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	s.removeCalls++

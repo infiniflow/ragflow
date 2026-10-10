@@ -509,6 +509,19 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 	}
 
 	switch task.Status {
+	case common.STOPPING:
+		if !e.claimTask(task.ID) {
+			e.renewDuplicateHandle(hb, handle, task.ID)
+			return
+		}
+		defer e.releaseTask(task.ID)
+		if e.markStopped(e.ctx, task.ID) {
+			e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
+			e.ackHandle(hb, handle, task.ID)
+		} else {
+			e.nackHandle(hb, handle, task.ID)
+		}
+		return
 	case common.COMPLETED, common.STOPPED, common.FAILED:
 		common.Info(fmt.Sprintf("task %s is already %s", taskMessage.TaskID, task.Status))
 		e.ackHandle(hb, handle, taskMessage.TaskID)
@@ -806,12 +819,7 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 		common.Error(fmt.Sprintf("markStopped: MarkStopped task %s: %v", taskID, err), err)
 		return false
 	}
-	if rc := kvrocks.Get(); rc != nil {
-		utility.BestEffort(fmt.Sprintf("clear cancel flag for %s", taskID), func() error {
-			rc.Delete(writeCtx, fmt.Sprintf("%s-cancel", taskID))
-			return nil // Delete returns bool; the bool does not distinguish "not found" from "error"
-		})
-	}
+
 	return true
 }
 

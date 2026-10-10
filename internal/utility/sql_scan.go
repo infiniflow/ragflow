@@ -279,8 +279,8 @@ func SQLQuoteLiteral(value string) (string, error) {
 		return "", fmt.Errorf("sqlscan: %q is not valid UTF-8", value)
 	}
 	for _, r := range value {
-		if r < 0x20 || r == 0x7f {
-			return "", fmt.Errorf("sqlscan: literal contains a control character")
+		if r == '\\' || r < 0x20 || r == 0x7f {
+			return "", fmt.Errorf("sqlscan: literal contains an unsupported character")
 		}
 	}
 	return "'" + strings.ReplaceAll(value, "'", "''") + "'", nil
@@ -393,6 +393,9 @@ func SQLSplitSelect(tokens []SQLToken) (*SQLStatementShape, error) {
 	depth := 0
 	for i := 1; i < len(tokens); i++ {
 		token := tokens[i]
+		if token.IsPunct(";") {
+			return nil, errors.New("sqlscan: semicolons are not allowed")
+		}
 		if token.IsPunct("(") {
 			depth++
 			// Any depth: "((select ...))" is as much a query inside a query as
@@ -557,6 +560,9 @@ func SQLMatchingParen(tokens []SQLToken, open int) (int, error) {
 // name. It returns the comma-separated groups at the top level of the call and
 // the index just past its closing parenthesis.
 func SQLCallArguments(tokens []SQLToken, name int) ([][]SQLToken, int, error) {
+	if name < 0 || name >= len(tokens) {
+		return nil, 0, fmt.Errorf("sqlscan: invalid function index %d", name)
+	}
 	open := name + 1
 	if open >= len(tokens) || !tokens[open].IsPunct("(") {
 		return nil, 0, fmt.Errorf("sqlscan: %q is not called", tokens[name].Text)

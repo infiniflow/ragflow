@@ -26,6 +26,7 @@ import (
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/chunker"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -536,5 +537,37 @@ func TestPipelineRunWithoutFractionSink(t *testing.T) {
 	}
 	if _, err := pipe.Run(t.Context(), map[string]any{"name": "x"}, nil); err != nil {
 		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestPipelineManualColumnFailureStopsBeforeDownstream(t *testing.T) {
+	pipe, err := NewPipelineFromDSL([]byte(`{"components":{
+ "begin":{"obj":{"component_name":"Begin","params":{}},"downstream":["source"]},
+ "source":{"obj":{"component_name":"test-table-source","params":{}},"upstream":["begin"],"downstream":["table"]},
+ "table":{"obj":{"component_name":"TableChunker","params":{}},"upstream":["source"],"downstream":["sink"]},
+ "sink":{"obj":{"component_name":"test-table-sink","params":{}},"upstream":["table"]}},"path":["begin","source","table","sink"]}`), "manual-failure")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := &mockCanvasStage{output: map[string]any{"output_format": "json", "file_type": "tsv", "json": []map[string]any{{"text": "<table><tr><th>x</th></tr><tr><td>1</td></tr></table>"}}}}
+	sink := &mockCanvasStage{}
+	pipe.WithComponentFactory(func(name string, params map[string]any) (runtime.Component, error) {
+		switch name {
+		case "Begin":
+			return &mockCanvasStage{}, nil
+		case "test-table-source":
+			return source, nil
+		case "test-table-sink":
+			return sink, nil
+		case "TableChunker":
+			return chunker.NewTableChunker(map[string]any{"column_mode": "manual"})
+		}
+		return nil, fmt.Errorf("unexpected stage %s", name)
+	})
+	if _, err := pipe.Run(t.Context(), map[string]any{"name": "input.tsv"}, nil); err == nil || !strings.Contains(err.Error(), "not supported") {
+		t.Fatalf("expected manual column routing error, got %v", err)
+	}
+	if sink.called {
+		t.Fatal("pipeline continued after column routing failed")
 	}
 }

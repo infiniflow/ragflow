@@ -19,7 +19,6 @@ package infinity
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -47,7 +46,7 @@ type fieldMappingEntry struct {
 }
 
 // loadFieldMapping reads field aliases from infinity_mapping.json.
-// A missing file yields an empty map.
+// The configured mapping file must exist.
 func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, err error) {
 	if mappingFileName == "" {
 		mappingFileName = "infinity_mapping.json"
@@ -60,9 +59,6 @@ func loadFieldMapping(mappingFileName string) (aliasToActual map[string]string, 
 
 	data, err := os.ReadFile(*filePath)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return map[string]string{}, nil
-		}
 		return nil, fmt.Errorf("load field mapping %q: %w", *filePath, err)
 	}
 
@@ -254,7 +250,7 @@ func projectSQLExpressions(c *utility.SQLClauses) (string, error) {
 				continue
 			}
 			switch token.Lower {
-			case "as", "distinct", "asc", "desc", "nulls", "first", "last", "and", "or", "not", "is", "null", "true", "false", "in", "like", "between":
+			case "as", "distinct", "all", "asc", "desc", "nulls", "first", "last", "and", "or", "not", "is", "null", "true", "false", "in", "like", "between":
 				continue
 			}
 			if !inputs[token.Text] {
@@ -290,13 +286,14 @@ func projectSQLExpressions(c *utility.SQLClauses) (string, error) {
 }
 
 // runSQL reads PostgreSQL wire results without converting them to display text.
-func runSQL(ctx context.Context, host, port, sql string, jsonColumns map[int]bool, checks []numericSQLCheck) ([]map[string]interface{}, error) {
+func runSQL(ctx context.Context, host, port, database, sql string, jsonColumns map[int]bool, checks []numericSQLCheck) ([]map[string]interface{}, error) {
 	ctx, cancel := context.WithTimeout(ctx, sqlTimeout)
 	defer cancel()
 	cfg, err := pgconn.ParseConfig("postgres://postgres@localhost/default_db?sslmode=disable")
 	if err != nil {
 		return nil, err
 	}
+	cfg.Database = database
 	cfg.Host = host
 	n, err := strconv.ParseUint(port, 10, 16)
 	if err != nil {
@@ -313,6 +310,12 @@ func runSQL(ctx context.Context, host, port, sql string, jsonColumns map[int]boo
 		defer cancel()
 		conn.Close(cleanup)
 	}()
+	// Infinity does not consume the database field in PostgreSQL startup.
+	// Select the configured database explicitly on this connection.
+	databaseSQL := utility.SQLRender([]utility.SQLToken{{Kind: utility.SQLQuoted, Name: database}}, '"')
+	if _, err := conn.Exec(ctx, "USE "+databaseSQL).ReadAll(); err != nil {
+		return nil, fmt.Errorf("infinity SQL database: %w", err)
+	}
 	for _, check := range checks {
 		reader := conn.Exec(ctx, check.query)
 		if !reader.NextResult() {
@@ -388,6 +391,9 @@ func numericSQLChecks(tokens []utility.SQLToken, clauses *utility.SQLClauses, al
 	var checks []numericSQLCheck
 	seen := map[string]bool{}
 	for i, token := range tokens {
+		if token.IsWord("try_cast") {
+			return nil, fmt.Errorf("Infinity table SQL does not support TRY_CAST")
+		}
 		if !token.IsWord("cast") || i+1 >= len(tokens) || !tokens[i+1].IsPunct("(") {
 			continue
 		}
@@ -413,7 +419,7 @@ func numericSQLChecks(tokens []utility.SQLToken, clauses *utility.SQLClauses, al
 			}
 		}
 		if at < 1 || at+2 != len(body) {
-			continue
+			return nil, fmt.Errorf("Infinity table SQL requires a supported scalar CAST type")
 		}
 		check := numericSQLCheck{floatBits: 64}
 		switch body[at+1].Lower {
@@ -429,7 +435,7 @@ func numericSQLChecks(tokens []utility.SQLToken, clauses *utility.SQLClauses, al
 			check.floatBits = 32
 		case "double":
 		default:
-			continue
+			return nil, fmt.Errorf("Infinity table SQL does not support CAST to %s", body[at+1].Text)
 		}
 		operand := body[:at]
 		projection := utility.SQLRender(operand, '"') + " AS cast_value"
@@ -486,6 +492,9 @@ func prepareJSONResults(tokens []utility.SQLToken) ([]utility.SQLToken, *utility
 	columns := map[int]bool{}
 	expressions := map[string]bool{}
 	selectList := shape.Clauses.Select
+	if len(selectList) > 0 && (selectList[0].IsWord("distinct") || selectList[0].IsWord("all")) {
+		selectList = selectList[1:]
+	}
 	start, depth, column := 0, 0, 0
 	for i := 0; i <= len(selectList); i++ {
 		if i < len(selectList) {
@@ -605,7 +614,7 @@ func (e *Engine) RunSQL(ctx context.Context, tableName string, sqlText string, k
 	common.Debug("InfinityConnection.sql to execute", zap.String("sql", sqlText))
 
 	host, port := resolveSQLHostPort(e.client.hostURI, e.client.postgresPort)
-	rows, err := runSQL(ctx, host, port, sqlText, jsonColumns, checks)
+	rows, err := runSQL(ctx, host, port, e.client.dbName, sqlText, jsonColumns, checks)
 	if err != nil {
 		return nil, err
 	}

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -97,6 +98,14 @@ func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantI
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+func (f *fakeUploadStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	data, ok := f.objects[f.key(bucket, fnm)]
+	if !ok {
+		return nil, errors.New("not found")
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
 }
 
 type imageOwnershipEngine struct {
@@ -3173,7 +3182,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	}
 }
 
-func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
+func TestSetDocumentMetadataReplacesMetadataRow(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -3197,8 +3206,8 @@ func TestSetDocumentMetadataMergesMetadataRow(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("SetDocumentMetadata failed: %v", err)
 	}
-	if got := engine.records["doc-1"]["author"]; got != "alice" {
-		t.Fatalf("author = %#v, want alice", got)
+	if got, exists := engine.records["doc-1"]["author"]; exists {
+		t.Fatalf("omitted author survived replacement: %v", got)
 	}
 	if got := engine.records["doc-1"]["category"]; got != "tech" {
 		t.Fatalf("category = %#v, want tech", got)

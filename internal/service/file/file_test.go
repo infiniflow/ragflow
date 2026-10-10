@@ -99,6 +99,14 @@ func (f *fakeStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...s
 	return f.blob, f.err
 }
 
+func (f *fakeStorage) Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error) {
+	data, err := f.Get(ctx, bucket, fnm, tenantID...)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(data)), nil
+}
+
 func (f *fakeStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	panic("not implemented in fakeStorage")
 }

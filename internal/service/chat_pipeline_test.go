@@ -54,7 +54,8 @@ func TestResolveChatDocIDsPreservesExplicitScope(t *testing.T) {
 		{"typed slice", nil, map[string]any{"doc_ids": []string{"doc-one"}}, []string{"doc-one"}},
 		{"empty JSON array", map[string]any{"doc_ids": "doc-two"}, map[string]any{"doc_ids": []any{}}, []string{}},
 		{"empty typed array", nil, map[string]any{"doc_ids": []string{}}, []string{}},
-		{"empty kwargs", map[string]any{"doc_ids": ""}, nil, []string{}},
+		{"empty kwargs", map[string]any{"doc_ids": ""}, nil, nil},
+		{"blank kwargs", map[string]any{"doc_ids": " , "}, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ids, err := resolveChatDocIDs(tc.kwargs, tc.message)

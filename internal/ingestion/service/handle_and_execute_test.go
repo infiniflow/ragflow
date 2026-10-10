@@ -520,3 +520,54 @@ func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
 		t.Fatal("waitAfterPullError did not cancel promptly on dispatchCtx.Done")
 	}
 }
+
+type retryStopDocStateSvc struct {
+	stubDocStateSvc
+	fail bool
+}
+
+func (s *retryStopDocStateSvc) RevokeTableProfile(ctx context.Context, docID string) error {
+	if s.fail {
+		return errors.New("revoke failed")
+	}
+	return s.stubDocStateSvc.RevokeTableProfile(ctx, docID)
+}
+func TestStoppingRedeliveryRetriesRevokeBeforeAcknowledging(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	defer testutil.ReplaceDBForTest(t, db)()
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.STOPPING).Error; err != nil {
+		t.Fatal(err)
+	}
+	raw, err := tableProfileForTest([]string{"amount"}).Encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc := &retryStopDocStateSvc{fail: true, stubDocStateSvc: stubDocStateSvc{metaData: map[string]any{entity.TableProfileMetadataField: raw, "amount": "100"}}}
+	ingestor := newUnitIngestor("retry-stop", 1, nil)
+	ingestor.docState = &docStateUpdater{docSvc: svc}
+	delivery := func() *fakeTaskHandle {
+		return &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+	}
+	first := delivery()
+	ingestor.handleAndExecute(first)
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != common.STOPPING || first.nacks.Load() != 1 || first.acks.Load() != 0 {
+		t.Fatalf("failed revoke finalized stop: %s ack=%d nack=%d", task.Status, first.acks.Load(), first.nacks.Load())
+	}
+	svc.fail = false
+	second := delivery()
+	ingestor.handleAndExecute(second)
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if task.Status != common.STOPPED || second.acks.Load() != 1 {
+		t.Fatalf("retry did not settle: %s", task.Status)
+	}
+	if _, ok := svc.metaData[entity.TableProfileMetadataField]; ok {
+		t.Fatal("retry retained profile")
+	}
+}

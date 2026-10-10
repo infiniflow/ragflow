@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/apache/thrift/lib/go/thrift"
+	infinitysdk "github.com/infiniflow/infinity-go-sdk"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/server/config"
@@ -37,11 +38,27 @@ func TestTableColumnSQLRoundTrip(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
-	e, err := NewEngine(ctx, config.InfinityConfig{URI: uri, PostgresPort: port, DBName: "default_db"})
+	database := fmt.Sprintf("column_db_%d", time.Now().UnixNano())
+	e, err := NewEngine(ctx, config.InfinityConfig{URI: uri, PostgresPort: port, DBName: database})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer e.Close()
+	defer func() {
+		conn, release, err := e.client.checkoutConn(context.Background(), "test cleanup")
+		if err != nil {
+			t.Errorf("database cleanup: %v", err)
+			return
+		}
+		defer release()
+		if _, err := conn.GetDatabase("default_db"); err != nil {
+			t.Errorf("database cleanup: %v", err)
+			return
+		}
+		if _, err := conn.DropDatabase(database, infinitysdk.ConflictTypeIgnore); err != nil {
+			t.Errorf("database cleanup: %v", err)
+		}
+	}()
 	base := fmt.Sprintf("ragflow_column_test_%d", time.Now().UnixNano())
 	kb := "table"
 	defer func() {

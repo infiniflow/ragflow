@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
+	"ragflow/internal/storage"
 	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
 )
@@ -257,5 +260,47 @@ func TestCollectProbeSheetsCountsParsedOuterRows(t *testing.T) {
 	}
 	if len(sheets) != 1 || sheets[0].RowCount != 1 {
 		t.Fatalf("expected one outer data row, got %+v", sheets)
+	}
+}
+
+type probeReadCounter struct {
+	bytes  int64
+	closed bool
+}
+
+func (r *probeReadCounter) Read(p []byte) (int, error) {
+	clear(p)
+	r.bytes += int64(len(p))
+	return len(p), nil
+}
+func (r *probeReadCounter) Close() error { r.closed = true; return nil }
+
+type probeStreamStorage struct {
+	storage.Storage
+	reader *probeReadCounter
+}
+
+func (s *probeStreamStorage) Open(context.Context, string, string, ...string) (io.ReadCloser, error) {
+	return s.reader, nil
+}
+func (*probeStreamStorage) Get(context.Context, string, string, ...string) ([]byte, error) {
+	return nil, errors.New("unbounded object read")
+}
+func TestProbeStoredFileBoundsActualStreamSize(t *testing.T) {
+	svc, _ := revokeTestService(t, nil)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]any{"size": 1, "location": "sales.xlsx"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	factory := storage.GetStorageFactory()
+	previous := factory.GetStorage()
+	t.Cleanup(func() { factory.SetStorage(previous) })
+	reader := &probeReadCounter{}
+	factory.SetStorage(&probeStreamStorage{reader: reader})
+	_, err := svc.ProbeDocumentTableColumns(t.Context(), "kb-1", "doc-1")
+	if probeFailureCode(t, err) != TableProbeLimit {
+		t.Fatalf("oversize stream error: %v", err)
+	}
+	if reader.bytes != TableProbeMaxFileBytes+1 || !reader.closed {
+		t.Fatalf("read %d bytes; closed=%v", reader.bytes, reader.closed)
 	}
 }

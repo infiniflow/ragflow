@@ -18,6 +18,7 @@ package storage
 
 import (
 	"context"
+	"io"
 	"time"
 )
 
@@ -72,6 +73,9 @@ type Storage interface {
 	// Get retrieves an object from storage
 	// Returns the data or nil if not found
 	Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error)
+
+	// Open streams an object. The caller must close the returned reader.
+	Open(ctx context.Context, bucket, fnm string, tenantID ...string) (io.ReadCloser, error)
 
 	// Remove removes an object from storage
 	Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error

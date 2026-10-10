@@ -161,7 +161,7 @@ func resolveChatDocIDs(kwargs, lastMsg map[string]interface{}) ([]string, error)
 		if !ok {
 			return nil, fmt.Errorf("doc_ids in kwargs must be a comma-separated string")
 		}
-		ids := make([]string, 0)
+		var ids []string
 		for _, part := range strings.Split(text, ",") {
 			if id := strings.TrimSpace(part); id != "" {
 				ids = append(ids, id)

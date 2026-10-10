@@ -539,11 +539,7 @@ func TestStartRunningLeavesTerminalDocumentUntouched(t *testing.T) {
 	}
 }
 
-// TestStartRunningFinalizesStoppingTask locks in the redelivery path: a
-// STOPPING task (cancelled after being nacked, before any worker ran it) is
-// moved to STOPPED by StartRunning, so the task reaches a terminal state and
-// a later re-parse can transition it back to CREATED.
-func TestStartRunningFinalizesStoppingTask(t *testing.T) {
+func TestStartRunningLeavesStoppingForRevoke(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
@@ -558,8 +554,8 @@ func TestStartRunningFinalizesStoppingTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
-	if task.Status != common.STOPPED {
-		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	if task.Status != common.STOPPING {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPING)
 	}
 }
 
@@ -1705,11 +1701,7 @@ func TestIngestionTaskServiceOpensPreTerminalLogBeforePublish(t *testing.T) {
 	}
 }
 
-// TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog locks
-// the workerless STOPPING finalize: MQ redelivery of a STOPPING task stops it
-// without ever running a terminal pipeline-log writer, so StartRunning must
-// close the row itself.
-func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog(t *testing.T) {
+func TestMarkStoppedClosesStoppingTaskLog(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1739,8 +1731,11 @@ func TestIngestionTaskServiceStartRunningClosingStoppingTaskClosesPreTerminalLog
 	if err != nil {
 		t.Fatalf("StartRunning failed: %v", err)
 	}
-	if task.Status != common.STOPPED {
-		t.Fatalf("status = %q, want %q", task.Status, common.STOPPED)
+	if task.Status != common.STOPPING {
+		t.Fatalf("status = %q, want %q", task.Status, common.STOPPING)
+	}
+	if err := svc.MarkStopped(t.Context(), "task-1"); err != nil {
+		t.Fatal(err)
 	}
 	var done entity.PipelineOperationLog
 	if err := db.First(&done, "id = ?", "running-log").Error; err != nil {

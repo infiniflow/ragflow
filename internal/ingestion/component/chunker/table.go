@@ -164,11 +164,7 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return nil, fmt.Errorf("TableChunker input: %w", err)
 	}
 
 	profile := tableProfile{
@@ -197,11 +193,7 @@ func (c *TableChunkerComponent) invoke(ctx context.Context, inputs map[string]an
 		// Row-structured payload: one chunk per upstream record.
 		items, err := tableItems(upstream.JSONResult, upstream.Chunks, profile, upstream.FileType)
 		if err != nil {
-			return map[string]any{
-				"output_format": "chunks",
-				"chunks":        []map[string]any{},
-				"_ERROR":        err.Error(),
-			}, nil
+			return nil, err
 		}
 		if len(items) == 0 {
 			return emptyOutputs(), nil

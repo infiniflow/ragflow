@@ -22,6 +22,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -176,9 +177,17 @@ func (s *DocumentService) ProbeDocumentTableColumns(ctx context.Context, dataset
 	if storageImpl == nil {
 		return nil, errors.New("storage not initialized")
 	}
-	data, err := storageImpl.Get(ctx, bucket, key)
+	stream, err := storageImpl.Open(ctx, bucket, key)
 	if err != nil {
 		return nil, err
+	}
+	defer stream.Close()
+	data, err := io.ReadAll(io.LimitReader(stream, TableProbeMaxFileBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > TableProbeMaxFileBytes {
+		return nil, tableProbeFailure(TableProbeLimit, "the stored file exceeds the column probe size limit")
 	}
 	name := documentID
 	if doc.Name != nil {

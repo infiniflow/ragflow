@@ -22,6 +22,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"os"
 	"path/filepath"
+	"ragflow/internal/utility"
 	"reflect"
 	"strings"
 	"testing"
@@ -583,5 +584,42 @@ func TestPrepareSQLRejectsCaseExpressions(t *testing.T) {
 	}
 	if _, err := prepareSQL("SELECT 'case' AS label FROM chunks", nil); err != nil {
 		t.Fatalf("literal rejected: %v", err)
+	}
+}
+
+func TestJSONResultsPreserveSelectModifiers(t *testing.T) {
+	for _, modifier := range []string{"DISTINCT", "ALL"} {
+		tokens, err := utility.SQLScan("SELECT " + modifier + " json_extract_string(chunk_data, '$.amount') AS amount FROM t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _, columns, err := prepareJSONResults(tokens)
+		if err != nil || !columns[0] {
+			t.Fatalf("%s projection lost JSON decoding: %v (%v)", modifier, columns, err)
+		}
+	}
+}
+func TestProjectionDoesNotTreatAllAsAnInputColumn(t *testing.T) {
+	sql, err := prepareSQL("SELECT ALL CAST(json_extract_string(chunk_data, '$.amount') AS DOUBLE) AS amount FROM t ORDER BY amount", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(strings.ToUpper(sql), ", ALL FROM") {
+		t.Fatalf("ALL became an inner column: %s", sql)
+	}
+}
+func TestNumericChecksRejectUnsupportedConversions(t *testing.T) {
+	for _, expr := range []string{"CAST(doc_id AS DECIMAL)", "CAST(doc_id AS NUMERIC)", "CAST(doc_id AS DECIMAL(10,2))", "TRY_CAST(doc_id AS DOUBLE)"} {
+		tokens, err := utility.SQLScan("SELECT " + expr + " FROM t")
+		if err != nil {
+			t.Fatal(err)
+		}
+		shape, err := utility.SQLSplitSelect(tokens)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := numericSQLChecks(tokens, shape.Clauses, nil); err == nil {
+			t.Fatalf("unchecked conversion accepted: %s", expr)
+		}
 	}
 }

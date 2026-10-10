@@ -959,8 +959,8 @@ func TestUploadDocumentsHandler_LocalReturnsPartialSuccess(t *testing.T) {
 	}
 }
 
-func TestUploadDocumentsHandler_DeniesNonNormalTeamRole(t *testing.T) {
-	db := setupUploadHandlerDB(t, "admin")
+func TestUploadDocumentsHandler_DeniesInvitedTeamMember(t *testing.T) {
+	db := setupUploadHandlerDB(t, "invite")
 	orig := dao.DB
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = orig })
@@ -2515,5 +2515,33 @@ func TestProbeTableColumnsReportsAMalformedBodyAsAnArgumentError(t *testing.T) {
 		if got := data["error"]; got != nil {
 			t.Errorf("data.error = %v, want none: a malformed body is not a size limit", got)
 		}
+	}
+}
+
+func TestTableEndpointsDenyAccessBeforeReading(t *testing.T) {
+	db := setupUploadHandlerDB(t, "normal")
+	previous := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = previous })
+	datasetID := "123e4567e89b12d3a456426614174000"
+	for _, endpoint := range []string{"probe", "columns", "schema"} {
+		t.Run(endpoint, func(t *testing.T) {
+			c, w := setupUploadContext(t, "/table", nil, "sales.csv", []byte("name\nvalue\n"))
+			c.Set("user_id", "outsider")
+			c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: "doc-1"}}
+			// Nil downstream services make any unauthorized read fail immediately.
+			switch endpoint {
+			case "probe":
+				(&DocumentHandler{datasetService: dataset.NewDatasetService()}).ProbeTableColumns(c)
+			case "columns":
+				(&DocumentHandler{datasetService: dataset.NewDatasetService()}).GetDocumentTableColumns(c)
+			case "schema":
+				(&DatasetsHandler{datasetsService: dataset.NewDatasetService()}).GetDatasetTableSchema(c)
+			}
+			body := decodeResponseBody(t, w.Result())
+			if body["code"] != float64(common.CodePermissionError) {
+				t.Fatalf("unauthorized response: %v", body)
+			}
+		})
 	}
 }

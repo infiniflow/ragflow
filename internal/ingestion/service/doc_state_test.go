@@ -634,3 +634,19 @@ func TestDocStateUpdaterPublishesBuiltInAndTableMetadataOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestEmptyPublicationWithoutProfileSkipsRevoke(t *testing.T) {
+	svc := &unavailableRevokeDocStateSvc{stubDocStateSvc: stubDocStateSvc{metaData: map[string]any{"user": "kept"}}}
+	if err := publishDocMetadata(t.Context(), svc, &taskpkg.PipelineResult{DocID: "doc-1"}); err != nil {
+		t.Fatal(err)
+	}
+	if svc.writeCount != 0 {
+		t.Fatal("empty publication touched metadata")
+	}
+}
+
+type unavailableRevokeDocStateSvc struct{ stubDocStateSvc }
+
+func (*unavailableRevokeDocStateSvc) RevokeTableProfile(context.Context, string) error {
+	return errors.New("lock unavailable")
+}

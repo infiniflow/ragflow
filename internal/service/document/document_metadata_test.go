@@ -543,3 +543,23 @@ func TestMetadataSummaryDropsTheTableProfile(t *testing.T) {
 		t.Errorf("the document's own metadata is missing: %v", summary)
 	}
 }
+
+func TestSetMetadataReplacesVisibleKeysAndPreservesProfile(t *testing.T) {
+	svc, engine := revokeTestService(t, map[string]map[string]any{"doc-1": {
+		entity.TableProfileMetadataField: publishedProfile(t, "金额"), "金额": "100", "obsolete": "old", "keep": "old",
+	}})
+	if err := svc.SetDocumentMetadata(t.Context(), "doc-1", map[string]any{"keep": "new"}); err != nil {
+		t.Fatal(err)
+	}
+	record := engine.records["doc-1"]
+	if _, ok := record["obsolete"]; ok {
+		t.Fatalf("removed key survived replacement: %v", record)
+	}
+	if _, ok := record["金额"]; ok {
+		t.Fatalf("omitted table value survived replacement: %v", record)
+	}
+	profile, ok, err := entity.DecodeTableProfile(record[entity.TableProfileMetadataField])
+	if err != nil || !ok || len(profile.Columns) == 0 || len(profile.OwnedMetadata) != 0 || record["keep"] != "new" {
+		t.Fatalf("replacement lost profile or ownership transfer: %v (%v)", record, err)
+	}
+}
