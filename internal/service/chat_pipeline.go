@@ -2537,10 +2537,7 @@ func cleanTTSText(text string) string {
 	// Strip emojis.
 	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
 	text = emojiRe.ReplaceAllString(text, "")
-	// Strip named tags, including reasoning tags, while preserving comparisons.
-	// Quoted attributes may contain > without ending the tag.
-	tagRe := regexp.MustCompile(`</?[A-Za-z][A-Za-z0-9:-]*(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
-	text = tagRe.ReplaceAllString(text, "")
+	text = stripTTSTags(text)
 	// Collapse whitespace.
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
@@ -2549,6 +2546,43 @@ func cleanTTSText(text string) string {
 		text = string(r[:500])
 	}
 	return text
+}
+
+// stripTTSTags removes paired markup and standalone reasoning/void tags.
+// Unmatched tags stay literal so compact comparisons such as a<b>c survive.
+func stripTTSTags(text string) string {
+	// Quoted attributes may contain > without ending the tag.
+	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	strip := make([]bool, len(matches))
+	open := make(map[string][]int)
+	for i, match := range matches {
+		name := strings.ToLower(text[match[4]:match[5]])
+		switch name {
+		case "think", "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr":
+			strip[i] = true
+		default:
+			if strings.HasSuffix(text[match[0]:match[1]], "/>") {
+				strip[i] = true
+			} else if match[2] == match[3] {
+				open[name] = append(open[name], i)
+			} else if stack := open[name]; len(stack) > 0 {
+				strip[stack[len(stack)-1]] = true
+				strip[i] = true
+				open[name] = stack[:len(stack)-1]
+			}
+		}
+	}
+	var result strings.Builder
+	last := 0
+	for i, match := range matches {
+		if strip[i] {
+			result.WriteString(text[last:match[0]])
+			last = match[1]
+		}
+	}
+	result.WriteString(text[last:])
+	return result.String()
 }
 
 // synthesizeTTS calls the TTS model to convert text to audio.

@@ -2819,6 +2819,13 @@ func TestCleanTTSText(t *testing.T) {
 		{name: "control emoji and whitespace", text: "\x00\t你好🙂\nworld\x7f  ", want: "你好 world"},
 		{name: "tags", text: "<think>reason</think> <b>answer</b>", want: "reason answer"},
 		{name: "comparisons", text: "2 < 3 and 4 > 1; a < b and c > d", want: "2 < 3 and 4 > 1; a < b and c > d"},
+		{name: "compact comparisons", text: "a<b>c; x<value>y", want: "a<b>c; x<value>y"},
+		{name: "unclosed tag", text: "<B>answer", want: "<B>answer"},
+		{name: "unmatched closing tag", text: "a</b>c", want: "a</b>c"},
+		{name: "nested tags", text: "<B><i>answer</i></b>", want: "answer"},
+		{name: "unmatched outer tag", text: "<b>unclosed <b>paired</b>", want: "<b>unclosed paired"},
+		{name: "encoded comparisons", text: "a&lt;b&gt;c", want: "a&lt;b&gt;c"},
+		{name: "incomplete tag", text: `answer <b title="unfinished`, want: `answer <b title="unfinished`},
 		{name: "quoted attributes", text: `<b title="a > b">answer</b> <span title='c > d'>text</span><br/>`, want: "answer text"},
 		{name: "trailing reasoning tag", text: "答案</think>", want: "答案"},
 		{name: "invalid UTF-8", text: "\xff知\xc3é\xe7\x9f", want: "知é"},
@@ -2841,6 +2848,7 @@ func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
 		want string
 	}{
 		{name: "mixed answer", text: "\xff<think>思考</think> \x00hello🙂", want: "思考 hello"},
+		{name: "compact comparison", text: "a<b>c", want: "a<b>c"},
 		{name: "empty"},
 		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
 	} {
