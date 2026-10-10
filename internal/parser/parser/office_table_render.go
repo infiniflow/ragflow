@@ -860,6 +860,96 @@ func isSubtotalRow(row []string) bool {
 	return false
 }
 
+// formSheetPrefixLen is the row window scanned for form-style cover pages.
+// Kros "Krycí list" occupies roughly the first 45 rows; the budget table
+// follows later and must not dilute the narrow-row signal.
+const formSheetPrefixLen = 50
+
+// isFormSheet reports whether the top rows of a sheet look like a form/cover
+// page rather than a regular data table. The check scans at most the first
+// formSheetPrefixLen rows so that a budget table below the cover does not
+// mask the form prefix (e.g. E1.2 - Statika has a 43-row cover page
+// followed by a 29-column budget).
+func isFormSheet(rows [][]string) bool {
+	limit := len(rows)
+	if limit > formSheetPrefixLen {
+		limit = formSheetPrefixLen
+	}
+	if limit < 6 {
+		return false
+	}
+	nonEmpty := 0
+	narrow := 0 // rows with ≤ 3 filled cells
+	for _, row := range rows[:limit] {
+		w := rowNonEmpty(row)
+		if w == 0 {
+			continue
+		}
+		nonEmpty++
+		if w <= 3 {
+			narrow++
+		}
+	}
+	if nonEmpty < 4 {
+		return false
+	}
+	return narrow*2 > nonEmpty // majority of prefix rows are narrow → form
+}
+
+// renderFormSheetKV extracts key-value pairs from the form prefix of a sheet
+// and renders them as a plain-text chunk. The sheet name is placed at the top
+// as context so retrieval matches on it (e.g. "E1.2 - Statika").
+//
+// Only the first formSheetPrefixLen rows are scanned; wide-table rows that
+// follow the cover page are ignored.
+//
+// Heuristic: for each non-empty row, if a text cell and a numeric cell
+// coexist (possibly separated by empty columns), they form a label→value
+// pair. Rows with only text cells contribute metadata lines.
+func renderFormSheetKV(sheet string, rows [][]string) string {
+	var b strings.Builder
+	b.WriteString("Sheet: ")
+	b.WriteString(sheet)
+	b.WriteByte('\n')
+
+	limit := len(rows)
+	if limit > formSheetPrefixLen {
+		limit = formSheetPrefixLen
+	}
+	for _, row := range rows[:limit] {
+		var labels []string
+		var numbers []string
+		for _, cell := range row {
+			v := strings.TrimSpace(cell)
+			if v == "" {
+				continue
+			}
+			if isNumericCell(v) {
+				numbers = append(numbers, v)
+			} else {
+				labels = append(labels, v)
+			}
+		}
+		if len(labels) == 0 && len(numbers) == 0 {
+			continue
+		}
+		if len(labels) > 0 && len(numbers) > 0 {
+			b.WriteString(strings.Join(labels, " "))
+			b.WriteString(": ")
+			b.WriteString(strings.Join(numbers, ", "))
+			b.WriteByte('\n')
+		} else if len(labels) > 0 {
+			joined := strings.Join(labels, " ")
+			// Skip GUID-like and internal markers.
+			if len(joined) < 80 && !strings.ContainsAny(joined, "{}") {
+				b.WriteString(joined)
+				b.WriteByte('\n')
+			}
+		}
+	}
+	return b.String()
+}
+
 func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, int, []string, error) {
 	rows, err := f.GetRows(sheet)
 	if err != nil {
