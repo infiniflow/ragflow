@@ -898,9 +898,6 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
             # (including ES zero placeholders used to infer dim). Strip after.
             strip_kbinfos_vectors(kbinfos)
             refs = deepcopy(kbinfos)
-            for c in refs["chunks"]:
-                if c.get("vector"):
-                    del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
@@ -1809,9 +1806,6 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         kbinfos["doc_aggs"] = recall_docs
         strip_kbinfos_vectors(kbinfos)
         refs = deepcopy(kbinfos)
-        for c in refs["chunks"]:
-            if c.get("vector"):
-                del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
