@@ -20,12 +20,7 @@ export function ImageFormFields({ prefix }: CommonProps) {
       valueClassName="w-8"
     >
       {(field) => (
-        <Switch
-          checked={!!field.value}
-          onCheckedChange={(checked) => {
-            field.onChange?.(checked);
-          }}
-        />
+        <Switch checked={!!field.value} onCheckedChange={field.onChange} />
       )}
     </RAGFlowFormItem>
   );
