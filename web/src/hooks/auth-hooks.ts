@@ -15,9 +15,7 @@
  */
 
 import message from '@/components/ui/message';
-import authorizationUtil, {
-  adminStorage,
-} from '@/utils/authorization-util';
+import authorizationUtil from '@/utils/authorization-util';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
@@ -67,16 +65,6 @@ export const useAuth = () => {
   useEffect(() => {
     setIsLogin(!!authorizationUtil.getAuthorization() || !!auth);
   }, [auth]);
-
-  return { isLogin };
-};
-
-export const useAdminAuth = () => {
-  const [isLogin, setIsLogin] = useState<Nullable<boolean>>(null);
-
-  useEffect(() => {
-    setIsLogin(!!adminStorage.getAuthorization());
-  }, []);
 
   return { isLogin };
 };

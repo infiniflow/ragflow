@@ -2,7 +2,7 @@ import { createContext, Dispatch, SetStateAction, useState } from 'react';
 import { Outlet } from 'react-router';
 
 import type { IUserInfo } from '@/interfaces/database/user-setting';
-import { adminStorage } from '@/utils/authorization-util';
+import authorizationUtil from '@/utils/authorization-util';
 
 type LocalStoragePersistedUserInfo = {
   avatar: unknown;
@@ -25,7 +25,7 @@ export type CurrentUserInfo =
     };
 
 const getLocalStorageUserInfo = (): CurrentUserInfo => {
-  const userInfo = adminStorage.getUserInfoObject();
+  const userInfo = authorizationUtil.getUserInfoObject();
 
   return userInfo
     ? {

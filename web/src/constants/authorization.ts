@@ -18,8 +18,3 @@ export const Authorization = 'Authorization';
 export const Token = 'token';
 export const UserInfo = 'userInfo';
 export const ThinkingLevel = 'thinkingLevel';
-
-/** Separate localStorage keys for the admin UI (/admin) so it does not collide with the main app session on the same origin. */
-export const AdminAuthorization = 'ragflow_admin_Authorization';
-export const AdminToken = 'ragflow_admin_token';
-export const AdminUserInfo = 'ragflow_admin_userInfo';

@@ -22,7 +22,9 @@ import { Authorization } from '@/constants/authorization';
 import i18n from '@/locales/config';
 import { Routes } from '@/routes';
 import api from '@/utils/api';
-import { adminStorage, getAdminAuthorization } from '@/utils/authorization-util';
+import authorizationUtil, {
+  getAuthorization,
+} from '@/utils/authorization-util';
 import { convertTheKeysOfTheObjectToSnake } from '@/utils/common-util';
 import { ResultCode, RetcodeMessage } from '@/utils/request';
 
@@ -38,7 +40,7 @@ request.interceptors.request.use((config) => {
 
   // @ts-ignore
   if (!newConfig.skipToken) {
-    newConfig.headers.set(Authorization, getAdminAuthorization());
+    newConfig.headers.set(Authorization, getAuthorization());
   }
 
   return newConfig;
@@ -59,7 +61,7 @@ request.interceptors.response.use(
         description: data?.message,
       });
 
-      adminStorage.removeAll();
+      authorizationUtil.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {
@@ -89,7 +91,7 @@ request.interceptors.response.use(
         duration: 3,
       });
 
-      adminStorage.removeAll();
+      authorizationUtil.removeAll();
       history.push(Routes.Admin);
       window.location.reload();
     } else if (data?.code && data.code !== 0) {

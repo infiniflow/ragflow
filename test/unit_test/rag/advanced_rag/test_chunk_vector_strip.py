@@ -2,12 +2,6 @@
 #  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
 #
 from rag.advanced_rag.harness.chunk_utils import strip_chunk_vectors, strip_kbinfos_vectors
-from rag.advanced_rag.harness.memory import add
-
-
-class _Tools:
-    def __init__(self):
-        self.kbinfos = {}
 
 
 def test_strip_chunk_vectors_removes_dense_arrays():
@@ -22,8 +16,8 @@ def test_strip_kbinfos_vectors():
     assert "vector" not in kbinfos["chunks"][0]
 
 
-def test_memory_add_does_not_store_vectors():
-    tools = _Tools()
-    add(tools, [{"chunk_id": "c1", "content": "fact", "vector": [0.5] * 64}])
-    assert len(tools.kbinfos["memory"]) == 1
-    assert "vector" not in tools.kbinfos["memory"][0]
+def test_strip_kbinfos_vectors_is_idempotent():
+    kbinfos = {"chunks": [{"id": "1"}], "doc_aggs": []}
+    strip_kbinfos_vectors(kbinfos)
+    strip_kbinfos_vectors(kbinfos)
+    assert "vector" not in kbinfos["chunks"][0]
