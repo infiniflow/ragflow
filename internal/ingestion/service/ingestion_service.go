@@ -516,7 +516,6 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 		}
 		defer e.releaseTask(task.ID)
 		if e.markStopped(e.ctx, task.ID) {
-			e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
 			e.ackHandle(hb, handle, task.ID)
 		} else {
 			e.nackHandle(hb, handle, task.ID)
@@ -820,6 +819,12 @@ func (e *Ingestor) markStopped(ctx context.Context, taskID string) bool {
 		return false
 	}
 
+	// Keep the operation log open until its terminal write can include the
+	// final document snapshot. All stop paths, including completion races,
+	// converge here after revocation and the task transition.
+	if task.Status == common.STOPPING {
+		e.recordTerminalPipelineLog(writeCtx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
+	}
 	return true
 }
 
@@ -851,9 +856,6 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 		common.Info(fmt.Sprintf("Task %s cancelled", task.ID))
 		e.markTerminalProgress(task)
 		stopped := e.markStopped(context.Background(), task.ID)
-		if stopped {
-			e.recordTerminalPipelineLog(context.Background(), task, string(entity.TaskStatusCancel), "Task stopped by user.")
-		}
 		return stopped
 	default:
 	}
@@ -882,9 +884,6 @@ func (e *Ingestor) runTask(ctx context.Context, task *entity.IngestionTask) bool
 			common.Info(fmt.Sprintf("Task %s cancelled during pipeline", task.ID))
 			e.markTerminalProgress(task)
 			stopped := e.markStopped(ctx, task.ID)
-			if stopped {
-				e.recordTerminalPipelineLog(ctx, task, string(entity.TaskStatusCancel), "Task stopped by user.")
-			}
 			return stopped
 		}
 		if errors.Is(err, context.DeadlineExceeded) {
@@ -1354,6 +1353,14 @@ func (e *Ingestor) recordTerminalPipelineLog(ctx context.Context, ingestionTask 
 	if run.DocumentID != ingestionTask.DocumentID || run.KbID != ingestionTask.DatasetID {
 		common.Warn(fmt.Sprintf("record terminal pipeline log for task %s: run %s belongs to document %s/dataset %s, expected %s/%s", ingestionTask.ID, run.ID, run.DocumentID, run.KbID, ingestionTask.DocumentID, ingestionTask.DatasetID))
 		return
+	}
+	// A completion racing a stop must not append a contradictory terminal
+	// event after cancellation already finalized this run's snapshot.
+	switch run.OperationStatus {
+	case string(entity.TaskStatusDone), string(entity.TaskStatusFail), string(entity.TaskStatusCancel):
+		if run.OperationStatus != status {
+			return
+		}
 	}
 	input := taskpkg.PipelineLogInput{
 		KbID:          ingestionTask.DatasetID,

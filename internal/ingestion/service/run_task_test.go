@@ -355,3 +355,66 @@ func TestStopSizesTheRevokeByTheLockNotByTheTerminalWrite(t *testing.T) {
 		t.Errorf("revoke budget %v is not longer than a terminal write's five seconds", budget)
 	}
 }
+
+func TestStoppedRunRecordsFinalSnapshot(t *testing.T) {
+	for _, path := range []string{"stop", "settle", "cancelled-pipeline", "stop-after-pipeline"} {
+		t.Run(path, func(t *testing.T) {
+			db := testutil.SetupTestDB(t)
+			cleanup := testutil.ReplaceDBForTest(t, db)
+			defer cleanup()
+			_, kbID, docID, taskID := testutil.SeedTestData(t, db)
+			if err := db.Model(&entity.Document{}).Where("id = ?", docID).Updates(map[string]any{
+				"name": "final.xlsx", "suffix": "xlsx", "progress": -1, "process_duration": 37.5,
+			}).Error; err != nil {
+				t.Fatal(err)
+			}
+			ingestor := newUnitIngestor("stop-snapshot", 1, []string{"xlsx"})
+			ingestor.docState = &docStateUpdater{docSvc: &stubDocStateSvc{}}
+			switch path {
+			case "stop":
+				if !ingestor.markStopped(t.Context(), taskID) {
+					t.Fatal("stop did not settle")
+				}
+			case "settle":
+				if _, err := ingestor.ingestionTaskSvc.RequestStop(t.Context(), taskID); err != nil {
+					t.Fatal(err)
+				}
+				if err := ingestor.settleToTerminal(t.Context(), taskID); err != nil {
+					t.Fatal(err)
+				}
+			case "cancelled-pipeline", "stop-after-pipeline":
+				ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
+					if path == "stop-after-pipeline" {
+						_, err := ingestor.ingestionTaskSvc.RequestStop(ctx, task.ID)
+						return err
+					}
+					return context.Canceled
+				}
+				runID := "run-" + taskID
+				if !ingestor.runTask(t.Context(), &entity.IngestionTask{ID: taskID, DocumentID: docID, DatasetID: kbID, PipelineLogID: &runID}) {
+					t.Fatal("cancel did not settle")
+				}
+			}
+			var run entity.PipelineOperationLog
+			if err := db.Take(&run, "id = ?", "run-"+taskID).Error; err != nil {
+				t.Fatal(err)
+			}
+			if run.OperationStatus != string(entity.TaskStatusCancel) || run.Progress != -1 || run.ProcessDuration != 37.5 || run.DocumentName != "final.xlsx" || run.DocumentSuffix != "xlsx" {
+				t.Fatalf("stop lost final snapshot: %+v", run)
+			}
+			events, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(t.Context(), db, run.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			terminalCount := 0
+			for _, event := range events {
+				if event.EventType == dao.EventTypeTerminal {
+					terminalCount++
+				}
+			}
+			if terminalCount != 1 {
+				t.Fatalf("terminal events = %d, want 1", terminalCount)
+			}
+		})
+	}
+}

@@ -610,3 +610,22 @@ func TestProcessTableRowsRejectsConflictingBranches(t *testing.T) {
 		t.Fatal("conflicting roles for the same source row were indexed")
 	}
 }
+
+func TestProcessChunksForPipelineStripsSpreadsheetImageFields(t *testing.T) {
+	ck := map[string]any{
+		"text": "image caption", "doc_type_kwd": "image", "img_id": "image-1",
+		"sheet_index": 1, "sheet": "Sales", "cell": "C4", "media_omitted": true,
+		"row_start": 3, "row_end": 3, "col_start": 2, "col_end": 2,
+	}
+	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "Sales.xlsx", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"row_start", "row_end", "col_start", "col_end", "cell", "media_omitted", "sheet", "sheet_index"} {
+		if _, exists := ck[key]; exists {
+			t.Errorf("internal spreadsheet image field %q survived: %v", key, ck)
+		}
+	}
+	if ck["img_id"] != "image-1" || ck["doc_type_kwd"] != "image" || ck["content_with_weight"] != "image caption" {
+		t.Fatalf("persisted image fields lost: %v", ck)
+	}
+}

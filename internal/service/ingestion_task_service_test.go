@@ -1701,7 +1701,7 @@ func TestIngestionTaskServiceOpensPreTerminalLogBeforePublish(t *testing.T) {
 	}
 }
 
-func TestMarkStoppedClosesStoppingTaskLog(t *testing.T) {
+func TestMarkStoppedLeavesLogOpenForFinalSnapshot(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
@@ -1741,8 +1741,8 @@ func TestMarkStoppedClosesStoppingTaskLog(t *testing.T) {
 	if err := db.First(&done, "id = ?", "running-log").Error; err != nil {
 		t.Fatalf("load running log: %v", err)
 	}
-	if done.OperationStatus != string(entity.TaskStatusCancel) {
-		t.Fatalf("OperationStatus = %q, want %q (workerless stop must close the row)", done.OperationStatus, string(entity.TaskStatusCancel))
+	if done.OperationStatus != string(entity.TaskStatusRunning) {
+		t.Fatalf("OperationStatus = %q, want %q until the terminal writer saves the snapshot", done.OperationStatus, string(entity.TaskStatusRunning))
 	}
 }
 

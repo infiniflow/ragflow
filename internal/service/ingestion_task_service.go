@@ -375,12 +375,11 @@ func (s *IngestionTaskService) MarkStopped(ctx context.Context, taskID string) e
 	if task.Status == common.STOPPED || task.Status == common.COMPLETED || task.Status == common.FAILED {
 		return nil
 	}
-	stopped, err := s.transition(ctx, taskID, common.STOPPED)
+	_, err = s.transition(ctx, taskID, common.STOPPED)
 	if err != nil {
 		return err
 	}
 	clearCancelFlag(ctx, taskID)
-	s.advanceOpenLog(ctx, stopped, dao.OpenPipelineOperationStatuses(), string(entity.TaskStatusCancel))
 	return nil
 }
 

@@ -166,7 +166,8 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 var pipelineOnlyFields = []string{
 	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 	"context_above", "context_below", "page_number",
-	"sheet", "sheet_index",
+	"sheet", "sheet_index", "cell", "media_omitted",
+	"row_start", "row_end", "col_start", "col_end",
 	// The row source map is what the derived profile is built from and is never
 	// a chunk column; table_row_int is, and is written
 	// by the engines that support structured table queries.
