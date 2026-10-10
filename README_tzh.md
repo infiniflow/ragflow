@@ -93,13 +93,8 @@
 - 2026-08-19 推出知識編譯，支援在文件級和知識庫級產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
 - 2026-08-19 推出 Agentic RAG，支援 Low、Medium、High、Ultra 四種思考模式。
 - 2026-07-02 支援 Google BigQuery 資料來源接入與增量同步。
-- 2026-06-29 支援 WhatsApp、釘釘和企業微信聊天管道。
-- 2026-05-26 新增 Browser 元件，支援 Agent 自主瀏覽和操作網頁。
-- 2026-04-21 提供七種預置資料攝取流水線範本。
-- 2026-04-21 支援 Agent 應用程式發布、Sandbox 程式碼執行與圖表產生。
-- 2026-04-21 支援使用者級記憶儲存和檢索。
 
-更多更新請參閱[完整發布記錄](./docs/release_notes.md)。
+更多更新請參閱[完整發布記錄](https://ragflow.io/docs/dev/release_notes)。
 
 
 ## 🎉 關注項目
@@ -158,15 +153,14 @@
 
 ## 🎬 自行架設
 
+本機部署支援 Docker 部署與從原始碼啟動。Docker 適合快速體驗、整合測試與正式部署；從原始碼啟動適合 RAGFlow 開發與除錯。Docker 部署不需要 Go 編譯器；從原始碼啟動需要 `go.mod` 指定的 Go 版本，前端開發還需要 Node.js 和 npm。
+
 ### 🐳 Docker 部署
 
 #### 📝 Docker 部署前提條件
 
 - 建議起步配置：4 核 CPU、16 GB 記憶體和 50 GB 可用磁碟。實際資源需求取決於文件引擎、資料規模、解析任務和並發量；啟用本機模型或其他額外元件時，請同時滿足相應元件的資源需求。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): 僅在使用 Self-Managed 容器 Sandbox 時需要安裝和設定。
-
-Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時需要額外安裝和設定 gVisor，其他 Sandbox Provider 不要求在 RAGFlow 主機安裝 gVisor。
 
 > [!TIP]
 > 如果你並沒有在本機安裝 Docker（Windows、Mac，或 Linux）, 可以參考文件 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
@@ -238,7 +232,7 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請在健康檢查網址中使用對應的連接埠。啟動失敗時，請使用 `docker logs --tail 50 <service>` 查看對應服務日誌。
+   返回 HTTP 200 表示 RAGFlow 已就緒。若修改了 `SVR_WEB_HTTP_PORT`，請使用對應連接埠。啟動失敗時，請使用 `docker logs --tail 50 ragflow-cpu` 查看日誌。
 5. 在你的瀏覽器中輸入你的伺服器對應的 IP 位址並登入 RAGFlow。
 
    > 上面這個範例中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過設定則無需輸入連接埠（預設的 HTTP 服務連接埠 80）。
@@ -246,6 +240,8 @@ Docker 部署無需在主機安裝 Go。使用 Self-Managed 容器 Sandbox 時�
 6. 登入 RAGFlow 後，在模型提供商頁面新增 LLM、Embedding 和 Reranker，並填寫對應的模型名稱、服務位址和 API key。
 
    _好戲開始，接著奏樂接著舞！ _
+
+詳情請參閱[快速入門指南](./docs/quickstart.mdx)。
 
 #### ⚙️ Docker 設定與調整
 
@@ -280,7 +276,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    從原始碼啟動的 Go 服務透過 `localhost:6379` 連線到 Compose 暴露的 Kvrocks；Docker 服務則使用容器網路中的主機名稱。使用提供的設定無需修改 `/etc/hosts`。
@@ -295,25 +291,25 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    終端機 2：Admin，目標連接埠 9381
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ./bin/ragflow_server --admin
    ```
 
    終端機 3：Ingestor
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --ingestor
    ```
 
    終端機 4：Syncer
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --syncer
    ```
 
    終端機 5：API，目標連接埠 9380
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --api
    ```
 
    各啟動模式的作用如下：
@@ -324,13 +320,11 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    - `--syncer`：啟動 Syncer 服務，負責資料同步任務。
    - `--api`：啟動 API 服務，為 Web、SDK 和外部用戶端提供介面。
 
-   `RAGFLOW_DEV_MODE=true` 僅供開發環境使用。它會停用程式碼版本與資料庫遷移版本之間的降級檢查，但不會執行遷移或變更資料庫結構，正式環境請勿設定。Admin 應先於其他服務啟動。遷移完成後，`RAGFLOW_DEV_MODE=true bash build.sh --run` 可啟動 Admin、Ingestor 和 API，但不會啟動 Syncer；如需完整服務鏈，請另外執行 `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`。
 5. 僅在開發前端時安裝 Node.js 和 npm，並啟動 React 前端：
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    在另一個終端機確認 Go API 已就緒：
@@ -339,7 +333,7 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   返回 HTTP 200 表示 API 可以正常回應。開發結束時，在各服務終端機按 `Ctrl+C` 停止對應程序。如需停止相依服務但保留容器，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`；如需移除相依服務容器和 Compose 網路但保留具名資料卷，請執行 `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`。
+   返回 HTTP 200 表示 API 可以正常回應。
 
 詳情請參閱[從原始碼啟動服務](./docs/develop/launch_ragflow_from_source.md)。
 
@@ -366,15 +360,3 @@ Go 版 Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`，以 K
 ## 🙌 貢獻指南
 
 RAGFlow 只有透過開源協作才能蓬勃發展。秉持這項精神,我們歡迎來自社區的各種貢獻。如果您有意參與其中,請查閱我們的 [貢獻者指南](https://ragflow.io/docs/dev/contributing) 。
-
-## 🤝 商務合作
-
-- [預約諮詢](https://aao615odquw.feishu.cn/share/base/form/shrcnjw7QleretCLqh1nuPo1xxh)
-
-## 👥 加入社區
-
-掃二維碼加入 RAGFlow 小助手，進 RAGFlow 交流群。
-
-<p align="center">
-  <img alt="RAGFlow assistant QR code" src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
-</p>

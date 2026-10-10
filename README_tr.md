@@ -93,13 +93,8 @@ Yerel dağıtım için [Kendi Sunucusunda Barındırma](#-kendi-sunucusunda-bar�
 - 2026-08-19 Belge ve veri kümesi düzeyinde Wiki, Graph, Tree, PageIndex, Mind Map, Timeline ve Skills üretmek için Knowledge Compilation tanıtıldı.
 - 2026-08-19 Low, Medium, High ve Ultra düşünme modlarına sahip Agentic RAG tanıtıldı.
 - 2026-07-02 Google BigQuery veri kaynağı alımı ve artımlı eşitleme eklendi.
-- 2026-06-29 WhatsApp, DingTalk ve WeCom sohbet kanalları eklendi.
-- 2026-05-26 Agent'ların web sayfalarında gezinip işlem yapmasını sağlayan Browser bileşeni eklendi.
-- 2026-04-21 Yedi yerleşik veri alım hattı şablonu eklendi.
-- 2026-04-21 Agent uygulamalarını yayımlama, sandbox kod yürütme ve grafik oluşturma eklendi.
-- 2026-04-21 Kullanıcı düzeyinde bellek depolama ve erişimi eklendi.
 
-Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) bakın.
+Diğer güncellemeler için [tam sürüm notlarına](https://ragflow.io/docs/dev/release_notes) bakın.
 
 ## 🎉 Bizi Takip Edin
 
@@ -155,15 +150,14 @@ Diğer güncellemeler için [tam sürüm notlarına](./docs/release_notes.md) ba
 
 ## 🎬 Kendi Sunucusunda Barındırma
 
+Yerel dağıtım hem Docker dağıtımını hem de kaynak koddan başlatmayı destekler. Docker hızlı değerlendirme, entegrasyon testi ve üretim için; kaynak koddan başlatma ise RAGFlow geliştirme ve hata ayıklama için uygundur. Docker dağıtımı Go derleyicisi gerektirmez. Kaynaktan başlatmak `go.mod` dosyasında belirtilen Go sürümünü, ön yüz geliştirme ise ayrıca Node.js ve npm'i gerektirir.
+
 ### 🐳 Docker Dağıtımı
 
 #### 📝 Docker Dağıtımı Ön Koşulları
 
 - Önerilen başlangıç yapılandırması: 4 CPU çekirdeği, 16 GB RAM ve 50 GB kullanılabilir disk alanı. Gerçek gereksinimler belge motoruna, veri hacmine, ayrıştırma görevlerine ve eşzamanlılığa bağlıdır. Yerel modeller ve diğer isteğe bağlı bileşenler ek kaynak gerektirebilir.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Yalnızca Self-Managed kapsayıcı Sandbox kullanılırken gereklidir.
-
-Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kapsayıcı Sandbox, gVisor kurulumu ve yapılandırması gerektirir; diğer Sandbox sağlayıcıları RAGFlow ana makinesinde gVisor gerektirmez.
 
 > [!TIP]
 > Yerel makinenize (Windows, Mac veya Linux) Docker yüklemediyseniz, [Docker Engine Kurulumu](https://docs.docker.com/engine/install/) sayfasına bakın.
@@ -237,7 +231,7 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   HTTP 200 yanıtı hazır olunduğunu gösterir. `SVR_WEB_HTTP_PORT` değerini değiştirdiyseniz sağlık kontrolü URL'sinde bu portu kullanın. Başlatma başarısız olursa ilgili hizmetin günlüklerini `docker logs --tail 50 <service>` ile inceleyin.
+   HTTP 200 yanıtı hazır olunduğunu gösterir. `SVR_WEB_HTTP_PORT` değerini değiştirdiyseniz bu portu kullanın. Başlatma başarısız olursa günlükleri `docker logs --tail 50 ragflow-cpu` ile inceleyin.
 
 5. Web tarayıcınıza sunucunuzun IP adresini girin ve RAGFlow'a giriş yapın.
 
@@ -250,6 +244,8 @@ Docker dağıtımı ana makineye Go kurulmasını gerektirmez. Self-Managed kaps
    >
 
    _Gösteri başlasın!_
+
+Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bakın.
 
 #### ⚙️ Docker Yapılandırması ve Ayarlama
 
@@ -282,7 +278,7 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    Kaynaktan çalıştırılan Go hizmetleri Kvrocks'a `localhost:6379` üzerinden bağlanır; sağlanan yapılandırmada `/etc/hosts` değişikliği gerekmez.
@@ -291,10 +287,10 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
 
    ```bash
    ./bin/ragflow_server --migrate
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --admin
+   ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --api
    ```
 
    Başlatma modları şu şekilde çalışır:
@@ -305,13 +301,11 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    - `--syncer`: Veri eşitleme görevleri için Syncer hizmetini başlatır.
    - `--api`: Web UI, SDK'lar ve harici istemciler için API hizmetini başlatır.
 
-   `RAGFLOW_DEV_MODE=true` yalnızca geliştirme içindir. Kod sürümü ile veritabanı geçiş sürümü arasındaki sürüm düşürme denetimini devre dışı bırakır ancak geçiş çalıştırmaz veya şemayı değiştirmez. Üretimde kullanmayın. Admin'i diğer hizmetlerden önce başlatın. Geçişten sonra `RAGFLOW_DEV_MODE=true bash build.sh --run` Admin, Ingestor ve API'yi başlatır ancak Syncer'ı başlatmaz; tam hizmet zinciri için `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` komutunu ayrıca çalıştırın.
 5. Yalnızca ön yüz geliştirirken Node.js ve npm'i yükleyin, ardından React ön yüzünü başlatın:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    Başka bir terminalde Go API'nin hazır olduğunu doğrulayın:
@@ -320,7 +314,7 @@ Belge motorunu değiştirme, yapılandırma değişikliklerinden sonra hizmetler
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   HTTP 200 yanıtı API'nin yanıt verdiğini gösterir. Geliştirme tamamlandığında her hizmet terminalinde `Ctrl+C` tuşlarına basın. Kapsayıcıları koruyarak bağımlılıkları durdurmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` komutunu çalıştırın. Adlandırılmış birimleri koruyarak bağımlılık kapsayıcılarını ve Compose ağını kaldırmak için `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` komutunu çalıştırın.
+   HTTP 200 yanıtı API'nin yanıt verdiğini gösterir.
 
 Ayrıntılar için [Hizmeti Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 

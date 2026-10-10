@@ -91,13 +91,8 @@ Experimente o nosso serviço na nuvem em [https://cloud.ragflow.io](https://clou
 - 2026-08-19 Lançado o Knowledge Compilation, que gera Wikis, Graphs, Trees, PageIndex, Mind Maps, Timelines e Skills nos níveis de documento e dataset.
 - 2026-08-19 Lançado o Agentic RAG com os modos de pensamento Low, Medium, High e Ultra.
 - 2026-07-02 Adicionadas a ingestão de dados do Google BigQuery e a sincronização incremental.
-- 2026-06-29 Adicionados canais de chat para WhatsApp, DingTalk e WeCom.
-- 2026-05-26 Adicionado o componente Browser, que permite aos Agents navegar e interagir com páginas da Web.
-- 2026-04-21 Adicionados sete modelos integrados de pipeline de ingestão de dados.
-- 2026-04-21 Adicionadas a publicação de aplicações Agent, a execução de código em sandbox e a geração de gráficos.
-- 2026-04-21 Adicionados o armazenamento e a recuperação de memória em nível de usuário.
 
-Consulte as [notas de versão completas](./docs/release_notes.md) para ver outras atualizações.
+Consulte as [notas de versão completas](https://ragflow.io/docs/dev/release_notes) para ver outras atualizações.
 
 ## 🎉 Fique Ligado
 
@@ -153,15 +148,14 @@ Consulte as [notas de versão completas](./docs/release_notes.md) para ver outra
 
 ## 🎬 Auto-hospedagem
 
+A implantação local oferece implantação com Docker e execução a partir do código-fonte. O Docker é indicado para avaliação rápida, testes de integração e produção; a execução pelo código-fonte é indicada para desenvolvimento e depuração do RAGFlow. O Docker não exige compilador Go. A execução pelo código-fonte requer a versão do Go indicada em `go.mod`, além de Node.js e npm para o desenvolvimento do frontend.
+
 ### 🐳 Implantação com Docker
 
 #### 📝 Pré-requisitos da implantação com Docker
 
 - Configuração inicial recomendada: 4 núcleos de CPU, 16 GB de RAM e 50 GB de espaço em disco disponível. Os requisitos reais dependem do mecanismo de documentos, volume de dados, tarefas de análise e concorrência. Modelos locais e outros componentes opcionais podem exigir recursos adicionais.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Necessário somente ao usar o Sandbox de contêineres Self-Managed.
-
-A implantação Docker não exige a instalação do Go no host. O Sandbox de contêineres Self-Managed exige instalação e configuração do gVisor; outros provedores de Sandbox não exigem gVisor no host do RAGFlow.
 
 > [!TIP]
 > Se você não instalou o Docker na sua máquina local (Windows, Mac ou Linux), veja [Instalar Docker Engine](https://docs.docker.com/engine/install/).
@@ -230,7 +224,7 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Uma resposta HTTP 200 indica que o serviço está pronto. Se `SVR_WEB_HTTP_PORT` foi alterado, use essa porta na URL de verificação. Se a inicialização falhar, consulte os logs do serviço correspondente com `docker logs --tail 50 <service>`.
+   Uma resposta HTTP 200 indica que o serviço está pronto. Se `SVR_WEB_HTTP_PORT` foi alterado, use essa porta. Se a inicialização falhar, consulte os logs com `docker logs --tail 50 ragflow-cpu`.
 5. No seu navegador, insira o endereço IP do seu servidor e faça login no RAGFlow.
 
    > Com as configurações padrão, você só precisa digitar `http://IP_DO_SEU_MÁQUINA` (**sem** o número da porta), pois a porta HTTP padrão `80` pode ser omitida ao usar as configurações padrão.
@@ -238,6 +232,8 @@ A implantação Docker não exige a instalação do Go no host. O Sandbox de con
 6. Após entrar, adicione um LLM, um modelo de embedding e um reranker na página de provedores de modelos, incluindo o nome do modelo, o endereço do serviço e a chave de API.
 
 _O show está no ar!_
+
+Consulte o [guia de início rápido](./docs/quickstart.mdx) para obter detalhes.
 
 #### ⚙️ Configuração e ajustes do Docker
 
@@ -270,7 +266,7 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    Os serviços Go iniciados pelo código-fonte acessam o Kvrocks exposto pelo Compose em `localhost:6379`; os serviços Docker usam o nome do host na rede dos contêineres. A configuração fornecida não exige alterações em `/etc/hosts`.
@@ -285,25 +281,25 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    Terminal 2: Admin, porta de destino 9381
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ./bin/ragflow_server --admin
    ```
 
    Terminal 3: Ingestor
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --ingestor
    ```
 
    Terminal 4: Syncer
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --syncer
    ```
 
    Terminal 5: API, porta de destino 9380
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --api
    ```
 
    Os modos de inicialização funcionam assim:
@@ -314,7 +310,6 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    - `--syncer`: Inicia o serviço Syncer para tarefas de sincronização de dados.
    - `--api`: Inicia o serviço API para a interface Web, SDKs e clientes externos.
 
-   `RAGFLOW_DEV_MODE=true` é exclusivo para desenvolvimento. Ele desativa a verificação de downgrade entre o código e as migrações, mas não executa migrações nem altera o esquema. Não o use em produção. Depois da migração, `RAGFLOW_DEV_MODE=true bash build.sh --run` pode iniciar Admin, Ingestor e API, mas não inicia o Syncer. Para iniciar a cadeia completa de serviços, execute separadamente `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`.
 5. Instale Node.js e npm somente se for desenvolver o front-end:
 
    ```bash
@@ -324,7 +319,6 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    Em seguida, inicie o serviço de front-end:
 
    ```bash
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    Em outro terminal, confirme que a API Go está pronta:
@@ -333,7 +327,7 @@ Para trocar o mecanismo de documentos, alterar configurações, reiniciar servi�
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   Uma resposta HTTP 200 indica que a API está respondendo. Ao concluir o desenvolvimento, pressione `Ctrl+C` em cada terminal de serviço. Para interromper as dependências mantendo os contêineres, execute `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Para remover os contêineres de dependência e a rede Compose mantendo os volumes nomeados, execute `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+   Uma resposta HTTP 200 indica que a API está respondendo.
 
 Consulte [Iniciar o serviço a partir do código-fonte](./docs/develop/launch_ragflow_from_source.md) para obter detalhes.
 

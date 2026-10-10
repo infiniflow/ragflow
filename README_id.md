@@ -91,13 +91,8 @@ Coba layanan cloud kami di [https://cloud.ragflow.io](https://cloud.ragflow.io).
 - 2026-08-19 Memperkenalkan Knowledge Compilation untuk menghasilkan Wiki, Graph, Tree, PageIndex, Mind Map, Timeline, dan Skills pada tingkat dokumen dan dataset.
 - 2026-08-19 Memperkenalkan Agentic RAG dengan mode berpikir Low, Medium, High, dan Ultra.
 - 2026-07-02 Menambahkan ingest sumber data Google BigQuery dan sinkronisasi inkremental.
-- 2026-06-29 Menambahkan kanal chat WhatsApp, DingTalk, dan WeCom.
-- 2026-05-26 Menambahkan komponen Browser agar Agent dapat menjelajahi dan berinteraksi dengan halaman web.
-- 2026-04-21 Menambahkan tujuh templat pipeline ingest data bawaan.
-- 2026-04-21 Menambahkan publikasi aplikasi Agent, eksekusi kode sandbox, dan pembuatan grafik.
-- 2026-04-21 Menambahkan penyimpanan dan pengambilan memori tingkat pengguna.
 
-Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
+Lihat [catatan rilis lengkap](https://ragflow.io/docs/dev/release_notes) untuk pembaruan lainnya.
 
 ## 🎉 Tetap Terkini
 
@@ -153,15 +148,14 @@ Lihat [catatan rilis lengkap](./docs/release_notes.md) untuk pembaruan lainnya.
 
 ## 🎬 Pengelolaan Mandiri
 
+Deployment lokal mendukung Docker dan menjalankan aplikasi dari sumber. Docker cocok untuk evaluasi cepat, pengujian integrasi, dan produksi, sedangkan menjalankan dari sumber ditujukan untuk pengembangan dan debugging RAGFlow. Docker tidak memerlukan compiler Go; menjalankan dari sumber memerlukan versi Go dalam `go.mod`, serta Node.js dan npm untuk pengembangan frontend.
+
 ### 🐳 Deployment Docker
 
 #### 📝 Prasyarat Deployment Docker
 
 - Konfigurasi awal yang disarankan: 4 inti CPU, RAM 16 GB, dan ruang disk tersedia 50 GB. Kebutuhan aktual bergantung pada mesin dokumen, volume data, tugas penguraian, dan konkurensi. Model lokal dan komponen opsional lainnya mungkin memerlukan sumber daya tambahan.
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Hanya diperlukan saat menggunakan container Sandbox Self-Managed.
-
-Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed memerlukan instalasi dan konfigurasi gVisor; penyedia Sandbox lainnya tidak memerlukan gVisor di host RAGFlow.
 
 > [!TIP]
 > Jika Anda belum menginstal Docker di komputer lokal Anda (Windows, Mac, atau Linux), lihat [Install Docker Engine](https://docs.docker.com/engine/install/).
@@ -237,7 +231,7 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   Respons HTTP 200 menunjukkan bahwa layanan siap. Jika Anda mengubah `SVR_WEB_HTTP_PORT`, gunakan port tersebut dalam URL pemeriksaan kesehatan. Jika startup gagal, periksa log layanan terkait dengan `docker logs --tail 50 <service>`.
+   Respons HTTP 200 menunjukkan bahwa layanan siap. Jika Anda mengubah `SVR_WEB_HTTP_PORT`, gunakan port tersebut dalam URL pemeriksaan kesehatan. Jika startup gagal, periksa log dengan `docker logs --tail 50 ragflow-cpu`.
 
 5. Buka browser web Anda, masukkan alamat IP server Anda, dan login ke RAGFlow.
 
@@ -250,6 +244,8 @@ Deployment Docker tidak memerlukan Go di host. Container Sandbox Self-Managed me
    >
 
    _Sistem telah siap digunakan!_
+
+Lihat [panduan mulai cepat](./docs/quickstart.mdx) untuk detail selengkapnya.
 
 #### ⚙️ Konfigurasi dan Penyesuaian Docker
 
@@ -282,7 +278,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    Layanan Go yang dijalankan dari sumber terhubung ke Kvrocks melalui `localhost:6379`; konfigurasi yang disediakan tidak memerlukan perubahan pada `/etc/hosts`.
@@ -294,19 +290,19 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
+   ./bin/ragflow_server --admin
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --ingestor
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --syncer
    ```
 
    ```bash
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --api
    ```
 
    Mode startup bekerja sebagai berikut:
@@ -317,13 +313,11 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    - `--syncer`: Memulai layanan Syncer untuk sinkronisasi data.
    - `--api`: Memulai layanan API untuk Web UI, SDK, dan klien eksternal.
 
-   `RAGFLOW_DEV_MODE=true` hanya untuk pengembangan; variabel ini menonaktifkan pemeriksaan downgrade antara versi kode dan migrasi database, tetapi tidak menjalankan migrasi atau mengubah skema. Jangan gunakan di produksi. Jalankan Admin sebelum layanan lain. Setelah migrasi, `RAGFLOW_DEV_MODE=true bash build.sh --run` memulai Admin, Ingestor, dan API, tetapi tidak memulai Syncer; jalankan Syncer secara terpisah dengan `RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer` untuk menjalankan seluruh rantai layanan.
 5. Hanya untuk pengembangan frontend, instal Node.js dan npm, lalu jalankan frontend React:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    Di terminal lain, pastikan Go API siap:
@@ -332,7 +326,7 @@ Untuk mengganti mesin dokumen, mengubah konfigurasi, memulai ulang layanan, sert
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   Respons HTTP 200 menunjukkan bahwa API merespons. Setelah pengembangan selesai, tekan `Ctrl+C` di setiap terminal layanan. Untuk menghentikan dependensi tanpa menghapus kontainer, jalankan `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse`. Untuk menghapus kontainer dependensi dan jaringan Compose sambil mempertahankan volume bernama, jalankan `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down`.
+   Respons HTTP 200 menunjukkan bahwa API merespons.
 
 Lihat [Menjalankan Layanan dari Sumber](./docs/develop/launch_ragflow_from_source.md) untuk detailnya.
 

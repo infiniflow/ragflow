@@ -74,13 +74,8 @@
 - 2026-08-19 Knowledge Compilationを導入。ドキュメントおよびデータセット単位でWiki、Graph、Tree、PageIndex、Mind Map、Timeline、Skillsを生成できます。
 - 2026-08-19 Low、Medium、High、Ultraの思考モードを備えたAgentic RAGを導入。
 - 2026-07-02 Google BigQueryデータソースの取り込みと増分同期に対応。
-- 2026-06-29 WhatsApp、DingTalk、WeComのチャットチャネルに対応。
-- 2026-05-26 AgentがWebページを閲覧・操作できるBrowserコンポーネントを追加。
-- 2026-04-21 7種類の組み込みデータ取り込みパイプラインテンプレートを追加。
-- 2026-04-21 Agentアプリの公開、Sandboxでのコード実行、グラフ生成に対応。
-- 2026-04-21 ユーザー単位のメモリ保存と検索に対応。
 
-その他の更新については[リリースノート全文](./docs/release_notes.md)を参照してください。
+その他の更新については[リリースノート全文](https://ragflow.io/docs/dev/release_notes)を参照してください。
 
 
 ## 🎉 続きを楽しみに
@@ -137,15 +132,14 @@
 
 ## 🎬 セルフホスティング
 
+ローカルデプロイでは、Docker デプロイとソースコードからの起動を利用できます。Docker は迅速な評価、統合テスト、本番環境に適し、ソースコードからの起動は RAGFlow の開発とデバッグに適しています。Docker では Go コンパイラは不要です。ソースコードから起動する場合は `go.mod` で指定された Go が必要で、フロントエンド開発には Node.js と npm も必要です。
+
 ### 🐳 Docker デプロイ
 
 #### 📝 Docker デプロイの前提条件
 
 - 推奨する開始時の構成：CPU 4コア、RAM 16 GB、空きディスク容量 50 GB。実際の要件は、ドキュメントエンジン、データ量、解析タスク、同時実行数によって異なります。ローカルモデルやその他のオプションコンポーネントでは、追加のリソースが必要になる場合があります。
 - Docker >= 24.0.0 & Docker Compose >= v2.26.1
-- [gVisor](https://gvisor.dev/docs/user_guide/install/): Self-ManagedコンテナSandboxを使用する場合のみ必要です。
-
-DockerデプロイではホストへのGoのインストールは不要です。Self-ManagedコンテナSandboxではgVisorのインストールと設定が必要ですが、他のSandboxプロバイダーではRAGFlowホストへのgVisorのインストールは不要です。
 
 > [!TIP]
 > ローカルマシン（Windows、Mac、または Linux）に Docker をインストールしていない場合は、[Docker Engine のインストール](https://docs.docker.com/engine/install/) を参照してください。
@@ -220,7 +214,7 @@ DockerデプロイではホストへのGoのインストールは不要です。
    curl -f http://localhost/api/v1/system/healthz
    ```
 
-   HTTP 200 レスポンスは準備完了を示します。`SVR_WEB_HTTP_PORT` を変更した場合は、ヘルスチェック URL でそのポートを使用してください。起動に失敗した場合は、`docker logs --tail 50 <service>` で該当サービスのログを確認してください。
+   HTTP 200 レスポンスは準備完了を示します。`SVR_WEB_HTTP_PORT` を変更した場合は、そのポートを使用してください。起動に失敗した場合は、`docker logs --tail 50 ragflow-cpu` でログを確認してください。
 
 5. ウェブブラウザで、プロンプトに従ってサーバーの IP アドレスを入力し、RAGFlow にログインします。
 
@@ -232,6 +226,8 @@ DockerデプロイではホストへのGoのインストールは不要です。
    >
 
    _これで初期設定完了！ショーの開幕です！_
+
+詳細は[クイックスタートガイド](./docs/quickstart.mdx)を参照してください。
 
 #### ⚙️ Docker の設定と調整
 
@@ -264,7 +260,7 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml \
-     up -d --wait es01 mysql minio nats kvrocks clickhouse
+     up -d --wait es01 mysql minio nats kvrocks
    ```
 
    ソースから起動する Go サービスは `localhost:6379` で Kvrocks に接続するため、提供されている設定では `/etc/hosts` の変更は不要です。
@@ -273,10 +269,10 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
 
    ```bash
    ./bin/ragflow_server --migrate
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --ingestor
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer
-   RAGFLOW_DEV_MODE=true ./bin/ragflow_server --api
+   ./bin/ragflow_server --admin
+   ./bin/ragflow_server --ingestor
+   ./bin/ragflow_server --syncer
+   ./bin/ragflow_server --api
    ```
 
    各起動モードの役割は次のとおりです:
@@ -287,13 +283,11 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
    - `--syncer`: データ同期を行うSyncerサービスを起動します。
    - `--api`: Web UI、SDK、外部クライアント向けのAPIサービスを起動します。
 
-   `RAGFLOW_DEV_MODE=true`は開発専用です。コードとデータベース移行バージョン間のダウングレードチェックを無効にしますが、移行の実行やスキーマ変更は行いません。本番環境では設定しないでください。Adminを他のサービスより先に起動します。移行後は`RAGFLOW_DEV_MODE=true bash build.sh --run`でAdmin、Ingestor、APIを起動できますが、Syncerは起動しません。完全なサービスチェーンには`RAGFLOW_DEV_MODE=true ./bin/ragflow_server --syncer`を別途実行してください。
 5. フロントエンドを開発する場合に限り、Node.jsとnpmをインストールしてReactフロントエンドを起動します:
 
    ```bash
    cd web
    npm install
-   API_PROXY_SCHEME=go npm run dev
    ```
 
    別のターミナルでGo APIの準備が完了したことを確認します:
@@ -302,7 +296,7 @@ Go版のDockerデプロイでは `docker/.env` と `docker/docker-compose.yml` �
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-   HTTP 200が返ればAPIは応答しています。開発終了時は各サービスターミナルで`Ctrl+C`を押します。コンテナを保持したまま依存サービスを停止するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml stop es01 mysql minio nats kvrocks clickhouse` を実行します。名前付きボリュームを保持したまま依存コンテナとComposeネットワークを削除するには `docker compose --env-file docker/.env -f docker/docker-compose-base.yml down` を実行します。
+   HTTP 200が返ればAPIは応答しています。
 
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
