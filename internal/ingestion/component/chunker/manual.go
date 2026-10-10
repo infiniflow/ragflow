@@ -60,6 +60,13 @@ type ManualChunkerComponent struct {
 // NewManualChunker constructs the component. It accepts the same heading-level
 // params as TitleChunker (method is pinned to "group"); the position resort is
 // automatic based on whether the upstream payload carries coordinates.
+//
+// include_heading_content stays a documented no-op here (see #20139): it only
+// has a toggle point in the hierarchy path (hierarchy.go's leaf-only emission
+// rule), and ManualChunker can never take that path — a heading record is
+// always part of the group it heads, so there is nothing for the flag to
+// switch. pipeline_params.go excludes it from ManualChunker's accepted param
+// keys accordingly, so it can no longer be silently saved with no effect.
 func NewManualChunker(params map[string]any) (runtime.Component, error) {
 	// method is pinned to "group": ManualChunker's entire value-add is the
 	// physical-position resort, which only fires inside the group path.
@@ -115,9 +122,12 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	if hasPdfPositions(records) {
 		sortRecordsByPosition(records)
 	}
-	// ManualChunker is exempt from the title-family token cap (#18455): it
-	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
-	return chunkFromRecords(ctx, db, inputs, &c.param, records, 0)
+	// ManualChunker shares GroupTitleChunker's token-cap enforcement
+	// (#18455/#20139): it reuses the exact same chunkFromRecords body, so
+	// there is no structural reason to drop chunk_token_cap on the floor.
+	// An unset cap still resolves to the schema default (512, see
+	// titleChunkerParam.Update / schema.TitleChunkerParam.Defaults).
+	return chunkFromRecords(ctx, db, inputs, &c.param, records, c.param.ChunkTokenCap)
 }
 
 // hasPdfPositions reports whether any record carries a PDF coordinate matrix
