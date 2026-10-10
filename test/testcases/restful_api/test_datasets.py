@@ -560,14 +560,14 @@ def test_dataset_update_identifier_validation_contract(rest_client):
     not_uuid1_res = rest_client.put(f"/datasets/{uuid.uuid4().hex}", json=payload)
     assert not_uuid1_res.status_code == 200
     not_uuid1_payload = not_uuid1_res.json()
-    assert not_uuid1_payload["code"] == 102, not_uuid1_payload
-    assert "lacks permission for dataset" in not_uuid1_payload["message"], not_uuid1_payload
+    assert not_uuid1_payload["code"] == 404, not_uuid1_payload
+    assert not_uuid1_payload["message"] == "Resource not found", not_uuid1_payload
 
     wrong_uuid_res = rest_client.put("/datasets/d94a8dc02c9711f0930f7fbc369eab6d", json=payload)
     assert wrong_uuid_res.status_code == 200
     wrong_uuid_payload = wrong_uuid_res.json()
-    assert wrong_uuid_payload["code"] == 102, wrong_uuid_payload
-    assert "lacks permission for dataset" in wrong_uuid_payload["message"], wrong_uuid_payload
+    assert wrong_uuid_payload["code"] == 404, wrong_uuid_payload
+    assert wrong_uuid_payload["message"] == "Resource not found", wrong_uuid_payload
 
 
 @pytest.mark.p2
@@ -1312,14 +1312,14 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     id_not_uuid1_res = rest_client.delete("/datasets", json={"ids": [uuid.uuid4().hex]})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
-    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 403, id_not_uuid1_payload
+    assert id_not_uuid1_payload["message"] == "Permission denied", id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.delete("/datasets", json={"ids": ["d94a8dc02c9711f0930f7fbc369eab6d"]})
     assert id_wrong_uuid_res.status_code == 200
     id_wrong_uuid_payload = id_wrong_uuid_res.json()
-    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
-    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+    assert id_wrong_uuid_payload["code"] == 403, id_wrong_uuid_payload
+    assert id_wrong_uuid_payload["message"] == "Permission denied", id_wrong_uuid_payload
 
     list_res = rest_client.get("/datasets")
     assert list_res.status_code == 200
@@ -1335,8 +1335,8 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
         partial_invalid_res = rest_client.delete("/datasets", json={"ids": invalid_ids})
         assert partial_invalid_res.status_code == 200
         partial_invalid_payload = partial_invalid_res.json()
-        assert partial_invalid_payload["code"] == 102, partial_invalid_payload
-        assert "lacks permission for dataset" in partial_invalid_payload["message"], partial_invalid_payload
+        assert partial_invalid_payload["code"] == 403, partial_invalid_payload
+        assert partial_invalid_payload["message"] == "Permission denied", partial_invalid_payload
 
     duplicate_ids_res = rest_client.delete("/datasets", json={"ids": remaining_ids + remaining_ids})
     assert duplicate_ids_res.status_code == 200
@@ -1353,8 +1353,8 @@ def test_dataset_delete_contract_matrix(rest_client, clear_datasets):
     second_delete_res = rest_client.delete("/datasets", json=repeated_delete_payload)
     assert second_delete_res.status_code == 200
     second_delete_payload = second_delete_res.json()
-    assert second_delete_payload["code"] == 102, second_delete_payload
-    assert "lacks permission for dataset" in second_delete_payload["message"], second_delete_payload
+    assert second_delete_payload["code"] == 403, second_delete_payload
+    assert second_delete_payload["message"] == "Permission denied", second_delete_payload
 
     unsupported_field_res = rest_client.delete("/datasets", json={"unknown_field": "unknown_field"})
     assert unsupported_field_res.status_code == 200
@@ -1558,8 +1558,8 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     name_wrong_res = rest_client.get("/datasets", params={"name": "wrong name"})
     assert name_wrong_res.status_code == 200
     name_wrong_payload = name_wrong_res.json()
-    assert name_wrong_payload["code"] == 102, name_wrong_payload
-    assert "lacks permission for dataset" in name_wrong_payload["message"], name_wrong_payload
+    assert name_wrong_payload["code"] == 0, name_wrong_payload
+    assert name_wrong_payload["data"] == [], name_wrong_payload
 
     name_empty_res = rest_client.get("/datasets", params={"name": ""})
     assert name_empty_res.status_code == 200
@@ -1589,14 +1589,14 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     id_not_uuid1_res = rest_client.get("/datasets", params={"id": uuid.uuid4().hex})
     assert id_not_uuid1_res.status_code == 200
     id_not_uuid1_payload = id_not_uuid1_res.json()
-    assert id_not_uuid1_payload["code"] == 102, id_not_uuid1_payload
-    assert "lacks permission for dataset" in id_not_uuid1_payload["message"], id_not_uuid1_payload
+    assert id_not_uuid1_payload["code"] == 404, id_not_uuid1_payload
+    assert id_not_uuid1_payload["message"] == "Resource not found", id_not_uuid1_payload
 
     id_wrong_uuid_res = rest_client.get("/datasets", params={"id": "d94a8dc02c9711f0930f7fbc369eab6d"})
     assert id_wrong_uuid_res.status_code == 200
     id_wrong_uuid_payload = id_wrong_uuid_res.json()
-    assert id_wrong_uuid_payload["code"] == 102, id_wrong_uuid_payload
-    assert "lacks permission for dataset" in id_wrong_uuid_payload["message"], id_wrong_uuid_payload
+    assert id_wrong_uuid_payload["code"] == 404, id_wrong_uuid_payload
+    assert id_wrong_uuid_payload["message"] == "Resource not found", id_wrong_uuid_payload
 
     id_empty_res = rest_client.get("/datasets", params={"id": ""})
     assert id_empty_res.status_code == 200
@@ -1622,12 +1622,17 @@ def test_dataset_list_query_contract_matrix(rest_client, clear_datasets):
     assert name_id_mismatch_payload["code"] == 0, name_id_mismatch_payload
     assert len(name_id_mismatch_payload["data"]) == 0, name_id_mismatch_payload
 
-    for dataset_id, name in ((dataset_ids[0], "wrong_name"), (uuid.uuid1().hex, "dataset_0")):
-        name_id_wrong_res = rest_client.get("/datasets", params={"id": dataset_id, "name": name})
-        assert name_id_wrong_res.status_code == 200
-        name_id_wrong_payload = name_id_wrong_res.json()
-        assert name_id_wrong_payload["code"] == 102, name_id_wrong_payload
-        assert "lacks permission for dataset" in name_id_wrong_payload["message"], name_id_wrong_payload
+    name_id_wrong_res = rest_client.get("/datasets", params={"id": dataset_ids[0], "name": "wrong_name"})
+    assert name_id_wrong_res.status_code == 200
+    name_id_wrong_payload = name_id_wrong_res.json()
+    assert name_id_wrong_payload["code"] == 0, name_id_wrong_payload
+    assert name_id_wrong_payload["data"] == [], name_id_wrong_payload
+
+    missing_id_name_res = rest_client.get("/datasets", params={"id": uuid.uuid1().hex, "name": "dataset_0"})
+    assert missing_id_name_res.status_code == 200
+    missing_id_name_payload = missing_id_name_res.json()
+    assert missing_id_name_payload["code"] == 404, missing_id_name_payload
+    assert missing_id_name_payload["message"] == "Resource not found", missing_id_name_payload
 
     unsupported_field_res = rest_client.get("/datasets", params={"unknown_field": "unknown_field"})
     assert unsupported_field_res.status_code == 200
@@ -1709,8 +1714,8 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     invalid_dataset_res = rest_client.get("/datasets/invalid_dataset_id/metadata/config")
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_dataset_payload["message"], invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
     update_payload = {
         "metadata": [
@@ -1758,8 +1763,8 @@ def test_dataset_metadata_config_get_and_update_contract(rest_client, create_dat
     )
     assert invalid_update_dataset_res.status_code == 200
     invalid_update_dataset_payload = invalid_update_dataset_res.json()
-    assert invalid_update_dataset_payload["code"] == 102, invalid_update_dataset_payload
-    assert "lacks permission for dataset 'invalid_dataset_id'" in invalid_update_dataset_payload["message"], invalid_update_dataset_payload
+    assert invalid_update_dataset_payload["code"] == 404, invalid_update_dataset_payload
+    assert invalid_update_dataset_payload["message"] == "Resource not found", invalid_update_dataset_payload
 
 
 def test_dataset_metadata_summary_contract(rest_client, create_dataset, tmp_path):

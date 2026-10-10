@@ -20,7 +20,7 @@ func TestCreateDataset_RequiresParseType(t *testing.T) {
 	// defaulted to BuiltIn; now this must be rejected.
 	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name: "ds-no-parse-type",
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected parse_type required error")
 	}
@@ -41,7 +41,7 @@ func TestCreateDataset_BuiltinRequiresParserID(t *testing.T) {
 	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:      "ds-builtin-no-parser",
 		ParseType: &parseType,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected parser_id required error for BuiltIn mode")
 	}
@@ -62,7 +62,7 @@ func TestCreateDataset_PipelineRequiresPipelineID(t *testing.T) {
 	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:      "ds-pipeline-no-id",
 		ParseType: &parseType,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected pipeline_id required error for Pipeline mode")
 	}
@@ -83,7 +83,7 @@ func TestCreateDataset_RejectsInvalidParseType(t *testing.T) {
 	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:      "ds-bad-parse-type",
 		ParseType: &parseType,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected invalid parse_type error")
 	}
@@ -106,7 +106,7 @@ func TestCreateDataset_BuiltinSucceedsWithParseType(t *testing.T) {
 		Name:      "ds-builtin-ok",
 		ParseType: &parseType,
 		ParserID:  &parserID,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}

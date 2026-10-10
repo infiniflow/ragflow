@@ -122,9 +122,6 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		}
 		name, _ := info["name"].(string)
 		datasetNames[id] = name
-		if !ds.Accessible(ctx, id, userID) {
-			continue
-		}
 		// Read only documents returned by retrieval, through the existing listing
 		// and metadata services. This avoids loading entire document collections.
 		for _, chunk := range resp.Chunks {

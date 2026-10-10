@@ -12,6 +12,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // CompilationStatus is the dataset-level knowledge-compile lifecycle state
@@ -41,8 +43,9 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 	if datasetID == "" {
 		return CompilationStatus{}, common.CodeDataError, errors.New("dataset_id is required")
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return CompilationStatus{}, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return CompilationStatus{}, code, permissionErr
 	}
 	requestedKind := strings.ToLower(strings.TrimSpace(kind))
 	normalizedKind := normalizeCompilationKind(requestedKind)
