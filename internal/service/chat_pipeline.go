@@ -1298,6 +1298,14 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 		}
 
+		// The notice describes a vector-search answer, so it is only added when
+		// retrieval ran and produced knowledge. An LLM-only answer (no knowledge
+		// parameter) or the empty_response fallback (no knowledge) is left as is.
+		var sqlNoticeKBs []string
+		if hasKnowledgeParam && len(knowledges) > 0 {
+			sqlNoticeKBs = sqlUnavailableKBs
+		}
+
 		// Stream path: per-delta callbacks, accumulate answer.
 		// Non-stream path: one-shot synchronous answer.
 		if stream {
@@ -1511,7 +1519,7 @@ func (s *ChatPipelineService) AsyncChat(
 			// Python uses state.full_text (raw text with <think> tags) as input
 			// to _extract_visible_answer → decorate_answer (dialog_service.py:914-920).
 			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
-			if withNotice := appendSQLUnavailableNotice(visibleAnswer, sqlUnavailableKBs); withNotice != visibleAnswer {
+			if withNotice := appendSQLUnavailableNotice(visibleAnswer, sqlNoticeKBs); withNotice != visibleAnswer {
 				send(AsyncChatResult{Answer: withNotice[len(visibleAnswer):], Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
 				visibleAnswer = withNotice
 			}
@@ -1555,7 +1563,7 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
-			answer = appendSQLUnavailableNotice(answer, sqlUnavailableKBs)
+			answer = appendSQLUnavailableNotice(answer, sqlNoticeKBs)
 
 			// Synthesize TTS for the full answer (non-stream, one-shot).
 			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, decorateQuote(quote, answer, emptyResponse), ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
