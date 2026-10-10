@@ -47,8 +47,13 @@ export function normalizeParserFormValues<T extends Record<string, any>>(
   );
 
   const imageSetup = setups.find((x) => x?.fileFormat === FileType.Image);
+  // Mirrors the backend: a setup that already carries the ocr_enabled switch is
+  // on the new contract, so any leftover parse_method is dead data — not a model
+  // reference. Hoisting it anyway would overwrite the model the user picked.
+  const hasImageOcrSwitch = typeof imageSetup?.ocr_enabled === 'boolean';
   const legacyImageMethod = imageSetup?.parse_method;
   const legacyImageModel =
+    !hasImageOcrSwitch &&
     typeof legacyImageMethod === 'string' &&
     !isEmpty(legacyImageMethod) &&
     legacyImageMethod.toLowerCase() !== 'ocr'

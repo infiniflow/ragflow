@@ -192,6 +192,29 @@ describe('parser-form utils', () => {
       ).toEqual({ fileFormat: FileType.Image, ocr_enabled: true });
     });
 
+    it('ignores a stale parse_method once the switch shape is present', () => {
+      // Mirrors the backend: ocr_enabled present means parse_method is dead
+      // data. Hoisting it would overwrite the model the user picked globally.
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: 'qwen-vl@DashScope', system_prompt: '' },
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            parse_method: 'abandoned-model@provider',
+          },
+        ],
+      });
+      expect(normalized.vlm).toEqual({
+        llm_id: 'qwen-vl@DashScope',
+        system_prompt: '',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+    });
+
     it('lifts a legacy image model reference onto the global vlm and turns OCR off', () => {
       const normalized = normalizeParserFormValues({
         setups: [

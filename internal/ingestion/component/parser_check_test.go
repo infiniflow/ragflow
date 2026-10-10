@@ -109,6 +109,22 @@ func TestParserComponent_Check(t *testing.T) {
 			name:   "image: missing parse_method → pass (treated as non-ocr, but lang defaults empty in DSL)",
 			setups: map[string]schema.ParserSetup{"image": {"lang": "English"}},
 		},
+		{
+			// The image contract keys off the presence of ocr_enabled, so a
+			// wrong-typed value must not read as "absent" and fall back to the
+			// legacy parse_method inference.
+			name:    "image: non-boolean ocr_enabled → error",
+			setups:  map[string]schema.ParserSetup{"image": {"ocr_enabled": "false"}},
+			wantErr: "ocr_enabled must be a boolean",
+		},
+		{
+			name:   "image: boolean ocr_enabled → pass",
+			setups: map[string]schema.ParserSetup{"image": {"ocr_enabled": false}},
+		},
+		{
+			name:   "image: ocr_enabled alongside a stale parse_method → pass (switch wins)",
+			setups: map[string]schema.ParserSetup{"image": {"ocr_enabled": true, "parse_method": "ocr"}},
+		},
 
 		// --- audio/video: vlm.llm_id not validated (matches Python check()) ---
 		{

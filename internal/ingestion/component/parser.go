@@ -266,6 +266,16 @@ func (c *ParserComponent) Check() error {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
 	}
+	// The whole image contract keys off whether ocr_enabled is present, so a
+	// value of the wrong type must not quietly read as "absent" and fall back to
+	// the legacy parse_method inference.
+	if img, ok := c.setups["image"]; ok {
+		if raw, exists := img["ocr_enabled"]; exists {
+			if _, isBool := raw.(bool); !isBool {
+				return errors.New("parser: image ocr_enabled must be a boolean")
+			}
+		}
+	}
 	return nil
 }
 
