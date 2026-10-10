@@ -113,6 +113,22 @@ func minerUBearerFromAPIKey(apiKey string) string {
 	return MinerUBearerTokenFromAPIKey(apiKey)
 }
 
+// MinerUV1OCRMode maps mineru_parse_method (auto, txt, ocr) onto the V1 job field ocr_mode.
+func MinerUV1OCRMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "auto", "txt", "ocr":
+		return strings.ToLower(strings.TrimSpace(raw))
+	default:
+		return "auto"
+	}
+}
+
+func minerUV1SupportCacheKey(baseURL, apiKey string) string {
+	token := minerUBearerFromAPIKey(apiKey)
+	sum := sha256.Sum256([]byte(token))
+	return baseURL + "\x00" + hex.EncodeToString(sum[:])
+}
+
 func minerUProbeGET(ctx context.Context, client *http.Client, rawURL, token string) (int, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -138,7 +154,7 @@ func MinerUSupportsV1(ctx context.Context, baseURL, apiKey string) (bool, error)
 	if baseURL == "" {
 		return false, fmt.Errorf("MinerU base URL is empty")
 	}
-	cacheKey := baseURL + "\x00" + minerUBearerFromAPIKey(apiKey)
+	cacheKey := minerUV1SupportCacheKey(baseURL, apiKey)
 	if cached, ok := minerUV1SupportCache.Load(cacheKey); ok {
 		entry := cached.(minerUV1SupportCacheEntry)
 		if time.Now().Before(entry.expires) {
@@ -267,7 +283,8 @@ func minerUV1Terminal(status string) bool {
 
 // ParseMinerUV1 runs the MinerU 4 V1 cycle: create upload → PUT bytes →
 // complete → parse job → poll → download zip and/or markdown.
-func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, content []byte, backend string, timeout time.Duration) (*MinerUV1Result, error) {
+// ocrMode is the V1 ocr_mode (auto, txt, ocr); use MinerUV1OCRMode to normalize.
+func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, content []byte, backend, ocrMode string, timeout time.Duration) (*MinerUV1Result, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	if baseURL == "" {
 		return nil, fmt.Errorf("MinerU base URL is empty")
@@ -355,14 +372,16 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		return nil, fmt.Errorf("MinerU V1 upload status %q", created.Status)
 	}
 
-	var job minerUV1JobResponse
-	if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/parse/jobs", token, map[string]any{
+	jobBody := map[string]any{
 		"files": []map[string]any{
 			{"source": map[string]any{"type": "file_id", "file_id": fileID}},
 		},
 		"tier":           MinerUTierFromBackend(backend),
 		"output_formats": []string{"zip", "markdown"},
-	}, &job); err != nil {
+		"ocr_mode":       MinerUV1OCRMode(ocrMode),
+	}
+	var job minerUV1JobResponse
+	if err := minerUJSON(ctx, client, http.MethodPost, baseURL+"/v1/parse/jobs", token, jobBody, &job); err != nil {
 		return nil, fmt.Errorf("create parse job: %w", err)
 	}
 	if job.JobID == "" {
@@ -453,13 +472,31 @@ func minerUV1FirstFileErrorMessage(files []minerUV1JobFile) string {
 	return ""
 }
 
+func minerUV1DownloadHTTPClient(apiOrigin string) *http.Client {
+	base := minerUHTTPClient()
+	return &http.Client{
+		Transport: base.Transport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			if !minerUSameOrigin(apiOrigin, req.URL.String()) {
+				req.Header.Del("Authorization")
+			}
+			return nil
+		},
+	}
+}
+
 func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, token, fileID string) ([]byte, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, baseURL+"/v1/files/"+fileID+"/content", nil)
+	apiOrigin := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	dlClient := minerUV1DownloadHTTPClient(apiOrigin)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiOrigin+"/v1/files/"+fileID+"/content", nil)
 	if err != nil {
 		return nil, err
 	}
 	applyMinerUAuth(req, token)
-	resp, err := client.Do(req)
+	resp, err := dlClient.Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -540,7 +540,7 @@ func dispatchMinerUPDF(
 	}
 
 	if v1 {
-		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, 0)
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, 0)
 		if err != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
 		}

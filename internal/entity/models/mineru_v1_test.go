@@ -58,6 +58,7 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 		mu       sync.Mutex
 		gotBytes []byte
 		gotTier  string
+		gotOCR   string
 		polls    int
 	)
 	zipBuf := minerUTestZip(t, "doc.md", "# Hello\n\nFrom V1.\n")
@@ -87,6 +88,11 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 				gotTier = tier
 				mu.Unlock()
 			}
+			if mode, ok := payload["ocr_mode"].(string); ok {
+				mu.Lock()
+				gotOCR = mode
+				mu.Unlock()
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"queued"}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/parse/jobs/job-1":
@@ -111,7 +117,7 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "ocr", 5*time.Second)
 	if err != nil {
 		t.Fatalf("ParseMinerUV1: %v", err)
 	}
@@ -128,6 +134,40 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 	}
 	if gotTier != "basic" {
 		t.Fatalf("tier = %q, want basic (mapped from pipeline)", gotTier)
+	}
+	if gotOCR != "ocr" {
+		t.Fatalf("ocr_mode = %q, want ocr", gotOCR)
+	}
+}
+
+func TestMinerUV1DownloadStripsAuthOnCrossOriginRedirect(t *testing.T) {
+	var sawAuth bool
+	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "" {
+			sawAuth = true
+		}
+		_, _ = w.Write([]byte("artifact"))
+	}))
+	defer redirect.Close()
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/files/out-1/content" {
+			http.Redirect(w, r, redirect.URL, http.StatusFound)
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer api.Close()
+
+	body, err := minerUV1DownloadFile(context.Background(), minerUHTTPClient(), api.URL, "secret-token", "out-1")
+	if err != nil {
+		t.Fatalf("minerUV1DownloadFile: %v", err)
+	}
+	if body == nil || string(body) != "artifact" {
+		t.Fatalf("body = %q", body)
+	}
+	if sawAuth {
+		t.Fatal("Authorization must not be forwarded to a cross-origin redirect target")
 	}
 }
 
@@ -150,7 +190,7 @@ func TestParseMinerUV1OutputFilesUseFileID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
 	if err != nil {
 		t.Fatalf("ParseMinerUV1: %v", err)
 	}
@@ -176,7 +216,7 @@ func TestParseMinerUV1PartialJobIncludesFileError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	_, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	_, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
 	if err == nil {
 		t.Fatal("expected error for partial job without artifacts")
 	}
@@ -206,7 +246,7 @@ func TestParseMinerUV1ZipDownloadFailureFallsBackToMarkdown(t *testing.T) {
 	}))
 	defer server.Close()
 
-	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", "auto", 5*time.Second)
 	if err != nil {
 		t.Fatalf("ParseMinerUV1: %v", err)
 	}
