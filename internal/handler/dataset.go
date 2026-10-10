@@ -531,6 +531,7 @@ func (h *DatasetsHandler) GetIngestionSummary(c *gin.Context) {
 }
 
 // ListIngestionLogs handles GET /api/v1/datasets/:dataset_id/ingestions.
+// The type=sync query returns logs for connectors linked to the dataset.
 func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -562,6 +563,17 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 		pageSize = ps
 	}
 
+	ctx := c.Request.Context()
+	if strings.EqualFold(strings.TrimSpace(c.Query("type")), "sync") {
+		result, code, err := h.datasetsService.ListSyncLogs(ctx, datasetID, user.ID, page, pageSize)
+		if err != nil {
+			common.ErrorWithCode(c, code, err.Error())
+			return
+		}
+		common.SuccessWithData(c, result, "success")
+		return
+	}
+
 	orderby := c.DefaultQuery("orderby", "create_time")
 	// desc defaults to true and is only disabled by the literal value "false".
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
@@ -574,8 +586,6 @@ func (h *DatasetsHandler) ListIngestionLogs(c *gin.Context) {
 	// Exact per-document filter for the file-log list. Python's endpoint has no
 	// equivalent; the frontend only sends it on the Go backend.
 	documentID := c.Query("document_id")
-
-	ctx := c.Request.Context()
 
 	result, code, err := h.datasetsService.ListIngestionLogs(ctx, datasetID, user.ID, page, pageSize, terms, operationStatus, createDateFrom, createDateTo, logType, keywords, documentID)
 	if err != nil {

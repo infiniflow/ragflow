@@ -576,11 +576,26 @@ func (dao *ConnectorDAO) ListLogsByConnectorID(ctx context.Context, db *gorm.DB,
 // ListLogs lists sync logs for the given tenant IDs with pagination.
 // When datasetID is non-empty, only logs of that dataset are returned.
 func (dao *ConnectorDAO) ListLogs(ctx context.Context, db *gorm.DB, tenantIDs []string, datasetID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+	return dao.listLogs(ctx, db, tenantIDs, true, datasetID, offset, limit)
+}
+
+// ListLogsByDatasetID lists sync logs for connectors currently linked to a dataset.
+func (dao *ConnectorDAO) ListLogsByDatasetID(ctx context.Context, db *gorm.DB, datasetID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
+	if datasetID == "" {
+		return []*entity.ConnectorSyncLog{}, 0, nil
+	}
+	return dao.listLogs(ctx, db, nil, false, datasetID, offset, limit)
+}
+
+func (dao *ConnectorDAO) listLogs(ctx context.Context, db *gorm.DB, tenantIDs []string, filterTenant bool, datasetID string, offset, limit int) ([]*entity.ConnectorSyncLog, int64, error) {
 	baseQuery := db.WithContext(ctx).Model(&entity.SyncLogs{}).
 		Joins("JOIN connector ON sync_logs.connector_id = connector.id").
 		Joins("JOIN connector2kb ON sync_logs.connector_id = connector2kb.connector_id AND sync_logs.kb_id = connector2kb.kb_id").
-		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id").
-		Where("connector.tenant_id IN ?", tenantIDs)
+		Joins("JOIN knowledgebase ON sync_logs.kb_id = knowledgebase.id")
+
+	if filterTenant {
+		baseQuery = baseQuery.Where("connector.tenant_id IN ?", tenantIDs)
+	}
 
 	if datasetID != "" {
 		baseQuery = baseQuery.Where("sync_logs.kb_id = ?", datasetID)
