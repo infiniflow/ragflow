@@ -669,6 +669,7 @@ class TestOBClientCreateColumn:
     """Test OBClient._create_column type creation."""
 
     def test_create_column_array_string_length(self):
+        """Test array string column length preservation and default behavior."""
         from es_ob_migration.ob_client import OBClient
         from sqlalchemy import String
 
