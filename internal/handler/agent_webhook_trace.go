@@ -125,16 +125,16 @@ func decodeWebhookID(webhookID string, webhooks map[string]webhookTraceRun) (str
 }
 
 // collectWebhookTraceEvents returns only events newer than the supplied cursor.
+// Completion depends on the stored terminal event, even when it was already read.
 func collectWebhookTraceEvents(run webhookTraceRun, sinceTS float64, webhookID string) webhookTracePoll {
 	result := newWebhookTracePoll(&webhookID, sinceTS, false)
 	for _, event := range run.Events {
 		eventTS := webhookTraceEventTimestamp(event)
-		if eventTS <= sinceTS {
-			continue
-		}
-		result.Events = append(result.Events, event)
-		if eventTS > result.NextSinceTS {
-			result.NextSinceTS = eventTS
+		if eventTS > sinceTS {
+			result.Events = append(result.Events, event)
+			if eventTS > result.NextSinceTS {
+				result.NextSinceTS = eventTS
+			}
 		}
 		if eventType, _ := event["event"].(string); eventType == "finished" {
 			result.Finished = true
