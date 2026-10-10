@@ -155,11 +155,12 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 		return nil, "", nil, 0, nil
 	}
 
-	var gotRef string
-	var gotType entity.ModelType
-	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, modelType entity.ModelType, ref string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		gotRef = ref
-		gotType = modelType
+	// The VLM model resolver must not be consulted at all: with enhancement off
+	// nothing is permitted to call a vision model, whichever model parse_method
+	// happens to name.
+	resolveModelConfigCalled := false
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType, _ string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolveModelConfigCalled = true
 		return &imagePromptCaptureDriver{}, "custom-vlm", &modelModule.APIConfig{}, 0, nil
 	}
 
@@ -174,7 +175,7 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		false, "",
+		false, visionSettings{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -182,8 +183,8 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 	if !dispatched {
 		t.Fatal("expected dispatched=true for VISUAL file")
 	}
-	if gotRef != "" || gotType != "" {
-		t.Errorf("model resolution happened with enhancement off: %q / %v", gotRef, gotType)
+	if resolveModelConfigCalled {
+		t.Error("model resolution happened with enhancement off")
 	}
 	if tenantResolverCalled {
 		t.Error("tenant default resolver must not be called when enhancement is off")
@@ -220,7 +221,7 @@ func TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision(t *testing.T) {
 
 	setups := defaultSetups()
 	setups["image"]["parse_method"] = "ocr"
-	res, _, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, "")
+	res, _, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
 	}
