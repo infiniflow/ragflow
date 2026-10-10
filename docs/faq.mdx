@@ -144,7 +144,7 @@ Check that the Go API and Admin services started, then review the RAGFlow contai
 
 ![anomaly](https://github.com/infiniflow/ragflow/assets/93570324/beb7ad10-92e4-4a58-8886-bfb7cbd09e5d)
 
-You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu` from the repository root). The Go services log these startup messages:
+You cannot log in until the services are initialized. Review the RAGFlow container logs (`docker logs -f ragflow-cpu` from the repository root). The Go services log these startup messages:
 
 ```text
 Starting api server: ...
@@ -181,7 +181,7 @@ Click the red cross beside the 'parsing status' bar, then restart the parsing pr
 1. Check the RAGFlow container logs for API, admin, and ingestor startup errors:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
+   docker logs -f ragflow-cpu
    ```
 
 
@@ -220,7 +220,7 @@ From the repository root, follow the Go service logs written to the mounted log 
 tail -f docker/ragflow-logs/*.log
 ```
 
-To view the container's combined output, use `docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu`.
+To view the container's combined output, use `docker logs -f ragflow-cpu`.
 
 ---
 
@@ -229,13 +229,13 @@ To view the container's combined output, use `docker compose --env-file docker/.
 1. From the repository root, check the Go deployment's containers:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+   docker ps
    ```
 
    Review the RAGFlow service logs:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml logs -f ragflow-cpu
+   docker logs -f ragflow-cpu
    ```
 
    Check the `nats` and selected document engine services in the same Compose project when diagnosing ingestion or indexing.
@@ -251,7 +251,7 @@ A running container does not necessarily mean that the service inside it is heal
 1. Check the status of the Elasticsearch Docker container:
 
    ```bash
-   docker compose --env-file docker/.env -f docker/docker-compose.yml ps es01
+   docker ps |grep es01
    ```
 
    A healthy Elasticsearch container should report `healthy`. The default Go Compose deployment exposes Elasticsearch on host port `1200`, while the container listens on port `9200`.
@@ -262,58 +262,13 @@ A running container does not necessarily mean that the service inside it is heal
    The status of a Docker container does not necessarily reflect the status of the service inside it. A service can be unhealthy even when its container is up and running. Possible causes include network failures, incorrect ports, and DNS or configuration errors.
    :::
 
-3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144. On Linux, update **/etc/sysctl.conf** to keep the change permanent. For macOS, see the following FAQ.
+3. If your container keeps restarting, ensure `vm.max_map_count` >= 262144. On Linux, update **/etc/sysctl.conf** to keep the change permanent.
 
 ---
 
 ### Why does the Elasticsearch container fail to start with `Elasticsearch did not exit normally`?
 
 On Linux, an insufficient `vm.max_map_count` value is a common cause. Check the Elasticsearch logs first. If they report that `vm.max_map_count` is too low, set it to at least 262144 and add the setting to **/etc/sysctl.conf** so it persists after a reboot. If the logs report a different error, check memory, disk space, permissions, and the Elasticsearch data directory instead.
-
----
-
-### How do I configure `vm.max_map_count` on macOS?
-
-`vm.max_map_count` is a Linux kernel parameter required only by Elasticsearch. It does not affect RAGFlow deployments that use Infinity as the document engine.
-
-On Docker Desktop, set the value in its Linux virtual machine:
-
-```bash
-docker run --rm --privileged alpine sysctl -w vm.max_map_count=262144
-```
-
-This setting is temporary and is reset when Docker Desktop restarts.
-
-On Colima, check the current value inside its virtual machine:
-
-```bash
-colima ssh -- sysctl vm.max_map_count
-```
-
-To set the value temporarily:
-
-```bash
-colima ssh -- sudo sysctl -w vm.max_map_count=262144
-```
-
-For a persistent setting, run `colima start --edit` and add a provision script to `colima.yaml`:
-
-```yaml
-provision:
-  - mode: system
-    script: |
-      #!/bin/bash
-      sysctl -w vm.max_map_count=262144
-```
-
-Then restart Colima:
-
-```bash
-colima stop
-colima start
-```
-
-*Contributed by [@helloxjade](https://github.com/helloxjade).*
 
 ---
 
@@ -433,7 +388,7 @@ Existing document indexes are not transferred to Infinity automatically. Back up
 
    ```bash
    docker compose --env-file docker/.env -f docker/docker-compose.yml up -d
-   docker compose --env-file docker/.env -f docker/docker-compose.yml ps
+   docker ps
    ```
 
 4. Reprocess or reindex the documents so their searchable content is written to Infinity. Verify retrieval before retiring the old Elasticsearch data.
@@ -617,6 +572,13 @@ DOCLING_API_KEY=your-api-key
 ```
 
 The Go parser sends PDFs to Docling Serve using `/v1/convert/source` and also tries `/v1alpha/convert/source` for older servers. It sends `DOCLING_API_KEY` as a Bearer token. If neither the parser configuration nor the environment variable supplies a URL, Docling parsing fails with a configuration error. Leave the API key unset when the service does not require authentication.
+
+To skip OCR on PDFs that already contain text, set `docling_do_ocr` to `false` in the parser configuration or provide `DOCLING_DO_OCR=false`. Choose the PDF backend with `docling_pdf_backend` or `DOCLING_PDF_BACKEND`. RAGFlow passes these to Docling Serve as `do_ocr` and `pdf_backend` in every convert request. Leave them unset to keep Docling Serve's defaults.
+
+```bash
+DOCLING_DO_OCR=false
+DOCLING_PDF_BACKEND=pypdfium2
+```
 
 ---
 

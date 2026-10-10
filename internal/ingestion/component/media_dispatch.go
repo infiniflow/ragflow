@@ -86,6 +86,7 @@ func maybeDispatchImage(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 	enableVisionEnhancement bool,
+	visionModelID string,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
 		return parser.ParseResult{}, false, nil
@@ -96,6 +97,15 @@ func maybeDispatchImage(
 	}
 	method := getStringOr(setup, "parse_method", "")
 	useOCR := method == "" || strings.EqualFold(method, "ocr")
+	// A model named as parse_method is an explicit VLM request (mirrors
+	// Python rag/flow/parser/parser.py:_image: "ocr" runs OCR, anything
+	// else is the vision model). It must run the description even when the
+	// global enhancement switch is off, otherwise the image item carries no
+	// text and the Tokenizer's retrievability filter drops the chunk.
+	modelFromParseMethod := ""
+	if !useOCR {
+		modelFromParseMethod = method
+	}
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
@@ -128,8 +138,12 @@ func maybeDispatchImage(
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement {
-		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs)
+	if enableVisionEnhancement || modelFromParseMethod != "" {
+		modelRef := visionModelID
+		if modelFromParseMethod != "" {
+			modelRef = modelFromParseMethod
+		}
+		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, modelRef)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
 			appendItemText(parsed.JSON[0], description)
@@ -191,6 +205,7 @@ func describeImage(
 	tenantID string,
 	setup schema.ParserSetup,
 	inputs map[string]any,
+	modelRef string,
 ) (string, []string) {
 	// --- Optional VLM description ---
 	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
@@ -198,8 +213,7 @@ func describeImage(
 		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
 
-	// Use the configured image VLM or the tenant default.
-	modelRef := configuredMediaModelID(setup, "image")
+	// Use the selected description model or the tenant default.
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -277,7 +291,7 @@ func maybeDispatchAudio(
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	modelRef := configuredMediaModelID(setup, "audio")
+	modelRef := configuredAudioModelID(setup)
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig

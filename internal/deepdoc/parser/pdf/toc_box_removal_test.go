@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -187,5 +188,122 @@ func TestParseRaw_TOCAndHeaderFooterBothApply(t *testing.T) {
 	}
 	if n := sectionsOnPage(result, 4); n == 0 {
 		t.Fatal("body page 4 must survive both passes")
+	}
+}
+
+// rangeFooterEngine builds a 100-page document whose parsed range (pages 31-41,
+// 1-based) carries a tight bare-number footer: Top is inside the sequence
+// track's 80%+ band but above the 86% footer zone, so only the sequence track
+// can remove it. DlaScale 3 turns a 1000px render into a 333pt page, putting
+// the footer at 280pt.
+func rangeFooterEngine() *MockEngine {
+	const footerTop = 280.0
+	chars := map[int][]pdf.TextChar{}
+	for pg := 30; pg <= 40; pg++ {
+		chars[pg] = []pdf.TextChar{
+			{X0: 50, X1: 550, Top: 100, Bottom: 140, Text: "body text", PageNumber: pg},
+			{X0: 280, X1: 340, Top: footerTop, Bottom: footerTop + 12, Text: strconv.Itoa(pg + 1), PageNumber: pg},
+		}
+	}
+	return &MockEngine{NumPages: 100, RenderW: 1000, RenderH: 1000, Chars: chars}
+}
+
+// TestParseRaw_PageRangeHeaderFooterUsesDocumentPageCount pins that the
+// page-number sequence track judges plausibility against the document's full
+// page count, not the parsed subset. Before the fix len(pageHeights)==11 gave
+// pageNumberCeiling==20, so the 31..41 footers were rejected as implausible and
+// survived; with the engine page count (100) the +1 run is recognised.
+func TestParseRaw_PageRangeHeaderFooterUsesDocumentPageCount(t *testing.T) {
+	cfg := pdf.DefaultParserConfig()
+	cfg.RemoveHeaderFooter = true
+	cfg.Pages = [][]int{{31, 41}}
+
+	result, err := NewParser(cfg).ParseRaw(t.Context(), rangeFooterEngine(), &MockDocAnalyzer{Healthy: true})
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if result.Metrics.BoxesHeaderFooterRemoved == 0 {
+		t.Fatal("the tight page-number footer run must be removed when totalPages is the document size")
+	}
+	for _, s := range result.Sections {
+		if strings.ContainsAny(s.Text, "0123456789") {
+			t.Fatalf("a page number survived into section %q", s.Text)
+		}
+	}
+}
+
+// rangeTOCEngine builds a 20-page bookmarkless document whose TOC sits on pages
+// 3-7 (1-based), i.e. 0-based 2-6: each TOC page carries a heading plus chapter
+// markers and a page number, the layout the box-shape signal removes. The other
+// pages carry prose, which no signal may drop.
+func rangeTOCEngine() *MockEngine {
+	line := func(pg int, top float64, text string) pdf.TextChar {
+		return pdf.TextChar{X0: 50, X1: 550, Top: top, Bottom: top + 12, Text: text, PageNumber: pg}
+	}
+	const body = "This paragraph of body text is comfortably longer than sixty runes, so the page it sits on counts as prose."
+	chars := map[int][]pdf.TextChar{}
+	for pg := 0; pg < 20; pg++ {
+		if pg >= 2 && pg <= 6 {
+			chars[pg] = []pdf.TextChar{
+				line(pg, 100, "目录"),
+				line(pg, 160, "第一章 道可道"),
+				line(pg, 190, "第二章 天下皆知"),
+				line(pg, 220, "第三章 不尚贤"),
+				line(pg, 250, "1"),
+			}
+			continue
+		}
+		chars[pg] = []pdf.TextChar{
+			line(pg, 300, body),
+			line(pg, 330, body),
+			line(pg, 360, body),
+		}
+	}
+	return &MockEngine{NumPages: 20, RenderW: 1000, RenderH: 1000, Chars: chars}
+}
+
+// TestParseRaw_PageRangeRemoveTOCDropsTOC pins that a no-bookmark TOC is removed
+// when the selected page range contains it, even though the range does not start
+// at the document's first page. Before the fix the box-shape signal was gated on
+// pages[0]==0, so page 3's range start disabled it and the TOC survived.
+func TestParseRaw_PageRangeRemoveTOCDropsTOC(t *testing.T) {
+	cfg := pdf.DefaultParserConfig()
+	cfg.RemoveTOC = true
+	cfg.Pages = [][]int{{3, 7}}
+
+	result, err := NewParser(cfg).ParseRaw(t.Context(), rangeTOCEngine(), &MockDocAnalyzer{Healthy: true})
+	if err != nil {
+		t.Fatalf("ParseRaw: %v", err)
+	}
+	if result.Metrics.BoxesTOCRemoved == 0 {
+		t.Fatal("a no-bookmark TOC inside the selected range must be removed")
+	}
+	for _, s := range result.Sections {
+		if strings.Contains(s.Text, "目录") || strings.Contains(s.Text, "第一章") {
+			t.Fatalf("TOC text survived into section %q", s.Text)
+		}
+	}
+
+	// Control: a range that does not contain the TOC removes nothing.
+	outside := pdf.DefaultParserConfig()
+	outside.RemoveTOC = true
+	outside.Pages = [][]int{{8, 10}}
+	got, err := NewParser(outside).ParseRaw(t.Context(), rangeTOCEngine(), &MockDocAnalyzer{Healthy: true})
+	if err != nil {
+		t.Fatalf("ParseRaw (outside range): %v", err)
+	}
+	if got.Metrics.BoxesTOCRemoved != 0 {
+		t.Fatalf("a range excluding the TOC must remove nothing, removed %d", got.Metrics.BoxesTOCRemoved)
+	}
+
+	// Control: the option off keeps the TOC page.
+	off := pdf.DefaultParserConfig()
+	off.Pages = [][]int{{3, 7}}
+	kept, err := NewParser(off).ParseRaw(t.Context(), rangeTOCEngine(), &MockDocAnalyzer{Healthy: true})
+	if err != nil {
+		t.Fatalf("ParseRaw (option off): %v", err)
+	}
+	if kept.Metrics.BoxesTOCRemoved != 0 {
+		t.Fatalf("RemoveTOC is off, got %d boxes removed", kept.Metrics.BoxesTOCRemoved)
 	}
 }

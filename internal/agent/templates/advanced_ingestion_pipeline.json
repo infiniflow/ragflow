@@ -14,160 +14,81 @@
     "canvas_category": "dataflow_canvas",
     "dsl": {
         "components": {
-            "Extractor:CurlyEmusJam": {
+            "Extractor:LazyCarpetsKiss": {
                 "downstream": [
                     "Tokenizer:WittySunsListen"
                 ],
                 "obj": {
                     "component_name": "Extractor",
                     "params": {
-                        "field_name": "metadata",
-                        "frequencyPenaltyEnabled": true,
-                        "frequency_penalty": 0.7,
                         "llm_id": "",
-                        "maxTokensEnabled": false,
+                        "temperature": 0.1,
+                        "top_p": 0.3,
+                        "frequency_penalty": 0.7,
+                        "presence_penalty": 0.4,
                         "max_tokens": 256,
+                        "temperatureEnabled": true,
+                        "topPEnabled": true,
+                        "presencePenaltyEnabled": true,
+                        "frequencyPenaltyEnabled": true,
+                        "maxTokensEnabled": false,
+                        "keywords": {
+                            "top_n": 5,
+                            "system_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top {{ topn }} important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY."
+                        },
+                        "questions": {
+                            "top_n": 3,
+                            "system_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose {{ topn }} questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top {{ topn }} important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY."
+                        },
+                        "tags": {
+                            "top_n": 0,
+                            "tag_file_id": ""
+                        },
+                        "summary": {
+                            "enabled": true,
+                            "system_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff."
+                        },
+                        "metadata": {
+                            "enabled": true,
+                            "metadata": [
+                                {
+                                    "key": "names",
+                                    "type": "string",
+                                    "description": "Names of people, organizations, or products mentioned in the content"
+                                },
+                                {
+                                    "key": "dates",
+                                    "type": "string",
+                                    "description": "Important dates or time periods mentioned in the content"
+                                },
+                                {
+                                    "key": "locations",
+                                    "type": "string",
+                                    "description": "Geographic locations mentioned in the content"
+                                },
+                                {
+                                    "key": "events",
+                                    "type": "string",
+                                    "description": "Key events described in the content"
+                                },
+                                {
+                                    "key": "key_facts",
+                                    "type": "string",
+                                    "description": "Important facts or numerical data stated in the content"
+                                }
+                            ],
+                            "built_in_metadata": []
+                        },
                         "outputs": {
                             "chunks": {
                                 "type": "Array<Object>",
                                 "value": []
                             }
-                        },
-                        "presencePenaltyEnabled": true,
-                        "presence_penalty": 0.4,
-                        "prompts": [
-                            {
-                                "content": "Content:\n{Extractor:SmartWindowsHammer@chunks}",
-                                "role": "user"
-                            }
-                        ],
-                        "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
-                        "temperature": 0.1,
-                        "temperatureEnabled": true,
-                        "tenant_llm_id": null,
-                        "topPEnabled": true,
-                        "top_p": 0.3
-                    }
-                },
-                "upstream": [
-                    "Extractor:SmartWindowsHammer"
-                ]
-            },
-            "Extractor:LazyCarpetsKiss": {
-                "downstream": [
-                    "Extractor:LovelyPearsRest"
-                ],
-                "obj": {
-                    "component_name": "Extractor",
-                    "params": {
-                        "field_name": "summary",
-                        "frequencyPenaltyEnabled": true,
-                        "frequency_penalty": 0.7,
-                        "llm_id": "",
-                        "maxTokensEnabled": false,
-                        "max_tokens": 256,
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "presencePenaltyEnabled": true,
-                        "presence_penalty": 0.4,
-                        "prompts": [
-                            {
-                                "content": "Text to Summarize:\n{TokenChunker:BumpyStarsPress@chunks}",
-                                "role": "user"
-                            }
-                        ],
-                        "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
-                        "temperature": 0.1,
-                        "temperatureEnabled": true,
-                        "tenant_llm_id": null,
-                        "topPEnabled": true,
-                        "top_p": 0.3
+                        }
                     }
                 },
                 "upstream": [
                     "TokenChunker:BumpyStarsPress"
-                ]
-            },
-            "Extractor:LovelyPearsRest": {
-                "downstream": [
-                    "Extractor:SmartWindowsHammer"
-                ],
-                "obj": {
-                    "component_name": "Extractor",
-                    "params": {
-                        "field_name": "keywords",
-                        "frequencyPenaltyEnabled": true,
-                        "frequency_penalty": 0.7,
-                        "llm_id": "",
-                        "maxTokensEnabled": false,
-                        "max_tokens": 256,
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "presencePenaltyEnabled": true,
-                        "presence_penalty": 0.4,
-                        "prompts": [
-                            {
-                                "content": "Text Content\n{Extractor:LazyCarpetsKiss@chunks}",
-                                "role": "user"
-                            }
-                        ],
-                        "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
-                        "temperature": 0.1,
-                        "temperatureEnabled": true,
-                        "tenant_llm_id": null,
-                        "topPEnabled": true,
-                        "top_p": 0.3
-                    }
-                },
-                "upstream": [
-                    "Extractor:LazyCarpetsKiss"
-                ]
-            },
-            "Extractor:SmartWindowsHammer": {
-                "downstream": [
-                    "Extractor:CurlyEmusJam"
-                ],
-                "obj": {
-                    "component_name": "Extractor",
-                    "params": {
-                        "field_name": "questions",
-                        "frequencyPenaltyEnabled": true,
-                        "frequency_penalty": 0.7,
-                        "llm_id": "",
-                        "maxTokensEnabled": false,
-                        "max_tokens": 256,
-                        "outputs": {
-                            "chunks": {
-                                "type": "Array<Object>",
-                                "value": []
-                            }
-                        },
-                        "presencePenaltyEnabled": true,
-                        "presence_penalty": 0.4,
-                        "prompts": [
-                            {
-                                "content": "Text Content\n{Extractor:LovelyPearsRest@chunks}",
-                                "role": "user"
-                            }
-                        ],
-                        "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
-                        "temperature": 0.1,
-                        "temperatureEnabled": true,
-                        "tenant_llm_id": null,
-                        "topPEnabled": true,
-                        "top_p": 0.3
-                    }
-                },
-                "upstream": [
-                    "Extractor:LovelyPearsRest"
                 ]
             },
             "File": {
@@ -368,7 +289,7 @@
                     }
                 },
                 "upstream": [
-                    "Extractor:CurlyEmusJam"
+                    "Extractor:LazyCarpetsKiss"
                 ]
             }
         },
@@ -402,40 +323,8 @@
                     "data": {
                         "isHovered": false
                     },
-                    "id": "xy-edge__Extractor:LazyCarpetsKissstart-Extractor:LovelyPearsRestend",
+                    "id": "xy-edge__Extractor:LazyCarpetsKissstart-Tokenizer:WittySunsListenend",
                     "source": "Extractor:LazyCarpetsKiss",
-                    "sourceHandle": "start",
-                    "target": "Extractor:LovelyPearsRest",
-                    "targetHandle": "end"
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__Extractor:LovelyPearsReststart-Extractor:SmartWindowsHammerend",
-                    "selected": false,
-                    "source": "Extractor:LovelyPearsRest",
-                    "sourceHandle": "start",
-                    "target": "Extractor:SmartWindowsHammer",
-                    "targetHandle": "end"
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__Extractor:SmartWindowsHammerstart-Extractor:CurlyEmusJamend",
-                    "selected": false,
-                    "source": "Extractor:SmartWindowsHammer",
-                    "sourceHandle": "start",
-                    "target": "Extractor:CurlyEmusJam",
-                    "targetHandle": "end"
-                },
-                {
-                    "data": {
-                        "isHovered": false
-                    },
-                    "id": "xy-edge__Extractor:CurlyEmusJamstart-Tokenizer:WittySunsListenend",
-                    "source": "Extractor:CurlyEmusJam",
                     "sourceHandle": "start",
                     "target": "Tokenizer:WittySunsListen",
                     "targetHandle": "end"
@@ -611,30 +500,73 @@
                 {
                     "data": {
                         "form": {
-                            "field_name": "summary",
-                            "frequencyPenaltyEnabled": true,
-                            "frequency_penalty": 0.7,
                             "llm_id": "",
-                            "maxTokensEnabled": false,
+                            "temperature": 0.1,
+                            "top_p": 0.3,
+                            "frequency_penalty": 0.7,
+                            "presence_penalty": 0.4,
                             "max_tokens": 256,
+                            "temperatureEnabled": true,
+                            "topPEnabled": true,
+                            "presencePenaltyEnabled": true,
+                            "frequencyPenaltyEnabled": true,
+                            "maxTokensEnabled": false,
+                            "keywords": {
+                                "top_n": 5,
+                                "system_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top {{ topn }} important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY."
+                            },
+                            "questions": {
+                                "top_n": 3,
+                                "system_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose {{ topn }} questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top {{ topn }} important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY."
+                            },
+                            "tags": {
+                                "top_n": 0,
+                                "tag_file_id": ""
+                            },
+                            "summary": {
+                                "enabled": true,
+                                "system_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff."
+                            },
+                            "metadata": {
+                                "enabled": true,
+                                "metadata": [
+                                    {
+                                        "key": "names",
+                                        "type": "string",
+                                        "description": "Names of people, organizations, or products mentioned in the content"
+                                    },
+                                    {
+                                        "key": "dates",
+                                        "type": "string",
+                                        "description": "Important dates or time periods mentioned in the content"
+                                    },
+                                    {
+                                        "key": "locations",
+                                        "type": "string",
+                                        "description": "Geographic locations mentioned in the content"
+                                    },
+                                    {
+                                        "key": "events",
+                                        "type": "string",
+                                        "description": "Key events described in the content"
+                                    },
+                                    {
+                                        "key": "key_facts",
+                                        "type": "string",
+                                        "description": "Important facts or numerical data stated in the content"
+                                    }
+                                ],
+                                "built_in_metadata": []
+                            },
                             "outputs": {
                                 "chunks": {
                                     "type": "Array<Object>",
                                     "value": []
                                 }
-                            },
-                            "presencePenaltyEnabled": true,
-                            "presence_penalty": 0.4,
-                            "prompts": "Text to Summarize:\n{TokenChunker:BumpyStarsPress@chunks}",
-                            "sys_prompt": "Act as a precise summarizer. Your task is to create a summary of the provided content that is both concise and faithful to the original.\n\nKey Instructions:\n1. Accuracy: Strictly base the summary on the information given. Do not introduce any new facts, conclusions, or interpretations that are not explicitly stated.\n2. Language: Write the summary in the same language as the source text.\n3. Objectivity: Present the key points without bias, preserving the original intent and tone of the content. Do not editorialize.\n4. Conciseness: Focus on the most important ideas, omitting minor details and fluff.",
-                            "temperature": 0.1,
-                            "temperatureEnabled": true,
-                            "tenant_llm_id": null,
-                            "topPEnabled": true,
-                            "top_p": 0.3
+                            }
                         },
                         "label": "Extractor",
-                        "name": "Summarization"
+                        "name": "Auto Extract"
                     },
                     "id": "Extractor:LazyCarpetsKiss",
                     "measured": {
@@ -646,135 +578,6 @@
                         "y": 195.39629819663406
                     },
                     "selected": false,
-                    "sourcePosition": "right",
-                    "targetPosition": "left",
-                    "type": "contextNode"
-                },
-                {
-                    "data": {
-                        "form": {
-                            "field_name": "keywords",
-                            "frequencyPenaltyEnabled": true,
-                            "frequency_penalty": 0.7,
-                            "llm_id": "",
-                            "maxTokensEnabled": false,
-                            "max_tokens": 256,
-                            "outputs": {
-                                "chunks": {
-                                    "type": "Array<Object>",
-                                    "value": []
-                                }
-                            },
-                            "presencePenaltyEnabled": true,
-                            "presence_penalty": 0.4,
-                            "prompts": "Text Content\n{Extractor:LazyCarpetsKiss@chunks}",
-                            "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nExtract the most important keywords/phrases of a given piece of text content.\n\nRequirements\n- Summarize the text content, and give the top 5 important keywords/phrases.\n- The keywords MUST be in the same language as the given piece of text content.\n- The keywords are delimited by ENGLISH COMMA.\n- Output keywords ONLY.",
-                            "temperature": 0.1,
-                            "temperatureEnabled": true,
-                            "tenant_llm_id": null,
-                            "topPEnabled": true,
-                            "top_p": 0.3
-                        },
-                        "label": "Extractor",
-                        "name": "Auto Keyword"
-                    },
-                    "dragging": false,
-                    "id": "Extractor:LovelyPearsRest",
-                    "measured": {
-                        "height": 90,
-                        "width": 200
-                    },
-                    "position": {
-                        "x": 983.5410692821999,
-                        "y": 301.1557383781162
-                    },
-                    "selected": false,
-                    "sourcePosition": "right",
-                    "targetPosition": "left",
-                    "type": "contextNode"
-                },
-                {
-                    "data": {
-                        "form": {
-                            "field_name": "questions",
-                            "frequencyPenaltyEnabled": true,
-                            "frequency_penalty": 0.7,
-                            "llm_id": "",
-                            "maxTokensEnabled": false,
-                            "max_tokens": 256,
-                            "outputs": {
-                                "chunks": {
-                                    "type": "Array<Object>",
-                                    "value": []
-                                }
-                            },
-                            "presencePenaltyEnabled": true,
-                            "presence_penalty": 0.4,
-                            "prompts": "Text Content\n{Extractor:LovelyPearsRest@chunks}",
-                            "sys_prompt": "Role\nYou are a text analyzer.\n\nTask\nPropose 3 questions about a given piece of text content.\n\nRequirements\n- Understand and summarize the text content, and propose the top 3 important questions.\n- The questions SHOULD NOT have overlapping meanings.\n- The questions SHOULD cover the main content of the text as much as possible.\n- The questions MUST be in the same language as the given piece of text content.\n- One question per line.\n- Output questions ONLY.",
-                            "temperature": 0.1,
-                            "temperatureEnabled": true,
-                            "tenant_llm_id": null,
-                            "topPEnabled": true,
-                            "top_p": 0.3
-                        },
-                        "label": "Extractor",
-                        "name": "Auto Question"
-                    },
-                    "dragging": false,
-                    "id": "Extractor:SmartWindowsHammer",
-                    "measured": {
-                        "height": 90,
-                        "width": 200
-                    },
-                    "position": {
-                        "x": 1021.1009769800036,
-                        "y": 421.67760363913044
-                    },
-                    "selected": false,
-                    "sourcePosition": "right",
-                    "targetPosition": "left",
-                    "type": "contextNode"
-                },
-                {
-                    "data": {
-                        "form": {
-                            "field_name": "metadata",
-                            "frequencyPenaltyEnabled": true,
-                            "frequency_penalty": 0.7,
-                            "llm_id": "",
-                            "maxTokensEnabled": false,
-                            "max_tokens": 256,
-                            "outputs": {
-                                "chunks": {
-                                    "type": "Array<Object>",
-                                    "value": []
-                                }
-                            },
-                            "presencePenaltyEnabled": true,
-                            "presence_penalty": 0.4,
-                            "prompts": "Content:\n{Extractor:SmartWindowsHammer@chunks}",
-                            "sys_prompt": "Extract important structured information from the given content. Output ONLY a valid JSON string with no additional text. If no important structured information is found, output an empty JSON object: {}.\n\nImportant structured information may include: names, dates, locations, events, key facts, numerical data, or other extractable entities.",
-                            "temperature": 0.1,
-                            "temperatureEnabled": true,
-                            "tenant_llm_id": null,
-                            "topPEnabled": true,
-                            "top_p": 0.3
-                        },
-                        "label": "Extractor",
-                        "name": "Auto Metadata"
-                    },
-                    "dragging": false,
-                    "id": "Extractor:CurlyEmusJam",
-                    "measured": {
-                        "height": 90,
-                        "width": 200
-                    },
-                    "position": {
-                        "x": 1065.7115140232393,
-                        "y": 527.4370438206126
-                    },
-                    "selected": true,
                     "sourcePosition": "right",
                     "targetPosition": "left",
                     "type": "contextNode"

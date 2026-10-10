@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
@@ -281,8 +282,8 @@ func containsFold(s, lowerKeyword string) bool {
 }
 
 // WikiPageDetail is the full wiki page payload. The content field is exposed as
-// content_md_rendered to match the frontend IArtifactPage contract (and Python's
-// get_wiki_page), which renders it directly.
+// content_md_rendered to match the frontend IArtifactPage contract, which
+// renders the page's Markdown body directly.
 type WikiPageDetail struct {
 	Slug           string   `json:"slug"`
 	Title          string   `json:"title"`
@@ -311,7 +312,7 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		"available_int": 1, // merged dataset-level page, not the per-doc source row
 	}
 	chunks, _, err := s.searchCompiled(ctx, tenantID, datasetID, filter,
-		[]string{"slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd", "md_with_weight",
+		[]string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "topic_kwd",
 			"content_with_weight", "summary_with_weight", "entity_names_kwd", "outlinks_kwd",
 			"related_kb_pages_kwd", "source_chunk_ids", "source_doc_ids"},
 		0, 1, nil)
@@ -322,11 +323,9 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		return nil, nil
 	}
 	c := chunks[0]
-	// Python stores the page body in md_with_weight (incremental writer), falling
-	// back to content_with_weight for legacy rows; mirror that here.
-	content := firstStringValue(c["md_with_weight"])
-	if content == "" {
-		content = firstStringValue(c["content_with_weight"])
+	content, err := loadWikiPageBody(ctx, engine.Get(), wikiIndexName(tenantID), datasetID, c)
+	if err != nil {
+		return nil, err
 	}
 	// slug_kwd is the full "<page_type>/<slug>" form; expose the bare slug so a
 	// client can pass it straight back to GetWikiPage/UpdateWikiPage without the
@@ -350,6 +349,18 @@ func (s *DatasetArtifactService) GetWikiPage(ctx context.Context, tenantID, data
 		SourceDocIDs:   toStringSlice(c["source_doc_ids"]),
 	}
 	return detail, nil
+}
+
+func loadWikiPageBody(ctx context.Context, docEngine engine.DocEngine, indexName, datasetID string, row map[string]interface{}) (string, error) {
+	if content := types.WikiPageContent(row); content != "" {
+		return content, nil
+	}
+	raw, err := docEngine.GetChunk(ctx, indexName, firstStringValue(row["id"]), []string{datasetID})
+	if err != nil {
+		return "", err
+	}
+	stored, _ := raw.(map[string]interface{})
+	return types.WikiPageContent(stored), nil
 }
 
 // UpdateWikiPage performs a partial field update of a wiki page's content,
@@ -382,9 +393,6 @@ func (s *DatasetArtifactService) UpdateWikiPage(ctx context.Context, tenantID, d
 	}
 	update := map[string]interface{}{}
 	if contentMd != "" {
-		// GetWikiPage prefers md_with_weight and falls back to content_with_weight,
-		// so write both to keep the edit readable regardless of the row's writer.
-		update["md_with_weight"] = contentMd
 		update["content_with_weight"] = contentMd
 	}
 	if title != "" {
@@ -605,11 +613,22 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	var matchExprs []interface{}
 	var orderBy *types.OrderByExpr
 	if keywords != "" {
+		// The token columns (title_tks / content_ltks / *_sm_ltks) are
+		// whitespace-analyzed and hold RAGFlow's pre-tokenized tokens
+		// (space-joined). ES analyzes the query with the whitespace analyzer too,
+		// so a raw multi-token keyword (e.g. "桃园三结义") never equals a stored
+		// token and silently matches nothing. Tokenize the query like the other
+		// lexical callers (see navKeywordExpressions); the raw input stays on
+		// original_query for engines that analyze the query themselves.
+		originalQuery := keywords
+		if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+			keywords = tokenized
+		}
 		matchExprs = []interface{}{&types.MatchTextExpr{
 			Fields:       []string{"title_tks^10", "title_sm_tks^5", "content_ltks^2", "content_sm_ltks"},
 			MatchingText: keywords,
 			TopN:         limit,
-			ExtraOptions: map[string]interface{}{"original_query": keywords},
+			ExtraOptions: map[string]interface{}{"original_query": originalQuery},
 		}}
 	} else {
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")

@@ -64,7 +64,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -388,7 +387,7 @@ func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entit
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return utility.GenerateUUID()
+	return common.GenerateUUID()
 }
 
 // publishMemoryTaskWakeup publishes only the durable task identity. Workers

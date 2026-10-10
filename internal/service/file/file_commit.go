@@ -28,7 +28,6 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 	"sync"
@@ -72,7 +71,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 	}
 
 	// 3. Create commit record
-	commitID := utility.GenerateUUID()
+	commitID := common.GenerateUUID()
 	nowMs := time.Now().UnixMilli()
 
 	commit := &entity.FileCommit{
@@ -112,7 +111,7 @@ func (s *FileCommitService) CreateCommit(ctx context.Context, folderID, authorID
 
 		for _, change := range changes {
 			item := &entity.FileCommitItem{
-				ID:        utility.GenerateUUID(),
+				ID:        common.GenerateUUID(),
 				CommitID:  commitID,
 				FileID:    change.FileID,
 				Operation: change.Operation,
@@ -280,7 +279,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	// Parent chain: previous commit that touched the same page file key.
 	fileID := wikiFileID(in.DatasetID, in.PageType, in.Slug)
 
-	commitID := utility.GenerateUUID()
+	commitID := common.GenerateUUID()
 
 	diffText := unifiedDiff(in.OldContent, in.NewContent)
 	if diffText == "" {
@@ -295,7 +294,7 @@ func (s *FileCommitService) RecordPageEdit(ctx context.Context, in PageEditCommi
 	}
 
 	item := &entity.FileCommitItem{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		CommitID:    commitID,
 		FileID:      fileID,
 		Operation:   operation,
@@ -707,7 +706,7 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 		IndexNames:   []string{wikiIndexName(tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"md_with_weight", "content_with_weight"},
+		SelectFields: []string{"id", "content_with_weight"},
 		Filter: map[string]interface{}{
 			"type_kwd":      []string{"wiki_page"},
 			"page_type_kwd": []string{pageType},
@@ -715,14 +714,24 @@ func (s *FileCommitService) readCurrentPageContent(ctx context.Context, tenantID
 			"available_int": 1,
 		},
 	})
-	if err != nil || result == nil || len(result.Chunks) == 0 {
+	if err != nil {
+		common.Warn("failed to read current Wiki page content", zap.Error(err))
 		return ""
 	}
-	content := pageContentValue(result.Chunks[0]["md_with_weight"])
-	if content == "" {
-		content = pageContentValue(result.Chunks[0]["content_with_weight"])
+	if result == nil || len(result.Chunks) == 0 {
+		return ""
 	}
-	return content
+	row := result.Chunks[0]
+	if content := enginetypes.WikiPageContent(row); content != "" {
+		return content
+	}
+	raw, err := docEngine.GetChunk(ctx, wikiIndexName(tenantID), pageContentValue(row["id"]), []string{datasetID})
+	if err != nil {
+		common.Warn("failed to read stored Wiki page content", zap.Error(err))
+		return ""
+	}
+	stored, _ := raw.(map[string]interface{})
+	return enginetypes.WikiPageContent(stored)
 }
 
 func pageContentValue(value interface{}) string {

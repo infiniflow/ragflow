@@ -37,6 +37,7 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   opensearch01:
     profiles:
       - opensearch
@@ -73,10 +74,11 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.3-x64-v3
+    image: infiniflow/infinity:v0.7.4-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -100,6 +102,7 @@ services:
       retries: 120
     restart: unless-stopped
 
+
   serenedb:
     profiles:
       - serenedb
@@ -120,6 +123,7 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+
 
   oceanbase:
     profiles:
@@ -152,13 +156,16 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   seekdb:
     profiles:
       - seekdb
     image: oceanbase/seekdb:latest
     container_name: seekdb
     volumes:
-      - ./seekdb:/var/lib/oceanbase
+      # SeekDB 1.4+ stores data in /var/lib/seekdb.
+      # For older 1.3.x images, change the container path to /var/lib/oceanbase.
+      - ./seekdb:/var/lib/seekdb
     ports:
       - ${SEEKDB_PORT:-2881}:2881
     env_file: .env
@@ -175,6 +182,7 @@ services:
     networks:
       - ragflow
     restart: unless-stopped
+
 
   vastbase:
     profiles:
@@ -205,6 +213,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
 
   sandbox-executor-manager:
     profiles:
@@ -241,6 +250,7 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
+
 
   mysql:
     profiles:
@@ -299,10 +309,12 @@ services:
       - ragflow
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-uroot", "-p${MYSQL_PASSWORD}"]
-      interval: 10s
-      timeout: 10s
-      retries: 120
+      interval: 1s
+      timeout: 2s
+      retries: 60
+      start_period: 30s
     restart: unless-stopped
+
 
   minio:
     image: pgsty/silo:RELEASE.2026-08-06T00-00-00Z
@@ -324,6 +336,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
 
   kvrocks:
     # Apache Kvrocks: a RocksDB-backed, Redis-protocol-compatible store used
@@ -353,8 +366,6 @@ services:
     # regardless of the host mapping (KVROCKS_PORT stays 6379, set by the Go overlay).
     ports:
       - "${KVROCKS_PORT:-6379}:6379"
-    profiles:
-      - ragflow-go
     volumes:
       - kvrocks_data:/var/lib/kvrocks
       - ./kvrocks-entrypoint.sh:/etc/kvrocks/entrypoint.sh:ro
@@ -368,6 +379,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 120
+
 
   jaeger:
     profiles:
@@ -384,9 +396,8 @@ services:
       - ragflow
     restart: unless-stopped
 
+
   nats:
-    profiles:
-      - ragflow-go
     image: nats:2.14.2
     ports:
       - ${EXPOSE_NATS_PORT:-4222}:4222
@@ -403,6 +414,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 30
+
 
   tei-cpu:
     profiles:

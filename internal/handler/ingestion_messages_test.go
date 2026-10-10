@@ -94,6 +94,56 @@ func TestDatasetsHandlerListIngestionMessagesValidatesAndPages(t *testing.T) {
 	}
 }
 
+func TestDatasetsHandlerListIngestionLogsDatasourceLogType(t *testing.T) {
+	db := setupIngestionMessagesHandlerDB(t)
+	insertIngestionMessagesHandlerKB(t, db, "kb-1", "user-1")
+
+	connectors := []entity.Connector{
+		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+	}
+	if err := db.Create(&connectors).Error; err != nil {
+		t.Fatalf("insert connectors: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-1-kb-1", ConnectorID: "connector-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link configured connector: %v", err)
+	}
+	logs := []entity.SyncLogs{
+		{ID: "sync-linked", ConnectorID: "connector-1", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		{ID: "sync-unlinked", ConnectorID: "connector-2", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatalf("insert sync logs: %v", err)
+	}
+
+	router := newIngestionLogsHandlerRouter()
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/ingestions?log_type=datasource&page=1&page_size=10", nil))
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Code common.ErrorCode `json:"code"`
+		Data struct {
+			Total int64 `json:"total"`
+			Logs  []struct {
+				ID          string `json:"id"`
+				ConnectorID string `json:"connector_id"`
+				KbID        string `json:"kb_id"`
+			} `json:"logs"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if body.Code != common.CodeSuccess || body.Data.Total != 1 || len(body.Data.Logs) != 1 {
+		t.Fatalf("response = %+v, raw=%s, want one configured connector log", body, response.Body.String())
+	}
+	if body.Data.Logs[0].ID != "sync-linked" || body.Data.Logs[0].ConnectorID != "connector-1" || body.Data.Logs[0].KbID != "kb-1" {
+		t.Fatalf("sync log = %+v, want configured connector's log", body.Data.Logs[0])
+	}
+}
+
 func newIngestionMessagesHandlerRouter() *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	h := NewDatasetsHandler(dataset.NewDatasetService(), nil)
@@ -105,13 +155,24 @@ func newIngestionMessagesHandlerRouter() *gin.Engine {
 	return r
 }
 
+func newIngestionLogsHandlerRouter() *gin.Engine {
+	gin.SetMode(gin.TestMode)
+	h := NewDatasetsHandler(dataset.NewDatasetService(), nil)
+	r := gin.New()
+	r.GET("/api/v1/datasets/:dataset_id/ingestions", func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: "user-1"})
+		h.ListIngestionLogs(c)
+	})
+	return r
+}
+
 func setupIngestionMessagesHandlerDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}, &entity.User{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.PipelineOperationLog{}, &entity.IngestionTaskLog{}, &entity.User{}, &entity.UserTenant{}, &entity.Connector{}, &entity.Connector2Kb{}, &entity.SyncLogs{}); err != nil {
 		t.Fatalf("migrate test schema: %v", err)
 	}
 	original := dao.DB
@@ -123,6 +184,15 @@ func setupIngestionMessagesHandlerDB(t *testing.T) *gorm.DB {
 func insertIngestionMessagesHandlerKB(t *testing.T, db *gorm.DB, id, userID string) {
 	t.Helper()
 	status := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-owner-" + id,
+		UserID:   userID,
+		TenantID: userID,
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
+	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:           id,
 		TenantID:     userID,
@@ -135,5 +205,15 @@ func insertIngestionMessagesHandlerKB(t *testing.T, db *gorm.DB, id, userID stri
 		Status:       &status,
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	activeStatus := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:       id + "-owner-membership",
+		UserID:   userID,
+		TenantID: userID,
+		Role:     "owner",
+		Status:   &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 }

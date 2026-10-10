@@ -302,7 +302,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// Shared per-run duration tally: every tool invocation is timed and
 	// accumulated here for per-question usage accounting.
 	if in.ToolCallDurations == nil {
-		in.ToolCallDurations = NewDurationAccumulator()
+		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
 	tools := in.Tools
@@ -362,8 +362,8 @@ func Run(ctx context.Context, in Input) (string, error) {
 				// Execute same-round tool calls (multiple tool_calls in one model
 				// response) concurrently rather than one-after-another. This is
 				// eino's default (false), but we state it explicitly so the
-				// parallel intent is not accidental. All six tools
-				// (think/todo_write/grep_chunks/search_chunks/list_chunks/run_javascript)
+				// parallel intent is not accidental. All of these tools
+				// (think/todo_write/grep_chunks/search_bm25_chunks/search_semantic_chunks/list_chunks/run_javascript/search_metadata)
 				// are concurrency-safe: they keep no shared mutable state across
 				// calls (run_javascript creates a fresh goja VM per invocation).
 				ExecuteSequentially: false,

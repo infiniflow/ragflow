@@ -13,9 +13,8 @@ func TestMergeCaptions_Unit(t *testing.T) {
 		{Text: "F", LayoutType: "figure", Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 60, Top: 30, Bottom: 45}}},
 		{Text: "C", LayoutType: "figure caption", Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 60, Top: 80, Bottom: 95}}},
 	}
-	figures := pdf.CollectFigures(sections)
 
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	// Caption removed.
 	if len(result) != 1 {
@@ -36,9 +35,8 @@ func TestMergeCaptions_TableCaption(t *testing.T) {
 		{Text: "T", LayoutType: "table", Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 60, Top: 30, Bottom: 45}}},
 		{Text: "C", LayoutType: "table caption", Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 60, Top: 80, Bottom: 95}}},
 	}
-	figures := pdf.CollectFigures(sections)
 
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section after merge, got %d", len(result))
@@ -62,8 +60,7 @@ func TestMergeCaptions_EuclideanDistance(t *testing.T) {
 			{PageNumbers: []int{0, 0}, Left: 0, Right: 100, Top: 70, Bottom: 80},
 		}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	// Caption merged into figure — verified by figure Text containing caption.
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section after merge, got %d", len(result))
@@ -83,8 +80,7 @@ func TestMergeCaptions_FigureCaptionNoTargetKept(t *testing.T) {
 		{Text: "Figure 2: system architecture overview", LayoutType: "figure caption",
 			Positions: []pdf.Position{{PageNumbers: []int{0, 0}, Left: 40, Right: 160, Top: 300, Bottom: 315}}},
 	}
-	figures := pdf.CollectFigures(sections) // empty: no "figure" section present
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("figure caption with no parent must be kept, got %d sections", len(result))
 	}

@@ -189,7 +189,7 @@ func TestShippedConfigIsASingleDirectAnswerTemplate(t *testing.T) {
 	}
 	wantTools := []string{
 		"think", "todo_write", "grep_chunks", "search_bm25_chunks",
-		"search_semantic_chunks", "list_chunks", "run_javascript",
+		"search_semantic_chunks", "list_chunks", "run_javascript", "search_metadata",
 	}
 	if strings.Join(tmpl.Tools, ",") != strings.Join(wantTools, ",") {
 		t.Fatalf("tools = %v, want %v", tmpl.Tools, wantTools)
@@ -201,7 +201,7 @@ func TestShippedConfigIsASingleDirectAnswerTemplate(t *testing.T) {
 	content := tmpl.Content
 	for _, want := range []string{
 		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks",
-		"list_chunks", "chunk_id:", "Evidence-First",
+		"list_chunks", "[ID:", "Evidence-First",
 	} {
 		if !strings.Contains(content, want) {
 			t.Errorf("prompt must mention %q", want)

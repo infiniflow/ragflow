@@ -30,6 +30,7 @@ import (
 // stored as a Deflate entry whose data is not a valid Deflate stream.
 type epubTestChapter struct {
 	name    string
+	entry   string // ZIP entry under OEBPS/ when it differs from the manifest href
 	content string
 	missing bool
 	damaged bool
@@ -73,6 +74,8 @@ func buildTestEPUB(t *testing.T, chapters []epubTestChapter) []byte {
 			if _, err := w.Write([]byte{0xff, 0xff, 0xff, 0xff}); err != nil {
 				t.Fatalf("write raw %s: %v", ch.name, err)
 			}
+		case ch.entry != "":
+			write("OEBPS/"+ch.entry, ch.content)
 		default:
 			write("OEBPS/"+ch.name, ch.content)
 		}
@@ -183,5 +186,23 @@ func TestEPUBParser_OnlyEmptyChaptersIsNotAnError(t *testing.T) {
 	res := parseTestEPUB(t, []epubTestChapter{{name: "ch1.xhtml", content: ""}})
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+}
+
+// Manifest hrefs are URLs, so non-ASCII and space file names are
+// percent-encoded and may carry a fragment.
+func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "Text/%E7%AC%AC%E4%B8%80%E7%AB%A0.xhtml", entry: "Text/第一章.xhtml", content: epubTestHTML("<p>ALPHA chapter</p>")},
+		{name: "Text/chapter%202.xhtml#start", entry: "Text/chapter 2.xhtml", content: epubTestHTML("<p>BRAVO chapter</p>")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := epubTestText(res)
+	for _, want := range []string{"ALPHA", "BRAVO"} {
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in %q", want, text)
+		}
 	}
 }

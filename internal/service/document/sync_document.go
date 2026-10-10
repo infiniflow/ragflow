@@ -21,6 +21,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 
@@ -298,7 +299,7 @@ func syncDocumentStagedLocation(sourceType, docID, filename string) string {
 	if sourceType == "" {
 		sourceType = "sync"
 	}
-	return fmt.Sprintf("sync/%s/.staged/%s/%s%s", sourceType, utility.GenerateToken(), docID, ext)
+	return fmt.Sprintf("sync/%s/.staged/%s/%s%s", sourceType, common.GenerateToken(), docID, ext)
 }
 
 // errorsIsRecordNotFound reports whether an error is GORM's not-found error.

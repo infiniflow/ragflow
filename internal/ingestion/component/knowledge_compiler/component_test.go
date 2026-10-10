@@ -11,10 +11,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
+	"ragflow/internal/ingestion/task/indexdoc"
 
 	"gorm.io/gorm"
 )
@@ -1095,7 +1097,7 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
-	_, err = c.Invoke(context.Background(), nil, map[string]any{
+	_, err = c.Invoke(common.WithRetryDelay(context.Background(), time.Millisecond), nil, map[string]any{
 		"chunks":    []any{map[string]any{"id": "c1", "text": "Alpha is a Beta"}},
 		"doc_id":    "d1",
 		"tenant_id": "t1",
@@ -1444,13 +1446,13 @@ func TestKnowledgeCompiler_BuildInputsAcceptsMapSliceChunks(t *testing.T) {
 	}
 }
 
-// TestProductsToChunkDocs_PageVsSectionCompileKWD locks the page/section
-// discriminator (compile_kwd) and the schema-column contract: the page body goes
-// to md_with_weight and no Go-only field (kc_*, tenant_id) is emitted.
+// TestProductsToChunkDocs_WikiPageAndSectionRoles locks the page/section
+// discriminator (type_kwd) and the schema-column contract: Markdown stays in
+// content_with_weight without a duplicate body column or non-schema fields.
 func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 	page := common.Product{
 		ID: "page-id", DocID: "d1", TenantID: "t1", Variant: common.VariantWiki,
-		Content: "# Alpha\n\nBody", ParentID: "",
+		Content: "# Alpha\n\n**Body** links to [Beta](artifact/kb1/entity/beta).", ParentID: "",
 		Meta: map[string]any{"kind": "page", "slug": "entity/alpha", "title": "Alpha", "page_type": "entity", "summary": "Body", "source_chunk_ids": []string{"c1"}},
 	}
 	section := common.Product{
@@ -1465,6 +1467,8 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 	var pageKWD, sectionKWD string
 	var sectionParent, pageBody, sectionBody string
 	for _, d := range docs {
+		row := d.ToMap()
+		indexdoc.RenameTextToContentWithWeight(row)
 		if compiled, _ := d.GetExtraString("compile_kwd"); compiled != "wiki" {
 			t.Fatalf("compile_kwd = %q, want wiki", compiled)
 		}
@@ -1473,12 +1477,11 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 				t.Fatalf("retired field %s was written", field)
 			}
 		}
-		// compile_kwd IS the page/section discriminator (wiki_page /
-		// wiki_section); there is no separate kind column.
+		// type_kwd distinguishes pages from sections within compile_kwd=wiki.
 		kind, _ := d.GetExtraString("type_kwd")
 		if kind == "wiki_page" {
 			pageKWD = kind
-			pageBody, _ = d.GetExtraString("md_with_weight")
+			pageBody, _ = row["content_with_weight"].(string)
 			if summary, _ := d.GetExtraString("summary_with_weight"); summary != "Body" {
 				t.Errorf("page summary_with_weight = %q, want Body", summary)
 			}
@@ -1491,7 +1494,10 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 		if kind == "wiki_section" {
 			sectionKWD = kind
 			sectionParent, _ = d.GetExtraString("parent_kwd")
-			sectionBody, _ = d.GetExtraString("md_with_weight")
+			sectionBody, _ = row["content_with_weight"].(string)
+		}
+		if _, ok := row["md_with_weight"]; ok {
+			t.Error("Wiki rows must not duplicate the body in md_with_weight")
 		}
 		// No Go-only field: Infinity rejects an unknown column.
 		for k := range d.Extra {
@@ -1504,19 +1510,19 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 		}
 	}
 	if pageKWD != "wiki_page" {
-		t.Errorf("page compile_kwd = %q, want wiki_page", pageKWD)
+		t.Errorf("page type_kwd = %q, want wiki_page", pageKWD)
 	}
 	if sectionKWD != "wiki_section" {
-		t.Errorf("section compile_kwd = %q, want wiki_section (schema-backed page/section discriminator)", sectionKWD)
+		t.Errorf("section type_kwd = %q, want wiki_section (schema-backed page/section discriminator)", sectionKWD)
 	}
 	if sectionParent != "page-id" {
 		t.Errorf("section parent_kwd = %q, want page-id", sectionParent)
 	}
-	if pageBody != "# Alpha\n\nBody" {
-		t.Errorf("page md_with_weight = %q, want the rendered page body", pageBody)
+	if pageBody != page.Content {
+		t.Errorf("page content_with_weight = %q, want %q", pageBody, page.Content)
 	}
-	if sectionBody != "" {
-		t.Errorf("section md_with_weight = %q, want empty (only page rows carry the page body)", sectionBody)
+	if sectionBody != section.Content {
+		t.Errorf("section content_with_weight = %q, want %q", sectionBody, section.Content)
 	}
 }
 

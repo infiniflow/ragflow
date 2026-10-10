@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 
 	"slices"
 	"sort"
@@ -509,10 +508,13 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 		uniqueMemoryTypes = append(uniqueMemoryTypes, mt)
 	}
 
-	memoryName, err := common.DuplicateName(func(name string, tid string) bool {
-		existing, _ := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
-		return len(existing) > 0
-	}, memoryName, tenantID)
+	memoryName, err := common.UniqueName(memoryName, MemoryNameLimit, func(candidate string) (bool, error) {
+		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+		if err != nil {
+			return false, err
+		}
+		return len(existing) > 0, nil
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -520,7 +522,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	memoryTypeInt := dao.CalculateMemoryType(uniqueMemoryTypes)
 	systemPrompt := PromptAssembler{}.AssembleSystemPrompt(uniqueMemoryTypes)
 
-	newID := utility.GenerateUUID()
+	newID := common.GenerateUUID()
 
 	memory := &entity.Memory{
 		ID:               newID,
@@ -589,16 +591,20 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 		if err = common.ValidateName(memoryName); err != nil {
 			return nil, err
 		}
-		if memoryName != strings.TrimSpace(currentMemory.Name) {
-			memoryName, err = common.DuplicateName(func(name string, tid string) bool {
-				existing, _ := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
-				return len(existing) > 0
-			}, memoryName, ownerTenantID)
+		available, nameErr := common.NameAvailable(strings.TrimSpace(currentMemory.Name), memoryName, func(candidate string) (bool, error) {
+			existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, ownerTenantID)
 			if err != nil {
-				return nil, err
+				return false, err
 			}
-			updateDict["name"] = memoryName
+			return len(existing) > 0, nil
+		})
+		if nameErr != nil {
+			return nil, nameErr
 		}
+		if !available {
+			return nil, errors.New("duplicated memory name")
+		}
+		updateDict["name"] = memoryName
 	}
 
 	if req.Permissions != nil {

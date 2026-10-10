@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
 	"go.uber.org/zap"
@@ -162,7 +161,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Create root folder if not exists
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -355,7 +354,7 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 // CreateFolder creates a folder in the database
 func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -402,6 +401,21 @@ func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentI
 		return nil, err
 	}
 	return files, nil
+}
+
+// NameExists reports whether a file or folder with the given name already
+// exists under parentID for the tenant, comparing names case-insensitively.
+// excludeID, when non-empty, omits that entry from the check so moving or
+// renaming an entry does not collide with itself.
+func (dao *FileDAO) NameExists(ctx context.Context, db *gorm.DB, name, parentID, tenantID, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.File{}).
+		Where("LOWER(name) = LOWER(?) AND parent_id = ? AND tenant_id = ?", name, parentID, tenantID)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var count int64
+	err := q.Count(&count).Error
+	return count > 0, err
 }
 
 // Delete deletes a file by ID (hard delete)
@@ -547,7 +561,7 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 		return existingFiles[0], nil
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
@@ -589,7 +603,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		docLocation = *doc.Location
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
@@ -606,7 +620,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		return err
 	}
 
-	f2dID := utility.GenerateToken()
+	f2dID := common.GenerateToken()
 	f2d := &entity.File2Document{
 		ID:         f2dID,
 		FileID:     &fileID,

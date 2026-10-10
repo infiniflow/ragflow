@@ -583,6 +583,7 @@ curl --request POST \
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
+  If the name is already taken, the dataset is created with a numbered suffix such as `test_1(1)`, `test_1(2)`, and so on.
 
 - `"avatar"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
@@ -2679,6 +2680,7 @@ curl --request POST \
 
 - `"name"`: (*Body parameter*), `string`, *Required*
   The name of the chat assistant.
+  If a chat assistant with the same name already exists, the new one gets a numbered suffix such as `new_chat_1(1)`.
 - `"icon"`: (*Body parameter*), `string`
   Base64 encoding of the avatar.
 - `"dataset_ids"`: (*Body parameter*), `list[string]`
@@ -2710,10 +2712,15 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"tavily"`, `"firecrawl"`, `"querit"`, `"serply"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
+  - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
+  - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
+  - `"exa_api_key"`: `string` The Exa API key. Set `web_search_provider` to `"exa"` when using this field.
   - `"firecrawl_api_key"`: `string` The [Firecrawl](https://www.firecrawl.dev/search) API key. Set `web_search_provider` to `"firecrawl"` when using this field. See the [Firecrawl Search API reference](https://docs.firecrawl.dev/api-reference/endpoint/search) for details.
+  - `"linkup_api_key"`: `string` The Linkup API key. Set `web_search_provider` to `"linkup"` when using this field.
+  - `"parallel_api_key"`: `string` The Parallel API key. Set `web_search_provider` to `"parallel"` when using this field.
   - `"querit_api_key"`: `string` The Querit API key. Set `web_search_provider` to `"querit"` when using this field.
+  - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
 - `"similarity_threshold"`: (*Body parameter*), `float`
@@ -2782,7 +2789,7 @@ Failure:
 ```json
 {
     "code": 102,
-    "message": "duplicated chat name"
+    "message": "`name` is required"
 }
 ```
 
@@ -3838,13 +3845,11 @@ Starts a chat completion request. The same endpoint supports three modes:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
 
-  - `"messages"`: `list[object]`
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
-  - `"pass_all_history_messages"`: `boolean` (optional)
   - `"legacy"`: `boolean` (optional)
 
 ##### Request example
@@ -3886,10 +3891,8 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `"messages"`: (*Body Parameter*), `list[object]`
-  The latest user message, or the conversation messages sent to the model when `pass_all_history_messages` is `true`. Either `messages` or `question` is required.
 - `"question"`: (*Body Parameter*), `string`
-  Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
+  The user question.
 - `"stream"`: (*Body Parameter*), `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
@@ -3900,8 +3903,6 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
-- `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
-  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 - `"legacy"`: (*Body Parameter*), `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
@@ -5327,6 +5328,7 @@ curl --request POST \
 
 - `title`: (*Body parameter*), `string`, *Required*
   The title of the agent.
+  If an agent with the same title already exists, the new one gets a numbered suffix such as `Test Agent(1)`.
 - `description`: (*Body parameter*), `string`
   The description of the agent. Defaults to `None`.
 - `dsl`: (*Body parameter*), `object`, *Required*
@@ -5348,8 +5350,8 @@ Failure:
 
 ```json
 {
-    "code": 102,
-    "message": "Agent with title test already exists."
+    "code": 101,
+    "message": "no DSL data in request"
 }
 ```
 
@@ -5414,7 +5416,16 @@ Success:
 }
 ```
 
-Failure:
+Failure (duplicate title):
+
+```json
+{
+    "code": 102,
+    "message": "Test Agent already exists."
+}
+```
+
+Failure (permission denied):
 
 ```json
 {
@@ -6851,7 +6862,7 @@ curl --request POST \
 ##### Request parameters
 
 - `"name"`: (*Body parameter*), `string`, *Required*
-  The name of the file or folder to create.
+  The name of the file or folder to create. If the name is already taken in the parent folder, the new entry gets a numbered suffix such as `New Folder(1)`.
 - `"parent_id"`: (*Body parameter*), `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
 - `"type"`: (*Body parameter*), `string`
@@ -6881,8 +6892,8 @@ Failure:
 
 ```json
 {
-    "code": 409,
-    "message": "Duplicated folder name in the same folder."
+    "code": 400,
+    "message": "Folder name cannot contain \"/\""
 }
 ```
 
@@ -7302,6 +7313,15 @@ or
 {
     "code": 400,
     "message": "The extension of file can't be changed"
+}
+```
+
+or
+
+```json
+{
+    "code": 400,
+    "message": "duplicated file name in the same folder"
 }
 ```
 

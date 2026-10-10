@@ -359,8 +359,8 @@ github.com/hashicorp/hcl v1.0.0/go.mod h1:E5yfLk+7swimpb2L/Alb/PJmXilQ/rhwaUYs4T
 github.com/hpcloud/tail v1.0.0/go.mod h1:ab1qPbhIpdTxEkNHXyeSf5vhxWSCs/tWer42PpOxQnU=
 github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7 h1:/4UAJqF04Rs8bPfJHEUvOpmv6cxX2hKXHscMktRiskU=
 github.com/infiniflow/gomsg v0.0.0-20260407083308-985c3a1a76b7/go.mod h1:TCjWm+lo7de/zYHb8rHfVSaKxOP4tZNrnRUzkqV4r28=
-github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9 h1:mqPwCOTktwl0V1f3tkfCRFonGQ3XrQ43gvH+TOWec6o=
-github.com/infiniflow/infinity/go v0.0.0-20260806040857-d755c5ad25d9/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
+github.com/infiniflow/infinity/go v0.0.0-20261009034419-e1bd341a2083 h1:NJ8AHjkqckkTrNvy/d2jm4mCypbvmA+iz//OXrNtn6k=
+github.com/infiniflow/infinity/go v0.0.0-20261009034419-e1bd341a2083/go.mod h1:hw3z5AwNFsGy1cdrE0Mfjot2y9jqVHTxBufUx9VzZ+0=
 github.com/infiniflow/onnxruntime_go v1.29.0 h1:pI6v4Bcc7BJdKRF+ZZZkaf4HV6Of6Kl6XryaW2aGbGQ=
 github.com/infiniflow/onnxruntime_go v1.29.0/go.mod h1:dFFL0KdgeeEDXoE9cjrg/ipQg0wEvD0tkGIg2UH0jdE=
 github.com/jackc/pgpassfile v1.0.0 h1:/6Hmqy13Ss2zCq62VdNG8tM1wchn8zjSGOBJ6icpsIM=
@@ -375,6 +375,8 @@ github.com/jinzhu/inflection v1.0.0 h1:K317FqzuhWc8YvSVlFMCCUb36O/S9MCKRDI7QkRKD
 github.com/jinzhu/inflection v1.0.0/go.mod h1:h+uFLlag+Qp1Va5pdKtLDYj+kHp5pxUVkryuEj+Srlc=
 github.com/jinzhu/now v1.1.5 h1:/o9tlHleP7gOFmsnYNz3RGnqzefHA47wQpKrrdTIwXQ=
 github.com/jinzhu/now v1.1.5/go.mod h1:d3SSVoowX0Lcu0IBviAWJpolVfI5UJVZZ7cO71lE/z8=
+github.com/jloor/go-excel-reader v0.3.0 h1:CczAwTDGIZgMu7wP718Im3yONlOTN+asdb+cp7yk7As=
+github.com/jloor/go-excel-reader v0.3.0/go.mod h1:A3hRAFOOAy82/j+pVmX/f/dVs4XEfDCT3aMVw+HNnGw=
 github.com/josharian/intern v1.0.0/go.mod h1:5DoeVV0s6jJacbCEi61lwdGj/aVlrQvzHFFd8Hwg//Y=
 github.com/json-iterator/go v1.1.10/go.mod h1:KdQUCv79m/52Kvf8AW2vK1V8akMuk1QjK/uOdHXbAo4=
 github.com/json-iterator/go v1.1.12 h1:PV8peI4a0ysnczrg+LtxykD8LfKY9ML6u2jnxaEnrnM=

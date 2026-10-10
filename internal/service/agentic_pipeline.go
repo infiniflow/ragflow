@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -66,6 +67,10 @@ func (s *ChatPipelineService) agenticRag(
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
+	// Wire the document-metadata resolver the metadata_search tool needs. The
+	// eino agentic_rag package must not import service (service imports it), so
+	// the concrete *service.MetadataService is injected here, per turn.
+	agentic_rag.SetMetadataService(NewMetadataService())
 	// agent_mode selects the template id for this run (validated non-empty by
 	// AsyncChat before dispatch). Resolved per-run so conf/agentic_rag.yaml
 	// edits take effect without restart.
@@ -88,6 +93,11 @@ func (s *ChatPipelineService) agenticRag(
 
 		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
 		defer cancel()
+		// The run's evidence registry: every tool result stamps its passages with
+		// the [ID:n] handle the model cites, and buildAgenticReference resolves
+		// those handles against the same numbering.
+		registry := agentic_rag.NewEvidenceRegistry()
+		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
@@ -148,6 +158,7 @@ func (s *ChatPipelineService) agenticRag(
 		// StartToThink marker is emitted once and EndToThink fires when the
 		// agent's final answer arrives.
 		thinking := false
+		var reasoning strings.Builder
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
 			Model:          model,
 			SynthModel:     synth,
@@ -159,6 +170,7 @@ func (s *ChatPipelineService) agenticRag(
 			ToolCallCounts: toolCounts,
 			ToolCallErrors: toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
+				reasoning.WriteString(thinkingDelta)
 				startToThink, endToThink := false, false
 				if thinkingDelta != "" {
 					if !thinking {
@@ -176,15 +188,15 @@ func (s *ChatPipelineService) agenticRag(
 				if startToThink {
 					emitResult(AsyncChatResult{Final: false, StartToThink: true})
 				}
+				if endToThink {
+					emitResult(AsyncChatResult{Final: false, EndToThink: true})
+				}
 				if contentDelta != "" || thinkingDelta != "" {
 					emitResult(AsyncChatResult{
 						Answer:    contentDelta,
 						Reasoning: thinkingDelta,
 						Final:     false,
 					})
-				}
-				if endToThink {
-					emitResult(AsyncChatResult{Final: false, EndToThink: true})
 				}
 			},
 		})
@@ -206,13 +218,23 @@ func (s *ChatPipelineService) agenticRag(
 		// payload, matching what the regular pipeline ships when quote is
 		// false. The answer text is still whatever the agent wrote.
 		answer := final
+		if reasoning.Len() > 0 {
+			answer = agentSessionMessageContent("\n\n"+final, reasoning.String())
+		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
-		} else if len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
-		emitResult(AsyncChatResult{Answer: answer, Reference: reference, Final: true})
+		// Persist the same thinking and final answer the stream renders, with
+		// the final answer's citation handles compacted against its reference.
+		emitResult(AsyncChatResult{
+			Answer:                answer,
+			Reference:             reference,
+			Final:                 true,
+			AnswerIsAuthoritative: true,
+		})
 	}()
 
 	return out, nil
@@ -348,11 +370,7 @@ func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message 
 	return out
 }
 
-// buildAgenticReference turns the answer's own chunk_id citations into the
-// reference payload the naive pipeline ships, and rewrites the answer with
-// [ID:N] markers. With no resolvable citations both come back unchanged: an
-// empty reference keeps the SSE shape the UI expects, and unmarked chunk_id
-// text is the honest state of an answer whose sources could not be loaded.
+// chatDatasetIDs reads the conversation's bound dataset ids.
 func chatDatasetIDs(chat *entity.Chat) []string {
 	if chat == nil {
 		return nil
@@ -366,14 +384,44 @@ func chatDatasetIDs(chat *entity.Chat) []string {
 	return ids
 }
 
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string) (map[string]interface{}, string) {
-	cited := agentic_rag.ExtractCitedChunkIDs(final)
+// buildAgenticReference turns the answer's citations into the reference payload
+// the naive pipeline ships, and rewrites the answer's markers to that payload's
+// numbering. The answer cites the run's evidence handles ([ID:n], the numbering
+// the model was shown); an answer that named passages by raw chunk_id instead
+// (a document-level question has no handle to write) falls back to that path.
+// With no resolvable citations both come back unchanged: an empty reference
+// keeps the SSE shape the UI expects, and the untouched text is the honest state
+// of an answer whose sources could not be loaded.
+func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
+	// Normalize the answer's markers BEFORE anything reads them. A reasoning
+	// model parks the whole answer inside <think>, so the normalization covers
+	// the entire text rather than a post-`</think>` tail: a handle sitting in
+	// the thinking stretch is cited exactly like one in the visible prose.
+	//
+	// Two shapes need repair, and both are invisible to every scanner
+	// downstream — this package's `\[ID:(\d+)\]` and the client's marker regex
+	// each stop at the first non-digit:
+	//   - a near-canonical marker ("(ID:47)", "[ID: 47]", "【ID:47】"), and
+	//   - several handles compressed into one marker ("[ID:47, ID:115]").
+	normalized := agentic_rag.ExpandCommaCitations(
+		RepairBadCitationFormats(final), len(registry.IDs()))
+
+	// Preferred: the answer's own [ID:n] handles, resolved against the run's
+	// evidence registry — the same numbering the model was shown, so a marker
+	// can only name a passage that actually reached the context.
+	cited := agentic_rag.CitedIDsFromMarkers(normalized, registry)
+	byHandles := len(cited) > 0
+	if !byHandles {
+		// Fallback: an answer that named passages by raw chunk_id. A
+		// document-level question has no [ID:n] handle to write.
+		cited = agentic_rag.ExtractCitedChunkIDs(normalized)
+	}
 	if len(cited) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
 	if len(rows) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	// Keep only ids that actually resolved, preserving first-appearance
 	// order: the marker number IS the chunk's position in the payload array.
@@ -390,16 +438,24 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		}
 	}
 	if len(resolved) == 0 {
-		return map[string]interface{}{}, final
+		return map[string]interface{}{}, normalized
 	}
 	ordered := make([]map[string]interface{}, 0, len(resolved))
 	for _, id := range resolved {
 		ordered = append(ordered, byID[id])
 	}
-	marked := agentic_rag.InsertCitationMarkers(final, resolved)
+	marked := normalized
+	if byHandles {
+		// Compact the run-level handles ("[ID:265]") into the answer's own
+		// first-citation order ("[ID:0]"), the numbering the payload ships.
+		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
+	} else {
+		marked = agentic_rag.InsertCitationMarkers(normalized, resolved)
+	}
 	common.InfoCtx(ctx, "agentic citations built",
 		zap.Int("cited", len(cited)),
 		zap.Int("resolved", len(resolved)),
+		zap.Bool("by_handle", byHandles),
 		zap.Int("final_bytes", len(marked)))
 	return map[string]interface{}{
 		"chunks":   chunksFormat(ordered),

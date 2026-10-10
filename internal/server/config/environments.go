@@ -103,9 +103,15 @@ type Environments struct {
 	MinerUAPIServer                   string `mapstructure:"miner_userver"`                     // MINERU_APISERVER
 	MinerUAPIKey                      string `mapstructure:"mineru_api_key"`                    // MINERU_API_KEY
 	MinerUBackend                     string `mapstructure:"mineru_backend"`                    // MINERU_BACKEND
+	MonkeyOCRAPIServer                string `mapstructure:"monkeyocr_apiserver"`               // MONKEYOCR_APISERVER
+	MonkeyOCROutputDir                string `mapstructure:"monkeyocr_output_dir"`              // MONKEYOCR_OUTPUT_DIR
+	MonkeyOCRServerURL                string `mapstructure:"monkeyocr_server_url"`              // MONKEYOCR_SERVER_URL
+	MonkeyOCRBackend                  string `mapstructure:"monkeyocr_backend"`                 // MONKEYOCR_BACKEND
+	MonkeyOCRDeleteOutput             string `mapstructure:"monkeyocr_delete_output"`           // MONKEYOCR_DELETE_OUTPUT
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
-	KeenableAPIURL                    string `mapstructure:"keenable_api_url"` // KEENABLE_API_URL
+	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
+	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS
 }
 
 type DefaultSuperUser struct {
@@ -284,6 +290,11 @@ func (c *Config) GetEnvironments() error {
 	homePath := common.GetEnv(common.EnvHome)
 	if homePath != "" {
 		c.environments.HomePath = homePath
+	}
+
+	mcpAllowPrivateHosts := common.GetEnvSmall(common.EnvMCPAllowPrivateHosts)
+	if mcpAllowPrivateHosts != "" {
+		c.environments.MCPAllowPrivateHosts = mcpAllowPrivateHosts == "true" || mcpAllowPrivateHosts == "1" || mcpAllowPrivateHosts == "yes"
 	}
 
 	userProfile := common.GetEnv(common.EnvUserProfile)
@@ -523,6 +534,22 @@ func (c *Config) GetEnvironments() error {
 		c.environments.MinerUBackend = MinerUBackendStr
 	}
 
+	if v := common.GetEnv(common.EnvMonkeyOCRAPIServer); v != "" {
+		c.environments.MonkeyOCRAPIServer = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCROutputDir); v != "" {
+		c.environments.MonkeyOCROutputDir = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRServerURL); v != "" {
+		c.environments.MonkeyOCRServerURL = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRBackend); v != "" {
+		c.environments.MonkeyOCRBackend = v
+	}
+	if v := common.GetEnv(common.EnvMonkeyOCRDeleteOutput); v != "" {
+		c.environments.MonkeyOCRDeleteOutput = v
+	}
+
 	TavilyAPIKeyStr := common.GetEnv(common.EnvTavilyAPIKey)
 	if TavilyAPIKeyStr != "" {
 		c.environments.TavilyAPIKey = TavilyAPIKeyStr
@@ -637,6 +664,8 @@ func (c *Config) GetMaxFileNumPerUser() int { return c.environments.MAXFileNumbe
 func (c *Config) GetMaxContentLength() int { return c.environments.MAXContentLength }
 
 func (c *Config) GetHomePath() string { return c.environments.HomePath }
+
+func (c *Config) GetMCPAllowPrivateHosts() bool { return c.environments.MCPAllowPrivateHosts }
 
 func (c *Config) GetUserProfile() string { return c.environments.UserProfile }
 
@@ -800,6 +829,26 @@ func (c *Config) GetMinerUAPIKey() string {
 
 func (c *Config) GetMinerUBackend() string {
 	return c.environments.MinerUBackend
+}
+
+func (c *Config) GetMonkeyOCRAPIServer() string {
+	return c.environments.MonkeyOCRAPIServer
+}
+
+func (c *Config) GetMonkeyOCROutputDir() string {
+	return c.environments.MonkeyOCROutputDir
+}
+
+func (c *Config) GetMonkeyOCRServerURL() string {
+	return c.environments.MonkeyOCRServerURL
+}
+
+func (c *Config) GetMonkeyOCRBackend() string {
+	return c.environments.MonkeyOCRBackend
+}
+
+func (c *Config) GetMonkeyOCRDeleteOutput() string {
+	return c.environments.MonkeyOCRDeleteOutput
 }
 
 func (c *Config) GetQueritAPIKey() string {

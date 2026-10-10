@@ -23,7 +23,8 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 	"unicode/utf8"
 
@@ -338,13 +339,13 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, name, userID, string(entity.StatusValid))
+	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
+		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
-	}
+	req["name"] = name
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
@@ -381,7 +382,7 @@ func validateCreateChatName(value interface{}) (string, error) {
 	return name, nil
 }
 
-func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}, tenantID string) ([]string, error) {
+func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}, userID string) ([]string, error) {
 	if value == nil {
 		return []string{}, nil
 	}
@@ -401,8 +402,9 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 
 	for _, datasetID := range normalizedIDs {
-		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, tenantID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
@@ -550,7 +552,7 @@ func buildCreateChatEntity(req map[string]interface{}, tenantID string) *entity.
 	}
 
 	chat := &entity.Chat{
-		ID:                     utility.GenerateUUID(),
+		ID:                     common.GenerateUUID(),
 		TenantID:               tenantID,
 		Name:                   &name,
 		Description:            &description,
@@ -964,16 +966,14 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if currentChat.Name != nil {
 			currentName = *currentChat.Name
 		}
-		if strings.ToLower(name) != strings.ToLower(currentName) {
-			existingNames, err := s.chatDAO.GetExistingNames(ctx, dao.DB, userID, string(entity.StatusValid))
-			if err != nil {
-				return nil, err
-			}
-			for _, existingName := range existingNames {
-				if strings.EqualFold(existingName, name) {
-					return nil, errors.New("duplicated chat name")
-				}
-			}
+		available, err := common.NameAvailable(currentName, name, func(candidate string) (bool, error) {
+			return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !available {
+			return nil, errors.New("duplicated chat name")
 		}
 	}
 
@@ -1057,8 +1057,9 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 			continue
 		}
 		datasetID := fmt.Sprint(item)
-		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
