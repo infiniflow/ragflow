@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="160" viewBox="0 0 320 160">
+  <title>Fixture</title>
+  <style>text { font-family: sans-serif; font-size: 20px; }</style>
+  <rect width="320" height="160" fill="#ffffff"/>
+  <text x="20" y="40">HELLO WORLD</text>
+  <text x="20" y="80">
+    <tspan x="20" dy="0">Quarterly revenue</tspan>
+    <tspan x="20" dy="24">R&amp;D <tspan font-weight="bold">budget</tspan></tspan>
+  </text>
+  <foreignObject x="20" y="110" width="280" height="40">
+    <div xmlns="http://www.w3.org/1999/xhtml"><p>Node label</p><p>Second line</p></div>
+  </foreignObject>
+</svg>
