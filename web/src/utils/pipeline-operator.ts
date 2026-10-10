@@ -164,27 +164,46 @@ function transformExtractorConfigToFormGo(
       ? Boolean(metadataGroup.enabled)
       : config.enable_metadata === 1 || config.enable_metadata === true;
 
+  // The enabled switch is authoritative when the group carries it; legacy
+  // configs without it derive enabled from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const keywordsTopN =
+    config.keywords?.top_n ??
+    config.auto_keywords ??
+    initialGoExtractorValues.keywords.top_n;
+  const questionsTopN =
+    config.questions?.top_n ??
+    config.auto_questions ??
+    initialGoExtractorValues.questions.top_n;
+  const tagsTopN =
+    config.tags?.top_n ??
+    config.auto_tags ??
+    initialGoExtractorValues.tags.top_n;
+
   result.keywords = {
-    top_n:
-      config.keywords?.top_n ??
-      config.auto_keywords ??
-      initialGoExtractorValues.keywords.top_n,
+    enabled:
+      config.keywords?.enabled !== undefined
+        ? Boolean(config.keywords.enabled)
+        : keywordsTopN > 0,
+    top_n: keywordsTopN,
     system_prompt:
       config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
   };
   result.questions = {
-    top_n:
-      config.questions?.top_n ??
-      config.auto_questions ??
-      initialGoExtractorValues.questions.top_n,
+    enabled:
+      config.questions?.enabled !== undefined
+        ? Boolean(config.questions.enabled)
+        : questionsTopN > 0,
+    top_n: questionsTopN,
     system_prompt:
       config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
   };
   result.tags = {
-    top_n:
-      config.tags?.top_n ??
-      config.auto_tags ??
-      initialGoExtractorValues.tags.top_n,
+    enabled:
+      config.tags?.enabled !== undefined
+        ? Boolean(config.tags.enabled)
+        : tagsTopN > 0,
+    top_n: tagsTopN,
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
   result.summary = {
