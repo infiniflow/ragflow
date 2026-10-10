@@ -122,6 +122,9 @@ func quoteList(items []string) string {
 }
 
 func validateDatasetAvatar(avatar string) error {
+	if avatar == "" {
+		return nil
+	}
 	if !strings.Contains(avatar, ",") {
 		return errors.New("missing MIME prefix. Expected format: data:<mime>;base64,<data>")
 	}
