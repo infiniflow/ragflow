@@ -134,6 +134,7 @@ The folder `src/components/ui/` is the project's **shared UI library** — it co
   - Components: `EditableTextarea`, `RAGFlowFormItem`
   - Constants: `InitialMockData`, `DefaultPlaceholder`
 - Avoid camelCase or SCREAMING_SNAKE_CASE for components and top-level constants.
+- **Place domain constant lists in the page's `constant/` directory** (e.g. `pages/agent/constant/pipeline.tsx`) when they belong to an existing family of constants there (like `ChunkerOperators`, `SingleOperators`), instead of declaring them locally next to their consumer. Keeping related lists in one file makes their overlaps and differences visible and gives new entries a single obvious home.
 - **Name things semantically, not generically.** A name should say what the value holds or what the callback does, so call sites read naturally. Don't leak a generic underlying-primitive API into your own component's public props — rename at the wrapper boundary (e.g., a tabs wrapper exposes `activeTab` / `onTabChange`, mapped internally to Radix's `value` / `onValueChange`), and align with what callers already name the state. Same for variables and functions: `hiddenNodeIds` over `nodeIdSet`, `pickByBackend` over `resolveVariant`.
 - Avoid duplicating component structures in JSX; favor render props or reusable components.
 
