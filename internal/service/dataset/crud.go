@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/permission"
@@ -729,6 +730,19 @@ func (d *DatasetService) deleteDatasetEngineData(ctx context.Context, kb *entity
 	}
 	if _, err := d.docEngine.DeleteMetadata(ctx, map[string]interface{}{"doc_id": docIDs}, kb.TenantID); err != nil {
 		common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to delete metadata for kb %s: %v", kb.ID, err))
+	}
+	// Infinity keeps one chunk table per dataset. Dropping the dataset must
+	// drop the table too, otherwise it leaks forever. Other engines share
+	// their store, so this is Infinity-only.
+	if d.docEngine.GetType() == string(engine.EngineInfinity) {
+		exists, err := d.docEngine.ChunkStoreExists(ctx, indexName, kb.ID)
+		if err != nil {
+			common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to check chunk table for kb %s: %v", kb.ID, err))
+		} else if exists {
+			if err := d.docEngine.DropChunkStore(ctx, indexName, kb.ID); err != nil {
+				common.Logger.Warn(fmt.Sprintf("deleteDataset: failed to drop chunk table for kb %s: %v", kb.ID, err))
+			}
+		}
 	}
 }
 
