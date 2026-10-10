@@ -143,8 +143,20 @@ func maybeDispatchPDFVision(
 		return res, true, nil
 	}
 
-	// MonkeyOCR dispatch: parse_method "monkeyocr" or layout_recognizer "@MonkeyOCR".
-	if isMonkeyOCRPDFSelector(method, layoutLower) {
+	// MonkeyOCR dispatch: parse_method "monkeyocr", a layout_recognizer or
+	// parse_method naming MonkeyOCR (including model@instance@provider), or a
+	// bare tenant model UUID that resolves to a MonkeyOCR OCR model.
+	monkeyOCRSelector := layout
+	if strings.TrimSpace(monkeyOCRSelector) == "" {
+		monkeyOCRSelector = method
+	}
+	isMonkeyOCRMatch := isMonkeyOCRPDFSelector(method, layoutLower)
+	isMonkeyOCRByUUID := false
+	if !isMonkeyOCRMatch && strings.TrimSpace(monkeyOCRSelector) != "" &&
+		!parser.IsPDFParseMethod(monkeyOCRSelector) {
+		isMonkeyOCRByUUID = isMonkeyOCRLayoutModelID(ctx, db, tenantID, monkeyOCRSelector)
+	}
+	if isMonkeyOCRMatch || isMonkeyOCRByUUID {
 		common.Info("pdf vision dispatch: MonkeyOCR branch matched",
 			zap.String("parse_method", method),
 			zap.String("layout_recognizer", layout),
@@ -152,7 +164,11 @@ func maybeDispatchPDFVision(
 		if tenantID == "" {
 			return parser.ParseResult{}, true, fmt.Errorf("parser: MonkeyOCR requires tenant_id")
 		}
-		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup)
+		dispatchModelID := ""
+		if isMonkeyOCRByUUID || strings.Contains(monkeyOCRSelector, "@") {
+			dispatchModelID = monkeyOCRSelector
+		}
+		res, err := dispatchMonkeyOCRPDF(ctx, db, filename, binary, tenantID, setup, dispatchModelID)
 		return res, true, err
 	}
 
@@ -490,10 +506,9 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model
-// via the streaming /file_parse endpoint and returns parsed sections.
-// Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
-// stream=True and reads the zip response body directly (no polling).
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
+// MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
+// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -546,7 +561,7 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, err
 	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
 	}
@@ -568,13 +583,50 @@ func dispatchMinerUPDF(
 }
 
 func isMonkeyOCRPDFSelector(method, layoutLower string) bool {
-	if strings.EqualFold(strings.TrimSpace(method), "monkeyocr") {
-		return true
+	methodLower := strings.ToLower(strings.TrimSpace(method))
+	if strings.Contains(methodLower, "@monkeyocrv2") || strings.HasPrefix(methodLower, "monkeyocrv2") {
+		return false
 	}
 	if strings.Contains(layoutLower, "@monkeyocrv2") || strings.HasPrefix(layoutLower, "monkeyocrv2") {
 		return false
 	}
+	if methodLower == "monkeyocr" || strings.HasSuffix(methodLower, "@monkeyocr") {
+		return true
+	}
 	return strings.HasPrefix(layoutLower, "monkeyocr") || strings.Contains(layoutLower, "@monkeyocr")
+}
+
+var resolveMonkeyOCRModelForDispatch = defaultResolveMonkeyOCRModelForDispatch
+
+func defaultResolveMonkeyOCRModelForDispatch(ctx context.Context, db *gorm.DB, tenantID, modelID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+	modelID = strings.TrimSpace(modelID)
+	if modelID != "" && !strings.Contains(modelID, "@") {
+		driver, modelName, apiConfig, _, err := resolveModelConfigByID(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	if modelID != "" {
+		driver, modelName, apiConfig, _, err := resolveModelConfig(ctx, db, tenantID, entity.ModelTypeOCR, modelID)
+		return driver, modelName, apiConfig, err
+	}
+	driver, modelName, apiConfig, _, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	return driver, modelName, apiConfig, err
+}
+
+var isMonkeyOCRLayoutModelID = defaultIsMonkeyOCRLayoutModelID
+
+func defaultIsMonkeyOCRLayoutModelID(ctx context.Context, db *gorm.DB, tenantID, selector string) bool {
+	selector = strings.TrimSpace(selector)
+	if db == nil {
+		return false
+	}
+	if selector == "" || strings.Contains(selector, "@") {
+		return false
+	}
+	driver, _, _, err := defaultResolveMonkeyOCRModelForDispatch(ctx, db, tenantID, selector)
+	if err != nil {
+		return false
+	}
+	return strings.EqualFold(driver.Name(), "monkeyocr")
 }
 
 // dispatchMonkeyOCRPDF submits a PDF to the tenant's MonkeyOCR adapter
@@ -586,8 +638,9 @@ func dispatchMonkeyOCRPDF(
 	binary []byte,
 	tenantID string,
 	setup schema.ParserSetup,
+	modelID string,
 ) (parser.ParseResult, error) {
-	driver, _, apiConfig, err := resolveTenantOCRModelByProvider(ctx, db, tenantID, "MonkeyOCR")
+	driver, _, apiConfig, err := resolveMonkeyOCRModelForDispatch(ctx, db, tenantID, modelID)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR model: %w", err)
 	}
@@ -636,7 +689,7 @@ func dispatchMonkeyOCRPDF(
 		return parser.ParseResult{}, err
 	}
 
-	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
+	zipBytes, err := mineruStreamParse(ctx, apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MonkeyOCR stream: %w", err)
 	}
@@ -792,7 +845,7 @@ func mineruAPIParseMethod(raw string) string {
 // mineruStreamParse POSTs the PDF binary to the MinerU /file_parse
 // endpoint with streaming and returns the zip response body.
 // Mirrors Python's mineru_parser.py._run_mineru_api with stream=True.
-func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
+func mineruStreamParse(ctx context.Context, apiURL string, apiKey string, binary []byte, parseMethod, lang, backend, serverURL string) ([]byte, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 
@@ -825,10 +878,13 @@ func mineruStreamParse(apiURL string, apiKey string, binary []byte, parseMethod,
 		return nil, fmt.Errorf("finalize form: %w", err)
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Minute)
 	defer cancel()
 
-	req, err := http.NewRequestWithContext(ctx, "POST", apiURL, &body)
+	req, err := http.NewRequestWithContext(reqCtx, "POST", apiURL, &body)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}

@@ -1022,15 +1022,25 @@ func TestDispatch_PDFMonkeyOCRMarkdown_UsesFileParseEndpoint(t *testing.T) {
 	}))
 	defer server.Close()
 
-	origResolver := resolveTenantOCRModelByProvider
-	t.Cleanup(func() { resolveTenantOCRModelByProvider = origResolver })
+	origResolver := resolveMonkeyOCRModelForDispatch
+	t.Cleanup(func() { resolveMonkeyOCRModelForDispatch = origResolver })
 	baseURL := server.URL
 	apiKey := ""
-	resolveTenantOCRModelByProvider = func(_ context.Context, _ *gorm.DB, tenantID, providerName string) (models.ModelDriver, string, *models.APIConfig, int, error) {
-		if tenantID != "test-tenant" || providerName != "MonkeyOCR" {
-			t.Fatalf("tenant=%q provider=%q", tenantID, providerName)
+	factoryDriver, err := models.NewModelFactory().CreateModelDriver("MonkeyOCR", map[string]string{"default": server.URL}, models.URLSuffix{DocumentParse: "file_parse"})
+	if err != nil {
+		t.Fatalf("CreateModelDriver: %v", err)
+	}
+	if factoryDriver.Name() != "monkeyocr" {
+		t.Fatalf("factory driver Name()=%q, want monkeyocr", factoryDriver.Name())
+	}
+	resolveMonkeyOCRModelForDispatch = func(_ context.Context, _ *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if tenantID != "test-tenant" {
+			t.Fatalf("tenant=%q", tenantID)
 		}
-		return &monkeyOCRFakeDriver{}, "monkeyocr-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, 0, nil
+		if modelID != "" {
+			t.Fatalf("modelID = %q, want empty for the named selector", modelID)
+		}
+		return factoryDriver, "MonkeyOCR-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
 	}
 
 	component, err := NewParserComponent(map[string]any{
@@ -1051,9 +1061,56 @@ func TestDispatch_PDFMonkeyOCRMarkdown_UsesFileParseEndpoint(t *testing.T) {
 	requireJSONText(t, out, "MonkeyOCR title")
 }
 
-type monkeyOCRFakeDriver struct{ mineruTestDriver }
+func TestDispatch_PDFMonkeyOCR_CompositeSelectorInParseMethod(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"# MonkeyOCR composite\n"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
 
-func (d *monkeyOCRFakeDriver) Name() string { return "monkeyocr" }
+	selector := "MonkeyOCR-model@default@MonkeyOCR"
+	origResolver := resolveMonkeyOCRModelForDispatch
+	t.Cleanup(func() { resolveMonkeyOCRModelForDispatch = origResolver })
+	baseURL := server.URL
+	apiKey := ""
+	factoryDriver, err := models.NewModelFactory().CreateModelDriver("MonkeyOCR", nil, models.URLSuffix{})
+	if err != nil {
+		t.Fatalf("CreateModelDriver: %v", err)
+	}
+	resolveMonkeyOCRModelForDispatch = func(_ context.Context, _ *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		if got, want := modelID, selector; got != want {
+			t.Fatalf("modelID = %q, want %q", got, want)
+		}
+		return factoryDriver, "MonkeyOCR-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	component, err := NewParserComponent(map[string]any{
+		"pdf": map[string]any{"parse_method": selector, "output_format": "markdown"},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	requireJSONText(t, out, "MonkeyOCR composite")
+}
 
 // mineruTestDriver is a minimal ModelDriver mock whose Name() returns "mineru".
 type mineruTestDriver struct{}
