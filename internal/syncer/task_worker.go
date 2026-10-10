@@ -119,7 +119,18 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 	}
 
 	// lock the connector and the KB
-	lease, locked := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
+	lease, locked, lockErr := w.locker.TryLock(taskContext.Connector.ID, taskContext.Knowledgebase.ID)
+	if lockErr != nil {
+		common.Warn("syncer connector lock acquisition failed", zap.String("task_id", taskContext.Task.ID), zap.Error(lockErr))
+		if err = w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
+			common.Warn("syncer task reschedule failed after lock error", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
+			nackEnvelope(envelope)
+			return
+		}
+		w.scheduleRetry(ctx, taskContext.Task.ID, 3*time.Second)
+		ackEnvelope(envelope)
+		return
+	}
 	if !locked {
 		if err = w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
 			common.Warn("syncer task reschedule failed after lock contention", zap.String("task_id", taskContext.Task.ID), zap.Error(err))

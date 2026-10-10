@@ -47,6 +47,73 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 	}, mr
 }
 
+func TestClientSetNXDistinguishesContention(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err != nil {
+		t.Fatalf("first SetNX returned error: %v", err)
+	}
+	if !acquired {
+		t.Fatal("first SetNX acquired = false, want true")
+	}
+
+	acquired, err = r.SetNX(ctx, "lock:document", "owner-2", time.Minute)
+	if err != nil {
+		t.Fatalf("contended SetNX returned error: %v", err)
+	}
+	if acquired {
+		t.Fatal("contended SetNX acquired = true, want false")
+	}
+}
+
+func TestClientSetNXReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	acquired, err := r.SetNX(ctx, "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want transport error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true on transport failure, want false")
+	}
+}
+
+func TestClientSetNXReturnsErrorForNilClient(t *testing.T) {
+	var r *Client
+
+	acquired, err := r.SetNX(t.Context(), "lock:document", "owner-1", time.Minute)
+	if err == nil {
+		t.Fatal("SetNX error = nil, want initialization error")
+	}
+	if acquired {
+		t.Fatal("SetNX acquired = true for nil client, want false")
+	}
+}
+
+func TestDistributedLockSpinAcquireReturnsTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	if err := lock.SpinAcquire(ctx); err == nil {
+		t.Fatal("SpinAcquire error = nil, want transport error")
+	}
+}
+
 // TestEvalTokenBucketStrict_AllowedThenDenied walks the bucket through
 // capacity=2, rate=0.1 (slow refill). Two calls should be allowed; the
 // third should be denied. This is the happy-path security gate.

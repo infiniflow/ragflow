@@ -355,17 +355,18 @@ func (r *Client) Set(ctx context.Context, key string, value string, exp time.Dur
 	return true
 }
 
-// SetNX sets value only if key does not exist
-func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) bool {
-	if r.client == nil {
-		return false
+// SetNX sets value only if key does not exist.
+// It returns false with a nil error when the key already exists.
+func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
 	}
 	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
 	if err != nil {
 		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
-		return false
+		return false, fmt.Errorf("set key %q if absent: %w", key, err)
 	}
-	return ok
+	return ok, nil
 }
 
 // GetOrCreateKey atomically retrieves an existing key or creates a new one
@@ -883,10 +884,11 @@ func NewDistributedLock(lockKey string, lockValue string, timeout time.Duration,
 	}
 }
 
-// Acquire acquires the lock
-func (l *DistributedLock) Acquire(ctx context.Context) bool {
-	if l.client == nil {
-		return false
+// Acquire acquires the lock. It returns false with a nil error when another
+// owner holds the lock.
+func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
+	if l == nil || l.client == nil {
+		return false, errors.New("distributed lock client is not initialized")
 	}
 	// Delete if stale
 	l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
@@ -900,8 +902,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
-			if l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout) {
+			acquired, err := l.Acquire(ctx)
+			if err != nil {
+				return err
+			}
+			if acquired {
 				return nil
 			}
 			time.Sleep(10 * time.Second)
