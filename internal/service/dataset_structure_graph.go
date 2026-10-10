@@ -16,15 +16,14 @@ import (
 	"sort"
 	"strings"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
 
-// Structure-graph sampling constants (mirror structure_graph_common.py).
+// Structure-graph query constants.
 const (
-	graphFullThreshold     = 1024 // below this combined count, return all rows
-	graphTopEntities       = 256  // seed set A size for large buckets
 	graphKeywordCandidates = 16   // keyword candidate rows
 	graphExpansionCap      = 4096 // hub-node expansion cap
 )
@@ -338,6 +337,9 @@ func sortedUnique(in []string) []string {
 }
 
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
+// Matching ignores case and internal whitespace, so an endpoint that differs
+// from the entity name only by the space character (e.g. U+0020 vs U+3000) is
+// still aligned instead of being dropped by the exact-name lookup downstream.
 func normalizeRelationEndpoints(entities []StructureGraphNode, relations []StructureGraphRelation) []StructureGraphRelation {
 	if len(entities) == 0 || len(relations) == 0 {
 		return relations
@@ -354,7 +356,7 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 			if !ok || strings.TrimSpace(v) == "" {
 				continue
 			}
-			key := strings.ToLower(strings.TrimSpace(v))
+			key := normalizeEndpointKey(v)
 			if cur, exists := lookup[key]; exists && cur != respID {
 				ambiguous[key] = true
 				continue
@@ -373,7 +375,7 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 		}
 		for _, f := range []string{"from", "to"} {
 			if v, ok := item[f].(string); ok {
-				if mapped, found := lookup[strings.ToLower(strings.TrimSpace(v))]; found {
+				if mapped, found := lookup[normalizeEndpointKey(v)]; found {
 					item[f] = mapped
 				}
 			}
@@ -381,6 +383,13 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 		normalized = append(normalized, item)
 	}
 	return normalized
+}
+
+// normalizeEndpointKey is the case- and whitespace-insensitive match key for
+// entity names / relation endpoints: any run of Unicode spaces (including
+// U+3000) folds to one ASCII space. Mirrors the compiler's normalizedEntityName.
+func normalizeEndpointKey(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
 // rowHasEnabledSource mirrors _row_has_enabled_source.
@@ -457,132 +466,142 @@ func graphStr(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// buildBucket mirrors sgc.build_bucket: small buckets whole, large sampled.
+// buildBucket returns every entity/relation row in the bucket, emitted in source
+// (reading) order. The graph is returned whole — no sampling — so a page_index
+// or tree keeps every title and include edge it needs to nest correctly.
 func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, datasetID string, scope map[string]interface{}, excludedDocIDs map[string]bool) ([]StructureGraphNode, []StructureGraphRelation, error) {
 	excludedDocIDs = excludedDocIDsOrEmpty(excludedDocIDs)
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
+
+	// Count, then fetch the whole bucket in one request at the exact limit. That
+	// lets the engine walk the result set in a single cursor pass (search_after
+	// past index.max_result_window) instead of re-skipping from the start on
+	// every offset page. Asc("id") is the stable cursor search_after needs.
 	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	if total < graphFullThreshold {
-		fieldMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, nil, 0, int(total), nil)
+	fieldMap := map[string]map[string]interface{}{}
+	if total > 0 {
+		orderBy := (&types.OrderByExpr{}).Asc("id")
+		fieldMap, _, err = graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, 0, int(total), nil)
 		if err != nil {
 			return nil, nil, err
 		}
-		// Initialize as empty (non-nil) slices so a bucket with entities but no
-		// relations serializes "relations": [] instead of null — the frontend
-		// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
-		// relations without a null guard (mirror Python, which always returns []).
-		entities := make([]StructureGraphNode, 0)
-		relations := make([]StructureGraphRelation, 0)
-		for _, row := range fieldMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			kg := firstStringValue(row["type_kwd"])
-			if kg == "" {
-				kg = firstStringValue(row["knowledge_graph_kwd"])
-			}
-			if kg == "relation" {
-				if edge := projectRelation(row); edge != nil {
-					relations = append(relations, edge)
-				}
-			} else {
-				if node := projectEntity(row); node != nil {
-					entities = append(entities, node)
-				}
-			}
-		}
-		entities = dedupEntities(entities)
-		relations = normalizeRelationEndpoints(entities, relations)
-		return entities, relations, nil
 	}
 
-	// Large bucket: sample. A = top entities by mention_count_int desc.
-	orderBy := (&types.OrderByExpr{}).Desc("mention_count_int")
-	var setA []StructureGraphNode
-	entityOffset := 0
-	var entityTotal int64 = -1
-	for len(setA) < graphTopEntities && (entityTotal == -1 || int64(entityOffset) < entityTotal) {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"entity"}
-		entAMap, entTotal, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, orderBy, entityOffset, graphTopEntities, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		entityTotal = entTotal
-		if len(entAMap) == 0 {
-			break
-		}
-		for _, row := range entAMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			if n := projectEntity(row); n != nil {
-				setA = append(setA, n)
-			}
-		}
-		entityOffset += len(entAMap)
+	// fieldMap is keyed by id (the engine returns rows in a map), so ranging it
+	// would discard the requested Asc("id") order. Walk the ids in sorted order
+	// to fix a deterministic base: the stable source-position sort below then
+	// orders by reading position, and equal/absent positions keep THIS id order
+	// instead of map iteration order.
+	ids := make([]string, 0, len(fieldMap))
+	for id := range fieldMap {
+		ids = append(ids, id)
 	}
-	if len(setA) > graphTopEntities {
-		setA = setA[:graphTopEntities]
-	}
-	var aNames []string
-	for _, e := range setA {
-		if n := strings.TrimSpace(graphStr(e["name"])); n != "" {
-			aNames = append(aNames, n)
+	sort.Strings(ids)
+	rows := make([]map[string]interface{}, 0, len(fieldMap))
+	for _, id := range ids {
+		row := fieldMap[id]
+		if !rowHasEnabledSource(row, excludedDocIDs) {
+			continue
 		}
+		rows = append(rows, row)
 	}
-	var aNameTerms []string
-	for _, name := range aNames {
-		aNameTerms = append(aNameTerms, endpointTerms(name)...)
+	sourceOrder, err := s.structureSourceOrder(ctx, tenantID, datasetID, rows)
+	if err != nil {
+		// Ordering is cosmetic; never fail the graph read on the auxiliary lookup.
+		common.Error("structure graph: source-order lookup failed", err)
+		sourceOrder = nil
 	}
-	aNameTerms = sortedUnique(aNameTerms)
+	sort.SliceStable(rows, func(i, j int) bool {
+		oi, oki := structureRowSourceOrder(rows[i], sourceOrder)
+		oj, okj := structureRowSourceOrder(rows[j], sourceOrder)
+		if oki != okj {
+			return oki
+		}
+		if oki && oi != oj {
+			return oi < oj
+		}
+		return false
+	})
 
-	relations := make([]StructureGraphRelation, 0)
-	targetNamesLower := map[string]bool{}
-	if len(aNameTerms) > 0 {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"relation"}
-		cond["from_entity_kwd"] = aNameTerms
-		relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap, nil)
-		if err != nil {
-			return nil, nil, err
+	// Initialize as empty (non-nil) slices so a bucket with entities but no
+	// relations serializes "relations": [] instead of null — the frontend
+	// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
+	// relations without a null guard (mirror Python, which always returns []).
+	entities := make([]StructureGraphNode, 0, len(rows))
+	relations := make([]StructureGraphRelation, 0, len(rows))
+	for _, row := range rows {
+		kg := firstStringValue(row["type_kwd"])
+		if kg == "" {
+			kg = firstStringValue(row["knowledge_graph_kwd"])
 		}
-		for _, row := range relMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
+		if kg == "relation" {
 			if edge := projectRelation(row); edge != nil {
 				relations = append(relations, edge)
-				if tgt := strings.ToLower(strings.TrimSpace(graphStr(edge["to"]))); tgt != "" {
-					targetNamesLower[tgt] = true
-				}
+			}
+		} else {
+			if node := projectEntity(row); node != nil {
+				entities = append(entities, node)
 			}
 		}
 	}
-	var setT []StructureGraphNode
-	if len(targetNamesLower) > 0 {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"entity"}
-		cond["name_kwd"] = sortedKeys(targetNamesLower)
-		tgtMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, row := range tgtMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			if n := projectEntity(row); n != nil {
-				setT = append(setT, n)
+	entities = dedupEntities(entities)
+	relations = normalizeRelationEndpoints(entities, relations)
+	return entities, relations, nil
+}
+
+// structureSourceOrder maps each referenced source chunk id to its reading order
+// (chunk_order_int), so buildBucket can emit rows in source order. Unresolvable
+// ids are absent from the returned map (nil when the bucket references none).
+func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenantID, datasetID string, rows []map[string]interface{}) (map[string]int, error) {
+	ids := make([]string, 0)
+	seen := map[string]bool{}
+	for _, row := range rows {
+		for _, id := range graphSourceChunkIDs(nil, row) {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
 			}
 		}
 	}
-	entities := dedupEntities(append(setA, setT...))
-	return entities, normalizeRelationEndpoints(entities, relations), nil
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// One fetch at the exact id count; Asc("id") keeps the engine's cursor
+	// pagination (search_after) available past index.max_result_window.
+	page, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "chunk_order_int"},
+		map[string]interface{}{"id": ids}, (&types.OrderByExpr{}).Asc("id"), 0, len(ids), nil)
+	if err != nil {
+		return nil, err
+	}
+	order := make(map[string]int, len(page))
+	for id, row := range page {
+		// intValue cannot distinguish an absent field from 0, so gate on
+		// presence: chunk 0 is a valid reading order.
+		if raw, ok := row["chunk_order_int"]; ok && raw != nil {
+			order[id] = intValue(raw)
+		}
+	}
+	return order, nil
+}
+
+// structureRowSourceOrder is a row's source position: the smallest
+// chunk_order_int among its source_chunk_ids (false when none resolve).
+func structureRowSourceOrder(row map[string]interface{}, order map[string]int) (int, bool) {
+	best, found := 0, false
+	for _, id := range graphSourceChunkIDs(nil, row) {
+		v, ok := order[id]
+		if !ok {
+			continue
+		}
+		if !found || v < best {
+			best, found = v, true
+		}
+	}
+	return best, found
 }
 
 func copyFilter(in map[string]interface{}) map[string]interface{} {
