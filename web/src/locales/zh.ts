@@ -453,6 +453,7 @@ export default {
       source: '来源',
       fileName: '文件名',
       datasetLogs: '知识库',
+      datasourceLogs: '数据源',
       fileLogs: '文件',
       overview: '日志',
       success: '成功',
