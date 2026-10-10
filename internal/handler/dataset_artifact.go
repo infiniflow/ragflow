@@ -15,6 +15,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -270,9 +271,17 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	}
 	var topN *int
 	if topNValue != "" {
-		if value, parseErr := strconv.Atoi(topNValue); parseErr == nil {
-			topN = &value
+		// A non-empty but non-integer top_n must surface as an argument error
+		// (matches the validation pattern used elsewhere in this package):
+		// silently coercing to the default makes a malformed request
+		// indistinguishable from an omitted one and lets callers rely on a
+		// budget the route never actually applied.
+		value, parseErr := strconv.Atoi(topNValue)
+		if parseErr != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, fmt.Sprintf("top_n must be an integer (got %q)", topNValue))
+			return
 		}
+		topN = &value
 	}
 	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID, keywords, topN)
 	if err != nil {
