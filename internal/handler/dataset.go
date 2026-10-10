@@ -1399,8 +1399,8 @@ func (h *DatasetsHandler) GetDatasetTableSchema(c *gin.Context) {
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 
-	if !h.datasetsService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData("DATASET_ACCESS_DENIED"),
+	if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}

@@ -66,6 +66,9 @@ const (
 	// It is answered with CodeArgumentError, so a client reads a table rejection
 	// the same way wherever it was raised.
 	TableConfigInvalid = "INVALID_TABLE_CONFIG"
+	// TableAccessDenied answers a probe request from someone the dataset is not
+	// shared with, the same code the dataset endpoints use for it.
+	TableAccessDenied = "DATASET_ACCESS_DENIED"
 )
 
 // TableProbeError carries a code plus a human-readable reason.

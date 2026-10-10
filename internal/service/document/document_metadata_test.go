@@ -498,3 +498,49 @@ func TestRemoveDocumentKeepFileRevokesTableProfile(t *testing.T) {
 		t.Errorf("metadata the table system never owned was removed: %v", record)
 	}
 }
+
+
+// Every user-facing read of document metadata has to exclude the table system's
+// own record, which names the columns the document indexed. This one answers the
+// document's metadata endpoint.
+func TestGetDocumentMetadataByIDDropsTheTableProfile(t *testing.T) {
+	svc, _ := revokeTestService(t, map[string]map[string]any{
+		"doc-1": {
+			entity.TableProfileMetadataField: publishedProfile(t, "金额"),
+			"作者":                             "张三",
+		},
+	})
+
+	fields, err := svc.GetDocumentMetadataByID(t.Context(), "doc-1")
+	if err != nil {
+		t.Fatalf("GetDocumentMetadataByID: %v", err)
+	}
+	if _, leaked := fields[entity.TableProfileMetadataField]; leaked {
+		t.Errorf("the table profile reached a reader: %v", fields)
+	}
+	if fields["作者"] != "张三" {
+		t.Errorf("the document's own metadata is missing: %v", fields)
+	}
+}
+
+// The dataset summary lists the metadata fields a dataset holds; the reserved
+// record is not one of them.
+func TestMetadataSummaryDropsTheTableProfile(t *testing.T) {
+	svc, _ := revokeTestService(t, map[string]map[string]any{
+		"doc-1": {
+			entity.TableProfileMetadataField: publishedProfile(t, "金额"),
+			"作者":                             "张三",
+		},
+	})
+
+	summary, err := svc.GetMetadataSummary(t.Context(), "kb-1", []string{"doc-1"})
+	if err != nil {
+		t.Fatalf("GetMetadataSummary: %v", err)
+	}
+	if _, leaked := summary[entity.TableProfileMetadataField]; leaked {
+		t.Errorf("the table profile reached the dataset summary: %v", summary)
+	}
+	if _, ok := summary["作者"]; !ok {
+		t.Errorf("the document's own metadata is missing: %v", summary)
+	}
+}

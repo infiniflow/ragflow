@@ -4598,8 +4598,9 @@ func TestUpdateDatasetDocumentColumnPatchKeepsOtherParameters(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	svc := testDocumentService(t)
-	_, code, err := svc.UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1",
+	_, code, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{ParserConfig: map[string]interface{}{
 			"TableChunker:FastFoxesJump": map[string]interface{}{
 				"column_roles": map[string]interface{}{"金额": "indexing"},
@@ -4646,8 +4647,9 @@ func TestUpdateDatasetDocumentColumnPatchRefusesBadValues(t *testing.T) {
 		t.Fatalf("seed parser_config: %v", err)
 	}
 
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	svc := testDocumentService(t)
-	_, _, err := svc.UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1",
+	_, _, err := svc.UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1",
 		&UpdateDatasetDocumentRequest{ParserConfig: map[string]interface{}{
 			"TableChunker:FastFoxesJump": map[string]interface{}{"column_roles": map[string]interface{}{"金额": "keyword"}},
 		}},

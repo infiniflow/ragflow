@@ -27,6 +27,11 @@ func (e *tableProfileTestEngine) GetType() string { return e.engineType }
 
 func (e *tableProfileTestEngine) SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
 	wanted, _ := req.Filter["id"].([]string)
+	if len(wanted) == 0 {
+		// The knowledge-base read filters by kb_id rather than by document id,
+		// so it asks for every record the dataset holds.
+		return &types.SearchMetadataResult{MetadataRecords: e.records, Total: int64(len(e.records))}, nil
+	}
 	keep := make(map[string]struct{}, len(wanted))
 	for _, id := range wanted {
 		keep[id] = struct{}{}
@@ -250,5 +255,28 @@ func TestConvertSearchResultToDocMetaHidesProfileField(t *testing.T) {
 	}
 	if fields["作者"] != "张三" {
 		t.Errorf("ordinary metadata lost: %v", fields)
+	}
+}
+
+// The table system's own record is not a value a reader filters on: a document
+// that published a profile must not offer "_table_profile" among the metadata
+// values the dataset lists.
+func TestGetFlattedMetaByKBsDropsTheTableProfile(t *testing.T) {
+	setupTableProfileDB(t)
+	docEngine := &tableProfileTestEngine{
+		engineType: "infinity",
+		records:    []map[string]interface{}{profileRecord(t, "doc-1", "infinity", "金额")},
+	}
+	svc := NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), docEngine)
+
+	flattened, err := svc.GetFlattedMetaByKBs(t.Context(), []string{"kb-1"})
+	if err != nil {
+		t.Fatalf("GetFlattedMetaByKBs: %v", err)
+	}
+	if _, leaked := flattened[entity.TableProfileMetadataField]; leaked {
+		t.Errorf("the table profile is offered as a metadata value: %v", flattened[entity.TableProfileMetadataField])
+	}
+	if _, ok := flattened["作者"]; !ok {
+		t.Errorf("the document's own metadata is missing: %v", flattened)
 	}
 }

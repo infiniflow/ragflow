@@ -26,6 +26,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/document"
 )
 
@@ -65,8 +66,8 @@ func (h *DocumentHandler) ProbeTableColumns(c *gin.Context) {
 	}
 	header := files[0]
 
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData("DATASET_ACCESS_DENIED"),
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
@@ -106,8 +107,8 @@ func (h *DocumentHandler) GetDocumentTableColumns(c *gin.Context) {
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
 
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData("DATASET_ACCESS_DENIED"),
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		common.ResponseWithCodeData(c, common.CodePermissionError, tableProbeErrorData(document.TableAccessDenied),
 			fmt.Sprintf("You don't own the dataset %s.", datasetID))
 		return
 	}
