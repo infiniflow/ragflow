@@ -9,6 +9,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { RunningStatus, RunningStatusOld } from '@/constants/knowledge';
 import { useGetPaginationWithRouter } from '@/hooks/logic-hooks';
 import { IDataSourceLog } from '@/pages/user-setting/data-source/interface';
 import { getDataSourceLogsTableColumns } from '@/pages/user-setting/data-source/log-columns';
@@ -22,23 +23,24 @@ import {
   useReactTable,
 } from '@tanstack/react-table';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { LogTabs } from './dataset-common';
 import { DatasetOverviewKeys } from './utils';
 
+const PollIntervalMs = 5000;
+
+// Backend variants differ: Python emits "SCHEDULE", Go emits "5".
+const isScheduledRow = (log: IDataSourceLog) => {
+  const status = log.status as string;
+  return (
+    status === RunningStatus.SCHEDULE || status === RunningStatusOld.SCHEDULE
+  );
+};
+
 const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   const { t: tDatasetOverview } = useTranslation('datasetOverview');
   const { pagination, setPagination } = useGetPaginationWithRouter();
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(Date.now());
-    }, 1000);
-
-    return () => window.clearInterval(timer);
-  }, []);
 
   const { data } = useQuery<{ logs: IDataSourceLog[]; total: number }>({
     queryKey: DatasetOverviewKeys.logs(
@@ -51,6 +53,11 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
     ),
     placeholderData: (previousData) => previousData ?? { logs: [], total: 0 },
     enabled: !!datasetId,
+    // Refetch immediately whenever the tab is shown so the user always
+    // sees the latest sync state on entry.
+    refetchOnMount: 'always',
+    // Poll at a fixed cadence while the tab is open.
+    refetchInterval: PollIntervalMs,
     queryFn: async () => {
       const { data: res = {} } = await listDataPipelineLogDocument(datasetId, {
         page: pagination.current,
@@ -61,9 +68,23 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
     },
   });
 
+  // Scheduled rows (the ones rendering the "Task starts in" countdown)
+  // are hidden here: the dataset view is a completed-history log, the
+  // live schedule belongs on the personal data source detail page.
+  const visibleLogs = useMemo(
+    () => (data?.logs || []).filter((log) => !isScheduledRow(log)),
+    [data?.logs],
+  );
+
+  // Static `now`: with scheduled rows filtered out no cell renders a
+  // live countdown, so the table doesn't need a 1s re-render tick.
   const columns = useMemo(
-    () => getDataSourceLogsTableColumns({ now, showDatasetColumn: false }),
-    [now],
+    () =>
+      getDataSourceLogsTableColumns({
+        now: Date.now(),
+        showDatasetColumn: false,
+      }),
+    [],
   );
 
   const currentPagination = useMemo(
@@ -75,7 +96,7 @@ const DataSourceLogsTable = ({ datasetId }: { datasetId: string }) => {
   );
 
   const table = useReactTable<IDataSourceLog>({
-    data: data?.logs || [],
+    data: visibleLogs,
     columns,
     manualPagination: true,
     getCoreRowModel: getCoreRowModel(),
