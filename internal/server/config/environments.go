@@ -105,7 +105,8 @@ type Environments struct {
 	MinerUBackend                     string `mapstructure:"mineru_backend"`                    // MINERU_BACKEND
 	TavilyAPIKey                      string `mapstructure:"tavily_api_key"`
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
-	KeenableAPIURL                    string `mapstructure:"keenable_api_url"` // KEENABLE_API_URL
+	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
+	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS
 }
 
 type DefaultSuperUser struct {
@@ -114,6 +115,8 @@ type DefaultSuperUser struct {
 	Nickname string `mapstructure:"nickname"`
 }
 
+// GetEnvironments overlays environment variables on top of the file-based
+// settings, filling the runtime environment snapshot.
 func (c *Config) GetEnvironments() error {
 
 	// Language
@@ -152,7 +155,7 @@ func (c *Config) GetEnvironments() error {
 	docEngine := common.GetEnvSmall(common.EnvDocEngine)
 	if docEngine != "" {
 		switch docEngine {
-		case "infinity", "elasticsearch", "oceanbase", "seekdb":
+		case "infinity", "elasticsearch", "oceanbase", "seekdb", "vastbase":
 			c.environments.DocumentEngineType = docEngine
 		case "opensearch":
 			return fmt.Errorf("not implemented: %s", docEngine)
@@ -282,6 +285,11 @@ func (c *Config) GetEnvironments() error {
 	homePath := common.GetEnv(common.EnvHome)
 	if homePath != "" {
 		c.environments.HomePath = homePath
+	}
+
+	mcpAllowPrivateHosts := common.GetEnvSmall(common.EnvMCPAllowPrivateHosts)
+	if mcpAllowPrivateHosts != "" {
+		c.environments.MCPAllowPrivateHosts = mcpAllowPrivateHosts == "true" || mcpAllowPrivateHosts == "1" || mcpAllowPrivateHosts == "yes"
 	}
 
 	userProfile := common.GetEnv(common.EnvUserProfile)

@@ -205,9 +205,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		&entity.SkillSearchConfig{},
 		&entity.TenantModelInstance{},
 		&entity.TenantModel{},
-		&entity.TenantModelGroupMapping{},
 		&entity.TenantModelProvider{},
-		&entity.TenantModelGroup{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},
 		&entity.FileCommit{},
@@ -247,6 +245,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		// RunMigrations creates the child tables this backfill writes to.
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
+		}
+		// Drop the retired raptor and graphrag sections from the dataset parser
+		// configs. It runs after the conversation split because the two steps
+		// share one version marker: this step's version sorts above the split's
+		// v1.0.0-rc1, so marking it earlier would skip a split that has not run.
+		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
+		}
+
+		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {

@@ -212,24 +212,22 @@ func (dao *UserCanvasDAO) DeleteTx(ctx context.Context, tx *gorm.DB, id string) 
 	return tx.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvas{}).Error
 }
 
-// GetByUserAndTitle returns the canvas matching user_id + title (and
-// optional canvas_category), or (nil, nil) when no such canvas exists.
-// Used by service.AgentService.CreateAgent to enforce the "title
-// already exists" rule that the Python agent API mirrors with
-// UserCanvasService.query(user_id=..., title=...).
-func (dao *UserCanvasDAO) GetByUserAndTitle(ctx context.Context, db *gorm.DB, userID, title, canvasCategory string) (*entity.UserCanvas, error) {
-	q := db.WithContext(ctx).Where("user_id = ? AND title = ?", userID, title)
+// TitleExists reports whether the user already has a canvas with the given
+// title in the category, comparing titles case-insensitively. excludeID, when
+// non-empty, omits that canvas from the check so a rename can keep its own
+// title while a move into another category is still validated.
+func (dao *UserCanvasDAO) TitleExists(ctx context.Context, db *gorm.DB, userID, canvasCategory, title, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.UserCanvas{}).
+		Where("user_id = ? AND LOWER(title) = LOWER(?)", userID, title)
 	if canvasCategory != "" {
 		q = q.Where("canvas_category = ?", canvasCategory)
 	}
-	var row entity.UserCanvas
-	if err := q.First(&row).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, nil
-		}
-		return nil, err
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
 	}
-	return &row, nil
+	var count int64
+	err := q.Count(&count).Error
+	return count > 0, err
 }
 
 // GetList get canvases list with pagination and filtering

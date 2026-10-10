@@ -28,6 +28,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/utility"
 )
 
@@ -40,8 +42,6 @@ var (
 	ErrLinkFileNotFound = errors.New("File not found!")
 	// ErrLinkDatasetNotFound mirrors Python "Can't find this dataset!".
 	ErrLinkDatasetNotFound = errors.New("Can't find this dataset!")
-	// ErrLinkNoAuthorization mirrors Python "no authorization".
-	ErrLinkNoAuthorization = errors.New("no authorization")
 	// ErrLinkInternal is a generic, safe-to-expose internal failure.
 	ErrLinkInternal = errors.New("Internal server error.")
 )
@@ -133,14 +133,16 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 			return ErrLinkFileNotFound
 		}
 		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
-			return ErrLinkNoAuthorization
+			_, permissionErr := permissionresponse.Normalize(permission.ErrPermissionDenied)
+			return permissionErr
 		}
 	}
 
 	// ── 5. Validate KB permissions ────────────────────────────────────────────
 	for _, kb := range kbMap {
-		if !service.HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
-			return ErrLinkNoAuthorization
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kb.ID, permission.OperationUpdate); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return permissionErr
 		}
 	}
 

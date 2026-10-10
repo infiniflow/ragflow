@@ -78,6 +78,8 @@ export default {
       searchKnowledgePlaceholder: 'Buscar',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continúa con la carga y el sistema cambiará automáticamente estos archivos a una configuración de análisis integrada compatible.',
       dataset: 'Conjunto de datos',
       testing: 'Pruebas de recuperación',
       files: 'Archivos',
@@ -167,6 +169,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       paddleocrOptions: 'Opciones de PaddleOCR',
       paddleocrApiUrl: 'URL de API de PaddleOCR',
       paddleocrApiUrlTip:
@@ -549,7 +552,7 @@ export default {
       destinationFolder: 'Carpeta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citas',
       citeTip: 'Consejo de cita',
       name: 'Nombre',
       nameMessage: 'Por favor ingresa el nombre',

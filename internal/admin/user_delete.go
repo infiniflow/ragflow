@@ -437,7 +437,7 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 	}
 	owner := data.ownedTenantID
 	var chatIDs, canvasIDs, conversationIDs, apiConversationIDs []string
-	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs, groupIDs []string
+	var evaluationDatasetIDs, evaluationRunIDs, connectorIDs, providerIDs, instanceIDs, modelIDs []string
 	var ingestionTaskIDs, pipelineLogIDs, memoryTaskIDs, commitIDs []string
 	var err error
 	if owner != "" {
@@ -492,9 +492,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			return err
 		}
 		if modelIDs, err = selectIDs(&entity.TenantModel{}, "provider_id IN ?", providerIDs); err != nil {
-			return err
-		}
-		if err = tx.Model(&entity.TenantModelGroupMapping{}).Where("provider_id IN ?", providerIDs).Distinct().Pluck("group_id", &groupIDs).Error; err != nil {
 			return err
 		}
 	}
@@ -697,22 +694,6 @@ func (data *userDeletionData) deleteDatabaseRows(ctx context.Context, tx *gorm.D
 			"token_num": gorm.Expr("CASE WHEN token_num >= ? THEN token_num - ? ELSE 0 END", count.tokens, count.tokens),
 		}).Error; err != nil {
 			return fmt.Errorf("update dataset counters: %w", err)
-		}
-	}
-	if len(groupIDs) > 0 {
-		if err := removeIDs("model group mappings", &entity.TenantModelGroupMapping{}, "provider_id", providerIDs); err != nil {
-			return err
-		}
-		for _, groupID := range groupIDs {
-			var remaining int64
-			if err := tx.Model(&entity.TenantModelGroupMapping{}).Where("group_id = ?", groupID).Count(&remaining).Error; err != nil {
-				return err
-			}
-			if remaining == 0 {
-				if _, err := remove("model groups", &entity.TenantModelGroup{}, "id = ?", groupID); err != nil {
-					return err
-				}
-			}
 		}
 	}
 	if err := removeIDs("models", &entity.TenantModel{}, "id", modelIDs); err != nil {

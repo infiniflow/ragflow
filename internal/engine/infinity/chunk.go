@@ -1514,7 +1514,28 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 		chunk["position_int"] = []interface{}{}
 	}
 
+	if val, ok := chunk["tag_kwd"].(string); ok {
+		chunk["tag_kwd"], _ = splitKeywordList("tag_kwd", val)
+	}
+
 	return chunk, nil
+}
+
+// splitKeywordList reads a "###"-joined keyword column back as a list.
+// transformChunkFields always joins tag_kwd, so it reads back as a list even
+// with one tag or none; any other keyword column is split only when it holds
+// several values, since most of them are scalar.
+func splitKeywordList(field, value string) ([]interface{}, bool) {
+	if field != "tag_kwd" && !strings.Contains(value, "###") {
+		return nil, false
+	}
+	list := []interface{}{}
+	for part := range strings.SplitSeq(value, "###") {
+		if part != "" {
+			list = append(list, part)
+		}
+	}
+	return list, true
 }
 
 // applyFieldMappings applies field mappings to chunks (side-effect only).
@@ -1605,16 +1626,10 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			if !ok || val == nil || val == "" {
 				chunk[colName] = []interface{}{}
 			} else if !kwdNoSplit[colName] {
-				// Split by "###" for _kwd fields
-				if strVal, ok := val.(string); ok && strings.Contains(strVal, "###") {
-					parts := strings.Split(strVal, "###")
-					var filtered []interface{}
-					for _, p := range parts {
-						if p != "" {
-							filtered = append(filtered, p)
-						}
+				if strVal, ok := val.(string); ok {
+					if list, split := splitKeywordList(colName, strVal); split {
+						chunk[colName] = list
 					}
-					chunk[colName] = filtered
 				}
 			}
 		}
@@ -1825,15 +1840,10 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				needsSplit = true
 			}
 			if needsSplit {
-				if strVal, ok := val.(string); ok && strings.Contains(strVal, "###") {
-					parts := strings.Split(strVal, "###")
-					var filtered []interface{}
-					for _, p := range parts {
-						if p != "" {
-							filtered = append(filtered, p)
-						}
+				if strVal, ok := val.(string); ok {
+					if list, split := splitKeywordList(fieldLower, strVal); split {
+						chunk[field] = list
 					}
-					chunk[field] = filtered
 				}
 				continue
 			}
@@ -2505,8 +2515,42 @@ func floatsEqual(a, b float64) bool {
 	return diff < 1e-9
 }
 
+func buildGraphTypeFilterCondition(value interface{}) string {
+	var values []string
+	switch val := value.(type) {
+	case []string:
+		values = val
+	case []interface{}:
+		for _, item := range val {
+			values = append(values, fmt.Sprintf("%v", item))
+		}
+	case string:
+		values = []string{val}
+	default:
+		values = []string{fmt.Sprintf("%v", value)}
+	}
+	conditions := make([]string, 0, len(values)*2)
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		conditions = append(conditions,
+			keywordFilterCondition("type_kwd", value),
+			fmt.Sprintf("knowledge_graph_kwd='%s'", escapeFilterValue(value)),
+		)
+	}
+	return joinBalanced(conditions, " OR ")
+}
+
 // equivalentConditionToStr converts a condition map to an Infinity filter string
 func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
+	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns)
+}
+
+func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }) string {
@@ -2517,6 +2561,22 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 	var cond []string
 
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			var children []string
+			for _, child := range types.FilterClauses(v) {
+				if expr := equivalentConditionToStrRaw(child, tableColumns); expr != "" {
+					children = append(children, "("+expr+")")
+				}
+			}
+			operator := " AND "
+			if k == "or" {
+				operator = " OR "
+			}
+			if len(children) > 0 {
+				cond = append(cond, joinBalanced(children, operator))
+			}
+			continue
+		}
 		if k == "_id" || utility.IsEmpty(v) {
 			continue
 		}
@@ -2524,11 +2584,8 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range m {
-					if kk == "exists" {
-						// For must_not exists, use !='' since we don't have table schema
-						cond = append(cond, fmt.Sprintf("NOT (%v!='')", vv))
-					}
+				if expr := equivalentConditionToStrRaw(m, tableColumns); expr != "" {
+					cond = append(cond, "NOT ("+expr+")")
 				}
 			}
 			continue
@@ -2537,6 +2594,13 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle exists specially (without table schema, use string comparison)
 		if k == "exists" {
 			cond = append(cond, fmt.Sprintf("%v!=''", v))
+			continue
+		}
+
+		if k == "knowledge_graph_kwd" {
+			if graphTypeCondition := buildGraphTypeFilterCondition(v); graphTypeCondition != "" {
+				cond = append(cond, graphTypeCondition)
+			}
 			continue
 		}
 

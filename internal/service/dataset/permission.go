@@ -3,20 +3,17 @@ package dataset
 import (
 	"context"
 	"errors"
-	"ragflow/internal/dao"
 	"strings"
 
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	"ragflow/internal/service"
 )
 
-// Accessible checks if a user has access to a dataset.
-func (d *DatasetService) Accessible(ctx context.Context, kbID, userID string) bool {
-	return d.kbDAO.Accessible(ctx, dao.DB, kbID, userID)
-}
-
-// GetByID retrieves a knowledge base by ID.
-func (d *DatasetService) GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error) {
-	return d.kbDAO.GetByID(ctx, dao.DB, kbID)
+// CheckAccess authorizes an operation on a dataset under the active edition's policy.
+func (d *DatasetService) CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error {
+	return service.CheckDatasetAccess(ctx, subject, datasetID, operation)
 }
 
 // GetKnowledgebaseByID resolves a dataset entity without applying permission
@@ -31,29 +28,6 @@ func (d *DatasetService) GetKnowledgebaseByID(ctx context.Context, datasetID str
 		return nil, err
 	}
 	return d.kbDAO.GetByID(ctx, dao.DB, normalizedID)
-}
-
-// CheckKBTeamPermission checks if a user has team-level permission for the KB.
-func (d *DatasetService) CheckKBTeamPermission(ctx context.Context, kb *entity.Knowledgebase, userID string) bool {
-	if kb == nil {
-		return false
-	}
-	if kb.TenantID == userID {
-		return true
-	}
-	if kb.Permission != string(entity.TenantPermissionTeam) {
-		return false
-	}
-	joinedTenants, err := d.tenantDAO.GetJoinedTenantsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return false
-	}
-	for _, jt := range joinedTenants {
-		if jt != nil && jt.TenantID == kb.TenantID {
-			return true
-		}
-	}
-	return false
 }
 
 // GetFieldMap returns the field map for the given knowledge base IDs.
