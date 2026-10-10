@@ -80,6 +80,7 @@ func insertCompilationOwnerKB(t *testing.T, kbID, userID string) {
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
 	}
+	ensureDatasetTestMembership(t, userID, userID, "owner")
 }
 
 func testCompilationStatusService() *DatasetService {
@@ -189,8 +190,8 @@ func TestGetDatasetCompilationStatus_Unauthorized(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected authorization error, got nil (status=%+v)", st)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("code=%d want %d", code, common.CodeDataError)
+	if code != common.CodeForbidden {
+		t.Fatalf("code=%d want %d", code, common.CodeForbidden)
 	}
 }
 

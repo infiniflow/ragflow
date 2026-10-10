@@ -30,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -265,7 +266,10 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -706,7 +710,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -1010,8 +1017,8 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
+		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+			respondPermissionError(c, err, false)
 			return
 		}
 	}
@@ -1137,6 +1144,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}

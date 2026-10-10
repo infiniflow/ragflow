@@ -20,9 +20,42 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 
 	"github.com/gin-gonic/gin"
 )
+
+func permissionErrorResult(err error, hideResource bool) (common.ErrorCode, string) {
+	normalize := permissionresponse.Normalize
+	if hideResource {
+		normalize = permissionresponse.NormalizeHidden
+	}
+	code, normalizedErr := normalize(err)
+	return code, normalizedErr.Error()
+}
+
+func respondPermissionError(c *gin.Context, err error, hideResource bool) {
+	code, message := permissionErrorResult(err, hideResource)
+	common.ResponseWithCodeData(c, code, nil, message)
+}
+
+func respondPermissionErrorIf(c *gin.Context, err error, hideResource bool) bool {
+	if !permissionresponse.IsPermissionError(err) {
+		return false
+	}
+	respondPermissionError(c, err, hideResource)
+	return true
+}
+
+func respondPermissionFailure(c *gin.Context, err error, hideResource bool) {
+	code, message := permissionErrorResult(err, hideResource)
+	common.ErrorWithCode(c, code, message)
+}
+
+func respondHTTPPermissionError(c *gin.Context, err error, hideResource bool) {
+	code, message := permissionErrorResult(err, hideResource)
+	common.ResponseWithHttpCodeData(c, int(code), code, nil, message)
+}
 
 // sortTermsFromQuery reads the `sort` parameter, a comma separated list of
 // `column:direction` terms such as `name:asc,create_time:desc`. A handler that

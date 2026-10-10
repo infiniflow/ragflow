@@ -237,6 +237,7 @@ export const useFetchAgentListByPage = () => {
     data: data?.canvas ?? [],
     loading,
     searchString,
+    debouncedSearchString,
     setSearchString,
     handleInputChange: onInputChange,
     pagination: { ...pagination, total: data?.total ?? 0 },
