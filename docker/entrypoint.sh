@@ -268,7 +268,7 @@ function run_model_provider_migrations() {
     if [[ "${DB_TYPE_NORMALIZED}" == "gaussdb" || "${DB_TYPE_NORMALIZED}" == "gauss" ]]; then
         # Postgres-shaped migration SQL is not safe on GaussDB (distributed/ORA
         # mode). run_migrations.sh also no-ops for GaussDB.
-        echo "Skipping model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
+        echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
 
