@@ -24,15 +24,18 @@ import { FormWrapper } from '../../components/form-wrapper';
 import {
   MemoryDatasetForm,
   RetrievalPartialSchema,
+  refineRetrievalBindings,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
-export const FormSchema = z.object({
-  ...RetrievalPartialSchema,
-  description: z.string().optional(),
-});
+export const FormSchema = z
+  .object({
+    ...RetrievalPartialSchema,
+    description: z.string().optional(),
+  })
+  .superRefine(refineRetrievalBindings);
 
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
@@ -65,7 +68,6 @@ const RetrievalForm = () => {
           <FormContainer>
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>

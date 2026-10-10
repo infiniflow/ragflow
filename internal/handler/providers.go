@@ -222,14 +222,16 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 				if liveModels, err := driver.ListModels(c.Request.Context(), apiConfig); err == nil {
 					remoteFetched = true
 					for _, m := range liveModels {
-						maxTokens := 8192
-						if m.MaxOutput != nil {
-							maxTokens = *m.MaxOutput
+						legacyMaxTokens := 0
+						if m.ContextLength != nil {
+							legacyMaxTokens = *m.ContextLength
 						}
 						remoteModels = append(remoteModels, map[string]interface{}{
-							"name":        m.Name,
-							"model_types": m.ModelTypes,
-							"max_tokens":  maxTokens,
+							"name":           m.Name,
+							"model_types":    m.ModelTypes,
+							"context_length": m.ContextLength,
+							"max_output":     m.MaxOutput,
+							"max_tokens":     legacyMaxTokens,
 						})
 					}
 				} else if bedrockAPIKeyAuth {
@@ -285,16 +287,15 @@ func (h *ProviderHandler) ListModels(c *gin.Context) {
 // wins, so a model already saved under the catalog's name keeps it.
 //
 // Remote entries override the catalog entry, with two exceptions: a remote
-// entry that carries no model types inherits the catalog's types, and
-// `max_tokens` always comes from the catalog when the catalog declares one —
-// an upstream listing reports the provider's ceiling, which is not the value
-// RAGFlow is configured to send.
+// entry that carries no model types inherits the catalog's types, and the
+// legacy `max_tokens` alias remains the input/context window. `max_output` is
+// kept as a separate provider generation ceiling.
 func mergeProviderModels(staticModels, remoteModels []map[string]interface{}) []map[string]interface{} {
 	merged := make(map[string]map[string]interface{}, len(staticModels)+len(remoteModels))
 	for _, m := range staticModels {
 		if maxTokens, ok := m["max_tokens"]; !ok || maxTokens == nil {
-			if maxOutput, ok := m["max_output"]; ok && maxOutput != nil {
-				m["max_tokens"] = maxOutput
+			if contextLength, ok := m["context_length"]; ok && contextLength != nil {
+				m["max_tokens"] = contextLength
 			}
 		}
 		name, ok := m["name"].(string)

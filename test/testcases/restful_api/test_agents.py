@@ -109,8 +109,12 @@ def test_agents_crud_validation_contract(rest_client, create_agent_resource):
     duplicate = rest_client.post("/agents", json={"title": "restful_agent_crud", "dsl": MINIMAL_DSL})
     assert duplicate.status_code == 200
     duplicate_payload = duplicate.json()
-    assert duplicate_payload["code"] == 102, duplicate_payload
-    assert "already exists" in duplicate_payload["message"], duplicate_payload
+    assert duplicate_payload["code"] == 0, duplicate_payload
+    assert duplicate_payload["data"]["title"] == "restful_agent_crud(1)", duplicate_payload
+    duplicate_id = duplicate_payload["data"]["id"]
+    cleanup_duplicate = rest_client.delete(f"/agents/{duplicate_id}")
+    assert cleanup_duplicate.status_code == 200
+    assert cleanup_duplicate.json()["code"] == 0, cleanup_duplicate.json()
 
     invalid_update = rest_client.put("/agents/invalid-agent-id", json={"title": "updated", "dsl": MINIMAL_DSL})
     assert invalid_update.status_code == 200

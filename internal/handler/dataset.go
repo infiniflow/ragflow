@@ -30,6 +30,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 )
@@ -265,7 +266,10 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.CreateDataset(ctx, &req, user.ID)
+	result, code, err := h.datasetsService.CreateDataset(ctx, &req, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -706,7 +710,10 @@ func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, user.ID)
+	result, code, err := h.datasetsService.DeleteDatasets(ctx, ids, req.DeleteAll, permission.Subject{
+		UserID:   user.ID,
+		TenantID: user.ID,
+	})
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -769,7 +776,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		KbIDs:        []string{datasetID},
 		Offset:       0,
 		Limit:        1,
-		SelectFields: []string{"content_with_weight", "knowledge_graph_kwd"},
+		SelectFields: []string{"content_with_weight", "type_kwd", "knowledge_graph_kwd"},
 		Filter: map[string]interface{}{
 			"kb_id":               []string{datasetID},
 			"knowledge_graph_kwd": []string{"graph"},
@@ -785,7 +792,10 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	chunk := searchResult.Chunks[0]
-	graphType := firstStringValue(chunk["knowledge_graph_kwd"])
+	graphType := firstStringValue(chunk["type_kwd"])
+	if graphType == "" {
+		graphType = firstStringValue(chunk["knowledge_graph_kwd"])
+	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
 		common.SuccessWithData(c, result, "success")
@@ -945,9 +955,8 @@ func (h *DatasetsHandler) AggregateTags(c *gin.Context) {
 }
 
 // GetCompilationStatus returns the dataset-level knowledge-compile lifecycle
-// state (scheduler contract for API_PROXY_SCHEME=go/hybrid). It replaces the
-// Python-era TraceIndex task-progress endpoint for the Go backend. The optional
-// `kind` query parameter scopes the status to one compile type.
+// state. The optional `kind` query parameter scopes the status to one compile
+// type.
 func (h *DatasetsHandler) GetCompilationStatus(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -1008,8 +1017,8 @@ func (h *DatasetsHandler) ListMetadataFlattened(c *gin.Context) {
 	ctx := c.Request.Context()
 	// Check access for each dataset
 	for _, datasetID := range datasetIDs {
-		if !h.datasetsService.Accessible(ctx, datasetID, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization for dataset: "+datasetID)
+		if err := h.datasetsService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+			respondPermissionError(c, err, false)
 			return
 		}
 	}
@@ -1135,6 +1144,9 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 
 	resp, err := searchService.SearchDatasets(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}

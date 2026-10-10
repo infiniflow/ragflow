@@ -70,7 +70,8 @@ type PDFParser struct {
 	ParseMethod        string
 	// Pages restricts parsing to these 1-indexed inclusive page ranges.
 	// nil/empty means parse all pages. Populated by ConfigureFromSetup from
-	// the filetype setup map and forwarded to the deepdoc ParserConfig.
+	// the filetype setup map. DeepDOC reads it through its ParserConfig, and
+	// plain_text skips the pages outside it.
 	Pages [][]int
 	// OnPageDone, when set, is forwarded to the deepdoc ParserConfig so the
 	// caller observes per-page parse progress (done/total). Only the deepdoc
@@ -87,6 +88,8 @@ type PDFParser struct {
 	PaddleOCRAlgorithm                string
 	DoclingServerURL                  string
 	DoclingAPIKey                     string
+	DoclingDoOCR                      *bool
+	DoclingPDFBackend                 string
 	OpenDataLoaderAPIServer           string
 	OpenDataLoaderAPIKey              string
 	OpenDataLoaderTimeout             int
@@ -194,6 +197,12 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 	}
 	if v, ok := setup["docling_api_key"].(string); ok {
 		p.DoclingAPIKey = v
+	}
+	if v, ok := setup["docling_do_ocr"].(bool); ok {
+		p.DoclingDoOCR = &v
+	}
+	if v, ok := setup["docling_pdf_backend"].(string); ok && v != "" {
+		p.DoclingPDFBackend = v
 	}
 	if v, ok := setup["opendataloader_apiserver"].(string); ok && v != "" {
 		p.OpenDataLoaderAPIServer = v
@@ -354,7 +363,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 		if len(data) == 0 {
 			return emptyPDFResult(filename)
 		}
-		items, pageCount, err := deepdocpdf.PlainText(data)
+		items, pageCount, err := deepdocpdf.PlainText(data, p.Pages)
 		if err != nil {
 			return ParseResult{Err: fmt.Errorf("parser: plain_text: %w", err)}
 		}

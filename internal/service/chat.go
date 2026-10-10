@@ -23,6 +23,8 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/utility"
 	"strings"
 	"unicode/utf8"
@@ -97,7 +99,7 @@ type ListChatsResponse struct {
 }
 
 // ListChats list chats for a user
-func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
+func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords, id, name string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListChatsResponse, error) {
 	var chats []*entity.ChatListItem
 	var total int64
 	var err error
@@ -112,6 +114,8 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			pageSize,
 			terms,
 			keywords,
+			id,
+			name,
 		)
 		if err != nil {
 			return nil, err
@@ -129,22 +133,9 @@ func (s *ChatService) ListChats(ctx context.Context, userID, status, keywords st
 			}, nil
 		}
 
-		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, terms, keywords)
+		chats, total, err = s.chatDAO.ListByOwnerIDs(ctx, dao.DB, filterOwnerIDs, userID, page, pageSize, terms, keywords, id, name)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				chats = chats[start:end]
-			} else {
-				chats = []*entity.ChatListItem{}
-			}
 		}
 	}
 
@@ -349,13 +340,13 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 	applyCreatePromptDefaults(req)
 	filterCreateChatPersistedFields(req)
 
-	exists, err := s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, name, userID, string(entity.StatusValid))
+	name, err = common.UniqueName(name, 255, func(candidate string) (bool, error) {
+		return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+	})
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated chat name in creating chat")
-	}
+	req["name"] = name
 
 	chat := buildCreateChatEntity(req, userID)
 	if err = s.chatDAO.Create(ctx, dao.DB, chat); err != nil {
@@ -392,7 +383,7 @@ func validateCreateChatName(value interface{}) (string, error) {
 	return name, nil
 }
 
-func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}, tenantID string) ([]string, error) {
+func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interface{}, userID string) ([]string, error) {
 	if value == nil {
 		return []string{}, nil
 	}
@@ -412,8 +403,9 @@ func (s *ChatService) validateCreateDatasetIDs(ctx context.Context, value interf
 	}
 
 	for _, datasetID := range normalizedIDs {
-		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, tenantID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil {
@@ -456,12 +448,12 @@ func resolveCreateLLMID(ctx context.Context, llmID, tenantID string, llmSetting 
 			}
 		}
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -472,12 +464,12 @@ func resolveCreateRerankID(ctx context.Context, rerankID, tenantID string) (stri
 	if _, ok := DefaultRerankModels[llmName]; ok {
 		return "", nil
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func applyCreatePromptDefaults(req map[string]interface{}) {
@@ -975,16 +967,14 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if currentChat.Name != nil {
 			currentName = *currentChat.Name
 		}
-		if strings.ToLower(name) != strings.ToLower(currentName) {
-			existingNames, err := s.chatDAO.GetExistingNames(ctx, dao.DB, userID, string(entity.StatusValid))
-			if err != nil {
-				return nil, err
-			}
-			for _, existingName := range existingNames {
-				if strings.EqualFold(existingName, name) {
-					return nil, errors.New("duplicated chat name")
-				}
-			}
+		available, err := common.NameAvailable(currentName, name, func(candidate string) (bool, error) {
+			return s.chatDAO.ExistsByNameTenantStatus(ctx, dao.DB, candidate, userID, string(entity.StatusValid))
+		})
+		if err != nil {
+			return nil, err
+		}
+		if !available {
+			return nil, errors.New("duplicated chat name")
 		}
 	}
 
@@ -1068,8 +1058,9 @@ func (s *ChatService) validateRESTDatasetIDs(ctx context.Context, value interfac
 			continue
 		}
 		datasetID := fmt.Sprint(item)
-		if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-			return nil, fmt.Errorf("you don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
 		}
 		kb, err := s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 		if err != nil || kb == nil {
@@ -1115,12 +1106,12 @@ func (s *ChatService) resolveRESTLLMID(ctx context.Context, llmID, tenantID stri
 			}
 		}
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, modelType, llmID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, modelType, llmID)
 	if err != nil {
 		return "", fmt.Errorf("`llm_id` %s doesn't exist", llmID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantID string) (string, error) {
@@ -1131,12 +1122,12 @@ func (s *ChatService) resolveRESTRerankID(ctx context.Context, rerankID, tenantI
 	if _, ok := defaultRerankModels[baseName]; ok {
 		return "", nil
 	}
-	modelSolver := NewModelSolver()
-	target, err := modelSolver.ResolveModelConfig(ctx, tenantID, entity.ModelTypeRerank, rerankID)
+	modelFactory := NewModelFactory()
+	target, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeRerank, rerankID)
 	if err != nil {
 		return "", fmt.Errorf("`rerank_id` %s doesn't exist", rerankID)
 	}
-	return target.ModelID, nil
+	return target.ID, nil
 }
 
 func filterRESTChatUpdates(req map[string]interface{}) map[string]interface{} {

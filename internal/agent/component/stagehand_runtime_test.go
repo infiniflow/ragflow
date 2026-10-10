@@ -19,11 +19,17 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	stagehand "github.com/browserbase/stagehand-go/v3"
+	"github.com/browserbase/stagehand-go/v3/option"
 )
 
 // cacheKey is the key formula used by clientFor. Exposed so tests
@@ -37,6 +43,15 @@ func cacheSize(r *stagehandRuntime) int {
 	n := 0
 	r.cache.Range(func(_, _ any) bool { n++; return true })
 	return n
+}
+
+// clientFor populates the cache without retaining an operation lease.
+func (r *stagehandRuntime) clientFor(req RunTaskRequest) (stagehand.Client, error) {
+	client, release, err := r.leaseClient(req)
+	if err == nil {
+		release()
+	}
+	return client, err
 }
 
 // ---------------------------------------------------------------------------
@@ -467,6 +482,148 @@ func TestStagehandRuntime_Close_TTLZero_NoSweeper(t *testing.T) {
 	case <-done:
 	case <-time.After(time.Second):
 		t.Fatal("Close hung with ttl=0 (sweeper not pre-closed)")
+	}
+}
+
+type countedStagehandOption struct {
+	option.RequestOption
+	closes atomic.Int32
+}
+
+func (o *countedStagehandOption) Close() error {
+	o.closes.Add(1)
+	return nil
+}
+
+func TestStagehandRuntime_EvictionWaitsForSessionEnd(t *testing.T) {
+	for _, operation := range []string{"task", "extract"} {
+		for _, eviction := range []string{"ttl", "lru", "close"} {
+			t.Run(operation+"/"+eviction, func(t *testing.T) {
+				endStarted := make(chan struct{})
+				finishEnd := make(chan struct{})
+				releaseEnd := sync.OnceFunc(func() { close(finishEnd) })
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					switch {
+					case strings.HasSuffix(req.URL.Path, "/start"):
+						_, _ = fmt.Fprint(w, `{"success":true,"data":{"sessionId":"s"}}`)
+					case strings.HasSuffix(req.URL.Path, "/end"):
+						close(endStarted)
+						<-finishEnd
+						_, _ = fmt.Fprint(w, `{"success":true}`)
+					case strings.HasSuffix(req.URL.Path, "/agentExecute"):
+						_, _ = fmt.Fprint(w, `{"success":true,"data":{"result":{"success":true,"message":"ok"}}}`)
+					case strings.HasSuffix(req.URL.Path, "/extract"):
+						_, _ = fmt.Fprint(w, `{"success":true,"data":{"result":"ok"}}`)
+					default:
+						http.Error(w, "unexpected path: "+req.URL.Path, http.StatusNotFound)
+					}
+				}))
+				defer server.Close()
+				defer releaseEnd()
+
+				r := newStagehandRuntime(time.Hour, 1, time.Minute)
+				defer r.Close()
+				req := RunTaskRequest{Instruction: "do it", ModelName: "openai/gpt-4o", APIKey: "key"}
+				counted := &countedStagehandOption{RequestOption: option.WithBaseURL(server.URL)}
+				entry := &stagehandClientEntry{
+					client: stagehand.NewClient(counted, option.WithMaxRetries(0)),
+				}
+				entry.lastUsedAt.Store(time.Now().UnixNano())
+				r.cache.Store(cacheKey(req), entry)
+				done := make(chan error, 1)
+				go func() {
+					if operation == "task" {
+						_, err := r.RunTask(t.Context(), req)
+						done <- err
+					} else {
+						_, err := r.RunExtract(t.Context(), RunExtractRequest{
+							Instruction: req.Instruction, ModelName: req.ModelName, APIKey: req.APIKey,
+							Schema: map[string]any{"type": "string"},
+						})
+						done <- err
+					}
+				}()
+				select {
+				case <-endStarted:
+				case err := <-done:
+					t.Fatalf("operation completed before End: %v", err)
+				case <-time.After(3 * time.Second):
+					t.Fatal("Sessions.End did not start")
+				}
+				if eviction == "ttl" {
+					entry.lastUsedAt.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+					r.evictExpired()
+				} else if eviction == "lru" {
+					_, _ = r.clientFor(RunTaskRequest{ModelName: req.ModelName, APIKey: "other"})
+				} else {
+					_ = r.Close()
+				}
+				if _, ok := r.cache.Load(cacheKey(req)); ok {
+					t.Fatal("entry was not evicted")
+				}
+				if got := counted.closes.Load(); got != 0 {
+					t.Fatalf("client closed before Sessions.End completed: %d", got)
+				}
+				releaseEnd()
+				select {
+				case err := <-done:
+					if err != nil {
+						t.Fatalf("operation: %v", err)
+					}
+				case <-time.After(3 * time.Second):
+					t.Fatal("operation did not finish")
+				}
+				r.Close()
+				if got := counted.closes.Load(); got != 1 {
+					t.Fatalf("client Close calls = %d, want 1", got)
+				}
+			})
+		}
+	}
+}
+
+func TestStagehandRuntime_RetiredClientWaitsForLastLease(t *testing.T) {
+	r := newStagehandRuntime(time.Hour, 0, time.Minute)
+	defer r.Close()
+	req := RunTaskRequest{ModelName: "openai/gpt-4o", APIKey: "key"}
+	counted := &countedStagehandOption{RequestOption: option.WithBaseURL("http://unused.test")}
+	entry := &stagehandClientEntry{client: stagehand.NewClient(counted)}
+	r.cache.Store(cacheKey(req), entry)
+
+	_, releaseFirst, err := r.leaseClient(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, releaseLast, err := r.leaseClient(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry.lastUsedAt.Store(time.Now().Add(-2 * time.Hour).UnixNano())
+	r.evictExpired()
+	_, releaseNew, err := r.leaseClient(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	releaseNew()
+	if v, _ := r.cache.Load(cacheKey(req)); v == entry {
+		t.Fatal("new acquisition reused a retired entry")
+	}
+	releaseFirst()
+	if got := counted.closes.Load(); got != 0 {
+		t.Fatalf("client closed with a remaining lease: %d", got)
+	}
+	var wg sync.WaitGroup
+	wg.Go(releaseLast)
+	for range 8 {
+		wg.Go(func() { _ = r.Close() })
+	}
+	wg.Wait()
+	if got := counted.closes.Load(); got != 1 {
+		t.Fatalf("Close calls = %d, want 1", got)
+	}
+	if _, _, err := r.leaseClient(req); err == nil {
+		t.Fatal("acquisition succeeded after runtime Close")
 	}
 }
 

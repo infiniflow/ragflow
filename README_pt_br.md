@@ -129,11 +129,6 @@ Consulte as [notas de versão completas](./docs/release_notes.md) para ver outra
 - O modelo analisa perguntas complexas e, quando necessário, divide a questão, pesquisa conhecimentos e verifica evidências em várias etapas.
 - Os modos Low, Medium, High e Ultra permitem ajustar a profundidade da busca e do raciocínio à complexidade da pergunta.
 
-### ⚙️ **Arquitetura de serviços nativa em Go**
-
-- Um serviço Go unificado fornece API, Admin, Ingestor e Syncer. O DeepDoc é executado no processo Go e realiza análise de layout, OCR e reconhecimento de tabelas.
-- Os serviços Go chamam bibliotecas nativas de análise de documentos e ONNX Runtime via CGO. MCP e Sandbox Executor podem ser habilitados conforme necessário.
-
 ### 🌱 **Citações fundamentadas com menos alucinações**
 
 - Visualização da fragmentação de texto para permitir intervenção humana.
@@ -246,7 +241,7 @@ _O show está no ar!_
 
 #### ⚙️ Configuração e ajustes do Docker
 
-A implantação Go com Docker usa `docker/.env` e `docker/docker-compose.yml`, com Kvrocks para cache e armazenamento de Checkpoints e NATS JetStream como fila de mensagens. Para configurar imagem, portas, senhas, mecanismo de documentos e origem das imagens de modelos, consulte o [guia de configuração do Docker](./docker/README.md). Para limitações de plataforma e requisitos do macOS, consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx).
+A implantação Go com Docker usa `docker/.env` e `docker/docker-compose.yml`, com Kvrocks para cache e armazenamento de Checkpoints e NATS JetStream como fila de mensagens. Para configurar imagem, portas, senhas, mecanismo de documentos e origem das imagens de modelos, consulte o [guia de configuração do Docker](./docker/README.md). Para suporte de plataforma (observação: macOS não é suportado temporariamente, use um host Linux x86_64), consulte o [guia de build da imagem Go e suporte a plataformas](./docs/develop/build_docker_image.mdx).
 
 Para trocar o mecanismo de documentos, alterar configurações, reiniciar serviços e manter ou remover dados existentes, siga também o guia de configuração do Docker.
 
