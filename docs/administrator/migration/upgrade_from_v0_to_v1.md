@@ -22,7 +22,7 @@ The `v0.27.2` to `v1.0.0-rc1` migration is irreversible. Create and verify a com
 
 ## Quick navigation
 
-- [Upgrade between v0.x releases](#1-upgrade-between-v0x-releases)
+- [Upgrade within v0.x releases](#1-upgrade-within-between-v0x-releases)
 - [Special instructions for each v0.x checkpoint](#2-handle-each-key-release)
 - [Upgrade from v0.27.2 to v1.0.0-rc1](#3-upgrade-from-v0272-to-v100-rc1)
 - [Upgrade from v1.0.0-rc1 to a later v1.x release](#4-upgrade-from-v100-rc1-to-a-later-v1x-release)
@@ -37,7 +37,7 @@ Start with the first checkpoint that is newer than your current version. Never d
 
 After the final upgrade, complete [Verify the upgraded deployment](#5-verify-the-upgraded-deployment). If any step fails, follow [Recover from a failed upgrade](#6-recover-from-a-failed-upgrade).
 
-## 1. Upgrade between v0.x releases
+## 1. Upgrade within v0.x releases
 
 Treat each arrow in the route as a separate upgrade. You **must start and verify every target release in the route**. Changing the image tag repeatedly, or copying volumes without starting the intermediate release, does not execute that release's database and data migrations.
 
@@ -200,7 +200,7 @@ The migration is irreversible. Never start `v0.27.2` against a database that has
 
 ## 4. Upgrade from v1.0.0-rc1 to a later v1.x release
 
-First verify that `v1.0.0-rc1` started successfully and that its migration completed. If the target version is newer, create a new v1 backup and then follow [Upgrade between v1.x releases](./upgrade_between_v1_releases.md). Do not skip directly from `v0.27.2` to the later release.
+First verify that `v1.0.0-rc1` started successfully and that its migration completed. If the target version is newer, create a new v1 backup and then follow [Upgrade from v1.x to later releases](./upgrade_from_v1_to_later_releases.md). Do not skip directly from `v0.27.2` to the later release.
 
 ## 5. Verify the upgraded deployment
 

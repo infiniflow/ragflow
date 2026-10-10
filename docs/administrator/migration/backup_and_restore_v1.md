@@ -11,7 +11,7 @@ sidebar_custom_props: {
 # Backup and Restore (v1.x)
 
 :::info Backup and host migration only
-This guide creates or restores a same-version recovery point and can move a deployment to another host. To upgrade an existing v1 deployment to a later release, create this backup first and then follow [Upgrade between v1.x releases](./upgrade_between_v1_releases.md).
+This guide creates or restores a same-version recovery point and can move a deployment to another host. To upgrade an existing v1 deployment to a later release, create this backup first and then follow [Upgrade from v1.x to later releases](./upgrade_from_v1_to_later_releases.md).
 :::
 
 Choose the steps for your task:

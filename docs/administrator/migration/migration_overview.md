@@ -29,7 +29,7 @@ The commands run from the repository root, use the `docker` Compose project, and
 | `v0.x` | Back up, restore, or move the deployment to another host | [Backup and Restore (v0.x)](./backup_and_restore_v0.md) |
 | `v0.x` | Upgrade to the current latest version | Create and verify an upgrade recovery point by following [Backup and Restore (v0.x)](./backup_and_restore_v0.md), then follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md) |
 | `v1.0.0-rc1` or later | Back up, restore, or move the deployment to another host | [Backup and Restore (v1.x)](./backup_and_restore_v1.md) |
-| `v1.0.0-rc1` or later | Upgrade to a later release | First complete [Backup and Restore (v1.x)](./backup_and_restore_v1.md), then follow [Upgrade between v1.x releases](./upgrade_between_v1_releases.md) |
+| `v1.0.0-rc1` or later | Upgrade to a later release | First complete [Backup and Restore (v1.x)](./backup_and_restore_v1.md), then follow [Upgrade from v1.x to later releases](./upgrade_from_v1_to_later_releases.md) |
 
 ## 2. Standard upgrade route from v0.x
 

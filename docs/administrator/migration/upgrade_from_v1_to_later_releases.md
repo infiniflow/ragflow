@@ -1,14 +1,14 @@
 ---
 sidebar_position: 4
-title: Upgrade between v1.x releases
-sidebar_label: Upgrade between v1.x releases
-slug: /upgrade_between_v1_releases
+title: Upgrade from v1.x to later releases
+sidebar_label: Upgrade from v1.x to later releases
+slug: /upgrade_from_v1_to_later_releases
 sidebar_custom_props: {
   categoryIcon: LucideLocateFixed
 }
 ---
 
-# Upgrade between v1.x releases
+# Upgrade from v1.x to later releases
 
 :::info Version scope
 This document applies to MySQL-based RAGFlow `v1.0.0-rc1` and later Docker deployments. To upgrade from an earlier release, first follow [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md).
