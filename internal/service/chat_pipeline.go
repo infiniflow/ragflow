@@ -3718,13 +3718,16 @@ NULL Check: json_extract_isnull(chunk_data, '$.FieldName') == false
 
 Each column is listed as "key (name)": the key is how the column is stored and
 the name is what it means. Put the key, exactly as given, inside '$.'. A name
-never goes in the query; give it to an extracted column with AS instead.
+never goes in the query; give it to an extracted column with AS instead, and
+double-quote it when it is not plain ASCII: AS "名称". An unquoted alias must be
+ASCII, so Elasticsearch rejects one that is not.
 
 RULES:
 1. Use EXACT field names (case-sensitive) from the list below
 2. For SELECT: include doc_id, docnm, and json_extract_string() for requested fields
 3. For COUNT: use COUNT(*) or COUNT(DISTINCT json_extract_string(...))
-4. Add AS alias for extracted field names
+4. Add AS alias for extracted field names, double-quoted when the name is not
+   plain ASCII (AS "名称")
 5. DO NOT select 'content' field
 6. Only add NULL check (json_extract_isnull() == false) in WHERE clause when:
    - Question asks to "show me" or "display" specific columns
