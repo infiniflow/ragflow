@@ -12,11 +12,12 @@ export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
 
   // Vision enhancement is a single global toggle shared by every vision-capable
-  // file type (see VisionEnhancementFormFields); the per-file image setup only
-  // carries the independent OCR switch. The enhancement model, language, and
-  // prompt live at the form top level or the global setup, so lang/system_prompt
-  // are shown when the global enhancement is on regardless of the OCR switch.
-  const enableVisionEnhancement = useWatch({ name: 'enable_vision_enhancement' });
+  // file type (see VisionEnhancementFormFields); the image setup only carries
+  // the independent OCR switch. Its language and prompt describe the global
+  // VLM pass, so they appear whenever that enhancement is on.
+  const enableVisionEnhancement = useWatch({
+    name: 'enable_vision_enhancement',
+  });
 
   useSetInitialLanguage({ prefix, languageShown: !!enableVisionEnhancement });
 
