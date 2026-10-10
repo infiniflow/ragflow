@@ -43,6 +43,7 @@ interface IProps extends Partial<IRemoveMessageById>, IRegenerateMessage {
   reference: IReference;
   loading?: boolean;
   sendLoading?: boolean;
+  deleteDisabled?: boolean;
   visibleAvatar?: boolean;
   nickname?: string;
   avatar?: string;
@@ -61,6 +62,7 @@ const MessageItem = ({
   avatar,
   avatarDialog,
   sendLoading = false,
+  deleteDisabled = false,
   clickDocumentButton,
   index,
   removeMessageById,
@@ -152,6 +154,7 @@ const MessageItem = ({
                 removeMessageById={removeMessageById}
                 regenerateMessage={regenerateMessage && handleRegenerateMessage}
                 sendLoading={sendLoading}
+                deleteDisabled={deleteDisabled}
               ></UserGroupButton>
             )}
             {/* Show message content if there's any text besides the download */}

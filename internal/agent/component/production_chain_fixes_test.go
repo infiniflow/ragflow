@@ -385,6 +385,57 @@ func TestRetrieval_ResolveDatasetIDByTenantName(t *testing.T) {
 	}
 }
 
+func TestRetrieval_ResolveDatasetIDByUserPermission(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		visibility string
+		wantID     string
+	}{
+		{name: "team-visible", visibility: string(entity.TenantPermissionTeam), wantID: "kb-team"},
+		{name: "private-denied", visibility: string(entity.TenantPermissionMe)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+			if err != nil {
+				t.Fatalf("failed to open sqlite: %v", err)
+			}
+			if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+				t.Fatalf("failed to migrate permission tables: %v", err)
+			}
+			origDB := dao.DB
+			dao.DB = db
+			t.Cleanup(func() { dao.DB = origDB })
+
+			status := string(entity.StatusValid)
+			datasetID := "kb-team"
+			if tc.visibility == string(entity.TenantPermissionMe) {
+				datasetID = "kb-private"
+			}
+			dataset := entity.Knowledgebase{
+				ID: datasetID, Name: "named-dataset", TenantID: "tenant-1", EmbdID: "embedding",
+				Permission: tc.visibility, CreatedBy: "owner", Status: &status,
+			}
+			if err := db.Create(&dataset).Error; err != nil {
+				t.Fatalf("failed to seed dataset: %v", err)
+			}
+			memberships := []entity.UserTenant{
+				{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: "owner", InvitedBy: "owner", Status: &status},
+				{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: "normal", InvitedBy: "owner", Status: &status},
+			}
+			if err := db.Create(&memberships).Error; err != nil {
+				t.Fatalf("failed to seed memberships: %v", err)
+			}
+
+			state := runtime.NewCanvasState("run-1", "task-1")
+			state.Sys["user_id"] = "member"
+			ctx := runtime.WithState(t.Context(), state)
+			if got := resolveRetrievalDatasetID(ctx, db, "named-dataset"); got != tc.wantID {
+				t.Fatalf("resolveRetrievalDatasetID = %q, want %q", got, tc.wantID)
+			}
+		})
+	}
+}
+
 func TestRetrieval_StructuredInputPreservesQueryWhenDatasetIDsAlreadyPresent(t *testing.T) {
 	c, err := newRetrievalComponent(nil)
 	if err != nil {

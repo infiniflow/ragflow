@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -77,7 +78,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil || !s.kbDAO.Accessible(ctx, dao.DB, document.KbID, userID) {
+		if document == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, document.KbID, permission.OperationRead) != nil {
 			continue
 		}
 

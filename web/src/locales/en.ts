@@ -666,6 +666,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeConfiguration: {
       builtInSuffix: 'Built in',
+      builtInBadge: 'Built in',
+      builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
       randomSeedTip:

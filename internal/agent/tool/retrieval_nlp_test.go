@@ -32,10 +32,13 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -409,6 +412,45 @@ func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing
 	})
 	if err == nil || err.Error() != "retrieval: datasets span multiple tenants" {
 		t.Fatalf("Search error = %v, want multiple-tenant rejection", err)
+	}
+}
+
+func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	ctx := runtime.WithState(t.Context(), state)
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
 	}
 }
 

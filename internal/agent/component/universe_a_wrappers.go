@@ -34,7 +34,7 @@ import (
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"github.com/google/uuid"
@@ -460,19 +460,30 @@ func resolveRetrievalDatasetID(ctx context.Context, db *gorm.DB, kbName string) 
 			}
 		}
 		if userID, _ := state.Sys["user_id"].(string); userID != "" {
-			if kbs, lookupErr := dao.NewKnowledgebaseDAO().GetKBByNameAndUserID(ctx, db, kbName, userID); lookupErr == nil && len(kbs) > 0 {
-				for _, kb := range kbs {
-					if kb == nil || kb.Status == nil || *kb.Status != string(entity.StatusValid) {
-						continue
-					}
-					common.Debug("agent retrieval component: resolved dataset id by user visibility")
-					return kb.ID
-				}
-			} else if lookupErr != nil {
-				common.Warn("agent retrieval component: resolve dataset id by name failed",
+			kbs, lookupErr := dao.NewKnowledgebaseDAO().GetByNameInUserTenants(ctx, db, kbName, userID)
+			if lookupErr != nil {
+				common.Warn("agent retrieval component: resolve dataset id by tenant membership failed",
 					zap.Error(lookupErr))
 			} else {
-				common.Debug("agent retrieval component: user visibility lookup missed")
+				refs := make([]permission.ResourceRef, 0, len(kbs))
+				for _, kb := range kbs {
+					if kb != nil {
+						refs = append(refs, permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID})
+					}
+				}
+				accessible, accessErr := permission.NewDatabaseChecker(db).FilterResources(
+					ctx,
+					permission.Subject{UserID: userID},
+					refs,
+					permission.OperationUse,
+				)
+				if accessErr != nil {
+					common.Warn("agent retrieval component: check dataset use permission failed",
+						zap.Error(accessErr))
+				} else if len(accessible) > 0 {
+					common.Debug("agent retrieval component: resolved dataset id by permission")
+					return accessible[0].ID
+				}
 			}
 		}
 	} else {
