@@ -18,6 +18,7 @@ package component
 
 import (
 	"context"
+	"maps"
 	"math"
 	"testing"
 
@@ -115,6 +116,57 @@ func TestLLMFactory_ParsesTopP(t *testing.T) {
 	}
 	if math.Abs(*comp.param.TopP-0.85) > 1e-9 {
 		t.Errorf("TopP parsed=%v, want 0.85", *comp.param.TopP)
+	}
+}
+
+// TestLLMFactory_DisabledSamplerParams verifies that the LLM factory drops
+// sampler values whose *Enabled flag is false, matching Python's
+// LLMParam.gen_conf, and keeps them when the flag is true.
+func TestLLMFactory_DisabledSamplerParams(t *testing.T) {
+	params := map[string]any{
+		"model_id":          "echo",
+		"temperature":       0.2,
+		"top_p":             0.75,
+		"max_tokens":        256,
+		"presence_penalty":  0.4,
+		"frequency_penalty": 0.7,
+	}
+	flags := []string{"temperatureEnabled", "topPEnabled", "maxTokensEnabled", "presencePenaltyEnabled", "frequencyPenaltyEnabled"}
+
+	build := func(enabled bool) LLMParam {
+		t.Helper()
+		conf := maps.Clone(params)
+		for _, flag := range flags {
+			conf[flag] = enabled
+		}
+		c, err := New("LLM", conf)
+		if err != nil {
+			t.Fatalf("New(LLM): %v", err)
+		}
+		return c.(*LLMComponent).param
+	}
+
+	p := build(false)
+	if p.Temperature != nil {
+		t.Errorf("disabled temperature still applied: %v", *p.Temperature)
+	}
+	if p.TopP != nil {
+		t.Errorf("disabled top_p still applied: %v", *p.TopP)
+	}
+	if p.MaxTokens != nil {
+		t.Errorf("disabled max_tokens still applied: %v", *p.MaxTokens)
+	}
+	if p.PresencePenalty != nil {
+		t.Errorf("disabled presence_penalty still applied: %v", *p.PresencePenalty)
+	}
+	if p.FrequencyPenalty != nil {
+		t.Errorf("disabled frequency_penalty still applied: %v", *p.FrequencyPenalty)
+	}
+
+	p = build(true)
+	if p.Temperature == nil || p.TopP == nil || p.MaxTokens == nil || p.PresencePenalty == nil || p.FrequencyPenalty == nil {
+		t.Errorf("enabled sampler params lost: temperature=%v top_p=%v max_tokens=%v presence_penalty=%v frequency_penalty=%v",
+			p.Temperature != nil, p.TopP != nil, p.MaxTokens != nil, p.PresencePenalty != nil, p.FrequencyPenalty != nil)
 	}
 }
 
