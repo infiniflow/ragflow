@@ -89,24 +89,25 @@ func TestParserComponent_Check(t *testing.T) {
 
 		// --- image family (parser.py:283-287) ---
 		{
-			name:   "image: ocr without lang → pass (no lang check for OCR)",
+			name:   "image: legacy ocr shape → pass",
 			setups: map[string]schema.ParserSetup{"image": {"parse_method": "ocr"}},
 		},
 		{
-			name:   "image: ocr with empty lang → pass (OCR skips lang)",
-			setups: map[string]schema.ParserSetup{"image": {"parse_method": "ocr", "lang": ""}},
-		},
-		{
-			name:    "image: non-ocr without lang → pass (language is not validated)",
+			// Language is not validated anywhere: it is no longer an input to
+			// captions, and Check runs before run inputs exist so it cannot see
+			// the knowledge base value. These two cases only differ in lang.
+			name:    "image: model reference with enhancement → pass regardless of lang",
 			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": ""}},
 			enhance: true,
 		},
 		{
-			name:   "image: non-ocr with lang → pass",
+			name:   "image: model reference with lang → pass",
 			setups: map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": "English"}},
 		},
 		{
-			name:   "image: missing parse_method → pass (treated as non-ocr, but lang defaults empty in DSL)",
+			// Absent parse_method matches the backend's legacy inference, which
+			// reads it as "run local OCR".
+			name:   "image: no parse_method → pass",
 			setups: map[string]schema.ParserSetup{"image": {"lang": "English"}},
 		},
 		{

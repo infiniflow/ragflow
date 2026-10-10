@@ -45,6 +45,30 @@ describe('transformParserParams vision settings', () => {
       system_prompt: '',
     });
   });
+
+  it('writes the image family as a switch and nothing else', () => {
+    // The saved shape is the contract the Go parser reads, so pin it: the
+    // switch out, and the retired per-family keys never written back.
+    const result = transformParserParams({
+      enable_vision_enhancement: false,
+      vlm: { llm_id: '', system_prompt: '' },
+      setups: [
+        {
+          fileFormat: FileType.Image,
+          ocr_enabled: false,
+          parse_method: 'stale-model@provider',
+          lang: 'French',
+          system_prompt: 'stale',
+          output_format: 'json',
+        },
+      ],
+    } as any);
+
+    expect(result.image).toMatchObject({ ocr_enabled: false });
+    expect(result.image).not.toHaveProperty('parse_method');
+    expect(result.image).not.toHaveProperty('lang');
+    expect(result.image).not.toHaveProperty('system_prompt');
+  });
 });
 
 describe('transformTokenChunkerParams', () => {
