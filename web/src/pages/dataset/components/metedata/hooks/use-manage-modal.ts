@@ -100,7 +100,7 @@ export const util = {
         key: item.field,
         type: item.valueType?.toLowerCase(),
         description: item.description,
-        enum: item.values,
+        enum: item.restrictDefinedValues === false ? [] : item.values,
       };
     });
   },
