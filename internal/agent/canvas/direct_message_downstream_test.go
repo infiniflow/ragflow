@@ -4,7 +4,7 @@ package canvas
 import "testing"
 
 // TestDirectMessageDownstream covers the mixed-downstream contract:
-// deferral is only allowed when every direct downstream is a Message.
+// deferral is only allowed when every direct downstream is a terminal Message.
 func TestDirectMessageDownstream(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -155,6 +155,26 @@ func TestDirectMessageDownstream(t *testing.T) {
 					"message_0": {
 						Obj:        CanvasComponentObj{ComponentName: "Message"},
 						Downstream: []string{},
+					},
+				},
+			},
+			cpnID:    "agent_0",
+			deferred: false,
+		},
+		{
+			name: "intermediate message stays eager",
+			canvas: &Canvas{
+				Components: map[string]CanvasComponent{
+					"agent_0": {
+						Obj:        CanvasComponentObj{ComponentName: "Agent"},
+						Downstream: []string{"message_0"},
+					},
+					"message_0": {
+						Obj:        CanvasComponentObj{ComponentName: "Message"},
+						Downstream: []string{"llm_0"},
+					},
+					"llm_0": {
+						Obj: CanvasComponentObj{ComponentName: "LLM"},
 					},
 				},
 			},

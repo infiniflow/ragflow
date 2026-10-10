@@ -1906,8 +1906,7 @@
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
             "status": "1",
-            "llm": [],
-            "rank": "984"
+            "llm": []
         },
         {
             "name": "VLLM",
@@ -3483,6 +3482,14 @@
             "llm": [],
             "rank": "989",
             "url": "https://openrouter.ai/api/v1"
+        },
+        {
+            "name": "Opper",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
+            "status": "1",
+            "llm": [],
+            "url": "https://api.opper.ai/v3/compat"
         },
         {
             "name": "StepFun",

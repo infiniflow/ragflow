@@ -41,6 +41,14 @@ type parallelExpansion struct {
 	OutputRefs     map[string]string
 }
 
+type parallelItemState struct {
+	Canvas *runtime.CanvasState
+}
+
+func init() {
+	_ = compose.RegisterSerializableType[parallelItemState]("canvas.parallelItemState")
+}
+
 func buildParallelExpansion(ctx context.Context, c *Canvas, parallelID string) (*parallelExpansion, error) {
 	if c == nil {
 		return nil, fmt.Errorf("agent: nil canvas")
@@ -139,7 +147,14 @@ func buildParallelItemWorkflow(
 		return nil, err
 	}
 
-	wrapper := compose.NewWorkflow[map[string]any, map[string]any]()
+	// Persist the item-local context state alongside Eino's per-item graph
+	// checkpoint; completed body nodes are skipped on resume.
+	wrapper := compose.NewWorkflow[map[string]any, map[string]any](
+		compose.WithGenLocalState(func(ctx context.Context) *parallelItemState {
+			state, _ := GetStateFromContext(ctx)
+			return &parallelItemState{Canvas: state}
+		}),
+	)
 
 	inNode := wrapper.AddLambdaNode(
 		parallelItemInputNodeKey,
@@ -220,6 +235,27 @@ func buildParallelOuterWorkflow(
 	if maxConcurrency > 0 {
 		parOpts = append(parOpts, workflowx.WithParallelMaxConcurrency(maxConcurrency))
 	}
+	parOpts = append(parOpts, workflowx.WithParallelRunOptions(compose.WithStateModifier(
+		func(ctx context.Context, _ compose.NodePath, state any) error {
+			saved, ok := state.(*parallelItemState)
+			if !ok || saved == nil || saved.Canvas == nil {
+				return fmt.Errorf("agent: parallel %q: invalid item checkpoint state %T", key, state)
+			}
+			current, err := GetStateFromContext(ctx)
+			if err != nil || current == nil {
+				return fmt.Errorf("agent: parallel %q: no item state in context", key)
+			}
+			data, err := json.Marshal(saved.Canvas)
+			if err != nil {
+				return fmt.Errorf("agent: parallel %q: marshal item state: %w", key, err)
+			}
+			if err := json.Unmarshal(data, current); err != nil {
+				return fmt.Errorf("agent: parallel %q: restore item state: %w", key, err)
+			}
+			saved.Canvas = current
+			return nil
+		},
+	)))
 	parOpts = append(parOpts, workflowx.WithParallelContextBuilder(func(
 		ctx context.Context, item any, index int,
 	) (context.Context, error) {

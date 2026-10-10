@@ -291,7 +291,7 @@ export const useCreateKnowledge = () => {
       name: string;
       embedding_model?: string;
       chunk_method?: string;
-      parseType?: ParseType;
+      parse_type?: ParseType;
       pipeline_id?: string | null;
       language?: string;
       [key: string]: any;

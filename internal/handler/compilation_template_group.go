@@ -142,15 +142,6 @@ func (h *CompilationTemplateGroupHandler) Save(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
-	nameExists, err := h.compilationTemplateGroupService.NameExists(c.Request.Context(), user.ID, req.Name)
-	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
-		return
-	}
-	if nameExists {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated compilation template group name.")
-		return
-	}
 	group, err := h.compilationTemplateGroupService.CreateGroup(c.Request.Context(), user.ID, &req)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())

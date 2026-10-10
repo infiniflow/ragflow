@@ -57,37 +57,43 @@ export const RetrievalPartialSchema = {
   user_id: z.string().optional(),
 };
 
+// A Retrieval node sourcing from datasets must name at least one dataset, and
+// one sourcing from memories must name at least one memory. The backend
+// otherwise rejects the run with a `dataset_ids`/`memory_ids is required`
+// error that only surfaces at runtime. Shared with the Agent-embedded
+// Retrieval tool form, which owns the same fields.
+export function refineRetrievalBindings(
+  data: Record<string, any>,
+  ctx: z.RefinementCtx,
+) {
+  if (
+    data.retrieval_from !== RetrievalFrom.Memory &&
+    (data.dataset_ids ?? []).length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['dataset_ids'],
+      message: t('flow.retrievalDatasetRequired'),
+    });
+  }
+  if (
+    data.retrieval_from === RetrievalFrom.Memory &&
+    (data.memory_ids ?? []).length === 0
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['memory_ids'],
+      message: t('flow.retrievalMemoryRequired'),
+    });
+  }
+}
+
 export const FormSchema = z
   .object({
     query: z.string().optional(),
     ...RetrievalPartialSchema,
   })
-  .superRefine((data, ctx) => {
-    // A Retrieval node sourcing from datasets must name at least one dataset,
-    // and one sourcing from memories must name at least one memory. The
-    // backend otherwise rejects the run with a `dataset_ids`/`memory_ids is
-    // required` error that only surfaces at runtime.
-    if (
-      data.retrieval_from === RetrievalFrom.Dataset &&
-      (data.dataset_ids ?? []).length === 0
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['dataset_ids'],
-        message: t('flow.retrievalDatasetRequired'),
-      });
-    }
-    if (
-      data.retrieval_from === RetrievalFrom.Memory &&
-      (data.memory_ids ?? []).length === 0
-    ) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['memory_ids'],
-        message: t('flow.retrievalMemoryRequired'),
-      });
-    }
-  });
+  .superRefine(refineRetrievalBindings);
 
 export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 

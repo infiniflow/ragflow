@@ -40,7 +40,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"ragflow/internal/common"
 	"strings"
 	"sync"
 	"time"
@@ -93,7 +92,7 @@ func FetchTools(ctx context.Context, opts FetchOptions) ([]Tool, error) {
 		opts.Timeout = 10 * time.Second
 	}
 
-	hostname, resolvedIP, err := common.AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -453,8 +452,10 @@ func requestSSE(ctx context.Context, endpoint string, headers map[string]string,
 	// the SSRF guard against the resolved URL, and — when the host
 	// differs from the original SSE host — swap in a fresh pinned
 	// client so the dial-time IP override still applies.
+	// Private targets are accepted only when they match the configured
+	// SSE endpoint host, preventing unrelated internal redirection.
 	postClient := client
-	if postHost, postIP, vErr := common.AssertURLSafe(postURL); vErr != nil {
+	if postHost, postIP, vErr := AssertMCPURLSafeSameOrigin(postURL, endpoint); vErr != nil {
 		return nil, vErr
 	} else if u, perr := url.Parse(postURL); perr == nil && u.Hostname() != "" {
 		if u.Hostname() != originalHost(endpoint) {

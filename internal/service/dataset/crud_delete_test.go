@@ -57,7 +57,7 @@ func TestDeleteDatasetRemovesTemporaryFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	service := testDatasetUpdateService(t)
-	if err := service.deleteDataset(t.Context(), "tenant-1", kb); err != nil {
+	if err := service.deleteDataset(t.Context(), kb); err != nil {
 		t.Fatalf("delete dataset with temporary file: %v", err)
 	}
 	if store.ObjExist(t.Context(), "kb-1", "temporary") {
@@ -96,7 +96,7 @@ func TestDeleteDatasetContinuesWhenStorageIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), "tenant-1", kb); err != nil {
+	if err := testDatasetUpdateService(t).deleteDataset(t.Context(), kb); err != nil {
 		t.Fatalf("delete dataset with missing storage: %v", err)
 	}
 	var count int64

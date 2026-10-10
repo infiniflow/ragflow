@@ -12,6 +12,7 @@ import (
 	"ragflow/internal/dao"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
@@ -40,7 +41,7 @@ func (s *DocumentService) GetDocumentImage(ctx context.Context, userID, imageID 
 // composite image ID belongs to an indexed chunk of an accessible document.
 func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+	if err != nil || doc == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrDocumentImageNotFound
 	}
 	bucket, objectKey, ok := strings.Cut(imageID, "-")
@@ -68,7 +69,7 @@ func (s *DocumentService) GetDocumentImageForDocument(ctx context.Context, userI
 // document metadata.
 func (s *DocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil || !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
+	if err != nil || doc == nil || service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil || doc.Thumbnail == nil || *doc.Thumbnail == "" || strings.HasPrefix(*doc.Thumbnail, imgBase64Prefix) {
 		return nil, ErrDocumentImageNotFound
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
@@ -279,13 +280,9 @@ func (s *DocumentService) GetDocumentPreview(ctx context.Context, userID, docID 
 		return nil, ErrPreviewDocumentNotFound
 	}
 
-	// Reuse KnowledgebaseDAO.Accessible — the exact rule the chunk list on
-	// the same page uses — so the two panels can never disagree: the owning
-	// tenant always, and tenant members only when the dataset's permission
-	// is TEAM. A denial stays indistinguishable from a missing document so
-	// an unauthorized caller cannot probe document IDs (mirrors Python
-	// DocumentService.accessible in the preview path).
-	if !s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID) {
+	// Keep access denial indistinguishable from a missing document so callers
+	// cannot probe document IDs.
+	if service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, doc.KbID, permission.OperationRead) != nil {
 		return nil, ErrPreviewDocumentNotFound
 	}
 
