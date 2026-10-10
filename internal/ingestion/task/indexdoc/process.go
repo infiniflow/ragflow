@@ -146,9 +146,13 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 // pipelineOnlyFields are the parser/chunker BOOKKEEPING keys: each one is
 // consumed inside the pipeline (ck_type drives chunk merging and the image-crop
 // decision, tk_nums carries the chunker's token count into the Tokenizer,
-// layout*/image/context_* describe the media block, and page_number/table_id/
-// sheet/headers/cells describe the table or spreadsheet block) and NONE of them
-// is a chunk-store column.
+// layout*/image/context_* describe the media block, page_number/table_id/
+// sheet/headers/cells describe the table or spreadsheet block, and
+// slide_number/media_*/cell/*_table_id/row_index/column_index locate an
+// embedded image in its slide, sheet or table) and NONE of them is a
+// chunk-store column. The email parser's JSON item also carries its header
+// fields and text_html; the headers stay searchable through the separate
+// header text item that the parser emits.
 //
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
@@ -160,6 +164,9 @@ var pipelineOnlyFields = []string{
 	"context_above", "context_below", "page_number",
 	"table_id", "sheet", "sheet_index", "headers", "cells",
 	"row_start", "row_end", "col_start", "col_end",
+	"slide_number", "media_order", "media_omitted", "cell",
+	"source_table_id", "parent_table_id", "row_index", "column_index",
+	"from", "to", "cc", "bcc", "date", "subject", "text_html",
 }
 
 // stripPipelineOnlyFields drops those bookkeeping keys at the index boundary,
