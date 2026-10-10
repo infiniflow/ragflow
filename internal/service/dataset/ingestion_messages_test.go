@@ -113,6 +113,49 @@ func TestDatasetIngestionLogUsesEventStream(t *testing.T) {
 	assertLatestEventMap(t, log, 1, "Knowledge compilation completed")
 }
 
+func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCompilationOwnerKB(t, "kb-1", "user-1")
+	insertCompilationOwnerKB(t, "kb-2", "user-1")
+
+	connectors := []entity.Connector{
+		{ID: "connector-1", TenantID: "user-1", Name: "linked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "other", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+	}
+	if err := db.Create(&connectors).Error; err != nil {
+		t.Fatalf("insert connectors: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-1-kb-1", ConnectorID: "connector-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link connector to kb-1: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-2-kb-2", ConnectorID: "connector-2", KbID: "kb-2", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link connector to kb-2: %v", err)
+	}
+
+	logs := []entity.SyncLogs{
+		{ID: "sync-kb-1", ConnectorID: "connector-1", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		{ID: "sync-kb-2", ConnectorID: "connector-2", KbID: "kb-2", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		// A stale/unlinked row must not appear in the dataset's configured connector logs.
+		{ID: "sync-unlinked", ConnectorID: "connector-2", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+	}
+	if err := db.Create(&logs).Error; err != nil {
+		t.Fatalf("insert sync logs: %v", err)
+	}
+
+	result, code, err := NewDatasetService().ListSyncLogs(t.Context(), "kb-1", "user-1", 1, 30)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListSyncLogs = (%+v, %v, %v), want success", result, code, err)
+	}
+	if result["total"] != int64(1) {
+		t.Fatalf("total = %#v, want 1", result["total"])
+	}
+	items, ok := result["logs"].([]*entity.ConnectorSyncLog)
+	if !ok || len(items) != 1 || items[0].ID != "sync-kb-1" {
+		t.Fatalf("logs = %#v, want only sync-kb-1", result["logs"])
+	}
+}
+
 func TestListIngestionLogsIncludesPythonFileLogsAndStatusFilters(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)

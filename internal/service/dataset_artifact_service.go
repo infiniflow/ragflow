@@ -30,6 +30,7 @@ import (
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/nav"
+	"ragflow/internal/tokenizer"
 )
 
 // Compile keyword constants used by the knowledge-compilation artifacts stored
@@ -612,11 +613,22 @@ func (s *DatasetArtifactService) GetWikiGraph(ctx context.Context, tenantID, dat
 	var matchExprs []interface{}
 	var orderBy *types.OrderByExpr
 	if keywords != "" {
+		// The token columns (title_tks / content_ltks / *_sm_ltks) are
+		// whitespace-analyzed and hold RAGFlow's pre-tokenized tokens
+		// (space-joined). ES analyzes the query with the whitespace analyzer too,
+		// so a raw multi-token keyword (e.g. "桃园三结义") never equals a stored
+		// token and silently matches nothing. Tokenize the query like the other
+		// lexical callers (see navKeywordExpressions); the raw input stays on
+		// original_query for engines that analyze the query themselves.
+		originalQuery := keywords
+		if tokenized, err := tokenizer.Tokenize(keywords); err == nil && tokenized != "" {
+			keywords = tokenized
+		}
 		matchExprs = []interface{}{&types.MatchTextExpr{
 			Fields:       []string{"title_tks^10", "title_sm_tks^5", "content_ltks^2", "content_sm_ltks"},
 			MatchingText: keywords,
 			TopN:         limit,
-			ExtraOptions: map[string]interface{}{"original_query": keywords},
+			ExtraOptions: map[string]interface{}{"original_query": originalQuery},
 		}}
 	} else {
 		orderBy = (&types.OrderByExpr{}).Desc("weight_int")

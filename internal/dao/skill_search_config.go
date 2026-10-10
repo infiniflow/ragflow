@@ -18,8 +18,8 @@ package dao
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
 	"gorm.io/gorm"
@@ -131,7 +131,7 @@ func (dao *SkillSearchConfigDAO) CreateWithTenantSpace(ctx context.Context, db *
 	}
 
 	defaultConfig := &entity.SkillSearchConfig{
-		ID:                     utility.GenerateUUID(),
+		ID:                     common.GenerateUUID(),
 		TenantID:               tenantID,
 		SpaceID:                spaceID,
 		EmbdID:                 embdID,

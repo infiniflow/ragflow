@@ -20,8 +20,7 @@ func TestMergeCaptions_EmitsCaptionTag(t *testing.T) {
 		{Text: "Table 1: Revenue", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 61, Right: 144, Top: 219, Bottom: 231}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with caption, standalone caption removed), got %d: %v", len(result), textsOf(result))
@@ -56,8 +55,7 @@ func TestMergeCaptions_LeftMarginCaptionAttaches(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 61, Right: 144, Top: 150, Bottom: 170}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 sections (title + table-with-caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -90,8 +88,7 @@ func TestMergeCaptions_SingleCaptionPerTable(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 200, Right: 380, Top: 350, Bottom: 370}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -129,8 +126,7 @@ func TestMergeCaptions_ReadingOrderByTop(t *testing.T) {
 		{Text: "The following table summarizes the quarterly sales performance", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 107, Right: 501, Top: 105, Bottom: 118}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with combined caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -175,8 +171,7 @@ func TestMergeCaptions_TallTableCaptionNearEdgeAttaches(t *testing.T) {
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			sections := []pdf.Section{table, c.caption}
-			figures := pdf.CollectFigures(sections)
-			result := MergeCaptions(sections, figures)
+			result := MergeCaptions(sections)
 			if len(result) != 1 {
 				t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
 			}
@@ -208,8 +203,7 @@ func TestMergeCaptions_CaptionOtherPageDoesNotAttach(t *testing.T) {
 		Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 183, Right: 412, Top: 64, Bottom: 82}},
 	}
 	sections := []pdf.Section{table, caption}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	// No table on the caption's page -> orphaned caption (dropped), table unchanged.
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table unchanged, orphaned caption dropped), got %d: %v", len(result), textsOf(result))
@@ -233,8 +227,7 @@ func TestMergeCaptions_FigureCaptionRawText(t *testing.T) {
 		{Text: "Figure 1: Revenue trend by quarter", LayoutType: pdf.DLALabelFigureCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
 	}
@@ -266,8 +259,7 @@ func TestMergeCaptions_NarrowCaptionAttachesWideTable(t *testing.T) {
 		{Text: "请求参数", LayoutType: pdf.DLALabelTableCaption,
 			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 28, Right: 100, Top: 157, Bottom: 178}}},
 	}
-	figures := pdf.CollectFigures(sections)
-	result := MergeCaptions(sections, figures)
+	result := MergeCaptions(sections)
 
 	if len(result) != 1 {
 		t.Fatalf("expected 1 section (table with caption, standalone caption removed), got %d: %v", len(result), textsOf(result))
@@ -278,5 +270,452 @@ func TestMergeCaptions_NarrowCaptionAttachesWideTable(t *testing.T) {
 	}
 	if strings.Count(got, "请求参数") != 1 {
 		t.Errorf("caption text should appear exactly once (inside <caption>), got %q", got)
+	}
+}
+
+// TestMergeCaptions_CJKBodyParagraphKept locks go_bug
+// cjk-caption-false-positive end-to-end: a Chinese/Japanese body paragraph
+// starting with 表/图 must survive MergeCaptions as its own section (Python
+// keeps it as body text) — neither dropped when no table is nearby, nor
+// swallowed into a table's <caption> when one is.
+func TestMergeCaptions_CJKBodyParagraphKept(t *testing.T) {
+	para := pdf.Section{Text: "表格是一种常见的数据组织形式，本文对其进行对比。", LayoutType: pdf.LayoutTypeText,
+		Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}}
+	t.Run("no table nearby", func(t *testing.T) {
+		sections := []pdf.Section{
+			{Text: "产品分析报告", LayoutType: pdf.LayoutTypeTitle,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 50, Bottom: 80}}},
+			para,
+		}
+		result := MergeCaptions(sections)
+		if len(result) != 2 {
+			t.Errorf("body paragraph dropped; got %d sections: %v", len(result), textsOf(result))
+		}
+	})
+	t.Run("table nearby", func(t *testing.T) {
+		sections := []pdf.Section{
+			{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+			para,
+		}
+		result := MergeCaptions(sections)
+		kept, swallowed := false, false
+		for _, s := range result {
+			if strings.Contains(s.Text, "表格是一种") {
+				kept = true
+			}
+			if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>表格是") {
+				swallowed = true
+			}
+		}
+		if !kept || swallowed {
+			t.Errorf("body paragraph must stay a standalone section (not enter <caption>); kept=%v swallowed=%v sections=%v",
+				kept, swallowed, textsOf(result))
+		}
+	})
+}
+
+// TestMergeCaptions_FigureWithCaptionMarkerTextSurvives locks go_bug
+// figure-self-caption-deleted: a figure section whose OWN text starts with a
+// caption marker (embedded chart title, OCR'd caption inside the figure box)
+// must not be classified as its own caption and deleted. Python pops figure
+// boxes before its caption scan so this cannot happen there; before the fix,
+// findNearestParent matched the figure to ITSELF (CollectFigures includes it,
+// distance 0) and the whole image section vanished from the output. Covers
+// the figure-kind (图1/Figure 1) and table-kind (Table 2) classification
+// paths — the latter would also steal the figure's text into a nearby
+// table's <caption>.
+func TestMergeCaptions_FigureWithCaptionMarkerTextSurvives(t *testing.T) {
+	for _, text := range []string{
+		"Figure 1: system architecture overview",
+		"图1 系统架构总览",
+		"Table 2: embedded chart title inside the figure region",
+	} {
+		sections := []pdf.Section{
+			{Text: "Introduction", LayoutType: pdf.LayoutTypeTitle,
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 50, Bottom: 80}}},
+			{Text: text, LayoutType: pdf.LayoutTypeFigure, Image: "img",
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		}
+		result := MergeCaptions(sections)
+		figureAlive := false
+		for _, s := range result {
+			if s.LayoutType == pdf.LayoutTypeFigure {
+				figureAlive = true
+				if s.Text != text {
+					t.Errorf("figure text mutated: got %q, want %q", s.Text, text)
+				}
+			}
+		}
+		if !figureAlive {
+			t.Errorf("figure %q removed from output (self-caption deletion); sections = %v", text, textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_FigureTextNotStolenIntoTable: same figure, but with a
+// real table in range — before the fix, the figure's "Table 2: …" text was
+// injected into that table's <caption> and the figure section deleted.
+func TestMergeCaptions_FigureTextNotStolenIntoTable(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 2: embedded chart title inside the figure region", LayoutType: pdf.LayoutTypeFigure, Image: "chartimg",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 120, Right: 480, Top: 420, Bottom: 600}}},
+	}
+	result := MergeCaptions(sections)
+	figureAlive, stolen := false, false
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeFigure {
+			figureAlive = true
+		}
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "embedded chart title") {
+			stolen = true
+		}
+	}
+	if !figureAlive {
+		t.Errorf("figure removed; sections = %v", textsOf(result))
+	}
+	if stolen {
+		t.Errorf("figure text stolen into the table's <caption>: %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_FigureCaptionKeptWithMarkerFigure locks the cascade form
+// of figure-self-caption-deleted: a genuine DLA figure caption attaching to a
+// figure whose own text starts with a caption marker must keep BOTH the
+// image and the real caption text (before the fix, the figure became its own
+// target, was deleted, and the attached caption text vanished with it).
+func TestMergeCaptions_FigureCaptionKeptWithMarkerFigure(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "Figure 4: deployment topology", LayoutType: pdf.LayoutTypeFigure, Image: "img4",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "图4 部署拓扑结构", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 1 || result[0].LayoutType != pdf.LayoutTypeFigure {
+		t.Fatalf("want the single figure section, got %d sections: %v", len(result), textsOf(result))
+	}
+	if !strings.Contains(result[0].Text, "部署拓扑") {
+		t.Errorf("real figure caption text lost with the deleted figure: %q", result[0].Text)
+	}
+}
+
+// TestMergeCaptions_TableCaptionFallsBackToFigure locks go_bug
+// table-caption-orphan-dropped: Python attaches a caption to the nearest
+// table OR figure (nearest(tables)/nearest(figures), `elif fk`) and drops it
+// only when BOTH searches fail. Go used to search tables only and delete the
+// caption when none was reachable — losing text Python keeps, for English
+// body text AND for correctly-DLA-labeled "table caption" sections alike
+// (language-independent; the figure here is deliberately neutral-text so the
+// figure-self-deletion bug cannot mask this path).
+func TestMergeCaptions_TableCaptionFallsBackToFigure(t *testing.T) {
+	for _, caption := range []pdf.Section{
+		{Text: "Table 1 shows revenue by category.", LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
+		{Text: "Quarterly revenue breakdown", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 510, Bottom: 530}}},
+	} {
+		sections := []pdf.Section{
+			{Text: "market overview chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+				Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 300, Bottom: 500}}},
+			caption,
+		}
+		result := MergeCaptions(sections)
+		found := false
+		for _, s := range result {
+			if strings.Contains(s.Text, "revenue") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("table caption %q dropped although a figure exists (Python attaches it); sections = %v",
+				caption.Text, textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed pins the SHARED
+// (Python-identical) heuristic boundary of the CJK fix: a body paragraph that
+// STARTS with "Table N" is classified a caption by BOTH implementations
+// (Python's re.match is start-anchored too) and consumed into the table's
+// <caption>. The text is retained — misplacement parity with Python, not a
+// Go regression; only the CJK false-positive class was fixed.
+func TestMergeCaptions_EnglishTable1OpeningParagraphSwallowed(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>data</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 1 shows revenue by category for the fiscal year.", LayoutType: pdf.LayoutTypeText,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 500, Top: 170, Bottom: 195}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeTable && strings.Contains(s.Text, "<caption>Table 1 shows revenue") {
+			return
+		}
+	}
+	t.Errorf("expected the start-anchored English paragraph consumed into <caption> (Python parity); sections = %v",
+		textsOf(result))
+}
+
+// TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach locks the figure-side
+// page-scope guard (go_bug figure-caption-cross-page-attached). Page-local
+// coordinates repeat on every page, so the figure search used to match on
+// page-local distance alone: here the page-2 caption's page-local centre is
+// CLOSER to the page-0 figure (dist²=13225) than to the page-2 figure it
+// belongs to (dist²=21025). The caption was therefore glued to the page-0
+// figure — pages away — and its own figure was left with no caption at all.
+func TestMergeCaptions_FigureCaptionOtherPageDoesNotAttach(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "page zero chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 250, Right: 350, Top: 250, Bottom: 350}}},
+		{Text: "page two chart", LayoutType: pdf.LayoutTypeFigure, Image: "img2",
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 250, Right: 350, Top: 510, Bottom: 610}}},
+		{Text: "Figure 9: latency by shard count", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 250, Right: 350, Top: 400, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections)
+
+	var onZero, onTwo bool
+	for _, s := range result {
+		if s.LayoutType != pdf.LayoutTypeFigure {
+			continue
+		}
+		hasCap := strings.Contains(s.Text, "latency by shard count")
+		switch s.Positions[0].PageNumbers[0] {
+		case 0:
+			onZero = hasCap
+		case 2:
+			onTwo = hasCap
+		}
+	}
+	if !onTwo {
+		t.Errorf("caption did not attach to its own (page 2) figure; sections = %v", textsOf(result))
+	}
+	if onZero {
+		t.Errorf("caption wrongly attached to the page-0 figure (page-local distance only): %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_FigureCaptionUnknownPageStillAttaches pins the deliberate
+// asymmetry with findTables: a figure whose positions carry NO page metadata is
+// kept as a candidate. This search is also the fallback target for orphaned
+// table captions, so rejecting on missing metadata would DELETE their text.
+func TestMergeCaptions_FigureCaptionUnknownPageStillAttaches(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "metadata-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "imgnp",
+			Positions: []pdf.Position{{Left: 100, Right: 500, Top: 200, Bottom: 400}}},
+		{Text: "Table 3: yearly totals", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{4}, Left: 100, Right: 500, Top: 410, Bottom: 430}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if s.LayoutType == pdf.LayoutTypeFigure && strings.Contains(s.Text, "yearly totals") {
+			return
+		}
+	}
+	t.Errorf("caption dropped instead of attaching to the page-less figure: %v", textsOf(result))
+}
+
+// TestMergeCaptions_TableFallbackSurvivesPageGuard locks the interaction
+// between the figure-side page guard and the orphaned-table-caption fallback
+// (go_bug table-caption-orphan-dropped). A table caption with no table in
+// range falls back to the figure search; the page guard must not then reject
+// every candidate and hand the caller a section to delete. Here the only
+// figure is on another page, so the page-scoped pass finds nothing — the
+// fallback must retry without the page filter and keep the text. Before that
+// retry existed, this caption was deleted outright.
+func TestMergeCaptions_TableFallbackSurvivesPageGuard(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "far away chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Table 5 shows the answer quality and retrieval performance across benchmarks.",
+			LayoutType: pdf.LayoutTypeText,
+			Positions:  []pdf.Position{{PageNumbers: []int{7}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if strings.Contains(s.Text, "answer quality and retrieval performance") {
+			return
+		}
+	}
+	t.Errorf("table caption text deleted instead of preserved on the fallback figure: %v", textsOf(result))
+}
+
+// TestMergeCaptions_FigureCaptionPositionMerged locks the highlight geometry:
+// a caption merged into a figure carries its TEXT into the figure's chunk, so
+// its box must be merged into the figure's Positions too — otherwise the UI
+// highlights the figure region only and the caption line is never highlighted
+// with the image. Positions[0] must stay the figure's own box (reading-order
+// sorting and the proximity searches use it).
+func TestMergeCaptions_FigureCaptionPositionMerged(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "revenue chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Figure 1: revenue by quarter", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged into the figure's positions: %+v", got.Positions)
+	}
+	if got.Positions[0].Top != 300 || got.Positions[0].Bottom != 500 {
+		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
+	}
+	if !hasBox(got.Positions, 510, 525) {
+		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
+	}
+}
+
+// TestMergeCaptions_CrossPageFallbackDoesNotClaimPage pins the guard on the
+// above: a table caption rescued by the page-blind fallback can land on a
+// figure pages away. Its text is still preserved, but its box must NOT be
+// merged into the figure's positions — Position pages drive the section's page
+// set, its render/eviction window and its crop plan, so claiming a page the
+// figure does not occupy would corrupt all three.
+func TestMergeCaptions_CrossPageFallbackDoesNotClaimPage(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "far chart", LayoutType: pdf.LayoutTypeFigure, Image: "img0",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Table 9: yearly totals", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{5}, Left: 100, Right: 400, Top: 320, Bottom: 340}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if s.LayoutType != pdf.LayoutTypeFigure {
+			continue
+		}
+		if len(s.Positions) != 1 {
+			t.Errorf("cross-page caption must not extend the figure's positions: %+v", s.Positions)
+		}
+		if !strings.Contains(s.Text, "yearly totals") {
+			t.Errorf("caption text must still be preserved: %q", s.Text)
+		}
+	}
+}
+
+// TestMergeCaptions_IdenticalBoxOtherPageNotChosen locks the page identity of
+// the figure the caption lands on. Two figures on DIFFERENT pages can share a
+// page-local box (page-local coordinates repeat per page — the very reason the
+// page filter exists). The search used to map its hit back to a section by
+// comparing position boxes alone, which returned the earliest section with an
+// equal box: the caption was then attached to the other page's figure.
+func TestMergeCaptions_IdenticalBoxOtherPageNotChosen(t *testing.T) {
+	shared := func(pg int) []pdf.Position {
+		return []pdf.Position{{PageNumbers: []int{pg}, Left: 100, Right: 400, Top: 200, Bottom: 400}}
+	}
+	sections := []pdf.Section{
+		{Text: "page zero chart", LayoutType: pdf.LayoutTypeFigure, Image: "i0", Positions: shared(0)},
+		{Text: "page two chart", LayoutType: pdf.LayoutTypeFigure, Image: "i2", Positions: shared(2)},
+		{Text: "Figure 7: numbers", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{2}, Left: 100, Right: 400, Top: 410, Bottom: 425}}},
+	}
+	result := MergeCaptions(sections)
+	var zero, two bool
+	for _, s := range result {
+		has := strings.Contains(s.Text, "numbers")
+		switch s.Positions[0].PageNumbers[0] {
+		case 0:
+			zero = has
+		case 2:
+			two = has
+		}
+	}
+	if !two {
+		t.Errorf("caption did not attach to the page-2 figure; sections = %v", textsOf(result))
+	}
+	if zero {
+		t.Errorf("caption attached to the page-0 figure that merely shares a box: %v", textsOf(result))
+	}
+}
+
+// TestMergeCaptions_SamePageFigureBeatsPageLessNearer locks the candidate
+// ordering: a figure with no page metadata stays eligible so that a caption the
+// table fallback must not drop can still land somewhere, but it must never
+// outbid a figure we can actually place on the caption's page.
+func TestMergeCaptions_SamePageFigureBeatsPageLessNearer(t *testing.T) {
+	sections := []pdf.Section{
+		// page-less figure, much CLOSER to the caption than the same-page one:
+		// dist² 56 against the same-page figure's 6006, so distance alone would
+		// pick it.
+		{Text: "page-less chart", LayoutType: pdf.LayoutTypeFigure, Image: "np",
+			Positions: []pdf.Position{{Left: 100, Right: 400, Top: 500, Bottom: 540}}},
+		{Text: "same-page chart", LayoutType: pdf.LayoutTypeFigure, Image: "sp",
+			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 100, Right: 400, Top: 400, Bottom: 500}}},
+		{Text: "Figure 3: detail", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{1}, Left: 100, Right: 400, Top: 520, Bottom: 535}}},
+	}
+	result := MergeCaptions(sections)
+	for _, s := range result {
+		if !strings.Contains(s.Text, "detail") {
+			continue
+		}
+		if !strings.Contains(s.Text, "same-page chart") {
+			t.Errorf("closer page-less figure outbid the caption's own-page figure: %v", textsOf(result))
+		}
+	}
+}
+
+// TestMergeCaptions_TableCaptionPositionMerged is the table half of the
+// highlight-geometry fix: injectCaption puts the caption text inside the
+// table's HTML, but a table's caption box routinely sits a few points ABOVE the
+// table box rather than overlapping it, so without merging the boxes the UI
+// highlights the table and never the caption line above it.
+func TestMergeCaptions_TableCaptionPositionMerged(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "<table><tr><td>x</td></tr></table>", LayoutType: pdf.LayoutTypeTable,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 113, Right: 484, Top: 161, Bottom: 236}}},
+		{Text: "Table 1: results", LayoutType: pdf.DLALabelTableCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 210, Right: 385, Top: 138, Bottom: 149}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (table with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if !strings.Contains(got.Text, "<caption>") {
+		t.Fatalf("caption not injected into the table HTML: %q", got.Text)
+	}
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged into the table's positions: %+v", got.Positions)
+	}
+	if got.Positions[0].Top != 161 || got.Positions[0].Bottom != 236 {
+		t.Errorf("primary box must stay first, got %+v", got.Positions[0])
+	}
+	if !hasBox(got.Positions, 138, 149) {
+		t.Errorf("caption box missing from the merged positions: %+v", got.Positions)
+	}
+}
+
+// TestMergeCaptions_MergedCaptionKeepsOnlySharedPages locks the page trimming
+// on the highlight merge: a caption box that itself spans pages must not make
+// the target claim a page it does not occupy. Position pages drive the
+// section's page set, its render/eviction window and its crop plan, so merging
+// a {0,5} caption box into a page-0 figure would corrupt all three.
+func TestMergeCaptions_MergedCaptionKeepsOnlySharedPages(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "spread chart", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "Figure 5: spread", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0, 5}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	result := MergeCaptions(sections)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	got := result[0]
+	if len(got.Positions) != 2 {
+		t.Fatalf("caption box not merged: %+v", got.Positions)
+	}
+	if pn := got.Positions[1].PageNumbers; len(pn) != 1 || pn[0] != 0 {
+		t.Errorf("merged caption must keep only the pages the figure occupies, got %v", pn)
+	}
+	if pn := got.Positions[0].PageNumbers; len(pn) != 1 || pn[0] != 0 {
+		t.Errorf("primary box changed: %v", pn)
 	}
 }

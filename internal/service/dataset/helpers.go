@@ -11,6 +11,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/google/uuid"
@@ -296,9 +297,12 @@ func pythonStringListRepr(items []string) string {
 	return "[" + strings.Join(quoted, ", ") + "]"
 }
 
-func canvasAccessibleForUser(ctx context.Context, userID, canvasID string) (bool, error) {
-	tenantIDs, _ := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-	return dao.NewUserCanvasDAO().Accessible(ctx, dao.DB, canvasID, userID, tenantIDs), nil
+func canvasAccessibleForUser(ctx context.Context, subject permission.Subject, canvasID string) (bool, error) {
+	err := service.CheckCanvasPermission(ctx, subject, canvasID, permission.OperationUse)
+	if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func parserConfigValueOrEmptyList(parserConfig map[string]interface{}, key string) interface{} {

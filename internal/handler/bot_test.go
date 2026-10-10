@@ -40,9 +40,9 @@ import (
 // methods return safe defaults.
 type stubBotService struct {
 	chatbotInfoFn      func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error)
-	agentbotInputsFn   func(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error)
-	agentbotCompleteFn func(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error)
-	agentbotLogsFn     func(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
+	agentbotInputsFn   func(ctx context.Context, userID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error)
+	agentbotCompleteFn func(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error)
+	agentbotLogsFn     func(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
 	chatbotCompleteFn  func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
@@ -53,23 +53,23 @@ func (s *stubBotService) ChatbotInfo(ctx context.Context, tenantID, dialogID str
 	return "", "", "", "", false, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotInputs(ctx context.Context, tenantID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotInputs(ctx context.Context, userID, agentID string) (string, string, string, string, map[string]any, common.ErrorCode, error) {
 	if s.agentbotInputsFn != nil {
-		return s.agentbotInputsFn(ctx, tenantID, agentID)
+		return s.agentbotInputsFn(ctx, userID, agentID)
 	}
 	return "", "", "", "", nil, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotCompletion(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotCompletion(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (<-chan canvas.RunEvent, common.ErrorCode, error) {
 	if s.agentbotCompleteFn != nil {
-		return s.agentbotCompleteFn(ctx, tenantID, agentID, req)
+		return s.agentbotCompleteFn(ctx, userID, agentID, req)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }
 
-func (s *stubBotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+func (s *stubBotService) AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
 	if s.agentbotLogsFn != nil {
-		return s.agentbotLogsFn(ctx, tenantID, agentID, messageID)
+		return s.agentbotLogsFn(ctx, userID, agentID, messageID)
 	}
 	return nil, common.CodeDataError, errors.New("not stubbed")
 }

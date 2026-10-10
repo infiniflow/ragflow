@@ -37,6 +37,34 @@ func (d *remoteModelProbeDriver) CheckConnection(context.Context, *modelModule.A
 	return d.checkErr
 }
 
+func TestMonkeyOCREnvConfig(t *testing.T) {
+	t.Setenv(common.EnvMonkeyOCRAPIServer, "http://monkeyocr:7861")
+
+	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		t.Fatal("collectEnvConfig returned nil")
+	}
+	if config[common.EnvMonkeyOCRAPIServer] != "http://monkeyocr:7861" {
+		t.Fatalf("API server = %#v", config[common.EnvMonkeyOCRAPIServer])
+	}
+	if config[common.EnvMonkeyOCRBackend] != "vlm-engine" {
+		t.Fatalf("backend = %#v", config[common.EnvMonkeyOCRBackend])
+	}
+	if config[common.EnvMonkeyOCRDeleteOutput] != 1 {
+		t.Fatalf("delete output = %#v", config[common.EnvMonkeyOCRDeleteOutput])
+	}
+}
+
+func TestEnsureMonkeyOCRFromEnvSkipsBlankAPIServer(t *testing.T) {
+	t.Setenv(common.EnvMonkeyOCRBackend, "vlm-engine")
+	t.Setenv(common.EnvMonkeyOCRAPIServer, "")
+
+	svc := &ModelProviderService{}
+	if err := svc.ensureMonkeyOCRFromEnv(context.Background(), "tenant-id"); err != nil {
+		t.Fatalf("ensureMonkeyOCRFromEnv: %v", err)
+	}
+}
+
 func TestMonkeyOCRv2EnvConfig(t *testing.T) {
 	t.Setenv(common.EnvMonkeyOCRv2ServerURL, "http://monkeyocrv2:8000")
 	t.Setenv(common.EnvMonkeyOCRv2Timeout, "120")
