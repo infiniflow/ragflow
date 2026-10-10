@@ -17,12 +17,12 @@ jest.mock(
         useFetchAgentListByPage: jest.fn(),
         useFetchBuiltinPipelines: jest.fn(),
       },
-    {
-      get: (target, prop: string) =>
-        prop in target
-          ? (target as Record<string, unknown>)[prop]
-          : jest.fn(() => ({})),
-    },
+      {
+        get: (target, prop: string) =>
+          prop in target
+            ? (target as Record<string, unknown>)[prop]
+            : jest.fn(() => ({})),
+      },
     ),
 );
 jest.mock('@/hooks/use-compilation-template-group-request', () => ({
