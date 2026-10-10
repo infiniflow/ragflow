@@ -87,6 +87,7 @@ func (dao *ConnectorDAO) ListByDatasetIDTx(ctx context.Context, db *gorm.DB, dat
 	var connectors []*ConnectorDatasetListItem
 
 	err := db.WithContext(ctx).Model(&entity.Connector2Kb{}).
+		Distinct().
 		Select("connector.id, connector.source, connector.name, connector2kb.auto_parse, connector.status").
 		Joins("JOIN connector ON connector2kb.connector_id = connector.id").
 		Where("connector2kb.kb_id = ?", datasetID).
