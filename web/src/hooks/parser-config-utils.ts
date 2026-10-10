@@ -14,6 +14,10 @@
  *  limitations under the License.
  */
 
+import { parseDelimiterField } from '@/utils/delimiter-preview';
+
+const GENERAL_CHUNKER_NODE = 'GeneralChunker:SixApplesFall';
+
 /**
  * Pipeline parser configs are keyed by operator id (e.g. "Parser:xxx"), so a
  * top-level key containing ":" marks the pipeline structure, which must be
@@ -53,6 +57,7 @@ const isMinerULayoutRecognize = (layoutRecognize: unknown): boolean =>
  *   - `metadata`          → `Extractor:AutoExtractDefault.metadata`
  *   - `parent_child`      → `GeneralChunker:SixApplesFall.parent_child`
  *   - `chunk_token_num`   → `GeneralChunker:SixApplesFall.chunk_token_size`
+ *   - `delimiter`         → `GeneralChunker:SixApplesFall.delimiters`
  * (the built-in path reads `chunk_token_size` off the chunker node, never a
  * flat `chunk_token_num`). Any key already containing `:` is passed through
  * untouched.
@@ -118,10 +123,8 @@ export const normalizeParserConfig = (
     }
   }
   if (chunk_token_num !== undefined && chunk_token_num !== null) {
-    scoped['GeneralChunker:SixApplesFall'] = {
-      ...(scoped['GeneralChunker:SixApplesFall'] as
-        | Record<string, any>
-        | undefined),
+    scoped[GENERAL_CHUNKER_NODE] = {
+      ...(scoped[GENERAL_CHUNKER_NODE] as Record<string, any> | undefined),
       chunk_token_size: chunk_token_num,
     };
   }
@@ -134,12 +137,19 @@ export const normalizeParserConfig = (
     };
   }
   if (parentChild) {
-    scoped['GeneralChunker:SixApplesFall'] = {
-      ...(scoped['GeneralChunker:SixApplesFall'] as
-        | Record<string, any>
-        | undefined),
+    scoped[GENERAL_CHUNKER_NODE] = {
+      ...(scoped[GENERAL_CHUNKER_NODE] as Record<string, any> | undefined),
       parent_child: parentChild,
     };
+  }
+  if (delimiter !== undefined && delimiter !== null && delimiter !== '') {
+    const delimiters = parseDelimiterField(String(delimiter));
+    if (delimiters.length > 0) {
+      scoped[GENERAL_CHUNKER_NODE] = {
+        ...(scoped[GENERAL_CHUNKER_NODE] as Record<string, any> | undefined),
+        delimiters,
+      };
+    }
   }
   return scoped;
 };
