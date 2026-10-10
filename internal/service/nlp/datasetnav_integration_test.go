@@ -49,7 +49,12 @@ func findNavRow(t *testing.T, tenantID, kbID, docID string) map[string]interface
 	// field-name refactor compile_kwd carries the real compilation kind
 	// ("tree"/"page_index"), so it is no longer the selector that scopes nav rows.
 	req := &types.SearchRequest{
-		IndexNames:   []string{idx},
+		IndexNames: []string{idx},
+		// KbIDs is what lets the engine resolve the per-KB table on Infinity
+		// (ragflow_<tenant>_<kb>); without it the read matches no table and the
+		// row is never found. ES keys on the tenant index alone, so it is inert
+		// there.
+		KbIDs:        []string{kbID},
 		Filter:       map[string]interface{}{"doc_id": []string{docID}, "type_kwd": []string{"nav_doc"}},
 		SelectFields: []string{"available_int", "compile_kwd", "type_kwd"},
 		Limit:        10,
