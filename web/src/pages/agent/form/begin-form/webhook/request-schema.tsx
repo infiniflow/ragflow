@@ -11,6 +11,9 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DynamicRequest } from './dynamic-request';
 
+// HTTP field names use the token character set, including hyphens.
+const HeaderNameInvalidCharacters = /[^!#$%&'*+\-.^_`|~0-9a-zA-Z]/g;
+
 export function WebhookRequestSchema() {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -59,6 +62,7 @@ export function WebhookRequestSchema() {
         ></DynamicRequest>
         <DynamicRequest
           name="schema.headers"
+          keyInputPattern={HeaderNameInvalidCharacters}
           label={t('flow.webhook.headerParameters')}
           operatorList={[WebhookRequestParameters.String]}
         ></DynamicRequest>

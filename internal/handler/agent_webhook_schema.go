@@ -18,11 +18,9 @@ package handler
 
 // Webhook schema helpers.
 //
-// These mirror api/apps/restful_apis/agent_api.py:1896-2051 (extract_by_schema,
-// default_for_type, auto_cast_value, validate_type) from the Python
-// webhook handler. The Go port preserves the Python semantics exactly:
-// required fields raise; optional fields get a type-based default;
-// type coercion runs before validation.
+// Required fields must be present; optional fields get a type-based default.
+// Type coercion runs before validation. Header names are matched without
+// regard to case, while query and body fields use their exact names.
 //
 // Edge cases preserved:
 //   - "file" type maps to []any (a list of parsed file descriptors).
@@ -201,6 +199,15 @@ func extractBySchema(data map[string]any, schema map[string]any, name string) (m
 	if schema == nil {
 		schema = map[string]any{}
 	}
+	// HTTP header names are case-insensitive; retain the schema's spelling
+	// in the output so downstream references keep their configured keys.
+	if name == "headers" {
+		headers := make(map[string]any, len(data))
+		for key, value := range data {
+			headers[strings.ToLower(key)] = value
+		}
+		data = headers
+	}
 
 	props, _ := schema["properties"].(map[string]any)
 	required := stringSlice(schema["required"])
@@ -210,17 +217,19 @@ func extractBySchema(data map[string]any, schema map[string]any, name string) (m
 	for field, rawSchema := range props {
 		fieldSchema, _ := rawSchema.(map[string]any)
 		fieldType, _ := fieldSchema["type"].(string)
+		lookupKey := field
+		if name == "headers" {
+			lookupKey = strings.ToLower(field)
+		}
+		raw, present := data[lookupKey]
 
 		// 1. Required field missing → error (python agent_api.py:1913).
 		isRequired := contains(required, field)
-		if isRequired {
-			if _, ok := data[field]; !ok {
-				return nil, fmt.Errorf("%s missing required field: %s", name, field)
-			}
+		if isRequired && !present {
+			return nil, fmt.Errorf("%s missing required field: %s", name, field)
 		}
 
 		// 2. Optional → default value.
-		raw, present := data[field]
 		if !present {
 			out[field] = defaultForType(fieldType)
 			continue
