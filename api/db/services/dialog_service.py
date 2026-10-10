@@ -21,6 +21,7 @@ import time
 import uuid
 from copy import deepcopy
 from rag.advanced_rag.agentic_rag import RAGTools
+from rag.advanced_rag.harness.chunk_utils import strip_kbinfos_vectors
 
 logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
@@ -812,6 +813,8 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
         # The raw value is still used for TTS (which has its own tag-
         # stripping in clean_tts_text).
         escaped_answer = html.escape(empty_res)
+        # No citation hydration on this path; drop dense vectors before yield.
+        strip_kbinfos_vectors(kbinfos)
         yield {"answer": escaped_answer, "reference": {}, "prompt": "", "audio_binary": None, "final": False}
         yield {"answer": escaped_answer, "reference": kbinfos, "prompt": "\n\n### Query:\n%s" % " ".join(questions), "audio_binary": tts(tts_mdl, empty_res), "final": True}
         return
@@ -891,10 +894,10 @@ async def async_chat(dialog, messages, stream=True, **kwargs):
                 recall_docs = kbinfos["doc_aggs"]
             kbinfos["doc_aggs"] = recall_docs
 
+            # insert_citations / _hydrate_chunk_vectors still need chunk vectors
+            # (including ES zero placeholders used to infer dim). Strip after.
+            strip_kbinfos_vectors(kbinfos)
             refs = deepcopy(kbinfos)
-            for c in refs["chunks"]:
-                if c.get("vector"):
-                    del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
@@ -1815,10 +1818,8 @@ async def async_ask(question, kb_ids, tenant_id, chat_llm_name=None, search_conf
         if not recall_docs:
             recall_docs = kbinfos["doc_aggs"]
         kbinfos["doc_aggs"] = recall_docs
+        strip_kbinfos_vectors(kbinfos)
         refs = deepcopy(kbinfos)
-        for c in refs["chunks"]:
-            if c.get("vector"):
-                del c["vector"]
 
         if answer.lower().find("invalid key") >= 0 or answer.lower().find("invalid api") >= 0:
             answer += " Please set LLM API-Key in 'User Setting -> Model Providers -> API-Key'"
