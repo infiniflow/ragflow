@@ -158,15 +158,16 @@ func (s *ChatPipelineService) agenticRag(
 		// agent's final answer arrives.
 		thinking := false
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
-			Model:          model,
-			SynthModel:     synth,
-			Messages:       convertMessagesToEino(messages),
-			TemplateID:     mode,
-			TenantID:       chat.TenantID,
-			DatasetIDs:     chatDatasetIDs(chat),
-			Stream:         stream,
-			ToolCallCounts: toolCounts,
-			ToolCallErrors: toolErrors,
+			Model:           model,
+			SynthModel:      synth,
+			Messages:        convertMessagesToEino(messages),
+			TemplateID:      mode,
+			TenantID:        chat.TenantID,
+			DatasetIDs:      chatDatasetIDs(chat),
+			ConversationKey: chat.ID,
+			Stream:          stream,
+			ToolCallCounts:  toolCounts,
+			ToolCallErrors:  toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
 				startToThink, endToThink := false, false
 				if thinkingDelta != "" {

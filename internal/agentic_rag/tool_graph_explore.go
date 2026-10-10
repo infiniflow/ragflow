@@ -25,6 +25,8 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+
+	"ragflow/internal/common"
 )
 
 // graphExploreToolName is the tool the model calls to walk the compiled
@@ -114,6 +116,13 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if query == "" {
 		return "", fmt.Errorf("graph_explore: query is required and must be a non-empty string")
 	}
+	if navToolDisabled(ctx, graphExploreToolName) {
+		// Session-level disable: this conversation's bound datasets were proven
+		// to have no compiled knowledge graph, so skip the backend and return
+		// the same "no graph" note the caller falls back from.
+		common.DebugCtx(ctx, "graph_explore: session-disabled; skipping backend (no compiled knowledge graph)")
+		return renderKgExplore(ctx, query, KgExploreResult{}), nil
+	}
 	datasetIDs, err := resolveDatasetScope(g.datasetIDs, args.DatasetIDs)
 	if err != nil {
 		return "", fmt.Errorf("graph_explore: %w", err)
@@ -132,6 +141,13 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	})
 	if err != nil {
 		return "", fmt.Errorf("graph_explore: %w", err)
+	}
+	if len(result.Entities) == 0 && len(result.Relations) == 0 {
+		// A DATASET-level absence (no compiled knowledge graph in scope): disable
+		// the tool for the rest of the conversation so the agent stops spending
+		// calls on it and falls back to the text tools.
+		disableNavTool(ctx, graphExploreToolName)
+		common.DebugCtx(ctx, "graph_explore: disabling for conversation (no compiled knowledge graph)")
 	}
 	return renderKgExplore(ctx, query, result), nil
 }
