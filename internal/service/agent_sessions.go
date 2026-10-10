@@ -144,8 +144,10 @@ func normalizeAgentSession(session *entity.API4Conversation, includeDSL bool) ma
 		}
 
 		for i := 0; i < len(assistantMessages) && i < len(references); i++ {
-			rawChunks, _ := references[i]["chunks"].([]interface{})
-			assistantMessages[i]["reference"] = normalizeAgentReferenceChunks(rawChunks)
+			reference := normalizeAgentReferenceEntry(references[i])
+			rawChunks, _ := reference["chunks"].([]interface{})
+			reference["chunks"] = normalizeAgentReferenceChunks(rawChunks)
+			assistantMessages[i]["reference"] = reference
 		}
 	}
 
@@ -228,28 +230,25 @@ func parseAgentSessionMessages(raw json.RawMessage) []map[string]interface{} {
 }
 
 func normalizeAgentReferenceEntry(reference map[string]interface{}) map[string]interface{} {
+	out := map[string]interface{}{
+		"chunks":   []interface{}{},
+		"doc_aggs": []interface{}{},
+	}
 	if reference == nil {
-		return map[string]interface{}{
-			"chunks":   []interface{}{},
-			"doc_aggs": []interface{}{},
-		}
+		return out
 	}
-	if _, ok := reference["chunks"]; ok {
-		return map[string]interface{}{
-			"chunks":   valueOrEmptySlice(reference["chunks"]),
-			"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
-		}
+	if v, ok := reference["chunks"]; ok {
+		out["chunks"] = valueOrEmptySlice(v)
+	} else if v, ok := reference["reference"]; ok {
+		out["chunks"] = valueOrEmptySlice(v)
 	}
-	if _, ok := reference["doc_aggs"]; ok {
-		return map[string]interface{}{
-			"chunks":   valueOrEmptySlice(reference["chunks"]),
-			"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
-		}
+	if v, ok := reference["doc_aggs"]; ok {
+		out["doc_aggs"] = valueOrEmptySlice(v)
 	}
-	return map[string]interface{}{
-		"chunks":   valueOrEmptySlice(reference["reference"]),
-		"doc_aggs": valueOrEmptySlice(reference["doc_aggs"]),
+	if v, ok := reference["metadata_filters"]; ok {
+		out["metadata_filters"] = valueOrEmptySlice(v)
 	}
+	return out
 }
 
 func valueOrEmptySlice(value interface{}) interface{} {

@@ -25,6 +25,8 @@ import (
 	"fmt"
 	"sync"
 
+	"ragflow/internal/common"
+
 	"gorm.io/gorm"
 )
 
@@ -66,6 +68,10 @@ type RetrievalRequest struct {
 	DatasetIDs []string
 	MemoryIDs  []string
 	TopN       int
+	// Diagnostics is an optional out-param populated by the adapter when
+	// metadata filtering runs, so the caller can report filter state in
+	// agent references.
+	Diagnostics *common.MetadataFilterDiagnostic
 	// RerankCandidatesCount caps the candidate set pulled for reranking. Zero
 	// means "use the backend default".
 	RerankCandidatesCount    int
