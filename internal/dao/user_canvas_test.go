@@ -167,7 +167,8 @@ func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) 
 		}
 	}
 
-	counts, err := dao.ListTags(ctx, db, []string{"user-1"}, "user-1", "")
+	canvasIDs := []string{"agent-canvas", "pipeline-canvas"}
+	counts, err := dao.ListTagsByCanvasIDs(ctx, db, canvasIDs, "")
 	if err != nil {
 		t.Fatalf("ListTags failed: %v", err)
 	}
@@ -181,7 +182,7 @@ func TestUserCanvasDAOListTagsIncludesPipelineWhenCategoryIsEmpty(t *testing.T) 
 		t.Fatalf("shared count = %d, want 2", counts["shared"])
 	}
 
-	counts, err = dao.ListTags(ctx, db, []string{"user-1"}, "user-1", "agent_canvas")
+	counts, err = dao.ListTagsByCanvasIDs(ctx, db, canvasIDs, "agent_canvas")
 	if err != nil {
 		t.Fatalf("ListTags with category failed: %v", err)
 	}
@@ -224,11 +225,10 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 		}
 	}
 
-	ownerIDs := []string{"user-1", "user-2"}
-
-	owners, err := d.GetOwnerFilter(ctx, db, ownerIDs, "user-1")
+	visibleCanvasIDs := []string{"c1", "c2", "c3"}
+	owners, err := d.GetOwnerFilterByCanvasIDs(ctx, db, visibleCanvasIDs)
 	if err != nil {
-		t.Fatalf("GetOwnerFilter failed: %v", err)
+		t.Fatalf("GetOwnerFilterByCanvasIDs failed: %v", err)
 	}
 	if len(owners) != 2 {
 		t.Fatalf("owner filter rows = %d, want 2", len(owners))
@@ -237,7 +237,7 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 	for _, o := range owners {
 		byID[o.ID] = o
 	}
-	// user-1 sees both of their own canvases; user-2 only the team one (c4 is "me").
+	// The caller passes only policy-authorized canvas IDs; c4 is excluded.
 	if byID["user-1"].Count != 2 {
 		t.Fatalf("user-1 count = %d, want 2", byID["user-1"].Count)
 	}
@@ -248,9 +248,9 @@ func TestUserCanvasDAOOwnerAndCategoryFilters(t *testing.T) {
 		t.Fatalf("user-1 label = %v, want Alice", byID["user-1"].Label)
 	}
 
-	categories, err := d.GetCategoryFilter(ctx, db, ownerIDs, "user-1")
+	categories, err := d.GetCategoryFilterByCanvasIDs(ctx, db, visibleCanvasIDs)
 	if err != nil {
-		t.Fatalf("GetCategoryFilter failed: %v", err)
+		t.Fatalf("GetCategoryFilterByCanvasIDs failed: %v", err)
 	}
 	catByID := make(map[string]int64, len(categories))
 	for _, c := range categories {
@@ -290,9 +290,9 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "finance", nil, "", nil)
+	results, _, err := d.ListByIDs(ctx, db, []string{"c1", "c2"}, nil, 1, 10, []OrderTerm{{Column: "create_time"}}, "finance", nil, "", nil)
 	if err != nil {
-		t.Fatalf("ListByTenantIDs: %v", err)
+		t.Fatalf("ListByIDs: %v", err)
 	}
 	if len(results) != 1 {
 		t.Fatalf("keyword search 'finance' returned %d rows, want 1 (matched by tag not title)", len(results))
@@ -302,9 +302,9 @@ func TestUserCanvasDAOKeywordSearchIncludesTags(t *testing.T) {
 	}
 }
 
-// TestUserCanvasDAOListByTenantIDsCategoryUnion verifies that a multi-category
+// TestUserCanvasDAOListByIDsCategoryUnion verifies that a multi-category
 // canvas_category filter matches the union of the selected categories.
-func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
+func TestUserCanvasDAOListByIDsCategoryUnion(t *testing.T) {
 	db := setupUserCanvasTestDB(t)
 	if err := db.AutoMigrate(&entity.User{}); err != nil {
 		t.Fatalf("failed to migrate user: %v", err)
@@ -327,17 +327,18 @@ func TestUserCanvasDAOListByTenantIDsCategoryUnion(t *testing.T) {
 		}
 	}
 
-	rows, total, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"dataflow_canvas", "agent_canvas"}, "", nil)
+	canvasIDs := []string{"c-wf-1", "c-wf-2", "c-df-1"}
+	rows, total, err := d.ListByIDs(ctx, db, canvasIDs, nil, 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"dataflow_canvas", "agent_canvas"}, "", nil)
 	if err != nil {
-		t.Fatalf("ListByTenantIDs: %v", err)
+		t.Fatalf("ListByIDs: %v", err)
 	}
 	if total != 3 || len(rows) != 3 {
 		t.Fatalf("category union returned total=%d rows=%d, want 3/3", total, len(rows))
 	}
 
-	rows, total, err = d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"agent_canvas"}, "", nil)
+	rows, total, err = d.ListByIDs(ctx, db, canvasIDs, nil, 1, 10, []OrderTerm{{Column: "create_time"}}, "", []string{"agent_canvas"}, "", nil)
 	if err != nil {
-		t.Fatalf("ListByTenantIDs (single category): %v", err)
+		t.Fatalf("ListByIDs (single category): %v", err)
 	}
 	if total != 2 || len(rows) != 2 {
 		t.Fatalf("single category returned total=%d rows=%d, want 2/2", total, len(rows))
@@ -369,9 +370,9 @@ func TestUserCanvasDAOOrderByTags(t *testing.T) {
 		}
 	}
 
-	results, _, err := d.ListByTenantIDs(ctx, db, []string{"u1"}, "u1", 1, 10, []OrderTerm{{Column: "tags"}}, "", nil, "", nil)
+	results, _, err := d.ListByIDs(ctx, db, []string{"c-z", "c-a", "c-m"}, nil, 1, 10, []OrderTerm{{Column: "tags"}}, "", nil, "", nil)
 	if err != nil {
-		t.Fatalf("ListByTenantIDs: %v", err)
+		t.Fatalf("ListByIDs: %v", err)
 	}
 	if len(results) != 3 {
 		t.Fatalf("returned %d rows, want 3", len(results))
