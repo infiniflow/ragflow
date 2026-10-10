@@ -15,7 +15,6 @@ import (
 	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -198,7 +197,7 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		}
 	}
 
-	kbID := utility.GenerateToken()
+	kbID := common.GenerateToken()
 	status := string(entity.StatusValid)
 	// Fall back to a numbered name when the requested one is already taken.
 	dedupedName, dedupeErr := d.dedupeDatasetName(ctx, name, tenantID)

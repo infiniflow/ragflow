@@ -144,7 +144,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 	variables["tools"] = tools
 
 	server := &entity.MCPServer{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		Name:        req.Name,
 		TenantID:    tenantID,
 		URL:         req.URL,
@@ -755,7 +755,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 		variables["tools"] = toolsAsMap(tools)
 
 		server := &entity.MCPServer{
-			ID:         utility.GenerateUUID(),
+			ID:         common.GenerateUUID(),
 			TenantID:   tenantID,
 			Name:       newName,
 			URL:        url,

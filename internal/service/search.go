@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
-	"ragflow/internal/utility"
 )
 
 // SearchService search service
@@ -203,7 +202,7 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	}
 
 	// Generate UUID for search ID (same as Python get_uuid())
-	searchID := utility.GenerateUUID()
+	searchID := common.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
 	// search.name is a 128-byte column; keep generated names within it.

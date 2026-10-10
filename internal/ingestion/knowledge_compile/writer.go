@@ -35,7 +35,6 @@ import (
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 // Writer persists dataset-level merged products and removes them on document
@@ -227,7 +226,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	// shard, so rows from the same execution share plan_kwd and reruns of the
 	// same plan share input_hash_kwd.
 	now := time.Now()
-	runID := utility.GenerateUUID()
+	runID := common.GenerateUUID()
 	inputHash := mergedInputHash(products)
 	// Diagnostics: before building merged rows, confirm the incoming products
 	// actually carry an embedding. mergedChunkMap only writes q_<dim>_vec when

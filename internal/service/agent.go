@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"maps"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 	"reflect"
 	"sort"
 	"strings"
@@ -983,7 +982,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	// no-op when graph.nodes is already non-empty.
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 	row := &entity.UserCanvas{
-		ID:             utility.GenerateUUID(),
+		ID:             common.GenerateUUID(),
 		UserID:         req.UserID,
 		Title:          req.Title,
 		Description:    req.Description,
@@ -1361,7 +1360,7 @@ func (s *AgentService) saveOrReplaceVersionOptions(ctx context.Context, userID, 
 	}
 	versionTitle := buildVersionTitle(nickname, title, time.Now())
 	return dao.SaveOrReplaceLatestVersionOptions{
-		NewID:           utility.GenerateUUID(),
+		NewID:           common.GenerateUUID(),
 		UserCanvasID:    canvasID,
 		Title:           &versionTitle,
 		Description:     description,
@@ -1470,7 +1469,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	}
 	newSession := sessionID == ""
 	if sessionID == "" {
-		sessionID = utility.GenerateToken()
+		sessionID = common.GenerateToken()
 	}
 	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
 	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
@@ -1486,7 +1485,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
 		}
 	}
-	messageID := utility.GenerateToken()
+	messageID := common.GenerateToken()
 	questionSaved := false
 	persistQuestion := func() error {
 		if questionSaved || s.api4ConversationDAO == nil || dao.DB == nil {
@@ -1512,7 +1511,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		return nil, err
 	}
 	runID := runIDFor(canvasID, map[string]any{"session_id": sessionID})
-	lockToken := utility.GenerateToken()
+	lockToken := common.GenerateToken()
 	runCtx, cancelRun := context.WithCancel(ctx)
 	// Keep workflow cancellation separate from event-consumer cancellation.
 	// An explicit session cancellation should still reach an attached client,
