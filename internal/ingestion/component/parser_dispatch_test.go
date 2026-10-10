@@ -954,6 +954,79 @@ func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *tes
 	}
 }
 
+func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
+	withSSRFBypass(t)
+
+	invoke := func(t *testing.T, serverURL string) map[string]any {
+		t.Helper()
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := serverURL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["output_format"] = "markdown"
+		setups["pdf"]["mineru_backend"] = "standard"
+		return invokeMinerUDispatch(t, nil, setups)
+	}
+
+	t.Run("zip content_list uses mineruExtractSections", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"V1 body"},{"type":"table","table_body":"<table></table>","table_caption":["Table caption"]}]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "V1 body")
+		requireJSONText(t, out, "Table caption")
+	})
+
+	t.Run("markdown fallback when zip download fails", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"},"markdown":{"id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				http.Error(w, "zip gone", http.StatusInternalServerError)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Markdown fallback\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Markdown fallback")
+	})
+}
+
 func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost || r.URL.Path != "/parse" {

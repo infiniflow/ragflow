@@ -319,38 +319,3 @@ func TestPDFParser_ParseWithResult_MinerURejectsInvalidBackend(t *testing.T) {
 		t.Fatalf("error = %q, want invalid backend context", res.Err.Error())
 	}
 }
-
-func TestPDFParser_ParseWithResult_MinerU4V1API(t *testing.T) {
-	withSSRFBypass(t)
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte(`{"status":"ok"}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
-			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
-		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
-			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"markdown":{"id":"md-1"}}}]}`))
-		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/md-1/content":
-			_, _ = w.Write([]byte("# V1 Title\n\nParsed by MinerU 4.\n"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	defer server.Close()
-
-	pdf := NewPDFParser()
-	pdf.ConfigureFromSetup(map[string]any{
-		"parse_method":     "MinerU",
-		"output_format":    "markdown",
-		"mineru_apiserver": server.URL,
-		"mineru_backend":   "standard",
-	})
-	res := pdf.ParseWithResult(t.Context(), "sample.pdf", []byte("%PDF-1.4\nmock"))
-	if res.Err != nil {
-		t.Fatalf("ParseWithResult: %v", res.Err)
-	}
-	if got, want := res.Markdown, "# V1 Title\n\nParsed by MinerU 4.\n"; got != want {
-		t.Fatalf("Markdown = %q, want %q", got, want)
-	}
-}

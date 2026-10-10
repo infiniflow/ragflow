@@ -70,7 +70,7 @@ func ValidateMinerUConfigForAPI(backend, serverURL string, v1 bool) error {
 func validateMinerUConfig(backend, serverURL string, v1 bool) error {
 	if _, ok := ValidMinerUBackends[backend]; !ok {
 		return fmt.Errorf(
-			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client, basic, standard, advanced, flash)",
+			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client, vlm-auto-engine, hybrid-auto-engine, basic, standard, advanced, flash)",
 			backend,
 		)
 	}

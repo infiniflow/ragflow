@@ -131,6 +131,39 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 	}
 }
 
+func TestParseMinerUV1ZipDownloadFailureFallsBackToMarkdown(t *testing.T) {
+	orig := minerUV1PollInterval
+	minerUV1PollInterval = time.Millisecond
+	t.Cleanup(func() { minerUV1PollInterval = orig })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"},"markdown":{"id":"out-md"}}}]}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+			http.Error(w, "zip gone", http.StatusInternalServerError)
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+			_, _ = w.Write([]byte("# Fallback markdown\n"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	result, err := ParseMinerUV1(context.Background(), server.URL, "secret", "sample.pdf", []byte("%PDF-1.4"), "pipeline", 5*time.Second)
+	if err != nil {
+		t.Fatalf("ParseMinerUV1: %v", err)
+	}
+	if result.Markdown != "# Fallback markdown\n" {
+		t.Fatalf("markdown = %q, want fallback artifact", result.Markdown)
+	}
+	if len(result.Zip) != 0 {
+		t.Fatalf("zip = %d bytes, want empty after download failure", len(result.Zip))
+	}
+}
+
 func TestMinerUMarkdownFromZip(t *testing.T) {
 	buf := minerUTestZip(t, "out.md", "# Title\n")
 	md, err := MinerUMarkdownFromZip(buf)

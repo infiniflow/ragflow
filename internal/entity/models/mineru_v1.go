@@ -351,6 +351,7 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 	}
 
 	result := &MinerUV1Result{}
+	var artifactErr error
 	for _, file := range job.Files {
 		if file.Status != "" && file.Status != "completed" {
 			continue
@@ -358,16 +359,22 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		if ref, ok := file.OutputFiles["zip"]; ok && ref.ID != "" && len(result.Zip) == 0 {
 			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.ID)
 			if err != nil {
-				return nil, fmt.Errorf("download zip: %w", err)
+				if artifactErr == nil {
+					artifactErr = fmt.Errorf("download zip: %w", err)
+				}
+			} else {
+				result.Zip = body
 			}
-			result.Zip = body
 		}
 		if ref, ok := file.OutputFiles["markdown"]; ok && ref.ID != "" && result.Markdown == "" {
 			body, err := minerUV1DownloadFile(ctx, client, baseURL, token, ref.ID)
 			if err != nil {
-				return nil, fmt.Errorf("download markdown: %w", err)
+				if artifactErr == nil {
+					artifactErr = fmt.Errorf("download markdown: %w", err)
+				}
+			} else {
+				result.Markdown = string(body)
 			}
-			result.Markdown = string(body)
 		}
 	}
 	if result.Markdown == "" && len(result.Zip) > 0 {
@@ -376,6 +383,9 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		}
 	}
 	if len(result.Zip) == 0 && strings.TrimSpace(result.Markdown) == "" {
+		if artifactErr != nil {
+			return nil, artifactErr
+		}
 		return nil, fmt.Errorf("MinerU V1 job %s completed without zip or markdown artifacts", job.JobID)
 	}
 	return result, nil
