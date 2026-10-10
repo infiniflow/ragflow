@@ -459,6 +459,16 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 // passed as the user turn so the model emits a one-line title on the first line
 // of the summary. maxToken is deliberately not sent as MaxTokens: the provider
 // controls its own output budget, while the prompt guides the target length.
+// summarizeBackoff returns the per-attempt backoff unit for summarizeTexts
+// retries. A ctx carrying common.WithRetryDelay shortens it so failure-path
+// tests need not wait out the real ~1s-per-attempt budget.
+func summarizeBackoff(ctx context.Context) time.Duration {
+	if d, ok := common.RetryDelayFromCtx(ctx); ok {
+		return d
+	}
+	return time.Second
+}
+
 func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, userText string, maxToken int) (string, error) {
 	userPrompt := fmt.Sprintf("%s Keep the summary concise and target approximately %d tokens.", userText, maxToken)
 	for attempt := 0; attempt < raptorMaxRetries; attempt++ {
@@ -466,7 +476,7 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
-			case <-time.After(time.Duration(1+attempt) * time.Second):
+			case <-time.After(time.Duration(attempt+1) * summarizeBackoff(ctx)):
 			}
 		}
 		req := common.ChatRequest{

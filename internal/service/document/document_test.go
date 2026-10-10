@@ -535,6 +535,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
@@ -639,6 +640,17 @@ func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
 	}
 	if err := dao.DB.Create(&owner).Error; err != nil {
 		t.Fatalf("insert test tenant owner: %v", err)
+	}
+}
+
+func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:         canvasID,
+		UserID:     ownerID,
+		Permission: string(entity.TenantPermissionMe),
+	}).Error; err != nil {
+		t.Fatalf("insert test canvas: %v", err)
 	}
 }
 
@@ -3417,6 +3429,7 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -3488,6 +3501,7 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
 	svc := testDocumentService(t)
 	ctx := t.Context()
 	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
@@ -3551,6 +3565,7 @@ func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) 
 
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
 	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,

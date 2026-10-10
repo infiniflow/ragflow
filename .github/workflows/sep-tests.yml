@@ -371,17 +371,30 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
-          mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
+          # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
+          # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
+          # can be orphaned when a runner crashes (NLM lease recovery) and then
+          # blocks the other 2 runners indefinitely. We therefore AVOID 'artifacts/'
+          # and place the lock directly under ${RUNNER_WORKSPACE_PREFIX}, which is
+          # still local and still shared by the 3 runners on this host. Override with
+          # BUILD_LOCK_DIR if you mount a different host-local dir into all runners.
+          BUILD_LOCK_DIR=${BUILD_LOCK_DIR:-${RUNNER_WORKSPACE_PREFIX}/ragflow-ci/${GITHUB_REPOSITORY}}
+          if ! mkdir -p "${BUILD_LOCK_DIR}" 2>/dev/null || [ ! -w "${BUILD_LOCK_DIR}" ]; then
+            echo "ERROR: build lock dir '${BUILD_LOCK_DIR}' is missing or not writable by the runner user." >&2
+            echo "       Ensure ${RUNNER_WORKSPACE_PREFIX} (or BUILD_LOCK_DIR) is a writable, host-local dir mounted into every runner (NOT nfs)." >&2
+            exit 1
+          fi
+          BUILD_LOCK_FILE=${BUILD_LOCK_DIR}/docker-build.lock
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
           # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           (
-            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment
@@ -898,17 +911,30 @@ jobs:
         run: |
           set -euo pipefail
           RUNNER_WORKSPACE_PREFIX=${RUNNER_WORKSPACE_PREFIX:-${HOME}}
-          BUILD_LOCK_FILE=${RUNNER_WORKSPACE_PREFIX}/artifacts/${GITHUB_REPOSITORY}/docker-build.lock
-          mkdir -p "$(dirname "${BUILD_LOCK_FILE}")"
+          # Build-slot lock. MUST live on HOST-LOCAL storage shared by every runner
+          # container on the SAME host. NOTE: ${RUNNER_WORKSPACE_PREFIX} is a host
+          # bind mount (local), but its 'artifacts/' subdir is NFS — a flock on NFS
+          # can be orphaned when a runner crashes (NLM lease recovery) and then
+          # blocks the other 2 runners indefinitely. We therefore AVOID 'artifacts/'
+          # and place the lock directly under ${RUNNER_WORKSPACE_PREFIX}, which is
+          # still local and still shared by the 3 runners on this host. Override with
+          # BUILD_LOCK_DIR if you mount a different host-local dir into all runners.
+          BUILD_LOCK_DIR=${BUILD_LOCK_DIR:-${RUNNER_WORKSPACE_PREFIX}/ragflow-ci/${GITHUB_REPOSITORY}}
+          if ! mkdir -p "${BUILD_LOCK_DIR}" 2>/dev/null || [ ! -w "${BUILD_LOCK_DIR}" ]; then
+            echo "ERROR: build lock dir '${BUILD_LOCK_DIR}' is missing or not writable by the runner user." >&2
+            echo "       Ensure ${RUNNER_WORKSPACE_PREFIX} (or BUILD_LOCK_DIR) is a writable, host-local dir mounted into every runner (NOT nfs)." >&2
+            exit 1
+          fi
+          BUILD_LOCK_FILE=${BUILD_LOCK_DIR}/docker-build.lock
           # Pass the Gitee personal access token to the Docker build via --build-arg GITEE_TOKEN.
           # Dockerfile / Dockerfile_ci read it from ARG GITEE_TOKEN (NOT a BuildKit secret),
           # so the runner must expose GITEE_TOKEN as an environment variable (e.g. via the
           # runner's docker-compose `environment:` mapping sourced from its .env file).
           (
-            flock -w 10800 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
+            flock -w 4200 9 || { echo "Timed out waiting for the shared Docker build slot" >&2; exit 1; }
             echo "Acquired Docker build slot for ${DOC_ENGINE}"
             ##sudo docker pull ubuntu:24.04
-            sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
+            timeout 1800 sudo DOCKER_BUILDKIT=1 docker build --build-arg NEED_MIRROR=1 --build-arg HTTPS_PROXY=${HTTPS_PROXY} --build-arg HTTP_PROXY=${HTTP_PROXY} --build-arg GITEE_TOKEN=${GITEE_TOKEN} -f Dockerfile -t ${RAGFLOW_IMAGE} .
           ) 9>"${BUILD_LOCK_FILE}"
 
       - name: Prepare Python test environment

@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 	"sync"
 	"time"
 
@@ -123,7 +122,7 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 
 	// Skills folder not found, create it
 	common.Info("Creating skills folder", zap.String("tenant_id", tenantID))
-	folderID := utility.GenerateUUID()
+	folderID := common.GenerateUUID()
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   rootFolder.ID,
@@ -218,8 +217,8 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	}
 
 	// Generate space ID and folder ID
-	spaceID := utility.GenerateUUID()
-	folderID := utility.GenerateUUID()
+	spaceID := common.GenerateUUID()
+	folderID := common.GenerateUUID()
 
 	// Create folder for the space under skills folder
 	folder := &entity.File{

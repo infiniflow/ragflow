@@ -203,6 +203,9 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	if err := checkCanvasRetrievalDependencies(ctx, db, merged); err != nil {
+		return nil, fmt.Errorf("agent Retrieval dependency permission: %w", err)
+	}
 	query, _ := merged["query"].(string)
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
@@ -240,6 +243,38 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
 
+}
+
+func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return nil
+	}
+	canvasID, _ := state.Sys["canvas_id"].(string)
+	userID, _ := state.Sys["user_id"].(string)
+	if canvasID == "" && userID == "" {
+		return nil
+	}
+	if canvasID == "" {
+		return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
+	}
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
+
+	checker := permission.NewDatabaseChecker(db)
+	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+	for _, datasetID := range toStringSlice(inputs["dataset_ids"]) {
+		datasetID = strings.TrimSpace(datasetID)
+		if datasetID == "" {
+			continue
+		}
+		dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+			return fmt.Errorf("dataset %q: %w", datasetID, err)
+		}
+	}
+	return nil
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -531,8 +566,9 @@ func (c *codeExecComponent) Inputs() map[string]string {
 }
 
 func (c *codeExecComponent) GetInputForm() map[string]any {
-	res := make(map[string]any, len(c.params))
-	for k := range c.params {
+	arguments := asAnyMap(c.params["arguments"])
+	res := make(map[string]any, len(arguments))
+	for k := range arguments {
 		res[k] = map[string]any{
 			"type": "line",
 			"name": k,
@@ -558,12 +594,21 @@ func (c *codeExecComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[
 	for k, v := range c.params {
 		merged[k] = v
 	}
+	arguments := asAnyMap(c.params["arguments"])
 	for k, v := range inputs {
-		merged[k] = v
+		if _, ok := arguments[k]; !ok {
+			merged[k] = v
+		}
 	}
 	if rawArgs, ok := merged["arguments"].(map[string]any); ok {
 		state, _ := runtime.GetStateFromContext(ctx)
-		merged["arguments"] = resolveCodeExecArguments(rawArgs, merged, state)
+		resolvedArgs := resolveCodeExecArguments(rawArgs, merged, state)
+		for k := range rawArgs {
+			if v, ok := inputs[k]; ok {
+				resolvedArgs[k] = v
+			}
+		}
+		merged["arguments"] = resolvedArgs
 	}
 	common.Debug("CodeExec wrapper invoke",
 		zap.Int("params_keys", len(c.params)),

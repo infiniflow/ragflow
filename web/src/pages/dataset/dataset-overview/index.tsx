@@ -13,8 +13,10 @@ import WhatIsThis from '@/components/what-is-this';
 import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
 import { FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams, useSearchParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
+import DataSourceLogsTable from './data-source-logs-table';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
@@ -116,6 +118,9 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
 
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
+  const [searchParams] = useSearchParams();
+  const { id } = useParams();
+  const datasetId = searchParams.get('id') || id || '';
   const { data: topData } = useFetchOverviewTotal();
   const overviewStats = buildDatasetOverviewStats(topData);
 
@@ -282,13 +287,17 @@ const FileLogsPage: FC = () => {
       />
 
       {/* Table */}
-      <FileLogsTable
-        data={tableList}
-        pagination={pagination}
-        setPagination={handlePaginationChange}
-        pageCount={10}
-        active={active}
-      />
+      {active === LogTabs.DATASOURCE_LOGS ? (
+        <DataSourceLogsTable datasetId={datasetId} />
+      ) : (
+        <FileLogsTable
+          data={tableList}
+          pagination={pagination}
+          setPagination={handlePaginationChange}
+          pageCount={10}
+          active={active}
+        />
+      )}
     </Card>
   );
 };

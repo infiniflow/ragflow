@@ -167,7 +167,7 @@ func TestCSVParser_GBK(t *testing.T) {
 	}
 	var rowText strings.Builder
 	for _, item := range res.JSON {
-		text, _ := item["text"].(string)
+		text := tableItemHTML(t, item)
 		rowText.WriteString(text)
 	}
 	if strings.ContainsRune(rowText.String(), '\ufffd') {
