@@ -26,7 +26,6 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 
 	"go.uber.org/zap"
@@ -89,7 +88,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to extract keywords: %w", err)
 	}
@@ -122,33 +121,21 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 		zap.String("llmID", llmID),
 		zap.Strings("languages", languages))
 
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	var chatModel *modelModule.ChatModel
 	var err error
 
+	access := ModelAccess{TenantID: tenantID}
 	if llmID != "" {
-		modelTypes, err := modelSolver.ResolveModelType(ctx, tenantID, llmID)
-		if err != nil {
-			return query, fmt.Errorf("failed to get model type: %w", err)
-		}
-		resolvedType := entity.ModelTypeChat
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				resolvedType = entity.ModelTypeImage2Text
-				break
-			}
-		}
-		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
+		chatModel, err = modelFactory.NewChatModel(ctx, access, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	} else {
-		target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	}
 	if chatModel == nil {
 		return query, fmt.Errorf("failed to get chat model: nil chat model")
@@ -192,7 +179,7 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, modelConfig, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, modelConfig, nil)
 	if err != nil {
 		return query, fmt.Errorf("failed to translate question: %w", err)
 	}
@@ -348,17 +335,11 @@ func FullQuestion(
 	}
 	system := buf.String()
 
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		{Role: "system", Content: system},
 		{Role: "user", Content: "Output: "},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, nil, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, nil, nil)
 	if err != nil {
 		return fallbackToLatestUser(messages), err
 	}

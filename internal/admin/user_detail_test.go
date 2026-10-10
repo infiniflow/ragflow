@@ -78,6 +78,13 @@ func setupAdminUserDetailTest(t *testing.T) *Handler {
 	if err := db.Create(&membership).Error; err != nil {
 		t.Fatalf("create membership: %v", err)
 	}
+	ownerMemberships := []entity.UserTenant{
+		{ID: "membership-owner-user", UserID: user.ID, TenantID: user.ID, Role: "owner", InvitedBy: user.ID, Status: &statusValid},
+		{ID: "membership-owner-tenant-2", UserID: "tenant-2", TenantID: "tenant-2", Role: "owner", InvitedBy: "tenant-2", Status: &statusValid},
+	}
+	if err := db.Create(&ownerMemberships).Error; err != nil {
+		t.Fatalf("create owner memberships: %v", err)
+	}
 
 	datasets := []entity.Knowledgebase{
 		{ID: "dataset-own", TenantID: user.ID, Name: "Own dataset", EmbdID: "embedding", Permission: "me", CreatedBy: user.ID, Status: &statusValid},

@@ -26,7 +26,6 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 )
 
@@ -34,44 +33,49 @@ import (
 // It accepts only the caller identity, model reference, request data, and
 // runtime configuration. Provider, instance, API configuration, and driver
 // resolution are handled internally.
-//
-// The legacy methods on ModelProviderService remain untouched so this new API
-// can be introduced without changing existing callers.
 type ModelCallService struct {
 	providerService *ModelProviderService
-	modelSolver     *ModelSolver
+	modelFactory    *ModelFactory
 }
 
 // NewModelCallService creates a model-call service with the standard model
 // provider and model resolver.
 func NewModelCallService() *ModelCallService {
-	providerService := NewModelProviderService()
+	return NewModelCallServiceWithProviderService(NewModelProviderService(), NewModelFactory())
+}
+
+// NewModelCallServiceWithProviderService creates a model-call service using
+// an existing provider service for provider metadata and balance operations.
+func NewModelCallServiceWithProviderService(providerService *ModelProviderService, modelFactory *ModelFactory) *ModelCallService {
+	if providerService == nil {
+		providerService = NewModelProviderService()
+	}
+	if modelFactory == nil {
+		modelFactory = NewModelFactory()
+	}
 	return &ModelCallService{
 		providerService: providerService,
-		modelSolver:     &ModelSolver{service: providerService},
+		modelFactory:    modelFactory,
 	}
 }
 
 // ChatToModelWithMessages sends messages to the model selected by modelRef.
 func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef, userID string, messages []modelModule.Message, config *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, common.ErrorCode, error) {
-	target, tenantID, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeChat)
+	access, tenantID, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return nil, code, err
+	}
+	chatModel, err := s.modelFactory.NewChatModel(ctx, access, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
-	if target.ModelInfo != nil {
-		config.ModelClass = target.ModelInfo.Class
-		if config.Thinking == nil && target.ModelInfo.Thinking != nil {
-			thinking := target.ModelInfo.Thinking.DefaultValue
-			config.Thinking = &thinking
-		}
-	}
-	populateModelUsage(usage, target, tenantID, userID)
+	info := chatModel.Info()
+	populateModelUsage(usage, info, chatModel.APIConfig, tenantID, userID)
 
-	modelName := target.ModelName
-	response, err := target.Driver.ChatWithMessages(ctx, modelName, messages, target.APIConfig, config, usage)
+	response, err := chatModel.ChatWithMessages(ctx, messages, config, usage)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -80,48 +84,46 @@ func (s *ModelCallService) ChatToModelWithMessages(ctx context.Context, modelRef
 	}
 	return response, common.CodeSuccess, nil
 }
-
-// ChatToModelStreamWithSender streams the response from the model selected by
-// modelRef through sender.
 func (s *ModelCallService) ChatToModelStreamWithSender(ctx context.Context, modelRef, userID string, messages []modelModule.Message, config *modelModule.ChatConfig, usage *common.ModelUsage, sender func(*string, *string) error) (common.ErrorCode, error) {
-	target, tenantID, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeChat)
+	access, tenantID, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return code, err
+	}
+	chatModel, err := s.modelFactory.NewChatModel(ctx, access, modelRef)
+	if err != nil {
+		return common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ChatConfig{}
 	}
-	if target.ModelInfo != nil {
-		config.ModelClass = target.ModelInfo.Class
-		if config.Thinking == nil && target.ModelInfo.Thinking != nil {
-			thinking := target.ModelInfo.Thinking.DefaultValue
-			config.Thinking = &thinking
-		}
-	}
-	populateModelUsage(usage, target, tenantID, userID)
+	populateModelUsage(usage, chatModel.Info(), chatModel.APIConfig, tenantID, userID)
 
-	modelName := target.ModelName
-	if err := target.Driver.ChatStreamlyWithSender(ctx, modelName, messages, target.APIConfig, config, usage, sender); err != nil {
+	if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, usage, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
 }
-
-// EmbedText embeds texts with the model selected by modelRef.
 func (s *ModelCallService) EmbedText(ctx context.Context, modelRef, userID string, texts []string, config *modelModule.EmbeddingConfig) ([]modelModule.EmbeddingData, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeEmbedding)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return nil, code, err
+	}
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, access, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.EmbeddingConfig{}
 	}
-	if err := validateEmbeddingModel(target.ModelInfo, config.Dimension, len(texts)); err != nil {
+	info := embeddingModel.Info()
+	if info == nil || info.Catalog == nil {
+		return nil, common.CodeBadRequest, errors.New("embedding model metadata is unavailable")
+	}
+	if err := validateEmbeddingModel(info.Catalog, config.Dimension, len(texts)); err != nil {
 		return nil, common.CodeBadRequest, err
 	}
 
-	modelName := target.ModelName
-	embeddings, err := target.Driver.Embed(ctx, &modelName, modelModule.EmbedRequest{Texts: texts}, target.APIConfig, config, nil)
+	embeddings, err := embeddingModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -130,20 +132,20 @@ func (s *ModelCallService) EmbedText(ctx context.Context, modelRef, userID strin
 	}
 	return embeddings, common.CodeSuccess, nil
 }
-
-// RerankDocument reranks documents with the model selected by modelRef.
 func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, userID, query string, documents []string, config *modelModule.RerankConfig) (*modelModule.RerankResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeRerank)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return nil, code, err
+	}
+	rerankModel, err := s.modelFactory.NewRerankModel(ctx, access, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.RerankConfig{}
 	}
 
-	modelName := target.ModelName
-	rerankModel := modelModule.NewRerankModel(target.Driver, &modelName, target.APIConfig, target.MaxTokens)
-	response, err := rerankModel.Rerank(ctx, modelModule.RerankRequest{Query: query, Documents: documents}, target.APIConfig, config, nil)
+	response, err := rerankModel.Rerank(ctx, modelModule.RerankRequest{Query: query, Documents: documents}, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -152,20 +154,20 @@ func (s *ModelCallService) RerankDocument(ctx context.Context, modelRef, userID,
 	}
 	return response, common.CodeSuccess, nil
 }
-
-// TranscribeAudio converts audioFile to text with the model selected by
-// modelRef.
 func (s *ModelCallService) TranscribeAudio(ctx context.Context, modelRef, userID string, audioFile *string, config *modelModule.ASRConfig) (*modelModule.ASRResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeSpeech2Text)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return nil, code, err
+	}
+	asrModel, err := s.modelFactory.NewASRModel(ctx, access, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ASRConfig{}
 	}
 
-	modelName := target.ModelName
-	response, err := target.Driver.TranscribeAudio(ctx, &modelName, audioFile, target.APIConfig, config, nil)
+	response, err := asrModel.Transcribe(ctx, audioFile, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -174,38 +176,54 @@ func (s *ModelCallService) TranscribeAudio(ctx context.Context, modelRef, userID
 	}
 	return response, common.CodeSuccess, nil
 }
-
-// TranscribeAudioStream streams the transcription from the model selected by
-// modelRef through sender.
 func (s *ModelCallService) TranscribeAudioStream(ctx context.Context, modelRef, userID string, audioFile *string, config *modelModule.ASRConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeSpeech2Text)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return code, err
+	}
+	asrModel, err := s.modelFactory.NewASRModel(ctx, access, modelRef)
+	if err != nil {
+		return common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.ASRConfig{}
 	}
-
-	modelName := target.ModelName
-	if err := target.Driver.TranscribeAudioWithSender(ctx, &modelName, audioFile, target.APIConfig, config, nil, sender); err != nil {
+	if err := asrModel.TranscribeWithSender(ctx, audioFile, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
 }
-
-// AudioSpeech converts audioContent to speech with the model selected by
-// modelRef.
 func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+	if s == nil || s.modelFactory == nil {
+		return nil, common.CodeServerError, errors.New("model call service is not initialized")
+	}
+	tenantID, tenantErr := s.ownerTenantID(ctx, userID)
+	access := ModelAccess{UserID: userID, TenantID: tenantID}
+	if tenantErr != nil {
+		if strings.TrimSpace(modelRef) != "" {
+			return nil, common.CodeNotFound, tenantErr
+		}
+		// Some internal audio dispatchers pass a tenant ID in userID.
+		access = ModelAccess{TenantID: userID}
+		tenantID = userID
+	}
+	var (
+		ttsModel *modelModule.TTSModel
+		err      error
+	)
+	if strings.TrimSpace(modelRef) == "" {
+		ttsModel, err = s.modelFactory.NewDefaultTTSModel(ctx, access)
+	} else {
+		ttsModel, err = s.modelFactory.NewTTSModel(ctx, access, modelRef)
+	}
 	if err != nil {
-		return nil, code, err
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.TTSConfig{}
 	}
 
-	modelName := target.ModelName
-	response, err := target.Driver.AudioSpeech(ctx, &modelName, audioContent, target.APIConfig, config, nil)
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -214,38 +232,67 @@ func (s *ModelCallService) AudioSpeech(ctx context.Context, modelRef, userID str
 	}
 	return response, common.CodeSuccess, nil
 }
-
-// AudioSpeechStream streams synthesized audio from the model selected by
-// modelRef through sender.
-func (s *ModelCallService) AudioSpeechStream(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeTTS)
+func (s *ModelCallService) AudioSpeechForTenant(ctx context.Context, modelRef, tenantID string, audioContent *string, config *modelModule.TTSConfig) (*modelModule.TTSResponse, common.ErrorCode, error) {
+	if s == nil || s.modelFactory == nil {
+		return nil, common.CodeServerError, errors.New("model call service is not initialized")
+	}
+	access := ModelAccess{TenantID: tenantID}
+	var (
+		ttsModel *modelModule.TTSModel
+		err      error
+	)
+	if strings.TrimSpace(modelRef) == "" {
+		ttsModel, err = s.modelFactory.NewDefaultTTSModel(ctx, access)
+	} else {
+		ttsModel, err = s.modelFactory.NewTTSModel(ctx, access, modelRef)
+	}
 	if err != nil {
-		return code, err
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.TTSConfig{}
 	}
 
-	modelName := target.ModelName
-	if err := target.Driver.AudioSpeechWithSender(ctx, &modelName, audioContent, target.APIConfig, config, nil, sender); err != nil {
+	response, err := ttsModel.Speech(ctx, audioContent, config, nil)
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	if response == nil {
+		return nil, common.CodeServerError, errors.New("empty audio speech response")
+	}
+	return response, common.CodeSuccess, nil
+}
+func (s *ModelCallService) AudioSpeechStream(ctx context.Context, modelRef, userID string, audioContent *string, config *modelModule.TTSConfig, sender func(*string, *string) error) (common.ErrorCode, error) {
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
+	if err != nil {
+		return code, err
+	}
+	ttsModel, err := s.modelFactory.NewTTSModel(ctx, access, modelRef)
+	if err != nil {
+		return common.CodeNotFound, err
+	}
+	if config == nil {
+		config = &modelModule.TTSConfig{}
+	}
+	if err := ttsModel.SpeechWithSender(ctx, audioContent, config, nil, sender); err != nil {
 		return common.CodeServerError, err
 	}
 	return common.CodeSuccess, nil
 }
-
-// OCRFile extracts text from content or url with the model selected by
-// modelRef.
 func (s *ModelCallService) OCRFile(ctx context.Context, modelRef, userID string, content []byte, url *string, config *modelModule.OCRConfig) (*modelModule.OCRFileResponse, common.ErrorCode, error) {
-	target, _, code, err := s.resolveTarget(ctx, modelRef, userID, entity.ModelTypeOCR)
+	access, _, code, err := s.modelAccessForUser(ctx, userID)
 	if err != nil {
 		return nil, code, err
+	}
+	ocrModel, err := s.modelFactory.NewOCRModel(ctx, access, modelRef)
+	if err != nil {
+		return nil, common.CodeNotFound, err
 	}
 	if config == nil {
 		config = &modelModule.OCRConfig{}
 	}
 
-	modelName := target.ModelName
-	response, err := target.Driver.OCRFile(ctx, &modelName, content, url, target.APIConfig, config, nil)
+	response, err := ocrModel.OCRFile(ctx, content, url, config, nil)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
@@ -305,19 +352,29 @@ func (s *ModelCallService) ParseFile(ctx context.Context, modelRef, userID strin
 	return response, common.CodeSuccess, nil
 }
 
-func (s *ModelCallService) resolveTarget(ctx context.Context, modelRef, userID string, modelType entity.ModelType) (*ModelTarget, string, common.ErrorCode, error) {
-	if s == nil || s.providerService == nil || s.modelSolver == nil {
-		return nil, "", common.CodeServerError, errors.New("model call service is not initialized")
+func (s *ModelCallService) modelAccessForUser(ctx context.Context, userID string) (ModelAccess, string, common.ErrorCode, error) {
+	if s == nil || s.providerService == nil || s.modelFactory == nil {
+		return ModelAccess{}, "", common.CodeServerError, errors.New("model call service is not initialized")
 	}
 	tenantID, err := s.ownerTenantID(ctx, userID)
 	if err != nil {
-		return nil, "", common.CodeNotFound, err
+		return ModelAccess{}, "", common.CodeNotFound, err
 	}
-	target, err := s.modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
-	if err != nil {
-		return nil, "", common.CodeNotFound, err
+	return ModelAccess{UserID: userID, TenantID: tenantID}, tenantID, common.CodeSuccess, nil
+}
+
+func populateModelUsage(usage *common.ModelUsage, info *modelModule.ModelInfo, apiConfig *modelModule.APIConfig, tenantID, userID string) {
+	if usage == nil || info == nil {
+		return
 	}
-	return target, tenantID, common.CodeSuccess, nil
+	usage.UserID = userID
+	usage.TenantID = tenantID
+	usage.ProviderName = info.ProviderName
+	usage.InstanceID = info.InstanceID
+	usage.ModelName = info.Name
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		usage.APIKey = *apiConfig.ApiKey
+	}
 }
 
 func (s *ModelCallService) ownerTenantID(ctx context.Context, userID string) (string, error) {
@@ -335,19 +392,6 @@ func (s *ModelCallService) ownerTenantID(ctx context.Context, userID string) (st
 		return "", fmt.Errorf("no owner tenant found for user %s", userID)
 	}
 	return tenants[0].TenantID, nil
-}
-
-func populateModelUsage(usage *common.ModelUsage, target *ModelTarget, tenantID, userID string) {
-	if usage == nil {
-		return
-	}
-	usage.UserID = userID
-	usage.TenantID = tenantID
-	usage.ProviderName = target.ProviderName
-	usage.ModelName = target.ModelName
-	if target.APIConfig != nil && target.APIConfig.ApiKey != nil {
-		usage.APIKey = *target.APIConfig.ApiKey
-	}
 }
 
 func (s *ModelCallService) resolveModelInfo(ctx context.Context, modelRef, userID string) (*ModelInstanceAndProviderInfo, error) {

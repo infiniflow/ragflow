@@ -94,10 +94,13 @@ func ProcessChunksForPipeline(
 		}
 
 		cleanupConsumedChunkFields(ck)
+		// The spreadsheet identity is keyed off fields the strip is about to
+		// remove, so it must be read before it.
+		spreadsheet := isSpreadsheetChunk(ck)
 		stripPipelineOnlyFields(ck)
 		metadata = mergeChunkMetadata(metadata, ck)
 		RenameTextToContentWithWeight(ck)
-		processChunkPositions(ck)
+		processChunkPositions(ck, spreadsheet)
 	}
 	return metadata, nil
 }
@@ -188,23 +191,31 @@ func mergeChunkMetadata(metadata map[string]any, ck map[string]any) map[string]a
 }
 
 // processChunkPositions converts the raw "positions" field into indexable
-// position fields (page_num_int, top_int, position_int) via AddPositions,
-// then removes the raw "positions" and the sibling "_pdf_positions" internal
-// field. _pdf_positions is the parser-emitted position matrix consumed by
-// the chunker's image-crop pass (pdfcrop_cgo.go); after the chunker it is
-// dead weight with no index column, so it is pruned unconditionally —
-// independent of "positions" and not gated on the early-return below.
+// position fields, then removes the raw "positions" and the sibling
+// "_pdf_positions" internal field. _pdf_positions is the parser-emitted
+// position matrix consumed by the chunker's image-crop pass (pdfcrop_cgo.go);
+// after the chunker it is dead weight with no index column, so it is pruned
+// unconditionally — independent of "positions" and not gated on the
+// early-return below.
+//
+// The field carries two vocabularies, and the branch on them is explicit
+// rather than inferred from the shape:
+//   - PDF items: [page, left, right, top, bottom] → page_num_int, top_int and
+//     position_int (addPDFPositions);
+//   - spreadsheet items (identity present): [sheet, rowStart, rowEnd,
+//     colStart, colEnd] → position_int only (addSpreadsheetPositions), which
+//     leaves the chunk's own top_int — the QA chunker's row index — intact.
 //
 // Two source types reach this point:
-//   - []float64 — flat array of 5-tuples [page,left,right,top,bottom,…] from
-//     parsers that emit positions directly as a flat float64 slice.
+//   - []float64 — flat array of 5-tuples from parsers that emit positions
+//     directly as a flat float64 slice.
 //   - [][]float64 — the production path: positions flow through ChunkDoc
 //     (json.RawMessage → decodeStructuredValue) which produces a slice of
 //     5-element groups.
 //
-// Both are flattened into a single []float64 for AddPositions, which groups
-// by 5 internally. Unexpected types are logged and discarded.
-func processChunkPositions(ck map[string]any) {
+// Both are flattened into a single []float64, which the store helpers group by
+// five. Unexpected types are logged and discarded.
+func processChunkPositions(ck map[string]any, spreadsheet bool) {
 	delete(ck, "_pdf_positions")
 	poss, exists := ck["positions"]
 	if !exists {
@@ -212,17 +223,36 @@ func processChunkPositions(ck map[string]any) {
 	}
 	switch v := poss.(type) {
 	case []float64:
-		AddPositions(ck, v)
+		storePositions(ck, v, spreadsheet)
 	case [][]float64:
 		flat := make([]float64, 0, len(v)*5)
 		for _, group := range v {
 			flat = append(flat, group...)
 		}
-		AddPositions(ck, flat)
+		storePositions(ck, flat, spreadsheet)
 	default:
 		common.Warn(fmt.Sprintf("chunk positions unexpected type %T; discarding", poss))
 	}
 	delete(ck, "positions")
+}
+
+func storePositions(ck map[string]any, flat []float64, spreadsheet bool) {
+	if spreadsheet {
+		addSpreadsheetPositions(ck, flat)
+		return
+	}
+	addPDFPositions(ck, flat)
+}
+
+// isSpreadsheetChunk reports whether a chunk's "positions" carry the
+// spreadsheet vocabulary, judged by the identity fields the strip removes
+// later in the chunk loop.
+func isSpreadsheetChunk(ck map[string]any) bool {
+	if v, ok := ck["sheet_index"]; ok && v != nil {
+		return true
+	}
+	sheet, ok := ck["sheet"].(string)
+	return ok && sheet != ""
 }
 
 // AggregateTableDocMetadata collects unique per-column values across all chunks

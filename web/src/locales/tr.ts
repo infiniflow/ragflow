@@ -413,7 +413,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
       reselectParserAfterUploadHint:
-        'Yüklemeye devam edin, ardından dosya listesinde bu dosyalar için ayrıştırma yöntemini yeniden seçin.',
+        'Yüklemeye devam edin; sistem bu dosyaları otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçirecektir.',
       reselectParserToParseHint:
         'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
       addModelAfterUploadHint:
@@ -670,6 +670,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       reRankModelWaring: 'Yeniden sıralama modeli çok zaman alır.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Tohum, farklı çalıştırmalarda aynı çıktının yeniden üretilebilirliğini sağlayan sözde rastgele bir algoritmanın başlangıç noktasıdır.',
       datasetDescription: `Dataset'inizi açıklayın`,
@@ -2541,7 +2542,8 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       navDeleteNodeTitle: 'Düğümü sil',
       navDeleteNodeDescription:
         'Bu düğümü ve alt düğümlerini silmek istediğinizden emin misiniz?',
-      representationEmpty: 'Kullanılabilir artifact şablonu yok.',
+      representationEmpty:
+        'Pipeline derleyicisi yapılandırılmadı veya artifact çıkarılmadı.',
       representationUnsupported: 'Bu gösterim türü henüz desteklenmiyor.',
       claimsPanelTitle: 'İddia · {{name}}',
       claimsTotal: 'Toplam {{count}}',
@@ -2728,8 +2730,6 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       delimiters: 'Sınırlayıcılar',
       delimitersTip:
         'Her satıra bir sınırlayıcı; çok karakterli sınırlayıcılar olduğu gibi yazılabilir (örneğin ##). Ters tırnakla (örneğin `##`): sert bölme — her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız: yumuşak bölme — sınırlayıcı yalnızca bir bölme noktasıdır ve parçalar yine parça token boyutuna kadar birleştirilir, bu nedenle kısa belgelerde gözle görülür bir değişiklik olmayabilir.',
-      delimitersTipPython:
-        'Her satıra bir sınırlayıcı. Yalnızca ters tırnak içine alınmış girdiler (örneğin `##`) etkili olur: her sınırlayıcı kendi parçasını başlatır ve token boyutuna göre birleştirme uygulanmaz. Ters tırnaksız girdiler yok sayılır.',
       childrenDelimitersTip:
         'Alt bölme: her üst parça, alım için kullanılan alt parçalara ayrılmak üzere bu sınırlayıcılarda yeniden bölünür; parça token boyutu burada geçerli değildir.',
       one: 'Tek',
@@ -2804,7 +2804,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       dataManipulation: 'Veri işleme',
       flow: 'Akış',
       dialog: 'Diyalog',
-      cite: 'Alıntı',
+      cite: 'Alıntıları göster',
       citeTip: 'alıntıİpucu',
       name: 'Ad',
       nameMessage: 'Lütfen ad girin',

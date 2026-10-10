@@ -13,7 +13,7 @@ RAGFlow model provider management allows you to connect online models, local mod
 
 ## Get Model API Key
 
-RAGFlow supports most mainstream LLMs. Please refer to [Supported Models](../../guides/models/supported_models.mdx) for a complete list of supported models. You will need to apply for your model API key online.
+RAGFlow supports most mainstream LLMs. You will need to apply for your model API key online.
 
 :::note
 If you find your online LLM is not on the list, don't feel disheartened. The list is expanding, and you can [file a feature request](https://github.com/infiniflow/ragflow/issues/new?assignees=&labels=feature+request&projects=&template=feature_request.yml&title=%5BFeature+Request%5D%3A+) with us! Alternatively, if you have customized or locally-deployed models, you can [bind them to RAGFlow using Ollama, Xinference, or LocalAI](./deploy_local_llm.mdx).
@@ -29,8 +29,7 @@ Go to **User settings** **>** **Model providers**. In **Available models**, sele
 
 ### Create a Model Provider Instance and Configure Connection Information
 
-An instance stores a set of connection settings under a provider. You can create separate instances for test environments, production environments, local models, or proxy gateways to avoid mixing configurations for different purposes.
-When you configure a provider for the first time, the right pane prompts you to create an instance first. After the instance is saved, you can continue to fill in **API Key** and **Base URL** and add models.
+An instance stores a set of connection settings under a provider. You can create separate instances for test environments, production environments, local models, or proxy gateways to avoid mixing configurations for different purposes. When you configure a provider for the first time, the right pane prompts you to create an instance first. After the instance is saved, you can continue to fill in **API Key** and **Base URL** and add models.
 
 **API Key** is used for authentication. **Base URL** specifies the model service endpoint.
 
@@ -126,7 +125,3 @@ The following model types usually work together for retrieval and generation:
 2. **VLM**, **ASR**, **TTS**, and **OCR**: VLM is used to understand images and image-text information. OCR recognizes text in images or scanned documents. ASR converts speech into text. TTS converts text into speech. Different model types jointly support multimodal scenarios such as image understanding, document recognition, and voice interaction.
 
 3. **Moderation**: The moderation model is used to identify non-compliant, harmful, or sensitive content in text or images. It can review user input and model output to reduce the risk of generating or spreading non-compliant content.
-
-## Supported Model List
-
-See [Supported Models](./supported_models.mdx).

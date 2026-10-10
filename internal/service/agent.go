@@ -709,7 +709,7 @@ func (s *AgentService) ListAgents(ctx context.Context, userID string, keywords s
 // listAgentsGroupsOnly returns only the caller's compilation template groups
 // (Python canvas_category == ["compilation_template_group"] branch).
 func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
-	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", terms)
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -731,7 +731,7 @@ func (s *AgentService) listAgentsGroupsOnly(ctx context.Context, userID, keyword
 // mirrors Python's merged /agents response. A stable sort retains the original
 // agent-before-group order when timestamps are equal.
 func (s *AgentService) mergeAgentsAndGroups(ctx context.Context, userID string, agentItems []*AgentItem, keywords string, terms []dao.OrderTerm, page, pageSize int) (*ListAgentsResponse, common.ErrorCode, error) {
-	groups, err := s.compilationTemplateGroupDAO.ListOwnedSaved(ctx, dao.DB, userID, keywords, "", terms)
+	groups, err := s.compilationTemplateGroupDAO.ListSaved(ctx, dao.DB, userID, keywords, "", terms)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to list compilation template groups: %w", err)
 	}
@@ -963,11 +963,15 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 		req.CanvasCategory = "agent_canvas"
 	}
 
-	if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, req.UserID, title, req.CanvasCategory); err != nil {
+	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
+		return s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, candidate, "")
+	})
+	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
-	} else if existing != nil {
-		return nil, common.CodeDataError, agentTitleAlreadyExistsError(title)
 	}
+	title = uniqueTitle
+	req.Title = &title
+
 	if err := component.ValidateIntegerParameters(req.DSL); err != nil {
 		return nil, common.CodeArgumentError, fmt.Errorf("create agent: %w", err)
 	}
@@ -1144,9 +1148,14 @@ func (s *AgentService) UpdateAgent(ctx context.Context, userID, canvasID string,
 	updates["release"] = release
 	if title, ok := updatedAgentTitle(canvasInstance, updates); ok {
 		canvasCategory := updatedAgentCanvasCategory(canvasInstance, updates)
-		if existing, err := s.canvasDAO.GetByUserAndTitle(ctx, dao.DB, ownerUserID, title, canvasCategory); err != nil {
+		// Exclude the canvas being updated so keeping or only re-casing its
+		// title does not collide with itself, while a move to a category that
+		// already holds the title is still rejected.
+		exists, err := s.canvasDAO.TitleExists(ctx, dao.DB, ownerUserID, canvasCategory, title, canvasID)
+		if err != nil {
 			return fmt.Errorf("check duplicate title: %w", err)
-		} else if existing != nil && existing.ID != canvasID {
+		}
+		if exists {
 			return agentTitleAlreadyExistsError(title)
 		}
 	}
@@ -1463,6 +1472,20 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	if sessionID == "" {
 		sessionID = utility.GenerateToken()
 	}
+	trustedFirstTouch := AgentSessionIDFromContext(ctx) == sessionID
+	if !newSession && s.api4ConversationDAO != nil && dao.DB != nil {
+		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
+		if err != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
+		}
+		if existingSession == nil {
+			if !trustedFirstTouch {
+				return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+			}
+		} else if existingSession.DialogID != canvasID || existingSession.UserID != userID {
+			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
+		}
+	}
 	messageID := utility.GenerateToken()
 	questionSaved := false
 	persistQuestion := func() error {
@@ -1703,26 +1726,24 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 		dsl = normalisedDSLForRun(versionRow)
 	}
 	sessionFound := false
-	if sessionID != "" && s.api4ConversationDAO != nil {
-		session, sessionErr := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
-		if sessionErr != nil {
-			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, sessionErr, ErrAgentStorageError)
+	if sessionID != "" && s.api4ConversationDAO != nil && dao.DB != nil {
+		existingSession, err := s.api4ConversationDAO.GetMetadataBySessionID(ctx, dao.DB, sessionID, canvasID)
+		if err != nil {
+			return nil, fmt.Errorf("RunAgent: load session %q: %w: %w", sessionID, err, ErrAgentStorageError)
 		}
-		if session != nil && session.UserID != userID {
+		if existingSession != nil && (existingSession.DialogID != canvasID || existingSession.UserID != userID) {
 			return nil, fmt.Errorf("RunAgent: session %q not found: %w", sessionID, dao.ErrUserCanvasNotFound)
 		}
-		sessionFound = session != nil
-		if session != nil && len(session.DSL) > 0 {
-			dsl = dslpkg.NormalizeForRun(session.DSL)
+		sessionFound = existingSession != nil
+		if existingSession != nil && len(existingSession.DSL) > 0 {
+			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
 	if err := validateAgentChatModels(ctx, userID, dsl); err != nil {
 		return nil, err
 	}
-	// A handler may allocate the session id before calling RunAgent so the
-	// effective id is available even when the run emits no events. Treat an
-	// absent conversation row as a first touch regardless of who generated the
-	// id; there is still only one business identity (session_id).
+	// A trusted boundary may allocate the session id before calling RunAgent so
+	// the effective id is available even when the run emits no events.
 	if !sessionFound || newSession {
 		// The editable/released canvas can be a runtime replica from another
 		// conversation. A new session may reuse its graph, memory, and env state,
@@ -1884,7 +1905,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 	if err != nil {
 		return nil
 	}
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	for _, node := range c.Components {
 		if !strings.EqualFold(node.Obj.ComponentName, "Agent") {
 			continue
@@ -1893,7 +1914,7 @@ func validateAgentChatModels(ctx context.Context, userID string, dsl map[string]
 		if !ok {
 			modelRef, _ = node.Obj.Params["llm_id"].(string)
 		}
-		if _, err := modelSolver.ResolveModelConfig(ctx, userID, entity.ModelTypeChat, modelRef); err != nil {
+		if _, err := modelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: userID}, entity.ModelTypeChat, modelRef); err != nil {
 			if errors.Is(err, errModelConfigUnavailable) || errors.Is(err, gorm.ErrRecordNotFound) {
 				return errors.New("The configured chat model is missing or unavailable. Please select a valid model.")
 			}
@@ -2187,6 +2208,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				zap.String("type", fmt.Sprintf("%T", err)),
 				zap.Error(err))
 			s.markRunFailed(ctx2, runID, "compile: "+err.Error())
+			if errors.Is(err, agenttool.ErrExeSQLNoCredentials) {
+				return nil, runtime.NewUserFacingError("ExeSQL configuration is incomplete. Set the database connection details before running the agent.")
+			}
 			return nil, canvas.NewInternalRunError(
 				fmt.Errorf("canvas compile: %w: %w", ErrAgentStorageError, err),
 			)
@@ -2265,8 +2289,22 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				attachment = v
 			}
 		}
-		referencePayload := agentRunReferencePayload(state, legacyReference)
+		referencePayload := agentRunReferencePayload(c, state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, answer, downloads, attachment)
+		// The terminal Message output is authoritative. Do not let a result or
+		// content field from a non-terminal upstream node become the answer when
+		// the Message intentionally selected attachments only.
+		if terminalContent, ok := assistantOutput["content"].(string); ok {
+			answer = terminalContent
+		} else {
+			answer = ""
+		}
+		downloads = assistantOutput["downloads"]
+		if terminalAttachment, ok := assistantOutput["attachment"].(map[string]any); ok {
+			attachment = terminalAttachment
+		} else {
+			attachment = nil
+		}
 		// Release any deferred Agent node that was not consumed because the
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
@@ -2636,20 +2674,39 @@ func buildPersistedAgentDSL(runDSL map[string]any, state *canvas.CanvasState) en
 	return dsl
 }
 
-func agentRunReferencePayload(state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+func agentRunReferencePayload(c *canvas.Canvas, state *canvas.CanvasState, legacyChunks []interface{}) map[string]interface{} {
+	var reference map[string]interface{}
 	if state != nil {
-		if reference := state.GetRetrievalReference(); len(reference) > 0 {
-			return reference
+		reference = state.GetRetrievalReference()
+	}
+	if len(reference) == 0 {
+		if len(legacyChunks) == 0 {
+			return nil
+		}
+		reference = map[string]interface{}{
+			"chunks":   legacyChunks,
+			"doc_aggs": []interface{}{},
+			"total":    len(legacyChunks),
 		}
 	}
-	if len(legacyChunks) == 0 {
-		return nil
+	if c != nil && state != nil {
+		snapshot := state.Snapshot()
+		hasAgent, cite := false, false
+		for cpnID, component := range c.Components {
+			if !strings.EqualFold(component.Obj.ComponentName, "Agent") || len(snapshot[cpnID]) == 0 {
+				continue
+			}
+			hasAgent = true
+			if enabled, _ := component.Obj.Params["cite"].(bool); enabled {
+				cite = true
+				break
+			}
+		}
+		if hasAgent && !cite {
+			delete(reference, "doc_aggs")
+		}
 	}
-	return map[string]interface{}{
-		"chunks":   legacyChunks,
-		"doc_aggs": []interface{}{},
-		"total":    len(legacyChunks),
-	}
+	return reference
 }
 
 func stringifyAgentUserInput(userInput any) string {
@@ -2917,9 +2974,9 @@ func canvasInvokeError(err error) error {
 	msg := err.Error()
 	if strings.Contains(msg, "[GraphRunError] no tasks to execute") &&
 		strings.Contains(msg, "last completed nodes: [Switch:") {
-		return errors.New("canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
+		return errors.New("agent invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches")
 	}
-	return fmt.Errorf("canvas invoke: %w", err)
+	return fmt.Errorf("agent invoke: %w", err)
 }
 
 // markRunSucceeded records the run as completed successfully via

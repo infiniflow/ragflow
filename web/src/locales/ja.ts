@@ -150,6 +150,8 @@ export default {
     },
 
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'アップロードを続行すると、これらのファイルは対応する組み込み解析設定に自動的に切り替わります。',
       dataset: 'データセット',
       testing: '検索テスト',
       files: 'ファイル',
@@ -390,6 +392,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: '画像・表コンテキストウィンドウ',
 
       imageTableContextWindowTip:
@@ -1876,7 +1879,7 @@ export default {
     },
 
     flow: {
-      cite: '引用',
+      cite: '引用を表示',
       citeTip: '引用に関するヒント',
       name: '名前',
       nameMessage: '名前を入力してください',
@@ -3624,7 +3627,8 @@ export default {
       directoryRule: 'ルール',
       skillFolders: 'スキル',
       skillEmpty: '利用可能なスキルがありません',
-      representationEmpty: '利用可能な表現テンプレートがありません。',
+      representationEmpty:
+        'パイプラインのコンパイラが設定されていないか、アーティファクトが抽出されていません。',
       representationUnsupported: 'この表現形式にはまだ対応していません。',
       claimsPanelTitle: 'アサーション · {{name}}',
       claimsTotal: '全 {{count}} 件',

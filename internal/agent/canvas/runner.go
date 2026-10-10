@@ -268,7 +268,7 @@ func (r *Runner) Run(
 	out := make(chan RunEvent, 8)
 
 	if run == nil {
-		pushErr(ctx, out, "canvas: nil RunFunc", sessionID)
+		pushErr(ctx, out, "agent: nil RunFunc", sessionID)
 		close(out)
 		return out
 	}

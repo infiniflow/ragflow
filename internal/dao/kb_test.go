@@ -69,56 +69,6 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-func createKBAccessFixture(t *testing.T, db *gorm.DB, id, permission, status string) {
-	t.Helper()
-	kb := &entity.Knowledgebase{ID: id, TenantID: "owner", CreatedBy: "owner", Name: id, EmbdID: "embd", Permission: permission, Status: stringPtr(status)}
-	if err := db.Create(kb).Error; err != nil {
-		t.Fatalf("failed to create KB: %v", err)
-	}
-}
-
-func createUserTenant(t *testing.T, db *gorm.DB, userID, tenantID, status string) {
-	t.Helper()
-	row := &entity.UserTenant{ID: userID + "-" + tenantID, UserID: userID, TenantID: tenantID, Role: "normal", InvitedBy: "owner", Status: stringPtr(status)}
-	if err := db.Create(row).Error; err != nil {
-		t.Fatalf("failed to create user_tenant: %v", err)
-	}
-}
-
-func TestKnowledgebaseDAO_Accessible(t *testing.T) {
-	db := setupKBTestDB(t)
-	dao := NewKnowledgebaseDAO()
-	ctx := t.Context()
-
-	createKBAccessFixture(t, db, "private", string(entity.TenantPermissionMe), string(entity.StatusValid))
-	createKBAccessFixture(t, db, "team", string(entity.TenantPermissionTeam), string(entity.StatusValid))
-	createKBAccessFixture(t, db, "unknown", "", string(entity.StatusValid))
-	createKBAccessFixture(t, db, "invalid", string(entity.TenantPermissionTeam), string(entity.StatusInvalid))
-	createUserTenant(t, db, "member", "owner", string(entity.StatusValid))
-	createUserTenant(t, db, "revoked", "owner", string(entity.StatusInvalid))
-
-	tests := []struct {
-		name, kbID, userID string
-		want               bool
-	}{
-		{"owner private", "private", "owner", true},
-		{"member private", "private", "member", false},
-		{"member team", "team", "member", true},
-		{"revoked member team", "team", "revoked", false},
-		{"unrelated team", "team", "other", false},
-		{"member unknown permission", "unknown", "member", false},
-		{"invalid KB", "invalid", "owner", false},
-		{"missing KB", "missing", "owner", false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := dao.Accessible(ctx, db, tt.kbID, tt.userID); got != tt.want {
-				t.Fatalf("Accessible(%q, %q) = %v, want %v", tt.kbID, tt.userID, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestKnowledgebaseDAO_DecreaseDocumentNum(t *testing.T) {
 	db := setupKBTestDB(t)
 	pushDB(t, db)
@@ -177,17 +127,11 @@ func TestKnowledgebaseDAO_DecreaseDocumentNum_ZeroDecrement(t *testing.T) {
 }
 
 // knowledgebaseQualifiedOrderExpressions are clause fragments rather than
-// column names. GetByTenantIDs prefixes the value with "knowledgebase.", so
+// column names. ListByResourceIDs prefixes the value with "knowledgebase.", so
 // these stand in for the `orderby` query parameter that reaches it from the
 // dataset list request (issue #14268).
 var knowledgebaseQualifiedOrderExpressions = []string{
 	"name, (SELECT inner_kb.id FROM knowledgebase AS inner_kb WHERE inner_kb.id = knowledgebase.id)",
-}
-
-// knowledgebaseOrderExpressions are the unprefixed counterparts used by
-// GetList.
-var knowledgebaseOrderExpressions = []string{
-	"(SELECT inner_kb.name FROM knowledgebase AS inner_kb WHERE inner_kb.id = knowledgebase.id)",
 }
 
 // seedOrderableKnowledgebases creates three datasets whose create_time order is
@@ -219,10 +163,10 @@ func assertKnowledgebaseIDOrder(t *testing.T, got, want []string, orderby string
 	}
 }
 
-// TestKnowledgebaseDAOGetByTenantIDsOrderByExpressionFallsBack checks that an
+// TestKnowledgebaseDAOListByResourceIDsOrderByExpressionFallsBack checks that an
 // `orderby` value that is not an allowed column name leaves the rows in the
 // default create_time order.
-func TestKnowledgebaseDAOGetByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
+func TestKnowledgebaseDAOListByResourceIDsOrderByExpressionFallsBack(t *testing.T) {
 	db := setupKBTestDB(t)
 	if err := db.AutoMigrate(&entity.User{}); err != nil {
 		t.Fatalf("failed to migrate user: %v", err)
@@ -234,9 +178,9 @@ func TestKnowledgebaseDAOGetByTenantIDsOrderByExpressionFallsBack(t *testing.T) 
 
 	for _, orderby := range knowledgebaseQualifiedOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "", "", "", "", nil)
+			rows, _, err := d.ListByResourceIDs(ctx, db, []string{"kb-1", "kb-2", "kb-3"}, nil, 1, 10, []OrderTerm{{Column: orderby}}, "", "", "")
 			if err != nil {
-				t.Fatalf("GetByTenantIDs with orderby %q: %v", orderby, err)
+				t.Fatalf("ListByResourceIDs with orderby %q: %v", orderby, err)
 			}
 			ids := make([]string, 0, len(rows))
 			for _, row := range rows {
@@ -247,32 +191,8 @@ func TestKnowledgebaseDAOGetByTenantIDsOrderByExpressionFallsBack(t *testing.T) 
 	}
 }
 
-// TestKnowledgebaseDAOGetListOrderByExpressionFallsBack is the GetList
-// counterpart, which builds the clause without the table prefix.
-func TestKnowledgebaseDAOGetListOrderByExpressionFallsBack(t *testing.T) {
-	db := setupKBTestDB(t)
-	pushDB(t, db)
-	seedOrderableKnowledgebases(t, db)
-	ctx := t.Context()
-	d := NewKnowledgebaseDAO()
-
-	for _, orderby := range knowledgebaseOrderExpressions {
-		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "", "")
-			if err != nil {
-				t.Fatalf("GetList with orderby %q: %v", orderby, err)
-			}
-			ids := make([]string, 0, len(rows))
-			for _, row := range rows {
-				ids = append(ids, row.ID)
-			}
-			assertKnowledgebaseIDOrder(t, ids, []string{"kb-1", "kb-2", "kb-3"}, orderby)
-		})
-	}
-}
-
-// TestKnowledgebaseDAOOrderByAllowedColumn checks that the allowlist still
-// honors a real column in both directions on both list paths.
+// TestKnowledgebaseDAOOrderByAllowedColumn checks that the list query honors a
+// real column in both directions.
 func TestKnowledgebaseDAOOrderByAllowedColumn(t *testing.T) {
 	db := setupKBTestDB(t)
 	if err := db.AutoMigrate(&entity.User{}); err != nil {
@@ -283,9 +203,9 @@ func TestKnowledgebaseDAOOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewKnowledgebaseDAO()
 
-	rows, _, err := d.GetByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "", "", "", "", nil)
+	rows, _, err := d.ListByResourceIDs(ctx, db, []string{"kb-1", "kb-2", "kb-3"}, nil, 1, 10, []OrderTerm{{Column: "name"}}, "", "", "")
 	if err != nil {
-		t.Fatalf("GetByTenantIDs ascending by name: %v", err)
+		t.Fatalf("ListByResourceIDs ascending by name: %v", err)
 	}
 	ids := make([]string, 0, len(rows))
 	for _, row := range rows {
@@ -293,13 +213,4 @@ func TestKnowledgebaseDAOOrderByAllowedColumn(t *testing.T) {
 	}
 	assertKnowledgebaseIDOrder(t, ids, []string{"kb-3", "kb-2", "kb-1"}, "name")
 
-	listed, _, err := d.GetList(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "", "")
-	if err != nil {
-		t.Fatalf("GetList descending by name: %v", err)
-	}
-	listedIDs := make([]string, 0, len(listed))
-	for _, row := range listed {
-		listedIDs = append(listedIDs, row.ID)
-	}
-	assertKnowledgebaseIDOrder(t, listedIDs, []string{"kb-1", "kb-2", "kb-3"}, "name")
 }

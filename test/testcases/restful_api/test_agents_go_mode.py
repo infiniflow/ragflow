@@ -1,11 +1,6 @@
-import os
 import uuid
-import pytest
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("API_PROXY_SCHEME", "python") != "go",
-    reason="Go mode only (set API_PROXY_SCHEME=go + bin/ragflow_server on 9384)",
-)
+import pytest
 
 V2_DSL = {
     "graph": {
@@ -31,7 +26,7 @@ V2_DSL = {
 
 @pytest.mark.p2
 def test_v2_dsl_round_trip_position_preserved(rest_client):
-    # Unique title per run so the test is idempotent (Go returns 102 on duplicate).
+    # Unique title per run so the test is idempotent.
     title = f"go_v2_e2e_{uuid.uuid4().hex[:8]}"
 
     # 1. POST v2 DSL

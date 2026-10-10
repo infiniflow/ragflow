@@ -16,7 +16,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 | Tool Category | Typical Components | Use Case |
 | --- | --- | --- |
-| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable | Retrieve web pages, news, public information, or content from specified sites. |
+| Web search | Tavily, Google, DuckDuckGo, SearXNG, Keenable, Sofya, Search1API | Retrieve web pages, news, public information, or content from specified sites. |
 | Academic search | Google Scholar, ArXiv, PubMed, BGPT | Retrieve papers, medical literature, and research materials. |
 | Data and financial queries | Execute SQL, Yahoo Finance, WenCai | Query databases, market data, or financial screening results. |
 | Content output | Email, Document Generator | Send emails or generate downloadable documents. |
@@ -24,7 +24,7 @@ Tool components connect external search, databases, HTTP APIs, email sending, do
 
 ## Web Page and Information Retrieval
 
-### Tavily Search 
+### Tavily Search
 
 Tavily is a web search service for LLMs. It is suitable for retrieving general web information, news, and content that needs to be limited to specific domains. Keep queries focused on a single topic and avoid overly long natural-language questions.
 
@@ -70,7 +70,7 @@ The output usually contains search result summaries, titles, links, snippets, an
 
 ![Tavily Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_search.jpg)
 
-### Tavily Extract 
+### Tavily Extract
 
 Tavily Extract reads the body content of one or more known URLs. A common workflow is to use Tavily Search to obtain links, then pass those links to this component to extract page content.
 
@@ -109,7 +109,7 @@ The output contains the page body, title, URL, and extraction status. `formalize
 
 ![Tavily Extract](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/tavily_extract.jpg)
 
-### Google 
+### Google
 
 Google Search obtains Google organic search results through SerpApi. It is suitable for web retrieval that requires country and language targeting.
 
@@ -169,7 +169,7 @@ The output contains titles, links, and summaries returned by DuckDuckGo. It can 
 
 ![Duckduckgo](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/duckduckgo_2.jpg)
 
-### SearXNG 
+### SearXNG
 
 SearXNG is a self-hostable privacy-oriented meta-search engine. This component calls a user-provided SearXNG instance and is suitable for scenarios that need control over retrieval sources or internal search deployment.
 
@@ -193,7 +193,7 @@ SearXNG is a self-hostable privacy-oriented meta-search engine. This component c
 
 The output contains titles, links, summaries, and source information returned by SearXNG. Before use, configure a reachable SearXNG service address and pass the system security checks.
 
-### Keenable 
+### Keenable
 
 Keenable is a web search API for AI Agents. By default, it supports a public free path without a key. After configuring a key, you can increase the limit and enable low-latency realtime mode.
 
@@ -224,6 +224,94 @@ Keenable is a web search API for AI Agents. By default, it supports a public fre
 The output contains search entries, summaries, and links returned by Keenable. It can be summarized by the Agent or passed to subsequent retrieval or extraction nodes. Do not set `realtime` for keyless trial runs.
 
 ![Keenable Search](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/keenable_search.jpg)
+
+### Sofya
+
+Sofya is a web search API for AI Agents. It returns the text of the result pages, not only a snippet, so results can be used without a separate fetch step. An API key is required and can be created at [sofya.co](https://sofya.co).
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| topic | string | No | general | `general` for web search or `news` for current events. |
+| freshness | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
+| api_key | string | Node configuration | Empty | Sofya API key. |
+| search_depth | string | Node configuration | basic | `basic` returns the content of the result pages. `snippets` returns search snippets only, which is faster and cheaper. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 20. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-sofya-api-key>` |
+| Search Depth | basic |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, and page content returned by Sofya. Results whose page could not be read fall back to the search snippet. It can be summarized by the Agent or passed to subsequent nodes.
+
+### Search1API
+
+Search1API searches the web or the news through one API and lets you choose the search service, such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News, or Reuters. When it is added to an Agent as a tool, the node settings are only defaults: the Agent can pick the channel and the search service for each call, for example GitHub for code questions or Reuters for news. An API key is required and can be created at [app.s1.dev](https://app.s1.dev). See the [Search1API documentation](https://s1.dev/docs) for details.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| query | string | Yes | `{sys.query}` | Search keywords. |
+| channel | string | No | general | `general` for web search or `news` for news search. The Agent can override the node value. |
+| search_service | string | No | google | The search service to query. The Agent can override the node value with any service the channel supports. |
+| time_range | string | No | any | Limit results by recency: `day`, `week`, `month`, `year`, or `any`. |
+| api_key | string | Node configuration | Empty | Search1API API key. |
+| top_n | integer | Node configuration | 10 | Maximum number of results, up to 50. |
+
+#### Supported Parameter Values
+
+| Channel | Supported Search Services |
+| --- | --- |
+| general | google, bing, bingcn, duckduckgo, yahoo, yandex, youtube, x, reddit, github, arxiv, wechat, bilibili, imdb, wikipedia, baidu, 360, quark |
+| news | google, bing, duckduckgo, yahoo, hackernews, reuters |
+
+If the Agent switches to a channel that does not offer the node's search service, the search uses Search1API's default service for that channel.
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| Query | RAGFlow Go release |
+| API Key | `<your-search1api-api-key>` |
+| Channel | general |
+| Search Service | google |
+| Top N | 10 |
+
+#### Output Result
+
+The output contains titles, links, and snippets returned by Search1API. `formalized_content` is commonly used as Agent context, while `json` preserves the raw result list.
+
+### Search1API Crawl
+
+Search1API Crawl reads one web page and returns its title and full content. A common workflow is to use Search1API to find links, then let the Agent read the most relevant page with this component. It uses the same API key as Search1API.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page to read. As an Agent tool, the Agent supplies the URL. |
+| api_key | string | Node configuration | Empty | Search1API API key. |
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| URL | `https://ragflow.io/docs/dev/` |
+| API Key | `<your-search1api-api-key>` |
+
+#### Output Result
+
+`json` contains the page title, link, content, and any metadata returned by Search1API.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
@@ -308,7 +396,7 @@ The output contains academic retrieval entries such as paper titles, authors, ab
 
 ![Google Scholar](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/google_scholar.jpg)
 
-### ArXiv 
+### ArXiv
 
 ArXiv is used to retrieve open preprints across fields such as computer science, mathematics, physics, and quantitative finance. ArXiv papers may not have undergone peer review, so mark their preprint nature when using the results.
 
@@ -334,7 +422,7 @@ The output contains paper titles, authors, abstracts, publication times, categor
 
 ![ArXiv](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/arxiv.jpg)
 
-### PubMed 
+### PubMed
 
 PubMed is used to retrieve life science and biomedical literature. The component queries through NCBI E-utilities and returns titles, authors, journals, DOIs, abstracts, and other information.
 
@@ -360,7 +448,7 @@ The output contains medical literature titles, authors, journals, abstracts, pub
 
 ![PubMed](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/pubmed.jpg)
 
-### BGPT 
+### BGPT
 
 BGPT retrieves scientific papers and returns structured evidence, including research methods, sample sizes, results, limitations, conflicts of interest, data availability, and falsifiability tips. It is suitable for evaluating scientific claims, not only for finding paper abstracts.
 
@@ -390,7 +478,7 @@ The output contains biomedical knowledge retrieval results and summaries, which 
 
 ## Data and Financial Queries
 
-### Execute SQL 
+### Execute SQL
 
 Execute SQL connects to an external database and executes SQL statements. The result is formatted as text or table content.
 
@@ -401,7 +489,7 @@ To protect system security, the database address must pass server-side security 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
 | sql | string | Yes | `{sys.query}` | SQL to execute. Canvas variables can be included. |
-| db_type | string | Yes | mysql | Supports `mysql`, `postgres`, `mariadb`, `mssql`, `IBMDB2`, `trino`, and `oceanbase`. |
+| db_type | string | Yes | mysql | Supports `mysql`, `postgres`, `mariadb`, `mssql`, `trino`, and `oceanbase`. |
 | database | string | Yes | Empty | Database name. Trino uses `catalog.schema` or `catalog`. |
 | username | string | Yes | Empty | Database account. |
 | host | string | Yes | Empty | Database address, which must pass server-side security checks. |
@@ -417,7 +505,6 @@ To protect system security, the database address must pass server-side security 
 | Database Type | postgres | PostgreSQL |
 | Database Type | mariadb | MariaDB |
 | Database Type | mssql | Microsoft SQL Server |
-| Database Type | IBMDB2 | IBM DB2 |
 | Database Type | trino | Trino |
 | Database Type | oceanbase | OceanBase |
 
@@ -440,7 +527,7 @@ The output contains SQL execution results, field names, and record content. You 
 
 ![Execute SQL](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/execute_sql.jpg)
 
-### Yahoo Finance 
+### Yahoo Finance
 
 The Yahoo Finance component queries stock quotes, company profiles, historical market data, financial statements, and news through `yfinance`, and outputs the selected content as a Markdown report.
 
@@ -452,7 +539,7 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 | info | boolean | Node configuration | true | Output company and quote information. |
 | history | boolean | Node configuration | false | Output historical market data. |
 | count | boolean | Node configuration | false | Share count switch defined by the code. |
-| financials | boolean | Node configuration | false | The current implementation outputs calendar information. |
+| financials | boolean | Node configuration | false | Output earnings dates and other financial calendar events returned by Yahoo Finance. |
 | income_stmt | boolean | Node configuration | false | Income statement switch defined by the code. |
 | balance_sheet | boolean | Node configuration | false | Output balance sheet and quarterly balance sheet. |
 | cash_flow_statement | boolean | Node configuration | false | Output cash flow statement and quarterly cash flow statement. |
@@ -481,7 +568,7 @@ The Yahoo Finance component queries stock quotes, company profiles, historical m
 
 The output contains a financial query report and structured market data, which can be used by subsequent Agents to generate market overviews or indicator explanations.
 
-### WenCai 
+### WenCai
 WenCai is used to screen financial data such as stocks, indices, funds, Hong Kong stocks, U.S. stocks, futures, and other instruments based on natural-language conditions.
 
 #### Parameter Description
@@ -530,7 +617,7 @@ Before using the WenCai component, confirm that the WenCai query service is avai
 
 ### Email
 
-The Email component sends HTML emails through SMTP and supports multiple CC addresses. The current version supports recipients, CC recipients, subject, and email body. It does not support adding attachments or BCC recipients through this component.
+The Email component sends HTML emails through SMTP. Configure the recipients, CC recipients, subject, and email body in the component.
 
 #### Parameter Description
 
@@ -574,7 +661,7 @@ The output contains sending status and error information. `success` being `true`
 
 ![Email](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/email.jpg)
 
-### HTTP Request 
+### HTTP Request
 
 The HTTP Request component calls external HTTP APIs, allowing business systems, third-party services, or self-built APIs to be connected to Agent workflows.
 
@@ -589,8 +676,7 @@ The HTTP Request component calls external HTTP APIs, allowing business systems, 
 | timeout | integer | No | 60 | Request timeout in seconds. |
 | proxy | string | No | Empty | Optional HTTP/HTTPS proxy address. |
 | clean_html | boolean | No | false | Whether to clean HTML tags from the response. |
-| datatype | string | No | json | Python request body type: `json` or `formdata`. |
-| body | string | No | Empty | Raw request body supported by the Go runtime. |
+| body | string | No | Empty | Raw request body. |
 | content_type | string | No | Empty | POST/PUT default to `application/json`. |
 
 #### Supported Values
@@ -632,45 +718,45 @@ The Document Generator component outputs Markdown content as PDF, DOCX, TXT, Mar
 
 #### Parameter Description
 
-| Field | Type | Required | Default Value | Description |
-| --- | --- | --- | --- | --- |
-| content | string | Yes | Empty | Markdown content to generate. Upstream outputs can be referenced. |
-| output_format | string | Yes | pdf | Output format: `pdf`, `docx`, `txt`, `markdown`, or `html`. |
-| filename | string | No | Empty | File name. If empty, it is generated automatically, and illegal file name characters are cleaned. |
-| header_text | string | No | Empty | Header text. Applies to PDF/DOCX. |
-| footer_text | string | No | Empty | Footer text. Applies to PDF/DOCX. |
-| watermark_text | string | No | Empty | Watermark text. Supported by PDF/DOCX/HTML according to the implementation. |
-| add_page_numbers | boolean | No | true | Whether to add page numbers. Mainly used for PDF/DOCX. |
-| add_timestamp | boolean | No | true | Whether to add generation time. |
-| include_download_info_in_content | boolean | No | false | Whether to keep the download information marker in the content. |
-| font_size | number | No | 12 | Font size, which must be greater than or equal to 12. |
+| Field                            | Type    | Required | Default Value | Description                                                                                       |
+|----------------------------------|---------|----------|---------------|---------------------------------------------------------------------------------------------------|
+| content                          | string  | Yes      | Empty         | Markdown content to generate. Upstream outputs can be referenced.                                 |
+| output_format                    | string  | Yes      | pdf           | Output format: `pdf`, `docx`, `txt`, `markdown`, or `html`.                                       |
+| filename                         | string  | No       | Empty         | File name. If empty, it is generated automatically, and illegal file name characters are cleaned. |
+| header_text                      | string  | No       | Empty         | Header text. Applies to PDF/DOCX.                                                                 |
+| footer_text                      | string  | No       | Empty         | Footer text. Applies to PDF/DOCX.                                                                 |
+| watermark_text                   | string  | No       | Empty         | Watermark text. Supported by PDF/DOCX/HTML according to the implementation.                       |
+| add_page_numbers                 | boolean | No       | true          | Whether to add page numbers. Mainly used for PDF/DOCX.                                            |
+| add_timestamp                    | boolean | No       | true          | Whether to add generation time.                                                                   |
+| include_download_info_in_content | boolean | No       | false         | Whether to keep the download information marker in the content.                                   |
+| font_size                        | number  | No       | 12            | Font size, which must be greater than or equal to 12.                                             |
 
 #### Supported Values
 
-| Parameter | Supported Value | Description |
-| --- | --- | --- |
-| Output Format | pdf | PDF document. |
-| Output Format | docx | Word document. |
-| Output Format | html | HTML document. |
-| Output Format | txt | Text file. |
-| Output Format | markdown | Markdown file. |
-| Font Size | >=12 | Font size must be greater than or equal to 12. |
+| Parameter     | Supported Value | Description                                    |
+|---------------|-----------------|------------------------------------------------|
+| Output Format | pdf             | PDF document.                                  |
+| Output Format | docx            | Word document.                                 |
+| Output Format | html            | HTML document.                                 |
+| Output Format | txt             | Text file.                                     |
+| Output Format | markdown        | Markdown file.                                 |
+| Font Size     | >=12            | Font size must be greater than or equal to 12. |
 
 #### Configuration Example
 
-| Configuration Item | Example Value |
-| --- | --- |
-| Content | `# RAGFlow Agent
-Test This document is generated by the DocGenerator component.` |
-| Output Format | pdf |
-| Filename | ragflow-agent-test.pdf |
-| Header Text | RAGFlow |
-| Footer Text | Internal Test |
-| Watermark Text | DRAFT |
-| Add Page Numbers | true |
-| Add Timestamp | true |
-| Include Download Info In Content | false |
-| Font Size | 12 |
+| Configuration Item                                              | Example Value          |
+|-----------------------------------------------------------------|------------------------|
+| Content                                                         | `# RAGFlow Agent       |
+| Test This document is generated by the DocGenerator component.` |                        |
+| Output Format                                                   | pdf                    |
+| Filename                                                        | ragflow-agent-test.pdf |
+| Header Text                                                     | RAGFlow                |
+| Footer Text                                                     | Internal Test          |
+| Watermark Text                                                  | DRAFT                  |
+| Add Page Numbers                                                | true                   |
+| Add Timestamp                                                   | true                   |
+| Include Download Info In Content                                | false                  |
+| Font Size                                                       | 12                     |
 
 #### Output Result
 
@@ -686,16 +772,12 @@ Browser is an LLM-driven browser automation component. It can access web pages, 
 
 | Field | Type | Required | Default Value | Description |
 | --- | --- | --- | --- | --- |
-| llm_id | string | Yes | Empty | Configured chat model ID used by Browser. The Go path can accept `model_id` as an alias. |
-| prompts | string | Yes | `{sys.query}` | Natural-language browser task. Canvas variables are supported. The Go path can accept `prompt` as an alias. |
-| max_steps | integer | No | 30 | Maximum number of browser execution steps. Effective in the Python path. The current Go Stagehand path accepts this field but does not use it during execution. |
+| llm_id | string | Yes | Empty | Configured chat model ID used by Browser. |
+| prompts | string | Yes | `{sys.query}` | Natural-language browser task. Canvas variables are supported. |
 | headless | boolean | No | true | Whether to run the browser in headless mode. |
 | enable_default_extensions | boolean | No | false | Whether to enable default `browser-use` extensions. |
 | chromium_sandbox | boolean | No | false | Whether to enable the Chromium sandbox. In Docker root environments, keep this disabled in general. |
-| persist_session | boolean | No | true | Whether to reuse the browser user directory for the same node. Effective in the Python path. |
 | upload_sources | array/string | No | `[]` | File IDs, URLs, or upstream variable references for the browser task. |
-| url | string | No | Empty | Compatibility field accepted by the current Go component. It does not participate in Stagehand execution. |
-| timeout | integer | No | 0 | Compatibility field accepted by the current Go component. It does not participate in Stagehand execution. |
 
 #### Supported Values
 

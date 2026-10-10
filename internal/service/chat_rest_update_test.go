@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"math"
 	"strings"
 	"testing"
 
@@ -286,6 +288,71 @@ func TestChatServiceUpdateChatAcceptsMetaDataFilterObject(t *testing.T) {
 	}
 }
 
+func TestChatServiceUpdateChatNormalizesKeywordsSimilarityWeight(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	resp, err := svc.UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+	})
+	if err != nil {
+		t.Fatalf("UpdateChat failed: %v", err)
+	}
+
+	chat, err := svc.chatDAO.GetByID(t.Context(), dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch chat: %v", err)
+	}
+	if math.Abs(chat.VectorSimilarityWeight-0.3) > similarityWeightTolerance {
+		t.Fatalf("vector_similarity_weight = %v, want 0.3", chat.VectorSimilarityWeight)
+	}
+	if got, ok := resp["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", resp["keywords_similarity_weight"])
+	}
+	if _, exists := resp["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatWithKBNamesMarshalJSONOmitsVectorSimilarityWeight(t *testing.T) {
+	payload, err := json.Marshal(&ChatWithKBNames{
+		Chat:       &entity.Chat{VectorSimilarityWeight: 0.3},
+		KBNames:    []string{"Dataset"},
+		DatasetIDs: []string{"dataset-1"},
+		Nickname:   "Owner",
+	})
+	if err != nil {
+		t.Fatalf("Marshal failed: %v", err)
+	}
+
+	response := map[string]interface{}{}
+	if err = json.Unmarshal(payload, &response); err != nil {
+		t.Fatalf("Unmarshal failed: %v", err)
+	}
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+}
+
+func TestChatServiceUpdateChatRejectsMismatchedSimilarityWeights(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	_, err := NewChatService().UpdateChat(t.Context(), "user-1", "chat-1", map[string]interface{}{
+		"name":                       "chat-chat-1",
+		"keywords_similarity_weight": 0.7,
+		"vector_similarity_weight":   0.4,
+	})
+	if err == nil || !strings.Contains(err.Error(), "must sum to 1") {
+		t.Fatalf("expected weight sum error, got %v", err)
+	}
+}
+
 func TestChatServiceUpdateChatBackfillsNilMetaDataFilter(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
@@ -353,21 +420,22 @@ func TestChatServiceCreateValidatesName(t *testing.T) {
 	}
 }
 
-func TestChatServiceCreateRejectsDuplicateName(t *testing.T) {
+func TestChatServiceCreateDedupesDuplicateName(t *testing.T) {
 	db := setupChatRESTUpdateServiceTestDB(t)
 	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
 
 	svc := NewChatService()
 	ctx := t.Context()
 	_, code, err := svc.Create(ctx, "user-1", map[string]interface{}{"name": "chat-chat-1"})
-	if err == nil {
-		t.Fatal("expected duplicate name error")
+	if err != nil {
+		t.Fatalf("expected deduped create to succeed, got %v", err)
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("expected data error code, got %d", code)
+	if code != common.CodeSuccess {
+		t.Fatalf("expected success code, got %d", code)
 	}
-	if !strings.Contains(err.Error(), "duplicated chat name") {
-		t.Fatalf("unexpected error: %v", err)
+	var created entity.Chat
+	if err := db.Where("tenant_id = ? AND name = ?", "user-1", "chat-chat-1(1)").First(&created).Error; err != nil {
+		t.Fatalf("expected a chat named %q: %v", "chat-chat-1(1)", err)
 	}
 }
 

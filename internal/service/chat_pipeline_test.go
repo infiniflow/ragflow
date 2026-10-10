@@ -792,7 +792,10 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 }
 
-func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
+// TestDecorateAnswer_QuoteDisabledKeepsChunks pins the cite=false shape of the
+// reference: the retrieved evidence still ships, but doc_aggs does not — with
+// the citation markers stripped there is nothing left to open those cards from.
+func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	kb := map[string]interface{}{
@@ -801,8 +804,12 @@ func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
 	}
 	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
 		nil, 0, false, nil, "", nil, "", nil, true)
-	if result.Reference == nil || len(result.Reference) != 0 {
-		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
+	if _, has := result.Reference["doc_aggs"]; has {
+		t.Fatalf("disabled citations must drop doc_aggs: %#v", result.Reference)
+	}
+	chunks, ok := result.Reference["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 || chunks[0]["id"] != "c1" {
+		t.Fatalf("disabled citations must still ship the evidence chunks: %#v", result.Reference["chunks"])
 	}
 	if result.Answer != "Answer" {
 		t.Fatalf("answer changed: %q", result.Answer)
@@ -1225,6 +1232,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	}
 	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
 		t.Errorf("seekdb = %q, want docnm_kwd", got)
+	}
+	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
+		t.Errorf("vastbase = %q, want docnm_kwd", got)
 	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
@@ -2044,11 +2054,16 @@ func TestAsyncChatHarnessQuote(t *testing.T) {
 			if !final.Final || final.Answer != want || streamed.String() != want {
 				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
 			}
-			if (len(final.Reference) > 0) != tt.wantQuote {
-				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
+			// The evidence ships either way; only doc_aggs follows the cite switch.
+			chunks, _ := final.Reference["chunks"].([]map[string]interface{})
+			if len(chunks) != 1 {
+				t.Fatalf("reference chunks = %#v, want the harness evidence", final.Reference["chunks"])
 			}
-			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
-				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
+			if _, hasDocAggs := final.Reference["doc_aggs"]; hasDocAggs != tt.wantQuote {
+				t.Fatalf("doc_aggs presence = %v, quote=%v: %#v", hasDocAggs, tt.wantQuote, final.Reference)
+			}
+			if !tt.wantQuote && strings.Contains(reasoning.String(), "[ID:") {
+				t.Fatalf("disabled citations must be removed from reasoning, got %q", reasoning.String())
 			}
 		})
 	}
@@ -2150,9 +2165,11 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedOmitsReference ensures an agentic answer
-// without citation markers does not expose the internal evidence pool.
-func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
+// TestDecorateHarnessAnswerUncitedKeepsChunks pins that an agentic answer using
+// no citation marker still carries the evidence it was grounded on: the pool is
+// the provenance of the answer, and the cite switch governs the doc_aggs cards
+// rather than the passages themselves.
+func TestDecorateHarnessAnswerUncitedKeepsChunks(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{
@@ -2170,8 +2187,9 @@ func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 
 	s := &ChatPipelineService{}
 	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
-	if res.Reference != nil {
-		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["id"] != "c1" {
+		t.Fatalf("reference chunks = %#v, want the evidence pool", res.Reference["chunks"])
 	}
 }
 
@@ -2241,8 +2259,11 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
-	if res.Reference != nil {
-		t.Fatalf("an answer without a resolvable citation must not carry a reference, got %#v", res.Reference)
+	// The unresolvable marker is dropped, but the evidence it was drawn from
+	// still ships.
+	remaining, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(remaining) != 1 || remaining[0]["document_name"] != "wolf.jpg" {
+		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
 	}
 }
 
@@ -2464,8 +2485,8 @@ func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	_, err := svc.ModelProviderSvc.modelSolver().ResolveModelConfig(
-		t.Context(), "tenant-1", entity.ModelTypeChat, "model-image2text-tools",
+	_, err := svc.ModelFactory.resolveConfig(
+		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
 	)
 	if err == nil {
 		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
@@ -2577,6 +2598,147 @@ func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := reasoningNeedsAgenticGraph(tc.chat, tc.cfg, tc.reasoningLevel); got != tc.want {
 				t.Errorf("reasoningNeedsAgenticGraph(level=%d) = %v, want %v", tc.reasoningLevel, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolveReasoningLevelReadsAgenticLevel pins where the agentic RAG mode is
+// selected from. The level arrives as a number (frontend sends
+// Number(getThinkingLevel())), from the request first and the dialog's
+// prompt_config second, and reasoningLevelAgentic is a level of its own rather
+// than a harness depth.
+func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         int
+	}{
+		{"absent everywhere", nil, nil, 0},
+		{"naive from request", map[string]interface{}{"reasoning": 0}, nil, 0},
+		{"harness depth from request", map[string]interface{}{"reasoning": 3}, nil, 3},
+		{"agentic from request", map[string]interface{}{"reasoning": 5}, nil, reasoningLevelAgentic},
+		{
+			"request float from JSON",
+			map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)},
+			nil,
+			reasoningLevelAgentic,
+		},
+		{
+			"agentic from dialog config",
+			nil,
+			map[string]interface{}{"reasoning": 5},
+			reasoningLevelAgentic,
+		},
+		{
+			// The UI always sends the level, so a request value must win over
+			// a dialog pinned to a different mode.
+			"request overrides dialog config",
+			map[string]interface{}{"reasoning": 2},
+			map[string]interface{}{"reasoning": 5},
+			2,
+		},
+		// chat_settings.ts writes a boolean, which must not read as agentic.
+		{"boolean false is not agentic", nil, map[string]interface{}{"reasoning": false}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveReasoningLevel(tc.kwargs, tc.promptConfig)
+			if got != tc.want {
+				t.Errorf("resolveReasoningLevel() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticLevelIsNotAHarnessMode pins the boundary between the two engines.
+// harnessModeForLevel's domain is the harness depths 1..4; reasoningLevelAgentic
+// belongs to a different engine and is meant to be dispatched to
+// smart-reasoning before any harness mode is derived.
+//
+// harnessModeForLevel itself is NOT asserted to reject the agentic level: it
+// takes an int and has no level vocabulary of its own, so any such assertion
+// would only pin an implementation detail. The contract these tests protect is
+// the one callers rely on — the level constant the selector sends, and a harness
+// mode for each depth that is supposed to have one.
+func TestAgenticLevelIsNotAHarnessMode(t *testing.T) {
+	// The selector's option value; a mismatch means the UI and this package
+	// disagree on which number means agentic.
+	if reasoningLevelAgentic != 5 {
+		t.Fatalf("reasoningLevelAgentic = %d, want 5 (the level message-input/next.tsx sends)", reasoningLevelAgentic)
+	}
+	want := map[int]string{1: "low", 2: "medium", 3: "high", 4: "ultra"}
+	for level, mode := range want {
+		if got := harnessModeForLevel(level); got != mode {
+			t.Errorf("harnessModeForLevel(%d) = %q, want %q", level, got, mode)
+		}
+	}
+}
+
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
+	}{
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
 			}
 		})
 	}

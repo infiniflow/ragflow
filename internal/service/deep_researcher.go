@@ -668,17 +668,11 @@ func (dr *DeepResearcher) chatOnce(
 	if dr.ChatModel == nil || dr.ChatModel.ModelDriver == nil {
 		return "", fmt.Errorf("DeepResearcher: no chat model configured")
 	}
-	modelName := ""
-	if dr.ChatModel.ModelName != nil {
-		modelName = *dr.ChatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: systemPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
-	)
+	resp, err := dr.ChatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}

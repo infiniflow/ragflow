@@ -7,7 +7,7 @@ import { rerankCandidatesCountSchema } from '@/components/rerank-candidates-coun
 import { rerankFormSchema } from '@/components/rerank';
 import {
   similarityThresholdSchema,
-  vectorSimilarityWeightSchema,
+  keywordsSimilarityWeightSchema,
 } from '@/components/similarity-slider';
 import { topnSchema } from '@/components/top-n-item';
 import { WebSearchProvider } from '@/constants/chat';
@@ -41,6 +41,7 @@ export function useChatSettingSchema() {
     linkup_api_key: z.string().optional(),
     parallel_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
+    search1api_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
     tavily_api_key: z.string().optional(),
     youcom_api_key: z.string().optional(),
@@ -52,6 +53,7 @@ export function useChatSettingSchema() {
         WebSearchProvider.Linkup,
         WebSearchProvider.Parallel,
         WebSearchProvider.Querit,
+        WebSearchProvider.Search1API,
         WebSearchProvider.Serply,
         WebSearchProvider.Tavily,
         WebSearchProvider.YouCom,
@@ -81,7 +83,7 @@ export function useChatSettingSchema() {
       llm_setting: z.object(LlmSettingFieldSchema),
       ...LlmSettingEnabledSchema,
       llm_id: z.string().optional(),
-      ...vectorSimilarityWeightSchema,
+      ...keywordsSimilarityWeightSchema,
       ...similarityThresholdSchema,
       ...topnSchema,
       ...rerankCandidatesCountSchema,

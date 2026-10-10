@@ -30,7 +30,6 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/service"
 )
@@ -69,20 +68,21 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "TTS service not available")
 		return
 	}
 
-	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeTTS)
+	ttsModel, err := h.modelFactory.NewDefaultTTSModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	driver := target.Driver
-	modelName := target.ModelName
-	apiConfig := target.APIConfig
 
+	modelName, providerName := "", ""
+	if info := ttsModel.Info(); info != nil {
+		modelName, providerName = info.Name, info.ProviderName
+	}
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
 		c.Header("Cache-Control", "no-cache")
@@ -108,7 +108,7 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
+		resp, err := ttsModel.Speech(ctx, &seg, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
 			if firstSynthErr == nil {
 				firstSynthErr = err
@@ -175,11 +175,11 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	if !headerWritten {
 		if firstSynthErr != nil {
 			common.ErrorWithCode(c, common.CodeServerError,
-				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, driver.Name()))
+				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName))
 			return
 		}
 		common.ErrorWithCode(c, common.CodeServerError,
-			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, driver.Name()))
+			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
 	}
 }
 
@@ -217,7 +217,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "ASR service not available")
 		return
 	}
@@ -268,14 +268,11 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	target, err := service.NewModelSolver().ResolveDefaultModelConfig(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	asrModel, err := h.modelFactory.NewDefaultASRModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
-	driver := target.Driver
-	modelName := target.ModelName
-	apiConfig := target.APIConfig
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {
@@ -306,7 +303,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err = driver.TranscribeAudioWithSender(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
+		if err = asrModel.TranscribeWithSender(ctx, &tmpPath, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -324,7 +321,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, &modelModule.ASRConfig{}, nil)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

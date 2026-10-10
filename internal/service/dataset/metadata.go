@@ -9,6 +9,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -16,8 +18,9 @@ import (
 func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userID, datasetID, documentID string, req map[string]interface{}) (*entity.Document, common.ErrorCode, error) {
 	userID = strings.TrimSpace(userID)
 	datasetID = strings.TrimSpace(datasetID)
-	if !d.Accessible(ctx, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("you don't own the dataset")
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	doc, err := d.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, documentID, datasetID)
@@ -67,22 +70,25 @@ func (d *DatasetService) UpdateDocumentMetadataConfig(ctx context.Context, userI
 }
 
 // GetMetadataConfig gets the auto-metadata configuration for a dataset.
-func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, userID string) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	tenantID = strings.TrimSpace(tenantID)
-	if !d.Accessible(ctx, datasetID, tenantID) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	userID = strings.TrimSpace(userID)
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	if kb == nil {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
+		return nil, code, permissionErr
 	}
 
 	_, enabled, metadata, builtInMetadata := modularMetadataConfig(kb.ParserConfig)
@@ -95,23 +101,26 @@ func (d *DatasetService) GetMetadataConfig(ctx context.Context, datasetID, tenan
 }
 
 // UpdateMetadataConfig updates the auto-metadata configuration for a dataset.
-func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, tenantID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, userID string, req *service.MetadataConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	datasetID = strings.TrimSpace(datasetID)
-	tenantID = strings.TrimSpace(tenantID)
+	userID = strings.TrimSpace(userID)
 
-	if !d.Accessible(ctx, datasetID, tenantID) {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, common.CodeDataError, errors.New("dataset not found")
+			code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
+			return nil, code, permissionErr
 		}
 		return nil, common.CodeServerError, errors.New("database operation failed")
 	}
 	if kb == nil {
-		return nil, common.CodeDataError, fmt.Errorf("user '%s' lacks permission for dataset '%s'", tenantID, datasetID)
+		code, permissionErr := permissionresponse.Normalize(permission.ErrResourceNotFound)
+		return nil, code, permissionErr
 	}
 
 	if req == nil {
@@ -173,20 +182,40 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 }
 
 // modularMetadataConfig reads the modular dataset-level metadata object
-// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
-// or malformed config yields a disabled, empty result.
+// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. The
+// dataset-level flat "metadata" key is authoritative when present; the
+// component-scoped copy under an Extractor node is used as a fallback (the
+// stored form after scoping). Configs without either (e.g. minimal fixtures)
+// yield a disabled, empty result.
 func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
 	if parserConfig == nil {
 		return false, false, []any{}, []any{}
 	}
-	metaObj, ok := parserConfig["metadata"].(map[string]any)
-	if !ok {
-		return false, false, []any{}, []any{}
+	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
+		enabled, _ := metaObj["enabled"].(bool)
+		metadata := anyOrEmptyList(metaObj["metadata"])
+		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn
 	}
-	enabled, _ := metaObj["enabled"].(bool)
-	metadata := anyOrEmptyList(metaObj["metadata"])
-	builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
-	return true, enabled, metadata, builtIn
+	for cpnID, raw := range parserConfig {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		metaObj, ok := params["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		enabled, _ := metaObj["enabled"].(bool)
+		metadata := anyOrEmptyList(metaObj["metadata"])
+		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn
+	}
+	return false, false, []any{}, []any{}
 }
 
 func anyOrEmptyList(value any) []any {

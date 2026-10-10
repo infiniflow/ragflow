@@ -39,7 +39,14 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	common.LookupHost = func(string) ([]string, error) { return []string{"8.8.8.8"}, nil }
 	t.Cleanup(func() { common.LookupHost = lookup })
 	var dispatched atomic.Bool
+	const authToken = "ragflow-secret"
 	mcp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "" {
+			t.Error("MCP authentication unexpectedly appeared in the URL")
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer "+authToken {
+			t.Errorf("Authorization = %q, want MCP bearer token", got)
+		}
 		if r.Method == "DELETE" {
 			w.WriteHeader(204)
 			return
@@ -71,7 +78,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	pinned := utility.PinnedHTTPClient
 	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client { return mcp.Client() }
 	t.Cleanup(func() { utility.PinnedHTTPClient = pinned })
-	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: utility.TransportStreamableHTTP}).Error; err != nil {
+	if err := db.Create(&entity.MCPServer{ID: "mcp", TenantID: "tenant", Name: "route server", URL: mcp.URL, ServerType: utility.TransportStreamableHTTP, Headers: entity.JSONMap{"Authorization": "Bearer ${authorization_token}"}, Variables: entity.JSONMap{"authorization_token": authToken}}).Error; err != nil {
 		t.Fatal(err)
 	}
 	state := runtime.NewCanvasState("run", "task")
@@ -84,6 +91,14 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 	}
 	var requests atomic.Int32
 	llm := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		if strings.Contains(string(body), authToken) || strings.Contains(string(body), mcp.URL) {
+			t.Error("MCP connection credentials leaked into the model request")
+		}
 		var req struct {
 			Tools []struct {
 				Function struct {
@@ -94,7 +109,7 @@ func TestAgentMCPModelDispatch(t *testing.T) {
 			ToolChoice string           `json:"tool_choice"`
 			Messages   []models.Message `json:"messages"`
 		}
-		json.NewDecoder(r.Body).Decode(&req)
+		json.Unmarshal(body, &req)
 		if len(req.Tools) != 1 || req.Tools[0].Function.Name != "route_0" || req.ToolChoice != "auto" {
 			t.Errorf("tools missing from model request: %+v", req)
 		}

@@ -11,7 +11,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 
 	enginetypes "ragflow/internal/engine/types"
@@ -40,8 +41,9 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, errors.New("no authorization")
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	kb, err := d.kbDAO.GetByID(ctx, dao.DB, datasetID)
@@ -60,11 +62,10 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	target, err := service.NewModelSolver().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	embeddingModel, err := service.NewModelFactory().NewEmbeddingModel(ctx, service.ModelAccess{TenantID: kb.TenantID}, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	checkNum := defaultEmbeddingCheckNum
 	if req.CheckNum != nil {
@@ -280,8 +281,8 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 	return samples, nil
 }
 
-func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, tenantID string) (bool, string) {
-	_, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, access service.ModelAccess) (bool, string) {
+	_, err := service.NewModelFactory().ResolveInfo(ctx, access, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

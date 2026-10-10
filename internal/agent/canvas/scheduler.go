@@ -157,21 +157,13 @@ func statePre(ctx context.Context, in map[string]any, state *CanvasState) (map[s
 			contextMemory := ctxState.SnapshotMemory()
 			localSysHistory := state.SnapshotSysHistory()
 			contextSysHistory := ctxState.SnapshotSysHistory()
-			for cpnID, bucket := range state.Outputs {
+			for cpnID, bucket := range state.Snapshot() {
 				for k, v := range bucket {
 					ctxState.SetVar(cpnID, k, v)
 				}
 			}
 			sysNS, envNS, globalsNS := state.SnapshotNamespaces()
-			for k, v := range sysNS {
-				ctxState.Sys[k] = v
-			}
-			for k, v := range envNS {
-				ctxState.Env[k] = v
-			}
-			for k, v := range globalsNS {
-				ctxState.Globals[k] = v
-			}
+			ctxState.MergeNamespaces(sysNS, envNS, globalsNS)
 			if len(contextHistory) >= len(localHistory) {
 				state.SetHistory(contextHistory)
 			} else {
@@ -235,9 +227,7 @@ func statePost(ctx context.Context, out map[string]any, state *CanvasState) (map
 	}
 	if ctxState != nil && state != nil && ctxState != state {
 		sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-		state.Sys = sysNS
-		state.Env = envNS
-		state.Globals = globalsNS
+		state.ReplaceNamespaces(sysNS, envNS, globalsNS)
 		state.SetHistory(ctxState.SnapshotHistory())
 		state.SetMemory(ctxState.SnapshotMemory())
 	}
@@ -282,10 +272,10 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 
-	if state.Sys != nil {
-		state.Sys["_node_start_"+cpnID] = now
-		state.Sys["_node_inputs_"+cpnID] = sanitizeNodeInputs(inputs)
-	}
+	state.MergeNamespaces(map[string]any{
+		"_node_start_" + cpnID:  now,
+		"_node_inputs_" + cpnID: sanitizeNodeInputs(inputs),
+	}, nil, nil)
 	nsData, err := runtime.SafeJSONMarshal(NodeStartedData{
 		Inputs:        sanitizeNodeInputs(inputs),
 		CreatedAt:     now,
@@ -324,10 +314,9 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
 	var elapsed float64
-	if state.Sys != nil {
-		if start, ok := state.Sys["_node_start_"+cpnID].(float64); ok {
-			elapsed = now - start
-		}
+	sysNS, _, _ := state.SnapshotNamespaces()
+	if start, ok := sysNS["_node_start_"+cpnID].(float64); ok {
+		elapsed = now - start
 	}
 	if elapsed < 0 {
 		elapsed = 0
@@ -335,20 +324,13 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 
 	// Collect outputs from the state's Outputs bucket for this cpn.
 	var outputs map[string]any
-	if state.Outputs != nil {
-		if bucket, ok := state.Outputs[cpnID]; ok && len(bucket) > 0 {
-			outputs = make(map[string]any, len(bucket))
-			for k, v := range bucket {
-				outputs[k] = v
-			}
-		}
+	if bucket := state.Snapshot()[cpnID]; len(bucket) > 0 {
+		outputs = bucket
 	}
 
 	inputs := map[string]any{}
-	if state.Sys != nil {
-		if v, ok := state.Sys["_node_inputs_"+cpnID].(map[string]any); ok {
-			inputs = v
-		}
+	if v, ok := sysNS["_node_inputs_"+cpnID].(map[string]any); ok {
+		inputs = v
 	}
 
 	var nfErr interface{}
@@ -403,10 +385,10 @@ func nodeFinishedNow(ctx context.Context, state *CanvasState, cpnID, componentNa
 // extracts from context for us (via WithGenLocalState — wired in compile.go).
 func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string]any, map[string]any], error) {
 	if c == nil {
-		return nil, fmt.Errorf("canvas: nil canvas")
+		return nil, fmt.Errorf("agent: nil canvas")
 	}
 	if len(c.Components) == 0 {
-		return nil, fmt.Errorf("canvas: no components")
+		return nil, fmt.Errorf("agent: no components")
 	}
 
 	// GenLocalState copies the request-initialized *CanvasState when the
@@ -437,9 +419,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				}
 			}
 			sysNS, envNS, globalsNS := ctxState.SnapshotNamespaces()
-			st.Sys = sysNS
-			st.Env = envNS
-			st.Globals = globalsNS
+			st.ReplaceNamespaces(sysNS, envNS, globalsNS)
 			st.Path = append([]string(nil), ctxState.Path...)
 			st.SetHistory(ctxState.SnapshotHistory())
 			st.SetMemory(ctxState.SnapshotMemory())
@@ -447,15 +427,19 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		st := NewCanvasState("", "")
 		if globals != nil {
+			sysNS := make(map[string]any)
+			envNS := make(map[string]any)
+			globalsNS := make(map[string]any)
 			for k, v := range globals {
 				if strings.HasPrefix(k, "sys.") {
-					st.Sys[strings.TrimPrefix(k, "sys.")] = v
+					sysNS[strings.TrimPrefix(k, "sys.")] = v
 				} else if strings.HasPrefix(k, "env.") {
-					st.Env[strings.TrimPrefix(k, "env.")] = v
+					envNS[strings.TrimPrefix(k, "env.")] = v
 				} else {
-					st.Globals[k] = v
+					globalsNS[k] = v
 				}
 			}
+			st.MergeNamespaces(sysNS, envNS, globalsNS)
 		}
 		st.SetHistory(c.History)
 		st.SetMemory(c.Memory)
@@ -482,6 +466,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 			}
 			var opts []workflowx.LoopOption
 			opts = append(opts, workflowx.WithLoopStream(workflowx.LoopStreamEveryIteration))
+			opts = append(opts, workflowx.WithLoopStatePersistence(exp.snapshot, exp.restore))
 			opts = append(opts, workflowx.WithLoopLifecycleHooks(
 				func(ctx context.Context, input any) {
 					state, _ := runtime.GetStateFromContext(ctx)
@@ -500,7 +485,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				ctx, wf, cpnID, exp.Sub, exp.ShouldQuit, opts...,
 			)
 			if err != nil {
-				return nil, fmt.Errorf("canvas: install loop %q: %w", cpnID, err)
+				return nil, fmt.Errorf("agent: install loop %q: %w", cpnID, err)
 			}
 			macroNodes[cpnID] = node
 			for m := range exp.Members {
@@ -565,14 +550,14 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 		}
 		name := c.Components[cpnID].Obj.ComponentName
 		if name == "" {
-			return nil, fmt.Errorf("canvas: component %q has empty component_name", cpnID)
+			return nil, fmt.Errorf("agent: component %q has empty component_name", cpnID)
 		}
 		deferToMessage := directMessageDownstream(c, cpnID)
 		nodeOpts := runtime.ComponentExecutionOptions{
 			DeferAgentToMessage:        deferToMessage,
 			SuppressAgentMessageEvents: strings.EqualFold(name, "Agent") && !deferToMessage,
 		}
-		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].Obj.Params, nodeOpts)
+		body, err := buildNodeBodyWithOptions(ctx, cpnID, name, c.Components[cpnID].DisplayName, c.Components[cpnID].Obj.Params, nodeOpts)
 		if err != nil {
 			return nil, err
 		}
@@ -643,29 +628,56 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	}
 	wired := make(map[pendingEdge]struct{}, len(pending))
 	first := make(map[string]bool, len(c.Components))
-	for _, e := range pending {
-		// Multiple output handles may converge on the same downstream
-		// node. The DSL keeps one upstream entry per handle, while eino
-		// permits only one control edge for a source/target pair.
+	wireOne := func(e pendingEdge) error {
 		if _, ok := wired[e]; ok {
-			continue
+			return nil
 		}
 		wired[e] = struct{}{}
 		if e.cpn == e.up {
-			return nil, fmt.Errorf("canvas: self-edge on %q", e.cpn)
+			return fmt.Errorf("agent: self-edge on %q", e.cpn)
 		}
 		if resolveNode(e.up) == nil {
-			return nil, fmt.Errorf("canvas: component %q has unknown upstream %q", e.cpn, e.up)
+			return fmt.Errorf("agent: component %q has unknown upstream %q", e.cpn, e.up)
 		}
 		cpnNode := resolveNode(e.cpn)
 		if cpnNode == nil {
-			return nil, fmt.Errorf("canvas: pending edge references unknown cpn %q", e.cpn)
+			return fmt.Errorf("agent: pending edge references unknown cpn %q", e.cpn)
+		}
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			// This edge leaves a Message. Wait for it, but do not copy
+			// its output. Edges into a Message are wired above and still
+			// copy the previous node's output, including the final message.
+			// When nothing else supplies data, read the workflow input
+			// without a direct edge from START, so an unselected branch
+			// does not run this node.
+			cpnNode.AddDependency(e.up)
+			if !first[e.cpn] {
+				cpnNode.AddInputWithOptions(compose.START, nil, compose.WithNoDirectDependency())
+				first[e.cpn] = true
+			}
+			return nil
 		}
 		if !first[e.cpn] {
 			cpnNode.AddInput(e.up)
 			first[e.cpn] = true
 		} else {
 			cpnNode.AddDependency(e.up)
+		}
+		return nil
+	}
+	var messageEdges []pendingEdge
+	for _, e := range pending {
+		if messageEdgeIsOrderingOnly(c, e.up) {
+			messageEdges = append(messageEdges, e)
+			continue
+		}
+		if err := wireOne(e); err != nil {
+			return nil, err
+		}
+	}
+	for _, e := range messageEdges {
+		if err := wireOne(e); err != nil {
+			return nil, err
 		}
 	}
 
@@ -739,9 +751,27 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 	return wf, nil
 }
 
+// messageEdgeIsOrderingOnly reports that an edge leaving a Message only
+// schedules the next node. Message output is not that node's input.
+// The check looks at the upstream id, so an edge whose target is a
+// Message still carries the previous node's output into that Message.
+func messageEdgeIsOrderingOnly(c *Canvas, upstreamID string) bool {
+	if c == nil {
+		return false
+	}
+	comp, ok := c.Components[upstreamID]
+	if !ok {
+		return false
+	}
+	return strings.EqualFold(comp.Obj.ComponentName, "Message")
+}
+
 // directMessageDownstream reports whether a component may hand a deferred
 // stream to its downstream consumers. Only a direct Message child enables lazy
-// Agent execution, and only when EVERY direct downstream is a Message.
+// Agent execution, and only when EVERY direct downstream is a Message that
+// ends the branch. A Message that itself continues is a status line: the
+// Agent must run eagerly and write a real value, or the stream is never
+// opened and later nodes observe the unresolved placeholder.
 //
 // A mixed graph (Agent -> [Agent, Message]) must keep eager execution: the
 // deferred stream is opaque to non-Message consumers, which would otherwise
@@ -761,6 +791,9 @@ func directMessageDownstream(c *Canvas, cpnID string) bool {
 		if !ok || !strings.EqualFold(down.Obj.ComponentName, "Message") {
 			return false
 		}
+		if len(down.Downstream) > 0 {
+			return false
+		}
 	}
 	return true
 }
@@ -773,7 +806,7 @@ func wireWorkflowTerminals(
 ) error {
 	if len(terminals) == 0 {
 		if fallback == "" {
-			return fmt.Errorf("canvas: end node not set")
+			return fmt.Errorf("agent: end node not set")
 		}
 		terminals = []string{fallback}
 	}

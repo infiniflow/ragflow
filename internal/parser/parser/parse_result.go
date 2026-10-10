@@ -62,8 +62,8 @@ type ParseResult struct {
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
 	// Markdown / HTML / text emit normalized
-	// `{text, doc_type_kwd}` items; image emits OCR/VLM result
-	// items.
+	// `{text, doc_type_kwd}` items; image emits an image payload and, after
+	// ingestion enhancement, its VLM description.
 	JSON []map[string]any
 
 	// Markdown is a backend response awaiting normalization.

@@ -59,7 +59,7 @@ func newWebhookTraceTestHandler(t *testing.T) (*AgentHandler, *goredis.Client) {
 	dao.DB = db
 	t.Cleanup(func() { dao.DB = originalDB })
 	if err := db.Create(&entity.UserCanvas{ID: "c1", UserID: "u1", Title: sptr("Test")}).Error; err != nil {
-		t.Fatalf("create canvas: %v", err)
+		t.Fatalf("create agent: %v", err)
 	}
 
 	mr, err := miniredis.Run()
@@ -396,6 +396,41 @@ func TestGetAgentWebhookLogsHandlesMissingAndInvalidState(t *testing.T) {
 	invalidSince := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"not-a-number"}})
 	if invalidSince.Data == nil || invalidSince.Data.NextSinceTS <= 0 || invalidSince.Data.Finished {
 		t.Fatalf("invalid since_ts data = %+v, want a fresh cursor", invalidSince.Data)
+	}
+}
+
+// TestGetAgentWebhookLogsStopsAfterExpiry checks the lifecycle of an expired selected trace.
+func TestGetAgentWebhookLogsStopsAfterExpiry(t *testing.T) {
+	h, rdb := newWebhookTraceTestHandler(t)
+	seedWebhookTrace(t, rdb, "c1", map[string]any{
+		"50": map[string]any{"start_ts": 50, "events": []any{}},
+	})
+	discovery := requestWebhookTrace(t, h, "c1", "u1", url.Values{"since_ts": {"42"}})
+	if discovery.Data == nil || discovery.Data.WebhookID == nil || discovery.Data.Finished {
+		t.Fatalf("discovery = %+v, want an active trace", discovery)
+	}
+	id := *discovery.Data.WebhookID
+	query := url.Values{"since_ts": {"50"}, "webhook_id": {id}}
+	key := "webhook-trace-c1-logs"
+	// Expire deterministically without sleeping or changing the wall clock.
+	if err := rdb.ExpireAt(t.Context(), key, time.Unix(1, 0)).Err(); err != nil {
+		t.Fatal(err)
+	}
+	if exists, err := rdb.Exists(t.Context(), key).Result(); err != nil || exists != 0 {
+		t.Fatalf("trace key exists = %d, err = %v, want expired", exists, err)
+	}
+	for range 2 {
+		poll := requestWebhookTrace(t, h, "c1", "u1", query)
+		if poll.Code != int(common.CodeSuccess) || poll.Data == nil {
+			t.Fatalf("expired trace response = %+v", poll)
+		}
+		data := poll.Data
+		if !data.Finished || data.WebhookID == nil || *data.WebhookID != id || data.NextSinceTS != 50 {
+			t.Fatalf("expired trace = %+v, want finished with original ID and cursor", data)
+		}
+		if data.Events == nil || len(data.Events) != 0 {
+			t.Fatalf("expired trace events = %#v, want []", data.Events)
+		}
 	}
 }
 

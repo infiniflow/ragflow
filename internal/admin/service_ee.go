@@ -21,17 +21,22 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"sort"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 
 	"gorm.io/gorm"
 )
 
-func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, string) {
-	GlobalServerStore.UpdateServerInfo(serverName, status)
+func UpdateServer(serverName string, status *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
+	err := GlobalServerStore.UpdateServerInfo(serverName, status)
+	if err != nil {
+		return common.CodeErrorServerStatus, nil, err.Error()
+	}
 	return CheckLicense()
 }
 
@@ -582,14 +587,28 @@ func (s *Service) ListUserDatasets(ctx context.Context, email string) ([]map[str
 		return nil, fmt.Errorf("failed to get user: %w", err)
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, user.ID)
+	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: user.ID}, permission.ScopeQuery{
+		Kind: permission.ResourceKindDataset, Operation: permission.OperationRead,
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		return nil, fmt.Errorf("failed to resolve user dataset permissions: %w", err)
 	}
 
-	datasets, err := s.kbDAO.GetAllByTenantIDs(ctx, dao.DB, tenantIDs, user.ID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user datasets: %w", err)
+	var datasets []*entity.Knowledgebase
+	if scope.Mode == permission.ScopeIDs {
+		datasets, err = s.kbDAO.GetByIDs(ctx, dao.DB, scope.ResourceIDs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get user datasets: %w", err)
+		}
+		sort.SliceStable(datasets, func(i, j int) bool {
+			if datasets[i].CreateTime == nil {
+				return datasets[j].CreateTime != nil
+			}
+			if datasets[j].CreateTime == nil {
+				return false
+			}
+			return *datasets[i].CreateTime < *datasets[j].CreateTime
+		})
 	}
 
 	result := make([]map[string]interface{}, 0, len(datasets))
@@ -1241,8 +1260,12 @@ func (s *Service) RemoveIngestionTasksByCondition(ctx context.Context, tasks []s
 	return []map[string]interface{}{element}, nil
 }
 
-func CheckLicense() (common.ErrorCode, string) {
-	return common.CodeLicenseValid, ""
+func CheckClientStatus(serverName string, status *common.BaseMessage) error {
+	return nil
+}
+
+func CheckLicense() (common.ErrorCode, map[string]interface{}, string) {
+	return common.CodeLicenseValid, map[string]interface{}{}, ""
 }
 
 // DownloadSensitiveWords download sensitive words

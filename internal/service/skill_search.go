@@ -36,21 +36,16 @@ import (
 
 // SkillSearchService handles business logic for skill search operations
 type SkillSearchService struct {
-	configDAO     *dao.SkillSearchConfigDAO
-	modelProvider *ModelProviderService
+	configDAO    *dao.SkillSearchConfigDAO
+	modelFactory *ModelFactory
 }
 
 // NewSkillSearchService creates a new SkillSearchService instance
 func NewSkillSearchService() *SkillSearchService {
 	return &SkillSearchService{
-		configDAO:     dao.NewSkillSearchConfigDAO(),
-		modelProvider: NewModelProviderService(),
+		configDAO:    dao.NewSkillSearchConfigDAO(),
+		modelFactory: NewModelFactory(),
 	}
-}
-
-// SetModelProvider sets the model provider for embedding generation
-func (s *SkillSearchService) SetModelProvider(provider *ModelProviderService) {
-	s.modelProvider = provider
 }
 
 // GetConfigRequest represents the request to get skill search config
@@ -659,7 +654,7 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 
 // getEmbedding generates embedding for text using the specified model
 func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, tenantID string) ([]float64, error) {
-	if s.modelProvider == nil {
+	if s.modelFactory == nil {
 		return nil, fmt.Errorf("model provider not set")
 	}
 
@@ -667,22 +662,14 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate text to prevent exceeding model's max input length
-	maxLen := embeddingModel.MaxTokens
-	if maxLen <= 0 {
-		maxLen = defaultMaxLength
-	}
-	truncatedText := truncate(text, maxLen-10)
-
-	var response []models.EmbeddingData
 	// Query: true — getEmbedding is used only by the skill search legs
 	// (vectorSearch / hybridSearch) to embed the user's query.
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{truncatedText}, Query: true}, embeddingModel.APIConfig, nil, nil)
+	response, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}, Query: true}, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
