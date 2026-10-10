@@ -563,3 +563,26 @@ func TestSetMetadataReplacesVisibleKeysAndPreservesProfile(t *testing.T) {
 		t.Fatalf("replacement lost profile or ownership transfer: %v (%v)", record, err)
 	}
 }
+
+func TestSyncMetadataPreservesUnsubmittedKeysAndOwnership(t *testing.T) {
+	svc, engine := revokeTestService(t, map[string]map[string]any{"doc-1": {
+		entity.TableProfileMetadataField: publishedProfile(t, "金额", "url"),
+		"金额":                             "100", "url": "old", "author": "user",
+	}})
+	input := service.DocumentUpsertInput{}
+	input.SourceDocument.Metadata = map[string]any{"url": "source"}
+	if err := svc.afterSyncDocumentUpsert(t.Context(), input, &entity.Document{ID: "doc-1"}, false); err != nil {
+		t.Fatal(err)
+	}
+	record := engine.records["doc-1"]
+	if record["author"] != "user" || record["金额"] != "100" || record["url"] != "source" {
+		t.Fatalf("partial sync erased metadata: %v", record)
+	}
+	profile, ok, err := entity.DecodeTableProfile(record[entity.TableProfileMetadataField])
+	if err != nil || !ok {
+		t.Fatalf("profile lost: %v", err)
+	}
+	if len(profile.OwnedMetadata) != 1 || profile.OwnedMetadata[0] != "金额" {
+		t.Fatalf("sync transferred ownership of unsubmitted keys: %v", profile.OwnedMetadata)
+	}
+}

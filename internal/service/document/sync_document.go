@@ -189,7 +189,7 @@ func (s *DocumentService) publishSyncDocument(ctx context.Context, doc *entity.D
 func (s *DocumentService) afterSyncDocumentUpsert(ctx context.Context, input service.DocumentUpsertInput, doc *entity.Document, rerun bool) error {
 	// write metadata
 	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
-		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
+		if err := s.mergeSyncDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
 			return err
 		}
 	}
@@ -206,7 +206,7 @@ func (s *DocumentService) ensureSyncDocumentPostWrite(ctx context.Context, input
 		return err
 	}
 	if len(input.SourceDocument.Metadata) > 0 && s.docEngine != nil {
-		if err := s.SetDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
+		if err := s.mergeSyncDocumentMetadata(ctx, doc.ID, input.SourceDocument.Metadata); err != nil {
 			return err
 		}
 	}

@@ -79,6 +79,28 @@ func (s *DocumentService) SetDocumentMetadata(ctx context.Context, docID string,
 	})
 }
 
+// mergeSyncDocumentMetadata applies source fields without replacing metadata
+// added by the user or ingestion. Only submitted fields transfer ownership.
+func (s *DocumentService) mergeSyncDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
+	return s.WithDocumentMetadataLock(ctx, docID, func(ctx context.Context) error {
+		if _, reserved := meta[entity.TableProfileMetadataField]; reserved {
+			return errors.New("_table_profile is reserved")
+		}
+		existing, err := s.GetDocumentMetadataRaw(ctx, docID)
+		if err != nil {
+			return err
+		}
+		after := cloneDocumentMetadata(existing)
+		for key, value := range meta {
+			after[key] = value
+		}
+		if err := relinquishTableMetadata(after, meta); err != nil {
+			return err
+		}
+		return s.SetDocumentMetadataRaw(ctx, docID, after)
+	})
+}
+
 // SetDocumentMetadataRaw writes a publisher's complete record, including its
 // table profile. Explicit metadata edits must use SetDocumentMetadata.
 func (s *DocumentService) SetDocumentMetadataRaw(ctx context.Context, docID string, meta map[string]any) error {
