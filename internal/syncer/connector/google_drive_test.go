@@ -277,6 +277,31 @@ func TestGoogleDriveSharedFolderScopesRecurse(t *testing.T) {
 	}
 }
 
+// TestGoogleDriveSharedFolderOnlySkipsMyDrive verifies folder URLs without My Drive emails never widen to a whole My Drive.
+func TestGoogleDriveSharedFolderOnlySkipsMyDrive(t *testing.T) {
+	connector, err := NewGoogleDriveConnector(map[string]any{
+		"include_my_drives":  true,
+		"my_drive_emails":    "",
+		"shared_folder_urls": "https://drive.google.com/drive/folders/root-folder",
+		"credentials": map[string]any{
+			"google_primary_admin": "admin@example.com",
+			"google_tokens":        `{"client_id":"client","client_secret":"secret","refresh_token":"refresh"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewGoogleDriveConnector failed: %v", err)
+	}
+
+	scopes, err := connector.buildScopes(t.Context())
+	if err != nil {
+		t.Fatalf("buildScopes failed: %v", err)
+	}
+	want := googleDriveScope{userEmail: "admin@example.com", corpora: "folder", folderID: "root-folder"}
+	if len(scopes) != 1 || scopes[0] != want {
+		t.Fatalf("scopes = %+v, want only %+v", scopes, want)
+	}
+}
+
 // TestGoogleDriveRateLimitRetries verifies rate limits do not truncate a scope.
 func TestGoogleDriveRateLimitRetries(t *testing.T) {
 	connector, err := NewGoogleDriveConnector(map[string]any{
