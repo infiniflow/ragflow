@@ -950,7 +950,9 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 			continue
 		}
 		if len(labels) > 0 && len(numbers) > 0 {
-			b.WriteString(strings.Join(labels, " "))
+			label := strings.Join(labels, " ")
+			label = strings.TrimSuffix(label, ":")
+			b.WriteString(label)
 			b.WriteString(": ")
 			b.WriteString(strings.Join(numbers, ", "))
 			b.WriteByte('\n')
