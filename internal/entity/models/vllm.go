@@ -153,10 +153,16 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 
 // Encode encodes a list of texts into embeddings
 type vllmEmbeddingResponse struct {
+	ID   string `json:"id"`
 	Data []struct {
 		Index     int       `json:"index"`
 		Embedding []float64 `json:"embedding"`
 	} `json:"data"`
+	// llama-server and vLLM report the request's token usage alongside the vectors.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Embed embeds a list of texts into embeddings
@@ -240,6 +246,15 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		embeddingData.Index = dataElem.Index
 		embeddings = append(embeddings, embeddingData)
 	}
+
+	// The provider's own token count is the oracle the ingest path calibrates its
+	// tokenizer against (see internal/tokenizer: ObserveUsage). Without it a
+	// llama-server deployment that counts with the calibrated estimate never leaves
+	// its default ratio. This mirrors OpenAIModel.Embed.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "embedding")
 
 	return embeddings, nil
 }
