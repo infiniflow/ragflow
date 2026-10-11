@@ -838,7 +838,11 @@ func TestIsFormSheet(t *testing.T) {
 	// Hybrid sheet: 30-row form prefix followed by 80 wide rows (like E1.2).
 	hybrid := make([][]string, 110)
 	for i := 0; i < 30; i++ {
-		hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "value"}
+		if i%4 == 0 {
+			hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "12345"}
+		} else {
+			hybrid[i] = []string{"", "", "", "label", "", "", "", "", "", "value"}
+		}
 	}
 	for i := 30; i < 110; i++ {
 		hybrid[i] = make([]string, 29)
