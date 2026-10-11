@@ -78,3 +78,43 @@ func TestTerminalCanvasOutputDoesNotReplayPreviousTurn(t *testing.T) {
 		t.Fatalf("output = %#v, want no output from the previous turn", got)
 	}
 }
+
+func TestAgentRunThinkingUsesFinalAnswerNode(t *testing.T) {
+	start := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	c := &canvas.Canvas{Components: map[string]canvas.CanvasComponent{
+		"begin":     {Obj: canvas.CanvasComponentObj{ComponentName: "Begin"}, Downstream: []string{"Agent:A"}},
+		"Agent:A":   {Obj: canvas.CanvasComponentObj{ComponentName: "Agent"}, Downstream: []string{"Agent:B"}},
+		"Agent:B":   {Obj: canvas.CanvasComponentObj{ComponentName: "Agent"}, Downstream: []string{"Message:0"}},
+		"Message:0": {Obj: canvas.CanvasComponentObj{ComponentName: "Message"}},
+	}}
+	for i := 0; i < 200; i++ {
+		state := canvas.NewCanvasState("run", "session")
+		state.SetVar("Agent:old", "thinking", "previous turn")
+		state.SetVar("Agent:old", "_created_time", "2026-10-09T00:00:00Z")
+		state.SetVar("Agent:A", "content", `{"rewrite":"q"}`)
+		state.SetVar("Agent:A", "thinking", "A")
+		state.SetVar("Agent:A", "_created_time", "2026-10-10T00:00:02Z")
+		state.SetVar("Agent:B", "content", "final prose")
+		state.SetVar("Agent:B", "thinking", "B")
+		state.SetVar("Agent:B", "_created_time", "2026-10-10T00:00:03Z")
+		state.SetVar("Message:0", "content", "final prose")
+		state.SetVar("Message:0", "_created_time", "2026-10-10T00:00:04Z")
+		output := terminalCanvasOutput(c, state, nil, start)
+		if output["content"] != "final prose" {
+			t.Fatalf("run %d: answer = %#v, want final prose", i, output["content"])
+		}
+		if got := agentRunThinking(state, output, start); got != "B" {
+			t.Fatalf("run %d: thinking = %q, want the final answer node's thinking", i, got)
+		}
+	}
+}
+
+func TestAgentRunThinkingPrefersSelectedOutput(t *testing.T) {
+	state := canvas.NewCanvasState("run", "session")
+	state.SetVar("Agent:A", "thinking", "A")
+	state.SetVar("Agent:A", "_created_time", "2026-10-10T00:00:02Z")
+	output := map[string]any{"content": "answer", "thinking": "selected"}
+	if got := agentRunThinking(state, output, time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)); got != "selected" {
+		t.Fatalf("thinking = %q, want selected", got)
+	}
+}

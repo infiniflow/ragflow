@@ -2250,19 +2250,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// Collect thinking and references from the state snapshot.
 		// node_finished events are already emitted per-node by the
 		// statePost wrappers in scheduler.go.
-		var thinking string
 		var legacyReference []interface{}
 		now := float64(time.Now().UnixNano()) / 1e9
 		for _, bucket := range state.Snapshot() {
-			if v, ok := bucket["thinking"].(string); ok && v != "" && thinking == "" {
-				thinking = v
-			}
 			if v, ok := bucket["reference"].([]interface{}); ok {
 				legacyReference = append(legacyReference, v...)
 			}
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
 		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, runStartedAt)
+		thinking := agentRunThinking(state, assistantOutput, runStartedAt)
 		// The selected Message owns the answer, including empty text when it
 		// intentionally selected attachments only.
 		answer, _ := assistantOutput["content"].(string)
@@ -2742,6 +2739,50 @@ func terminalCanvasOutput(
 		}
 	}
 	return map[string]any{}
+}
+
+// agentRunThinking picks the reasoning saved with the run's answer. Message
+// outputs normally carry no thinking, so use the selected output's own
+// thinking when present, otherwise the most recently started node of this run
+// that produced thinking (the node feeding the final answer). Buckets are
+// walked in sorted order so the result never depends on map iteration.
+func agentRunThinking(state *canvas.CanvasState, assistantOutput map[string]any, runStartedAt time.Time) string {
+	if v, ok := assistantOutput["thinking"].(string); ok && v != "" {
+		return v
+	}
+	if state == nil {
+		return ""
+	}
+	snapshot := state.Snapshot()
+	ids := make([]string, 0, len(snapshot))
+	for cpnID := range snapshot {
+		ids = append(ids, cpnID)
+	}
+	sort.Strings(ids)
+	var latestThinking, untimedThinking string
+	latest := runStartedAt
+	for _, cpnID := range ids {
+		bucket := snapshot[cpnID]
+		v, ok := bucket["thinking"].(string)
+		if !ok || v == "" {
+			continue
+		}
+		created, _ := bucket["_created_time"].(string)
+		createdAt, err := time.Parse(time.RFC3339Nano, created)
+		if err != nil {
+			if untimedThinking == "" {
+				untimedThinking = v
+			}
+			continue
+		}
+		if !createdAt.Before(latest) {
+			latestThinking, latest = v, createdAt
+		}
+	}
+	if latestThinking != "" {
+		return latestThinking
+	}
+	return untimedThinking
 }
 
 func cloneCanvasOutput(input map[string]any) map[string]any {
