@@ -318,6 +318,13 @@ func TestIsOverLimitErrorMatchesDelimitedNumbers(t *testing.T) {
 			false,
 		},
 		{
+			// A 500 in the body (a token count) must not be read as the HTTP status:
+			// only the status field counts.
+			"llama-server wording under 503 with 500 in the body",
+			`vLLM embeddings API error: 503 Service Unavailable, body: {"error":{"code":503,"message":"input (500 tokens) is too large to process. increase the physical batch size","type":"server_error"}}`,
+			false,
+		},
+		{
 			"llama-server over slot context (400)",
 			`vLLM embeddings API error: 400 Bad Request, body: {"error":{"code":400,"message":"input (2068 tokens) is larger than the max context size (2048 tokens). skipping","type":"exceed_context_size_error"}}`,
 			true,
