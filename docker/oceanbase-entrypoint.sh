@@ -5,6 +5,12 @@ log() {
   echo "[ragflow-ob-entrypoint] $*"
 }
 
+# Escape backslashes and single quotes so a value can be safely embedded
+# inside a single-quoted SQL string literal.
+sql_escape() {
+  printf '%s' "$1" | sed "s/\\\\/\\\\\\\\/g; s/'/\\\\'/g"
+}
+
 ob_sys() {
   obclient -h127.0.0.1 -P2881 -uroot@sys -p"${OB_SYS_PASSWORD}" -Doceanbase -A -N -e "$1"
 }
