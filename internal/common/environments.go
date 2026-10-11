@@ -255,38 +255,12 @@ const (
 	EnvGmailWebOAuthRedirectURI          = "GMAIL_WEB_OAUTH_REDIRECT_URI"
 	EnvGoogleDriveWebOAuthRedirectURI    = "GOOGLE_DRIVE_WEB_OAUTH_REDIRECT_URI"
 	EnvSpacyModelDir                     = "SPACY_MODEL_DIR"
-
-	// EnvDeepDocModelDir points the in-process (Go) DeepDoc backend at the
-	// model snapshot (see common.DeepDocModelFiles); mirrors
-	// the RAGFlow default model dir (internal/rag/res/deepdoc).
-	EnvDeepDocModelDir = "DEEPDOC_MODEL_DIR"
-	// EnvDeepDocDropScore overrides the confidence threshold below which the
-	// in-process (Go) DeepDoc backend blanks recognized text while preserving
-	// the real score. It defaults to 0.5, matching the historical DeepDoc
-	// recognizer drop_score, so recognized text is blanked consistently.
-	EnvDeepDocDropScore = "DEEPDOC_DROP_SCORE"
-	// EnvDeepDocInferenceConcurrency bounds how many DeepDoc ONNX inference
-	// Runs may be in flight at once. Each Run opens with max(1, N/K) intra-op
-	// threads (N = EnvDeepDocInferenceCPUCores budget, K = this value), so the
-	// total cores inference may occupy is at most N. It overrides the
-	// ingestor.inference_concurrency config key and is itself overridden by the
-	// --deepdoc-inference-concurrency CLI flag.
-	EnvDeepDocInferenceConcurrency = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
-	// EnvIngestorMaxConcurrentWorkers bounds how many ingestion tasks the
-	// ingestor runs in parallel (the NATS consumer worker count). It overrides
-	// the ingestor.max_concurrent_workers config key and is itself overridden
-	// by the --ingestor-max-concurrent-workers CLI flag.
-	EnvIngestorMaxConcurrentWorkers = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
-	// EnvIngestorPageConcurrency bounds how many pages of a single document are
-	// parsed concurrently inside one ingestor worker. It overrides the
-	// ingestor.page_concurrency config key and is itself overridden by the
-	// --ingestor-page-concurrency CLI flag.
-	EnvIngestorPageConcurrency = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
-	// EnvDeepDocInferenceCPUCores bounds the CPU-core budget N for DeepDoc
-	// in-process inference (0 = all cores). It overrides the
-	// ingestor.inference_cpu_cores config key and is itself overridden by the
-	// --deepdoc-inference-cpu-cores CLI flag.
-	EnvDeepDocInferenceCPUCores = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+	EnvDeepDocModelDir                   = "DEEPDOC_MODEL_DIR"
+	EnvDeepDocDropScore                  = "DEEPDOC_DROP_SCORE"
+	EnvDeepDocInferenceConcurrency       = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	EnvIngestorMaxConcurrentWorkers      = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	EnvIngestorPageConcurrency           = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	EnvDeepDocInferenceCPUCores          = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
 )
 
 // DeepDocModelFiles is the single source of truth for the weights the

@@ -112,6 +112,19 @@ type Environments struct {
 	QueritAPIKey                      string `mapstructure:"querit_api_key"`
 	KeenableAPIURL                    string `mapstructure:"keenable_api_url"`        // KEENABLE_API_URL
 	MCPAllowPrivateHosts              bool   `mapstructure:"mcp_allow_private_hosts"` // RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS
+
+	//EnvDeepDocModelDir                   = "DEEPDOC_MODEL_DIR"
+	//EnvDeepDocDropScore                  = "DEEPDOC_DROP_SCORE"
+	//EnvDeepDocInferenceConcurrency       = "RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY"
+	//EnvIngestorMaxConcurrentWorkers      = "RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS"
+	//EnvIngestorPageConcurrency           = "RAGFLOW_INGESTOR_PAGE_CONCURRENCY"
+	//EnvDeepDocInferenceCPUCores          = "RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES"
+	DeepDocModelDir              string  `mapstructure:"deepdoc_model_dir"`               // DEEPDOC_MODEL_DIR
+	DeepDocDropScore             float64 `mapstructure:"deepdoc_drop_score"`              // DEEPDOC_DROP_SCORE
+	DeepDocInferenceConcurrency  int     `mapstructure:"deepdoc_inference_concurrency"`   // RAGFLOW_DEEPDOC_INFERENCE_CONCURRENCY
+	IngestorMaxConcurrentWorkers int     `mapstructure:"ingestor_max_concurrent_workers"` // RAGFLOW_INGESTOR_MAX_CONCURRENT_WORKERS
+	IngestorPageConcurrency      int     `mapstructure:"ingestor_page_concurrency"`       // RAGFLOW_INGESTOR_PAGE_CONCURRENCY
+	DeepDocInferenceCPUCores     int     `mapstructure:"deepdoc_inference_cpucores"`      // RAGFLOW_DEEPDOC_INFERENCE_CPU_CORES
 }
 
 type DefaultSuperUser struct {
@@ -387,6 +400,62 @@ func (c *Config) GetEnvironments() error {
 	DeepDocBatchCSVStr := common.GetEnv(common.EnvBatchCSV)
 	if DeepDocBatchCSVStr != "" {
 		c.environments.DeepDocBatchCSV = DeepDocBatchCSVStr
+	}
+
+	DeepDocModelDir := common.GetEnv(common.EnvDeepDocModelDir)
+	if DeepDocModelDir != "" {
+		c.environments.DeepDocModelDir = DeepDocModelDir
+	}
+
+	DeepDocDropScoreStr := common.GetEnv(common.EnvDeepDocDropScore)
+	if DeepDocDropScoreStr != "" {
+		DeepDocDropScore, err := strconv.ParseFloat(DeepDocDropScoreStr, 64)
+		if err != nil {
+			return err
+		}
+		c.environments.DeepDocDropScore = DeepDocDropScore
+	}
+
+	DeepDocInferenceConcurrencyStr := common.GetEnv(common.EnvDeepDocInferenceConcurrency)
+	if DeepDocInferenceConcurrencyStr != "" {
+		DeepDocInferenceConcurrency, err := strconv.Atoi(DeepDocInferenceConcurrencyStr)
+		if err != nil {
+			return err
+		}
+		c.environments.DeepDocInferenceConcurrency = DeepDocInferenceConcurrency
+	}
+
+	IngestorMaxConcurrentWorkersStr := common.GetEnv(common.EnvIngestorMaxConcurrentWorkers)
+	if IngestorMaxConcurrentWorkersStr != "" {
+		IngestorMaxConcurrentWorkers, err := strconv.Atoi(IngestorMaxConcurrentWorkersStr)
+		if err != nil {
+			return err
+		}
+		if IngestorMaxConcurrentWorkers < MinIngestorWorkers || IngestorMaxConcurrentWorkers > MaxIngestorWorkers {
+			return fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]", IngestorMaxConcurrentWorkers, MinIngestorWorkers, MaxIngestorWorkers)
+		}
+		c.environments.IngestorMaxConcurrentWorkers = IngestorMaxConcurrentWorkers
+	}
+
+	IngestorPageConcurrencyStr := common.GetEnv(common.EnvIngestorPageConcurrency)
+	if IngestorPageConcurrencyStr != "" {
+		IngestorPageConcurrency, err := strconv.Atoi(IngestorPageConcurrencyStr)
+		if err != nil {
+			return err
+		}
+		if IngestorPageConcurrency < MinPageConcurrency || IngestorPageConcurrency > MaxPageConcurrency {
+			return fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]", IngestorPageConcurrency, MinPageConcurrency, MaxPageConcurrency)
+		}
+		c.environments.IngestorPageConcurrency = IngestorPageConcurrency
+	}
+
+	DeepDocInferenceCPUCoresStr := common.GetEnv(common.EnvDeepDocInferenceCPUCores)
+	if DeepDocInferenceCPUCoresStr != "" {
+		DeepDocInferenceCPUCores, err := strconv.Atoi(DeepDocInferenceCPUCoresStr)
+		if err != nil {
+			return err
+		}
+		c.environments.DeepDocInferenceCPUCores = DeepDocInferenceCPUCores
 	}
 
 	OpenDataLoaderAPIServerStr := common.GetEnv(common.EnvOpenDataLoaderAPIServer)
