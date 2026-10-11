@@ -1245,7 +1245,7 @@ func TestWikiQueryWiredReturnsPages(t *testing.T) {
 	if oc.Status != StatusOK {
 		t.Fatalf("status = %s, want ok", oc.Status)
 	}
-	if n, _ := toInt(oc.Metrics["n_hits"]); n != 1 {
+	if n, _ := common.ToInt(oc.Metrics["n_hits"]); n != 1 {
 		t.Errorf("n_hits = %v, want 1", oc.Metrics["n_hits"])
 	}
 	hit, ok := oc.Payload[0].(map[string]any)
@@ -1816,12 +1816,12 @@ func TestNamedTermSeatsReachTermsThePhraseSearchMissed(t *testing.T) {
 		// The phrase batch returns ONLY the passage matching several names at
 		// once — the ranking that strands the rare ones.
 		"关羽 斩华雄 荀正": {famous},
-		"关羽 斩颜良":    {},
-		"关羽":        {famous},
-		"斩华雄":       {famous},
-		"荀正":        {rare},
-		"斩颜良":       {predicate},
-		"杨龄":        {third},
+		"关羽 斩颜良":      {},
+		"关羽":             {famous},
+		"斩华雄":           {famous},
+		"荀正":             {rare},
+		"斩颜良":           {predicate},
+		"杨龄":             {third},
 		// 庞德 reaches nothing anywhere: the corpus does not carry it.
 		"庞德": {},
 	}}
