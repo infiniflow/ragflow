@@ -31,11 +31,6 @@ import (
 	"time"
 )
 
-const (
-	redactedLogValue      = "[REDACTED]"
-	maxLoggedVectorFloats = 3
-)
-
 // APIStatusError is a provider HTTP failure with its status code preserved, so
 // callers can act on the status (failover cooldown, retry) instead of matching
 // the error text. The shared request helpers return it; the message is byte-for-
