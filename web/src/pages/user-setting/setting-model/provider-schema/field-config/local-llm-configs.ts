@@ -197,6 +197,13 @@ export const LocalLlmConfigs: Record<string, ProviderConfig> = {
     undefined,
     'https://github.com/QuantumNous/new-api',
   ),
+  [LLMFactory.LiteLLM]: buildLocalConfig(
+    LLMFactory.LiteLLM,
+    'LiteLLM',
+    false,
+    undefined,
+    'https://docs.litellm.ai/docs/proxy/quick_start',
+  ),
   // [LLMFactory.TokenPony]: buildLocalConfig(
   //   LLMFactory.TokenPony,
   //   'TokenPony',
