@@ -111,6 +111,7 @@ export enum LLMFactory {
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
   Opper = 'Opper',
+  LiteLLM = 'LiteLLM',
 }
 
 // Please lowercase the file name
@@ -205,6 +206,7 @@ export const IconMap = {
   [LLMFactory.MWS]: 'mws',
   [LLMFactory.CheaperInference]: 'cheaperinference',
   [LLMFactory.Opper]: 'opper',
+  [LLMFactory.LiteLLM]: 'litellm',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -321,4 +323,5 @@ export const APIMapUrl = {
   [LLMFactory.PaddleOCRLocal]: 'https://www.paddleocr.ai/latest/',
   [LLMFactory.RAGcon]: 'https://connect.ragcon.com',
   [LLMFactory.FunASR]: 'https://github.com/modelscope/FunASR',
+  [LLMFactory.LiteLLM]: 'https://docs.litellm.ai/docs/proxy/virtual_keys',
 };

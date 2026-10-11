@@ -79,3 +79,25 @@ describe('MWS provider configuration', () => {
     });
   });
 });
+
+describe('LiteLLM provider configuration', () => {
+  it('lets the user add model names by hand', () => {
+    expect(LIST_MODEL_PROVIDERS.has(LLMFactory.LiteLLM)).toBe(false);
+  });
+
+  it('asks for a base URL and an optional API key', () => {
+    const config = LocalLlmConfigs[LLMFactory.LiteLLM];
+
+    expect(config).toMatchObject({
+      llmFactory: LLMFactory.LiteLLM,
+      title: 'LiteLLM',
+      docLink: 'https://docs.litellm.ai/docs/proxy/quick_start',
+    });
+    expect(
+      config.fields.find((field) => field.name === 'base_url'),
+    ).toMatchObject({ required: true });
+    expect(
+      config.fields.find((field) => field.name === 'api_key'),
+    ).toMatchObject({ required: false });
+  });
+});

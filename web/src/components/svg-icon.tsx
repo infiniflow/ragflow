@@ -77,6 +77,7 @@ const themeIcons = [
   LLMFactory.MinerUNet,
   LLMFactory.JiekouAI,
   LLMFactory.Perplexity,
+  LLMFactory.LiteLLM,
 ];
 
 const svgIcons = [
@@ -118,6 +119,7 @@ const svgIcons = [
   LLMFactory.MWS,
   LLMFactory.CheaperInference,
   LLMFactory.Opper,
+  LLMFactory.LiteLLM,
 ];
 
 export const LlmIcon = ({
