@@ -350,10 +350,16 @@ type vllmRerankRequest struct {
 // field is intentionally ignored — callers reconstruct text from the
 // original input via Index.
 type vllmRerankResponse struct {
+	ID      string `json:"id"`
 	Results []struct {
 		Index          int     `json:"index"`
 		RelevanceScore float64 `json:"relevance_score"`
 	} `json:"results"`
+	// vLLM reports the request's token usage alongside the scores.
+	Usage struct {
+		PromptTokens int `json:"prompt_tokens"`
+		TotalTokens  int `json:"total_tokens"`
+	} `json:"usage"`
 }
 
 // Rerank scores documents against the query using a vLLM rerank model
@@ -453,6 +459,13 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 			RelevanceScore: r.RelevanceScore,
 		})
 	}
+
+	// Report the provider's token usage, mirroring OpenAIModel.Embed and this
+	// driver's Embed, so rerank calls are counted instead of always reporting zero.
+	recordResponseUsage(modelUsage, parsed.ID, &TokenUsage{
+		PromptTokens: parsed.Usage.PromptTokens,
+		TotalTokens:  parsed.Usage.TotalTokens,
+	}, "rerank")
 
 	return &rerankResponse, nil
 }
