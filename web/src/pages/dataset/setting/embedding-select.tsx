@@ -1,4 +1,5 @@
 import { ModelTreeSelect, ModelTypeMap } from '@/components/model-tree-select';
+import { useIsDatasetOwner } from '@/pages/dataset/contexts/knowledge-base-context';
 import { Spin } from '@/components/ui/spin';
 import { useTranslate } from '@/hooks/common-hooks';
 import { useCheckKbEmbedding } from '@/hooks/use-knowledge-request';
@@ -24,6 +25,7 @@ export const EmbeddingSelect = ({
   const { t } = useTranslate('knowledgeConfiguration');
   const form = useFormContext();
   const { checkKbEmbedding, checking } = useCheckKbEmbedding();
+  const locked = useIsDatasetOwner() === false;
 
   const oldValue = useMemo(() => {
     const embdStr = form.getValues(name || 'embedding_model');
@@ -43,7 +45,7 @@ export const EmbeddingSelect = ({
           }
         }}
         ownerTenantId={ownerTenantId}
-        disabled={(disabled && !isEdit) || checking}
+        disabled={(disabled && !isEdit) || checking || locked}
         value={field.value}
         placeholder={t('embeddingModelPlaceholder')}
         testId={testId}
