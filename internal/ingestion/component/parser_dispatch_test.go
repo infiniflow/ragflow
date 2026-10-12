@@ -973,7 +973,7 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 		return invokeMinerUDispatch(t, nil, setups)
 	}
 
-	t.Run("zip content_list uses mineruExtractSections", func(t *testing.T) {
+	t.Run("zip content_list uses mineruExtractJSONItems", func(t *testing.T) {
 		var zipBuf bytes.Buffer
 		zw := zip.NewWriter(&zipBuf)
 		f, _ := zw.Create("content_list.json")
@@ -1134,8 +1134,8 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 		if err == nil {
 			t.Fatal("Invoke: want error when V1 zip yields no sections")
 		}
-		if !strings.Contains(err.Error(), "no sections") {
-			t.Fatalf("error = %q, want no sections", err.Error())
+		if !strings.Contains(err.Error(), "no usable content_list") && !strings.Contains(err.Error(), "no sections") {
+			t.Fatalf("error = %q, want empty content_list extract error", err.Error())
 		}
 	})
 }

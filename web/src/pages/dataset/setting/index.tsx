@@ -17,10 +17,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { ParseType } from '@/constants/knowledge';
-import {
-  buildParserOptionValue,
-  ParserOptionKind,
-} from '@/hooks/use-parser-options';
+import { buildParserSelectValue } from '@/hooks/use-parser-options';
 import { useParserSelectHandler } from '@/hooks/use-parser-select-handler';
 import {
   useActiveTab,
@@ -241,19 +238,11 @@ export default function DatasetSetting() {
                           render={() => (
                             <FormItem className="space-y-1">
                               <ParserSelect
-                                value={
-                                  parseType === ParseType.BuiltIn
-                                    ? buildParserOptionValue(
-                                        ParserOptionKind.BuiltIn,
-                                        builtinPipelineId ?? '',
-                                      )
-                                    : pipelineId
-                                      ? buildParserOptionValue(
-                                          ParserOptionKind.Pipeline,
-                                          pipelineId,
-                                        )
-                                      : undefined
-                                }
+                                value={buildParserSelectValue({
+                                  parseType,
+                                  parserId: builtinPipelineId,
+                                  pipelineId,
+                                })}
                                 onChange={handleParserSelect}
                               />
                               <FormMessage />

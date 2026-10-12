@@ -239,8 +239,8 @@ services:
       - SANDBOX_MAX_MEMORY=${SANDBOX_MAX_MEMORY:-256m}
       - SANDBOX_TIMEOUT=${SANDBOX_TIMEOUT:-10s}
       # Shared secret for the /run API. Set it in .env (same value is passed
-      # to the ragflow service); when empty the API stays open (backwards
-      # compatible) but a warning is logged.
+      # to the ragflow service). Current Sandbox source rejects unconfigured
+      # authentication; verify the behavior of the deployed image version.
       - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
       # Sandbox runner containers get no external network by default.
       - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}

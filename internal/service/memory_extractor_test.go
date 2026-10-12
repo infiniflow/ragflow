@@ -131,6 +131,37 @@ func TestBuildExtractedMessageValidAtSemantics(t *testing.T) {
 	}
 }
 
+// TestMaterializeMemoryExtractionInvalidAtStaysValidWhenUnparseable: an
+// invalid_at the LLM made up must not become "expired at extraction time".
+// Python stores nothing for it (fallback=""), so the Go side must persist nil
+// and keep the memory valid; parseable values keep their own wall clock.
+func TestMaterializeMemoryExtractionInvalidAtStaysValidWhenUnparseable(t *testing.T) {
+	msg := MemoryMessage{UserID: "u1", AgentID: "a1", SessionID: "s1"}
+	now := time.Date(2026, 8, 20, 10, 5, 0, 0, time.Local)
+
+	for _, test := range []struct {
+		name      string
+		invalidAt string
+		want      any
+	}{
+		{name: "unparseable", invalidAt: "last summer", want: nil},
+		{name: "empty", invalidAt: "", want: nil},
+		{name: "parseable", invalidAt: "2026-12-31T23:59:59+08:00", want: "2026-12-31 23:59:59"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			materialized := materializeMemoryExtraction(t.Context(), []extractedMemory{{
+				MessageType: "fact",
+				Content:     "likes coffee",
+				InvalidAt:   test.invalidAt,
+			}}, now)
+			got := buildExtractedMessage(42, "mem-1", msg, materialized[0])["invalid_at"]
+			if got != test.want {
+				t.Fatalf("invalid_at = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
 // TestBuildExtractedMessageUsesStandardDocumentID ensures extracted items
 // use the standard memoryID_messageID identity expected by GetMessageContent.
 func TestBuildExtractedMessageUsesStandardDocumentID(t *testing.T) {

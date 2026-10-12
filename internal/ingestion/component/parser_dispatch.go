@@ -28,7 +28,6 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
@@ -77,7 +76,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parser.ParseResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window fractionWindow) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -97,7 +96,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
-	attachPDFPageProgress(ctx, p)
+	attachPDFPageProgress(ctx, p, window)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
@@ -114,21 +113,42 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 	return res
 }
 
+// pdfPageProgressSupported reports whether the configured parser setup produces
+// in-flight page progress events (via DeepDOC OnPageDone). Remote engines
+// (MinerU, PaddleOCR, Docling, etc.) and non-PDF families do not report page progress.
+func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schema.ParserSetup) bool {
+	if fileType != utility.FileTypePDF {
+		return false
+	}
+	var method string
+	if setup, ok := setups[resolveParserFamily(fileType)]; ok {
+		if s, ok := setup["parse_method"].(string); ok {
+			method = strings.ToLower(strings.TrimSpace(s))
+		}
+	}
+	switch method {
+	case "", "deepdoc":
+		return true
+	default:
+		return false
+	}
+}
+
 // attachPDFPageProgress wires the DeepDOC page callback so a long PDF
 // parse reports in-flight completion instead of staying silent until
 // the component exits. Only the local DeepDOC backend fires it; remote
 // engines (MinerU, PaddleOCR, Docling, …) never call the callback and
 // the fraction stays at zero.
-func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer) {
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window fractionWindow) {
 	pdfParser, ok := p.(*parser.PDFParser)
-	if !ok {
+	if !ok || window.span <= 0 {
 		return
 	}
 	pdfParser.OnPageDone = func(done, total int) {
 		if total <= 0 {
 			return
 		}
-		runtime.ReportComponentFraction(ctx, float64(done)/float64(total))
+		window.report(ctx, float64(done)/float64(total))
 	}
 }
 

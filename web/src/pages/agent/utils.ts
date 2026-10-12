@@ -270,9 +270,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,
-            parse_method: cur.parse_method,
-            lang: cur.lang,
-            system_prompt: cur.system_prompt,
+            ocr_enabled: cur.ocr_enabled,
           };
           break;
         case FileType.Email:
@@ -494,7 +492,7 @@ export const LlmSettingParamKeys = [
 // the transitional "metadata_config", ...). Accept them as read
 // fallbacks — flat "metadata" is an array, which distinguishes it from
 // the group object — but never re-emit them.
-function transformExtractorParamsGo(
+export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
   const raw = params as Record<string, any>;
@@ -535,6 +533,22 @@ function transformExtractorParamsGo(
   const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
   const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
 
+  // The enabled switch is authoritative when the form carries it; an unopened
+  // legacy node (flat keys only) derives it from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const isKeywordsEnabled =
+    params.keywords?.enabled !== undefined
+      ? Boolean(params.keywords.enabled)
+      : keywordsTopN > 0;
+  const isQuestionsEnabled =
+    params.questions?.enabled !== undefined
+      ? Boolean(params.questions.enabled)
+      : questionsTopN > 0;
+  const isTagsEnabled =
+    params.tags?.enabled !== undefined
+      ? Boolean(params.tags.enabled)
+      : tagsTopN > 0;
+
   // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
   // nested per-feature groups, so emit exactly that whitelist along with
   // the LLM settings the form defines — no legacy flat mirrors, no
@@ -542,14 +556,17 @@ function transformExtractorParamsGo(
   return {
     ...pick(params, LlmSettingParamKeys),
     keywords: {
+      enabled: isKeywordsEnabled,
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
     },
     questions: {
+      enabled: isQuestionsEnabled,
       top_n: questionsTopN,
       system_prompt: questionsSysPrompt,
     },
     tags: {
+      enabled: isTagsEnabled,
       top_n: tagsTopN,
       tag_file_id: tagFileId,
     },
@@ -563,12 +580,6 @@ function transformExtractorParamsGo(
       built_in_metadata: builtInMetadataList,
     },
   };
-}
-
-export function transformExtractorParams(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  return transformExtractorParamsGo(params);
 }
 
 // The Compiler reads the compilation template group plus the same LLM runtime
