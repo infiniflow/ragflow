@@ -23,8 +23,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/utility"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -83,7 +81,7 @@ func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatCha
 		return errors.New("channel is nil")
 	}
 	if channel.ID == "" {
-		channel.ID = utility.GenerateUUID()
+		channel.ID = common.GenerateUUID()
 	}
 	if channel.Status == 0 {
 		channel.Status = 1
@@ -116,7 +114,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 		}
 	}
 	row := &entity.ChatChannel{
-		ID:       utility.GenerateUUID(),
+		ID:       common.GenerateUUID(),
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,

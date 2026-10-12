@@ -40,7 +40,6 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -166,8 +165,7 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parser.ParseResult,
 	inputs map[string]any,
-	setups map[string]schema.ParserSetup,
-	modelRef string,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
@@ -176,8 +174,10 @@ func maybeDispatchVisionEnhancement(
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
-	setup := setups[family]
-	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// Captions follow the knowledge base language, which also drives
+	// tokenization. The family setup's lang is an OCR engine parameter
+	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
+	language := resolveVisionLanguage(inputs)
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
@@ -207,11 +207,11 @@ func maybeDispatchVisionEnhancement(
 	var resolveErr error
 	if tenantID != "" {
 		var err error
-		if modelRef != "" {
-			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if vision.modelID != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
 			if err != nil {
 				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-					zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
 				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 			}
 		} else {

@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
 	"go.uber.org/zap"
@@ -162,7 +161,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Create root folder if not exists
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -355,7 +354,7 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 // CreateFolder creates a folder in the database
 func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -562,7 +561,7 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 		return existingFiles[0], nil
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
@@ -604,7 +603,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		docLocation = *doc.Location
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
@@ -621,7 +620,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		return err
 	}
 
-	f2dID := utility.GenerateToken()
+	f2dID := common.GenerateToken()
 	f2d := &entity.File2Document{
 		ID:         f2dID,
 		FileID:     &fileID,

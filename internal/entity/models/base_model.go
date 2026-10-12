@@ -31,11 +31,6 @@ import (
 	"time"
 )
 
-const (
-	redactedLogValue      = "[REDACTED]"
-	maxLoggedVectorFloats = 3
-)
-
 // APIStatusError is a provider HTTP failure with its status code preserved, so
 // callers can act on the status (failover cooldown, retry) instead of matching
 // the error text. The shared request helpers return it; the message is byte-for-
@@ -230,15 +225,16 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 	defer resp.Body.Close()
 
+	var body []byte
 	if resp.StatusCode != http.StatusOK {
-		body, err := readModelErrorBody(resp.Body)
+		body, err = readModelErrorBody(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
 		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
-	body, err := readModelResponseBody(resp.Body)
+	body, err = readModelResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -478,6 +474,12 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 	return client.Do(req)
 }
 
+func setOpt[T any](m map[string]any, key string, p *T) {
+	if p != nil {
+		m[key] = *p
+	}
+}
+
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
 	reqBody := map[string]any{
 		"model":    modelName,
@@ -486,36 +488,21 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	}
 
 	if cfg != nil {
-		if cfg.Temperature != nil {
-			reqBody["temperature"] = *cfg.Temperature
-		}
-
-		if cfg.DoSample != nil {
-			reqBody["do_sample"] = *cfg.DoSample
-		}
-
-		if cfg.TopP != nil {
-			reqBody["top_p"] = *cfg.TopP
-		}
-
-		if cfg.MaxTokens != nil {
-			reqBody["max_tokens"] = *cfg.MaxTokens
-		}
-
-		if cfg.Stop != nil {
-			reqBody["stop"] = *cfg.Stop
-		}
+		setOpt(reqBody, "temperature", cfg.Temperature)
+		setOpt(reqBody, "do_sample", cfg.DoSample)
+		setOpt(reqBody, "top_p", cfg.TopP)
+		setOpt(reqBody, "max_tokens", cfg.MaxTokens)
+		setOpt(reqBody, "stop", cfg.Stop)
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
-			toolChoice := "auto"
-			if cfg.ToolChoice != nil {
-				toolChoice = *cfg.ToolChoice
-			}
-			if cfg.ToolChoiceValue != nil {
+			switch {
+			case cfg.ToolChoiceValue != nil:
 				reqBody["tool_choice"] = cfg.ToolChoiceValue
-			} else {
-				reqBody["tool_choice"] = toolChoice
+			case cfg.ToolChoice != nil:
+				reqBody["tool_choice"] = *cfg.ToolChoice
+			default:
+				reqBody["tool_choice"] = "auto"
 			}
 		}
 	}
@@ -574,21 +561,6 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 			reqBody["tool_choice"] = *chatConfig.ToolChoice
 		}
 	}
-}
-
-// extractToolCalls converts an OpenAI-compatible message's tool calls.
-func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
-	rawToolCalls, ok := message["tool_calls"].([]interface{})
-	if !ok {
-		return nil
-	}
-	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
-	for _, rawToolCall := range rawToolCalls {
-		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
-			toolCalls = append(toolCalls, toolCall)
-		}
-	}
-	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

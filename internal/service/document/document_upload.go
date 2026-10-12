@@ -172,7 +172,7 @@ func (s *DocumentService) newAFileFromKB(ctx context.Context, tenantID, name, pa
 	}
 	loc := ""
 	folder := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -203,7 +203,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	if doc.Location != nil {
 		loc = *doc.Location
 	}
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   kbFolderID,
@@ -220,7 +220,7 @@ func (s *DocumentService) addFileFromKB(ctx context.Context, doc *entity.Documen
 	}
 	docID := doc.ID
 	if err := s.file2DocumentDAO.Create(ctx, dao.DB, &entity.File2Document{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		FileID:     &fileID,
 		DocumentID: &docID,
 	}); err != nil {
@@ -311,7 +311,7 @@ func normalizeWebDocumentName(name, contentType string, blob []byte) string {
 // content hash. parserID/parserConfig are resolved by the caller (see
 // resolveDocumentParser); blob may be nil for the empty/virtual document.
 func (s *DocumentService) newDatasetDocument(kb *entity.Knowledgebase, tenantID, filename, location, filetype, parserID string, parserConfig entity.JSONMap, src string, size int64, blob []byte) *entity.Document {
-	docID := utility.GenerateToken()
+	docID := common.GenerateToken()
 	parserConfig = cloneParserConfigForDocument(parserConfig)
 	status := "1"
 	suffix := ""

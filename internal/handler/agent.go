@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -349,9 +348,6 @@ type agentDetailResponse struct {
 	LastPublishTime *int64 `json:"last_publish_time,omitempty"`
 }
 
-// updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest map[string]interface{}
-
 func decodeJSONWithNumber(body io.Reader, target any) error {
 	decoder := json.NewDecoder(body)
 	decoder.UseNumber()
@@ -374,13 +370,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	var req updateAgentRequest
+	var req map[string]interface{}
 	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if req == nil {
-		req = updateAgentRequest{}
+		req = map[string]interface{}{}
 	}
 	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req); err != nil {
 		ec, em := mapAgentError(err)
@@ -468,7 +464,7 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	if sessionID == "" {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
-		sessionID = utility.GenerateToken()
+		sessionID = common.GenerateToken()
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
@@ -1271,7 +1267,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// Keep the effective session available to the non-stream response and
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
-		req.SessionID = utility.GenerateToken()
+		req.SessionID = common.GenerateToken()
 		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 

@@ -1,50 +1,28 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Textarea } from '@/components/ui/textarea';
-import { buildOptions } from '@/utils/form';
-import { isEmpty } from 'lodash';
-import { useMemo } from 'react';
-import { useWatch } from 'react-hook-form';
+import { Switch } from '@/components/ui/switch';
 import { useTranslation } from 'react-i18next';
-import { ImageParseMethod } from '../../constant/pipeline';
-import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
 import { CommonProps } from './interface';
-import { useSetInitialLanguage } from './use-set-initial-language';
 import { buildFieldNameWithPrefix } from './utils';
 
+// The image setup carries a single switch: run local OCR or not. The vision
+// model and its description prompt belong to the global enhancement block (see
+// VisionEnhancementFormFields); response language is not a setting anywhere and
+// follows the knowledge base, which also drives tokenization.
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
-  const options = buildOptions(
-    ImageParseMethod,
-    t,
-    'flow.imageParseMethodOptions',
-  );
-  const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
-
-  const parseMethod = useWatch({
-    name: parseMethodName,
-  });
-
-  const languageShown = useMemo(() => {
-    return !isEmpty(parseMethod) && parseMethod !== ImageParseMethod.OCR;
-  }, [parseMethod]);
-
-  useSetInitialLanguage({ prefix, languageShown });
 
   return (
-    <>
-      <ParserMethodFormField
-        prefix={prefix}
-        optionsWithoutLLM={options}
-      ></ParserMethodFormField>
-      {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
-      {languageShown && (
-        <RAGFlowFormItem
-          name={buildFieldNameWithPrefix('system_prompt', prefix)}
-          label={t('flow.systemPrompt')}
-        >
-          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
-        </RAGFlowFormItem>
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
+      label={t('flow.imageOcr')}
+      tooltip={t('flow.imageOcrTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <Switch checked={!!field.value} onCheckedChange={field.onChange} />
       )}
-    </>
+    </RAGFlowFormItem>
   );
 }

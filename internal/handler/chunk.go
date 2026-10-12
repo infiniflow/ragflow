@@ -169,6 +169,9 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.Get(ctx, req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -257,6 +260,9 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -389,6 +395,9 @@ func (h *ChunkHandler) List(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -448,6 +457,9 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if err = h.chunkService.SwitchChunks(ctx, userID, datasetID, documentID, availableInt, chunkIDs); err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -644,6 +656,9 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	ctx := c.Request.Context()
 	err = h.chunkService.UpdateChunk(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		var coded interface {
 			Code() common.ErrorCode
 		}
@@ -699,6 +714,9 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
