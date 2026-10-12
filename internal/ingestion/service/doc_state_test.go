@@ -60,7 +60,9 @@ func TestDocStateUpdater_PreservesTypedMetadataOnReplacement(t *testing.T) {
 	}}
 	u := &docStateUpdater{docSvc: svc}
 	u.apply(t.Context(), &taskpkg.PipelineResult{
-		DocID: "doc-1", Metadata: map[string]any{"author": "Alice", "year": "new"},
+		DocID: "doc-1", Metadata: map[string]any{
+			"author": "Alice", "year": map[string]any{"value": float64(2025)},
+		},
 	})
 	want := map[string]any{
 		"author": "Alice", "year": float64(2024), "verified": false, "null": nil,

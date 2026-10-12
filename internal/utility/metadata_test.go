@@ -56,6 +56,17 @@ func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
 		{"number overwrites scalar", "new", int64(42), int64(42)},
 		{"false overwrites list", []string{"new"}, false, false},
 		{"null overwrites scalar", "new", nil, nil},
+		{"string overwrites object", map[string]any{"x": 1}, "old", "old"},
+		{"number overwrites object", map[string]any{"x": 1}, int64(42), int64(42)},
+		{"float overwrites object", map[string]any{"x": 1}, 1.5, 1.5},
+		{"bool overwrites object", map[string]any{"x": 1}, false, false},
+		{"null overwrites object", map[string]any{"x": 1}, nil, nil},
+		{"number overwrites structured list", []any{1, 2}, int64(42), int64(42)},
+		{"float overwrites structured list", []any{1, 2}, 1.5, 1.5},
+		{"bool overwrites structured list", []any{1, 2}, false, false},
+		{"null overwrites structured list", []any{1, 2}, nil, nil},
+		{"number overwrites typed numeric list", []int{1, 2}, 42, 42},
+		{"typed numeric list keeps target", "new", []int{1, 2}, "new"},
 		{"object keeps target", "new", map[string]any{"x": 1}, "new"},
 		{"mixed list keeps target", "new", []any{"old", 1}, "new"},
 		{"structured target keeps list", []any{"new", 1}, []string{"old"}, []any{"new", 1}},
@@ -66,8 +77,24 @@ func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := UpdateMetadataTo(map[string]any{"key": tt.target}, map[string]any{"key": tt.incoming})
-			if !reflect.DeepEqual(got["key"], tt.want) {
+			value, exists := got["key"]
+			if !exists || !reflect.DeepEqual(value, tt.want) {
 				t.Fatalf("value = %#v, want %#v", got["key"], tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateMetadataTo_DoesNotModifySharedListBackingArray(t *testing.T) {
+	for _, incoming := range []any{"b", []string{"b"}} {
+		t.Run(reflect.TypeOf(incoming).String(), func(t *testing.T) {
+			backing := []string{"a", "untouched"}
+			got := UpdateMetadataTo(map[string]any{"tags": backing[:1]}, map[string]any{"tags": incoming})
+			if !reflect.DeepEqual(got["tags"], []string{"a", "b"}) {
+				t.Fatalf("tags = %#v, want [a b]", got["tags"])
+			}
+			if !reflect.DeepEqual(backing, []string{"a", "untouched"}) {
+				t.Fatalf("shared backing array changed: %v", backing)
 			}
 		})
 	}

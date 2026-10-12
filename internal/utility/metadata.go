@@ -21,6 +21,7 @@ import "encoding/json"
 // UpdateMetadataTo merges metadata into an existing metadata map.
 // String lists are merged and deduplicated. Incoming scalars overwrite
 // existing values; objects and structured lists are added only for missing keys.
+// Strings and string lists are not merged into existing structured lists.
 func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	if target == nil {
 		return nil
@@ -63,6 +64,8 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			}
 		}
 		if targetIsList && (normIsList || normIsString) {
+			// Appending must not write into a backing array shared by the caller.
+			targetList = targetList[:len(targetList):len(targetList)]
 			if normIsList {
 				target[k] = dedupeStrings(append(targetList, normList...))
 			} else if s, ok := normVal.(string); ok {
