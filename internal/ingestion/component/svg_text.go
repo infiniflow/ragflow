@@ -85,6 +85,9 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 	// depth counts open elements; textDepth and skipDepth record the depth at
 	// which a text container or a non-rendered subtree was opened.
 	var depth, textDepth, skipDepth int
+	// switches holds the open <switch> elements, innermost last. A switch
+	// renders one child, so the children after its first are skipped.
+	var switches []svgSwitch
 	var sawRoot bool
 	for {
 		if err := ctx.Err(); err != nil {
@@ -131,10 +134,13 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 				}
 				sawRoot = true
 			}
+			inner := len(switches) - 1
 			switch {
 			case skipDepth > 0:
-			case svgNonRendered[name]:
+			case svgNonRendered[name] || isSVGHidden(el.Attr) || inner >= 0 && switches[inner].rendered && depth == switches[inner].depth+1:
 				skipDepth = depth
+			case name == "switch":
+				switches = append(switches, svgSwitch{depth: depth})
 			case textDepth == 0:
 				if name == "text" || name == "foreignObject" {
 					textDepth = depth
@@ -151,6 +157,14 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 			}
 			if depth == skipDepth {
 				skipDepth = 0
+			}
+			if inner := len(switches) - 1; inner >= 0 {
+				switch depth {
+				case switches[inner].depth + 1:
+					switches[inner].rendered = true
+				case switches[inner].depth:
+					switches = switches[:inner]
+				}
 			}
 			depth--
 		case xml.CharData:
@@ -179,15 +193,46 @@ func extractSVGText(ctx context.Context, data []byte) (string, error) {
 	return strings.Join(lines, "\n"), nil
 }
 
-// svgNonRendered lists the elements whose character data is never drawn.
+// svgSwitch is an open <switch> element: the depth it was opened at, and
+// whether its first child has already been read.
+type svgSwitch struct {
+	depth    int
+	rendered bool
+}
+
+// svgNonRendered lists the elements whose character data is not drawn where
+// it appears.
 var svgNonRendered = map[string]bool{
 	"style": true, "script": true, "title": true, "desc": true, "metadata": true,
+	"defs": true, "symbol": true, "clipPath": true, "mask": true,
+}
+
+// svgHiddenStyle matches a style attribute that removes its element from
+// rendering.
+var svgHiddenStyle = regexp.MustCompile(`(?i)(?:^|;)\s*display\s*:\s*none\s*(?:;|$)`)
+
+// isSVGHidden reports whether an element's attributes set display to none.
+func isSVGHidden(attrs []xml.Attr) bool {
+	for _, attr := range attrs {
+		switch attr.Name.Local {
+		case "display":
+			if strings.TrimSpace(attr.Value) == "none" {
+				return true
+			}
+		case "style":
+			if svgHiddenStyle.MatchString(attr.Value) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // svgTextBlocks lists the HTML elements inside <foreignObject> that break the
 // line they appear in.
 var svgTextBlocks = map[string]bool{
-	"br": true, "div": true, "p": true, "li": true, "tr": true,
+	"br": true, "div": true, "p": true, "li": true, "tr": true, "td": true, "th": true,
+	"dt": true, "dd": true,
 	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
 }
 
