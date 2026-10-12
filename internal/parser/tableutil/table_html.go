@@ -126,22 +126,66 @@ type origin struct {
 // are trimmed. Spans are clamped to the surviving grid so a stored
 // ColSpan/RowSpan never exceeds the positions it actually owns (mirrors
 // AnyDoc's GridBuilder).
+//
+// The grid width is computed by a pre-pass that walks the same placement rules
+// the main grid build uses, so it counts columns an ancestor rowspan still
+// occupies in a later row. If the width only summed each row's own colspan
+// (the legacy computation), an ancestor rowspan would push a later row's cells
+// past the width and its trailing real cells would be silently dropped by the
+// column guard — both losing data and regressing the legacy Rows text view.
 func buildGrid(rows [][]cellInput) [][]entity.TableCell {
+	// Pre-pass: discover the columns that ancestor rowspans occupy in each
+	// later row (recorded in `covered`) and the true grid width. The placement
+	// here mirrors the main loop below exactly so the width matches what the
+	// main loop will actually reach.
+	covered := make([]map[int]origin, len(rows))
 	width := 0
-	for _, row := range rows {
-		pos := 0
-		for _, c := range row {
-			pos += spanOf(c.ColSpan)
-		}
-		if pos > width {
-			width = pos
+	for r, row := range rows {
+		col := 0
+		ci := 0
+		for {
+			if _, ok := covered[r][col]; ok {
+				// Ancestor rowspan owns this column here; advance past it.
+				col++
+			} else if ci < len(row) {
+				c := row[ci]
+				ci++
+				cs := spanOf(c.ColSpan)
+				rs := spanOf(c.RowSpan)
+				col += cs
+				if rs > 1 {
+					for dr := 1; dr < rs; dr++ {
+						rr := r + dr
+						if rr >= len(covered) {
+							break
+						}
+						if covered[rr] == nil {
+							covered[rr] = map[int]origin{}
+						}
+						for dc := 0; dc < cs; dc++ {
+							covered[rr][col-1-dc] = origin{r, col - cs}
+						}
+					}
+				}
+			} else {
+				// No real cell at this column. An ancestor may still own
+				// columns further right, so jump to the next covered column
+				// instead of stopping; otherwise the row is exhausted.
+				next := nextCoveredCol(covered[r], col)
+				if next < 0 {
+					break
+				}
+				col = next
+			}
+			if col > width {
+				width = col
+			}
 		}
 	}
 	if width == 0 {
 		return nil
 	}
 	grid := make([][]entity.TableCell, len(rows))
-	covered := make([]map[int]origin, len(rows))
 	for r, row := range rows {
 		grid[r] = make([]entity.TableCell, 0, width)
 		col := 0
@@ -178,27 +222,14 @@ func buildGrid(rows [][]cellInput) [][]entity.TableCell {
 			// markers so the grid stays dense and exactly-once (mirrors
 			// AnyDoc's GridBuilder, which fills every covered slot). The
 			// back-pointer names the origin slot (col), not the engulfed
-			// position (col+dc).
+			// position (col+dc). Ancestor rowspan continuation markers for
+			// later rows were already registered in the pre-pass above.
 			for dc := 1; dc < cs; dc++ {
 				grid[r] = append(grid[r], entity.TableCell{
 					Covered:   true,
 					OriginRow: r,
 					OriginCol: col,
 				})
-			}
-			if rs > 1 {
-				for dr := 1; dr < rs; dr++ {
-					rr := r + dr
-					if rr >= len(covered) {
-						break
-					}
-					if covered[rr] == nil {
-						covered[rr] = map[int]origin{}
-					}
-					for dc := 0; dc < cs; dc++ {
-						covered[rr][col+dc] = origin{r, col}
-					}
-				}
 			}
 			col += cs
 		}
@@ -242,6 +273,19 @@ func spanOf(v int) int {
 		return 1
 	}
 	return v
+}
+
+// nextCoveredCol returns the smallest column key in m strictly greater than col,
+// or -1 if no such key exists. It is used by buildGrid's width pre-pass to jump
+// past empty columns to a column still owned by an ancestor rowspan.
+func nextCoveredCol(m map[int]origin, col int) int {
+	next := -1
+	for k := range m {
+		if k > col && (next < 0 || k < next) {
+			next = k
+		}
+	}
+	return next
 }
 
 // attrInt reads a non-negative integer HTML attribute, clamping 0, negative,

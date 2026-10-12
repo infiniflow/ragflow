@@ -151,6 +151,51 @@ func TestGridRowspanKeepsContinuationRow(t *testing.T) {
 	}
 }
 
+// An ancestor rowspan shifts a later row's cells to the right. The grid width
+// must count the columns an ancestor rowspan occupies, otherwise the later
+// row's trailing real cells are dropped (silent data loss that also regresses
+// the legacy Rows text). This guards buildGrid's width computation.
+func TestGridRowspanShiftsTrailingCells(t *testing.T) {
+	td, _ := ParseTableHTML(`<table>
+<tr><td rowspan="2">A</td><td>x</td></tr>
+<tr><td>y</td><td>z</td></tr>
+</table>`)
+	// r0: A(rs2) + x ; r1: covered at c0, then y at c1, z at c2 -> width 3.
+	if len(td.Grid) != 2 {
+		t.Fatalf("rows=%d want 2", len(td.Grid))
+	}
+	if len(td.Grid[1]) != 3 {
+		t.Fatalf("row1 width=%d want 3 (y and z both present, not dropped)", len(td.Grid[1]))
+	}
+	if !td.Grid[1][0].Covered || td.Grid[1][0].OriginCol != 0 {
+		t.Fatalf("r1c0 must be a covered continuation of A: %+v", td.Grid[1][0])
+	}
+	if td.Grid[1][1].Text != "y" || td.Grid[1][2].Text != "z" {
+		t.Fatalf("r1 must keep both y and z: %+v", td.Grid[1])
+	}
+	// Text view must reproduce the legacy Rows exactly (no cell dropped).
+	want := [][]string{{"A", "x"}, {"y", "z"}}
+	if got := gridTexts(td); !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%v want %v", got, want)
+	}
+}
+
+// Realistic case: a single-column ID cell spans two rows while the second data
+// row carries more cells than the first. The extra cells must not be dropped.
+func TestGridRowspanKeepsExtraCells(t *testing.T) {
+	td, _ := ParseTableHTML(`<table>
+<tr><td rowspan="2">ID</td><td>a</td><td>b</td></tr>
+<tr><td>c</td><td>d</td><td>e</td></tr>
+</table>`)
+	if len(td.Grid[1]) != 4 {
+		t.Fatalf("row1 width=%d want 4 (covered ID + c,d,e)", len(td.Grid[1]))
+	}
+	want := [][]string{{"ID", "a", "b"}, {"c", "d", "e"}}
+	if got := gridTexts(td); !reflect.DeepEqual(got, want) {
+		t.Fatalf("texts=%v want %v", got, want)
+	}
+}
+
 // combined colspan+rowspan: the big cell covers (r0c0,r0c1,r1c0,r1c1) while c
 // and d are real cells, so 2 rows survive with r1's first two slots Covered.
 func TestGridSpanAndTrailingTrim(t *testing.T) {
