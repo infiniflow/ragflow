@@ -1076,7 +1076,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	for key, childList := range momChunks {
 		momID := key.momID
 		parentResult, err := docEngine.Search(ctx, &types.SearchRequest{
-			IndexNames:         []string{indexNames[0]},
+			IndexNames:         indexNames,
 			KbIDs:              []string{key.kbID},
 			Limit:              1,
 			IncludeUnavailable: true,

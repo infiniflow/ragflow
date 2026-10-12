@@ -3,8 +3,10 @@ import {
   ModelTypeMap,
 } from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import message from '@/components/ui/message';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
+import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useCallback } from 'react';
@@ -24,11 +26,26 @@ function VisionEnhancementSwitch({
   enabled,
   onEnabledChange,
 }: VisionEnhancementSwitchProps) {
+  const { t } = useTranslation();
   const form = useFormContext<ParserFormSchemaType>();
   const defaultModelDictionary = useFetchDefaultModelDictionary();
 
   const handleCheckedChange = useCallback(
     (checked: boolean) => {
+      // Turning the enhancement off while an image setup runs without OCR
+      // leaves the image with no text source, so keep it on and say why.
+      if (!checked) {
+        const setups = form.getValues('setups') ?? [];
+        const imageOcrOff = setups.some(
+          (setup) =>
+            setup?.fileFormat === FileType.Image &&
+            setup?.ocr_enabled === false,
+        );
+        if (imageOcrOff) {
+          message.warning(t('flow.imageTextSourceRequired'));
+          return;
+        }
+      }
       onEnabledChange(checked);
       if (checked && !form.getValues('vlm.llm_id')) {
         const modelId = defaultModelDictionary[ModelTypeToField.vision];
@@ -37,7 +54,7 @@ function VisionEnhancementSwitch({
         }
       }
     },
-    [onEnabledChange, form, defaultModelDictionary],
+    [onEnabledChange, form, defaultModelDictionary, t],
   );
 
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
