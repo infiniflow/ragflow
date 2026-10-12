@@ -28,7 +28,6 @@ import (
 	"ragflow/internal/service"
 	documentservice "ragflow/internal/service/document"
 	syncerconnector "ragflow/internal/syncer/connector"
-	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
 )
@@ -94,7 +93,7 @@ func New(config Config, taskDAO *dao.SyncTaskDAO, registry ConnectorRegistry, si
 	}
 
 	return &Syncer{
-		id:         utility.GenerateUUID(),
+		id:         common.GenerateUUID(),
 		config:     config,
 		queue:      queue,
 		scheduler:  scheduler,

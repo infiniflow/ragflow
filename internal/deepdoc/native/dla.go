@@ -90,8 +90,16 @@ func dlaGeom(img *Image) (newW, newH int, dw, dh float64) {
 
 // dlaLetterbox places the already-resized BGR raster (newH*newW*3, row-major)
 // into the dlaInputSize canvas with 114-filled borders and returns the CHW
-// float blob (/255) the YOLOv10 layout model consumes. Only the resize source
-// differs from the production Python reference (Go bilinearResize vs cv2).
+// float blob (/255) the YOLOv10 layout model consumes.
+//
+// Channel order MUST be RGB (channel 0 = red). The Go decoder yields a BGR
+// raster (img.ToBGR), but the Python reference deepdoc pipeline applies
+// cv2.cvtColor(BGR2RGB) inside its letterbox before the HWC->CHW transpose, so
+// the layout model is trained and inferred on RGB input. Swapping the channels
+// here keeps Go aligned with that reference. Feeding BGR instead (channel 0 =
+// blue) silently flips the colour channels and collapses the confidence of any
+// box over a coloured region, while leaving grayscale pages byte-identical
+// (hence the bug went unnoticed on text-heavy scans).
 func dlaLetterbox(resized []byte, newW, newH int, dw, dh float64) []float32 {
 	top := int(math.Round(dh - 0.1))
 	left := int(math.Round(dw - 0.1))
@@ -103,14 +111,15 @@ func dlaLetterbox(resized []byte, newW, newH int, dw, dh float64) []float32 {
 			inY, inX := y-top, x-left
 			if inY >= 0 && inY < newH && inX >= 0 && inX < newW {
 				o := (inY*newW + inX) * 3
-				cb = float32(resized[o])
-				cg = float32(resized[o+1])
+				// resized is BGR; the model wants RGB (Python ref does BGR2RGB).
 				cr = float32(resized[o+2])
+				cg = float32(resized[o+1])
+				cb = float32(resized[o])
 			}
-			// CHW; model expects BGR, so channel 0 = blue, 2 = red.
-			blob[0*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cb / 255.0
+			// CHW; model expects RGB, so channel 0 = red, 2 = blue.
+			blob[0*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cr / 255.0
 			blob[1*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cg / 255.0
-			blob[2*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cr / 255.0
+			blob[2*dlaInputSize*dlaInputSize+y*dlaInputSize+x] = cb / 255.0
 		}
 	}
 	return blob
@@ -156,23 +165,44 @@ func dlaPostprocess(out []float32, sf [4]float32) DLAResult {
 		})
 	}
 
-	byClass := map[int][]int{}
-	for i, c := range cands {
-		byClass[c.cls] = append(byClass[c.cls], i)
-	}
+	// The layout model (layout.onnx and layout.ort are the SAME graph — the .ort
+	// is just the FlatBuffer-serialized form, with no NMS op baked in) does NOT
+	// run NMS in its graph: output0 is a set of raw top-k candidate boxes
+	// (xyxy, score, class). The OSS reference pipeline (deepdoc's
+	// LayoutRecognizer4YOLOv10.postprocess / ref_dla.py) applies a per-class
+	// NMS(iou=0.45) on top of these candidates before handing boxes to the
+	// caller — that post-NMS output is the wire contract the caller consumes.
+	// The golden files are generated from that same Python serving post-process,
+	// so to match the caller's view this code re-runs the identical per-class
+	// nms(0.45) (the operators.py +1 convention). This is the single NMS the
+	// serving applies — there is no second NMS downstream (native_analyzer maps
+	// the boxes through as-is), so it is NOT a double-NMS.
 	res := DLAResult{}
-	for cls, idxs := range byClass {
-		sub := make([]nmsBox, len(idxs))
+	// Per-class NMS(0.45, +1) — mirrors OSS Python serving's postprocess; the
+	// golden is generated from that post-NMS output.
+	byCls := map[int][]int{}
+	for i, c := range cands {
+		byCls[c.cls] = append(byCls[c.cls], i)
+	}
+	keep := map[int]bool{}
+	for _, idxs := range byCls {
+		bs := make([]nmsBox, len(idxs))
 		for k, i := range idxs {
-			sub[k] = cands[i].nmsBox
+			bs[k] = cands[i].nmsBox
 		}
-		for _, keep := range nms(sub, 0.45, true) {
-			res.Boxes = append(res.Boxes, DLABox{
-				X0: round2(sub[keep].X0), Y0: round2(sub[keep].Y0),
-				X1: round2(sub[keep].X1), Y1: round2(sub[keep].Y1),
-				Score: round4(sub[keep].Score), Class: cls,
-			})
+		for _, k := range nms(bs, 0.45, true) {
+			keep[idxs[k]] = true
 		}
+	}
+	for i, c := range cands {
+		if !keep[i] {
+			continue
+		}
+		res.Boxes = append(res.Boxes, DLABox{
+			X0: round2(c.nmsBox.X0), Y0: round2(c.nmsBox.Y0),
+			X1: round2(c.nmsBox.X1), Y1: round2(c.nmsBox.Y1),
+			Score: round4(c.nmsBox.Score), Class: c.cls,
+		})
 	}
 	// Re-map class ids through the OSS label->Go index map.
 	mapped := res.Boxes[:0]
@@ -194,6 +224,7 @@ func dlaPostprocess(out []float32, sf [4]float32) DLAResult {
 		mapped = append(mapped, b)
 	}
 	res.Boxes = mapped
+
 	// Deterministic ordering: dlaPostprocess iterates a class->index map, whose
 	// iteration order is unspecified in Go. Sort so identical detections always
 	// serialize identically (e.g. for stable Wire() across runs / session reuse).

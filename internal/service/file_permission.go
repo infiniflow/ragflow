@@ -4,6 +4,7 @@ import (
 	"context"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // CheckFileTeamPermission reports whether userID may access the given file: either
@@ -21,13 +22,8 @@ func CheckFileTeamPermission(ctx context.Context, fileDAO *dao.FileDAO, file *en
 		return false
 	}
 
-	kbDAO := dao.NewKnowledgebaseDAO()
 	for _, datasetID := range datasetIDs {
-		kb, err := kbDAO.GetByID(ctx, dao.DB, datasetID)
-		if err != nil || kb == nil {
-			continue
-		}
-		if HasKBTeamPermission(ctx, kb, userID, dao.NewTenantDAO()) {
+		if CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead) == nil {
 			return true
 		}
 	}

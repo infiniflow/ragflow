@@ -646,7 +646,7 @@ curl --request POST \
       - Defaults to `DeepDOC`
     - `"tag_kb_ids"`: `array<string>`
       - IDs of datasets to be parsed using the ​​Tag chunk method.
-      - Before setting this, ensure a tag set is created and properly configured. For details, see [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
+      - Before setting this, ensure a tag set is created and properly configured. For details, see [Use tag set](https://ragflow.io/docs/dev/dataset_configuration).
     - `"task_page_size"`: `int`
       - For PDFs only.
       - Defaults to `12`
@@ -856,7 +856,7 @@ curl --request PUT \
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 - `"pagerank"`: (*Body parameter*), `int`
-  Refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank).
+  Refer to [Set page rank](https://ragflow.io/docs/dev/dataset_configuration).
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
@@ -895,7 +895,7 @@ curl --request PUT \
       - Defaults to `false`
     - `"layout_recognize"`: `string`
       - Defaults to `DeepDOC`
-    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/use_tag_sets).
+    - `"tag_kb_ids"`: `array<string>`. Refer to [Use tag set](https://ragflow.io/docs/dev/dataset_configuration).
       - Must include a list of dataset IDs, where each dataset is parsed using the ​​Tag Chunking Method
     - `"task_page_size"`: `int` For PDF only.
       - Defaults to `12`
@@ -3845,13 +3845,11 @@ Starts a chat completion request. The same endpoint supports three modes:
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
 
-  - `"messages"`: `list[object]`
   - `"question"`: `string`
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
   - `"llm_id"`: `string` (optional)
-  - `"pass_all_history_messages"`: `boolean` (optional)
   - `"legacy"`: `boolean` (optional)
 
 ##### Request example
@@ -3893,10 +3891,8 @@ curl --request POST \
 
 ##### Request Parameters
 
-- `"messages"`: (*Body Parameter*), `list[object]`
-  The latest user message, or the conversation messages sent to the model when `pass_all_history_messages` is `true`. Either `messages` or `question` is required.
 - `"question"`: (*Body Parameter*), `string`
-  Latest user question. This is equivalent to passing `messages: [{"role": "user", "content": question}]`.
+  The user question.
 - `"stream"`: (*Body Parameter*), `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
@@ -3907,8 +3903,6 @@ curl --request POST \
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
 - `"llm_id"`: (*Body Parameter*), `string`
   Optional model override when a specific chat model should be used for this request.
-- `"pass_all_history_messages"`: (*Body Parameter*), `boolean`
-  When `chat_id` and `session_id` are provided, defaults to `false`, so the server uses stored session history and only the latest user message from the request. Set to `true` to replace/use the submitted full `messages` history, and overrides the stored session history.
 - `"legacy"`: (*Body Parameter*), `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).

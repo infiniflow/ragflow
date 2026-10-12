@@ -133,6 +133,18 @@ func TestProviderEmbeddingAndRerankUsage(t *testing.T) {
 			embedInput:    7,
 			embedTotal:    7,
 		},
+		{
+			// The OpenAI-API-Compatible provider reuses the vLLM driver, which is
+			// how a locally served embedding model (llama-server, vLLM) is added.
+			// It must report usage so the ingest path can calibrate its tokenizer.
+			name: "openai-api-compatible (vLLM)",
+			newModel: func(baseURL string) ModelDriver {
+				return NewOpenAIAPICompatibleModel(map[string]string{"default": baseURL}, URLSuffix{Embedding: "embedding"})
+			},
+			embeddingBody: `{"id":"embed-vllm","data":[{"embedding":[0.1,0.2],"index":0}],"usage":{"prompt_tokens":7,"total_tokens":7}}`,
+			embedInput:    7,
+			embedTotal:    7,
+		},
 	}
 
 	for _, tc := range cases {

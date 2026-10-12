@@ -19,16 +19,33 @@ package parser
 import (
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
-func TestNewTableJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
-	item := NewTableJSONItem("<table><tr><td>value</td></tr></table>", "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
+	td := &entity.TableData{
+		Rows:       [][]string{{"col"}, {"value"}},
+		HeaderRows: 1,
+		Caption:    "Sheet1",
+	}
+	item := NewTableDataJSONItem(td, "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
 
 	if got, want := item[DocTypeKey], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
 	}
 	if got, want := item["ck_type"], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
+	}
+	got, ok := item["table"].(*entity.TableData)
+	if !ok {
+		t.Fatalf("item[%q] = %T, want *entity.TableData", "table", item["table"])
+	}
+	if got.Caption != "Sheet1" || len(got.Rows) != 2 {
+		t.Fatalf("item table = %+v, want caption Sheet1 and 2 rows", got)
+	}
+	if _, ok := item["positions"].([][]float64); !ok {
+		t.Fatalf("item[%q] missing positions matrix", "positions")
 	}
 }
 

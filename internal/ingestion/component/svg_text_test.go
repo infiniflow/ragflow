@@ -131,12 +131,12 @@ func TestMaybeDispatchImageSVG(t *testing.T) {
 	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
 	for _, tc := range []struct {
 		name    string
-		method  string
+		ocr     bool
 		enabled bool
 	}{
-		{"vision disabled", "ocr", false},
-		{"vision enabled", "ocr", true},
-		{"vlm method", "custom-vlm", true},
+		{"vision disabled", true, false},
+		{"vision enabled", true, true},
+		{"ocr off", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			driver := &imagePromptCaptureDriver{}
@@ -148,7 +148,7 @@ func TestMaybeDispatchImageSVG(t *testing.T) {
 				return driver, "vision", &modelModule.APIConfig{}, 0, nil
 			}
 			t.Cleanup(func() { resolveTenantModelByType, resolveModelConfig = originalTenant, originalConfig })
-			params["image"].(map[string]any)["parse_method"] = tc.method
+			params["image"].(map[string]any)["ocr_enabled"] = tc.ocr
 			component, err := NewParserComponent(params)
 			if err != nil {
 				t.Fatal(err)
@@ -182,7 +182,7 @@ func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
 	}
 	t.Cleanup(func() { resolveTenantModelByType = original })
 	textless := []byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect width="1" height="1"/></svg>`)
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "shape.SVG", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), true, "")
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "shape.SVG", textless, map[string]any{"tenant_id": "t1"}, defaultSetups(), true, visionSettings{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,17 +200,31 @@ func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
 	}
 }
 
+// An SVG is a text source of its own, so switching both OCR and vision
+// enhancement off must not report the item as having none.
+func TestMaybeDispatchImageSVGNeedsNoTextSource(t *testing.T) {
+	setups := defaultSetups()
+	setups["image"]["ocr_enabled"] = false
+	result, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "diagram.svg", pictureSVGFixture, nil, setups, false, visionSettings{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.JSON) != 1 || result.JSON[0]["text"] != pictureSVGFixtureText || len(result.Warnings) != 0 {
+		t.Fatalf("result = %+v, warnings = %v", result.JSON, result.Warnings)
+	}
+}
+
 func TestMaybeDispatchImageRejectsInvalidSVG(t *testing.T) {
-	for _, method := range []string{"ocr", "custom-vlm"} {
+	for _, ocr := range []bool{true, false} {
 		setups := defaultSetups()
-		setups["image"]["parse_method"] = method
-		_, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "broken.svg", []byte(`<svg><text>a</svg>`), nil, setups, false, "")
+		setups["image"]["ocr_enabled"] = ocr
+		_, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "broken.svg", []byte(`<svg><text>a</svg>`), nil, setups, false, visionSettings{})
 		if !handled || err == nil || !strings.Contains(err.Error(), "parser: decode SVG") {
-			t.Fatalf("method %q: handled = %v, error = %v, want SVG decode error", method, handled, err)
+			t.Fatalf("ocr %v: handled = %v, error = %v, want SVG decode error", ocr, handled, err)
 		}
-		_, _, err = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "empty.svg", nil, nil, setups, false, "")
+		_, _, err = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "empty.svg", nil, nil, setups, false, visionSettings{})
 		if err == nil || !strings.Contains(err.Error(), "size limits") {
-			t.Fatalf("method %q: error = %v, want size limit error", method, err)
+			t.Fatalf("ocr %v: error = %v, want size limit error", ocr, err)
 		}
 	}
 }
