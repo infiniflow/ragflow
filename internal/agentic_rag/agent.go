@@ -410,11 +410,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
 	var initialWebEvidence string
-	if initialWebTool != nil && strings.TrimSpace(question) != "" {
+	if initialWebTool != nil && question != nil && strings.TrimSpace(question.Content) != "" {
 		// Internet is a request option, not an optional model decision. Seed
 		// one real tool call/result so even a model that answers immediately
 		// has web evidence in its conversation.
-		args, err := json.Marshal(webSearchArgs{Queries: []string{question}})
+		args, err := json.Marshal(webSearchArgs{Queries: []string{question.Content}})
 		if err != nil {
 			return "", fmt.Errorf("web_search: encode initial query: %w", err)
 		}
