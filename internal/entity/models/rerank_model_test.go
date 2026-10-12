@@ -128,7 +128,8 @@ func TestRerankModelShrinksOnOverLimit(t *testing.T) {
 			return nil
 		},
 	}
-	model := NewRerankModel(driver, nil, nil, 512)
+	apiKey := t.Name()
+	model := NewRerankModel(driver, nil, &APIConfig{ApiKey: &apiKey}, 512)
 	if _, err := model.Rerank(t.Context(), RerankRequest{Query: "q", Documents: []string{document}}, nil, nil); err != nil {
 		t.Fatalf("Rerank() error = %v, want success after shrinking", err)
 	}
@@ -138,6 +139,16 @@ func TestRerankModelShrinksOnOverLimit(t *testing.T) {
 	first, last := driver.docs[0][0], driver.docs[len(driver.docs)-1][0]
 	if len(last) >= len(first) {
 		t.Fatalf("documents did not shrink across attempts: first=%d bytes last=%d bytes", len(first), len(last))
+	}
+	// The rejection must teach the calibration from the attempt actually sent: the
+	// count of the trimmed documents, not the longer original, which would
+	// understate the ratio and leave it at the 1.05 default.
+	ratio, _, rejects, ok := tokenizer.DefaultCalibration().Stats(model.QuotaKey())
+	if !ok || rejects == 0 {
+		t.Fatalf("calibration saw no over-limit observation: ok=%t rejects=%d", ok, rejects)
+	}
+	if ratio <= tokenizer.DefaultUncountedRatioUpper {
+		t.Fatalf("calibration ratio = %.3f, want above the %.2f default", ratio, tokenizer.DefaultUncountedRatioUpper)
 	}
 }
 
@@ -170,5 +181,37 @@ func TestRerankModelQuotaKeyNamesDeployment(t *testing.T) {
 	unnamed := NewRerankModel(&captureRerankDriver{}, nil, &APIConfig{BaseURL: &baseA, ApiKey: &apiKey}, 10).QuotaKey()
 	if unnamed == keyA {
 		t.Fatalf("QuotaKey() ignored the model name: %q", unnamed)
+	}
+	// With no BaseURL the driver falls back to its provider's default endpoint, so
+	// the provider name is what keeps two deployments apart.
+	noURL := &APIConfig{ApiKey: &apiKey}
+	provA := NewRerankModelWithInfo(&captureRerankDriver{}, &name, noURL, 10, &ModelInfo{ProviderName: "VLLM"}).QuotaKey()
+	provB := NewRerankModelWithInfo(&captureRerankDriver{}, &name, noURL, 10, &ModelInfo{ProviderName: "OpenAI-API-Compatible"}).QuotaKey()
+	if provA == provB {
+		t.Fatalf("QuotaKey() ignored the provider when BaseURL is empty: %q", provA)
+	}
+}
+
+// passthrough sends the input without measuring it, so it must not be blocked by a
+// missing tokenizer asset; the modes that do count still refuse.
+func TestRerankModelPassthroughIgnoresUnavailableTokenizer(t *testing.T) {
+	document := strings.Repeat("token ", 40)
+
+	t.Setenv(common.EnvRerankTokenLimitMode, "passthrough")
+	driver := &captureRerankDriver{}
+	model := NewRerankModel(driver, nil, nil, 10)
+	model.limiterErr = errors.New("model tokenizer is declared but its asset is unavailable")
+	if _, err := model.Rerank(t.Context(), RerankRequest{Query: "q", Documents: []string{document}}, nil, nil); err != nil {
+		t.Fatalf("passthrough must not require the tokenizer counter: %v", err)
+	}
+	if driver.calls != 1 {
+		t.Fatalf("driver calls = %d, want 1", driver.calls)
+	}
+
+	t.Setenv(common.EnvRerankTokenLimitMode, "truncate")
+	refusing := NewRerankModel(&captureRerankDriver{}, nil, nil, 10)
+	refusing.limiterErr = errors.New("model tokenizer is declared but its asset is unavailable")
+	if _, err := refusing.Rerank(t.Context(), RerankRequest{Query: "q", Documents: []string{document}}, nil, nil); err == nil {
+		t.Fatal("truncate must refuse when the declared tokenizer asset is unavailable")
 	}
 }
