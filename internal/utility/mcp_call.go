@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"ragflow/internal/common"
 	"time"
 )
 
@@ -73,7 +72,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Second
 	}
-	hostname, resolvedIP, err := common.AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}

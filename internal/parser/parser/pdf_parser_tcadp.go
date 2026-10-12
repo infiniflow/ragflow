@@ -100,7 +100,11 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return emit(text, pdfTableDocType(text), "table")
+			items := emit(text, pdfTableDocType(text), "table")
+			for _, it := range items {
+				projectPDFTable(it)
+			}
+			return items
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {

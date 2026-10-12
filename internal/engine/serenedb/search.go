@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"ragflow/internal/common"
 	"regexp"
 	"sort"
 	"strconv"
@@ -586,7 +587,8 @@ func (e *serenedbEngine) GetAggregation(chunks []map[string]interface{}, fieldNa
 		// Aggregation-style chunks carry an explicit value/count.
 		if val, ok := c["value"]; ok {
 			if s, ok := val.(string); ok {
-				counts[s] += toInt(c["count"])
+				count, _ := common.ToInt(c["count"])
+				counts[s] += count
 				continue
 			}
 		}
@@ -660,16 +662,4 @@ func asList(v interface{}) []interface{} {
 	default:
 		return []interface{}{v}
 	}
-}
-
-func toInt(v interface{}) int {
-	switch n := v.(type) {
-	case int:
-		return n
-	case int64:
-		return int(n)
-	case float64:
-		return int(n)
-	}
-	return 0
 }

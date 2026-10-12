@@ -1245,7 +1245,7 @@ func TestWikiQueryWiredReturnsPages(t *testing.T) {
 	if oc.Status != StatusOK {
 		t.Fatalf("status = %s, want ok", oc.Status)
 	}
-	if n, _ := toInt(oc.Metrics["n_hits"]); n != 1 {
+	if n, _ := common.ToInt(oc.Metrics["n_hits"]); n != 1 {
 		t.Errorf("n_hits = %v, want 1", oc.Metrics["n_hits"])
 	}
 	hit, ok := oc.Payload[0].(map[string]any)

@@ -40,6 +40,7 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      readOnly: '只读',
       viewMore: '查看更多',
       viewLess: '收起',
       comingSoon: '即将推出',
@@ -453,6 +454,7 @@ export default {
       source: '来源',
       fileName: '文件名',
       datasetLogs: '知识库',
+      datasourceLogs: '数据源',
       fileLogs: '文件',
       overview: '日志',
       success: '成功',
@@ -605,6 +607,8 @@ export default {
     },
     knowledgeConfiguration: {
       builtInSuffix: '内置',
+      builtInBadge: '内置',
+      builtInPipelines: '内置解析流程',
       parserSelectPlaceholder: '选择解析方式',
       parserOptionUnavailable: '不可用',
       randomSeedTip:
@@ -2349,6 +2353,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      visionEnhancementPromptTip:
+        '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',
       enableVisionEnhancementTip:
         '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
@@ -3098,6 +3107,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       nodeFormInvalid: '配置有误，请先修正',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
+      extractorKeywordsTopNMissing:
+        '自动关键词已开启，请设置抽取数量（至少为 1）',
+      extractorQuestionsTopNMissing:
+        '自动问题已开启，请设置生成数量（至少为 1）',
+      extractorTagsTopNMissing: '自动标签已开启，请设置标签数量（至少为 1）',
+      extractorTagFileMissing: '自动标签已开启，请先选择标签文件',
       retrievalDatasetMissing: '未选择知识库，请先选择',
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',

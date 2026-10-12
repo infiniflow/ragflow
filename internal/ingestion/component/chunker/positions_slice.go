@@ -18,32 +18,9 @@ package chunker
 
 import (
 	"encoding/json"
+	"ragflow/internal/common"
 	"unicode/utf8"
 )
-
-// toFloat converts a JSON number (int, int64, float64) to float64.
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case int32:
-		return float64(x), true
-	case json.Number:
-		f, err := x.Float64()
-		if err != nil {
-			return 0, false
-		}
-		return f, true
-	default:
-		return 0, false
-	}
-}
 
 // slicePositionsByTextRatio proportionally slices a PDF position matrix
 // (JSON array of [page, left, right, top, bottom] rows) by vertical ratio.
@@ -84,8 +61,8 @@ func slicePositionsByTextRatio(raw json.RawMessage, startRatio, endRatio float64
 		if len(row) < 5 {
 			return nil
 		}
-		top, ok1 := toFloat(row[3])
-		bottom, ok2 := toFloat(row[4])
+		top, ok1 := common.ToFloat(row[3])
+		bottom, ok2 := common.ToFloat(row[4])
 		if !ok1 || !ok2 || bottom <= top {
 			return nil
 		}
@@ -121,8 +98,8 @@ func slicePositionsByTextRatio(raw json.RawMessage, startRatio, endRatio float64
 		}
 		localStartRatio := (interStart - segStart) / h
 		localEndRatio := (interEnd - segStart) / h
-		oldTop, _ := toFloat(row[3])
-		oldBottom, _ := toFloat(row[4])
+		oldTop, _ := common.ToFloat(row[3])
+		oldBottom, _ := common.ToFloat(row[4])
 		oldH := oldBottom - oldTop
 		newTop := oldTop + localStartRatio*oldH
 		newBottom := oldTop + localEndRatio*oldH

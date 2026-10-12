@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// result_protocol.go is the Go port of `agent/sandbox/result_protocol.py`.
+// result_protocol.go defines wrappers and result parsing for Go providers.
 //
 // The contract:
 //
@@ -30,8 +30,8 @@
 // The marker protocol is a contract with `executor_manager`
 // (Python FastAPI service that runs the actual code). Renaming the
 // marker is a wire-format break — `executor_manager` parses for this
-// exact prefix. See `agent/sandbox/executor_manager/services/execution.py`
-// for the Python side that depends on it.
+// exact prefix. The external producer lives in infiniflow/sandbox at
+// executor_manager/services/execution.py.
 
 package sandbox
 
@@ -43,8 +43,7 @@ import (
 )
 
 // resultMarkerPrefix is the wire-level marker the executor_manager
-// Python service scans stdout for. Keep in sync with Python
-// `agent/sandbox/result_protocol.py::RESULT_MARKER_PREFIX`.
+// service scans stdout for. Preserve this cross-repository wire contract.
 const resultMarkerPrefix = "__RAGFLOW_RESULT__:"
 
 // BuildPythonWrapper wraps a Python source so that:

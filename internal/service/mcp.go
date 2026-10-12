@@ -144,7 +144,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 	variables["tools"] = tools
 
 	server := &entity.MCPServer{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		Name:        req.Name,
 		TenantID:    tenantID,
 		URL:         req.URL,
@@ -755,7 +755,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 		variables["tools"] = toolsAsMap(tools)
 
 		server := &entity.MCPServer{
-			ID:         utility.GenerateUUID(),
+			ID:         common.GenerateUUID(),
 			TenantID:   tenantID,
 			Name:       newName,
 			URL:        url,
@@ -824,7 +824,7 @@ func (s *MCPService) TestServer(ctx context.Context, tenantID, mcpID string, req
 	// ErrMCPInvalidURL data errors instead of being swallowed inside the
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
-	if _, _, err := common.AssertURLSafe(req.URL); err != nil {
+	if _, _, err := utility.AssertMCPURLSafe(req.URL); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 
