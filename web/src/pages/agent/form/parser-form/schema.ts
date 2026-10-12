@@ -58,20 +58,40 @@ export const SetupSchema = z
     }
   });
 
-export const FormSchema = z.object({
-  setups: z.array(SetupSchema).min(1, i18n.t('flow.atLeastOneFileType')),
-  // Global vision enhancement: one switch + img2txt model + description prompt,
-  // sitting at the params top level alongside the per-family setups (see the
-  // backend Parser component contract). Response language is intentionally not
-  // here: captions are indexed text, so they follow the knowledge base language
-  // that also drives tokenization, and can never disagree with it.
-  vlm: z
-    .object({
-      llm_id: z.string().optional(),
-      system_prompt: z.string().optional(),
-    })
-    .optional(),
-  enable_vision_enhancement: z.boolean().optional(),
-});
+export const FormSchema = z
+  .object({
+    setups: z.array(SetupSchema).min(1, i18n.t('flow.atLeastOneFileType')),
+    // Global vision enhancement: one switch + img2txt model + description prompt,
+    // sitting at the params top level alongside the per-family setups (see the
+    // backend Parser component contract). Response language is intentionally not
+    // here: captions are indexed text, so they follow the knowledge base language
+    // that also drives tokenization, and can never disagree with it.
+    vlm: z
+      .object({
+        llm_id: z.string().optional(),
+        system_prompt: z.string().optional(),
+      })
+      .optional(),
+    enable_vision_enhancement: z.boolean().optional(),
+  })
+  .superRefine((values, ctx) => {
+    // An image needs at least one text source: local OCR or the global vision
+    // enhancement. Reject the dead configuration at save time so a canvas that
+    // indexes nothing cannot be written (mirrors the backend Check()).
+    if (values.enable_vision_enhancement) {
+      return;
+    }
+    const imageIndex = values.setups.findIndex(
+      (setup) =>
+        setup.fileFormat === FileType.Image && setup.ocr_enabled === false,
+    );
+    if (imageIndex >= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['setups', imageIndex, 'ocr_enabled'],
+        message: i18n.t('flow.imageTextSourceRequired'),
+      });
+    }
+  });
 
 export type ParserFormSchemaType = z.infer<typeof FormSchema>;

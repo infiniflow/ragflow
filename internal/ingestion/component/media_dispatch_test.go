@@ -112,12 +112,20 @@ func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
 			}
 			t.Cleanup(func() { resolveTenantModelByType = originalResolver })
 			imageSetup["ocr_enabled"] = tc.ocr
+			params["enable_vision_enhancement"] = tc.enabled
 			component, err := NewParserComponent(params)
+			if !tc.ocr && !tc.enabled {
+				// Neither text source is configured: construction must fail
+				// instead of producing an index-nothing pipeline.
+				if err == nil || !strings.Contains(err.Error(), "no text source") {
+					t.Fatalf("err = %v, want no-text-source construction error", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			pc := component.(*ParserComponent)
-			pc.enableVisionEnhancement = tc.enabled
 			result, err := pc.Invoke(t.Context(), nil, map[string]any{"name": "photo.png", "file_type": "image", "binary": data, "tenant_id": tc.tenant})
 			if err != nil {
 				t.Fatal(err)

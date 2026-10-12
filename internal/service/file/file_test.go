@@ -8,10 +8,12 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -459,6 +461,75 @@ func TestFileService_UploadFromURL_HTMLNormalizesReadableContent(t *testing.T) {
 	}
 	if resp["mime_type"] != "text/html" {
 		t.Fatalf("mime_type = %#v", resp["mime_type"])
+	}
+}
+
+func TestFileService_UploadFromURL_ShortensLongNamesWithinTheLimit(t *testing.T) {
+	// The leading "a" puts the 255-byte boundary inside a 3-byte character.
+	longName := "a" + strings.Repeat("报", 100)
+	cases := []struct {
+		name        string
+		path        string
+		contentType string
+		body        string
+		wantName    string
+		wantExt     string
+	}{
+		{
+			name:        "pdf without extension",
+			path:        longName,
+			contentType: "application/pdf",
+			body:        "%PDF-1.7 fake pdf",
+			wantName:    "a" + strings.Repeat("报", 83) + ".pdf",
+			wantExt:     "pdf",
+		},
+		{
+			name:        "docx keeps extension",
+			path:        longName + ".docx",
+			contentType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+			body:        "PK\x03\x04 fake docx",
+			wantName:    "a" + strings.Repeat("报", 83) + ".docx",
+			wantExt:     "docx",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", c.contentType)
+				_, _ = w.Write([]byte(c.body))
+			}))
+			defer server.Close()
+
+			origAssert := common.AssertURLSafe
+			origPinned := utility.PinnedHTTPClient
+			common.AssertURLSafe = func(rawURL string) (string, string, error) {
+				return "127.0.0.1", "127.0.0.1", nil
+			}
+			utility.PinnedHTTPClient = func(hostname, resolvedIP string, timeout time.Duration) *http.Client {
+				return server.Client()
+			}
+			t.Cleanup(func() {
+				common.AssertURLSafe = origAssert
+				utility.PinnedHTTPClient = origPinned
+			})
+
+			factory := storage.GetStorageFactory()
+			originalStorage := factory.GetStorage()
+			factory.SetStorage(&fakeStorage{})
+			t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+			resp, err := testFileService().UploadFromURL(t.Context(), "tenant123", server.URL+"/"+url.PathEscape(c.path))
+			if err != nil {
+				t.Fatalf("UploadFromURL failed: %v", err)
+			}
+			name, _ := resp["name"].(string)
+			if name != c.wantName || !utf8.ValidString(name) {
+				t.Fatalf("name = %q, want %q", name, c.wantName)
+			}
+			if resp["extension"] != c.wantExt {
+				t.Fatalf("extension = %#v, want %q", resp["extension"], c.wantExt)
+			}
+		})
 	}
 }
 
