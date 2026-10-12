@@ -362,6 +362,70 @@ func TestMistralOCRFileSendsRemoteDocumentURL(t *testing.T) {
 	}
 }
 
+// Instances created by Python's "Mistral OCR" factory store the key inside a
+// JSON api_key; the bare key is sent and the payload base URL is used when the
+// instance has none.
+func TestMistralOCRFileReadsStoredJSONKey(t *testing.T) {
+	withSSRFBypass(t)
+	rec := &mistralOCRRecorder{}
+	srv := newMistralOCRServer(t, rec, http.StatusOK, `{"pages":[]}`)
+	defer srv.Close()
+
+	model := "mistral-ocr-latest"
+	cases := []struct {
+		name   string
+		config *APIConfig
+		want   string
+	}{
+		{
+			name: "environment payload",
+			config: &APIConfig{ApiKey: strPtr(`{"MISTRAL_OCR_BASE_URL": "` + srv.URL + `/v1", "MISTRAL_OCR_API_KEY": "sk-env",` +
+				` "MISTRAL_OCR_TABLE_FORMAT": "html", "MISTRAL_OCR_KEEP_HEADER_FOOTER": 0}`)},
+			want: "Bearer sk-env",
+		},
+		{
+			name:   "form payload",
+			config: &APIConfig{ApiKey: strPtr(`{"api_key": " sk-form ", "mistral_ocr_base_url": "` + srv.URL + `"}`)},
+			want:   "Bearer sk-form",
+		},
+		{
+			name:   "nested form payload",
+			config: &APIConfig{ApiKey: strPtr(`{"api_key": {"api_key": "sk-nested", "mistral_ocr_base_url": "` + srv.URL + `/v1"}}`)},
+			want:   "Bearer sk-nested",
+		},
+		{
+			name:   "instance base URL wins over the payload",
+			config: mistralOCRAPIConfig(`{"api_key": "sk-form", "mistral_ocr_base_url": "https://unused.example/v1"}`, srv.URL),
+			want:   "Bearer sk-form",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			rec.paths = nil
+			if _, err := newMistralOCRDriverForTest().OCRFile(context.Background(), &model, []byte("%PDF-1.4"), nil,
+				tc.config, nil, nil); err != nil {
+				t.Fatalf("OCRFile: %v", err)
+			}
+			if rec.auth != tc.want {
+				t.Errorf("Authorization = %q, want %q", rec.auth, tc.want)
+			}
+			if got, want := rec.paths, []string{"POST /v1/ocr"}; !reflect.DeepEqual(got, want) {
+				t.Errorf("requests = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// A JSON api_key without a key is rejected before any request is made.
+func TestMistralOCRFileRejectsStoredJSONWithoutKey(t *testing.T) {
+	model := "mistral-ocr-latest"
+	_, err := newMistralOCRDriverForTest().OCRFile(context.Background(), &model, []byte("%PDF-1.4"), nil,
+		&APIConfig{ApiKey: strPtr(`{"MISTRAL_OCR_BASE_URL": "https://api.mistral.ai/v1"}`)}, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "api key is required") {
+		t.Fatalf("error = %v, want api key is required", err)
+	}
+}
+
 func TestMistralOCRFileUploadsLargeDocuments(t *testing.T) {
 	withSSRFBypass(t)
 	rec := &mistralOCRRecorder{}

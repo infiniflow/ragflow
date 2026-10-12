@@ -114,7 +114,8 @@ func mistralOCRPageIndexes(ocrConfig *OCRConfig) ([]int, error) {
 // Markdown: header/footer blocks are dropped, extracted tables are inlined as
 // HTML, and image placeholders are removed.
 func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	if apiConfig == nil || apiConfig.ApiKey == nil || strings.TrimSpace(*apiConfig.ApiKey) == "" {
+	apiConfig = mistralOCRCredentials(apiConfig)
+	if apiConfig == nil || apiConfig.ApiKey == nil || *apiConfig.ApiKey == "" {
 		return nil, fmt.Errorf("api key is required")
 	}
 	if modelName == nil || strings.TrimSpace(*modelName) == "" {
@@ -136,8 +137,7 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 	if err != nil {
 		return nil, err
 	}
-	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
-	auth := &APIConfig{ApiKey: &apiKey}
+	auth := &APIConfig{ApiKey: apiConfig.ApiKey}
 
 	ctx, cancel := context.WithTimeout(ctx, longOpCallTimeout)
 	defer cancel()
@@ -189,6 +189,31 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 	}
 	text := result.markdown()
 	return &OCRFileResponse{Text: &text}, nil
+}
+
+// mistralOCRCredentials returns apiConfig with the bare Mistral key. Instances
+// created by Python's "Mistral OCR" factory store a JSON api_key:
+// {"MISTRAL_OCR_API_KEY", "MISTRAL_OCR_BASE_URL", ...} when provisioned from
+// the environment, or {"api_key", "mistral_ocr_base_url", ...} from its form.
+// The key is read from it, and its base URL is used when the instance has none.
+func mistralOCRCredentials(apiConfig *APIConfig) *APIConfig {
+	if apiConfig == nil || apiConfig.ApiKey == nil {
+		return apiConfig
+	}
+	resolved := *apiConfig
+	raw := strings.TrimSpace(*apiConfig.ApiKey)
+	if providerJSONConfigMap(raw) == nil {
+		resolved.ApiKey = &raw
+		return &resolved
+	}
+	apiKey := ProviderJSONConfigValue(raw, "api_key", "MISTRAL_OCR_API_KEY")
+	resolved.ApiKey = &apiKey
+	if resolved.BaseURL == nil || strings.TrimSpace(*resolved.BaseURL) == "" {
+		if baseURL := ProviderJSONConfigValue(raw, "mistral_ocr_base_url", "MISTRAL_OCR_BASE_URL"); baseURL != "" {
+			resolved.BaseURL = &baseURL
+		}
+	}
+	return &resolved
 }
 
 // mistralOCRPDFHeaderWindow is how far into the file a PDF header may start;
