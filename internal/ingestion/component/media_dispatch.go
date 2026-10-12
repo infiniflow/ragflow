@@ -96,11 +96,12 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	method := getStringOr(setup, "parse_method", "")
-	ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool)
+	_, hasOCRFlag := setup["ocr_enabled"].(bool)
 	// ocr_enabled is the OCR switch. Legacy setups omit it and encode the same
 	// choice in parse_method: "ocr"/empty selects local OCR, any other value is
-	// a VLM model reference that also implies OCR is off.
-	useOCR := (hasOCRFlag && ocrEnabled) || (!hasOCRFlag && (method == "" || strings.EqualFold(method, "ocr")))
+	// a VLM model reference that also implies OCR is off. The selection itself
+	// lives in imageSetupRunsOCR (parser.go), shared with Check().
+	useOCR := imageSetupRunsOCR(setup)
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
