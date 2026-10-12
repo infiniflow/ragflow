@@ -2234,6 +2234,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			wfInput = map[string]any{"query": ""}
 		}
 		runStartedAt := time.Now()
+		if !isResume {
+			rememberAgentRunStartedAt(state, runStartedAt)
+		}
 		workflowOutput, invokeErr := cc.Workflow.Invoke(ctx2, wfInput, invokeOpts...)
 		err = invokeErr
 		if errors.Is(err, context.Canceled) || errors.Is(ctx2.Err(), context.Canceled) {
@@ -2258,8 +2261,12 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
-		assistantID, assistantOutput := selectTerminalCanvasOutput(c, state, workflowOutput, runStartedAt)
-		thinking := agentRunThinking(c, state, assistantID, assistantOutput, runStartedAt)
+		// A resumed invoke starts later than Agents that already finished
+		// before the interruption. Those outputs stay in the checkpoint, so
+		// attribute this turn from the original run start.
+		cutoff := agentRunCutoff(state, isResume, runStartedAt)
+		assistantID, assistantOutput := selectTerminalCanvasOutput(c, state, workflowOutput, cutoff)
+		thinking := agentRunThinking(c, state, assistantID, assistantOutput, cutoff)
 		// The selected Message owns the answer, including empty text when it
 		// intentionally selected attachments only.
 		answer, _ := assistantOutput["content"].(string)
@@ -2646,6 +2653,36 @@ func stringifyAgentUserInput(userInput any) string {
 		}
 		return fmt.Sprint(v)
 	}
+}
+
+const agentRunStartedAtSysKey = "_agent_run_started_at"
+
+func rememberAgentRunStartedAt(state *canvas.CanvasState, started time.Time) {
+	if state == nil {
+		return
+	}
+	state.MergeNamespaces(map[string]any{
+		agentRunStartedAtSysKey: started.UTC().Format(time.RFC3339Nano),
+	}, nil, nil)
+}
+
+// agentRunCutoff is the earliest output time that still belongs to this
+// conversation turn. A resume reuses the start recorded before the
+// interruption so Agents that already ran stay eligible. A checkpoint
+// written before that start was recorded still belongs to the interrupted
+// turn, so it has no lower bound.
+func agentRunCutoff(state *canvas.CanvasState, isResume bool, invokeStartedAt time.Time) time.Time {
+	if !isResume {
+		return invokeStartedAt
+	}
+	if state != nil {
+		sys, _, _ := state.SnapshotNamespaces()
+		raw, _ := sys[agentRunStartedAtSysKey].(string)
+		if started, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+			return started
+		}
+	}
+	return time.Time{}
 }
 
 func agentRunQuery(userInput any) any {

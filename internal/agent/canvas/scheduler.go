@@ -306,6 +306,26 @@ func nodeStartedAt(ctx context.Context, state *CanvasState, cpnID, componentName
 	})
 }
 
+// copyDeferredNodeOutput mirrors a completed deferred Agent bucket from the
+// context state into the graph-local state. Message writes the resolved
+// content and thinking onto the context state; checkpoints persist the
+// graph-local state.
+func copyDeferredNodeOutput(ctx context.Context, graphState *CanvasState, cpnID string) {
+	if graphState == nil || cpnID == "" {
+		return
+	}
+	ctxState, _ := runtime.GetStateFromContext(ctx)
+	if ctxState == nil || ctxState == graphState {
+		return
+	}
+	for key, value := range ctxState.Snapshot()[cpnID] {
+		if runtime.IsDeferredStream(value) {
+			continue
+		}
+		graphState.SetVar(cpnID, key, value)
+	}
+}
+
 // nodeFinishedNow emits a node_finished RunEvent. Called from the per-node
 // statePost wrapper. The elapsed time is computed from the time recorded
 // by nodeStartedAt. Metadata is read from ctx via RunMeta.
@@ -580,6 +600,7 @@ func BuildWorkflow(ctx context.Context, c *Canvas) (*compose.Workflow[map[string
 				// partial generator. Message completes this callback after the
 				// deferred stream closes.
 				runtime.RegisterDeferredNode(ctx, cpnID, func() {
+					copyDeferredNodeOutput(ctx, state, cpnID)
 					nodeFinishedNow(ctx, state, cpnID, componentName, componentName, nil)
 				})
 			} else {

@@ -470,6 +470,15 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		if strings.Contains(ref, "@") {
 			parts := strings.SplitN(ref, "@", 2)
 			state.SetVar(parts[0], parts[1], finalText)
+			// Reasoning is streamed through the sink and returned on the
+			// completed Agent output. The Agent bucket otherwise keeps only
+			// the lazy stream, so an empty or present thinking value has to
+			// be written here before the deferred node is marked complete.
+			if result != nil {
+				if thinking, ok := result["thinking"].(string); ok {
+					state.SetVar(parts[0], "thinking", thinking)
+				}
+			}
 			runtime.CompleteDeferredNode(ctx, parts[0])
 		}
 		out.WriteString(finalText)

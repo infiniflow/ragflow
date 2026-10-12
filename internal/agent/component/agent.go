@@ -158,6 +158,14 @@ type AgentOutput struct {
 // that returns canned *schema.Message values.
 var agentRunner = runEinoReActAgent
 
+// SetAgentRunnerForTest replaces the ReAct runner and returns a function
+// that restores the previous one.
+func SetAgentRunnerForTest(fn func(context.Context, AgentParam) (*schema.Message, error)) func() {
+	prev := agentRunner
+	agentRunner = fn
+	return func() { agentRunner = prev }
+}
+
 // runEinoReActAgent creates an eino react agent and runs it against the
 // model built from p.
 func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, error) {

@@ -2,9 +2,12 @@
 package canvas
 
 import (
+	"context"
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // TestBuildWorkflow_3NodeLinear exercises a trivial Begin → LLM → Message
@@ -396,5 +399,41 @@ func TestNodeLifecycleEventsFallbackMarshalErrorPreservesIdentity(t *testing.T) 
 		default:
 			t.Fatalf("missing %s event", wantType)
 		}
+	}
+}
+
+func TestCopyDeferredNodeOutputCopiesCompletedThinking(t *testing.T) {
+	ctxState := NewCanvasState("run", "session")
+	graphState := NewCanvasState("run", "session")
+	ctxState.SetVar("agent_0", "content", "answer")
+	ctxState.SetVar("agent_0", "thinking", "")
+	ctxState.SetVar("agent_0", "content_stream", &runtime.DeferredStream{
+		Open: func(context.Context, runtime.AgentDeltaSink) (map[string]any, error) {
+			return nil, nil
+		},
+	})
+	ctx := runtime.WithState(t.Context(), ctxState)
+
+	copyDeferredNodeOutput(ctx, graphState, "agent_0")
+
+	thinking, err := graphState.GetVar("agent_0@thinking")
+	if err != nil {
+		t.Fatalf("GetVar thinking: %v", err)
+	}
+	if thinking != "" {
+		t.Fatalf("thinking = %#v, want empty string", thinking)
+	}
+	if got, _ := graphState.GetVar("agent_0@content"); got != "answer" {
+		t.Fatalf("content = %#v, want answer", got)
+	}
+	if got, _ := graphState.GetVar("agent_0@content_stream"); got != nil {
+		t.Fatalf("deferred stream copied = %#v", got)
+	}
+
+	same := NewCanvasState("run", "session")
+	same.SetVar("agent_0", "thinking", "keep")
+	copyDeferredNodeOutput(runtime.WithState(t.Context(), same), same, "agent_0")
+	if got, _ := same.GetVar("agent_0@thinking"); got != "keep" {
+		t.Fatalf("same-state thinking = %#v, want keep", got)
 	}
 }

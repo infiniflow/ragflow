@@ -383,6 +383,57 @@ func TestMessage_DeferredStreamThinkingEvents(t *testing.T) {
 	}
 }
 
+func TestMessage_DeferredStreamPersistsThinking(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-save", "task-deferred-save")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("", "plan")
+			sink("answer", "")
+			return map[string]any{"content": "answer", "thinking": "plan"}, nil
+		},
+	})
+	ctx := runtime.WithDeferredNodeRegistry(withStateForTest(t.Context(), state))
+	ctx = runtime.WithCanvasMessageEventEmitter(ctx, func(string, bool, bool) {})
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := state.GetVar("agent_0@thinking"); got != "plan" {
+		t.Fatalf("thinking = %#v, want plan", got)
+	}
+	if got, _ := state.GetVar("agent_0@content"); got != "answer" {
+		t.Fatalf("content = %#v, want answer", got)
+	}
+}
+
+func TestMessage_DeferredStreamPersistsEmptyThinking(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-deferred-empty", "task-deferred-empty")
+	state.SetVar("agent_0", "content", &runtime.DeferredStream{
+		Open: func(_ context.Context, sink runtime.AgentDeltaSink) (map[string]any, error) {
+			sink("answer", "")
+			return map[string]any{"content": "answer", "thinking": ""}, nil
+		},
+	})
+	ctx := withStateForTest(t.Context(), state)
+	ctx = runtime.WithCanvasMessageEventEmitter(ctx, func(string, bool, bool) {})
+
+	if _, err := c.Invoke(ctx, nil, map[string]any{"text": "{{agent_0@content}}"}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, err := state.GetVar("agent_0@thinking")
+	if err != nil {
+		t.Fatalf("GetVar thinking: %v", err)
+	}
+	if got != "" {
+		t.Fatalf("thinking = %#v, want empty string", got)
+	}
+	if _, ok := got.(string); !ok {
+		t.Fatalf("thinking type = %T, want string", got)
+	}
+}
+
 func TestMessage_DeferredStreamUsesCompletedContent(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-deferred-final", "task-deferred-final")

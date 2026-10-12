@@ -154,6 +154,22 @@ func TestAgentRunThinkingIgnoresParallelBranch(t *testing.T) {
 	}
 }
 
+func TestAgentRunCutoffKeepsOriginalStartOnResume(t *testing.T) {
+	start := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
+	resumeAt := start.Add(time.Hour)
+	state := canvas.NewCanvasState("run", "session")
+	rememberAgentRunStartedAt(state, start)
+	if got := agentRunCutoff(state, true, resumeAt); !got.Equal(start) {
+		t.Fatalf("cutoff = %s, want original start %s", got, start)
+	}
+	if got := agentRunCutoff(state, false, resumeAt); !got.Equal(resumeAt) {
+		t.Fatalf("fresh cutoff = %s, want invoke start %s", got, resumeAt)
+	}
+	if got := agentRunCutoff(canvas.NewCanvasState("run", "session"), true, resumeAt); !got.IsZero() {
+		t.Fatalf("resume without a recorded start = %s, want no lower bound", got)
+	}
+}
+
 func TestAgentRunThinkingKeepsEmptyFinalAgentThinking(t *testing.T) {
 	start := time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)
 	c := &canvas.Canvas{Components: map[string]canvas.CanvasComponent{
