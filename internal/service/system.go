@@ -460,18 +460,6 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 	return s.systemSettingsDAO.Create(ctx, dao.DB, newSetting)
 }
 
-// Config methods
-
-// ListAllConfigs returns backend connection settings with plaintext credentials.
-// This method currently has no callers. Do not call it directly.
-func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
-	result, err := server.GetAllConfigs()
-	if err != nil {
-		return nil, err
-	}
-	return result, nil
-}
-
 // Environment methods
 
 // ListEnvironments list all environments
