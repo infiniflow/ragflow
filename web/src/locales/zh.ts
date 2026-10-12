@@ -2356,6 +2356,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       imageOcr: 'OCR',
       imageOcrTip:
         '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      imageTextSourceRequired: '图片需要文本来源，请保留 OCR 或视觉增强。',
       visionEnhancementPromptTip:
         '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',

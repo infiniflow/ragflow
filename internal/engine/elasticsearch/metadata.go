@@ -723,19 +723,19 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		return nil
 	}
 
-	// Execute search for each tenant (use first KB to get tenant)
-	kb := kbIDs[0]
-	tenantID, err := dao.GetTenantIDByKBID(ctx, sqlDB, kb)
+	groups, err := dao.GroupKBIDsByTenant(ctx, sqlDB, kbIDs)
 	if err != nil {
-		common.Warn("FilterDocIdsByMetaPushdown: failed to get tenant for KB", zap.String("kbID", kb), zap.Error(err))
+		common.Warn("FilterDocIdsByMetaPushdown: failed to resolve KB tenants", zap.Strings("kbIDs", kbIDs), zap.Error(err))
 		return nil
 	}
-	indexName := buildMetadataIndexName(tenantID)
-
-	// Check if index exists
-	exists, err := e.indexExists(ctx, indexName)
-	if err != nil || !exists {
-		return nil
+	indexNames := make([]string, 0, len(groups))
+	for _, group := range groups {
+		indexName := buildMetadataIndexName(group.TenantID)
+		exists, err := e.indexExists(ctx, indexName)
+		if err != nil || !exists {
+			return nil
+		}
+		indexNames = append(indexNames, indexName)
 	}
 
 	// Build the filter query using the full meta_filter logic
@@ -765,13 +765,17 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
-		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithIndex(indexNames...),
+		e.client.Search.WithAllowPartialSearchResults(false),
 		e.client.Search.WithBody(&buf),
 	)
-	if err != nil || res.IsError() {
+	if err != nil {
 		return nil
 	}
 	defer res.Body.Close()
+	if res.IsError() {
+		return nil
+	}
 
 	var result map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&result); err != nil {

@@ -2779,6 +2779,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       imageOcr: 'OCR',
       imageOcrTip:
         'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
       visionEnhancementPromptTip:
         'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
