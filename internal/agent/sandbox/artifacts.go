@@ -19,7 +19,6 @@
 // an artifact accepted by one is accepted by the other — the
 // model sees a uniform `artifacts: [{name, content_b64,
 // mime_type, size}, ...]` shape across providers.
-//
 package sandbox
 
 // allowedArtifactExts is the set of file extensions the Local
