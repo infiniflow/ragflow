@@ -40,7 +40,7 @@ import (
 
 // NewHarnessRetriever connects chat requests to the agentic runtime using the
 // shared model, metadata and document services initialized by the API server.
-func NewHarnessRetriever(modelProviderService *service.ModelProviderService, metadataService *service.MetadataService, docEngine engineDocEngine) func(context.Context, service.HarnessRequest) (service.HarnessResult, error) {
+func NewHarnessRetriever(modelFactory *service.ModelFactory, metadataService *service.MetadataService, docEngine engineDocEngine) func(context.Context, service.HarnessRequest) (service.HarnessResult, error) {
 	return func(ctx context.Context, req service.HarnessRequest) (service.HarnessResult, error) {
 		// Resolve the tenant's actual chat model, mirroring Python where RAGTools
 		// receives a fully-resolved LLMBundle: chat.LLMID may be a UUID/tenant_model
@@ -60,28 +60,29 @@ func NewHarnessRetriever(modelProviderService *service.ModelProviderService, met
 		// Resolve the same Chat model that the pipeline uses. An empty model ID
 		// selects the tenant default; an explicit reference must be enrolled as
 		// Chat, so an image2text-only model is rejected here.
-		var target *service.ModelTarget
+		var chatModel *modelModule.ChatModel
 		var mErr error
-		if modelProviderService == nil {
-			mErr = errors.New("model provider service is not initialized")
+		if modelFactory == nil {
+			mErr = errors.New("model factory is not initialized")
 		} else {
-			solver := service.NewModelSolver()
+			access := service.ModelAccess{TenantID: req.TenantID}
 			if strings.TrimSpace(req.ModelID) == "" {
-				target, mErr = solver.ResolveDefaultModelConfig(ctx, req.TenantID, entity.ModelTypeChat)
+				chatModel, mErr = modelFactory.NewDefaultChatModel(ctx, access)
 			} else {
-				target, mErr = solver.ResolveModelConfig(ctx, req.TenantID, entity.ModelTypeChat, req.ModelID)
+				chatModel, mErr = modelFactory.NewChatModel(ctx, access, req.ModelID)
 			}
 		}
-		if mErr == nil {
-			if inv := component.NewResolvedInvoker(target.Driver, target.ModelName, target.APIConfig); inv != nil {
-				// MaxLength mirrors Python LLMBundle.max_length (the model's
-				// context window in tokens); message-fitting nodes (calculate,
-				// structure_qa) use it as their chat.FitMessages budget.
-				model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: target.ContextLength}
-				resolvedModelName = target.ModelName
-				// Reuse the same resolved driver/name/api as the invoker so
-				// the outer loop and the inner tool calls share one model.
-				outerModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
+		if mErr == nil && chatModel != nil {
+			if inv := component.NewResolvedInvoker(chatModel); inv != nil {
+				info := chatModel.Info()
+				contextLength := 0
+				if info != nil {
+					contextLength = info.ContextLength
+					resolvedModelName = info.Name
+				}
+				// Message fitting uses the input context window, not MaxOutput.
+				model = &agenticruntime.InvokerSessionModel{Invoker: inv, DB: dao.DB, MaxLength: contextLength}
+				outerModel = chatModel
 			}
 		} else {
 			common.Warn("runtime: failed to resolve chat model for reasoning; runtime will degrade to direct search", zap.Error(mErr))
@@ -166,7 +167,7 @@ func NewHarnessRetriever(modelProviderService *service.ModelProviderService, met
 			// The scope config lets each dataset be scanned under its own tenant
 			// and a doc scope be grouped by real owner, like graph_explore.
 			Expand: agenticruntime.NewCompiledExpander(
-				newDatasetCompiledStore(docEngine, modelProviderService, kbs),
+				newDatasetCompiledStore(docEngine, modelFactory, kbs),
 				agenticruntime.CompiledScopeConfig{
 					DatasetIDs:        req.DatasetIDs,
 					TenantID:          req.TenantID,
@@ -188,7 +189,7 @@ func NewHarnessRetriever(modelProviderService *service.ModelProviderService, met
 			// paraphrase-phrased claims are never recalled. Bound to
 			// kbs[0].EmbdID (validateDatasetEmbeddingModels above guarantees
 			// every bound dataset shares it), query-side encoded.
-			Embedder: embedderForDatasets(kbs, modelProviderService),
+			Embedder: embedderForDatasets(kbs, modelFactory),
 			// Tagger is the Go equivalent of Python's label_question
 			// (agentic_rag.py:668): classifies the query into question-type
 			// tags the retriever boosts on. metadataService implements it
@@ -376,11 +377,11 @@ func hasEmbedderFor(kbs []*entity.Knowledgebase) bool {
 // guarantees the rest share it). Nil when no dataset carries an embedding
 // model — the claim leg then degrades to BM25-only, matching a Python run
 // without embed_mdl.
-func embedderForDatasets(kbs []*entity.Knowledgebase, modelSvc *service.ModelProviderService) nlp.NavEmbedder {
+func embedderForDatasets(kbs []*entity.Knowledgebase, modelFactory *service.ModelFactory) nlp.NavEmbedder {
 	if len(kbs) == 0 || kbs[0] == nil || kbs[0].EmbdID == "" {
 		return nil
 	}
-	return service.NewNavEmbedder(modelSvc, kbs[0].EmbdID)
+	return service.NewNavEmbedder(modelFactory, kbs[0].EmbdID)
 }
 
 func validateLoadedDatasets(datasetIDs []string, kbs []*entity.Knowledgebase) error {
@@ -547,12 +548,12 @@ func newEngineCompiledStore(e engineDocEngine, embed compiledQueryEncoder, embed
 // expansion; using the tenant-default model instead would compare the query
 // against rows embedded by a different model — different vector spaces, so the
 // dense hits would be noise.
-func newDatasetCompiledStore(e engineDocEngine, modelSvc *service.ModelProviderService, kbs []*entity.Knowledgebase) agenticruntime.CompiledStore {
+func newDatasetCompiledStore(e engineDocEngine, modelFactory *service.ModelFactory, kbs []*entity.Knowledgebase) agenticruntime.CompiledStore {
 	if e == nil {
 		return nil
 	}
 	if hasEmbedderFor(kbs) {
-		return newEngineCompiledStore(e, service.NewNavEmbedder(modelSvc, kbs[0].EmbdID), kbs[0].TenantID)
+		return newEngineCompiledStore(e, service.NewNavEmbedder(modelFactory, kbs[0].EmbdID), kbs[0].TenantID)
 	}
 	return newEngineCompiledStore(e, nil, "")
 }

@@ -205,10 +205,19 @@ func TestBuildFulltextSQLSingleColumn(t *testing.T) {
 	mustNotContain(t, sql, "title_tks @@")
 }
 
-func TestBuildVectorSQLThresholdInWhere(t *testing.T) {
-	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2}
+// The similarity threshold must NOT reach the WHERE clause: there it compiles to
+// a radius search instead of a top-k lookup (173,001 ms vs 136 ms at k=1024 on
+// 111.8M chunks). Elasticsearch applies it as a post-filter, OpenSearch drops
+// it, and RAGFlow re-applies it against the hybrid score afterwards.
+//
+// hasVecThreshold must be SET here. Without it the fixture describes a request
+// that supplied no threshold at all, so the assertion holds trivially and the
+// test would still pass if buildVectorSQL started emitting the radius predicate
+// for a threshold that WAS given - the only case it is meant to guard.
+func TestBuildVectorSQLThresholdNotInWhere(t *testing.T) {
+	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2, hasVecThreshold: true}
 	sql := buildVectorSQL("t", "id", "TRUE", pm, 10, 5)
-	mustContain(t, sql, "-(q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2]) >= 0.2")
+	mustNotContain(t, sql, ">= 0.2")
 	mustContain(t, sql, "ORDER BY q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2] LIMIT 10 OFFSET 5")
 }
 
@@ -225,6 +234,43 @@ func TestBuildFusionSQLShape(t *testing.T) {
 	mustContain(t, sql, "ORDER BY _score DESC")
 	mustContain(t, sql, "content_ltks @@ 'q'")
 	mustContain(t, sql, "t.id, t.content_ltks") // output fields prefixed with t.
+}
+
+func TestBuildFusionSQLThresholdFiltersAfterLimit(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+		vecThreshold: 0.2, hasVecThreshold: true,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	// Applied to the already-limited candidates, so the IVF scan still returns top-k...
+	mustContain(t, sql, "LIMIT 200) c WHERE sim >= 0.2")
+	// ...and never as a radius predicate on the scan itself.
+	mustNotContain(t, sql, "AS sim\n    FROM idx_t WHERE TRUE AND")
+}
+
+func TestBuildFusionSQLNoThresholdStillExcludesNulls(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	mustNotContain(t, sql, "WHERE sim >=")
+	// COALESCE(v.sim, 0) would otherwise score a vectorless row as zero.
+	mustContain(t, sql, "WHERE sim IS NOT NULL")
+}
+
+func TestDropNullSimRemovesVectorlessRows(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "a", vecSimColumn: 0.9},
+		{"id": "b", vecSimColumn: nil},
+		{"id": "c"},
+		{"id": "d", vecSimColumn: -0.4},
+	}
+	got := dropNullSim(rows)
+	if len(got) != 2 || got[0]["id"] != "a" || got[1]["id"] != "d" {
+		t.Errorf("dropNullSim = %v, want the two rows carrying a similarity", got)
+	}
 }
 
 func TestBuildUpsert(t *testing.T) {

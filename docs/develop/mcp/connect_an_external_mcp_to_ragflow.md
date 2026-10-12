@@ -66,6 +66,8 @@ sse
 
 If the MCP server does not require authentication, leave **Authorization Token** empty. The manual form does not expose arbitrary headers, variables, or a description field. For another authentication scheme or custom headers, use a JSON import with a string-to-string `headers` object, as shown in the example below.
 
+When the server supports bearer authentication, keep the URL free of credentials and put the key in **Authorization Token**. RAGFlow's own MCP endpoint uses this header; query-string keys do not authenticate it. Existing third-party query-authentication URLs remain supported because their authentication requirements depend on the server. Ordinary MCP configuration responses mask the authorization token, and unchanged edits and connection tests reuse the saved value server-side. Explicit configuration downloads include credentials so they can be imported again.
+
 Make sure that the path in **URL** matches the endpoint actually exposed by the MCP server. For example, a Streamable HTTP server commonly uses `/mcp`, while an SSE server commonly uses `/sse`.
 
 RAGFlow keeps **Save** disabled until the current connection settings have been tested successfully and at least one tool has been discovered. If you change the URL, server type, or authorization token, test the connection again before saving.

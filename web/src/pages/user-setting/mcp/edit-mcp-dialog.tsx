@@ -100,8 +100,7 @@ export function EditMcpDialog({
   }, []);
 
   const handleOk = async (values: z.infer<typeof FormSchema>) => {
-    // When the field still holds the mask, the user did not change the token;
-    // send the previously stored token so it is not overwritten with empty.
+    // A masked token is preserved by the backend when editing a saved server.
     const nextValues = {
       ...omit(values, 'authorization_token'),
       ...connectionFields(values.authorization_token, data),
@@ -109,7 +108,7 @@ export function EditMcpDialog({
     if (isTriggeredBySaving) {
       onOk?.(nextValues);
     } else {
-      const ret = await testMcpServer(nextValues);
+      const ret = await testMcpServer({ ...nextValues, mcp_id: id });
       if (ret.code === 0) {
         setFieldChanged(false);
       }

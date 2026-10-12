@@ -404,8 +404,7 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
 		contentType = normalizedType
 		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
-		// no explicit ext was provided. Never overwrite a caller-
-		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// no explicit ext was provided. Never overwrite a caller-supplied extension (e.g. ext=svg&mime_type=image/png must
 		// stay ext=svg for the force-attachment check).
 		if ext == "" {
 			for knownExt, knownType := range CONTENT_TYPE_MAP {

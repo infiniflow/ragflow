@@ -22,6 +22,8 @@ import IterationForm from '../form/iteration-form';
 import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
+import Search1APICrawlForm from '../form/search1api-crawl-form';
+import Search1APIForm from '../form/search1api-form';
 import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
@@ -86,6 +88,12 @@ export const FormConfigMap = {
   },
   [Operator.SofyaSearch]: {
     component: SofyaForm,
+  },
+  [Operator.Search1APISearch]: {
+    component: Search1APIForm,
+  },
+  [Operator.Search1APICrawl]: {
+    component: Search1APICrawlForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,

@@ -445,7 +445,7 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 }
 
 // TestPrepareValidatedRunResetsDocumentProgress verifies validation precedes
-// document initialization and leaves the legacy progress_msg untouched.
+// document initialization while preserving committed counts and progress_msg.
 func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -478,14 +478,14 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	if doc.Progress != 0 {
 		t.Fatalf("progress = %f, want 0", doc.Progress)
 	}
-	if doc.ChunkNum != 0 {
-		t.Fatalf("chunk_num = %d, want 0", doc.ChunkNum)
+	if doc.ChunkNum != 10 {
+		t.Fatalf("chunk_num = %d, want 10", doc.ChunkNum)
 	}
-	if doc.TokenNum != 0 {
-		t.Fatalf("token_num = %d, want 0", doc.TokenNum)
+	if doc.TokenNum != 100 {
+		t.Fatalf("token_num = %d, want 100", doc.TokenNum)
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "partial" {
-		t.Fatalf("progress_msg = %v, want the legacy value unchanged", doc.ProgressMsg)
+		t.Fatalf("progress_msg = %v, want partial", doc.ProgressMsg)
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")

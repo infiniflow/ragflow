@@ -535,6 +535,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
@@ -600,6 +601,7 @@ func sptr(s string) *string { return &s }
 
 func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum int64) {
 	t.Helper()
+	ensureTestTenantOwner(t, "user-1", tenantID)
 	kb := &entity.Knowledgebase{
 		ID:         id,
 		TenantID:   tenantID,
@@ -614,6 +616,41 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
+	}
+}
+
+func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	var owner entity.UserTenant
+	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", string(entity.StatusValid)).First(&owner).Error
+	if err == nil {
+		return
+	}
+	if !dao.IsNotFoundErr(err) {
+		t.Fatalf("find test tenant owner: %v", err)
+	}
+	status := string(entity.StatusValid)
+	owner = entity.UserTenant{
+		ID:        userID + "_" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	if err := dao.DB.Create(&owner).Error; err != nil {
+		t.Fatalf("insert test tenant owner: %v", err)
+	}
+}
+
+func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:         canvasID,
+		UserID:     ownerID,
+		Permission: string(entity.TenantPermissionMe),
+	}).Error; err != nil {
+		t.Fatalf("insert test canvas: %v", err)
 	}
 }
 
@@ -1251,7 +1288,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			ID:       userID + "_" + tenantID,
 			UserID:   userID,
 			TenantID: tenantID,
-			Role:     "admin",
+			Role:     "owner",
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -2048,7 +2085,7 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "tenant-1", "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "user-1", "nonexistent")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2098,7 +2135,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	ctx := t.Context()
 
 	// Dataset owner reads the original file.
-	p, err := svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev")
+	p, err := svc.GetDocumentPreview(ctx, "user-1", "doc-prev")
 	if err != nil {
 		t.Fatalf("owner preview: %v", err)
 	}
@@ -2118,7 +2155,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
-	_, err = svc.GetDocumentPreview(ctx, "tenant-2", "doc-prev")
+	_, err = svc.GetDocumentPreview(ctx, "user-3", "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -2137,7 +2174,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
-	p, err = svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev-me")
+	p, err = svc.GetDocumentPreview(ctx, "user-1", "doc-prev-me")
 	if err != nil {
 		t.Fatalf("owner preview private dataset: %v", err)
 	}
@@ -2154,7 +2191,7 @@ func TestGetDocumentPreview_EmptyObject(t *testing.T) {
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-empty")
+	_, err := svc.GetDocumentPreview(t.Context(), "user-1", "doc-prev-empty")
 	if !errors.Is(err, ErrPreviewFileEmpty) {
 		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
 	}
@@ -2177,7 +2214,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-miss")
+	_, err := svc.GetDocumentPreview(t.Context(), "user-1", "doc-prev-miss")
 	if err == nil {
 		t.Fatal("expected storage read error")
 	}
@@ -2212,6 +2249,26 @@ func TestDownloadDocument_WrongDataset(t *testing.T) {
 	}
 }
 
+func TestDownloadDocument_DatabaseErrorIsNotNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.Migrator().DropTable(&entity.Document{}); err != nil {
+		t.Fatalf("drop document table: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, err := svc.DownloadDocument(t.Context(), "kb-1", "doc-1")
+	if err == nil {
+		t.Fatal("expected database error")
+	}
+	if errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("database error was masked as document not found: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to get document doc-1") {
+		t.Fatalf("unexpected database error: %v", err)
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -2220,14 +2277,14 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	if code != common.CodeForbidden {
+		t.Fatalf("code = %v, want %v", code, common.CodeForbidden)
 	}
-	if err.Error() != "you don't own the dataset" {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }
@@ -2241,7 +2298,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	chunkCount := int64(6)
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ChunkCount: &chunkCount,
 	}, map[string]bool{"chunk_count": true})
 	if err == nil {
@@ -2279,7 +2336,7 @@ func TestUpdateDatasetDocumentRejectsZeroImmutableFields(t *testing.T) {
 				t.Fatalf("prepare document: %v", err)
 			}
 
-			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &tt.request, tt.present)
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &tt.request, tt.present)
 			if err == nil {
 				t.Fatalf("expected %s mutation error", tt.name)
 			}
@@ -2399,7 +2456,7 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	parseType := 1
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &parserID,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -2425,7 +2482,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	newName := "new.pdf"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Name: &newName,
 	}, map[string]bool{"name": true})
 	if err != nil {
@@ -2455,7 +2512,7 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -3036,7 +3093,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},
 	}, map[string]bool{"meta_fields": true})
 	if err == nil {
@@ -3372,15 +3429,14 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
-	chunkMethod := "manual"
+	insertTestCanvas(t, pipelineID, "user-1")
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID: &pipelineID,
-		ParserID:   &chunkMethod,
 		ParseType:  &parseType,
-	}, map[string]bool{"pipeline_id": true, "parser_id": true, "parse_type": true})
+	}, map[string]bool{"pipeline_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -3412,7 +3468,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	pipelineIDEmpty := ""
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineIDEmpty,
@@ -3445,9 +3501,10 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
@@ -3462,50 +3519,34 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	}
 }
 
-// TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID reproduces
-// the comment-3 bug: parse_type=2 (pipeline) with a dirty req.ParserID must
-// still resolve to pipeline mode so parser_config is cleaned against the
-// canvas DSL (fallback when the canvas is absent), not the builtin DSL.
-//
-// With the bug, req.ParserID != nil flipped isCanvas=false inside the
-// parser_config block, so the config was rebuilt against the builtin "manual"
-// DSL and unknown fields were dropped. After the fix, the canvas load fails
-// (no such pipeline in the test DB) and the original config is persisted as-is.
-func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T) {
+// TestUpdateDatasetDocumentParseTypePipelineRejectsParserID locks in the new
+// explicit contract: parse_type=2 (Pipeline) must not carry a parser_id. The
+// previous lenient behavior silently ignored the contradictory id; now it is
+// rejected so a malformed request can never pick the wrong mode.
+func TestUpdateDatasetDocumentParseTypePipelineRejectsParserID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	parseType := 2
-	// Dirty parser_id that the builtin branch would otherwise use to load a
-	// builtin DSL and strip unknown fields.
 	parserID := "manual"
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineID,
-		ParserConfig: map[string]any{
-			"nonexistent_field": "value",
-		},
-	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true, "parser_config": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true})
+	if err == nil {
+		t.Fatal("expected error rejecting parser_id in Pipeline mode")
 	}
-	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
-		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
 	}
-	if resp.ParserID != "naive" {
-		t.Fatalf("parser_id = %q, want original naive (parser_id must not apply in pipeline mode)", resp.ParserID)
-	}
-	// Pipeline mode with an absent canvas must fall back to persisting the
-	// original config verbatim. If the builtin path ran instead, the unknown
-	// field would have been stripped during DSL cleaning.
-	if v, ok := resp.ParserConfig["nonexistent_field"]; !ok || v != "value" {
-		t.Fatalf("parser_config = %v, want nonexistent_field=value preserved (canvas fallback)", resp.ParserConfig)
+	if err.Error() != "parser_id must not be set when parse_type is Pipeline" {
+		t.Fatalf("err = %q", err.Error())
 	}
 }
 
@@ -3524,7 +3565,8 @@ func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) 
 
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
-	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	insertTestCanvas(t, pipelineID, "user-1")
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 		ParserConfig: map[string]any{
@@ -3561,7 +3603,7 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	parserID := "manual"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType: &parseType,
 		ParserID:  &parserID,
 		ParserConfig: map[string]any{
@@ -3586,7 +3628,7 @@ func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
-	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserConfig: map[string]any{
 			"GeneralChunker:SixApplesFall": map[string]any{
 				"parent_child": map[string]any{
@@ -3624,7 +3666,7 @@ func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
 	enabled := 0
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Enabled: &enabled,
 	}, map[string]bool{"enabled": true})
 	if err != nil {
@@ -3844,17 +3886,15 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestKB(t, "kb-2", "tenant-1", 0, 0, 0)
 	insertTestKB(t, "kb-other", "tenant-other", 0, 0, 0)
-	if err := db.Create(&entity.UserTenant{
-		ID:        "user-1_tenant-1",
-		UserID:    "user-1",
-		TenantID:  "tenant-1",
-		Role:      "owner",
-		InvitedBy: "user-1",
-		Status:    sptr("1"),
-	}).Error; err != nil {
-		t.Fatalf("seed user tenant: %v", err)
+	if err := db.Where("tenant_id = ? AND role = ?", "tenant-other", "owner").Delete(&entity.UserTenant{}).Error; err != nil {
+		t.Fatalf("remove fixture owner: %v", err)
 	}
-
+	if err := db.Create(&entity.UserTenant{
+		ID: "other-owner_tenant-other", UserID: "other-owner", TenantID: "tenant-other",
+		Role: "owner", InvitedBy: "other-owner", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("seed other tenant owner: %v", err)
+	}
 	base64Thumb := "data:image/png;base64,AAAA"
 	fileThumb := "thumb.png"
 	otherThumb := "secret.png"
@@ -3956,6 +3996,7 @@ func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T)
 
 	kbID := strings.Repeat("b", 32)
 	status := string(entity.StatusValid)
+	ensureTestTenantOwner(t, "user-1", "user-1")
 	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -4009,7 +4050,7 @@ func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
 	if store.getCalls != 0 {
 		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
 	}
-	got, err := svc.GetDocumentThumbnail(ctx, "owner-1", "doc-thumb")
+	got, err := svc.GetDocumentThumbnail(ctx, "user-1", "doc-thumb")
 	if err != nil || !bytes.Equal(got, image) {
 		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}

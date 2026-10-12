@@ -40,6 +40,7 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      readOnly: '只读',
       viewMore: '查看更多',
       viewLess: '收起',
       comingSoon: '即将推出',
@@ -368,7 +369,7 @@ export default {
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
       reselectParserAfterUploadHint:
-        '可继续上传，上传后在文件列表中重新选择这些文件的解析方法。',
+        '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -453,6 +454,7 @@ export default {
       source: '来源',
       fileName: '文件名',
       datasetLogs: '知识库',
+      datasourceLogs: '数据源',
       fileLogs: '文件',
       overview: '日志',
       success: '成功',
@@ -604,6 +606,11 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文档不能被删除',
     },
     knowledgeConfiguration: {
+      builtInSuffix: '内置',
+      builtInBadge: '内置',
+      builtInPipelines: '内置解析流程',
+      parserSelectPlaceholder: '选择解析方式',
+      parserOptionUnavailable: '不可用',
       randomSeedTip:
         '种子是伪随机算法的起点，它确保在不同运行中产生相同的输出，从而保证可重复性。',
       datasetDescription: '你的知识库描述。',
@@ -1060,6 +1067,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingLevelHighDescription: '深度推理',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: '尽力思考',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: '自主探索语料库',
       thinkingTip:
         '仅控制官方模型提供商中的 Qwen、Kimi 和 GLM 模型思考模式。系统默认会关闭 Qwen 思考，以避免任务长时间运行。',
       quote: '显示引文',
@@ -1158,6 +1167,9 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       queritApiKeyTip:
         '选择 Querit 后，将使用 Querit 的网络搜索结果补充知识库检索。',
       queritApiKeyMessage: '请输入 Querit API Key',
+      search1apiApiKeyTip:
+        '选择 Search1API 后，将使用 Search1API 的网络搜索结果补充知识库检索。',
+      search1apiApiKeyMessage: '请输入 Search1API API Key',
       serplyApiKeyTip:
         '选择 Serply 后，将使用 Serply 的网络搜索结果补充知识库检索。',
       serplyApiKeyMessage: '请输入 Serply API Key',
@@ -1245,7 +1257,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
       google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
       google_driveMyDriveEmailsTip:
-        '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
+        '可选。将索引这些邮箱的整个 “我的云端硬盘”，并与下方的共享文件夹一并同步，多个邮箱用逗号分隔。留空则仅同步这些文件夹。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
       gmailPrimaryAdminTip:
@@ -2341,6 +2353,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      imageTextSourceRequired: '图片需要文本来源，请保留 OCR 或视觉增强。',
+      visionEnhancementPromptTip:
+        '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',
       enableVisionEnhancementTip:
         '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
@@ -2430,7 +2448,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         loadFailed: '版本加载失败，该版本可能已被删除',
         version: '版本',
       },
-      cite: '引用',
+      cite: '显示引文',
       citeTip: '引用',
       nameMessage: '请输入名称',
       lastSavedAt: '上次保存于',
@@ -2521,6 +2539,23 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       sofyaSearchDepthBasic: '页面正文',
       sofyaSearchDepthSnippets: '仅摘要',
       sofyaApiKeyTip: '必填。请在 sofya.co 申请 API Key。',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        '基于 Search1API 的网页与新闻搜索组件，覆盖 Google、Bing、百度、GitHub、arXiv、Reddit、YouTube、Hacker News、Reuters 等搜索服务。作为智能体工具时，智能体可以在每次调用时自行选择频道和搜索服务。需要配置 API Key。',
+      search1APIChannelTip:
+        '网页频道搜索通用网页，新闻频道搜索新闻来源。作为智能体工具时，智能体可以在每次调用时切换频道。',
+      search1APIChannelGeneral: '网页',
+      search1APIChannelNews: '新闻',
+      search1APIService: '搜索服务',
+      search1APIServiceTip:
+        '所选频道的默认搜索服务。作为智能体工具时，智能体可以在每次调用时改用该频道支持的其他服务。',
+      search1APIApiKeyTip: '必填。请在 app.s1.dev 申请 API Key。',
+      search1APICrawl: 'Search1API 网页读取',
+      search1APICrawlDescription:
+        '使用 Search1API 读取网页，返回页面标题和完整正文。需要配置 API Key。',
+      search1APICrawlUrl: '网页地址',
+      search1APICrawlUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       docGenerator: '文档生成器',
       docGeneratorDescription: `从 Markdown 内容生成文件。`,
       browser: 'Browser',
@@ -2545,7 +2580,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       watermarkText: '水印文本',
       headerText: '页眉文本',
       footerText: '页脚文本',
-      includeDownloadInfoInContent: '在内容末尾附加下载信息',
       contentPlaceholder: '输入 Markdown 内容...',
       filenamePlaceholder: 'document.ext（留空则自动生成）',
       contentRequired: '内容不能为空',
@@ -3055,6 +3089,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       nodeFormInvalid: '配置有误，请先修正',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
+      extractorKeywordsTopNMissing:
+        '自动关键词已开启，请设置抽取数量（至少为 1）',
+      extractorQuestionsTopNMissing:
+        '自动问题已开启，请设置生成数量（至少为 1）',
+      extractorTagsTopNMissing: '自动标签已开启，请设置标签数量（至少为 1）',
+      extractorTagFileMissing: '自动标签已开启，请先选择标签文件',
       retrievalDatasetMissing: '未选择知识库，请先选择',
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',

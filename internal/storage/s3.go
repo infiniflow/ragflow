@@ -31,6 +31,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
+	"github.com/aws/smithy-go/encoding/httpbinding"
 	"go.uber.org/zap"
 )
 
@@ -83,10 +84,11 @@ func (s *S3Storage) connect(ctx context.Context) error {
 	}
 
 	// Create S3 client with custom endpoint if provided
-	clientOpts := []func(*s3.Options){}
+	var clientOpts []func(*s3.Options)
 	if s.config.EndpointURL != "" {
 		clientOpts = append(clientOpts, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(s.config.EndpointURL)
+			o.UsePathStyle = s.config.AddressingStyle == "path"
 		})
 	}
 
@@ -491,7 +493,7 @@ func (s *S3Storage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, de
 	srcBucket, srcPath = s.resolveBucketAndPath(srcBucket, srcPath)
 	destBucket, destPath = s.resolveBucketAndPath(destBucket, destPath)
 
-	copySource := fmt.Sprintf("%s/%s", srcBucket, srcPath)
+	copySource := httpbinding.EscapePath(fmt.Sprintf("%s/%s", srcBucket, srcPath), false)
 
 	_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(destBucket),

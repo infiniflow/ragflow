@@ -6,7 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"ragflow/internal/common"
+	"strconv"
 	"strings"
 
 	models "ragflow/internal/entity/models"
@@ -58,6 +60,7 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		auth = "Bearer " + apiKey
 	}
 	encoded := base64.StdEncoding.EncodeToString(data)
+	convertOptions := doclingConvertOptions(parser)
 	payloads := []struct {
 		endpoint string
 		body     func() map[string]any
@@ -66,22 +69,22 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 		{
 			endpoint: "/v1/convert/source",
 			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false) },
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, false, convertOptions) },
 		},
 		{
 			endpoint: "/v1alpha/convert/source",
 			chunked:  true,
-			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true) },
+			body:     func() map[string]any { return doclingChunkedPayload(filename, encoded, true, convertOptions) },
 		},
 		{
 			endpoint: "/v1/convert/source",
 			chunked:  false,
-			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, false) },
+			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, false, convertOptions) },
 		},
 		{
 			endpoint: "/v1alpha/convert/source",
 			chunked:  false,
-			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, true) },
+			body:     func() map[string]any { return doclingStandardPayload(filename, encoded, true, convertOptions) },
 		},
 	}
 
@@ -127,9 +130,30 @@ func parsePDFWithDocling(ctx context.Context, filename string, data []byte, pars
 	return ParseResult{Err: fmt.Errorf("parser: Docling convert: %w", lastErr)}
 }
 
-func doclingStandardPayload(filename string, encoded string, alpha bool) map[string]any {
+// doclingConvertOptions collects the Docling Serve conversion options set in the
+// parser setup, falling back to the environment. Unset options are left out so
+// Docling Serve keeps its own defaults.
+func doclingConvertOptions(parser *PDFParser) map[string]any {
+	options := map[string]any{}
+	if parser.DoclingDoOCR != nil {
+		options["do_ocr"] = *parser.DoclingDoOCR
+	} else if v, err := strconv.ParseBool(strings.TrimSpace(common.GetEnv(common.EnvDoclingDoOCR))); err == nil {
+		options["do_ocr"] = v
+	}
+	backend := strings.TrimSpace(parser.DoclingPDFBackend)
+	if backend == "" {
+		backend = strings.TrimSpace(common.GetEnv(common.EnvDoclingPDFBackend))
+	}
+	if backend != "" {
+		options["pdf_backend"] = backend
+	}
+	return options
+}
+
+func doclingStandardPayload(filename string, encoded string, alpha bool, convertOptions map[string]any) map[string]any {
 	source := map[string]any{"filename": filename, "base64_string": encoded}
 	options := map[string]any{"from_formats": []string{"pdf"}, "to_formats": []string{"json", "md", "text"}}
+	maps.Copy(options, convertOptions)
 	if alpha {
 		return map[string]any{
 			"options":      options,
@@ -143,9 +167,9 @@ func doclingStandardPayload(filename string, encoded string, alpha bool) map[str
 	}
 }
 
-func doclingChunkedPayload(filename string, encoded string, alpha bool) map[string]any {
-	payload := doclingStandardPayload(filename, encoded, alpha)
-	payload["options"] = map[string]any{
+func doclingChunkedPayload(filename string, encoded string, alpha bool, convertOptions map[string]any) map[string]any {
+	payload := doclingStandardPayload(filename, encoded, alpha, convertOptions)
+	options := map[string]any{
 		"from_formats": []string{"pdf"},
 		"to_formats":   []string{"json", "md", "text"},
 		"do_chunking":  true,
@@ -155,6 +179,8 @@ func doclingChunkedPayload(filename string, encoded string, alpha bool) map[stri
 			"tokenizer":  "sentencepiece",
 		},
 	}
+	maps.Copy(options, convertOptions)
+	payload["options"] = options
 	return payload
 }
 

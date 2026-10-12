@@ -201,7 +201,7 @@ const ParserForm = ({
 
   return (
     <Form {...form}>
-      <form className="space-y-5 px-5">
+      <form className="space-y-5 px-5 pt-4">
         <VisionEnhancementFormFields />
         {fields.map((field, index) => {
           return (

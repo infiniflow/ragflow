@@ -553,6 +553,52 @@ describe('collectCanvasIssues: missing required fields', () => {
     );
   });
 
+  // Switching the source to memories writes no `memory_ids` key until a
+  // memory is picked, so the unbound node round-trips without it.
+  it('flags a Retrieval node whose binding key is absent', () => {
+    const datasetIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', { retrieval_from: 'dataset' }),
+      ],
+    });
+    const memoryIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r2', 'Retrieval', { retrieval_from: 'memory' }),
+      ],
+    });
+
+    expect(datasetIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    expect(memoryIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalMemoryMissing' }),
+    );
+  });
+
+  it('treats a Retrieval node without retrieval_from as a dataset node', () => {
+    const emptyIssues = collect({
+      nodes: [makeNode('Retrieval:r1', 'Retrieval', {})],
+    });
+    const legacyIssues = collect({
+      nodes: [makeNode('Retrieval:r2', 'Retrieval', { kb_ids: ['kb-1'] })],
+    });
+    const memoryIssues = collect({
+      nodes: [makeNode('Retrieval:r3', 'Retrieval', { memory_ids: ['mem-1'] })],
+    });
+
+    expect(emptyIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    // A legacy `kb_ids` binding counts as bound; a legacy memory binding is
+    // read as a memory source instead of an empty dataset.
+    expect(
+      legacyIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+    expect(
+      memoryIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+  });
+
   it('flags an Agent node without a model', () => {
     const issues = collect({
       nodes: [makeNode('Agent:a1', 'Agent', { llm_id: '' })],
@@ -887,6 +933,77 @@ describe('collectCanvasIssues: compiler template group', () => {
         (x) =>
           x.messageKey === 'knowledgeConfiguration.compilationTemplateRequired',
       ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: extractor extraction toggles', () => {
+  const extractIssues = (form: Record<string, any>) =>
+    collect({
+      nodes: [
+        makeNode('Extractor:e1', 'Extractor', { llm_id: 'model-1', ...form }),
+      ],
+    }).filter((x) => x.nodeId === 'Extractor:e1');
+
+  it('flags an enabled keywords group whose top_n is not positive', () => {
+    const issues = extractIssues({ keywords: { enabled: true, top_n: 0 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorKeywordsTopNMissing',
+      }),
+    );
+  });
+
+  it('flags enabled questions and tags groups whose top_n is not positive', () => {
+    const issues = extractIssues({
+      questions: { enabled: true },
+      tags: { enabled: true, top_n: -1, tag_file_id: 'tag-1' },
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        messageKey: 'flow.extractorQuestionsTopNMissing',
+      }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagsTopNMissing' }),
+    );
+    // A tag file is selected, so no tag-file issue.
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagFileMissing'),
+    ).toBe(false);
+  });
+
+  it('flags an enabled tags group without a tag file', () => {
+    const issues = extractIssues({ tags: { enabled: true, top_n: 3 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagFileMissing' }),
+    );
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagsTopNMissing'),
+    ).toBe(false);
+  });
+
+  it('accepts switched-off groups and enabled groups with a positive top_n', () => {
+    const issues = extractIssues({
+      keywords: { enabled: false, top_n: 0 },
+      questions: { enabled: true, top_n: 2 },
+      tags: { enabled: true, top_n: 3, tag_file_id: 'tag-1' },
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
+    ).toHaveLength(0);
+  });
+
+  it('ignores legacy groups without the enabled key', () => {
+    const issues = extractIssues({ keywords: { top_n: 0 } });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
     ).toHaveLength(0);
   });
 });
