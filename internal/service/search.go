@@ -19,11 +19,13 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
-	"strings"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // SearchService search service
@@ -102,22 +104,9 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 			}, nil
 		}
 
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, terms, keywords)
+		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, page, pageSize, terms, keywords)
 		if err != nil {
 			return nil, err
-		}
-
-		if page > 0 && pageSize > 0 {
-			start := (page - 1) * pageSize
-			end := start + pageSize
-			if start < int(total) {
-				if end > int(total) {
-					end = int(total)
-				}
-				searches = searches[start:end]
-			} else {
-				searches = []*entity.SearchListItem{}
-			}
 		}
 	}
 
@@ -177,7 +166,7 @@ func (s *SearchService) toSearchAppResponse(search *entity.SearchListItem) map[s
 		"status":        search.Status,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": map[string]interface{}(search.SearchConfig),
+		"search_config": BuildSearchConfigResponse(map[string]interface{}(search.SearchConfig)),
 		"nickname":      ownerNickname(search.Nickname, search.TenantID),
 	}
 
@@ -213,13 +202,17 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 	}
 
 	// Generate UUID for search ID (same as Python get_uuid())
-	searchID := utility.GenerateUUID()
+	searchID := common.GenerateUUID()
 
 	// Generate unique name (same as Python duplicate_name)
-	uniqueName, err := common.DuplicateName(func(name string, tid string) bool {
-		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, name, tid)
-		return len(existing) > 0
-	}, name, userID)
+	// search.name is a 128-byte column; keep generated names within it.
+	uniqueName, err := common.UniqueName(name, 128, func(candidate string) (bool, error) {
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		if err != nil {
+			return false, err
+		}
+		return len(existing) > 0, nil
+	})
 
 	if err != nil {
 		return nil, err
@@ -311,7 +304,7 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 		Name:         detail.Name,
 		Description:  detail.Description,
 		CreatedBy:    detail.CreatedBy,
-		SearchConfig: detail.SearchConfig,
+		SearchConfig: BuildSearchConfigResponse(detail.SearchConfig),
 		UpdateTime:   detail.UpdateTime,
 	}, nil
 }
@@ -397,10 +390,9 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 	}
 
 	for _, datasetID := range datasetIDs {
-		accessible = s.datasetDAO.Accessible(ctx, dao.DB, datasetID, userID)
-		if !accessible {
-			// Mirror Python's search completion endpoint message.
-			return nil, common.CodeDataError, fmt.Errorf("You don't own the dataset %s", datasetID)
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return nil, code, permissionErr
 		}
 	}
 
@@ -423,11 +415,12 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		Question:   question,
 		DatasetIDs: datasetIDs,
 		ModelID:    modelID,
-		Options:    askOptionsFromSearchConfig(searchID, searchConfig),
+		Options:    BuildAskStreamOptions(searchID, searchConfig),
 	}, common.CodeSuccess, nil
 }
 
-func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
+// BuildAskStreamOptions maps a saved search configuration to Ask retrieval options.
+func BuildAskStreamOptions(searchID string, searchConfig map[string]interface{}) AskStreamOptions {
 	opts := AskStreamOptions{
 		SearchID:       searchID,
 		DocIDs:         stringSliceFromSearchConfig(searchConfig["doc_ids"]),
@@ -457,8 +450,10 @@ func askOptionsFromSearchConfig(searchID string, searchConfig map[string]interfa
 	if value, ok := floatFromSearchConfig(searchConfig["similarity_threshold"]); ok {
 		opts.SimilarityThreshold = &value
 	}
-	if value, ok := floatFromSearchConfig(searchConfig["vector_similarity_weight"]); ok {
-		opts.VectorSimilarityWeight = &value
+	keywordsSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "keywords_similarity_weight")
+	vectorSimilarityWeight, _ := similarityWeightFromMap(searchConfig, "vector_similarity_weight")
+	if value, err := ResolveVectorSimilarityWeight(keywordsSimilarityWeight, vectorSimilarityWeight); err == nil && value != nil {
+		opts.VectorSimilarityWeight = value
 	}
 	if llmSetting, ok := searchConfigMapValue(searchConfig["llm_setting"]); ok {
 		opts.Temperature = generationFloat(llmSetting, "temperature", DefaultAskTemperature)
@@ -571,6 +566,22 @@ func floatFromSearchConfig(value interface{}) (float64, bool) {
 	}
 }
 
+// BuildSearchConfigResponse returns the public search configuration without
+// exposing the internally persisted vector weight.
+func BuildSearchConfigResponse(searchConfig map[string]interface{}) map[string]interface{} {
+	result := make(map[string]interface{}, len(searchConfig))
+	for key, value := range searchConfig {
+		result[key] = value
+	}
+	if _, exists := result["keywords_similarity_weight"]; !exists {
+		if vectorWeight, ok := floatFromSearchConfig(result["vector_similarity_weight"]); ok {
+			result["keywords_similarity_weight"] = 1 - vectorWeight
+		}
+	}
+	delete(result, "vector_similarity_weight")
+	return result
+}
+
 // UpdateSearchRequest update search request
 // Reference: api/apps/restful_apis/search_api.py::update
 // Required fields: name, search_config
@@ -603,14 +614,24 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		return nil, fmt.Errorf("cannot find search %s", searchID)
 	}
 
-	// Step 3: Check for duplicate name (if name changed)
-	// Python: if req["name"].lower() != search_app.name.lower() and len(SearchService.query(...)) >= 1
+	// Step 3: Check for duplicate name. Case-only changes are allowed, matching
+	// the dataset rename rule.
 	trimmedName := req.Name
-	if search.Name != trimmedName {
-		existing, _ := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, trimmedName, userID)
-		if len(existing) > 0 {
-			return nil, fmt.Errorf("duplicated search name")
+	available, err := common.NameAvailable(search.Name, trimmedName, func(candidate string) (bool, error) {
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		if err != nil {
+			return false, err
 		}
+		return len(existing) > 0, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	if !available {
+		return nil, fmt.Errorf("duplicated search name")
+	}
+	if err := NormalizeSimilarityWeights(req.SearchConfig); err != nil {
+		return nil, err
 	}
 
 	// Step 4: Merge search_config
@@ -662,7 +683,6 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 // GetDetail gets search details by ID including search_config
 func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
-
 	if err != nil {
 		return nil, err
 	}

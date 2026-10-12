@@ -550,7 +550,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		}
 		return "Describe page {{ page }}.", nil
 	}
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -629,7 +629,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	})
 
 	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -668,6 +668,95 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	}
 	if got := jsonItems[1]["text"]; got != "" {
 		t.Fatalf("json[1].text = %#v, want empty string placeholder", got)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_HonorsPageRanges pins that the VLM path renders
+// and transcribes only the configured page ranges. The same setup key carries
+// the canvas-debug page cap.
+func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
+	origPromptLoader := pdfVisionPromptLoader
+	origRenderer := pdfVisionPageRenderer
+	origResolver := pdfVisionModelResolver
+	origInvoker := pdfVisionChatInvoker
+	t.Cleanup(func() {
+		pdfVisionPromptLoader = origPromptLoader
+		pdfVisionPageRenderer = origRenderer
+		pdfVisionModelResolver = origResolver
+		pdfVisionChatInvoker = origInvoker
+	})
+
+	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		if want := [][]int{{2, 3}}; !reflect.DeepEqual(ranges, want) {
+			return nil, fmt.Errorf("renderer ranges = %v, want %v", ranges, want)
+		}
+		return []pdfVisionPage{
+			{PageNumber: 2, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,bbb"},
+			{PageNumber: 3, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,ccc"},
+		}, nil
+	}
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return nil, "resolved-vlm", nil, nil
+	}
+	pdfVisionChatInvoker = func(ctx context.Context, _ models.ModelDriver, _ string, _ []models.Message, _ *models.APIConfig) (*models.ChatResponse, error) {
+		answer := "page text"
+		return &models.ChatResponse{Answer: &answer}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	setups["pdf"]["pages"] = []any{[]any{float64(2), float64(3)}}
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json payload = %T, want []map[string]any", out["json"])
+	}
+	var pageNumbers []any
+	for _, item := range jsonItems {
+		pageNumbers = append(pageNumbers, item["page_number"])
+	}
+	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {
+		t.Fatalf("page numbers = %v, want %v", pageNumbers, want)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_RejectsInvalidPages pins that an invalid pages
+// value fails the VLM parse before any page is rendered. A fallback to every
+// page would send the whole PDF to the vision model.
+func TestDispatch_PDFVisionJSON_RejectsInvalidPages(t *testing.T) {
+	origRenderer := pdfVisionPageRenderer
+	t.Cleanup(func() { pdfVisionPageRenderer = origRenderer })
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		t.Errorf("renderer called with ranges %v, want no render for invalid pages", ranges)
+		return nil, fmt.Errorf("renderer must not run")
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	setups["pdf"]["pages"] = "abc"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "pdf vision pages") {
+		t.Fatalf("Invoke error = %v, want pdf vision pages error", err)
 	}
 }
 
@@ -768,6 +857,96 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	items, ok := out["json"].([]map[string]any)
 	if !ok || len(items) == 0 {
 		t.Fatalf("json payload = %#v, want non-empty structured items", out["json"])
+	}
+}
+
+func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.T) {
+	withSSRFBypass(t)
+	var gotBackend, gotServerURL, gotAuth string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == "/file_parse" {
+			gotAuth = r.Header.Get("Authorization")
+			if err := r.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("ParseMultipartForm: %v", err)
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			gotBackend = r.FormValue("backend")
+			gotServerURL = r.FormValue("server_url")
+			buf := new(bytes.Buffer)
+			zw := zip.NewWriter(buf)
+			f, _ := zw.Create("content_list.json")
+			_, _ = f.Write([]byte(`[{"type":"text","text":"http-client"}]`))
+			_ = zw.Close()
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(buf.Bytes())
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer server.Close()
+
+	origResolver := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolver }()
+	baseURL := server.URL
+	apiKey := `{"mineru_backend":"vlm-http-client","mineru_server_url":"http://vllm-host:30000"}`
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	setups["pdf"]["output_format"] = "markdown"
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := gotBackend, "vlm-http-client"; got != want {
+		t.Fatalf("backend = %q, want %q", got, want)
+	}
+	if got, want := gotServerURL, "http://vllm-host:30000"; got != want {
+		t.Fatalf("server_url = %q, want %q", got, want)
+	}
+	if gotAuth != "" {
+		t.Fatalf("Authorization = %q, want empty for provider JSON api_key", gotAuth)
+	}
+	if got := out["output_format"]; got != "json" {
+		t.Fatalf("output_format = %v, want json", got)
+	}
+	requireJSONText(t, out, "http-client")
+}
+
+func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
+	origResolver := resolveMinerUModelForDispatch
+	defer func() { resolveMinerUModelForDispatch = origResolver }()
+	baseURL := "http://mineru-api:8888"
+	apiKey := `{"mineru_backend":"hybrid-http-client"}`
+	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "mineru"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "sample.pdf",
+		"tenant_id": "test-tenant",
+	})
+	if err == nil {
+		t.Fatal("Invoke: want error when mineru_server_url is missing, got nil")
+	}
+	if !strings.Contains(err.Error(), "mineru_server_url") {
+		t.Fatalf("error = %q, want mineru_server_url context", err.Error())
 	}
 }
 

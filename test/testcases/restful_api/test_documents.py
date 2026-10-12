@@ -14,17 +14,20 @@
 #  limitations under the License.
 #
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import string
+import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from contextlib import ExitStack
 from pathlib import Path
-import uuid
 
-from openpyxl import Workbook
 import pytest
 import requests
+from openpyxl import Workbook
 from requests_toolbelt import MultipartEncoder
-from test.testcases.configs import DEFAULT_PARSER_CONFIG, DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, VERSION
+from utils import wait_for
+from utils.file_utils import create_txt_file
+
+from test.testcases.configs import DOCUMENT_NAME_LIMIT, HOST_ADDRESS, INVALID_API_TOKEN, INVALID_ID_32, VERSION
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import compare_by_hash
@@ -39,8 +42,6 @@ from test.testcases.utils.file_utils import (
     create_pdf_file,
     create_ppt_file,
 )
-from utils import wait_for
-from utils.file_utils import create_txt_file
 
 
 @pytest.mark.p1
@@ -491,7 +492,7 @@ def test_documents_upload_error_contract(rest_client, create_dataset, tmp_path):
     assert filename_empty_res.status_code == 200
     filename_empty_payload = filename_empty_res.json()
     assert filename_empty_payload["code"] == 101, filename_empty_payload
-    expected_message = "No file part!" if IS_GO_PROXY else "No file selected!"
+    expected_message = "No file part!"
     assert filename_empty_payload["message"] == expected_message, filename_empty_payload
 
 
@@ -583,8 +584,8 @@ def test_documents_update_invalid_dataset_and_document_contract(rest_client, cre
     )
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_body = invalid_dataset_res.json()
-    assert invalid_dataset_body["code"] == 102, invalid_dataset_body
-    assert "you don't own the dataset" in invalid_dataset_body["message"], invalid_dataset_body
+    assert invalid_dataset_body["code"] == 404, invalid_dataset_body
+    assert invalid_dataset_body["message"] == "Resource not found", invalid_dataset_body
 
     invalid_document_res = rest_client.patch(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}",
@@ -820,28 +821,11 @@ def test_documents_update_parser_config_contract(rest_client, create_dataset, tm
             list_body = list_res.json()
             assert list_body["code"] == 0, (parser_config, list_body)
             doc_parser_config = list_body["data"]["docs"][0]["parser_config"]
-            if IS_GO_PROXY:
-                assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
-                assert "raptor" not in doc_parser_config, (parser_config, list_body)
-                assert "graphrag" not in doc_parser_config, (parser_config, list_body)
-                continue
-            if parser_config == {}:
-                assert doc_parser_config == DEFAULT_PARSER_CONFIG, (parser_config, list_body)
-            else:
-                for key, value in parser_config.items():
-                    if key in {"graphrag", "raptor"}:
-                        assert key not in doc_parser_config, (parser_config, list_body)
-                        continue
-                    if isinstance(value, dict):
-                        for sub_key, sub_value in value.items():
-                            assert doc_parser_config[key][sub_key] == sub_value, (parser_config, list_body)
-                    else:
-                        assert doc_parser_config[key] == value, (parser_config, list_body)
+            assert isinstance(doc_parser_config, dict) and doc_parser_config, (parser_config, list_body)
+            assert "raptor" not in doc_parser_config, (parser_config, list_body)
+            assert "graphrag" not in doc_parser_config, (parser_config, list_body)
         else:
-            if IS_GO_PROXY:
-                assert body["message"] in expected_message, (parser_config, body)
-            else:
-                assert body["message"] == expected_message, (parser_config, body)
+            assert body["message"] in expected_message, (parser_config, body)
 
 
 @pytest.mark.p2
@@ -1023,8 +1007,8 @@ def test_document_metadata_config_contract(rest_client, create_document):
     )
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "you don't own the dataset", invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
     invalid_document_res = rest_client.put(
         f"/datasets/{dataset_id}/documents/{INVALID_ID_32}/metadata/config",
@@ -1044,7 +1028,9 @@ def test_document_metadata_config_contract(rest_client, create_document):
     update_body = update_res.json()
     assert update_body["code"] == 0, update_body
     parser_config = update_body["data"]["parser_config"]
-    assert parser_config["metadata"] == update_payload["metadata"], update_body
+    # Go scopes metadata onto the Extractor node rather than a flat key.
+    scoped = parser_config.get("Extractor:AutoExtractDefault", {})
+    assert scoped.get("metadata") == update_payload["metadata"], update_body
 
 
 @pytest.mark.p2
@@ -1501,15 +1487,15 @@ def test_documents_download_requires_auth_and_invalid_id_contract(rest_client, c
     invalid_doc_res = _download_document_to_file(rest_client, dataset_id, "invalid_document_id", invalid_doc_path)
     assert invalid_doc_res.status_code == 200
     invalid_doc_payload = invalid_doc_res.json()
-    assert invalid_doc_payload["code"] == 102, invalid_doc_payload
-    assert invalid_doc_payload["message"] == "document not found", invalid_doc_payload
+    assert invalid_doc_payload["code"] == 404, invalid_doc_payload
+    assert invalid_doc_payload["message"] == "Resource not found", invalid_doc_payload
 
     invalid_dataset_path = tmp_path / "invalid_dataset_download.txt"
     invalid_dataset_res = _download_document_to_file(rest_client, "invalid_dataset_id", document_id, invalid_dataset_path)
     assert invalid_dataset_res.status_code == 200
     invalid_dataset_payload = invalid_dataset_res.json()
-    assert invalid_dataset_payload["code"] == 102, invalid_dataset_payload
-    assert invalid_dataset_payload["message"] == "document not found", invalid_dataset_payload
+    assert invalid_dataset_payload["code"] == 404, invalid_dataset_payload
+    assert invalid_dataset_payload["message"] == "Resource not found", invalid_dataset_payload
 
 
 @pytest.mark.p3

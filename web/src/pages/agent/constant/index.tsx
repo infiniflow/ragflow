@@ -25,6 +25,8 @@ export {
 
 export * from './pipeline';
 
+import { DocGeneratorOutputFormat } from './doc-generator';
+
 import { ModelVariableType } from '@/constants/knowledge';
 import { t } from 'i18next';
 import {
@@ -89,6 +91,10 @@ export const initialRetrievalValues = {
   top_n: 8,
   rerank_candidates_count: 64,
   dataset_ids: [],
+  // Both bindings default to an empty array rather than being absent: the
+  // checklist treats a missing key as unbound, and without a default an
+  // unbound node would never be written back with the key.
+  memory_ids: [],
   rerank_id: '',
   ...initialSimilarityThresholdValue,
   ...initialKeywordsSimilarityWeightValue,
@@ -238,6 +244,73 @@ export const initialSofyaValues = {
     json: {
       value: [],
       type: 'Array<Object>',
+    },
+  },
+};
+
+export enum Search1APIChannel {
+  General = 'general',
+  News = 'news',
+}
+
+// Search services each Search1API channel accepts. The agent may pick any of
+// them at call time; the node value is only the default.
+export const Search1APIServices: Record<Search1APIChannel, string[]> = {
+  [Search1APIChannel.General]: [
+    'google',
+    'bing',
+    'bingcn',
+    'duckduckgo',
+    'yahoo',
+    'yandex',
+    'youtube',
+    'x',
+    'reddit',
+    'github',
+    'arxiv',
+    'wechat',
+    'bilibili',
+    'imdb',
+    'wikipedia',
+    'baidu',
+    '360',
+    'quark',
+  ],
+  [Search1APIChannel.News]: [
+    'google',
+    'bing',
+    'duckduckgo',
+    'yahoo',
+    'hackernews',
+    'reuters',
+  ],
+};
+
+export const initialSearch1APISearchValues = {
+  api_key: '',
+  query: AgentGlobals.SysQuery,
+  channel: Search1APIChannel.General,
+  search_service: 'google',
+  top_n: 10,
+  outputs: {
+    formalized_content: {
+      value: '',
+      type: 'string',
+    },
+    json: {
+      value: [],
+      type: 'Array<Object>',
+    },
+  },
+};
+
+export const initialSearch1APICrawlValues = {
+  api_key: '',
+  url: '',
+  outputs: {
+    json: {
+      value: {},
+      type: 'object',
     },
   },
 };
@@ -776,7 +849,6 @@ export const RestrictedUpstreamMap = {
   [Operator.Message]: [
     Operator.Begin,
     Operator.Message,
-    Operator.Retrieval,
     Operator.RewriteQuestion,
     Operator.Categorize,
   ],
@@ -798,6 +870,8 @@ export const RestrictedUpstreamMap = {
   [Operator.KeenableSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.YouComSearch]: [Operator.Begin, Operator.Retrieval],
   [Operator.SofyaSearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APISearch]: [Operator.Begin, Operator.Retrieval],
+  [Operator.Search1APICrawl]: [Operator.Begin],
   [Operator.ExeSQL]: [Operator.Begin],
   [Operator.Switch]: [Operator.Begin],
   [Operator.WenCai]: [Operator.Begin],
@@ -857,6 +931,8 @@ export const NodeMap = {
   [Operator.KeenableSearch]: 'ragNode',
   [Operator.YouComSearch]: 'ragNode',
   [Operator.SofyaSearch]: 'ragNode',
+  [Operator.Search1APISearch]: 'ragNode',
+  [Operator.Search1APICrawl]: 'ragNode',
   [Operator.ExeSQL]: 'ragNode',
   [Operator.Switch]: 'switchNode',
   [Operator.WenCai]: 'ragNode',
@@ -1119,7 +1195,7 @@ export enum AgentVariableType {
 }
 
 export const initialDocGeneratorValues = {
-  output_format: 'pdf',
+  output_format: DocGeneratorOutputFormat.Pdf,
   content: '',
   filename: '',
   header_text: '',
@@ -1127,7 +1203,6 @@ export const initialDocGeneratorValues = {
   watermark_text: '',
   add_page_numbers: true,
   add_timestamp: true,
-  include_download_info_in_content: false,
   font_size: 12,
   outputs: {
     doc_id: { type: 'string' },

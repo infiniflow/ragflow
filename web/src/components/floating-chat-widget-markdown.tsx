@@ -114,6 +114,12 @@ const FloatingChatWidgetMarkdown = ({
           return;
         }
         if (!documentUrl) return;
+        // Web page documents carry their own url; opening the internal
+        // /document route for them lands on an empty page.
+        if (/^https?:\/\//i.test(documentUrl)) {
+          window.open(documentUrl, '_blank', 'noopener,noreferrer');
+          return;
+        }
         window.open(
           `/document/${documentId}?ext=${fileExtension}&resource=${'document'}`,
           '_blank',
@@ -139,7 +145,12 @@ const FloatingChatWidgetMarkdown = ({
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
-      const chunkItem = reference?.chunks?.[chunkIndex];
+      let chunkItem = reference?.chunks?.[chunkIndex];
+      if (!chunkItem) {
+        chunkItem = reference?.chunks?.find(
+          (x: any) => x?.chunk_id === chunkIndex,
+        ) as IReferenceChunk;
+      }
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs

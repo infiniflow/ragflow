@@ -66,7 +66,7 @@ During retrieval testing, hybrid search is used to retrieve chunks created by th
 
 #### Similarity Threshold
 
-This setting is the threshold for retrieving chunks. Chunks with similarity below the threshold are filtered out. By default, the threshold is set to `0.2`. This means only chunks with a hybrid similarity score of 20 or higher are retrieved.
+This setting is the threshold for retrieving chunks. Chunks with similarity below the threshold are filtered out. By default, the threshold is set to `0.2`. This means only chunks with a hybrid similarity score of `0.2` or higher are retrieved.
 
 #### Vector Similarity Weight
 
@@ -134,4 +134,4 @@ Please note that some of your settings may consume a large amount of time. If yo
 - On the dataset configuration page, turn off **Use RAPTOR to enhance retrieval**.
 - Extracting the knowledge graph (GraphRAG) is time-consuming.
 - On the dataset configuration page, disable **Auto keyword** and **Auto question**, because both depend on the LLM.
-- v0.17.0+: If all PDFs in your dataset are pure text and do not require GPU-intensive processing such as OCR (optical character recognition), TSR (table structure recognition), or DLA (document layout analysis), select **Naive** instead of **DeepDoc** or other time-consuming large model options in the **Document parser** drop-down menu. This significantly reduces document parsing time.
+- v0.17.0+: If all PDFs in your dataset are pure text and do not require compute-intensive processing such as OCR (optical character recognition), TSR (table structure recognition), or DLA (document layout analysis), select **Naive** instead of **DeepDoc** or other time-consuming large model options in the **Document parser** drop-down menu. This significantly reduces document parsing time. In the RAGFlow open-source 1.0 release, DeepDoc performs these operations with CPU inference.

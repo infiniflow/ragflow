@@ -249,11 +249,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 	}
 	if req.Model != "model" {
-		modelType := entity.ModelTypeChat
-		if s.pipeline.ModelProviderSvc.isImage2TextLLM(ctx, dialog.TenantID, resolvedModel) {
-			modelType = entity.ModelTypeImage2Text
-		}
-		if _, mErr := s.pipeline.ModelProviderSvc.modelSolver().ResolveModelConfig(ctx, dialog.TenantID, modelType, resolvedModel); mErr != nil {
+		if _, mErr := s.pipeline.ModelFactory.ResolveInfo(ctx, ModelAccess{UserID: userID, TenantID: dialog.TenantID}, entity.ModelTypeChat, resolvedModel); mErr != nil {
 			s.writeArgError(c, fmt.Sprintf("`llm_id` %s doesn't exist", req.Model))
 			return
 		}
@@ -377,6 +373,9 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 
 				if result.Final {
 					finalContent := strings.TrimSpace(result.Answer)
+					if result.AnswerIsAuthoritative {
+						finalContent = strings.TrimSpace(ExtractVisibleAnswer(result.Answer))
+					}
 					fullContent = finalContent
 					finalReference = []FormattedChunk{}
 					if ref, ok := result.Reference["chunks"]; ok {
@@ -385,7 +384,7 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 						}
 					}
 					s.enrichChunksWithDocumentMetadata(ctx, finalReference, dialog.TenantID, openaiReq.IncludeRefMetadata, openaiReq.MetadataFields)
-					completionTok = tokenizer.NumTokensFromString(result.Answer)
+					completionTok = tokenizer.NumTokensFromString(finalContent)
 					events <- OpenAIStreamEvent{
 						Kind:             OpenAIEventFinal,
 						FinalAnswer:      finalContent,
@@ -454,6 +453,9 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 		}
 
 		content := strings.TrimSpace(finalResult.Answer)
+		if finalResult.AnswerIsAuthoritative {
+			content = strings.TrimSpace(ExtractVisibleAnswer(finalResult.Answer))
+		}
 		completionTokens := tokenizer.NumTokensFromString(content)
 		resp := &OpenAICompletionResponse{
 			Model:            openaiReq.Model,

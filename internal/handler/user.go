@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/server"
 	"ragflow/internal/server/local"
-	"ragflow/internal/utility"
 	"strconv"
 	"time"
 
@@ -104,7 +103,7 @@ func (h *UserHandler) Register(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, err.Error())
 		return
 	}
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
@@ -178,7 +177,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		operationLog.ErrorCode = uint16(common.CodeServerError)
@@ -265,7 +264,7 @@ func (h *UserHandler) LoginByEmail(c *gin.Context) {
 		operationLog.DurationMS = time.Since(startAt).Milliseconds()
 		return
 	}
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		operationLog.ErrorCode = uint16(common.CodeServerError)
@@ -718,7 +717,7 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeServerError, false, "Failed to generate auth token")
 		return
@@ -726,13 +725,6 @@ func (h *UserHandler) ForgotResetPassword(c *gin.Context) {
 	c.Header("Authorization", authToken)
 	c.Header("Access-Control-Expose-Headers", "Authorization")
 
-	// GetUserProfile includes the password hash and the live access_token,
-	// which must never appear in the reset response body (the token is
-	// already in the Authorization header). Mirror the Python contract
-	// `user.to_safe_dict(for_self=True)` by stripping those fields before
-	// writing. PR #15290 review.
 	profile := h.userService.GetUserProfile(ctx, user)
-	delete(profile, "password")
-	delete(profile, "access_token")
 	common.SuccessWithData(c, profile, "Password reset successful. Logged in.")
 }

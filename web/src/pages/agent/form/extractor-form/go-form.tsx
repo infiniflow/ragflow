@@ -62,18 +62,21 @@ import { canSelectTagFile, useTagFileTree } from './use-tag-file-tree';
 export const FormSchema = z.object({
   keywords: z
     .object({
+      enabled: z.union([z.number(), z.boolean()]).optional(),
       top_n: z.number().optional(),
       system_prompt: z.string().optional(),
     })
     .optional(),
   questions: z
     .object({
+      enabled: z.union([z.number(), z.boolean()]).optional(),
       top_n: z.number().optional(),
       system_prompt: z.string().optional(),
     })
     .optional(),
   tags: z
     .object({
+      enabled: z.union([z.number(), z.boolean()]).optional(),
       top_n: z.number().optional(),
       tag_file_id: z.string().optional(),
     })
@@ -219,6 +222,18 @@ const GoExtractorForm = ({
   });
   const { treeData, loadData } = useTagFileTree(tagFileId);
 
+  const keywordsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'keywords.enabled',
+  });
+  const questionsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'questions.enabled',
+  });
+  const tagsEnabledRaw = useWatch({
+    control: form.control,
+    name: 'tags.enabled',
+  });
   const summaryEnabledRaw = useWatch({
     control: form.control,
     name: 'summary.enabled',
@@ -227,6 +242,11 @@ const GoExtractorForm = ({
     control: form.control,
     name: 'metadata.enabled',
   });
+  const keywordsEnabled =
+    keywordsEnabledRaw === true || keywordsEnabledRaw === 1;
+  const questionsEnabled =
+    questionsEnabledRaw === true || questionsEnabledRaw === 1;
+  const tagsEnabled = tagsEnabledRaw === true || tagsEnabledRaw === 1;
   const summaryEnabled = summaryEnabledRaw === true || summaryEnabledRaw === 1;
   const metadataEnabled =
     metadataEnabledRaw === true || metadataEnabledRaw === 1;
@@ -248,6 +268,27 @@ const GoExtractorForm = ({
       form.setValue('summary.system_prompt', t('flow.prompts.system.summary'));
     }
   }, [form, t]);
+
+  const handleKeywordsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('keywords.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleQuestionsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('questions.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
+
+  const handleTagsSwitch = useCallback(
+    (checked: boolean) => {
+      form.setValue('tags.enabled', checked, { shouldDirty: true });
+    },
+    [form],
+  );
 
   const handleSummarySwitch = useCallback(
     (checked: boolean) => {
@@ -272,7 +313,17 @@ const GoExtractorForm = ({
 
         <div className="space-y-4">
           <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse title={t('flow.keywords')} defaultOpen>
+            <Collapse
+              title={t('flow.keywords')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={keywordsEnabled}
+                  onCheckedChange={handleKeywordsSwitch}
+                  data-testid="extractor-keywords-switch"
+                />
+              }
+            >
               <div className="space-y-4">
                 <AutoKeywordsFormField name="keywords.top_n" />
                 <RAGFlowFormItem
@@ -290,7 +341,17 @@ const GoExtractorForm = ({
           </Card>
 
           <Card as="section" className="bg-bg-card px-5 py-2.5 border-none">
-            <Collapse title={t('flow.questions')} defaultOpen>
+            <Collapse
+              title={t('flow.questions')}
+              defaultOpen
+              rightContent={
+                <Switch
+                  checked={questionsEnabled}
+                  onCheckedChange={handleQuestionsSwitch}
+                  data-testid="extractor-questions-switch"
+                />
+              }
+            >
               <div className="space-y-4">
                 <AutoQuestionsFormField name="questions.top_n" />
                 <RAGFlowFormItem
@@ -311,6 +372,13 @@ const GoExtractorForm = ({
             <Collapse
               title={t('flow.tags') || t('knowledgeDetails.autoTags')}
               defaultOpen
+              rightContent={
+                <Switch
+                  checked={tagsEnabled}
+                  onCheckedChange={handleTagsSwitch}
+                  data-testid="extractor-tags-switch"
+                />
+              }
             >
               <div className="space-y-4">
                 <SliderInputFormField

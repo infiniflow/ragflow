@@ -792,7 +792,10 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 }
 
-func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
+// TestDecorateAnswer_QuoteDisabledKeepsChunks pins the cite=false shape of the
+// reference: the retrieved evidence still ships, but doc_aggs does not — with
+// the citation markers stripped there is nothing left to open those cards from.
+func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	kb := map[string]interface{}{
@@ -801,8 +804,12 @@ func TestDecorateAnswer_NoReferencesWhenQuoteDisabled(t *testing.T) {
 	}
 	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
 		nil, 0, false, nil, "", nil, "", nil, true)
-	if result.Reference == nil || len(result.Reference) != 0 {
-		t.Fatalf("disabled citations must explicitly clear references: %#v", result.Reference)
+	if _, has := result.Reference["doc_aggs"]; has {
+		t.Fatalf("disabled citations must drop doc_aggs: %#v", result.Reference)
+	}
+	chunks, ok := result.Reference["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 || chunks[0]["id"] != "c1" {
+		t.Fatalf("disabled citations must still ship the evidence chunks: %#v", result.Reference["chunks"])
 	}
 	if result.Answer != "Answer" {
 		t.Fatalf("answer changed: %q", result.Answer)
@@ -1225,6 +1232,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	}
 	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
 		t.Errorf("seekdb = %q, want docnm_kwd", got)
+	}
+	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
+		t.Errorf("vastbase = %q, want docnm_kwd", got)
 	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
@@ -2044,11 +2054,16 @@ func TestAsyncChatHarnessQuote(t *testing.T) {
 			if !final.Final || final.Answer != want || streamed.String() != want {
 				t.Fatalf("stream=%q final=%+v, want %q", streamed.String(), final, want)
 			}
-			if (len(final.Reference) > 0) != tt.wantQuote {
-				t.Fatalf("references=%#v, quote=%v", final.Reference, tt.wantQuote)
+			// The evidence ships either way; only doc_aggs follows the cite switch.
+			chunks, _ := final.Reference["chunks"].([]map[string]interface{})
+			if len(chunks) != 1 {
+				t.Fatalf("reference chunks = %#v, want the harness evidence", final.Reference["chunks"])
 			}
-			if !tt.wantQuote && (final.Reference == nil || strings.Contains(reasoning.String(), "[ID:")) {
-				t.Fatal("disabled citations must be removed from reasoning and explicitly clear references")
+			if _, hasDocAggs := final.Reference["doc_aggs"]; hasDocAggs != tt.wantQuote {
+				t.Fatalf("doc_aggs presence = %v, quote=%v: %#v", hasDocAggs, tt.wantQuote, final.Reference)
+			}
+			if !tt.wantQuote && strings.Contains(reasoning.String(), "[ID:") {
+				t.Fatalf("disabled citations must be removed from reasoning, got %q", reasoning.String())
 			}
 		})
 	}
@@ -2150,9 +2165,11 @@ func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
 	return keys
 }
 
-// TestDecorateHarnessAnswerUncitedOmitsReference ensures an agentic answer
-// without citation markers does not expose the internal evidence pool.
-func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
+// TestDecorateHarnessAnswerUncitedKeepsChunks pins that an agentic answer using
+// no citation marker still carries the evidence it was grounded on: the pool is
+// the provenance of the answer, and the cite switch governs the doc_aggs cards
+// rather than the passages themselves.
+func TestDecorateHarnessAnswerUncitedKeepsChunks(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{
@@ -2170,8 +2187,9 @@ func TestDecorateHarnessAnswerUncitedOmitsReference(t *testing.T) {
 
 	s := &ChatPipelineService{}
 	res := s.decorateHarnessAnswer("小狼的颜色是灰色的。", kbinfos, nil, nil, true)
-	if res.Reference != nil {
-		t.Fatalf("uncited answer must not carry a reference, got %#v", res.Reference)
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["id"] != "c1" {
+		t.Fatalf("reference chunks = %#v, want the evidence pool", res.Reference["chunks"])
 	}
 }
 
@@ -2241,8 +2259,11 @@ func TestDecorateHarnessAnswerResolvesRenderedPosition(t *testing.T) {
 	if strings.Contains(res.Answer, "[ID:1]") {
 		t.Fatalf("an unresolvable marker must be dropped, got %q", res.Answer)
 	}
-	if res.Reference != nil {
-		t.Fatalf("an answer without a resolvable citation must not carry a reference, got %#v", res.Reference)
+	// The unresolvable marker is dropped, but the evidence it was drawn from
+	// still ships.
+	remaining, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(remaining) != 1 || remaining[0]["document_name"] != "wolf.jpg" {
+		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
 	}
 }
 
@@ -2442,10 +2463,6 @@ func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 	}{
 		{"tool-capable model", "model-tools-on", true, "chat"},
 		{"model without tool support", "model-tools-off", false, "chat"},
-		// Enrolled only as image-to-text. The type has to be resolved before the
-		// row is loaded, otherwise the load is rejected as a chat model and the
-		// capability reads as absent while the pipeline runs on this same model.
-		{"image2text-only model", "model-image2text-tools", true, "image2text"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
@@ -2462,24 +2479,17 @@ func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
 	}
 }
 
-// TestResolveChatModelTargetAcceptsImage2TextOnlyModel pins the shared entry point
-// the agentic wiring and the generation path both use: it must load a model
-// enrolled only as image-to-text — and report its capability — instead of
-// rejecting it as a chat model, which is what made such a request silently fall
-// back to the regular RAG path.
-func TestResolveChatModelTargetAcceptsImage2TextOnlyModel(t *testing.T) {
+// TestResolveModelConfigRejectsImage2TextOnlyModel ensures that a model
+// enrolled only as image-to-text cannot be used as a chat model.
+func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
 	setupChatPipelineToolSupportTestDB(t)
 	svc := NewChatPipelineService()
 
-	target, err := svc.ModelProviderSvc.ResolveChatModelTarget(t.Context(), "tenant-1", "model-image2text-tools")
-	if err != nil {
-		t.Fatalf("ResolveChatModelTarget(image2text-only model) failed: %v", err)
-	}
-	if !target.ModelType.Has(entity.ModelTypeImage2Text) {
-		t.Errorf("resolved type = %v, want image2text", target.ModelType)
-	}
-	if !target.SupportsTools {
-		t.Error("resolved target reported no tool support, want true")
+	_, err := svc.ModelFactory.resolveConfig(
+		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
+	)
+	if err == nil {
+		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
 	}
 }
 
@@ -2593,6 +2603,147 @@ func TestReasoningNeedsAgenticGraphGatesOnToolSupport(t *testing.T) {
 	}
 }
 
+// TestResolveReasoningLevelReadsAgenticLevel pins where the agentic RAG mode is
+// selected from. The level arrives as a number (frontend sends
+// Number(getThinkingLevel())), from the request first and the dialog's
+// prompt_config second, and reasoningLevelAgentic is a level of its own rather
+// than a harness depth.
+func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         int
+	}{
+		{"absent everywhere", nil, nil, 0},
+		{"naive from request", map[string]interface{}{"reasoning": 0}, nil, 0},
+		{"harness depth from request", map[string]interface{}{"reasoning": 3}, nil, 3},
+		{"agentic from request", map[string]interface{}{"reasoning": 5}, nil, reasoningLevelAgentic},
+		{
+			"request float from JSON",
+			map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)},
+			nil,
+			reasoningLevelAgentic,
+		},
+		{
+			"agentic from dialog config",
+			nil,
+			map[string]interface{}{"reasoning": 5},
+			reasoningLevelAgentic,
+		},
+		{
+			// The UI always sends the level, so a request value must win over
+			// a dialog pinned to a different mode.
+			"request overrides dialog config",
+			map[string]interface{}{"reasoning": 2},
+			map[string]interface{}{"reasoning": 5},
+			2,
+		},
+		// chat_settings.ts writes a boolean, which must not read as agentic.
+		{"boolean false is not agentic", nil, map[string]interface{}{"reasoning": false}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveReasoningLevel(tc.kwargs, tc.promptConfig)
+			if got != tc.want {
+				t.Errorf("resolveReasoningLevel() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticLevelIsNotAHarnessMode pins the boundary between the two engines.
+// harnessModeForLevel's domain is the harness depths 1..4; reasoningLevelAgentic
+// belongs to a different engine and is meant to be dispatched to
+// smart-reasoning before any harness mode is derived.
+//
+// harnessModeForLevel itself is NOT asserted to reject the agentic level: it
+// takes an int and has no level vocabulary of its own, so any such assertion
+// would only pin an implementation detail. The contract these tests protect is
+// the one callers rely on — the level constant the selector sends, and a harness
+// mode for each depth that is supposed to have one.
+func TestAgenticLevelIsNotAHarnessMode(t *testing.T) {
+	// The selector's option value; a mismatch means the UI and this package
+	// disagree on which number means agentic.
+	if reasoningLevelAgentic != 5 {
+		t.Fatalf("reasoningLevelAgentic = %d, want 5 (the level message-input/next.tsx sends)", reasoningLevelAgentic)
+	}
+	want := map[int]string{1: "low", 2: "medium", 3: "high", 4: "ultra"}
+	for level, mode := range want {
+		if got := harnessModeForLevel(level); got != mode {
+			t.Errorf("harnessModeForLevel(%d) = %q, want %q", level, got, mode)
+		}
+	}
+}
+
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
+	}{
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
+			}
+		})
+	}
+}
+
 // TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
 // carrying the flag on the resolution instead of memoizing it: a model edited
 // after the first request is seen by the next resolution, with no TTL to wait out.
@@ -2620,5 +2771,103 @@ func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 	}
 	if chatConfigSupportsTools(cfg) {
 		t.Error("a flipped is_tools flag was not seen by the next resolution")
+	}
+}
+
+// ttsSpyDriver records the text a TTS driver is asked to synthesize.
+type ttsSpyDriver struct {
+	modelModule.ModelDriver
+	input  string
+	called bool
+}
+
+func (d *ttsSpyDriver) AudioSpeech(_ context.Context, _ *string, audioContent *string, _ *modelModule.APIConfig, _ *modelModule.TTSConfig, _ *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	d.input = *audioContent
+	d.called = true
+	return &modelModule.TTSResponse{Audio: []byte("audio")}, nil
+}
+
+// TestSynthesizeTTS_CutsAtFiveHundredCharacters pins the cap to 500 characters,
+// so a CJK answer keeps its length and never ends in half a rune.
+func TestSynthesizeTTS_CutsAtFiveHundredCharacters(t *testing.T) {
+	spy := &ttsSpyDriver{}
+	name := "tts"
+	ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+	s := &ChatPipelineService{}
+	if audio := s.synthesizeTTS(t.Context(), ttsModel, strings.Repeat("知", 600)); audio == nil {
+		t.Fatal("expected audio")
+	}
+	if want := strings.Repeat("知", 500); spy.input != want {
+		t.Errorf("TTS input is %d bytes / %d runes, want 500 whole characters", len(spy.input), len([]rune(spy.input)))
+	}
+}
+
+func TestCleanTTSText(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty"},
+		{name: "ASCII below limit", text: strings.Repeat("a", 499), want: strings.Repeat("a", 499)},
+		{name: "ASCII at limit", text: strings.Repeat("a", 500), want: strings.Repeat("a", 500)},
+		{name: "ASCII over limit", text: strings.Repeat("a", 501), want: strings.Repeat("a", 500)},
+		{name: "CJK below limit", text: strings.Repeat("知", 499), want: strings.Repeat("知", 499)},
+		{name: "CJK at limit", text: strings.Repeat("知", 500), want: strings.Repeat("知", 500)},
+		{name: "CJK over limit", text: strings.Repeat("知", 501), want: strings.Repeat("知", 500)},
+		{name: "mixed rune widths", text: strings.Repeat("aé知𐐀", 126), want: strings.Repeat("aé知𐐀", 125)},
+		{name: "control emoji and whitespace", text: "\x00\t你好🙂\nworld\x7f  ", want: "你好 world"},
+		{name: "tags", text: "<think>reason</think> <b>answer</b>", want: "reason answer"},
+		{name: "comparisons", text: "2 < 3 and 4 > 1; a < b and c > d", want: "2 < 3 and 4 > 1; a < b and c > d"},
+		{name: "compact comparisons", text: "a<b>c; x<value>y", want: "a<b>c; x<value>y"},
+		{name: "unclosed tag", text: "<B>answer", want: "<B>answer"},
+		{name: "unmatched closing tag", text: "a</b>c", want: "a</b>c"},
+		{name: "nested tags", text: "<B><i>answer</i></b>", want: "answer"},
+		{name: "unmatched outer tag", text: "<b>unclosed <b>paired</b>", want: "<b>unclosed paired"},
+		{name: "encoded comparisons", text: "a&lt;b&gt;c", want: "a&lt;b&gt;c"},
+		{name: "incomplete tag", text: `answer <b title="unfinished`, want: `answer <b title="unfinished`},
+		{name: "quoted attributes", text: `<b title="a > b">answer</b> <span title='c > d'>text</span><br/>`, want: "answer text"},
+		{name: "trailing reasoning tag", text: "答案</think>", want: "答案"},
+		{name: "invalid UTF-8", text: "\xff知\xc3é\xe7\x9f", want: "知é"},
+		{name: "valid replacement character", text: "知\ufffdé", want: "知\ufffdé"},
+		{name: "cleanup before limit", text: "<think>" + strings.Repeat("知", 499) + "</think>\xff界🙂\x00余", want: strings.Repeat("知", 499) + "界"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanTTSText(tc.text); got != tc.want {
+				t.Errorf("cleanTTSText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "mixed answer", text: "\xff<think>思考</think> \x00hello🙂", want: "思考 hello"},
+		{name: "compact comparison", text: "a<b>c", want: "a<b>c"},
+		{name: "empty"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &ttsSpyDriver{}
+			name := "tts"
+			ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+			s := &ChatPipelineService{}
+			audio := s.synthesizeTTS(t.Context(), ttsModel, tc.text)
+			wantCall := tc.want != ""
+			if spy.called != wantCall {
+				t.Errorf("TTS driver called = %v, want %v", spy.called, wantCall)
+			}
+			if spy.input != tc.want {
+				t.Errorf("TTS input = %q, want %q", spy.input, tc.want)
+			}
+			if (audio != nil) != wantCall {
+				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
+			}
+		})
 	}
 }

@@ -315,11 +315,11 @@ func (m *sentencePieceModel) parseNormalizerSpec(raw []byte) error {
 				m.addDummyPrefix = on
 			case 4:
 				m.removeExtraWhitespaces = on
-			case 5:
+			default:
 				m.escapeWhitespaces = on
 			}
 		default:
-			if err := r.skip(wire); err != nil {
+			if err = r.skip(wire); err != nil {
 				return fmt.Errorf("sentencepiece: normalizer_spec: %w", err)
 			}
 		}
@@ -850,7 +850,7 @@ func readTokenizerAsset(names []string, pinKey string, pins map[string]string) (
 		}
 		return candidate, raw, nil
 	}
-	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run ragflow_deps/download_go_deps.py` or set %s to a directory holding them; tried: %s",
+	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run ragflow_deps/download_deps.py` or set %s to a directory holding them; tried: %s",
 		common.EnvModelAssetsDir, strings.Join(tried, ", "))
 }
 

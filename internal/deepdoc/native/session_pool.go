@@ -258,16 +258,21 @@ func recKeyOf(modelPath, inName string, inShape []int64, outName string) recKey 
 }
 
 const (
-	// recMaxShapePools caps distinct (modelPath, width) pools. Unlike the
+	// recMaxShapePools caps distinct (modelPath, N, imgW) pools. Unlike the
 	// fixed-shape DLA/TSR models, a long-running server ingesting many
 	// differently-sized text lines would otherwise pin one pooled session (and
-	// its ORT tensors) per distinct width forever. The shared sessionPool
-	// evicts the least-recently-used width pool (Destroying its idle sessions)
+	// its ORT tensors) per distinct shape forever. The shared sessionPool
+	// evicts the least-recently-used shape pool (Destroying its idle sessions)
 	// once the cap is exceeded, bounding memory.
-	recMaxShapePools = 64
-	// recShapePoolCap caps idle sessions retained per width; extras are
+	recMaxShapePools = 96
+	// recShapePoolCap caps idle sessions retained per shape; extras are
 	// Destroyed on release instead of pooled.
-	recShapePoolCap = 4
+	//
+	// 96 * 1 keeps the same native-RSS budget as the prior 64 * 4 config
+	// (~384 pooled sessions) while spreading it across more distinct shapes so
+	// concurrent workers contending on a single width no longer serialize on one
+	// idle session per shape.
+	recShapePoolCap = 1
 )
 
 // recSessions is the dynamic-width OCR-rec pool: bounded at recMaxShapePools

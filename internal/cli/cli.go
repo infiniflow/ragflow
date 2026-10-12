@@ -287,7 +287,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 			defaultApiServerConfig.IP = "127.0.0.1"
 		}
 		if defaultApiServerConfig.Port == 0 {
-			defaultApiServerConfig.Port = 9384
+			defaultApiServerConfig.Port = 9380
 		}
 
 		commandLineConfig.APIClientConfig.APIServerMap = config.APIServerMap
@@ -302,7 +302,7 @@ func ParseArgs(args []string) (*CommandLineConfig, error) {
 	case AdminMode:
 		AdminConfig := &AdminModeConfig{
 			AdminHost: "127.0.0.1",
-			AdminPort: 9383,
+			AdminPort: 9381,
 			//AdminName:     "admin@ragflow.io",
 			//AdminPassword: "admin",
 		}
@@ -538,15 +538,7 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 			}
 		}
 
-		engine := filesystem.NewEngine()
-
-		// Register providers
-		// TODO: if http config change, engine http config won't be updated. They should share the same config
-		engine.RegisterProvider(filesystem.NewDatasetProvider(&httpClientAdapter{httpClient}))
-		engine.RegisterProvider(filesystem.NewFileProvider(&httpClientAdapter{httpClient}))
-		engine.RegisterProvider(filesystem.NewSkillProvider(&httpClientAdapter{httpClient}))
-
-		cli.ContextEngine = engine
+		cli.setFilesystemClient(httpClient)
 	} else if commandLineConfig.CLIMode == AdminMode {
 		httpClient := NewHTTPClient()
 		httpClient.Host = commandLineConfig.AdminClientConfig.AdminHost
@@ -567,6 +559,15 @@ func NewCLIWithConfig(commandLineConfig *CommandLineConfig) (*CLI, error) {
 	}
 
 	return cli, nil
+}
+
+func (c *CLI) setFilesystemClient(client *HTTPClient) {
+	engine := filesystem.NewEngine()
+	adapter := &httpClientAdapter{client: client}
+	engine.RegisterProvider(filesystem.NewDatasetProvider(adapter))
+	engine.RegisterProvider(filesystem.NewFileProvider(adapter))
+	engine.RegisterProvider(filesystem.NewSkillProvider(adapter))
+	c.ContextEngine = engine
 }
 
 // sanitizeCLIError returns an operator-safe rendering of a CLI

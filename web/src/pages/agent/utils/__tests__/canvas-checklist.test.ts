@@ -82,6 +82,61 @@ describe('collectCanvasIssues: orphan steps', () => {
       expect.objectContaining({ nodeId: 'File', type: CanvasIssueType.Orphan }),
     );
   });
+
+  it('flags pipeline node groups wired to each other but detached from File', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Compiler:cp1', 'Compiler'),
+        makeNode('Indexer:i1', 'Indexer'),
+        makeNode('Extractor:e1', 'Extractor'),
+        makeNode('Extractor:e2', 'Extractor'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Compiler:cp1', 'Indexer:i1'),
+        makeEdge('Extractor:e1', 'Extractor:e2'),
+      ],
+    });
+
+    const orphans = issues
+      .filter((x) => x.type === CanvasIssueType.Orphan)
+      .map((x) => x.nodeId);
+    expect(orphans).toEqual(
+      expect.arrayContaining([
+        'Compiler:cp1',
+        'Indexer:i1',
+        'Extractor:e1',
+        'Extractor:e2',
+      ]),
+    );
+    expect(orphans).not.toContain('File');
+    expect(orphans).not.toContain('Parser:p1');
+    expect(orphans).not.toContain('Chunker:c1');
+  });
+
+  it('flags no orphan on a fully connected pipeline', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('File', 'File'),
+        makeNode('Parser:p1', 'Parser'),
+        makeNode('Chunker:c1', 'TokenChunker'),
+        makeNode('Indexer:i1', 'Indexer'),
+      ],
+      edges: [
+        makeEdge('File', 'Parser:p1'),
+        makeEdge('Parser:p1', 'Chunker:c1'),
+        makeEdge('Chunker:c1', 'Indexer:i1'),
+      ],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.Orphan),
+    ).toHaveLength(0);
+  });
 });
 
 describe('collectCanvasIssues: dangling variable references', () => {
@@ -354,6 +409,107 @@ describe('collectCanvasIssues: iteration/loop children references', () => {
       issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
     ).toHaveLength(0);
   });
+
+  it('lets a Loop reference its own variables and child outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', {
+          loop_termination_condition: [
+            { variable: 'UserFillUp:u1@value', operator: 'is', value: '1' },
+            { variable: 'Loop:p1@count', operator: '≥', value: 3 },
+          ],
+          outputs: { count: { type: 'number' } },
+        }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('lets an Iteration reference child outputs in its output map', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'StringTransform:s1@result' },
+          },
+        }),
+        makeNode(
+          'StringTransform:s1',
+          'StringTransform',
+          { outputs: { result: { type: 'string' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(
+      issues.filter((x) => x.type === CanvasIssueType.InvalidVariable),
+    ).toHaveLength(0);
+  });
+
+  it('flags an Iteration referencing the per-item IterationStart outputs', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Iteration:p1', 'Iteration', {
+          outputs: {
+            merged: { ref: 'IterationStart:s1@item' },
+          },
+        }),
+        makeNode(
+          'IterationStart:s1',
+          'IterationItem',
+          { outputs: { item: { type: 'unknown' } } },
+          { parentId: 'Iteration:p1' },
+        ),
+      ],
+      edges: [makeEdge('Iteration:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Iteration:p1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'IterationStart:s1@item' },
+      }),
+    );
+  });
+
+  it('still flags an outsider referencing a container child', () => {
+    const issues = collect({
+      nodes: [
+        makeNode('Loop:p1', 'Loop', { outputs: {} }),
+        makeNode(
+          'UserFillUp:u1',
+          'UserFillUp',
+          { outputs: { value: { type: 'string' } } },
+          { parentId: 'Loop:p1' },
+        ),
+        makeNode('Message:m1', 'Message', {
+          content: ['{UserFillUp:u1@value}'],
+        }),
+      ],
+      edges: [makeEdge('Loop:p1', 'Message:m1')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Message:m1',
+        type: CanvasIssueType.InvalidVariable,
+        messageParams: { variable: 'UserFillUp:u1@value' },
+      }),
+    );
+  });
 });
 
 describe('collectCanvasIssues: missing required fields', () => {
@@ -397,6 +553,52 @@ describe('collectCanvasIssues: missing required fields', () => {
     );
   });
 
+  // Switching the source to memories writes no `memory_ids` key until a
+  // memory is picked, so the unbound node round-trips without it.
+  it('flags a Retrieval node whose binding key is absent', () => {
+    const datasetIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r1', 'Retrieval', { retrieval_from: 'dataset' }),
+      ],
+    });
+    const memoryIssues = collect({
+      nodes: [
+        makeNode('Retrieval:r2', 'Retrieval', { retrieval_from: 'memory' }),
+      ],
+    });
+
+    expect(datasetIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    expect(memoryIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalMemoryMissing' }),
+    );
+  });
+
+  it('treats a Retrieval node without retrieval_from as a dataset node', () => {
+    const emptyIssues = collect({
+      nodes: [makeNode('Retrieval:r1', 'Retrieval', {})],
+    });
+    const legacyIssues = collect({
+      nodes: [makeNode('Retrieval:r2', 'Retrieval', { kb_ids: ['kb-1'] })],
+    });
+    const memoryIssues = collect({
+      nodes: [makeNode('Retrieval:r3', 'Retrieval', { memory_ids: ['mem-1'] })],
+    });
+
+    expect(emptyIssues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.retrievalDatasetMissing' }),
+    );
+    // A legacy `kb_ids` binding counts as bound; a legacy memory binding is
+    // read as a memory source instead of an empty dataset.
+    expect(
+      legacyIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+    expect(
+      memoryIssues.filter((x) => x.messageKey.startsWith('flow.retrieval')),
+    ).toHaveLength(0);
+  });
+
   it('flags an Agent node without a model', () => {
     const issues = collect({
       nodes: [makeNode('Agent:a1', 'Agent', { llm_id: '' })],
@@ -407,6 +609,20 @@ describe('collectCanvasIssues: missing required fields', () => {
         nodeId: 'Agent:a1',
         type: CanvasIssueType.MissingRequired,
         messageKey: 'flow.agentModelMissing',
+      }),
+    );
+  });
+
+  it('flags an Extractor node without a model', () => {
+    const issues = collect({
+      nodes: [makeNode('Extractor:e1', 'Extractor', { llm_id: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Extractor:e1',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorModelMissing',
       }),
     );
   });
@@ -717,6 +933,77 @@ describe('collectCanvasIssues: compiler template group', () => {
         (x) =>
           x.messageKey === 'knowledgeConfiguration.compilationTemplateRequired',
       ),
+    ).toHaveLength(0);
+  });
+});
+
+describe('collectCanvasIssues: extractor extraction toggles', () => {
+  const extractIssues = (form: Record<string, any>) =>
+    collect({
+      nodes: [
+        makeNode('Extractor:e1', 'Extractor', { llm_id: 'model-1', ...form }),
+      ],
+    }).filter((x) => x.nodeId === 'Extractor:e1');
+
+  it('flags an enabled keywords group whose top_n is not positive', () => {
+    const issues = extractIssues({ keywords: { enabled: true, top_n: 0 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.extractorKeywordsTopNMissing',
+      }),
+    );
+  });
+
+  it('flags enabled questions and tags groups whose top_n is not positive', () => {
+    const issues = extractIssues({
+      questions: { enabled: true },
+      tags: { enabled: true, top_n: -1, tag_file_id: 'tag-1' },
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        messageKey: 'flow.extractorQuestionsTopNMissing',
+      }),
+    );
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagsTopNMissing' }),
+    );
+    // A tag file is selected, so no tag-file issue.
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagFileMissing'),
+    ).toBe(false);
+  });
+
+  it('flags an enabled tags group without a tag file', () => {
+    const issues = extractIssues({ tags: { enabled: true, top_n: 3 } });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({ messageKey: 'flow.extractorTagFileMissing' }),
+    );
+    expect(
+      issues.some((x) => x.messageKey === 'flow.extractorTagsTopNMissing'),
+    ).toBe(false);
+  });
+
+  it('accepts switched-off groups and enabled groups with a positive top_n', () => {
+    const issues = extractIssues({
+      keywords: { enabled: false, top_n: 0 },
+      questions: { enabled: true, top_n: 2 },
+      tags: { enabled: true, top_n: 3, tag_file_id: 'tag-1' },
+    });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
+    ).toHaveLength(0);
+  });
+
+  it('ignores legacy groups without the enabled key', () => {
+    const issues = extractIssues({ keywords: { top_n: 0 } });
+
+    expect(
+      issues.filter((x) => x.messageKey.startsWith('flow.extractor')),
     ).toHaveLength(0);
   });
 });

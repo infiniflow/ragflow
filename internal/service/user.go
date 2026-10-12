@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/server"
-	"ragflow/internal/server/config"
 	"regexp"
 	"strconv"
 	"strings"
@@ -134,8 +133,8 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeServerError, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := false
@@ -206,7 +205,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		ParserIDs: "naive:General,qa:Q&A,manual:Manual,table:Table,paper:Research Paper,book:Book,laws:Laws,presentation:Presentation,picture:Picture,one:One,audio:Audio,email:Email,tag:Tag",
 		Status:    &status,
 	}
-	userTenantID := utility.GenerateToken()
+	userTenantID := common.GenerateToken()
 	userTenant := &entity.UserTenant{
 		ID:        userTenantID,
 		UserID:    userID,
@@ -215,7 +214,7 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		InvitedBy: userID,
 		Status:    &status,
 	}
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file__ := ""
 	rootFile := &entity.File{
 		ID:        fileID,
@@ -226,11 +225,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		Type:      "folder",
 		Location:  &file__,
 		Size:      0,
-	}
-
-	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
-	if err != nil {
-		return nil, common.CodeServerError, fmt.Errorf("failed to initialize tenant llm: %w", err)
 	}
 
 	db := dao.GetDB()
@@ -247,12 +241,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 			return fmt.Errorf("failed to create user tenant relation: %w", err)
 		}
 
-		if len(tenantLLMs) > 0 {
-			if err = tx.Create(&tenantLLMs).Error; err != nil {
-				return fmt.Errorf("failed to create tenant llm: %w", err)
-			}
-		}
-
 		if err = tx.Create(rootFile).Error; err != nil {
 			return fmt.Errorf("failed to create root folder: %w", err)
 		}
@@ -261,98 +249,6 @@ func (s *UserService) Register(ctx context.Context, req *RegisterRequest) (*enti
 		return nil, common.CodeServerError, fmt.Errorf("fail to create transaction: %w", err)
 	}
 	return user, common.CodeSuccess, nil
-}
-
-// getInitTenantLLM builds the tenant_llm rows created for a new user's default tenant.
-func (s *UserService) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		return nil, fmt.Errorf("config not initialized")
-	}
-
-	modelConfigs := map[string]config.ModelConfig{
-		entity.ModelTypeChat.String():        cfg.GetDefaultChatModel(),
-		entity.ModelTypeEmbedding.String():   cfg.GetDefaultEmbeddingModel(),
-		entity.ModelTypeSpeech2Text.String(): cfg.GetDefaultASRModel(),
-		entity.ModelTypeImage2Text.String():  cfg.GetDefaultVisionModel(),
-		entity.ModelTypeRerank.String():      cfg.GetDefaultRerankModel(),
-		entity.ModelTypeTTS.String():         cfg.GetDefaultTTSModel(),
-		entity.ModelTypeOCR.String():         cfg.GetDefaultOCRModel(),
-	}
-
-	seenFactories := make(map[string]bool)
-	factoryConfigs := make([]config.ModelConfig, 0, len(modelConfigs))
-	for _, modelConfig := range []config.ModelConfig{
-		cfg.GetDefaultChatModel(),
-		cfg.GetDefaultEmbeddingModel(),
-		cfg.GetDefaultASRModel(),
-		cfg.GetDefaultVisionModel(),
-		cfg.GetDefaultRerankModel(),
-		cfg.GetDefaultTTSModel(),
-		cfg.GetDefaultOCRModel(),
-	} {
-		if modelConfig.Factory == "" || seenFactories[modelConfig.Factory] {
-			continue
-		}
-		seenFactories[modelConfig.Factory] = true
-		factoryConfigs = append(factoryConfigs, modelConfig)
-	}
-
-	llmDAO := dao.NewLLMDAO()
-	tenantLLMs := make([]*entity.TenantLLM, 0)
-	for _, factoryConfig := range factoryConfigs {
-		llms, err := llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get LLMs for factory %s: %w", factoryConfig.Factory, err)
-		}
-
-		for _, llm := range llms {
-			apiKey := factoryConfig.APIKey
-			apiBase := factoryConfig.BaseURL
-			if modelConfig, ok := modelConfigs[llm.ModelType]; ok {
-				if modelConfig.APIKey != "" {
-					apiKey = modelConfig.APIKey
-				}
-				if modelConfig.BaseURL != "" {
-					apiBase = modelConfig.BaseURL
-				}
-			}
-
-			maxTokens := int64(8192)
-			if llm.MaxTokens > 0 {
-				maxTokens = llm.MaxTokens
-			}
-
-			llmName := llm.LLMName
-			modelType := llm.ModelType
-			tenantLLMs = append(tenantLLMs, &entity.TenantLLM{
-				TenantID:   userID,
-				LLMFactory: factoryConfig.Factory,
-				LLMName:    &llmName,
-				ModelType:  &modelType,
-				APIKey:     &apiKey,
-				APIBase:    &apiBase,
-				MaxTokens:  maxTokens,
-				Status:     "1",
-			})
-		}
-	}
-
-	seen := make(map[string]bool)
-	uniqueTenantLLMs := make([]*entity.TenantLLM, 0, len(tenantLLMs))
-	for _, tenantLLM := range tenantLLMs {
-		llmName := ""
-		if tenantLLM.LLMName != nil {
-			llmName = *tenantLLM.LLMName
-		}
-		key := strings.Join([]string{tenantLLM.TenantID, tenantLLM.LLMFactory, llmName}, "|")
-		if seen[key] {
-			continue
-		}
-		seen[key] = true
-		uniqueTenantLLMs = append(uniqueTenantLLMs, tenantLLM)
-	}
-	return uniqueTenantLLMs, nil
 }
 
 // Login user login
@@ -379,7 +275,7 @@ func (s *UserService) Login(ctx context.Context, req *LoginRequest) (*entity.Use
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
@@ -416,7 +312,7 @@ func (s *UserService) LoginByEmail(ctx context.Context, req *EmailLoginRequest) 
 	}
 
 	// Generate new access token
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now
@@ -602,7 +498,7 @@ func (s *UserService) GetUserByToken(ctx context.Context, authorization string) 
 
 	// Extract access token from authorization header
 	// Equivalent to: access_token = str(jwt.loads(authorization)) in Python
-	accessToken, err := utility.ExtractAccessToken(authorization, secretKey)
+	accessToken, err := common.ExtractAccessToken(authorization, secretKey)
 	if err != nil {
 		return nil, common.CodeUnauthorized, fmt.Errorf("invalid authorization token: %w", err)
 	}
@@ -630,7 +526,7 @@ func (s *UserService) UpdateUserAccessToken(ctx context.Context, user *entity.Us
 func (s *UserService) Logout(ctx context.Context, user *entity.User) (common.ErrorCode, error) {
 	// Invalidate token by setting it to an invalid value
 	// Similar to Python implementation: "INVALID_" + secrets.token_hex(16)
-	invalidToken := "INVALID_" + utility.GenerateToken()
+	invalidToken := "INVALID_" + common.GenerateToken()
 	err := s.UpdateUserAccessToken(ctx, user, invalidToken)
 	if err != nil {
 		return common.CodeServerError, err
@@ -661,12 +557,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 	var lastLoginTime string
 	if user.LastLoginTime != nil {
 		lastLoginTime = user.LastLoginTime.Format("2006-01-02T15:04:05")
-	}
-
-	// Get access token
-	var accessToken string
-	if user.AccessToken != nil {
-		accessToken = *user.AccessToken
 	}
 
 	// Get avatar
@@ -701,12 +591,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		loginChannel = *user.LoginChannel
 	}
 
-	// Get password
-	var password string
-	if user.Password != nil {
-		password = *user.Password
-	}
-
 	// Get status
 	status := "1"
 	if user.Status != nil {
@@ -719,8 +603,10 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		isSuperuser = *user.IsSuperuser
 	}
 
+	// NOTE: access_token and password (hash) are intentionally omitted. This map
+	// is serialized into user-facing API responses (login/register/oauth/profile);
+	// the auth token is delivered via the Authorization header + cookie, not here.
 	return map[string]interface{}{
-		"access_token":     accessToken,
 		"avatar":           avatar,
 		"color_schema":     colorSchema,
 		"create_date":      createDate,
@@ -735,7 +621,6 @@ func (s *UserService) GetUserProfile(ctx context.Context, user *entity.User) map
 		"last_login_time":  lastLoginTime,
 		"login_channel":    loginChannel,
 		"nickname":         user.Nickname,
-		"password":         password,
 		"status":           status,
 		"timezone":         timezone,
 		"update_date":      updateDate,
@@ -781,7 +666,7 @@ func (s *UserService) UpdateUserSettings(ctx context.Context, user *entity.User,
 				return common.CodeExceptionError, err
 			}
 			user.Password = &hashedPassword
-			invalidToken := "INVALID_" + utility.GenerateToken()
+			invalidToken := "INVALID_" + common.GenerateToken()
 			user.AccessToken = &invalidToken
 		}
 	}
@@ -829,7 +714,7 @@ func (s *UserService) ChangePassword(ctx context.Context, user *entity.User, req
 			return common.CodeServerError, fmt.Errorf("failed to hash new password: %w", err)
 		}
 		user.Password = &hashedPassword
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -869,9 +754,6 @@ func (s *UserService) SetTenantInfo(ctx context.Context, userID string, req *Set
 	if req.TenantID != nil {
 		tenantID = *req.TenantID
 	}
-
-	tenantLLMService := NewTenantLLMService()
-	updates = tenantLLMService.EnsureTenantModelIDForParams(ctx, tenantID, updates)
 
 	if len(updates) > 0 {
 		if err := tenantDAO.Update(ctx, dao.DB, tenantID, updates); err != nil {
@@ -1084,7 +966,7 @@ func (s *UserService) ForgotIssueCaptcha(ctx context.Context, email string) (cap
 	if err != nil {
 		return "", "", common.CodeServerError, err
 	}
-	captchaID = utility.GenerateToken()
+	captchaID = common.GenerateToken()
 	if ok := kvrocks.Get().Set(ctx, utility.CaptchaIDRedisKey(captchaID), text, 60*time.Second); !ok {
 		return "", "", common.CodeServerError, fmt.Errorf("failed to store captcha")
 	}
@@ -1305,7 +1187,7 @@ func (s *UserService) ForgotResetPassword(ctx context.Context, req *ForgotResetP
 
 	// Auto-login: rotate the access token like LoginByEmail does so the
 	// handler can immediately mint an Authorization header.
-	token := utility.GenerateToken()
+	token := common.GenerateToken()
 	user.AccessToken = &token
 	now := time.Now().Truncate(time.Second)
 	user.LastLoginTime = &now

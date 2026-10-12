@@ -246,15 +246,28 @@ export const useChatStreamStore = create<ChatStreamState>()(
             // placeholder) were just deleted: without it, the flush would slice
             // off whatever message is now last.
             if (!previous.isStreaming) return state;
+            const messages = previous.messages.slice(0, -1);
+            const question = messages.at(-1);
+            // The server assigns the turn ID for question-only requests.
+            // Keep the local question and streamed answer paired under that ID.
+            if (
+              answer.id &&
+              question?.role === MessageType.User &&
+              (question.id !== answer.id || question.awaitingServerId)
+            ) {
+              messages[messages.length - 1] = {
+                ...question,
+                id: answer.id,
+                awaitingServerId: false,
+              };
+            }
+            messages.push(buildAssistantMessageFromAnswer(answer));
             return {
               sessions: {
                 ...state.sessions,
                 [conversationId]: {
                   ...previous,
-                  messages: [
-                    ...previous.messages.slice(0, -1),
-                    buildAssistantMessageFromAnswer(answer),
-                  ],
+                  messages,
                   lastActiveAt: Date.now(),
                 },
               },

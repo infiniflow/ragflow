@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"ragflow/internal/common"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/service/file"
@@ -598,9 +600,11 @@ func (h *FileHandler) LinkToDatasets(c *gin.Context) {
 // any other (internal) error is reported as a server error.
 func linkToDatasetsErrorCode(err error) common.ErrorCode {
 	switch {
-	case errors.Is(err, document.ErrLinkFileNotFound),
-		errors.Is(err, document.ErrLinkDatasetNotFound),
-		errors.Is(err, document.ErrLinkNoAuthorization):
+	case errors.Is(err, permission.ErrUnauthenticated), errors.Is(err, permission.ErrMembershipNotFound),
+		errors.Is(err, permission.ErrPermissionDenied), errors.Is(err, permission.ErrResourceNotFound):
+		code, _ := permissionresponse.Normalize(err)
+		return code
+	case errors.Is(err, document.ErrLinkFileNotFound), errors.Is(err, document.ErrLinkDatasetNotFound):
 		return common.CodeDataError
 	default:
 		return common.CodeServerError

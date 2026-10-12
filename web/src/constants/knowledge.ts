@@ -158,6 +158,11 @@ export enum ProcessingType {
   timeline = 'Timeline',
   sessionEssence = 'Session_Essence',
   sessionGraph = 'Session_Graph',
+  // Task types written by the Go knowledge-compile pipeline
+  // (kccommon.TaskType*); they intentionally match the frontend categories.
+  wiki = 'Wiki',
+  tree = 'Tree',
+  pageIndex = 'PageIndex',
 }
 
 export const ProcessingTypeMap = {

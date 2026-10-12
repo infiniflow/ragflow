@@ -44,13 +44,6 @@ jest.mock('@/locales/config', () => ({
   default: { t: (key: string) => key },
 }));
 
-// `pickByBackend` keeps the real dataset predicates on the Go branch, which is
-// what the list's polling and the stop-loss read.
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: () => true,
-  pickByBackend: ({ go }: { go: unknown }) => go,
-}));
-
 jest.mock('@/hooks/logic-hooks', () => ({
   useGetPaginationWithRouter: () => ({
     pagination: { current: 1, pageSize: 30, total: 0 },

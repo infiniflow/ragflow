@@ -18,15 +18,8 @@ Regular users do not need to enter the Admin UI when they use business features 
 
 ## Initial Administrator Account
 
-After the first deployment, you can log in with the default administrator account `admin@ragflow.io`. Its password is chosen when the admin server starts and no superuser exists yet:
-
-- If the `ADMIN_DEFAULT_PASSWORD` environment variable is set (or `DEFAULT_SUPERUSER_PASSWORD`, which is shared with the web service bootstrap), that value is used.
-- Otherwise a random password is generated and written **once** to `logs/admin_bootstrap_password.txt` (mode 0600; in a docker deployment check the `docker/ragflow-logs` volume) — retrieve it from that file, log in, and change it immediately.
+When the Admin service starts with `--init-superuser` and no superuser exists, it creates the default administrator account `admin@ragflow.io` with the initial password `admin`. The option does not change an existing superuser account or reset its password.
 
 This account is used to initialize the system and create subsequent administrator accounts. It is not recommended as a long-term shared daily operations account.
 
 After the first login, reset the default password as soon as possible and create separate accounts for different administrators. In daily administration, grant the `Superuser` identity only to users who actually need Admin UI responsibilities.
-
-## Change the Admin Account Password
-
-This feature is not available yet.

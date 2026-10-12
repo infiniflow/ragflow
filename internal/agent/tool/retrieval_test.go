@@ -143,6 +143,62 @@ func TestAgenticSearchDisablesDenseFallback(t *testing.T) {
 	}
 }
 
+func TestAgenticSearchExcludesCompiledResults(t *testing.T) {
+	previous := GetRetrievalService()
+	service := &capturingRetrievalService{}
+	SetRetrievalService(service)
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-compiled", "session-compiled")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	if _, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"plain","kb_ids":["kb-1"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if !service.req.ExcludeCompiled {
+		t.Fatal("default agentic search should exclude compiled results")
+	}
+	if service.req.TenantID != "tenant-1" {
+		t.Fatalf("TenantID = %q, want tenant-1", service.req.TenantID)
+	}
+}
+
+func TestAgenticSearchDoesNotAdvertiseUnsupportedCompiledExpansion(t *testing.T) {
+	info, err := NewAgenticSearchTool(toolHybridSearch).Info(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	schemaJSON, err := json.Marshal(info.ParamsOneOf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(schemaJSON), `"use_compiled"`) {
+		t.Fatalf("schema advertises unsupported compiled expansion: %s", schemaJSON)
+	}
+}
+
+type failingAgenticRetrievalService struct{}
+
+func (failingAgenticRetrievalService) Search(context.Context, *gorm.DB, RetrievalRequest) ([]RetrievalChunk, error) {
+	return nil, errors.New("backend unavailable")
+}
+
+func TestAgenticSearchReturnsRetrievalError(t *testing.T) {
+	previous := GetRetrievalService()
+	SetRetrievalService(failingAgenticRetrievalService{})
+	t.Cleanup(func() { SetRetrievalService(previous) })
+
+	state := runtime.NewCanvasState("run-error", "session-error")
+	state.Sys["tenant_id"] = "tenant-1"
+	ctx := runtime.WithState(t.Context(), state)
+
+	_, err := NewAgenticSearchTool(toolHybridSearch).InvokableRun(ctx, `{"query":"hello","kb_ids":["kb-1"]}`)
+	if err == nil || !strings.Contains(err.Error(), "backend unavailable") {
+		t.Fatalf("error = %v, want backend unavailable", err)
+	}
+}
+
 func TestRetrieval_PassesTenantIDFromCanvasState(t *testing.T) {
 	prev := GetRetrievalService()
 	svc := &capturingRetrievalService{}

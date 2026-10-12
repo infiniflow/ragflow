@@ -50,7 +50,8 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) Tre
 	m := TreeMetrics{AllParented: true, VectorOK: true, SchemaOK: true, covered: make(map[string]bool)}
 	maxLevel := -1
 	for _, c := range chunks {
-		kind, _ := c.GetExtraString("kc_kind")
+		// raptor_kwd / raptor_layer_int are the tree row's kind and depth.
+		kind, _ := c.GetExtraString("raptor_kwd")
 		// Auxiliary tree-graph rows (kind entity/relation/graph, from the
 		// structure-graph projection) are not part of the RAPTOR tree structure,
 		// so they are excluded from the structural metrics (ProductCount,
@@ -60,7 +61,7 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) Tre
 		}
 		m.ProductCount++
 		level := 0
-		if lf, ok := extraFloat(c, "kc_level"); ok {
+		if lf, ok := extraFloat(c, "raptor_layer_int"); ok {
 			level = int(lf)
 		}
 		switch kind {
@@ -102,9 +103,8 @@ func AnalyzeTreeProducts(chunks []schema.ChunkDoc, validSourceIDs ...string) Tre
 		}
 		id, _ := c.GetExtraString("id")
 		docID, _ := c.GetExtraString("doc_id")
-		tenant, _ := c.GetExtraString("tenant_id")
 		ck, _ := c.GetExtraString("compile_kwd")
-		if id == "" || docID == "" || tenant == "" || c.Text == "" || ck == "" {
+		if id == "" || docID == "" || c.Text == "" || ck == "" {
 			m.SchemaOK = false
 		}
 	}

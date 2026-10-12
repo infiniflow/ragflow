@@ -53,14 +53,15 @@ func (p *JSONParser) String() string {
 // shape (array, single object, or line-delimited) and emits one JSON
 // item per logical record, with {text, doc_type_kwd:"text"}.
 func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
-	text := string(bytes.TrimSpace(data))
+	decoded, encName := DecodeToUTF8(data, "application/json")
+	text := string(bytes.TrimSpace(decoded))
 	if text == "" {
 		return ParseResult{
 			OutputFormat: "json",
 			File: map[string]any{
 				"name":     filename,
 				"size":     len(data),
-				"encoding": "utf-8",
+				"encoding": encName,
 			},
 			JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
 		}
@@ -75,7 +76,7 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 		File: map[string]any{
 			"name":     filename,
 			"size":     len(data),
-			"encoding": "utf-8",
+			"encoding": encName,
 		},
 		JSON: items,
 	}

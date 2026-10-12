@@ -119,7 +119,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -1145,7 +1145,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",
@@ -1175,8 +1175,8 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	errCode, message := h.service.HandleHeartbeat(&req)
-	common.ErrorWithCode(c, errCode, message)
+	errCode, data, message := h.service.HandleHeartbeat(&req)
+	common.ResponseWithCodeData(c, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {

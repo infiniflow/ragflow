@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"time"
@@ -79,6 +80,34 @@ func NewSyncTaskDAO(db *gorm.DB) *SyncTaskDAO {
 // DB returns the DAO database handle.
 func (d *SyncTaskDAO) DB() *gorm.DB {
 	return d.db
+}
+
+// ListDatasetSyncTasks returns running sync tasks and the latest non-scheduled
+// sync task for each connector still linked to the dataset. Newest rows come first.
+func (d *SyncTaskDAO) ListDatasetSyncTasks(ctx context.Context, datasetID string) ([]entity.SyncLogs, error) {
+	var tasks []entity.SyncLogs
+	err := d.db.WithContext(ctx).Raw(`
+		SELECT id, connector_id, kb_id, status, new_docs_indexed, error_count, error_class, update_time
+		FROM (
+			SELECT sync_logs.id, sync_logs.connector_id, sync_logs.kb_id, sync_logs.status,
+				sync_logs.new_docs_indexed, sync_logs.error_count, sync_logs.error_class, sync_logs.update_time,
+				ROW_NUMBER() OVER (
+					PARTITION BY sync_logs.connector_id
+					ORDER BY COALESCE(sync_logs.update_time, 0) DESC, sync_logs.id DESC
+				) AS row_num
+			FROM sync_logs
+			WHERE sync_logs.kb_id = ? AND sync_logs.task_type = ? AND sync_logs.status <> ?
+				AND EXISTS (
+					SELECT 1 FROM connector2kb
+					WHERE connector2kb.connector_id = sync_logs.connector_id
+						AND connector2kb.kb_id = sync_logs.kb_id
+				)
+		) AS ranked
+		WHERE status = ? OR row_num = 1
+		ORDER BY COALESCE(update_time, 0) DESC, id DESC`,
+		datasetID, TaskTypeSync, SyncStatusSchedule, SyncStatusRunning).
+		Scan(&tasks).Error
+	return tasks, err
 }
 
 type dueSyncTaskRow struct {
@@ -484,7 +513,7 @@ func createScheduledTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, ta
 		Update("status", SyncStatusSchedule).Error; err != nil {
 		return "", err
 	}
-	taskID := utility.GenerateToken()
+	taskID := common.GenerateToken()
 	return taskID, tx.WithContext(ctx).Create(&entity.SyncLogs{
 		ID:               taskID,
 		ConnectorID:      connectorID,

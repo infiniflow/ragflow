@@ -10,27 +10,14 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
-
-// Accessible reports whether docID belongs to a knowledge base
-// reachable by userID. Used to gate actions on a document the caller
-// has access to. Returns false on any lookup failure or empty inputs
-// so callers can treat a denial as a 404-equivalent and avoid leaking
-// whether the document exists at all.
-func (s *DocumentService) Accessible(ctx context.Context, docID, userID string) bool {
-	if docID == "" || userID == "" {
-		return false
-	}
-	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc == nil {
-		return false
-	}
-	return s.kbDAO.Accessible(ctx, dao.DB, doc.KbID, userID)
-}
 
 func (s *DocumentService) GetDocumentStorageAddress(ctx context.Context, doc *entity.Document) (string, string, error) {
 	if doc == nil {
@@ -70,8 +57,14 @@ func (s *DocumentService) DownloadDocument(ctx context.Context, datasetID, docID
 		return nil, fmt.Errorf("specify document_id please")
 	}
 	doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
-	if err != nil || doc.KbID != datasetID {
-		return nil, fmt.Errorf("document not found")
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return nil, ErrDocumentNotFound
+		}
+		return nil, fmt.Errorf("failed to get document %s: %w", docID, err)
+	}
+	if doc == nil || doc.KbID != datasetID {
+		return nil, ErrDocumentNotFound
 	}
 	bucket, name, err := s.GetDocumentStorageAddress(ctx, doc)
 	if err != nil {
@@ -227,8 +220,9 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
-	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return 0, fmt.Errorf("You don't own the dataset %s.", datasetID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDelete); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return 0, permissionErr
 	}
 
 	// 2. Resolve document IDs
@@ -317,7 +311,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	}
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
 	if typeErr != nil {
-		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
 	if err != nil {
@@ -339,6 +333,9 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	}
 	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
 		return err
+	}
+	if len(variants) == 0 {
+		return nil
 	}
 	// File replacement/deletion uses this path instead of deleteDocumentFull.
 	// Publish the same deletion event so the dataset-level consumer removes the
@@ -383,15 +380,9 @@ func (s *DocumentService) InsertDocument(doc *entity.Document) error {
 // Returns an error when the existing-name lookup fails so callers never write
 // blind and risk duplicated document names.
 func (s *DocumentService) UniqueDocumentName(ctx context.Context, kbID, name string) (string, error) {
-	names, err := s.documentDAO.ListNamesByKbID(ctx, dao.DB, kbID)
-	if err != nil {
-		return "", err
-	}
-	taken := make(map[string]bool, len(names))
-	for _, n := range names {
-		taken[n] = true
-	}
-	return uniqueUploadName(name, taken), nil
+	return common.UniqueFileName(name, 255, func(candidate string) (bool, error) {
+		return s.documentDAO.NameExistsInKB(ctx, dao.DB, kbID, candidate)
+	})
 }
 
 // resolveDocAndKB loads the document and its knowledgebase, returning both or
@@ -417,7 +408,7 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	indexName := fmt.Sprintf("ragflow_%s", tenantID)
 	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, tenantID, kbID, docID)
 	if typeErr != nil {
-		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to resolve knowledge compile types for %s: %v", docID, typeErr))
+		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
@@ -425,6 +416,12 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
 		return fmt.Errorf("delete chunks for document %s: %w", docID, delErr)
+	}
+	if len(variants) == 0 {
+		if s.metadataSvc != nil {
+			_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+		}
+		return nil
 	}
 	// Notify the dataset-level post-processing consumer (§11) that this document's
 	// source + per-doc compiled chunks are gone. The consumer removes the

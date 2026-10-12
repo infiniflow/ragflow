@@ -50,24 +50,21 @@ type FileSystemClient interface {
 	GetSkillContent(ctx context.Context, tenantID, skillName string) (*SkillVersionInfo, error)
 }
 
-// defaultMaxLength is a safe default for embedding model max input length
-const defaultMaxLength = 8191
-
 // SkillIndexerService handles skill indexing operations
 type SkillIndexerService struct {
-	configDAO     *dao.SkillSearchConfigDAO
-	fileDAO       *dao.FileDAO
-	spaceDAO      *dao.SkillSpaceDAO
-	modelProvider *ModelProviderService
+	configDAO    *dao.SkillSearchConfigDAO
+	fileDAO      *dao.FileDAO
+	spaceDAO     *dao.SkillSpaceDAO
+	modelFactory *ModelFactory
 }
 
 // NewSkillIndexerService creates a new SkillIndexerService instance
 func NewSkillIndexerService() *SkillIndexerService {
 	return &SkillIndexerService{
-		configDAO:     dao.NewSkillSearchConfigDAO(),
-		fileDAO:       dao.NewFileDAO(),
-		spaceDAO:      dao.NewSkillSpaceDAO(),
-		modelProvider: NewModelProviderService(),
+		configDAO:    dao.NewSkillSearchConfigDAO(),
+		fileDAO:      dao.NewFileDAO(),
+		spaceDAO:     dao.NewSkillSpaceDAO(),
+		modelFactory: NewModelFactory(),
 	}
 }
 
@@ -168,7 +165,7 @@ func (s *SkillIndexerService) IndexSkill(ctx context.Context, tenantID, spaceID 
 		}
 	}
 
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	// For Infinity: ensure table exists with correct dimension BEFORE inserting
 	if docEngine.GetType() == "infinity" {
@@ -249,7 +246,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 	}
 
 	// Ensure index exists with correct dimension
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	if docEngine.GetType() == "infinity" {
 		// For Infinity: must ensure table exists with correct dimension BEFORE inserting
 		common.Info(fmt.Sprintf("Checking if index exists: %s", indexName))
@@ -362,7 +359,7 @@ func (s *SkillIndexerService) BatchIndexSkills(ctx context.Context, tenantID, sp
 // Returns nil if the document doesn't exist (idempotent delete)
 func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, spaceID, skillID string, docEngine engine.DocEngine) error {
 	spaceID = normalizeSpaceID(spaceID)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	// ES document ID cannot contain '/' - replace with '_'
 	docID := strings.ReplaceAll(skillID, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
@@ -381,7 +378,7 @@ func (s *SkillIndexerService) DeleteSkillIndex(ctx context.Context, tenantID, sp
 // Deletes all versions: both new format (skillname) and old format (skillname_x.x.x)
 func (s *SkillIndexerService) DeleteSkillByName(ctx context.Context, tenantID, spaceID, skillName string, docEngine engine.DocEngine) error {
 	spaceID = normalizeSpaceID(spaceID)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	docID := strings.ReplaceAll(skillName, "/", "_")
 	if err := docEngine.DeleteDocument(ctx, indexName, docID); err != nil {
@@ -436,7 +433,7 @@ func (s *SkillIndexerService) ReindexAll(ctx context.Context, tenantID, spaceID 
 	common.Info(fmt.Sprintf("ReindexAll: new embedding dimension is %d", newDimension))
 
 	// Delete existing index and recreate with new dimension (for both ES and Infinity)
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 	exists, _ := docEngine.ChunkStoreExists(ctx, indexName, "skill")
 	if exists {
 		common.Info(fmt.Sprintf("ReindexAll: deleting existing index %s", indexName))
@@ -843,7 +840,7 @@ func (s *SkillIndexerService) cleanupOldVersions(ctx context.Context, tenantID, 
 // InitializeIndex initializes the skill search index for a tenant
 func (s *SkillIndexerService) InitializeIndex(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string) error {
 	// Check if index exists
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	common.Info("Checking skill index existence", zap.String("indexName", indexName), zap.String("tenantID", tenantID), zap.String("spaceID", spaceID))
 
@@ -874,7 +871,7 @@ func (s *SkillIndexerService) createIndex(ctx context.Context, tenantID, spaceID
 
 // createIndexWithDimension creates the skill index with a specific vector dimension
 func (s *SkillIndexerService) createIndexWithDimension(ctx context.Context, tenantID, spaceID string, docEngine engine.DocEngine, embdID string, dimension int) error {
-	indexName := getSkillIndexName(tenantID, spaceID)
+	indexName := SkillIndexName(tenantID, spaceID)
 
 	common.Info(fmt.Sprintf("Creating skill index with dimension %d", dimension),
 		zap.String("indexName", indexName),
@@ -915,7 +912,7 @@ func (s *SkillIndexerService) EnsureIndex(ctx context.Context, tenantID, spaceID
 
 // generateEmbedding generates embedding for text using the specified model
 func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdID, tenantID string) ([]float64, error) {
-	if s.modelProvider == nil {
+	if s.modelFactory == nil {
 		return nil, fmt.Errorf("model provider not set")
 	}
 
@@ -923,20 +920,13 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate text to prevent exceeding model's max input length
-	maxLen := embeddingModel.MaxTokens
-	if maxLen <= 0 {
-		maxLen = defaultMaxLength
-	}
-	truncatedText := truncate(text, maxLen-10)
-
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{truncatedText}}, embeddingModel.APIConfig, nil, nil)
+	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}}, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode text: %w", err)
 	}
@@ -952,7 +942,7 @@ func (s *SkillIndexerService) generateEmbedding(ctx context.Context, text, embdI
 func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []string, embdID, tenantID string) ([]models.EmbeddingData, error) {
 	common.Info(fmt.Sprintf("generateEmbeddings called: texts=%d, embdID=%s, tenantID=%s", len(texts), embdID, tenantID))
 
-	if s.modelProvider == nil {
+	if s.modelFactory == nil {
 		return nil, fmt.Errorf("model provider not set")
 	}
 
@@ -961,26 +951,16 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	}
 
 	common.Info(fmt.Sprintf("Getting embedding model for %s", embdID))
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to get embedding model: %v", err), err)
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
 
-	// Truncate texts to prevent exceeding model's max input length
-	maxLen := embeddingModel.MaxTokens
-	if maxLen <= 0 {
-		maxLen = defaultMaxLength
-	}
-	truncatedTexts := make([]string, len(texts))
-	for i, text := range texts {
-		truncatedTexts[i] = truncate(text, maxLen-10)
-	}
-
-	common.Info(fmt.Sprintf("Encoding %d texts", len(truncatedTexts)))
+	common.Info(fmt.Sprintf("Encoding %d texts", len(texts)))
 	// Use batch encode API (consistent with Python's encode(texts: list))
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: truncatedTexts}, embeddingModel.APIConfig, nil, nil)
+	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: texts}, nil, nil)
 	if err != nil {
 		common.Error(fmt.Sprintf("Failed to encode texts: %v", err), err)
 		return nil, fmt.Errorf("failed to encode texts: %w", err)
@@ -994,24 +974,11 @@ func (s *SkillIndexerService) generateEmbeddings(ctx context.Context, texts []st
 	return response, nil
 }
 
-// truncate truncates text to maxLen characters
-// Similar to Python's truncate function in rag/llm/embedding_model.py
-func truncate(text string, maxLen int) string {
-	if maxLen <= 0 {
-		return text
-	}
-	runes := []rune(text)
-	if len(runes) <= maxLen {
-		return text
-	}
-	return string(runes[:maxLen])
-}
-
 // getEmbeddingDimension gets the embedding dimension by calling the embedding API with test text
 // This follows Python's approach: use actual embedding result to determine dimension
 // If embedding API fails, returns error (cannot create table without knowing dimension)
 func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantID, embdID string) (int, error) {
-	if s.modelProvider == nil {
+	if s.modelFactory == nil {
 		return 0, fmt.Errorf("model provider not set")
 	}
 
@@ -1019,7 +986,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 		return 0, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	embeddingModel, err := s.modelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: tenantID}, embdID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get embedding model: %w", err)
 	}
@@ -1027,7 +994,7 @@ func (s *SkillIndexerService) getEmbeddingDimension(ctx context.Context, tenantI
 	// Use simple test text like Python does: embedding_model.encode(["ok"])
 	testText := "ok"
 	var response []models.EmbeddingData
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{testText}}, embeddingModel.APIConfig, nil, nil)
+	response, err = embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{testText}}, nil, nil)
 	if err != nil {
 		return 0, fmt.Errorf("failed to encode test text: %w", err)
 	}

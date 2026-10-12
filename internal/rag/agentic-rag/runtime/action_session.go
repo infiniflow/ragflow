@@ -1675,11 +1675,9 @@ func (m *InvokerSessionModel) CompleteWithTemperature(ctx context.Context, messa
 		return nil, err
 	}
 	reply := &ModelReply{Content: resp.Content}
-	if resp != nil {
-		reply.Usage = resp.Usage
-		reply.Tokens = totalOf(resp)
-		reply.ToolCalls = nativeToHarnessCalls(resp.ToolCalls)
-	}
+	reply.Usage = resp.Usage
+	reply.Tokens = totalOf(resp)
+	reply.ToolCalls = nativeToHarnessCalls(resp.ToolCalls)
 	return reply, nil
 }
 
@@ -1724,11 +1722,9 @@ func (m *InvokerSessionModel) Complete(ctx context.Context, messages []schema.Me
 		return nil, err
 	}
 	reply := &ModelReply{Content: resp.Content}
-	if resp != nil {
-		reply.Usage = resp.Usage
-		reply.Tokens = totalOf(resp)
-		reply.ToolCalls = nativeToHarnessCalls(resp.ToolCalls)
-	}
+	reply.Usage = resp.Usage
+	reply.Tokens = totalOf(resp)
+	reply.ToolCalls = nativeToHarnessCalls(resp.ToolCalls)
 	return reply, nil
 }
 

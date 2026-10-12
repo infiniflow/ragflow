@@ -147,7 +147,7 @@ func (v *VariableAssignerComponent) GetInputForm() map[string]any {
 // assigned is returned at outputs["assignments"]; per-item errors (if
 // any) are returned at outputs["errors"].
 func (v *VariableAssignerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("VariableAssigner: %w", err)
 	}

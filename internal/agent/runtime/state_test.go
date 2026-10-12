@@ -66,6 +66,105 @@ func TestCanvasState_MarshalUnmarshalJSON(t *testing.T) {
 	}
 }
 
+func TestCanvasState_UnmarshalInitializesMutableState(t *testing.T) {
+	t.Parallel()
+
+	var state CanvasState
+	if err := json.Unmarshal([]byte(`{"outputs":null,"sys":null,"env":null,"retrieval":null,"globals":null}`), &state); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+
+	state.SetVar("message_0", "content", "hello")
+	state.RecordOutput("message_0", "result", map[string]any{"ok": true})
+	state.SetGlobal("flag", true)
+
+	if got := state.Outputs["message_0"]["content"]; got != "hello" {
+		t.Fatalf("SetVar after restore = %#v, want hello", got)
+	}
+	if got := state.Outputs["message_0"]["result"]; got == nil {
+		t.Fatal("RecordOutput after restore did not persist")
+	}
+	if got, ok := state.GetGlobal("flag"); !ok || got != true {
+		t.Fatalf("SetGlobal after restore = %#v, %v; want true, true", got, ok)
+	}
+}
+
+func TestCanvasStateRestoreReplacesNamespaces(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"outputs":null,"sys":null,"env":null,"retrieval":null,"globals":null}`} {
+		t.Run(raw, func(t *testing.T) {
+			state := NewCanvasState("old-run", "old-session")
+			state.SetVar("old", "value", true)
+			state.Sys["old"] = true
+			state.Env["old"] = true
+			state.Retrieval["old"] = true
+			state.SetGlobal("old", true)
+			state.CancelFlag.Store(true)
+			if err := json.Unmarshal([]byte(raw), state); err != nil {
+				t.Fatal(err)
+			}
+			if state.Outputs == nil || len(state.Outputs) != 0 {
+				t.Fatalf("outputs = %#v, want empty writable map", state.Outputs)
+			}
+			for name, namespace := range map[string]map[string]any{
+				"sys": state.Sys, "env": state.Env, "retrieval": state.Retrieval, "globals": state.Globals,
+			} {
+				if namespace == nil || len(namespace) != 0 {
+					t.Fatalf("%s = %#v, want empty writable map", name, namespace)
+				}
+			}
+			if state.CancelFlag.Load() || state.RunID != "" || state.SessionID != "" {
+				t.Fatal("restore retained prior cancellation or identity")
+			}
+		})
+	}
+}
+
+func TestCanvasStateMergeAndReplaceNamespaces(t *testing.T) {
+	state := NewCanvasState("run", "session")
+	state.MergeNamespaces(
+		map[string]any{"query": "hello"},
+		map[string]any{"region": "test"},
+		map[string]any{"item": 1},
+	)
+	state.MergeNamespaces(map[string]any{"user_id": "user", "query": "updated"}, nil, nil)
+
+	sys, env, globals := state.SnapshotNamespaces()
+	if sys["query"] != "updated" || sys["user_id"] != "user" || env["region"] != "test" || globals["item"] != 1 {
+		t.Fatalf("merged namespaces = %#v, %#v, %#v", sys, env, globals)
+	}
+
+	replacement := map[string]any{"query": "replacement"}
+	state.ReplaceNamespaces(replacement, nil, nil)
+	replacement["query"] = "mutated"
+
+	sys, env, globals = state.SnapshotNamespaces()
+	if sys["query"] != "replacement" || len(sys) != 1 {
+		t.Fatalf("replaced sys = %#v", sys)
+	}
+	if env == nil || globals == nil || len(env) != 0 || len(globals) != 0 {
+		t.Fatalf("replaced empty namespaces = %#v, %#v", env, globals)
+	}
+}
+
+func TestCanvasStateWritesNullOutputBuckets(t *testing.T) {
+	for _, method := range []string{"SetVar", "RecordOutput"} {
+		t.Run(method, func(t *testing.T) {
+			var state CanvasState
+			if err := json.Unmarshal([]byte(`{"outputs":{"node":null}}`), &state); err != nil {
+				t.Fatal(err)
+			}
+			if method == "SetVar" {
+				state.SetVar("node", "value", "result")
+			} else {
+				state.RecordOutput("node", "value", "result")
+			}
+			if got, _ := state.GetVar("node@value"); got != "result" {
+				t.Fatalf("value = %#v, want result", got)
+			}
+		})
+	}
+}
+
 func TestCanvasStateCheckpointPreservesCurrentUserMarker(t *testing.T) {
 	t.Parallel()
 	src := NewCanvasState("run-checkpoint", "task-checkpoint")

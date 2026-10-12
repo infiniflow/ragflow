@@ -508,32 +508,29 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 	return resp, nil
 }
 
-// resolvedModelInvoker is a ChatInvoker pinned to an already-resolved model
-// (driver/modelName/apiConfig). Unlike einoChatInvoker it never consults the
-// process-global default model name nor splits a composite llm id — the caller
-// (e.g. the Go chat pipeline's harness bridge) resolves the tenant model up
-// front via the model provider service. This mirrors Python, where RAGTools
-// receives a fully-resolved LLMBundle, and lets the agentic-RAG harness call a
-// tenant's actual chat model (which may be a UUID/tenant_model id) instead of
-// falling through to a dummy driver.
+// resolvedModelInvoker pins agent calls to one factory-created tenant model.
+// Unlike einoChatInvoker it never consults a process-global default or parses a
+// composite model reference.
 type resolvedModelInvoker struct {
-	driver    models.ModelDriver
-	modelName string
-	apiConfig *models.APIConfig
+	model *models.ChatModel
 }
 
-// NewResolvedInvoker builds a ChatInvoker bound to the given resolved model
-// config. modelName may be a bare model name; apiConfig carries the api key and
-// base url already resolved for the tenant.
-func NewResolvedInvoker(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) ChatInvoker {
-	return &resolvedModelInvoker{driver: driver, modelName: modelName, apiConfig: apiConfig}
+// NewResolvedInvoker builds a ChatInvoker around a typed, resolved chat model.
+func NewResolvedInvoker(model *models.ChatModel) ChatInvoker {
+	if model == nil {
+		return nil
+	}
+	return &resolvedModelInvoker{model: model}
 }
 
 // resolvedChatWrapper builds the eino wrapper for the pinned model, applying the
 // request's sampling config, thinking switch and tool binding. Invoke and Stream
 // share it so both send an identical request; only the transport differs.
 func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
-	cm := models.NewChatModel(c.driver, &modelName, c.apiConfig)
+	cm := c.model
+	if cm.ModelName == nil || *cm.ModelName != modelName {
+		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, cm.Info())
+	}
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
@@ -565,7 +562,13 @@ func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
 	if req.ModelName != "" {
 		return req.ModelName
 	}
-	return c.modelName
+	if info := c.model.Info(); info != nil {
+		return info.Name
+	}
+	if c.model.ModelName != nil {
+		return *c.model.ModelName
+	}
+	return ""
 }
 
 // Invoke satisfies ChatInvoker.
@@ -688,7 +691,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// tenantID scopes composite-reference resolution to the tenant's own rows
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if tid, ok := state.Sys["tenant_id"].(string); ok {
 			tenantID = tid
 		}
@@ -714,7 +717,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// state is absent (e.g. tests that call Invoke directly without
 	// going through the canvas scheduler), the prompts pass through
 	// unchanged — backward compatible.
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
@@ -752,7 +755,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileTexts []string
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
 			return nil, err
 		}
@@ -811,7 +814,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// empty,
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}

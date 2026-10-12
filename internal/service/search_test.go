@@ -17,6 +17,8 @@
 package service
 
 import (
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 
@@ -103,7 +105,7 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	// The owner can update name + merge config.
 	req = &UpdateSearchRequest{
 		Name:         "Updated Name",
-		SearchConfig: map[string]interface{}{"summary": true},
+		SearchConfig: map[string]interface{}{"summary": true, "keywords_similarity_weight": 0.7},
 	}
 	updated, err := NewSearchService().UpdateSearch(ctx, "tenant-1", created.SearchID, req)
 	if err != nil {
@@ -115,6 +117,11 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	if updated.SearchConfig["summary"] != true {
 		t.Fatalf("expected merged search_config, got %#v", updated.SearchConfig)
 	}
+	keywordsWeight, keywordsOK := updated.SearchConfig["keywords_similarity_weight"].(float64)
+	vectorWeight, vectorOK := updated.SearchConfig["vector_similarity_weight"].(float64)
+	if !keywordsOK || !vectorOK || math.Abs(keywordsWeight-0.7) > similarityWeightTolerance || math.Abs(vectorWeight-0.3) > similarityWeightTolerance {
+		t.Fatalf("similarity weights were not normalized: %#v", updated.SearchConfig)
+	}
 
 	persisted, err := dao.NewSearchDAO().GetByID(ctx, dao.DB, created.SearchID)
 	if err != nil {
@@ -122,6 +129,24 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 	}
 	if persisted.Name != "Updated Name" {
 		t.Fatalf("expected persisted name, got %q", persisted.Name)
+	}
+}
+
+func TestBuildSearchConfigResponseOmitsVectorSimilarityWeight(t *testing.T) {
+	searchConfig := map[string]interface{}{
+		"similarity_threshold":     0.2,
+		"vector_similarity_weight": 0.3,
+	}
+
+	response := BuildSearchConfigResponse(searchConfig)
+	if got, ok := response["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > similarityWeightTolerance {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", response["keywords_similarity_weight"])
+	}
+	if _, exists := response["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
+	}
+	if _, exists := searchConfig["keywords_similarity_weight"]; exists {
+		t.Fatal("BuildSearchConfigResponse must not mutate the stored search config")
 	}
 }
 
@@ -165,5 +190,58 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 	}
 	if got, want := result.SearchApps[0]["nickname"], "user-1"; got != want {
 		t.Fatalf("nickname = %v, want %v", got, want)
+	}
+}
+
+// TestSearchServiceListSearchesPaginatesOwnerBranch covers the owner_ids branch
+// end to end: pagination happens in SQL now, so each page must carry only its
+// own rows while total still reports every matching search.
+func TestSearchServiceListSearchesPaginatesOwnerBranch(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := t.Context()
+
+	for i := 1; i <= 5; i++ {
+		createTime := int64(i * 100)
+		status := string(entity.StatusValid)
+		if err := dao.DB.Create(&entity.Search{
+			ID:           fmt.Sprintf("search-%d", i),
+			TenantID:     "tenant-1",
+			Name:         fmt.Sprintf("Search %d", i),
+			CreatedBy:    "tenant-1",
+			SearchConfig: entity.JSONMap{},
+			Status:       &status,
+			BaseModel:    entity.BaseModel{CreateTime: &createTime},
+		}).Error; err != nil {
+			t.Fatalf("failed to create search %d: %v", i, err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		page     int
+		pageSize int
+		wantIDs  []string
+	}{
+		{name: "middle page", page: 2, pageSize: 2, wantIDs: []string{"search-3", "search-2"}},
+		{name: "unpaginated returns every row", page: 0, pageSize: 0, wantIDs: []string{"search-5", "search-4", "search-3", "search-2", "search-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := NewSearchService().ListSearches(ctx, "tenant-1", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-1"})
+			if err != nil {
+				t.Fatalf("ListSearches failed: %v", err)
+			}
+			if result.Total != 5 {
+				t.Fatalf("total = %d, want 5", result.Total)
+			}
+			if len(result.SearchApps) != len(tt.wantIDs) {
+				t.Fatalf("got %d search apps, want %d", len(result.SearchApps), len(tt.wantIDs))
+			}
+			for i, app := range result.SearchApps {
+				if got := app["id"]; got != tt.wantIDs[i] {
+					t.Fatalf("search app %d id = %v, want %s", i, got, tt.wantIDs[i])
+				}
+			}
+		})
 	}
 }

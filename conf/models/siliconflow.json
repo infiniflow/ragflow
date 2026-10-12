@@ -2,7 +2,8 @@
   "name": "SILICONFLOW",
   "rank": 980,
   "url": {
-    "default": "https://api.siliconflow.cn/v1"
+    "default": "https://api.siliconflow.cn/v1",
+    "intl": "https://api.siliconflow.com/v1"
   },
   "url_suffix": {
     "chat": "chat/completions",
@@ -76,7 +77,7 @@
       }
     },
     {
-      "name": "qwen/qwen3-8b",
+      "name": "Qwen/Qwen3-8B",
       "context_length": 131072,
       "max_output": 32768,
       "model_types": [
@@ -87,7 +88,7 @@
       }
     },
     {
-      "name": "qwen/qwen3.5-4b",
+      "name": "Qwen/Qwen3.5-4B",
       "context_length": 262144,
       "max_output": 32768,
       "model_types": [
@@ -98,7 +99,7 @@
       }
     },
     {
-      "name": "tencent/hunyuan-mt-7b",
+      "name": "tencent/Hunyuan-MT-7B",
       "context_length": 32768,
       "max_output": 8192,
       "model_types": [
@@ -153,6 +154,1188 @@
       "model_types": [
         "asr"
       ]
+    },
+    {
+      "name": "BAAI/bge-large-en-v1.5",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 512,
+      "max_dimension": 1024,
+      "max_batch_size": 2048,
+      "tokenizer": "bert-wordpiece"
+    },
+    {
+      "name": "BAAI/bge-large-zh-v1.5",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 512,
+      "max_batch_size": 2048,
+      "tokenizer": "bert-wordpiece"
+    },
+    {
+      "name": "ByteDance-Seed/Seed-OSS-36B-Instruct",
+      "context_length": 256000,
+      "max_output": 256000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-OCR",
+      "model_types": [
+        "ocr"
+      ]
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-R1",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.1",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.1-Terminus",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.2",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V3.2-Exp",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Flash",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Flash-Vision-Exp",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Pro",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4-Pro-0813",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "deepseek-ai/DeepSeek-V4.1-Flash",
+      "context_length": 1048576,
+      "max_output": 393216,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "fishaudio/fish-speech-1.5",
+      "model_types": [
+        "tts",
+        "asr"
+      ]
+    },
+    {
+      "name": "google/gemma-4-12B-it",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemma-4-26B-A4B-it",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemma-4-31B-it",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "inclusionAI/Ling-flash-2.0",
+      "context_length": 128000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "inclusionAI/Ling-mini-2.0",
+      "context_length": 128000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "IndexTeam/IndexTTS-2",
+      "model_types": [
+        "tts"
+      ],
+      "max_tokens": 1000
+    },
+    {
+      "name": "LoRA/Qwen/Qwen2.5-14B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "LoRA/Qwen/Qwen2.5-32B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "LoRA/Qwen/Qwen2.5-72B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "LoRA/Qwen/Qwen2.5-7B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "meituan-longcat/LongCat-2.0",
+      "context_length": 1048576,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "MiniMaxAI/MiniMax-M3",
+      "context_length": 1048576,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/Kimi-K2.5",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/Kimi-K2.6",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/Kimi-K2.7-Code",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "moonshotai/Kimi-K3",
+      "context_length": 1048576,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "PaddlePaddle/PaddleOCR-VL-1.5",
+      "context_length": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ]
+    },
+    {
+      "name": "Pro/BAAI/bge-m3",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 8192,
+      "max_dimension": 1024,
+      "max_batch_size": 32,
+      "dimensions": [],
+      "tokenizer": "xlmr-spm"
+    },
+    {
+      "name": "Pro/BAAI/bge-reranker-v2-m3",
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 8192,
+      "tokenizer": "xlmr-spm"
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-R1",
+      "context_length": 131072,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V3",
+      "context_length": 163840,
+      "max_output": 163840,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Pro/deepseek-ai/DeepSeek-V3.2",
+      "context_length": 131072,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Pro/Qwen/Qwen2.5-7B-Instruct",
+      "context_length": 32000,
+      "max_output": 32000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen2.5-14B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen2.5-32B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen2.5-72B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen2.5-72B-Instruct-128K",
+      "context_length": 128000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen2.5-7B-Instruct",
+      "context_length": 32768,
+      "max_output": 4096,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-14B",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-30B-A3B-Instruct-2507",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-32B",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-ASR-1.7B",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-4B",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 32000,
+      "max_dimension": 2560,
+      "max_batch_size": 1024,
+      "dimensions": [],
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "Qwen/Qwen3-Embedding-8B",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 32000,
+      "max_dimension": 4096,
+      "max_batch_size": 32,
+      "dimensions": [],
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "Qwen/Qwen3-Omni-30B-A3B-Captioner",
+      "context_length": 65536,
+      "max_output": 65536,
+      "model_types": [
+        "asr",
+        "vision",
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Omni-30B-A3B-Instruct",
+      "context_length": 65536,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision",
+        "asr",
+        "tts"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Omni-30B-A3B-Thinking",
+      "context_length": 65536,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision",
+        "asr"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-Reranker-0.6B",
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 32000,
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "Qwen/Qwen3-Reranker-4B",
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 32000,
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "Qwen/Qwen3-Reranker-8B",
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 32000,
+      "tokenizer": "qwen-bpe"
+    },
+    {
+      "name": "Qwen/Qwen3-VL-30B-A3B-Instruct",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision",
+        "ocr"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-30B-A3B-Thinking",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-32B-Instruct",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-32B-Thinking",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-8B-Instruct",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-8B-Thinking",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3-VL-Embedding-8B",
+      "model_types": [
+        "embedding"
+      ],
+      "max_tokens": 32000,
+      "max_dimension": 4096,
+      "max_batch_size": 2048,
+      "dimensions": []
+    },
+    {
+      "name": "Qwen/Qwen3-VL-Reranker-8B",
+      "model_types": [
+        "rerank"
+      ],
+      "max_tokens": 32000
+    },
+    {
+      "name": "Qwen/Qwen3.5-122B-A10B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.5-27B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.5-35B-A3B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.5-9B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.6-27B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.6-35B-A3B",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.8-2.4T-A95B",
+      "context_length": 1048576,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "Qwen/Qwen3.8-27B",
+      "context_length": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "stepfun-ai/Step-3.5-Flash",
+      "context_length": 262144,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "tencent/Hunyuan-A13B-Instruct",
+      "context_length": 262144,
+      "max_output": 8192,
+      "model_types": [
+        "chat"
+      ]
+    },
+    {
+      "name": "tencent/Hy3",
+      "context_length": 262144,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "tencent/Hy4-preview",
+      "context_length": 1048576,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "THUDM/GLM-4-32B-0414",
+      "context_length": 128000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "THUDM/GLM-4-9B-0414",
+      "context_length": 32000,
+      "max_output": 32000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "THUDM/GLM-Z1-9B-0414",
+      "context_length": 128000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "XingChenAGI/Xing4.0-29B",
+      "context_length": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "XingChenAGI/XingChenASR-Diarize-V3.0",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "XingChenAGI/XingChenASR-V3.2",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "XingChenAGI/XingChenASR-V3.2-Ultra",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "XingChenAGI/XingChenGSR-V1.0",
+      "model_types": [
+        "asr"
+      ]
+    },
+    {
+      "name": "zai-org/GLM-4.5-Air",
+      "context_length": 128000,
+      "max_output": 96000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-4.5V",
+      "context_length": 65536,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5.1",
+      "context_length": 200000,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5.2",
+      "context_length": 1048576,
+      "max_output": 262144,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5.3",
+      "context_length": 1048576,
+      "max_output": 128000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5.3-Flash",
+      "context_length": 1048576,
+      "max_output": 262144,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
+    },
+    {
+      "name": "zai-org/GLM-5V-Turbo",
+      "context_length": 204800,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      },
+      "thinking": {
+        "default_value": true,
+        "clear_thinking": true
+      }
     }
   ]
 }

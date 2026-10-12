@@ -129,6 +129,93 @@ func TestS3StorageRemoveBucketDeletesEmptyPhysicalBucket(t *testing.T) {
 	}
 }
 
+func TestS3StorageRemoveEmptyBucketPreservesNonemptyPhysicalBucket(t *testing.T) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
+		switch req.Method {
+		case http.MethodHead:
+			return s3Response(http.StatusOK, ""), nil
+		case http.MethodDelete:
+			return s3Response(http.StatusConflict, `<Error><Code>BucketNotEmpty</Code></Error>`), nil
+		}
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+		return nil, nil
+	})
+	if err := storage.RemoveEmptyBucket(t.Context(), "kb01"); err == nil {
+		t.Fatal("RemoveEmptyBucket returned nil for a nonempty bucket")
+	}
+}
+
+func TestS3StorageExistenceChecksDistinguishMissingFromFailure(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		status  int
+		code    string
+		missing bool
+	}{
+		{name: "missing", status: http.StatusNotFound, code: "NoSuchBucket", missing: true},
+		{name: "unavailable", status: http.StatusInternalServerError, code: "InternalError"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
+				return s3Response(test.status, `<Error><Code>`+test.code+`</Code></Error>`), nil
+			})
+			objectExists, objectErr := storage.ObjectExists(t.Context(), "kb01", "file")
+			bucketExists, bucketErr := storage.BucketExistsWithError(t.Context(), "kb01")
+			if objectExists || bucketExists {
+				t.Fatal("existence check reported an existing item")
+			}
+			if test.missing && (objectErr != nil || bucketErr != nil) {
+				t.Fatalf("missing item returned errors: object=%v bucket=%v", objectErr, bucketErr)
+			}
+			if !test.missing && (objectErr == nil || bucketErr == nil) {
+				t.Fatalf("storage failure was treated as missing: object=%v bucket=%v", objectErr, bucketErr)
+			}
+		})
+	}
+}
+
+func TestS3StorageRemoveEmptyBucketDeletesEmptyPhysicalBucket(t *testing.T) {
+	deleted := false
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
+		switch req.Method {
+		case http.MethodHead:
+			return s3Response(http.StatusOK, ""), nil
+		case http.MethodDelete:
+			deleted = true
+			return s3Response(http.StatusNoContent, ""), nil
+		}
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+		return nil, nil
+	})
+	if err := storage.RemoveEmptyBucket(t.Context(), "kb01"); err != nil {
+		t.Fatal(err)
+	}
+	if !deleted {
+		t.Fatal("RemoveEmptyBucket did not delete an empty bucket")
+	}
+}
+
+func TestS3StorageRemoveEmptyBucketPreservesLogicalBucketObjects(t *testing.T) {
+	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {
+		switch {
+		case req.Method == http.MethodHead:
+			return s3Response(http.StatusOK, ""), nil
+		case req.URL.Query().Has("versions"):
+			if got := req.URL.Query().Get("prefix"); got != "prefix/kb01/" {
+				t.Fatalf("prefix = %q", got)
+			}
+			return s3Response(http.StatusOK, `<ListVersionsResult><Version><Key>prefix/kb01/file</Key><VersionId>v1</VersionId></Version></ListVersionsResult>`), nil
+		}
+		t.Fatalf("unexpected request: %s %s", req.Method, req.URL)
+		return nil, nil
+	})
+	storage.bucket = "physical"
+	storage.prefixPath = "prefix"
+	if err := storage.RemoveEmptyBucket(t.Context(), "kb01"); err == nil {
+		t.Fatal("RemoveEmptyBucket returned nil for a nonempty logical bucket")
+	}
+}
+
 func TestS3StorageRemoveBucketSingleBucketMode(t *testing.T) {
 	var deleteBody string
 	storage := newS3TestStorage("us-east-1", func(req *http.Request) (*http.Response, error) {

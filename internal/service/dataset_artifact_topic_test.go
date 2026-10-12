@@ -28,6 +28,32 @@ func TestAggregateWikiTopicItemsUsesMaterializedPaths(t *testing.T) {
 	}
 }
 
+// TestWikiEntitySlugsSkipsBlankSlugs pins the GetWikiGraph guard: an entity row
+// without a slug must not reach the relation filter, because the engine renders
+// it as filter_fulltext('from_kwd', ”) and Infinity fails the whole query with
+// "Trying to match:  on fields: from_kwd failed" (3052).
+func TestWikiEntitySlugsSkipsBlankSlugs(t *testing.T) {
+	got := wikiEntitySlugs([]map[string]interface{}{
+		{"slug_kwd": "topic/出师表"},
+		{"slug_kwd": ""},
+		{"slug_kwd": nil},
+		{}, // phantom row: the engine projected nothing
+		{"slug_kwd": "person/诸葛亮"},
+	})
+	want := []string{"topic/出师表", "person/诸葛亮"}
+	if len(got) != len(want) {
+		t.Fatalf("wikiEntitySlugs = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("wikiEntitySlugs = %#v, want %#v", got, want)
+		}
+	}
+	if slugs := wikiEntitySlugs(nil); len(slugs) != 0 {
+		t.Errorf("wikiEntitySlugs(nil) = %#v, want empty", slugs)
+	}
+}
+
 func TestAggregateWikiTopicItemsIgnoresPathCase(t *testing.T) {
 	items := aggregateWikiTopicItems([]map[string]interface{}{
 		{"topic_kwd": "Knowledge/Core"},

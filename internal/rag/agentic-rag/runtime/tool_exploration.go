@@ -633,7 +633,7 @@ func defaultSeedEncoder(ctx context.Context, tenantID, text string) []float64 {
 	if dao.GetDB() == nil {
 		return nil
 	}
-	embedder := service.NewNavEmbedder(service.NewModelProviderService(), "")
+	embedder := service.NewNavEmbedder(service.NewModelFactory(), "")
 	// Query-side encoding: the seed is the user's query, not an indexed document.
 	vecs, err := embedder.EncodeQueries(ctx, tenantID, []string{text})
 	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {

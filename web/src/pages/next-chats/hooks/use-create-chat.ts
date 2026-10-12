@@ -42,7 +42,7 @@ export const useCreateChatDialog = () => {
       tenant_llm_id: defaultModelDictionary?.llm_id,
       llm_setting: {},
       similarity_threshold: 0.2,
-      vector_similarity_weight: 0.3,
+      keywords_similarity_weight: 0.7,
       top_n: 8,
       rerank_candidates_count: 64,
     }),

@@ -19,13 +19,16 @@ package dao
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
 
 	"github.com/glebarez/sqlite"
+	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
+	"gorm.io/gorm/schema"
 )
 
 func TestAutoMigrateRuntimeModelsCreatesGoRuntimeTables(t *testing.T) {
@@ -237,6 +240,81 @@ func TestCreateIngestionLogSchemaObjectsRechecksAfterCreateError(t *testing.T) {
 	migrator := &ingestionLogSchemaMigratorStub{}
 	if err := createIngestionLogIndexIfMissing(migrator, &entity.IngestionTaskLog{}, "idx_ingestion_task_log_pipeline_id", "add ingestion_task_log pipeline index"); err != nil {
 		t.Fatalf("createIngestionLogIndexIfMissing: %v", err)
+	}
+}
+
+// uniqueColumnType is a gorm.ColumnType that answers Unique() and nothing
+// else, which is all MigrateColumnUnique branches on.
+type uniqueColumnType struct {
+	unique bool
+}
+
+func (c uniqueColumnType) Name() string                      { return "document_id" }
+func (c uniqueColumnType) DatabaseTypeName() string          { return "VARCHAR" }
+func (c uniqueColumnType) ColumnType() (string, bool)        { return "varchar(32)", true }
+func (c uniqueColumnType) PrimaryKey() (bool, bool)          { return false, true }
+func (c uniqueColumnType) AutoIncrement() (bool, bool)       { return false, true }
+func (c uniqueColumnType) Length() (int64, bool)             { return 32, true }
+func (c uniqueColumnType) DecimalSize() (int64, int64, bool) { return 0, 0, false }
+func (c uniqueColumnType) Nullable() (bool, bool)            { return false, true }
+func (c uniqueColumnType) Unique() (bool, bool)              { return c.unique, true }
+func (c uniqueColumnType) ScanType() reflect.Type            { return reflect.TypeOf("") }
+func (c uniqueColumnType) Comment() (string, bool)           { return "", false }
+func (c uniqueColumnType) DefaultValue() (string, bool)      { return "", false }
+
+// TestNamedIndexMigratorSkipsPhantomUniqueDrop pins the behaviour that kept
+// failing every startup on MySQL: a unique index created as an index is not a
+// column-level unique constraint, so nothing exists to drop. The other three
+// combinations must fall through to the stock migrator, which decides whether
+// the constraint it names has to be created.
+func TestNamedIndexMigratorSkipsPhantomUniqueDrop(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		unique   bool
+		tag      bool
+		wantSkip bool
+	}{
+		{"named index with no unique tag", true, false, true},
+		{"column is not unique", false, false, false},
+		{"unique tag already set", false, true, false},
+		{"index and tag agree", true, true, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := phantomUniqueDrop(&schema.Field{Unique: tc.tag}, uniqueColumnType{unique: tc.unique})
+			if got != tc.wantSkip {
+				t.Fatalf("phantomUniqueDrop(unique=%v, tag=%v) = %v, want %v", tc.unique, tc.tag, got, tc.wantSkip)
+			}
+		})
+	}
+}
+
+// TestWrappersExposeEverythingWrappedTypeDoes is the guard that made the
+// concrete embedding necessary: embedding gorm's interfaces instead would drop
+// the twenty migrator methods and the three dialector methods that gorm reaches
+// by type assertion, and losing one surfaces as a panic part-way through
+// AutoMigrate. Embedding the concrete types promotes all of them by
+// construction; this catches a future refactor that reverts to the interfaces.
+func TestWrappersExposeEverythingWrappedTypeDoes(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		wrapped  reflect.Type
+		wrapper  reflect.Type
+		override string
+	}{
+		{"dialector", reflect.TypeOf(&mysql.Dialector{}), reflect.TypeOf(migrationAwareDialector{}), "Migrator"},
+		{"migrator", reflect.TypeOf(mysql.Migrator{}), reflect.TypeOf(namedIndexMigrator{}), "MigrateColumnUnique"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for i := 0; i < tc.wrapped.NumMethod(); i++ {
+				name := tc.wrapped.Method(i).Name
+				if name == tc.override {
+					continue
+				}
+				if _, ok := tc.wrapper.MethodByName(name); !ok {
+					t.Errorf("wrapper does not expose %s; gorm reaches some capabilities by type assertion on the wrapped type rather than through its interfaces", name)
+				}
+			}
+		})
 	}
 }
 

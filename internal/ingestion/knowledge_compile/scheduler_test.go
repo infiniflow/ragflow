@@ -88,6 +88,24 @@ func TestPublishDeletedPreservesRemovedProductTypes(t *testing.T) {
 	}
 }
 
+func TestPublishDeletedSkipsUnscopedEvent(t *testing.T) {
+	scheduler := NewFakeScheduler()
+	previousPublisher, previousClaimer := defaultPublisher, defaultClaimer
+	defaultPublisher, defaultClaimer = scheduler, scheduler
+	t.Cleanup(func() {
+		defaultPublisher, defaultClaimer = previousPublisher, previousClaimer
+	})
+
+	if err := PublishDeleted(t.Context(), "t1", "kb1", "d1", nil, nil); err != nil {
+		t.Fatalf("publish deleted: %v", err)
+	}
+	if _, ok, err := scheduler.Claim(t.Context(), "kb1"); err != nil {
+		t.Fatalf("claim deleted event: %v", err)
+	} else if ok {
+		t.Fatal("unscoped deletion should not enqueue an event")
+	}
+}
+
 func TestFakeSchedulerProgressIsClaimScoped(t *testing.T) {
 	f := NewFakeScheduler()
 	if err := f.Publish(t.Context(), "t1", "kb1", "d1", string(EventTypeCompleted), nil, nil); err != nil {

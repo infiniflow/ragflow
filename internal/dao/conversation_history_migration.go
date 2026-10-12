@@ -33,7 +33,7 @@ import (
 // migration, so both steps read the same progress record instead of keeping one
 // each. The dev prerelease keeps it below v1.0.0-rc1, which owns the schema
 // this step only prepares.
-const conversationHistoryTargetVersion = "v1.0.0-rc1.dev1"
+const conversationHistoryTargetVersion = "v1.0.0-rc1"
 
 // conversationHistoryBatchSize bounds how many conversations are read and
 // written per transaction, so an interrupted run resumes from a committed

@@ -81,7 +81,7 @@ interface GraphRag {
 }
 
 export type IDocumentInfoFilter = {
-  run_status: Record<number, number>;
+  run_status: Record<string, number>;
   suffix: Record<string, number>;
   metadata: Record<string, Record<string, number>>;
 };

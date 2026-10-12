@@ -4,10 +4,10 @@ import {
   LargeModelFormField,
 } from '@/components/large-model-form-field';
 import { LlmSettingSchema } from '@/components/llm-setting-items/next';
-import { SliderInputSwitchFormField } from '@/components/llm-setting-items/slider';
 import { MessageHistoryWindowSizeFormField } from '@/components/message-history-window-size-item';
 import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
+import { SwitchFormField } from '@/components/switch-form-field';
 import { Button } from '@/components/ui/button';
 import {
   Form,
@@ -247,22 +247,10 @@ function AgentForm({ node }: INextOperatorForm) {
           <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
             <section className="space-y-5">
               <MessageHistoryWindowSizeFormField></MessageHistoryWindowSizeFormField>
-              <FormField
-                control={form.control}
-                name={`cite`}
-                render={({ field }) => (
-                  <FormItem className="flex-1">
-                    <FormLabel tooltip={t('chat.quoteTip')}>
-                      {t('flow.cite')}
-                    </FormLabel>
-                    <FormControl>
-                      <Switch
-                        checked={field.value}
-                        onCheckedChange={field.onChange}
-                      ></Switch>
-                    </FormControl>
-                  </FormItem>
-                )}
+              <SwitchFormField
+                name="cite"
+                label={t('flow.cite')}
+                tooltip={t('chat.quoteTip')}
               />
               <FormField
                 control={form.control}

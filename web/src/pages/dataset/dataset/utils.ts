@@ -1,7 +1,6 @@
 import { Operator } from '@/constants/agent';
 import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import type { IDocumentInfo } from '@/interfaces/database/document';
-import { pickByBackend } from '@/utils/backend-variant';
 import { getExtension } from '@/utils/document-util';
 import {
   getOperatorType,
@@ -21,11 +20,6 @@ const activeIngestionStatuses = new Set<IngestionTaskStatus>([
   IngestionTaskStatus.RUNNING,
   IngestionTaskStatus.STOPPING,
 ]);
-
-export const isParserRunning = (text?: RunningStatus) => {
-  const isRunning = text === RunningStatus.RUNNING;
-  return isRunning;
-};
 
 /**
  * Maps a Go `ingestion_status` value onto the legacy `RunningStatus`
@@ -71,39 +65,24 @@ export const ingestionStatusToRunningStatus = (
 /**
  * Returns the effective display/action status of a document.
  *
- * Go derives every status from the real-time `ingestion_status` field
- * (the `run` field is no longer returned). Python keeps reading the
- * legacy `run` field, which is always present on Python responses.
+ * Every status is derived from the real-time `ingestion_status` field
+ * (the legacy `run` field is no longer returned).
  *
- * @param document - Document (or subset) carrying the raw status fields.
+ * @param document - Document (or subset) carrying the raw status field.
  * @returns The `RunningStatus` to drive icons, dots and labels.
  *
  * @example
- * // Go backend
  * getDocumentRunningStatus({ ingestion_status: IngestionTaskStatus.SCHEDULED });
  * // => RunningStatus.QUEUED
- *
- * @example
- * // Python backend
- * getDocumentRunningStatus({ run: RunningStatus.RUNNING });
- * // => RunningStatus.RUNNING
  */
 export const getDocumentRunningStatus = (
-  document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
-): RunningStatus =>
-  pickByBackend({
-    go: ingestionStatusToRunningStatus(document.ingestion_status),
-    python: document.run ?? RunningStatus.UNSTART,
-  });
+  document: Pick<IDocumentInfo, 'ingestion_status'>,
+): RunningStatus => ingestionStatusToRunningStatus(document.ingestion_status);
 
-/** Returns the backend-specific message shown for a document's current run. */
+/** Returns the message shown for a document's current run. */
 export const getDocumentProgressMessage = (
-  document: Pick<IDocumentInfo, 'progress_msg' | 'latest_ingestion_event'>,
-) =>
-  pickByBackend({
-    go: document.latest_ingestion_event?.message,
-    python: document.progress_msg,
-  }) || '-';
+  document: Pick<IDocumentInfo, 'latest_ingestion_event'>,
+) => document.latest_ingestion_event?.message || '-';
 
 /**
  * Whether a cancel request is currently in flight for the document.
@@ -130,41 +109,21 @@ const isGoDocumentProcessing = (
   !!document.ingestion_status &&
   activeIngestionStatuses.has(document.ingestion_status);
 
-// Python: ingestion_status is never present on Python responses (the
-// Python backend only serializes the legacy run field), so run is the
-// only signal — exactly the pre-Go polling contract
-// (docs.some(doc => doc.run === RUNNING)).
-const isPythonDocumentProcessing = (document: Pick<IDocumentInfo, 'run'>) =>
-  isParserRunning(document.run);
-
 /**
  * Whether a document is currently being parsed (queued, running or
  * canceling). Drives the 5s list polling, disabled row actions and the
  * bulk-delete protection.
  *
- * The check is backend-specific: on Go it relies solely on
- * `ingestion_status`, on Python it follows the legacy `run`-based logic.
- *
- * @param document - Document (or subset) carrying the raw status fields.
+ * @param document - Document (or subset) carrying the raw status field.
  * @returns `true` while any parse-related task is in progress.
  *
  * @example
- * // Go backend
  * isDocumentProcessing({ ingestion_status: IngestionTaskStatus.RUNNING });
  * // => true
- *
- * @example
- * // Python backend
- * isDocumentProcessing({ run: RunningStatus.DONE });
- * // => false
  */
 export const isDocumentProcessing = (
-  document: Pick<IDocumentInfo, 'run' | 'ingestion_status'>,
-) =>
-  pickByBackend({
-    go: isGoDocumentProcessing(document),
-    python: isPythonDocumentProcessing(document),
-  });
+  document: Pick<IDocumentInfo, 'ingestion_status'>,
+) => isGoDocumentProcessing(document);
 
 // --- Parser prerequisite checks -------------------------------------------
 // A file cannot be parsed under the dataset's current Parser operator when

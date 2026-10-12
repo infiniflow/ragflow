@@ -34,12 +34,12 @@ func TestIsMessageDocumentNotFound(t *testing.T) {
 
 func TestMemoryIndexNameMatchesPythonPrefix(t *testing.T) {
 	t.Setenv(common.EnvESIndexPrefix, "")
-	if got := memoryIndexName("tenant-1"); got != "memory_tenant-1" {
-		t.Fatalf("memoryIndexName() = %q", got)
+	if got := MemoryIndexName("tenant-1"); got != "memory_tenant-1" {
+		t.Fatalf("MemoryIndexName() = %q", got)
 	}
 	t.Setenv(common.EnvESIndexPrefix, "legacy")
-	if got := memoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
-		t.Fatalf("memoryIndexName() with prefix = %q", got)
+	if got := MemoryIndexName("tenant-1"); got != "memory_legacy_tenant-1" {
+		t.Fatalf("MemoryIndexName() with prefix = %q", got)
 	}
 }
 
@@ -315,6 +315,9 @@ func TestListMemoryFiltersKeepsCanonicalFacetOrder(t *testing.T) {
 	}
 }
 
+// TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines pins the
+// forget_at companion column behavior for engines that store it as a plain
+// nullable field.
 func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 	setupMemoryMessageTestDB(t)
 
@@ -346,6 +349,8 @@ func TestForgetMessageKeepsCompanionFieldForNonOceanBaseEngines(t *testing.T) {
 		{engineType: "infinity", wantForgetAtCompanion: true},
 		{engineType: "oceanbase", wantForgetAtCompanion: false},
 		{engineType: "seekdb", wantForgetAtCompanion: false},
+		// Vastbase memory tables carry forget_at but no forget_at_flt column.
+		{engineType: "vastbase", wantForgetAtCompanion: false},
 	} {
 		t.Run(test.engineType, func(t *testing.T) {
 			docEngine := &memoryMessageDocEngine{engineType: test.engineType}
