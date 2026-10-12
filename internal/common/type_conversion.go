@@ -17,6 +17,7 @@
 package common
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
@@ -62,6 +63,34 @@ func ToIntNum(v any) (int, bool) {
 		return int(n), true
 	case float64:
 		return int(n), true
+	}
+	return 0, false
+}
+
+func ToFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case json.Number:
+		f, err := x.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
 	}
 	return 0, false
 }
