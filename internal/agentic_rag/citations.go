@@ -37,9 +37,8 @@ import (
 // payload the frontend already resolves ([ID:N] -> reference.chunks[N],
 // N 0-based — the same contract naive answers ship).
 
-// citedChunkIDRe matches the `chunk_id: <id>` provenance field of the FOS
-// format (Tested / Eliminated / Retained / Clue lines). Web-sourced lines
-// carry no chunk_id by design and are naturally excluded.
+// citedChunkIDRe matches an explicit `chunk_id: <id>` provenance field for a
+// corpus chunk or web passage.
 var citedChunkIDRe = regexp.MustCompile(`chunk_id:\s*([A-Za-z0-9_-]+)`)
 
 // ExtractCitedChunkIDs returns the chunk ids the deliverable cites, in

@@ -17,6 +17,7 @@
 package agentic_rag
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -67,7 +68,7 @@ type toolFactory func(tenantID string, datasetIDs []string) tool.BaseTool
 // toolRegistry maps every supported tool name to its constructor. Keeping this
 // here means adding a new tool is a one-line registration, and the config drives
 // which subset is actually loaded. web_search is NOT in this map and must not
-// appear in a template's tools list: it is injected by Run when the conversation
+// appear in a template's tools list: toolsFor adds it when the conversation
 // has a search provider.
 func toolRegistry() map[string]toolFactory {
 	return map[string]toolFactory{
@@ -196,10 +197,14 @@ func TemplateTemperature(templateID string) *float64 {
 	return &t
 }
 
-// toolsFor builds the agent tool set from the template's tool list, falling back
+// toolsFor uses explicit tools or builds them from the template, falling back
 // to the full default set when the template lists none. Unknown names are
-// skipped with a warning so a typo doesn't silently drop a tool.
-func toolsFor(t Template, tenantID string, datasetIDs []string) []tool.BaseTool {
+// skipped with a warning. The conversation's web capability is added here so
+// all retrieval tools use the same agent dispatch path.
+func toolsFor(ctx context.Context, t Template, tenantID string, datasetIDs []string, tools []tool.BaseTool) []tool.BaseTool {
+	if len(tools) > 0 {
+		return append(append([]tool.BaseTool(nil), tools...), webSearchTools(ctx)...)
+	}
 	reg := toolRegistry()
 	names := t.Tools
 	if len(names) == 0 {
@@ -218,5 +223,5 @@ func toolsFor(t Template, tenantID string, datasetIDs []string) []tool.BaseTool 
 		}
 		out = append(out, f(tenantID, datasetIDs))
 	}
-	return out
+	return append(out, webSearchTools(ctx)...)
 }

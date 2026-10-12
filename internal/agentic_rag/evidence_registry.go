@@ -79,13 +79,17 @@ func (r *EvidenceRegistry) StampWebResult(result WebResult) int {
 	if r == nil || strings.TrimSpace(result.URL) == "" {
 		return -1
 	}
-	id := fmt.Sprintf("web-%x", sha256.Sum256([]byte(result.URL+"\n"+result.Content)))
+	id := webResultID(result)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, exists := r.webResults[id]; !exists {
 		r.webResults[id] = result
 	}
 	return r.stampLocked(id)
+}
+
+func webResultID(result WebResult) string {
+	return fmt.Sprintf("web-%x", sha256.Sum256([]byte(result.URL+"\n"+result.Content)))
 }
 
 // WebResult returns a retained web passage. Corpus ids are resolved through
