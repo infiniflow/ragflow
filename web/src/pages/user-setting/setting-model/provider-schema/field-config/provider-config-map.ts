@@ -711,14 +711,17 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       instance_name: values.instance_name,
       llm_factory: LLMFactory.MinerU,
       api_key: buildMineruApiKey(values),
-      base_url: '',
+      base_url: values.mineru_apiserver ?? '',
       model_info: [],
     }),
     echoTransform: (instance) => {
       const obj = parseApiKeyAsObject(instance.api_key) ?? {};
       const rawDelete = obj.mineru_delete_output;
       return {
-        mineru_apiserver: obj.mineru_apiserver ?? '',
+        mineru_apiserver:
+          typeof instance.base_url === 'string' && instance.base_url.trim()
+            ? instance.base_url
+            : (obj.mineru_apiserver ?? ''),
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',
