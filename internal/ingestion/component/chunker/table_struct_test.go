@@ -23,7 +23,7 @@ import (
 
 func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 	td := &entity.TableData{
-		Rows:       [][]string{{"Name", "Age"}, {"Alice", "30"}, {"Bob", "25"}},
+		Grid:       [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}, {{Text: "Alice"}, {Text: "30"}}, {{Text: "Bob"}, {Text: "25"}}},
 		HeaderRows: 1,
 	}
 	out := expandHTMLTableRows(schema.ChunkDoc{DocType: "table", TableData: td})
@@ -44,7 +44,7 @@ func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 }
 
 func TestExpandHTMLTableRowsHeaderOnlySingleChunk(t *testing.T) {
-	td := &entity.TableData{Rows: [][]string{{"Name", "Age"}}, HeaderRows: 1}
+	td := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}}, HeaderRows: 1}
 	out := expandHTMLTableRows(schema.ChunkDoc{DocType: "table", TableData: td})
 	if len(out) != 1 {
 		t.Fatalf("got %d chunks, want 1 (header-only)", len(out))

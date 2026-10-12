@@ -37,20 +37,22 @@ import (
 // aligned with the sub-table. headerRows and ranges are 0/nil when the table
 // fits in a single chunk (the caller then emits the whole table unchanged).
 func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(string) int) (parts []entity.TableData, dataRanges [][2]int, headerRows int) {
-	if td == nil || len(td.Rows) == 0 {
+	if td == nil || len(td.Grid) == 0 {
 		return nil, nil, 0
 	}
 	headerRows = td.HeaderRows
-	if headerRows > len(td.Rows) {
-		headerRows = len(td.Rows)
+	if headerRows > len(td.Grid) {
+		headerRows = len(td.Grid)
 	}
-	dataRows := td.Rows[headerRows:]
+	dataRows := td.Grid[headerRows:]
 	if len(dataRows) == 0 {
 		return nil, nil, 0
 	}
 
+	headerGrid := append([][]entity.TableCell{}, td.Grid[:headerRows]...)
+
 	// Base tokens: header rows + caption, replicated into every sub-table.
-	base := &entity.TableData{Rows: td.Rows[:headerRows], Caption: td.Caption}
+	base := &entity.TableData{Grid: headerGrid, Caption: td.Caption}
 	baseTokens := countTokens(tableutil.RenderTableText(base))
 
 	var start int
@@ -62,7 +64,7 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 		part := entity.TableData{
 			Caption:    td.Caption,
 			HeaderRows: headerRows,
-			Rows:       append(append([][]string{}, td.Rows[:headerRows]...), dataRows[start:end]...),
+			Grid:       append(append([][]entity.TableCell{}, headerGrid...), dataRows[start:end]...),
 		}
 		parts = append(parts, part)
 		dataRanges = append(dataRanges, [2]int{start, end})
@@ -72,7 +74,7 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 
 	currentTokens = baseTokens
 	for i, row := range dataRows {
-		rowTokens := countTokens(strings.Join(row, " "))
+		rowTokens := countTokens(rowTokenText(row))
 		// Flush the running batch before this row if adding it would exceed the
 		// budget. A single row that alone exceeds the budget still becomes its
 		// own chunk (row integrity wins over the budget).
@@ -87,4 +89,17 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 		return nil, nil, 0
 	}
 	return parts, dataRanges, headerRows
+}
+
+// rowTokenText joins the non-covered cell texts of a grid row for token
+// counting, mirroring how the row is later rendered.
+func rowTokenText(row []entity.TableCell) string {
+	texts := make([]string, 0, len(row))
+	for _, c := range row {
+		if c.Covered {
+			continue
+		}
+		texts = append(texts, c.Text)
+	}
+	return strings.Join(texts, " ")
 }

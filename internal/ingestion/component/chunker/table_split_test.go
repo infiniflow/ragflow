@@ -24,11 +24,11 @@ import (
 func charTokens(s string) int { return len([]rune(s)) }
 
 func makeTable(dataRows int) *entity.TableData {
-	rows := [][]string{{"Name", "Age"}} // header
+	grid := [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}} // header
 	for i := 0; i < dataRows; i++ {
-		rows = append(rows, []string{"person", "30"})
+		grid = append(grid, []entity.TableCell{{Text: "person"}, {Text: "30"}})
 	}
-	return &entity.TableData{Rows: rows, HeaderRows: 1}
+	return &entity.TableData{Grid: grid, HeaderRows: 1}
 }
 
 func TestSplitLargeTableFitsWhole(t *testing.T) {
@@ -62,10 +62,10 @@ func TestSplitLargeTableRowGranular(t *testing.T) {
 		if part.HeaderRows != 1 {
 			t.Fatalf("part %d headerRows = %d", i, part.HeaderRows)
 		}
-		if len(part.Rows) < 2 {
-			t.Fatalf("part %d has <1 data row: %v", i, part.Rows)
+		if len(part.CellTexts()) < 2 {
+			t.Fatalf("part %d has <1 data row: %v", i, part.CellTexts())
 		}
-		if part.Rows[0][0] != "Name" {
+		if part.CellTexts()[0][0] != "Name" {
 			t.Fatalf("part %d missing header row", i)
 		}
 		r := ranges[i]
@@ -80,9 +80,9 @@ func TestSplitLargeTableRowGranular(t *testing.T) {
 	// The concatenation of every part's data rows must equal the original rows.
 	var rebuilt [][]string
 	for _, part := range parts {
-		rebuilt = append(rebuilt, part.Rows[1:]...)
+		rebuilt = append(rebuilt, part.CellTexts()[1:]...)
 	}
-	for i, row := range td.Rows[1:] {
+	for i, row := range td.CellTexts()[1:] {
 		if len(rebuilt[i]) != len(row) || rebuilt[i][0] != row[0] {
 			t.Fatalf("row %d mismatch: got %v want %v", i, rebuilt[i], row)
 		}
@@ -94,7 +94,7 @@ func TestSplitLargeTableSingleRowOverBudgetKeepsRow(t *testing.T) {
 	// (row integrity wins over the budget). A single part means "not split,
 	// emit whole" — the over-budget row becomes one chunk rather than being cut.
 	td := &entity.TableData{
-		Rows:       [][]string{{"H"}, {"x" + string(make([]byte, 200))}},
+		Grid:       [][]entity.TableCell{{{Text: "H"}}, {{Text: "x" + string(make([]byte, 200))}}},
 		HeaderRows: 1,
 	}
 	parts, ranges, _ := splitLargeTable(td, 5, charTokens)
@@ -104,7 +104,7 @@ func TestSplitLargeTableSingleRowOverBudgetKeepsRow(t *testing.T) {
 }
 
 func TestSplitLargeTableHeaderOnly(t *testing.T) {
-	td := &entity.TableData{Rows: [][]string{{"Name", "Age"}}, HeaderRows: 1}
+	td := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}}, HeaderRows: 1}
 	parts, ranges, _ := splitLargeTable(td, 10, charTokens)
 	if ranges != nil || len(parts) != 0 {
 		t.Fatalf("header-only table should not split")

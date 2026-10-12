@@ -44,7 +44,7 @@ func TestParseTableHTMLHappyPath(t *testing.T) {
 		{"Alice", "30"},
 		{"Bob", "25"},
 	}
-	assertRowsEqual(t, td.Rows, want)
+	assertRowsEqual(t, td.CellTexts(), want)
 }
 
 func TestParseTableHTMLMultipleHeaderRows(t *testing.T) {
@@ -67,8 +67,8 @@ func TestParseTableHTMLNoThTreatsFirstRowAsHeader(t *testing.T) {
 
 func TestParseTableHTMLEmpty(t *testing.T) {
 	td := mustParse(t, `<table></table>`)
-	if len(td.Rows) != 0 {
-		t.Fatalf("Rows = %v, want empty", td.Rows)
+	if len(td.CellTexts()) != 0 {
+		t.Fatalf("Rows = %v, want empty", td.CellTexts())
 	}
 	if td.HeaderRows != 0 {
 		t.Fatalf("HeaderRows = %d, want 0", td.HeaderRows)
@@ -78,7 +78,7 @@ func TestParseTableHTMLEmpty(t *testing.T) {
 func TestParseTableHTMLTrimsCellWhitespace(t *testing.T) {
 	html := `<table><tr><td>  spaced  </td></tr></table>`
 	td := mustParse(t, html)
-	if got := td.Rows[0][0]; got != "spaced" {
+	if got := td.CellTexts()[0][0]; got != "spaced" {
 		t.Fatalf("cell = %q, want %q", got, "spaced")
 	}
 }
@@ -86,7 +86,7 @@ func TestParseTableHTMLTrimsCellWhitespace(t *testing.T) {
 func TestParseTableHTMLBrBecomesNewline(t *testing.T) {
 	html := `<table><tr><td>line1<br>line2</td></tr></table>`
 	td := mustParse(t, html)
-	if got := td.Rows[0][0]; got != "line1\nline2" {
+	if got := td.CellTexts()[0][0]; got != "line1\nline2" {
 		t.Fatalf("cell = %q, want %q", got, "line1\nline2")
 	}
 }
@@ -96,7 +96,7 @@ func TestParseTableHTMLInertElementsIgnored(t *testing.T) {
 	html := `<table><tr><td>keep<script>alert(1)</script>middle` +
 		`<style>.x{}</style>end</td></tr></table>`
 	td := mustParse(t, html)
-	got := td.Rows[0][0]
+	got := td.CellTexts()[0][0]
 	if strings.Contains(got, "alert") || strings.Contains(got, ".x{}") {
 		t.Fatalf("inert content leaked into cell: %q", got)
 	}
@@ -110,10 +110,10 @@ func TestParseTableHTMLNestedTableFoldedIntoCell(t *testing.T) {
 	td := mustParse(t, html)
 	// Outer <tr> yields exactly one row with one cell; the nested <tr> must
 	// NOT become a separate row.
-	if len(td.Rows) != 1 {
-		t.Fatalf("len(Rows) = %d, want 1 (nested tr not a row)", len(td.Rows))
+	if len(td.CellTexts()) != 1 {
+		t.Fatalf("len(Rows) = %d, want 1 (nested tr not a row)", len(td.CellTexts()))
 	}
-	got := td.Rows[0][0]
+	got := td.CellTexts()[0][0]
 	if !strings.Contains(got, "outer") || !strings.Contains(got, "inner") {
 		t.Fatalf("nested table text not folded: %q", got)
 	}
@@ -126,26 +126,43 @@ func TestParseTableHTMLBareTrWrapped(t *testing.T) {
 	// Legacy behaviour: a bare <tr> fragment without <table> still parses.
 	html := `<tr><td>a</td><td>b</td></tr>`
 	td := mustParse(t, html)
-	assertRowsEqual(t, td.Rows, [][]string{{"a", "b"}})
+	assertRowsEqual(t, td.CellTexts(), [][]string{{"a", "b"}})
 }
 
-func TestParseTableHTMLColspanIgnoredLikeLegacy(t *testing.T) {
-	// Legacy tableRowsWithHeader ignores colspan/rowspan and just collects
-	// each <td>/<th> as one cell; a spanned cell keeps its own text.
+func TestParseTableHTMLCapturesColspan(t *testing.T) {
+	// A colspan is captured, not discarded: the wide cell keeps its text on the
+	// origin slot (ColSpan=2) and the engulfed position becomes a Covered
+	// marker, but the text view still yields the two real cell texts.
 	html := `<table><tr><td colspan="2">wide</td><td>narrow</td></tr></table>`
 	td := mustParse(t, html)
-	assertRowsEqual(t, td.Rows, [][]string{{"wide", "narrow"}})
+	row := td.Grid[0]
+	if len(row) != 3 {
+		t.Fatalf("grid width = %d, want 3 (origin + covered + narrow)", len(row))
+	}
+	if row[0].Text != "wide" || row[0].ColSpan != 2 || row[0].RowSpan != 1 {
+		t.Fatalf("origin slot wrong: %+v", row[0])
+	}
+	if !row[1].Covered || row[1].OriginCol != 0 {
+		t.Fatalf("engulfed slot must be Covered pointing at col 0: %+v", row[1])
+	}
+	if row[2].Text != "narrow" || row[2].ColSpan != 1 {
+		t.Fatalf("narrow slot wrong: %+v", row[2])
+	}
+	assertRowsEqual(t, td.CellTexts(), [][]string{{"wide", "narrow"}})
 }
 
 func TestRenderTableHTMLRoundTrip(t *testing.T) {
 	td := &entity.TableData{
-		Rows:       [][]string{{"Name", "Age"}, {"Alice", "30"}},
+		Grid: [][]entity.TableCell{
+			{{Text: "Name"}, {Text: "Age"}},
+			{{Text: "Alice"}, {Text: "30"}},
+		},
 		HeaderRows: 1,
 		Caption:    "People",
 	}
 	rendered := RenderTableHTML(td)
 	back := mustParse(t, rendered)
-	assertRowsEqual(t, back.Rows, td.Rows)
+	assertRowsEqual(t, back.CellTexts(), td.CellTexts())
 	if back.HeaderRows != td.HeaderRows {
 		t.Fatalf("HeaderRows round-trip = %d, want %d", back.HeaderRows, td.HeaderRows)
 	}
@@ -156,7 +173,10 @@ func TestRenderTableHTMLRoundTrip(t *testing.T) {
 
 func TestRenderTableTextHasNoTags(t *testing.T) {
 	td := &entity.TableData{
-		Rows:       [][]string{{"Name", "Age"}, {"Alice", "30"}},
+		Grid: [][]entity.TableCell{
+			{{Text: "Name"}, {Text: "Age"}},
+			{{Text: "Alice"}, {Text: "30"}},
+		},
 		HeaderRows: 1,
 		Caption:    "People",
 	}

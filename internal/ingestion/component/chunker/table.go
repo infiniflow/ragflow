@@ -149,7 +149,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	if td == nil {
 		return []schema.ChunkDoc{item}
 	}
-	rows, headerCount := td.Rows, td.HeaderRows
+	rows, headerCount := td.CellTexts(), td.HeaderRows
 	if len(rows) <= headerCount {
 		out := item
 		out.Text = tableutil.RenderTableText(td)

@@ -88,7 +88,7 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 				if !ok || td == nil {
 					t.Fatalf("doc_type_kwd table item missing structured *entity.TableData: %#v", item)
 				}
-				if len(td.Rows) == 0 {
+				if len(td.CellTexts()) == 0 {
 					t.Fatalf("structured table has no rows: %#v", td)
 				}
 				if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") {
