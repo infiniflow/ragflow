@@ -344,6 +344,39 @@ func TestMistralOCRFileSendsImagesAsImageURL(t *testing.T) {
 	}
 }
 
+// A remote URL whose path ends in an image extension is sent as image_url;
+// the query string and the extension case do not matter.
+func TestMistralOCRFileSendsRemoteImagesAsImageURL(t *testing.T) {
+	withSSRFBypass(t)
+	rec := &mistralOCRRecorder{}
+	srv := newMistralOCRServer(t, rec, http.StatusOK, `{"pages":[]}`)
+	defer srv.Close()
+
+	model := "mistral-ocr-latest"
+	for _, tc := range []struct {
+		remote   string
+		wantType string
+	}{
+		{remote: "https://example.com/scans/Page-1.JPG?sig=abc", wantType: "image_url"},
+		{remote: "https://example.com/scans/page-2.webp", wantType: "image_url"},
+		{remote: "https://example.com/report.pdf?name=scan.png", wantType: "document_url"},
+		{remote: "https://example.com/slides.pptx", wantType: "document_url"},
+		{remote: "https://example.com/download", wantType: "document_url"},
+	} {
+		t.Run(tc.remote, func(t *testing.T) {
+			remote := tc.remote
+			if _, err := newMistralOCRDriverForTest().OCRFile(context.Background(), &model, nil, &remote,
+				mistralOCRAPIConfig("sk-test", srv.URL), nil, nil); err != nil {
+				t.Fatalf("OCRFile: %v", err)
+			}
+			doc, _ := rec.ocrBody["document"].(map[string]any)
+			if doc["type"] != tc.wantType || doc[tc.wantType] != remote {
+				t.Fatalf("document = %v, want %s %s", doc, tc.wantType, remote)
+			}
+		})
+	}
+}
+
 func TestMistralOCRFileSendsRemoteDocumentURL(t *testing.T) {
 	withSSRFBypass(t)
 	rec := &mistralOCRRecorder{}

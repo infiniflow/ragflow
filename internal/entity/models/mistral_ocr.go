@@ -25,6 +25,8 @@ import (
 	"mime"
 	"mime/multipart"
 	"net/http"
+	neturl "net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strings"
@@ -144,6 +146,8 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 
 	var document map[string]any
 	switch {
+	case len(content) == 0 && mistralOCRIsImageURL(remoteURL):
+		document = map[string]any{"type": "image_url", "image_url": remoteURL}
 	case len(content) == 0:
 		document = map[string]any{"type": "document_url", "document_url": remoteURL}
 	case len(content) > mistralOCRInlineMaxBytes:
@@ -236,6 +240,22 @@ func mistralOCRMimeType(content []byte) string {
 		return "application/octet-stream"
 	}
 	return mediaType
+}
+
+// mistralOCRImageExtensions are common image formats, sent to /v1/ocr as
+// image_url; anything else is sent as document_url.
+var mistralOCRImageExtensions = map[string]bool{
+	".png": true, ".jpg": true, ".jpeg": true, ".avif": true, ".webp": true,
+	".gif": true, ".bmp": true, ".tif": true, ".tiff": true,
+}
+
+// mistralOCRIsImageURL reports whether the remote file's path names an image.
+func mistralOCRIsImageURL(remoteURL string) bool {
+	parsed, err := neturl.Parse(remoteURL)
+	if err != nil {
+		return false
+	}
+	return mistralOCRImageExtensions[strings.ToLower(path.Ext(parsed.Path))]
 }
 
 // mistralOCRSend performs req and returns the response body of a 2xx reply.
