@@ -37,21 +37,26 @@ import (
 // it whenever the caller supplies one.
 const webSearchToolName = "web_search"
 
+const webSearchInstruction = `### Web search enabled for this turn
+The user enabled internet search. An initial web_search query for the current question has already run; its result is included as a tool message. Use that web evidence alongside corpus retrieval, even when the corpus returns a match. Call web_search again with refined queries when the initial results are insufficient.
+Use web results to supplement the corpus, check current facts, and distinguish public meanings of a name from unrelated corpus matches.
+Deep-read corpus evidence with list_chunks; web results are snippets and cannot be opened with list_chunks. Ground web-backed claims in the returned snippets and cite each result's ref attribute as [ID:n], just like corpus evidence. These handles become clickable citations to the source URLs. Clearly distinguish corpus facts from web facts. If web search fails or finds no useful evidence, state that limitation and answer from the evidence available.`
+
 const webSearchToolDescription = `Web search tool: queries the public internet through the conversation's configured search provider and returns the top snippets with their URLs.
 
 ## When to use it
-Only after the corpus tools cannot ground a sub-question: the dataset is missing the fact, is stale, or the question reaches outside every bound dataset. It is never a substitute for a locate pass you have not run.
+When this tool is available, the user enabled internet search and an initial query for the current question runs before your first model turn. Use this tool for additional or refined queries when the initial results do not answer the question. Use the web alongside corpus evidence to check current facts and resolve public meanings of ambiguous names.
 
 ## What the Tool Does NOT Do
 - Does NOT search the conversation's datasets (use grep_chunks / search_bm25_chunks / search_chunks)
 - Does NOT return full pages: hits are provider SNIPPETS, and they are not corpus chunks — list_chunks cannot open them
-- Does NOT justify a claim on its own: a web hit is supporting evidence, cite it by URL
+- Does NOT support facts absent from its snippet: ground web-backed claims in the returned text and cite its ref handle
 
-## Citing a hit in your deliverable
-A hit has no chunk_id and list_chunks cannot open it, so a matrix/chain line citing one carries (source: web, url: <url>, title: <title>, snippet: "<verbatim passage from that result>") IN PLACE of the doc/doc_id/chunk_id triple — never paste a URL into a doc/doc_id field, never invent a chunk_id for a web hit, and the snippet is verbatim from that result. Keep dataset deep-reads as the standard for anything the bound datasets hold.
+## Citing a hit in your answer
+A hit has no corpus chunk_id and list_chunks cannot open it. Cite web-backed claims with [ID:n], where n is the result's ref attribute. Never invent a chunk_id or a citation handle. Use only the handles actually supplied by the tool, and distinguish web facts from corpus facts.
 
 ## Output (XML)
-Returns an XML <web_results count="N" query="..."> document. Each hit is a <result> element with rank, url and title attributes and the snippet as its text.`
+Returns an XML <web_results count="N" query="..."> document. Each hit is a <result> element with rank, url, title and ref attributes and the snippet as its text.`
 
 // WebResult is one hit handed back by the conversation's web search provider.
 // Content is the provider's snippet/passage text — web hits are snippets and
@@ -234,7 +239,7 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 		zap.Int("hits", len(hits)),
 		zap.Strings("failures", failures),
 	)
-	return formatWebResultsXML(strings.Join(queries, " | "), hits, notices), nil
+	return formatWebResultsXML(ctx, strings.Join(queries, " | "), hits, notices), nil
 }
 
 // formatWebResultsXML renders the web_search payload: the same compact XML
@@ -242,7 +247,8 @@ func (w *WebSearchTool) invokableRun(ctx context.Context, argumentsInJSON string
 // corpus identifiers, since a web hit has no chunk_id or doc_id to deep-read.
 // notices (non-empty only when a query errored) are emitted right after the
 // opening tag so a partial failure is visible rather than fatal.
-func formatWebResultsXML(query string, hits []webHit, notices []string) string {
+func formatWebResultsXML(ctx context.Context, query string, hits []webHit, notices []string) string {
+	registry := evidenceRegistryFrom(ctx)
 	var b strings.Builder
 	fmt.Fprintf(&b, "<web_results count=\"%d\" query=\"%s\">\n", len(hits), xmlEscape(query))
 	for _, n := range notices {
@@ -250,8 +256,12 @@ func formatWebResultsXML(query string, hits []webHit, notices []string) string {
 		b.WriteString("\n")
 	}
 	for i, h := range hits {
-		fmt.Fprintf(&b, "<result rank=\"%d\" query=\"%s\" url=\"%s\" title=\"%s\">%s</result>\n",
-			i+1, xmlEscape(h.query), xmlEscape(h.url), xmlEscape(h.title), xmlEscape(h.content))
+		fmt.Fprintf(&b, "<result rank=\"%d\" query=\"%s\" url=\"%s\" title=\"%s\"",
+			i+1, xmlEscape(h.query), xmlEscape(h.url), xmlEscape(h.title))
+		if ref := registry.StampWebResult(WebResult{Title: h.title, URL: h.url, Content: h.content}); ref >= 0 {
+			fmt.Fprintf(&b, " ref=\"%d\"", ref)
+		}
+		fmt.Fprintf(&b, ">%s</result>\n", xmlEscape(h.content))
 	}
 	b.WriteString("</web_results>")
 	return b.String()

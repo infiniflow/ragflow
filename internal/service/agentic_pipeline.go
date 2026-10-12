@@ -423,6 +423,7 @@ func chatDatasetIDs(chat *entity.Chat) []string {
 // numbering. The answer cites the run's evidence handles ([ID:n], the numbering
 // the model was shown); an answer that named passages by raw chunk_id instead
 // (a document-level question has no handle to write) falls back to that path.
+// Web passages resolve from the run's registry; only corpus ids reach the index.
 // With no resolvable citations both come back unchanged: an empty reference
 // keeps the SSE shape the UI expects, and the untouched text is the honest state
 // of an answer whose sources could not be loaded.
@@ -439,6 +440,21 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 	//   - several handles compressed into one marker ("[ID:47, ID:115]").
 	normalized := agentic_rag.ExpandCommaCitations(
 		RepairBadCitationFormats(final), len(registry.IDs()))
+	// A model may cite a web result with a Markdown link instead of its
+	// handle. Only links to sources actually shown during this run qualify.
+	linkedURLs := make(map[string]bool)
+	for n, id := range registry.IDs() {
+		web, ok := registry.WebResult(id)
+		if !ok || linkedURLs[web.URL] {
+			continue
+		}
+		linkedURLs[web.URL] = true
+		marker := fmt.Sprintf("[ID:%d]", n)
+		if !strings.Contains(normalized, marker) {
+			linkEnd := "](" + web.URL + ")"
+			normalized = strings.ReplaceAll(normalized, linkEnd, linkEnd+" "+marker)
+		}
+	}
 
 	// Preferred: the answer's own [ID:n] handles, resolved against the run's
 	// evidence registry — the same numbering the model was shown, so a marker
@@ -449,17 +465,41 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		// Fallback: an answer that named passages by raw chunk_id. A
 		// document-level question has no [ID:n] handle to write.
 		cited = agentic_rag.ExtractCitedChunkIDs(normalized)
+	} else {
+		seen := make(map[string]bool, len(cited))
+		for _, id := range cited {
+			seen[id] = true
+		}
+		for _, id := range agentic_rag.ExtractCitedChunkIDs(normalized) {
+			if !seen[id] {
+				cited = append(cited, id)
+				seen[id] = true
+			}
+		}
 	}
 	if len(cited) == 0 {
 		return map[string]interface{}{}, normalized
 	}
-	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
-	if len(rows) == 0 {
-		return map[string]interface{}{}, normalized
-	}
 	// Keep only ids that actually resolved, preserving first-appearance
 	// order: the marker number IS the chunk's position in the payload array.
-	byID := make(map[string]map[string]interface{}, len(rows))
+	byID := make(map[string]map[string]interface{}, len(cited))
+	var corpusIDs []string
+	for _, id := range cited {
+		if web, ok := registry.WebResult(id); ok {
+			title := web.Title
+			if title == "" {
+				title = web.URL
+			}
+			byID[id] = map[string]interface{}{
+				"id": id, "doc_id": web.URL, "docnm_kwd": title,
+				"content_with_weight": web.Content, "url": web.URL,
+				"kb_id": []interface{}{}, "img_id": "", "positions": []interface{}{},
+			}
+		} else {
+			corpusIDs = append(corpusIDs, id)
+		}
+	}
+	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, corpusIDs)
 	for _, r := range rows {
 		if id, ok := r["id"].(string); ok {
 			byID[id] = r
@@ -483,9 +523,8 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		// Compact the run-level handles ("[ID:265]") into the answer's own
 		// first-citation order ("[ID:0]"), the numbering the payload ships.
 		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
-	} else {
-		marked = agentic_rag.InsertCitationMarkers(normalized, resolved)
 	}
+	marked = agentic_rag.InsertCitationMarkers(marked, resolved)
 	common.InfoCtx(ctx, "agentic citations built",
 		zap.Int("cited", len(cited)),
 		zap.Int("resolved", len(resolved)),
@@ -539,6 +578,9 @@ func agenticDocAggs(chunks []map[string]interface{}) []interface{} {
 				"doc_id":   docID,
 				"doc_name": ck["docnm_kwd"],
 				"count":    0,
+			}
+			if url, _ := ck["url"].(string); url != "" {
+				agg[docID]["url"] = url
 			}
 		}
 		if n, ok := agg[docID]["count"].(int); ok {

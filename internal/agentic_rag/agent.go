@@ -18,6 +18,7 @@ package agentic_rag
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -334,17 +335,26 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// InvokableTool (e.g. streamable-only) are passed through unwrapped — all
 	// agent tools here are InvokableTool.
 	wrapped := make([]tool.BaseTool, len(tools))
+	var initialWebTool tool.InvokableTool
 	for i, t := range tools {
 		if it, ok := t.(tool.InvokableTool); ok {
-			wrapped[i] = &instrumentedTool{
+			timed := &instrumentedTool{
 				InvokableTool: it,
 				acc:           in.ToolCallDurations,
+			}
+			wrapped[i] = timed
+			if _, ok := t.(*WebSearchTool); ok {
+				initialWebTool = timed
 			}
 		} else {
 			wrapped[i] = t
 		}
 	}
 	tools = wrapped
+	instruction := instructionFor(tmpl)
+	if initialWebTool != nil {
+		instruction += "\n\n" + webSearchInstruction
+	}
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),
@@ -354,7 +364,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          "smart-reasoning",
-		Instruction:   instructionFor(tmpl),
+		Instruction:   instruction,
 		Model:         in.Model,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,
@@ -399,8 +409,52 @@ func Run(ctx context.Context, in Input) (string, error) {
 		seed = seed[:len(seed)-1]
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
+	var initialWebEvidence string
+	if initialWebTool != nil && strings.TrimSpace(question) != "" {
+		// Internet is a request option, not an optional model decision. Seed
+		// one real tool call/result so even a model that answers immediately
+		// has web evidence in its conversation.
+		args, err := json.Marshal(webSearchArgs{Queries: []string{question}})
+		if err != nil {
+			return "", fmt.Errorf("web_search: encode initial query: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		initialWebEvidence, err = initialWebTool.InvokableRun(ctx, string(args))
+		if err != nil {
+			return "", fmt.Errorf("web_search: initial query: %w", err)
+		}
+		if err := ctx.Err(); err != nil {
+			return "", err
+		}
+		if in.ToolCallCounts != nil {
+			in.ToolCallCounts[webSearchToolName]++
+		}
+		if strings.Contains(initialWebEvidence, toolErrorMarker) && strings.Contains(initialWebEvidence, `severity="error"`) {
+			if in.ToolCallErrors != nil {
+				in.ToolCallErrors[webSearchToolName]++
+			}
+			if in.ToolErrorSamples != nil {
+				in.ToolErrorSamples[webSearchToolName] = initialWebEvidence
+			}
+		}
+		const callID = "ragflow_initial_web_search"
+		runMessages = append(runMessages,
+			schema.AssistantMessage("", []schema.ToolCall{{
+				ID: callID, Type: "function",
+				Function: schema.FunctionCall{Name: webSearchToolName, Arguments: string(args)},
+			}}),
+			schema.ToolMessage(initialWebEvidence, callID),
+		)
+		common.DebugCtx(ctx, "agentic_rag: initial web search completed",
+			zap.Int("content_bytes", len(initialWebEvidence)))
+	}
 	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
+	if initialWebEvidence != "" {
+		evidence = truncateForLog(initialWebEvidence, 4000) + "\n\n" + evidence
+	}
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
 	// narration tail or on a bare tool call still holds the model's own answer
