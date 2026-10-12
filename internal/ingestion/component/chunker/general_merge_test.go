@@ -123,14 +123,6 @@ func TestApplyGeneralOverlapDoesNotAccumulatePositions(t *testing.T) {
 	}
 }
 
-func markdownBlockUnits(chunks []schema.ChunkDoc) []markdownUnit {
-	units := make([]markdownUnit, 0, len(chunks))
-	for _, chunk := range chunks {
-		units = append(units, markdownUnit{chunk: chunk, startsBlock: true})
-	}
-	return units
-}
-
 func TestMergeMarkdownUnitsCarriesCharacterOverlapIntoNextBudget(t *testing.T) {
 	units := []schema.ChunkDoc{
 		{Text: "alpha beta", DocType: "text", CKType: "text"},
@@ -143,7 +135,7 @@ func TestMergeMarkdownUnitsCarriesCharacterOverlapIntoNextBudget(t *testing.T) {
 	}
 	target := intValue(units[0].TKNums) + intValue(units[1].TKNums)
 
-	got := mergeMarkdownUnits(markdownBlockUnits(units), target, 50)
+	got := mergeMarkdownUnits(units, target, 50, nil)
 	want := []string{
 		"alpha beta\ngamma delta",
 		"gamma delta\nepsilon zeta",
@@ -182,7 +174,7 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	}
 
 	target := intValue(units[0].TKNums)
-	got := mergeMarkdownUnits(markdownBlockUnits(units), target, 50)
+	got := mergeMarkdownUnits(units, target, 50, nil)
 	if len(got) != 2 {
 		t.Fatalf("chunks = %#v, want previous and overlapped current chunks", got)
 	}
@@ -220,7 +212,7 @@ func TestMergeMarkdownUnitsStripsFoldedHeadingFromTableContextAbove(t *testing.T
 			TKNums:       intPtr(1),
 		},
 	}
-	got := mergeMarkdownUnits(markdownBlockUnits(units), 10, 0)
+	got := mergeMarkdownUnits(units, 10, 0, nil)
 	if len(got) != 1 {
 		t.Fatalf("chunks = %#v, want one table chunk", got)
 	}
@@ -244,7 +236,7 @@ func TestMergeMarkdownUnitsStripsOnlyFoldedHeadingFromTableContextAbove(t *testi
 			TKNums:       intPtr(1),
 		},
 	}
-	got := mergeMarkdownUnits(markdownBlockUnits(units), 10, 0)
+	got := mergeMarkdownUnits(units, 10, 0, nil)
 	if len(got) != 2 {
 		t.Fatalf("chunks = %#v, want intro text and table", got)
 	}
@@ -267,7 +259,7 @@ func TestMergeMarkdownUnitsKeepsImageWithMediaContextStandalone(t *testing.T) {
 		},
 		{Text: "after", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
-	got := mergeMarkdownUnits(markdownBlockUnits(units), 10, 0)
+	got := mergeMarkdownUnits(units, 10, 0, nil)
 	if len(got) != 3 {
 		t.Fatalf("chunks = %d, want text, image, text", len(got))
 	}
@@ -283,7 +275,7 @@ func TestMergeMarkdownUnitsStartsNewChunkForIncomingHeading(t *testing.T) {
 		{Text: "The architecture is split into parser and chunker.", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
 
-	got := mergeMarkdownUnits(markdownBlockUnits(units), 3, 0)
+	got := mergeMarkdownUnits(units, 3, 0, nil)
 	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{
 		"Background details",
 		"## Architecture\nThe architecture is split into parser and chunker.",
