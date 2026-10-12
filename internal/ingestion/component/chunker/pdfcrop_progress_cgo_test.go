@@ -4,6 +4,7 @@ package chunker
 
 import (
 	"context"
+	"math"
 	"sync"
 	"testing"
 
@@ -62,12 +63,16 @@ func TestCropImageChunks_ReportsFractions(t *testing.T) {
 	}
 
 	fractions := rec.getFractions()
-	// 3 tasks settled + 1 terminal 1.0 = 4 reports
+	// 3 tasks settled monotonically + 1 terminal 1.0 = 4 reports
 	if len(fractions) != 4 {
 		t.Fatalf("expected 4 reports, got %d (%v)", len(fractions), fractions)
 	}
-	if last := fractions[len(fractions)-1]; last != 1.0 {
-		t.Errorf("last fraction = %f, want 1.0", last)
+
+	wantFractions := []float64{1.0 / 3.0, 2.0 / 3.0, 1.0, 1.0}
+	for i, want := range wantFractions {
+		if math.Abs(fractions[i]-want) > 1e-6 {
+			t.Errorf("fraction[%d] = %f, want %f", i, fractions[i], want)
+		}
 	}
 }
 
@@ -90,5 +95,30 @@ func TestCropImageChunks_ZeroTasksReportsNothing(t *testing.T) {
 	fractions := rec.getFractions()
 	if len(fractions) != 0 {
 		t.Errorf("expected 0 reports for 0 crop tasks, got %v", fractions)
+	}
+}
+
+func TestCropImageChunks_CancelledContextDoesNotReport(t *testing.T) {
+	rec := &chunkFractionRecorder{}
+	ctx, cancel := context.WithCancel(rec.context(t, "Chunker:pdf"))
+	cancel() // Cancel context before invocation
+
+	chunks := []schema.ChunkDoc{
+		{
+			Text:      "content 1",
+			Positions: jsonPositions(t, []float64{1, 0, 100, 0, 100}),
+			CKType:    "text",
+		},
+		{
+			Text:      "content 2",
+			Positions: jsonPositions(t, []float64{1, 100, 200, 100, 200}),
+			CKType:    "text",
+		},
+	}
+
+	_ = cropImageChunks(ctx, mockCropEngine{}, chunks)
+	fractions := rec.getFractions()
+	if len(fractions) != 0 {
+		t.Errorf("cancelled context must not report progress, got: %v", fractions)
 	}
 }

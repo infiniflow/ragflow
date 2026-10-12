@@ -34,7 +34,7 @@ func TestAttachPDFPageProgress_ReportsFraction(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser)
+	attachPDFPageProgress(ctx, pdfParser, fractionWindow{base: 0, span: 1})
 	if pdfParser.OnPageDone == nil {
 		t.Fatal("expected OnPageDone to be wired")
 	}
@@ -58,7 +58,7 @@ func TestAttachPDFPageProgress_IgnoresUnknownTotal(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser)
+	attachPDFPageProgress(ctx, pdfParser, fractionWindow{base: 0, span: 1})
 	pdfParser.OnPageDone(1, 0)
 
 	if len(seen) != 0 {
@@ -70,10 +70,24 @@ func TestAttachPDFPageProgress_LeavesOtherParsersAlone(t *testing.T) {
 	var seen []fractionObservation
 	ctx := boundFractionContext(t, "Parser:txt", &seen)
 
-	attachPDFPageProgress(ctx, parser.NewTextParser())
+	attachPDFPageProgress(ctx, parser.NewTextParser(), fractionWindow{base: 0, span: 1})
 
 	if len(seen) != 0 {
 		t.Errorf("expected no fraction from a non-PDF parser, got %v", seen)
+	}
+}
+
+func TestAttachPDFPageProgress_ZeroWindowSilent(t *testing.T) {
+	var seen []fractionObservation
+	ctx := boundFractionContext(t, "Parser:pdf", &seen)
+
+	pdfParser := parser.NewPDFParser()
+	attachPDFPageProgress(ctx, pdfParser, fractionWindow{})
+	if pdfParser.OnPageDone != nil {
+		t.Fatal("expected OnPageDone to remain nil for zero window")
+	}
+	if len(seen) != 0 {
+		t.Errorf("expected no observations for zero window, got %v", seen)
 	}
 }
 

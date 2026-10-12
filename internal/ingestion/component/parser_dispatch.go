@@ -76,7 +76,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window ...fractionWindow) parser.ParseResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window fractionWindow) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -96,7 +96,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
-	attachPDFPageProgress(ctx, p, window...)
+	attachPDFPageProgress(ctx, p, window)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
@@ -126,13 +126,6 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 			method = strings.ToLower(strings.TrimSpace(s))
 		}
 	}
-	switch {
-	case strings.HasSuffix(method, "@mineru"),
-		strings.HasSuffix(method, "@paddleocr"),
-		strings.HasSuffix(method, "@somark"),
-		strings.HasSuffix(method, "@opendataloader"):
-		return false
-	}
 	switch method {
 	case "", "deepdoc":
 		return true
@@ -146,20 +139,16 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 // the component exits. Only the local DeepDOC backend fires it; remote
 // engines (MinerU, PaddleOCR, Docling, …) never call the callback and
 // the fraction stays at zero.
-func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window ...fractionWindow) {
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window fractionWindow) {
 	pdfParser, ok := p.(*parser.PDFParser)
-	if !ok {
+	if !ok || window.span <= 0 {
 		return
-	}
-	w := fractionWindow{base: 0, span: 1}
-	if len(window) > 0 && window[0].span > 0 {
-		w = window[0]
 	}
 	pdfParser.OnPageDone = func(done, total int) {
 		if total <= 0 {
 			return
 		}
-		w.report(ctx, float64(done)/float64(total))
+		window.report(ctx, float64(done)/float64(total))
 	}
 }
 

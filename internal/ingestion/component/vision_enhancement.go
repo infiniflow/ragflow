@@ -167,12 +167,9 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	vision visionSettings,
-	window ...fractionWindow,
+	window fractionWindow,
 ) (parser.ParseResult, bool, error) {
-	var w fractionWindow
-	if len(window) > 0 {
-		w = window[0]
-	}
+	w := window
 
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
@@ -345,8 +342,10 @@ func maybeDispatchVisionEnhancement(
 			defer wg.Done()
 			defer releaseSlot()
 			defer func() {
-				n := settled.Add(1)
-				w.report(ctx, float64(n)/float64(total))
+				if ctx.Err() == nil {
+					n := settled.Add(1)
+					w.report(ctx, float64(n)/float64(total))
+				}
 			}()
 
 			messages := buildVisionMessages(prompt, imageData)

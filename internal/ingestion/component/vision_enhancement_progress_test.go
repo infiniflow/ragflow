@@ -3,6 +3,7 @@ package component
 import (
 	"context"
 	"errors"
+	"math"
 	"testing"
 
 	"ragflow/internal/dao"
@@ -47,13 +48,11 @@ func TestVisionEnhancement_ReportsPerFigureFractions(t *testing.T) {
 	if len(fractions) != 5 {
 		t.Fatalf("recorded fractions count = %d, want 5 (4 items + 1 close); got %v", len(fractions), fractions)
 	}
-	for i, f := range fractions {
-		if f < 0.5 || f > 1.0 {
-			t.Errorf("fraction %d = %f, outside window [0.5, 1.0]", i, f)
+	wantFractions := []float64{0.625, 0.75, 0.875, 1.0, 1.0}
+	for i, want := range wantFractions {
+		if math.Abs(fractions[i]-want) > 1e-6 {
+			t.Errorf("fraction[%d] = %f, want %f", i, fractions[i], want)
 		}
-	}
-	if last := fractions[len(fractions)-1]; last != 1.0 {
-		t.Errorf("last fraction = %f, want 1.0", last)
 	}
 }
 
@@ -91,8 +90,11 @@ func TestVisionEnhancement_SettledFractionsCountFailedFigures(t *testing.T) {
 	if len(fractions) != 3 {
 		t.Fatalf("recorded fractions count = %d, want 3; got %v", len(fractions), fractions)
 	}
-	if last := fractions[len(fractions)-1]; last != 1.0 {
-		t.Errorf("last fraction = %f, want 1.0", last)
+	wantFractions := []float64{0.6, 1.0, 1.0}
+	for i, want := range wantFractions {
+		if math.Abs(fractions[i]-want) > 1e-6 {
+			t.Errorf("fraction[%d] = %f, want %f", i, fractions[i], want)
+		}
 	}
 }
 
@@ -126,5 +128,35 @@ func TestVisionEnhancement_ZeroWindowReportsNothing(t *testing.T) {
 
 	if len(rec.fractions()) != 0 {
 		t.Errorf("expected 0 fractions for zero window, got %v", rec.fractions())
+	}
+}
+
+func TestVisionEnhancement_CancelledContextReportsNothing(t *testing.T) {
+	invoker := &visionEnhanceCaptureInvoker{}
+	swapVisionGlobals(t, fakeResolver, invoker.invoke, fakePrompt)
+
+	rec := &fractionRecorder{}
+	ctx, cancel := context.WithCancel(rec.context(t, "Parser:vision"))
+	cancel() // Cancel context before invocation
+
+	png := visionTestPNGBase64(t)
+	dispatched := parser.ParseResult{
+		OutputFormat: "json",
+		JSON: []map[string]any{
+			{"text": "1", "image": png, "doc_type_kwd": "image"},
+			{"text": "2", "image": png, "doc_type_kwd": "image"},
+		},
+	}
+
+	win := fractionWindow{base: 0.5, span: 0.5}
+	_, _, _ = maybeDispatchVisionEnhancement(
+		ctx, dao.DB, utility.FileTypeXLSX, dispatched,
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{},
+		win,
+	)
+
+	if len(rec.fractions()) != 0 {
+		t.Errorf("cancelled context must not report progress, got: %v", rec.fractions())
 	}
 }
