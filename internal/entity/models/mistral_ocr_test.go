@@ -485,3 +485,37 @@ func TestMistralProviderListsOCRModels(t *testing.T) {
 		}
 	}
 }
+
+// Stored "Mistral OCR" provider names resolve to the Mistral catalog entry
+// through CatalogProviderName, while FindProvider keeps the stored name
+// unknown.
+func TestCatalogProviderNameMapsStoredMistralOCR(t *testing.T) {
+	dir, restore := setupProviderTestDir(t, "mistral.json")
+	defer restore()
+
+	if err := InitProviderManager(dir); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+	for _, stored := range []string{"Mistral OCR", "mistral ocr", " Mistral OCR "} {
+		if got := CatalogProviderName(stored); got != "Mistral" {
+			t.Errorf("CatalogProviderName(%q) = %q, want Mistral", stored, got)
+		}
+	}
+	for _, stored := range []string{"Mistral", "OpenAI", "MistralOCR", ""} {
+		if got := CatalogProviderName(stored); got != stored {
+			t.Errorf("CatalogProviderName(%q) = %q, want it unchanged", stored, got)
+		}
+	}
+
+	pm := GetProviderManager()
+	if provider := pm.FindProvider("Mistral OCR"); provider != nil {
+		t.Fatalf("FindProvider(%q) = %s, want nil", "Mistral OCR", provider.Name)
+	}
+	model, err := pm.GetModelByName(CatalogProviderName("Mistral OCR"), "mistral-ocr-latest")
+	if err != nil {
+		t.Fatalf("GetModelByName: %v", err)
+	}
+	if !model.ModelTypeMap["ocr"] {
+		t.Fatalf("model types = %v, want ocr", model.ModelTypes)
+	}
+}

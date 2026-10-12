@@ -2296,12 +2296,13 @@ func (m *ModelProviderService) getModelInstanceAndProviderByName(ctx context.Con
 		modelEntity = nil
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(*providerName)
+	catalogName := modelModule.CatalogProviderName(*providerName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if providerInfo == nil {
 		return nil, errors.New("provider not found")
 	}
 
-	modelInfo, err := dao.GetModelProviderManager().GetModelByName(*providerName, *modelName)
+	modelInfo, err := dao.GetModelProviderManager().GetModelByName(catalogName, *modelName)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("provider %s model %s not found", *providerName, *modelName))
 	}
@@ -2371,12 +2372,13 @@ func (m *ModelProviderService) getModelInstanceAndProviderByID(ctx context.Conte
 		return nil, errors.New("provider not found")
 	}
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(providerEntity.ProviderName)
+	catalogName := modelModule.CatalogProviderName(providerEntity.ProviderName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if providerInfo == nil {
 		return nil, errors.New("provider not found")
 	}
 
-	modelInfo, err := dao.GetModelProviderManager().GetModelByName(providerEntity.ProviderName, modelEntity.ModelName)
+	modelInfo, err := dao.GetModelProviderManager().GetModelByName(catalogName, modelEntity.ModelName)
 	if err != nil {
 		return nil, errors.New(fmt.Sprintf("provider %s model %s not found", providerEntity.ProviderName, modelEntity.ModelName))
 	}
