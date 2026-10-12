@@ -386,10 +386,7 @@ func buildPubMedTool(params map[string]any) (einotool.BaseTool, error) {
 		if !valid {
 			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param email", "pubmed")
 		}
-		// A blank email (the UI default) falls back to defaultPubMedEmail.
-		if strings.TrimSpace(email) != "" {
-			defaults.Email = email
-		}
+		defaults.Email = email
 	}
 	return NewPubMedToolWithDefaults(nil, defaults), nil
 }
