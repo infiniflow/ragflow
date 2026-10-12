@@ -294,8 +294,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	req.UserID = user.ID
-	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
+	row, code, err := h.agentService.CreateAgent(c.Request.Context(), user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/file"
 	"sync"
 	"time"
@@ -58,7 +59,6 @@ func NewSkillSpaceService(dr file.DocRemover) *SkillSpaceService {
 
 // CreateSpaceRequest represents the request to create a skills space
 type CreateSpaceRequest struct {
-	TenantID    string `json:"tenant_id" binding:"required"`
 	Name        string `json:"name" binding:"required"`
 	Description string `json:"description"`
 	EmbdID      string `json:"embd_id"`
@@ -147,14 +147,19 @@ func (s *SkillSpaceService) getSkillsFolderID(ctx context.Context, tenantID stri
 }
 
 // CreateSpace creates a new skills space with associated folder
-func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) CreateSpace(ctx context.Context, userID string, req *CreateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
 	// Validate name
 	if req.Name == "" {
 		return nil, common.CodeDataError, fmt.Errorf("space name is required")
 	}
+	tenantID, err := requireOwnedTenantID(ctx, userID)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
 
 	// Tenant-scoped serialization to prevent concurrent create/delete races
-	tenantKey := req.TenantID + ":" + req.Name
+	tenantKey := tenantID + ":" + req.Name
 	mu, _ := s.spaceCreateMu.LoadOrStore(tenantKey, &sync.Mutex{})
 	tenantMu := mu.(*sync.Mutex)
 	tenantMu.Lock()
@@ -167,7 +172,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	// requested one, mirroring the dataset create rule.
 	// skill_space.name is a 128-byte column; keep generated names within it.
 	spaceName, err := common.UniqueName(req.Name, 128, func(candidate string) (bool, error) {
-		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, req.TenantID, candidate)
+		existing, lookupErr := s.spaceDAO.GetByTenantAndName(ctx, dao.DB, tenantID, candidate)
 		if lookupErr != nil {
 			if dao.IsNotFoundErr(lookupErr) {
 				return false, nil
@@ -181,7 +186,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	}
 
 	// Check if there's a space with the same name that is currently being deleted
-	existingSpaceAny, err := s.spaceDAO.GetByTenantAndNameAnyStatus(ctx, dao.DB, req.TenantID, spaceName)
+	existingSpaceAny, err := s.spaceDAO.GetByTenantAndNameAnyStatus(ctx, dao.DB, tenantID, spaceName)
 	if err == nil && existingSpaceAny != nil && existingSpaceAny.Status == entity.SpaceStatusDeleting {
 		return nil, common.CodeDataError, fmt.Errorf("space with name '%s' is being deleted, please try again later", spaceName)
 	}
@@ -189,12 +194,12 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	// Check if there's a deleted/non-active space with the same name and permanently delete it
 	// This handles the case where a previous creation failed partially
 	// Only delete non-active spaces (status != '1') to prevent TOCTOU race
-	if err = s.spaceDAO.DeletePermanentByName(ctx, dao.DB, req.TenantID, spaceName); err != nil {
+	if err = s.spaceDAO.DeletePermanentByName(ctx, dao.DB, tenantID, spaceName); err != nil {
 		common.Warn("Failed to delete permanent space by name", zap.Error(err))
 	}
 
 	// Get skills folder ID
-	skillsFolderID, err := s.getSkillsFolderID(ctx, req.TenantID)
+	skillsFolderID, err := s.getSkillsFolderID(ctx, tenantID)
 	if err != nil {
 		common.Error("Failed to get skills folder ID", err)
 		return nil, common.CodeOperatingError, err
@@ -202,7 +207,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 
 	// Check if there's an existing folder with the same name under skills folder
 	// If exists, delete it to prevent duplicate folder names
-	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, spaceName, skillsFolderID, req.TenantID)
+	existingFolders, err := s.fileDAO.Query(ctx, dao.DB, spaceName, skillsFolderID, tenantID)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to query existing folders: %w", err)
 	}
@@ -224,8 +229,8 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	folder := &entity.File{
 		ID:         folderID,
 		ParentID:   skillsFolderID,
-		TenantID:   req.TenantID,
-		CreatedBy:  req.TenantID,
+		TenantID:   tenantID,
+		CreatedBy:  userID,
 		Name:       spaceName,
 		Type:       "folder",
 		Size:       0,
@@ -240,7 +245,7 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	// Create the space
 	space := &entity.SkillSpace{
 		ID:          spaceID,
-		TenantID:    req.TenantID,
+		TenantID:    tenantID,
 		Name:        spaceName,
 		FolderID:    folderID,
 		Description: req.Description,
@@ -260,18 +265,18 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	// Create default search config for this space
 	defaultEmbdID := req.EmbdID
 	if defaultEmbdID == "" {
-		tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, req.TenantID)
+		tenant, err := s.tenantDAO.GetByID(ctx, dao.DB, tenantID)
 		if err == nil && tenant != nil && tenant.EmbdID != "" {
 			defaultEmbdID = tenant.EmbdID
-			common.Info("Using tenant default embedding model", zap.String("tenantID", req.TenantID), zap.String("embdID", defaultEmbdID))
+			common.Info("Using tenant default embedding model", zap.String("tenantID", tenantID), zap.String("embdID", defaultEmbdID))
 		} else {
-			common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", req.TenantID))
+			common.Warn("Tenant has no default embedding model, skill search will not work until configured", zap.String("tenantID", tenantID))
 		}
 	}
 	if defaultEmbdID != "" {
-		if _, err := s.configDAO.GetOrCreate(ctx, dao.DB, req.TenantID, spaceID, defaultEmbdID); err != nil {
+		if _, err := s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, defaultEmbdID); err != nil {
 			common.Warn("Failed to create skill search config for new space",
-				zap.String("tenantID", req.TenantID),
+				zap.String("tenantID", tenantID),
 				zap.String("spaceID", spaceID),
 				zap.String("embdID", defaultEmbdID),
 				zap.Error(err))
@@ -281,9 +286,14 @@ func (s *SkillSpaceService) CreateSpace(ctx context.Context, req *CreateSpaceReq
 	return space.ToMap(), common.CodeSuccess, nil
 }
 
-// ListSpaces lists all skills spaces for a tenant
-func (s *SkillSpaceService) ListSpaces(ctx context.Context, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
-	spaces, err := s.spaceDAO.GetByTenantID(ctx, dao.DB, tenantID)
+// ListSpaces lists skill spaces the caller can read.
+func (s *SkillSpaceService) ListSpaces(ctx context.Context, userID string) (map[string]interface{}, common.ErrorCode, error) {
+	spaceIDs, err := accessibleSkillSpaceIDs(ctx, userID, permission.OperationRead)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	spaces, err := s.spaceDAO.GetByIDs(ctx, dao.DB, spaceIDs)
 	if err != nil {
 		return nil, common.CodeOperatingError, fmt.Errorf("failed to list spaces: %w", err)
 	}
@@ -301,35 +311,37 @@ func (s *SkillSpaceService) ListSpaces(ctx context.Context, tenantID string) (ma
 }
 
 // GetSpace retrieves a skills space by ID (includes deleting status for visibility)
-func (s *SkillSpaceService) GetSpace(ctx context.Context, spaceID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) GetSpace(ctx context.Context, userID, spaceID string) (map[string]interface{}, common.ErrorCode, error) {
+	if _, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead); err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
-	}
-
-	// Verify tenant ownership
-	if space.TenantID != tenantID {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
+		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 
 	// Return deleted spaces as not found
 	if space.Status == entity.SpaceStatusDeleted {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
+		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 
 	return space.ToMap(), common.CodeSuccess, nil
 }
 
 // UpdateSpace updates a skills space
-func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, tenantID string, req *UpdateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) UpdateSpace(ctx context.Context, userID, spaceID string, req *UpdateSpaceRequest) (map[string]interface{}, common.ErrorCode, error) {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
 	space, err := s.spaceDAO.GetByID(ctx, dao.DB, spaceID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
-	}
-
-	// Verify tenant ownership
-	if space.TenantID != tenantID {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
+		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 
 	// Build updates
@@ -403,16 +415,17 @@ func (s *SkillSpaceService) UpdateSpace(ctx context.Context, spaceID string, ten
 
 // DeleteSpace starts asynchronous deletion of a skills space and returns immediately.
 // The space status is set to "deleting" and the actual cleanup runs in a background goroutine.
-func (s *SkillSpaceService) DeleteSpace(ctx context.Context, spaceID, tenantID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
+func (s *SkillSpaceService) DeleteSpace(ctx context.Context, userID, spaceID string, docEngine engine.DocEngine) (common.ErrorCode, error) {
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationDelete)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return code, normalized
+	}
 	// Get space regardless of status (could be retrying a failed delete)
 	space, err := s.spaceDAO.GetByIDAnyStatus(ctx, dao.DB, spaceID)
 	if err != nil {
-		return common.CodeDataError, fmt.Errorf("space not found")
-	}
-
-	// Verify tenant ownership
-	if space.TenantID != tenantID {
-		return common.CodeDataError, fmt.Errorf("space not found")
+		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		return code, normalized
 	}
 
 	// If already deleting, return success (idempotent)
@@ -560,15 +573,15 @@ func (s *SkillSpaceService) deleteFolderRecursive(ctx context.Context, folderID 
 }
 
 // GetSpaceByFolderID retrieves a skills space by its folder ID
-func (s *SkillSpaceService) GetSpaceByFolderID(ctx context.Context, folderID, tenantID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSpaceService) GetSpaceByFolderID(ctx context.Context, userID, folderID string) (map[string]interface{}, common.ErrorCode, error) {
 	space, err := s.spaceDAO.GetByFolderID(ctx, dao.DB, folderID)
 	if err != nil {
-		return nil, common.CodeDataError, fmt.Errorf("space not found for folder")
+		code, normalized := normalizeSkillSpacePermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
-
-	// Verify tenant ownership
-	if space.TenantID != tenantID {
-		return nil, common.CodeDataError, fmt.Errorf("space not found")
+	if _, err := resolveSkillSpaceTenantID(ctx, userID, space.ID, permission.OperationRead); err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
 	}
 
 	return space.ToMap(), common.CodeSuccess, nil

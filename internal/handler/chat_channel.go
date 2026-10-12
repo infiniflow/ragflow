@@ -27,7 +27,7 @@ import (
 
 type ChatChannelService interface {
 	CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
-	List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error)
+	List(ctx context.Context, userID string) ([]*entity.ChatChannelListResponse, error)
 	GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
 	GetChatChannelRuntime(ctx context.Context, userID, channelID string) (map[string]any, common.ErrorCode, error)
@@ -102,6 +102,9 @@ func (h *ChatChannelHandler) ListChatChannel(c *gin.Context) {
 	ctx := c.Request.Context()
 	rows, err := h.chatChannelService.List(ctx, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -244,10 +247,6 @@ func unwrapChatChannelPayload(payload map[string]interface{}) map[string]interfa
 }
 
 func writeChatChannelError(c *gin.Context, code common.ErrorCode, message string) {
-	if code == common.CodeAuthenticationError && message == "no authorization" {
-		common.ResponseWithCodeData(c, code, false, message)
-		return
-	}
 	common.ResponseWithCodeData(c, code, nil, message)
 }
 

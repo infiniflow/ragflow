@@ -30,6 +30,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -155,7 +156,7 @@ func (h *MCPHandler) GetMCPServer(c *gin.Context) {
 }
 
 func mcpDetailError(c *gin.Context, code common.ErrorCode, err error) {
-	if code == common.CodeDataError {
+	if code == common.CodeDataError || code == common.CodeUnauthorized || code == common.CodeForbidden || code == common.CodeNotFound {
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
@@ -208,6 +209,11 @@ func (h *MCPHandler) DeleteMCPServer(c *gin.Context) {
 func mcpErrorResponse(c *gin.Context, err error) bool {
 	if err == nil {
 		return false
+	}
+	if permissionresponse.IsPermissionError(err) {
+		code, normalized := permissionresponse.NormalizeHidden(err)
+		common.ErrorWithCode(c, code, normalized.Error())
+		return true
 	}
 	switch {
 	case errors.Is(err, service.ErrMCPInvalidType),
@@ -324,6 +330,11 @@ func (h *MCPHandler) ImportMCPServers(c *gin.Context) {
 	ctx := c.Request.Context()
 	results, err := h.mcpService.ImportServers(ctx, user.ID, servers, timeout)
 	if err != nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, normalized := permissionresponse.Normalize(err)
+			common.ErrorWithCode(c, code, normalized.Error())
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeBadRequest, nil, err.Error())
 		return
 	}

@@ -80,6 +80,7 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	searchAppIDs := make([]string, 0, len(refs))
 	chatIDs := make([]string, 0, len(refs))
 	chatSessionIDs := make([]string, 0, len(refs))
+	chatChannelIDs := make([]string, 0, len(refs))
 	connectorIDs := make([]string, 0, len(refs))
 	syncTaskIDs := make([]string, 0, len(refs))
 	modelProviderIDs := make([]string, 0, len(refs))
@@ -105,6 +106,8 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 			chatIDs = append(chatIDs, ref.ID)
 		case ResourceKindChatSession:
 			chatSessionIDs = append(chatSessionIDs, ref.ID)
+		case ResourceKindChatChannel:
+			chatChannelIDs = append(chatChannelIDs, ref.ID)
 		case ResourceKindConnector:
 			connectorIDs = append(connectorIDs, ref.ID)
 		case ResourceKindSyncTask:
@@ -176,6 +179,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 		return nil, err
 	}
 	chatsByID, err := s.loadChats(ctx, chatIDs)
+	if err != nil {
+		return nil, err
+	}
+	chatChannelsByID, err := s.loadChatChannels(ctx, chatChannelIDs)
 	if err != nil {
 		return nil, err
 	}
@@ -287,6 +294,10 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 		case ResourceKindChat:
 			if chat, ok := chatsByID[ref.ID]; ok {
 				resources = append(resources, chatResource(chat))
+			}
+		case ResourceKindChatChannel:
+			if channel, ok := chatChannelsByID[ref.ID]; ok {
+				resources = append(resources, chatChannelResource(channel))
 			}
 		case ResourceKindChatSession:
 			session, ok := chatSessionsByID[ref.ID]
@@ -528,6 +539,22 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		}
 		if err := s.db.WithContext(ctx).Model(&entity.ChatSession{}).
 			Where("dialog_id = ?", parent.ID).
+			Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
+	case ResourceKindChatChannel:
+		if parent.ID != "" || parent.Kind != "" {
+			return nil, fmt.Errorf("%w: chat channels cannot have a parent scope", ErrInvalidPermission)
+		}
+		tenantIDs, err := s.tenantIDsForSubject(ctx, subject)
+		if err != nil {
+			return nil, err
+		}
+		if len(tenantIDs) == 0 {
+			return []ResourceRef{}, nil
+		}
+		if err := s.db.WithContext(ctx).Model(&entity.ChatChannel{}).
+			Where("tenant_id IN ?", tenantIDs).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -1042,6 +1069,20 @@ func chatSessionResource(session *entity.ChatSession, chat *entity.Chat) Resourc
 		OwnerOperations:   []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
 		TenantOperations:  []Operation{OperationRead},
 		CreatorOperations: []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
+		Active:            true,
+	}
+}
+
+func chatChannelResource(channel *entity.ChatChannel) Resource {
+	operations := []Operation{OperationRead, OperationUpdate, OperationDelete, OperationUse}
+	return Resource{
+		Ref:               ResourceRef{Kind: ResourceKindChatChannel, ID: channel.ID},
+		TenantID:          channel.TenantID,
+		OwnerUserID:       channel.TenantID,
+		Visibility:        VisibilityTenant,
+		TenantRequirement: TenantMember,
+		OwnerOperations:   operations,
+		TenantOperations:  operations,
 		Active:            true,
 	}
 }

@@ -1781,10 +1781,9 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
 
-	row, code, err := NewAgentService().CreateAgent(ctx, &CreateAgentRequest{
-		UserID: "user-1",
-		Title:  sptr("Dup Title"),
-		DSL:    entity.JSONMap{},
+	row, code, err := NewAgentService().CreateAgent(ctx, "user-1", &CreateAgentRequest{
+		Title: sptr("Dup Title"),
+		DSL:   entity.JSONMap{},
 	})
 	if err != nil {
 		t.Fatalf("expected deduped create to succeed, got %v", err)
@@ -1799,6 +1798,16 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 	var created entity.UserCanvas
 	if err := dao.DB.WithContext(ctx).Where("user_id = ? AND title = ?", "user-1", "Dup Title(1)").First(&created).Error; err != nil {
 		t.Fatalf("expected a persisted agent named %q: %v", "Dup Title(1)", err)
+	}
+}
+
+func TestCreateAgentRequiresAuthenticatedUserID(t *testing.T) {
+	row, code, err := NewAgentService().CreateAgent(t.Context(), " ", &CreateAgentRequest{
+		Title: sptr("Agent"),
+		DSL:   entity.JSONMap{},
+	})
+	if row != nil || code != common.CodeUnauthorized || err == nil {
+		t.Fatalf("CreateAgent without user ID = (%+v, %d, %v), want unauthorized", row, code, err)
 	}
 }
 

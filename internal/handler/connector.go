@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
@@ -86,6 +87,9 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	// List connectors
 	result, err := h.connectorService.ListConnectors(ctx, userID)
 	if err != nil {
+		if connectorErrorResponse(c, err) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -100,10 +104,11 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	switch {
 	case err == nil:
 		return false
+	case permissionresponse.IsPermissionError(err):
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		common.ErrorWithCode(c, code, permissionErr.Error())
 	case errors.Is(err, service.ErrConnectorIDRequired):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-	case errors.Is(err, service.ErrConnectorNoAuth):
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
@@ -384,11 +389,15 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	}
 
 	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
+	if permissionresponse.IsPermissionError(err) {
+		connectorErrorResponse(c, err)
+		return
+	}
 	if errors.Is(err, service.ErrConnectorTestUnsupported) || errors.Is(err, service.ErrConnectorSourceNotImplemented) {
 		connectorErrorResponse(c, err)
 		return
 	}
-	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
+	if err != nil && !errors.Is(err, service.ErrConnectorNotFound) {
 		// Schema/credential validation failures map to DATA_ERROR;
 		// anything unexpected falls back to SERVER_ERROR.
 		var (

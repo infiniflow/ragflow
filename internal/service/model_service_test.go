@@ -13,6 +13,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 type remoteModelProbeDriver struct {
@@ -445,6 +446,89 @@ func TestModelProviderServiceAlterModelStatusByID(t *testing.T) {
 	}
 	if got.Status != "inactive" {
 		t.Fatalf("status = %q, want inactive", got.Status)
+	}
+}
+
+func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "user-tenant-member",
+		UserID:    "member-1",
+		TenantID:  "tenant-1",
+		Role:      string(permission.RoleNormal),
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant member: %v", err)
+	}
+
+	ctx := t.Context()
+	service := NewModelProviderService()
+	providers, code, err := service.ListProvidersOfTenant(ctx, "member-1")
+	if err != nil || code != common.CodeSuccess || len(providers) != 1 {
+		t.Fatalf("ListProvidersOfTenant() = (%v, %v, %d providers), want success and one provider", code, err, len(providers))
+	}
+
+	if _, code, err = service.ShowProviderInstance(ctx, "OpenAI", "instance-1", "member-1"); err == nil || code != common.CodeNotFound {
+		t.Fatalf("ShowProviderInstance() = (%v, %v), want hidden instance denial", code, err)
+	}
+
+	factory := NewModelFactory()
+	access := ModelAccess{UserID: "member-1", TenantID: "tenant-1"}
+	if _, err = factory.resolveConfig(ctx, access, entity.ModelTypeChat, "model-1"); err != nil {
+		t.Fatalf("member should be able to use the tenant model: %v", err)
+	}
+	if _, err = factory.resolveConfig(ctx, access, entity.ModelTypeChat, "gpt-test@default@OpenAI"); err != nil {
+		t.Fatalf("member should be able to use the composite model reference: %v", err)
+	}
+
+	code, err = service.AlterModel(ctx, "OpenAI", "default", "gpt-test", "member-1", "", map[string]interface{}{"status": "inactive"})
+	if err == nil || code != common.CodeNotFound {
+		t.Fatalf("AlterModel() = (%v, %v), want hidden model update denial", code, err)
+	}
+	var model entity.TenantModel
+	if err := db.Where("id = ?", "model-1").First(&model).Error; err != nil {
+		t.Fatalf("reload tenant model: %v", err)
+	}
+	if model.Status != "active" {
+		t.Fatalf("denied update changed model status to %q", model.Status)
+	}
+}
+
+func TestCheckConnectionDeniesBeforeCallingProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID:        "user-tenant-member",
+		UserID:    "member-1",
+		TenantID:  "tenant-1",
+		Role:      string(permission.RoleNormal),
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("seed tenant member: %v", err)
+	}
+
+	provider := dao.GetModelProviderManager().FindProvider("OpenAI")
+	if provider == nil {
+		t.Fatal("OpenAI provider is not configured")
+	}
+	probe := &remoteModelProbeDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	originalDriver := provider.ModelDriver
+	provider.ModelDriver = probe
+	t.Cleanup(func() { provider.ModelDriver = originalDriver })
+
+	code, err := NewModelProviderService().CheckConnection(t.Context(), "OpenAI", "sk-test", "default", "", "instance-1", "member-1", nil)
+	if err == nil || code != common.CodeNotFound {
+		t.Fatalf("CheckConnection() = (%v, %v), want hidden update denial", code, err)
+	}
+	if probe.checkCalls != 0 {
+		t.Fatalf("provider was contacted %d times before authorization", probe.checkCalls)
 	}
 }
 

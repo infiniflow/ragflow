@@ -59,6 +59,26 @@ func (s *databaseSource) loadMCPServerTenants(ctx context.Context, ids []string)
 	return tenantIDsByServer, nil
 }
 
+func (s *databaseSource) loadChatChannels(ctx context.Context, ids []string) (map[string]*entity.ChatChannel, error) {
+	channelsByID := make(map[string]*entity.ChatChannel)
+	ids = uniqueStringValues(ids)
+	if len(ids) == 0 {
+		return channelsByID, nil
+	}
+	query := s.db.WithContext(ctx).Where("id IN ?", ids)
+	if s.lockRows {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var channels []*entity.ChatChannel
+	if err := query.Find(&channels).Error; err != nil {
+		return nil, err
+	}
+	for _, channel := range channels {
+		channelsByID[channel.ID] = channel
+	}
+	return channelsByID, nil
+}
+
 func (s *databaseSource) loadSkillSpaces(ctx context.Context, ids []string) (map[string]skillSpaceAuthorization, error) {
 	spacesByID := make(map[string]skillSpaceAuthorization)
 	ids = uniqueStringValues(ids)

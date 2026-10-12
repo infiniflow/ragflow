@@ -52,6 +52,7 @@ const (
 	ResourceKindSearchApp     ResourceKind = "search_app"
 	ResourceKindChat          ResourceKind = "chat"
 	ResourceKindChatSession   ResourceKind = "chat_session"
+	ResourceKindChatChannel   ResourceKind = "chat_channel"
 	ResourceKindConnector     ResourceKind = "connector"
 	ResourceKindSyncTask      ResourceKind = "sync_task"
 	ResourceKindModelProvider ResourceKind = "model_provider"

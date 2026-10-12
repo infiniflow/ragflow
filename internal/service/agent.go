@@ -43,6 +43,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
 	dslpkg "ragflow/internal/agent/dsl"
@@ -904,7 +905,6 @@ func intValuePtr(p *int64) int64 {
 
 // CreateAgentRequest is the input shape for CreateAgent.
 type CreateAgentRequest struct {
-	UserID         string         `json:"user_id"`
 	Title          *string        `json:"title,omitempty"`
 	Description    *string        `json:"description,omitempty"`
 	Permission     string         `json:"permission"`
@@ -918,9 +918,13 @@ type CreateAgentRequest struct {
 // Returns the standard (T, common.ErrorCode, error) triple so the handler
 // can map validation/duplicate errors to codes 101/102 without
 // introducing a separate error type. Missing DSL or title and a
-// duplicate title under the same owner all surface as specific code
-// values that the Python agent API contract expects.
-func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+// duplicate title under the authenticated owner surface as specific codes.
+func (s *AgentService) CreateAgent(ctx context.Context, userID string, req *CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		code, permissionErr := permissionresponse.Normalize(permission.ErrUnauthenticated)
+		return nil, code, permissionErr
+	}
 	if req == nil {
 		return nil, common.CodeArgumentError, errors.New("create agent: nil request")
 	}
@@ -941,7 +945,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	}
 
 	uniqueTitle, err := common.UniqueName(title, 255, func(candidate string) (bool, error) {
-		return s.canvasDAO.TitleExists(ctx, dao.DB, req.UserID, req.CanvasCategory, candidate, "")
+		return s.canvasDAO.TitleExists(ctx, dao.DB, userID, req.CanvasCategory, candidate, "")
 	})
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("check duplicate title: %w", err)
@@ -961,7 +965,7 @@ func (s *AgentService) CreateAgent(ctx context.Context, req *CreateAgentRequest)
 	req.DSL = dslpkg.NormalizeForCanvas(req.DSL)
 	row := &entity.UserCanvas{
 		ID:             common.GenerateUUID(),
-		UserID:         req.UserID,
+		UserID:         userID,
 		Title:          req.Title,
 		Description:    req.Description,
 		Permission:     req.Permission,
