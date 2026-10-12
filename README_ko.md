@@ -179,7 +179,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. 브라우저에서 `http://IP_OF_YOUR_MACHINE`을 열고 로그인합니다.
+5. 브라우저에서 `http://IP_OF_YOUR_MACHINE`을 열고 로그인합니다. 기본 구성에서는 HTTP 포트 `80`을 생략할 수 있습니다.
 
 6. 모델 공급자 페이지에서 LLM, Embedding, Reranker를 추가합니다. 자세한 내용은 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)를 참조하세요.
 
@@ -231,8 +231,6 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    ./bin/ragflow_server --admin
    ```
 
-   터미널 2: Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -260,7 +258,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 
 
-> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 기본 MySQL 구성에서는 Docker 엔트리포인트가 마이그레이션 후 Admin, Syncer, Ingestor, API를 시작합니다. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. `download_deps.py`는 네이티브 라이브러리와 모델을 준비하며 `requests`와 `huggingface-hub`를 사용합니다. `--migrate`는 마이그레이션 후 종료하고 나머지 옵션은 해당 서비스를 시작합니다. HTTP 200은 API 준비 완료를 뜻합니다.
+> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 기본 MySQL 구성에서는 Docker 엔트리포인트가 마이그레이션 후 Admin, Syncer, Ingestor, API를 시작합니다. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. `download_deps.py`는 네이티브 라이브러리와 모델을 준비하며 `requests`와 `huggingface-hub`를 사용합니다. `--migrate`는 마이그레이션 후 종료하고, `--admin`은 관리 서비스, `--ingestor`는 수집 서비스, `--syncer`는 외부 데이터 소스 동기화 서비스, `--api`는 Web UI와 SDK용 API 서비스를 시작합니다. HTTP 200은 API 준비 완료를 뜻합니다.
 
 ## 📚 문서
 

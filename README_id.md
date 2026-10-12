@@ -186,7 +186,7 @@ Deployment lokal mendukung Docker dan menjalankan dari sumber. Docker cocok untu
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. Buka `http://IP_OF_YOUR_MACHINE` di browser dan masuk.
+5. Buka `http://IP_OF_YOUR_MACHINE` di browser dan masuk. Dengan konfigurasi default, port HTTP `80` dapat dihilangkan.
 
 6. Tambahkan LLM, embedding, dan reranker pada halaman penyedia model, beserta nama model, alamat layanan, dan API key.
 
@@ -245,8 +245,6 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
    ./bin/ragflow_server --admin
    ```
 
-   Terminal 2: Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -273,7 +271,7 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
 
 Lihat [Menjalankan Layanan dari Sumber](./docs/develop/launch_ragflow_from_source.md) untuk detailnya.
 
-> **Catatan operasional:** agar pengaturan Elasticsearch permanen, tambahkan `vm.max_map_count=262144` ke `/etc/sysctl.conf`. Dengan MySQL default, entrypoint image Docker menjalankan migrasi sebelum memulai Admin, Syncer, Ingestor, dan API. DeepDoc open-source 1.0 memakai inferensi CPU untuk layout, OCR, dan tabel. Setelah konfigurasi Docker berubah, mulai ulang layanan dan ikuti [panduan Docker](./docker/README.md) untuk mempertahankan atau menghapus data. `download_deps.py` menyiapkan pustaka native dan model serta memerlukan `requests` dan `huggingface-hub`. `--migrate` menjalankan migrasi lalu keluar; `--admin`, `--ingestor`, `--syncer`, dan `--api` memulai layanan terkait. HTTP 200 berarti API siap.
+> **Catatan operasional:** agar pengaturan Elasticsearch permanen, tambahkan `vm.max_map_count=262144` ke `/etc/sysctl.conf`. Dengan MySQL default, entrypoint image Docker menjalankan migrasi sebelum memulai Admin, Syncer, Ingestor, dan API. DeepDoc open-source 1.0 memakai inferensi CPU untuk layout, OCR, dan tabel. Setelah konfigurasi Docker berubah, mulai ulang layanan dan ikuti [panduan Docker](./docker/README.md) untuk mempertahankan atau menghapus data. `download_deps.py` menyiapkan pustaka native dan model serta memerlukan `requests` dan `huggingface-hub`. `--migrate` menjalankan migrasi lalu keluar; `--admin` memulai layanan administrasi, `--ingestor` layanan ingestion, `--syncer` layanan sinkronisasi sumber data eksternal, dan `--api` layanan API untuk Web UI dan SDK. HTTP 200 berarti API siap.
 
 ## 📚 Dokumentasi
 
@@ -297,5 +295,4 @@ Lihat [Roadmap RAGFlow 2026](https://github.com/infiniflow/ragflow/issues/12241)
 
 ## 🙌 Kontribusi
 
-RAGFlow berkembang melalui kolaborasi open-source. Dalam semangat ini, kami menerima kontribusi dari komunitas.
-Jika Anda ingin berpartisipasi, tinjau terlebih dahulu [Panduan Kontribusi](https://ragflow.io/docs/dev/contributing).
+RAGFlow berkembang melalui kolaborasi open-source. Dalam semangat ini, kami menerima kontribusi dari komunitas. Jika Anda ingin berpartisipasi, tinjau terlebih dahulu [Panduan Kontribusi](https://ragflow.io/docs/dev/contributing).

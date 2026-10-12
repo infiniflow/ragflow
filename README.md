@@ -94,8 +94,7 @@ See the [full release notes](https://ragflow.io/docs/dev/release_notes) for more
 
 ## 🎉 Stay Tuned
 
-⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new
-releases! 🌟
+⭐️ Star our repository to stay up-to-date with exciting new features and improvements! Get instant notifications for new releases! 🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
@@ -160,7 +159,7 @@ Local deployment supports both Docker deployment and launching from source. Dock
 - Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
 
 > [!TIP]
-> If you have not installed Docker on your local machine (Windows, Mac, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
+> If you have not installed Docker on your local machine (Windows, macOS, or Linux), see [Install Docker Engine](https://docs.docker.com/engine/install/).
 
 #### 🚀 Start up the server
 
@@ -179,8 +178,7 @@ Local deployment supports both Docker deployment and launching from source. Dock
    > sudo sysctl -w vm.max_map_count=262144
    > ```
    >
-   > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the
-   > `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
+   > This change will be reset after a system reboot. To ensure your change remains permanent, add or update the `vm.max_map_count` value in **/etc/sysctl.conf** accordingly:
    >
    > ```bash
    > vm.max_map_count=262144
@@ -231,9 +229,8 @@ Local deployment supports both Docker deployment and launching from source. Dock
    ```
 5. In your web browser, enter the IP address of your server and log in to RAGFlow.
 
-   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number) as the default
-   > HTTP serving port `80` can be omitted when using the default configurations.
-   >
+   > With the default settings, you only need to enter `http://IP_OF_YOUR_MACHINE` (**sans** port number), because the default HTTP serving port `80` can be omitted when using the default configuration.
+
 6. After signing in, add an LLM, embedding, and reranker on the model provider page, including the model name, service address, and API key.
 
    > For details, see [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
@@ -248,7 +245,7 @@ Docker deployment uses `docker/.env` and `docker/docker-compose.yml`. Configure 
 
 For document-engine changes, configuration updates, restarting services, and retaining or removing existing data, follow the Docker configuration guide.
 
-### 🔨 Launch Go Services from Source
+### 🔨 Launch from Source
 
 #### 📝 Source Build Prerequisites
 
@@ -297,8 +294,6 @@ For document-engine changes, configuration updates, restarting services, and ret
    ./bin/ragflow_server --admin
    ```
 
-   Terminal 2: start Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -320,8 +315,8 @@ For document-engine changes, configuration updates, restarting services, and ret
    - `--migrate`: Runs database migrations and exits when complete.
    - `--admin`: Starts the Admin service for management and initialization operations.
    - `--ingestor`: Starts the Ingestor service for data ingestion and parsing tasks.
-   - `--syncer`: Starts the Syncer service for data synchronization tasks.
-   - `--api`: Starts the API service for the Web UI, SDKs, and external clients.
+   - `--syncer`: Starts the Syncer service for external data source synchronization tasks.
+   - `--api`: Starts the API service for the Web UI and SDKs.
 
 7. Only when developing the frontend, install Node.js and npm, then start the React frontend:
 
@@ -362,5 +357,4 @@ See the [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/1224
 
 ## 🙌 Contributing
 
-RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community.
-If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.
+RAGFlow flourishes via open-source collaboration. In this spirit, we embrace diverse contributions from the community. If you would like to be a part, review our [Contribution Guidelines](https://ragflow.io/docs/dev/contributing) first.

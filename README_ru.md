@@ -177,7 +177,7 @@ Docker подходит для быстрой оценки, интеграцио
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. Откройте `http://IP_OF_YOUR_MACHINE` в браузере и войдите в систему.
+5. Откройте `http://IP_OF_YOUR_MACHINE` в браузере и войдите в систему. При стандартной конфигурации HTTP-порт `80` можно не указывать.
 
 6. Добавьте LLM, Embedding и Reranker на странице поставщиков моделей. Подробнее: [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
 
@@ -229,8 +229,6 @@ Docker подходит для быстрой оценки, интеграцио
    ./bin/ragflow_server --admin
    ```
 
-   Терминал 2: Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -257,7 +255,7 @@ Docker подходит для быстрой оценки, интеграцио
 
 Подробнее см. [Запуск из исходников](./docs/develop/launch_ragflow_from_source.md).
 
-> **Эксплуатационные примечания:** для постоянной настройки Elasticsearch добавьте `vm.max_map_count=262144` в `/etc/sysctl.conf`. При стандартном MySQL точка входа Docker выполняет миграцию перед запуском Admin, Syncer, Ingestor и API. В open-source 1.0 DeepDoc использует CPU для анализа макета, OCR и таблиц. После изменения Docker перезапустите сервисы и следуйте [руководству Docker](./docker/README.md) для сохранения или удаления данных. `download_deps.py` подготавливает нативные библиотеки и модели и требует `requests` и `huggingface-hub`. `--migrate` выполняет миграцию и завершается; остальные параметры запускают соответствующие сервисы. HTTP 200 означает готовность API.
+> **Эксплуатационные примечания:** для постоянной настройки Elasticsearch добавьте `vm.max_map_count=262144` в `/etc/sysctl.conf`. При стандартном MySQL точка входа Docker выполняет миграцию перед запуском Admin, Syncer, Ingestor и API. В open-source 1.0 DeepDoc использует CPU для анализа макета, OCR и таблиц. После изменения Docker перезапустите сервисы и следуйте [руководству Docker](./docker/README.md) для сохранения или удаления данных. `download_deps.py` подготавливает нативные библиотеки и модели и требует `requests` и `huggingface-hub`. `--migrate` выполняет миграцию и завершается; `--admin` запускает службу администрирования, `--ingestor` — службу загрузки данных, `--syncer` — службу синхронизации внешних источников данных, а `--api` — службу API для Web UI и SDK. HTTP 200 означает готовность API.
 
 ## 📚 Документация
 
@@ -281,5 +279,4 @@ Docker подходит для быстрой оценки, интеграцио
 
 ## 🙌 Участие в разработке
 
-RAGFlow развивается как open-source проект. Мы рады любым вкладам сообщества.
-Если хотите помочь — сначала ознакомьтесь с [Contribution Guidelines](https://ragflow.io/docs/dev/contributing).
+RAGFlow развивается как open-source проект. Мы рады любым вкладам сообщества. Если хотите помочь — сначала ознакомьтесь с [Contribution Guidelines](https://ragflow.io/docs/dev/contributing).

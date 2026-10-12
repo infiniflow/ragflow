@@ -175,7 +175,7 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. Abra `http://IP_OF_YOUR_MACHINE` no navegador e faça login.
+5. Abra `http://IP_OF_YOUR_MACHINE` no navegador e faça login. Com a configuração padrão, a porta HTTP `80` pode ser omitida.
 
 6. Adicione LLM, Embedding e Reranker na página de provedores de modelos. Consulte [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup).
 
@@ -227,8 +227,6 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
    ./bin/ragflow_server --admin
    ```
 
-   Terminal 2: Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -255,7 +253,7 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 
 Consulte [Iniciar pelo código-fonte](./docs/develop/launch_ragflow_from_source.md) para detalhes.
 
-> **Notas operacionais:** para tornar o ajuste do Elasticsearch permanente, adicione `vm.max_map_count=262144` a `/etc/sysctl.conf`. Com o MySQL padrão, o entrypoint Docker executa a migração antes de iniciar Admin, Syncer, Ingestor e API. No open source 1.0, o DeepDoc usa CPU para layout, OCR e tabelas. Após alterar o Docker, reinicie os serviços e siga o [guia Docker](./docker/README.md) para manter ou remover dados. `download_deps.py` prepara bibliotecas nativas e modelos e requer `requests` e `huggingface-hub`. `--migrate` migra e encerra; as demais opções iniciam os serviços correspondentes. HTTP 200 indica que a API está pronta.
+> **Notas operacionais:** para tornar o ajuste do Elasticsearch permanente, adicione `vm.max_map_count=262144` a `/etc/sysctl.conf`. Com o MySQL padrão, o entrypoint Docker executa a migração antes de iniciar Admin, Syncer, Ingestor e API. No open source 1.0, o DeepDoc usa CPU para layout, OCR e tabelas. Após alterar o Docker, reinicie os serviços e siga o [guia Docker](./docker/README.md) para manter ou remover dados. `download_deps.py` prepara bibliotecas nativas e modelos e requer `requests` e `huggingface-hub`. `--migrate` migra e encerra; `--admin` inicia o serviço de administração, `--ingestor` o serviço de ingestão, `--syncer` o serviço de sincronização de fontes de dados externas e `--api` o serviço de API para a interface Web e os SDKs. HTTP 200 indica que a API está pronta.
 
 ## 📚 Documentação
 
@@ -279,5 +277,4 @@ Veja o [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241
 
 ## 🙌 Contribuindo
 
-O RAGFlow prospera por meio da colaboração de código aberto. Com esse espírito, abraçamos contribuições diversas da comunidade.
-Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](https://ragflow.io/docs/dev/contributing).
+O RAGFlow prospera por meio da colaboração de código aberto. Com esse espírito, abraçamos contribuições diversas da comunidade. Se você deseja fazer parte, primeiro revise nossas [Diretrizes de Contribuição](https://ragflow.io/docs/dev/contributing).

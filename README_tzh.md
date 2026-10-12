@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="./README.md"><img alt="README in English" src="https://img.shields.io/badge/English-DFE0E5"></a>
-  <a href="./README_zh.md"><img alt="简体中文版自述文件" src="https://img.shields.io/badge/简体中文-DFE0E5"></a>
+  <a href="./README_zh.md"><img alt="簡體中文版自述文件" src="https://img.shields.io/badge/簡體中文-DFE0E5"></a>
   <a href="./README_tzh.md"><img alt="繁體版中文自述文件" src="https://img.shields.io/badge/繁體中文-DBEDFA"></a>
   <a href="./README_ja.md"><img alt="日本語のREADME" src="https://img.shields.io/badge/日本語-DFE0E5"></a>
   <a href="./README_ko.md"><img alt="한국어" src="https://img.shields.io/badge/한국어-DFE0E5"></a>
@@ -54,28 +54,30 @@
 <details open>
 <summary><b>📕 目錄</b></summary>
 
-- 💡 [RAGFlow 是什麼？](#-ragflow-是什麼)
+- 💡 [RAGFlow 是甚麼？](#-ragflow-是甚麼)
 - 🎮 [快速開始](#-快速開始)
 - 🔥 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系統架構](#-系統架構)
-- 🏠 [本機部署](#-本機部署)
+- 🏠 [本地部署](#-本地部署)
 - 📚 [技術文檔](#-技術文檔)
 - 📜 [路線圖](#-路線圖)
-- 🏄 [開源社群](#-開源社群)
+- 🏄 [開源社區](#-開源社區)
 - 🙌 [貢獻指南](#-貢獻指南)
+- 🤝 [商務合作](#-商務合作)
+- 👥 [加入社區](#-加入社區)
 
 </details>
 
-## 💡 RAGFlow 是什麼？
+## 💡 RAGFlow 是甚麼？
 
-[RAGFlow](https://ragflow.io/) 是一款領先的開源 [RAG](https://ragflow.io/basics/what-is-rag)（Retrieval-Augmented Generation）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑藉融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
+[RAGFlow](https://ragflow.io/) 是一款領先的開源檢索增強生成（[RAG](https://ragflow.io/basics/what-is-rag)）引擎，通過融合前沿的 RAG 技術與 Agent 能力，為大型語言模型提供卓越的上下文層。它提供可適配任意規模企業的端到端 RAG 工作流，憑借融合式[上下文引擎](https://ragflow.io/basics/what-is-agent-context-engine)與預置的 Agent 模板，助力開發者以極致效率與精度將複雜數據轉化為高可信、生產級的人工智能系統。
 
 ## 🎮 快速開始
 
-請登入網址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 試用雲服務。
+請登錄網址 [https://cloud.ragflow.io](https://cloud.ragflow.io) 體驗雲服務。
 
-如需本機部署，請參閱[本機部署](#-自行架設)。
+如果想在本地部署，請參閱[本地部署](#-本地部署)。
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="Chunking demonstration" src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/refs/heads/image/image/chunking.gif" width="1200"/>
@@ -84,19 +86,17 @@
 
 ## 🔥 近期更新
 
-- 2026-09-29 發布 RAGFlow 1.0.0-rc1。
+- 2026-09-30 發佈 RAGFlow 1.0.0-rc1。
+- 2026-09-10 支持通過 Sitemap 接入網站內容。
+- 2026-08-19 推出知識編譯，支持在文檔級和知識庫級生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
+- 2026-08-19 推出 Agentic RAG，支持 Low、Medium、High、Ultra 四種思考模式。
+- 2026-07-02 支持 Google BigQuery 數據源接入與增量同步。
 
-- 2026-09-10 支援透過 Sitemap 接入網站內容。
-- 2026-08-19 推出知識編譯，支援在文件級和知識庫級產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills。
-- 2026-08-19 推出 Agentic RAG，支援 Low、Medium、High、Ultra 四種思考模式。
-- 2026-07-02 支援 Google BigQuery 資料來源接入與增量同步。
-
-更多更新請參閱[完整發布記錄](https://ragflow.io/docs/dev/release_notes)。
-
+更多更新請參閱[完整發佈記錄](https://ragflow.io/docs/dev/release_notes)。
 
 ## 🎉 關注項目
 
-⭐️ 點擊右上角的 Star 追蹤 RAGFlow，可以取得最新發布的即時通知 !🌟
+⭐️ 點擊右上角的 Star 關注 RAGFlow，可以獲取最新發佈的實時通知！🌟
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
 <img alt="RAGFlow feature updates" src="https://github.com/user-attachments/assets/18c9707e-b8aa-4caf-a154-037089c105ba" width="1200"/>
@@ -106,97 +106,164 @@
 
 ### 🍭 **"Quality in, quality out"**
 
-- 基於深度文件理解，能夠從各類複雜格式的非結構化資料中提取真知灼見。
+- 基於深度文檔理解，能夠從各類複雜格式的非結構化數據中提取真知灼見。
 - 真正在無限上下文（token）的場景下快速完成大海撈針測試。
 
-### 🍱 **基於模板的文字切片**
+### 🍱 **基於模板的文本切片**
 
-- 不只是智能，更重要的是可控可解釋。
-- 多種文字範本可供選擇
+- 不僅僅是智能，更重要的是可控可解釋。
+- 多種文本模板可供選擇。
 
 ### 🧩 **知識編譯（Knowledge Compilation）**
 
-- 支援文件級和知識庫級編譯，將原始內容整理為結構化知識產物。
-- 透過編譯範本產生 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills，滿足不同的知識組織與重用需求。
-- 支援設定編譯模型與處理規則，並檢視、更新和重新產生知識產物。
+- 支持文檔級和知識庫級編譯，將原始內容組織為結構化的知識產物。
+- 通過編譯模板生成 Wiki、Graph、Tree、PageIndex、Mind Map、Timeline 及 Skills，滿足不同的知識組織和復用需求。
+- 支持配置編譯模型與處理規則，並查看、更新和重新生成知識產物。
 
 ### 🧠 **Agentic Retrieval**
 
-- 針對複雜問題進行多步檢索：模型會分析問題，並在需要時執行問題拆解、知識檢索和證據核驗。
-- 透過多輪檢索與推理取得更完整的上下文，協助產生有依據的回答。
-- 支援 Low、Medium、High、Ultra 思考模式，可依問題複雜度控制檢索和推理深度。
+- 面向複雜問題進行多步檢索：模型會分析問題，並在需要時執行問題拆解、知識檢索和證據核驗。
+- 通過多輪檢索與推理獲取更完整的上下文，幫助生成有依據的回答。
+- 支持 Low、Medium、High、Ultra 思考模式，可按問題複雜度控制檢索和推理深度。
 
 ### 🌱 **有理有據、最大程度降低幻覺（hallucination）**
 
-- 文字切片過程視覺化，支援手動調整。
+- 文本切片過程可視化，支持手動調整。
 - 有理有據：答案提供關鍵引用的快照並支持追根溯源。
 
-### 🍔 **相容各類異質資料來源**
+### 🍔 **兼容各類異構數據源**
 
-- 支援豐富的文件類型，包括 Word 文件、PPT、excel 表格、txt 檔案、圖片、PDF、影印件、複印件、結構化資料、網頁等。
+- 支持豐富的文件類型，包括 Word 文檔、PPT、Excel 表格、TXT 文件、圖片、PDF、影印件、復印件、結構化數據、網頁等。
 
-### 🛀 **全程無憂、自動化的 RAG 工作流程**
+### 🛀 **全程無憂、自動化的 RAG 工作流**
 
-- 全面優化的 RAG 工作流程可以支援從個人應用乃至超大型企業的各類生態系統。
-- 大語言模型 LLM 以及向量模型皆支援配置。
+- 自動化的 RAG 工作流可以支持從個人應用乃至超大型企業的各類生態系統。
+- 大語言模型 LLM 以及向量模型均支持配置。
 - 基於多路召回、融合重排序。
-- 提供易用的 API，可輕鬆整合到各類企業系統。
+- 提供易用的 API，可以輕鬆集成到各類企業系統。
 
 ## 🔎 系統架構
 
 <div align="center" style="margin-top:20px;margin-bottom:20px;">
-<img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
+  <img src="https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/structure.jpg" alt="RAGFlow system architecture" width="1000" />
 </div>
 
-## 🏠 本機部署
+## 🏠 本地部署
 
-Docker 適合快速體驗、整合測試和正式環境；原始碼啟動適合開發與除錯。Docker 不需要 Go。原始碼啟動需要 `go.mod` 指定的 Go，前端開發還需要 Node.js 和 npm。
+本地部署提供 Docker 部署和源碼啓動兩種方式：Docker 適合快速體驗、集成測試和生產部署；源碼啓動適合 RAGFlow 開發和調試。Docker 部署無需安裝 Go 編譯器，源碼啓動需要安裝 `go.mod` 指定版本的 Go 編譯器；前端開發還需要 Node.js 和 npm。
 
 ### 🐳 Docker 部署
 
-#### 📝 前提條件
+#### 📝 Docker 部署前提條件
 
-- 建議起步設定：4 核心 CPU、16 GB 記憶體和 50 GB 可用磁碟空間。
-- Docker ≥ 24.0.0, Docker Compose ≥ v2.26.1.
+- 建議起步配置：4 核 CPU、16 GB 內存和 50 GB 可用磁盤。實際資源需求取決於文檔引擎、數據規模、解析任務和併發量；啓用本地模型或其他額外組件時，請同時滿足相應組件的資源要求。
+- Docker ≥ 24.0.0，Docker Compose ≥ v2.26.1。
 
-#### 🚀 啟動伺服器
+> ⚠️ **提示：** 如果你尚未在本機安裝 Docker（Windows、macOS 或 Linux），可以參考 [Install Docker Engine](https://docs.docker.com/engine/install/) 自行安裝。
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+#### 🚀 啓動服務器
 
-2. `git clone https://github.com/infiniflow/ragflow.git`
+1. 如果使用 Elasticsearch，將 Docker 宿主機的 `vm.max_map_count` 設置為至少 262144。使用 Infinity 時則不需要執行此步驟：
 
-3. Docker:
+   > 如需確認 `vm.max_map_count` 的大小：
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > 如果使用 Elasticsearch 且 `vm.max_map_count` 的值小於 262144，可以進行重置：
+   >
+   > ```bash
+   > # 這裡我們設為 262144:
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > 你的改動會在下次系統重啓時被重置。如果希望做永久改動，還需要在 **/etc/sysctl.conf** 文件里把 `vm.max_map_count` 的值再相應更新一遍：
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+
+2. 克隆倉庫：
+
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   ```
+
+3. 切換到發佈標籤並使用 Docker Compose 啓動服務器：
+
+   進入倉庫中的 Docker 部署目錄。
 
    ```bash
    cd ragflow/docker
+   ```
+
+   切換到 `v1.0.0-rc1` 發佈標籤。
+
+   ```bash
    git checkout v1.0.0-rc1
+   ```
+
+   在啓動 RAGFlow 服務及其依賴服務。
+
+   ```bash
    docker compose -f docker-compose.yml up -d
    ```
 
-4. 檢查服務狀態和 API 是否就緒：
+   > 💡 **鏡像下載提示：** 如果無法從默認倉庫拉取鏡像，請先在 `docker/.env` 中將 `RAGFLOW_IMAGE` 設置為以下鏡像源之一，並保留 `v1.0.0-rc1` 標籤：
+   >
+   > - 華為雲：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc1`
+   > - 阿里雲：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc1`
+
+   默認 MySQL 配置下，鏡像入口會先執行數據庫遷移，再啓動 Admin、Syncer、Ingestor 和 API 等服務。
+
+   > RAGFlow 開源版 1.0 的 DeepDoc 版面分析、OCR 和表格識別使用 CPU 推理。
+
+4. 服務器啓動成功後再次確認服務器狀態：
+
+   使用 `docker ps` 檢查依賴服務狀態；依賴服務顯示 `healthy` 且 RAGFlow 容器持續運行後，通過 HTTP 接口判斷 RAGFlow 是否就緒（RAGFlow 容器本身未定義 Compose healthcheck）：
 
    ```bash
    curl -f http://localhost/api/v1/system/healthz
+   ```
+
+   返回 HTTP 200 後，再訪問 Web 頁面。如果修改了 `SVR_WEB_HTTP_PORT`，請將健康檢查地址中的端口替換為對應值。
+
+   如果服務啓動異常，再查看對應容器日誌：
+
+   ```bash
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. 在瀏覽器開啟 `http://IP_OF_YOUR_MACHINE` 並登入。
+5. 在你的瀏覽器中輸入你的服務器對應的 IP 地址並登錄 RAGFlow。
+   > 上面這個例子中，您只需輸入 http://IP_OF_YOUR_MACHINE 即可：未改動過配置則無需輸入端口（默認的 HTTP 服務端口 80）。
 
-6. 在模型供應商頁面新增 LLM、Embedding 和 Reranker。詳情請參閱 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)。
+6. 登錄 RAGFlow 後，在模型提供商頁面添加 LLM、Embedding 和 Reranker，並填寫對應的模型名稱、服務地址和 API key。
 
-詳情請參閱[快速入門指南](./docs/quickstart.mdx)。
+   > 詳見 [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup)。
 
-#### ⚙️ Docker 設定與調整
+   _好戲開始，接著奏樂接著舞！_
 
-使用 `docker/.env` 和 `docker/docker-compose.yml`。請參閱 [Docker 設定](./docker/README.md)及[映像建置與平台支援](./docs/develop/build_docker_image.mdx)。macOS 目前不受支援。
+詳情請見 [快速入門指南](./docs/quickstart.mdx)。
 
-### 🔨 以原始碼啟動
+#### ⚙️ Docker 配置與調整
 
-#### 📝 前提條件
+Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端口、密碼、文檔引擎及模型鏡像源請按[Docker 配置說明](./docker/README.md)修改；平台支持（注意：macOS 暫不受支持）請參閱[Go Docker 鏡像構建與平台支持指南](./docs/develop/build_docker_image.mdx)。源碼構建 Docker 鏡像請參閱[Go Docker 鏡像構建與平台支持指南](./docs/develop/build_docker_image.mdx)。
 
-1. 複製倉庫並安裝 `go.mod` 指定的 Go、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2，以及 CGO 所需的原生程式庫。
+切換文檔引擎、修改配置後重啓服務，以及保留或清理已有數據的操作，也請按照上述 Docker 配置文檔執行。
 
-2. 準備依賴項目：
+### 🔨 以源代碼啓動
+
+#### 📝 源碼啓動前提條件
+
+1. 克隆倉庫，並安裝 `go.mod` 中指定版本的 Go 編譯器（當前為 Go 1.27）、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2 開發文件 CGO 依賴的靜態庫；[build.sh](./build.sh) 會設置所需的構建參數。
+
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
+2. 運行 [依賴下載腳本](./ragflow_deps/download_deps.py) 下載靜態庫和模型文件：
 
    ```bash
    python3 -m venv /tmp/ragflow-go-download-venv
@@ -205,62 +272,75 @@ Docker 適合快速體驗、整合測試和正式環境；原始碼啟動適合�
    ./build.sh --all
    ```
 
-3. 編譯服務:
+   下載腳本準備構建所需的靜態庫和模型資源，並需要 `requests` 和 `huggingface-hub`。如果已通過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+
+3. 編譯：
 
    ```bash
    ./build.sh --all
    ```
 
-4. 啟動本機依賴服務:
+4. 啓動本地依賴服務，並確認 **conf/service_conf.yaml** 中的主機與端口對應宿主機可訪問的地址。如果使用 Elasticsearch，還需先將 Docker 主機的 `vm.max_map_count` 設為至少 `262144`。
 
    ```bash
    sudo sysctl -w vm.max_map_count=262144
    docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks
    ```
 
-5. 遷移資料庫:
+5. 數據遷移：
 
    ```bash
    ./bin/ragflow_server --migrate
    ```
 
-6. 使用四個終端機啟動四項服務:
+6. 啓動 4 個終端分別啓動 4 個服務：
 
-   終端機 1：Admin (`9381`)。
+   終端 1：啓動 Admin，監聽端口 `9381`。
 
    ```bash
    ./bin/ragflow_server --admin
    ```
 
-   終端機 2：Ingestor。
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
 
-   終端機 3：Syncer。
+   終端 3：啓動 Syncer。
 
    ```bash
    ./bin/ragflow_server --syncer
    ```
 
-   終端機 4：API (`9380`)。
+   終端 4：啓動 API，監聽端口 `9380`。
 
    ```bash
    ./bin/ragflow_server --api
    ```
 
-7. 僅在前端開發時安裝 Node.js 和 npm，並驗證 API:
+   各啓動參數的作用如下：
+
+   - `--migrate`：執行數據庫遷移，完成後即可退出。
+   - `--admin`：啓動 Admin 服務，負責管理和初始化操作。
+   - `--ingestor`：啓動 Ingestor 服務，負責數據攝取和解析任務。
+   - `--syncer`：啓動 Syncer 服務，負責外部數據源的數據同步任務。
+   - `--api`：啓動 API 服務，為 Web 和 SDK 提供 API 接口。
+
+7. 僅在前端開發時安裝 Node.js 和 npm，然後啓動 React 前端：
 
    ```bash
    cd web
    npm install
+   ```
+
+   服務啓動後，運行下面命令來確認 API 服務已就緒：
+
+   ```bash
    curl -f http://127.0.0.1:9380/api/v1/system/healthz
    ```
 
-詳情請參閱[從原始碼啟動服務](./docs/develop/launch_ragflow_from_source.md)。
+   返回 HTTP 200 表示 API 可以正常響應。前端 和 DeepDoc 的完整驗證步驟請參閱[從源代碼啓動服務](./docs/develop/launch_ragflow_from_source.md#5-verify-the-startup)。
 
-> **操作說明：** 若要永久設定 Elasticsearch，請在 `/etc/sysctl.conf` 加入 `vm.max_map_count=262144`。預設 MySQL 設定下，Docker 入口會先執行資料庫遷移，再啟動 Admin、Syncer、Ingestor 和 API。開源版 1.0 的 DeepDoc 使用 CPU 執行版面分析、OCR 和表格辨識。修改 Docker 設定後請重新啟動服務，資料保留或清理請依照 [Docker 指南](./docker/README.md)。`download_deps.py` 會準備原生程式庫和模型資源，並需要 `requests` 與 `huggingface-hub`。`--migrate` 執行遷移後退出；其餘參數啟動對應服務。HTTP 200 表示 API 已就緒。
+詳情請見 [從源代碼啓動服務](./docs/develop/launch_ragflow_from_source.md)。
 
 ## 📚 技術文檔
 
@@ -276,7 +356,7 @@ Docker 適合快速體驗、整合測試和正式環境；原始碼啟動適合�
 
 詳見 [RAGFlow Roadmap 2026](https://github.com/infiniflow/ragflow/issues/12241) 。
 
-## 🏄 開源社群
+## 🏄 開源社區
 
 - [Discord](https://discord.gg/NjYzJD3GM3)
 - [X](https://x.com/infiniflowai)
@@ -284,4 +364,16 @@ Docker 適合快速體驗、整合測試和正式環境；原始碼啟動適合�
 
 ## 🙌 貢獻指南
 
-RAGFlow 只有透過開源協作才能蓬勃發展。秉持這項精神,我們歡迎來自社區的各種貢獻。如果您有意參與其中,請查閱我們的 [貢獻者指南](https://ragflow.io/docs/dev/contributing) 。
+RAGFlow 只有通過開源協作才能蓬勃發展。秉持這一精神，我們歡迎來自社區的各種貢獻。如果您有意參與其中，請查閱我們的[貢獻者指南](https://ragflow.io/docs/dev/contributing)。
+
+## 🤝 商務合作
+
+- [預約咨詢](https://aao615odquw.feishu.cn/share/base/form/shrcnjw7QleretCLqh1nuPo1xxh)
+
+## 👥 加入社區
+
+掃二維碼添加 RAGFlow 小助手，進 RAGFlow 交流群。
+
+<p align="center">
+  <img alt="RAGFlow assistant QR code" src="https://github.com/infiniflow/ragflow/assets/7248/bccf284f-46f2-4445-9809-8f1030fb7585" width=50% height=50%>
+</p>

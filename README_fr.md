@@ -186,7 +186,7 @@ Le déploiement local prend en charge Docker et le lancement depuis les sources.
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. Ouvrez `http://IP_OF_YOUR_MACHINE` dans un navigateur et connectez-vous.
+5. Ouvrez `http://IP_OF_YOUR_MACHINE` dans un navigateur et connectez-vous. Avec la configuration par défaut, le port HTTP `80` peut être omis.
 
 6. Ajoutez un LLM, un modèle d’embedding et un reranker dans la page des fournisseurs de modèles, avec le nom, l’adresse du service et la clé API.
 
@@ -245,8 +245,6 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
    ./bin/ragflow_server --admin
    ```
 
-   Terminal 2 : Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -273,7 +271,7 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 
 Consultez [Lancer le service depuis les sources](./docs/develop/launch_ragflow_from_source.md) pour plus de détails.
 
-> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_deps.py` prépare les bibliothèques natives et les modèles et nécessite `requests` et `huggingface-hub`. `--migrate` migre puis quitte ; `--admin`, `--ingestor`, `--syncer` et `--api` démarrent les services correspondants. Une réponse HTTP 200 indique que l’API est prête.
+> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_deps.py` prépare les bibliothèques natives et les modèles et nécessite `requests` et `huggingface-hub`. `--migrate` migre puis quitte ; `--admin` démarre le service d’administration, `--ingestor` le service d’ingestion, `--syncer` le service de synchronisation des sources de données externes et `--api` le service API pour l’interface Web et les SDK. Une réponse HTTP 200 indique que l’API est prête.
 
 ## 📚 Documentation
 
@@ -297,5 +295,4 @@ Voir la [Feuille de route RAGFlow 2026](https://github.com/infiniflow/ragflow/is
 
 ## 🙌 Contribuer
 
-RAGFlow s'épanouit grâce à la collaboration open-source. Dans cet esprit, nous accueillons des contributions diverses de la communauté.
-Si vous souhaitez en faire partie, consultez d'abord nos [Directives de contribution](https://ragflow.io/docs/dev/contributing).
+RAGFlow s'épanouit grâce à la collaboration open-source. Dans cet esprit, nous accueillons des contributions diverses de la communauté. Si vous souhaitez en faire partie, consultez d'abord nos [Directives de contribution](https://ragflow.io/docs/dev/contributing).

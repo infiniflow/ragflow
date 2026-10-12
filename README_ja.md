@@ -178,7 +178,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. ブラウザで `http://IP_OF_YOUR_MACHINE` を開いてログインします。
+5. ブラウザで `http://IP_OF_YOUR_MACHINE` を開いてログインします。デフォルト設定では、HTTP ポート `80` は省略できます。
 
 6. モデルプロバイダーページで LLM、Embedding、Reranker を追加します。詳細は [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) を参照してください。
 
@@ -230,8 +230,6 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    ./bin/ragflow_server --admin
    ```
 
-   ターミナル2: Ingestor。
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -258,7 +256,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
-> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_deps.py` はネイティブライブラリとモデルを準備し、`requests` と `huggingface-hub` を使用します。`--migrate` は移行後に終了し、残りの各オプションは対応サービスを起動します。HTTP 200 は API の準備完了を示します。
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_deps.py` はネイティブライブラリとモデルを準備し、`requests` と `huggingface-hub` を使用します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 

@@ -177,7 +177,7 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
    docker logs --tail 50 ragflow-cpu
    ```
 
-5. Tarayıcıda `http://IP_OF_YOUR_MACHINE` adresini açıp oturum açın.
+5. Tarayıcıda `http://IP_OF_YOUR_MACHINE` adresini açıp oturum açın. Varsayılan yapılandırmada HTTP bağlantı noktası `80` yazılmayabilir.
 
 6. Model sağlayıcıları sayfasında LLM, Embedding ve Reranker ekleyin. Ayrıntılar için [llm_api_key_setup](https://ragflow.io/docs/dev/llm_api_key_setup) sayfasına bakın.
 
@@ -229,8 +229,6 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
    ./bin/ragflow_server --admin
    ```
 
-   Terminal 2: Ingestor.
-
    ```bash
    ./bin/ragflow_server --ingestor
    ```
@@ -257,7 +255,7 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
 Ayrıntılar için [Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
-> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_deps.py` yerel kitaplıkları ve modelleri hazırlar; `requests` ve `huggingface-hub` gerektirir. `--migrate` geçişi çalıştırıp çıkar; diğer seçenekler ilgili hizmetleri başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
+> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_deps.py` yerel kitaplıkları ve modelleri hazırlar; `requests` ve `huggingface-hub` gerektirir. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
 
 ## 📚 Dokümantasyon
 
@@ -281,5 +279,4 @@ Ayrıntılar için [Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_sour
 
 ## 🙌 Katkıda Bulunma
 
-RAGFlow, açık kaynak iş birliği sayesinde gelişmektedir. Bu anlayışla, topluluktan gelen çeşitli katkıları benimsiyoruz.
-Bir parçası olmak istiyorsanız, önce [Katkıda Bulunma Kılavuzumuzu](https://ragflow.io/docs/dev/contributing) inceleyin.
+RAGFlow, açık kaynak iş birliği sayesinde gelişmektedir. Bu anlayışla, topluluktan gelen çeşitli katkıları benimsiyoruz. Bir parçası olmak istiyorsanız, önce [Katkıda Bulunma Kılavuzumuzu](https://ragflow.io/docs/dev/contributing) inceleyin.
