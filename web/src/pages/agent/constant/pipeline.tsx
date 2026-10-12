@@ -385,14 +385,17 @@ export const initialExtractorValues = {
 export const initialGoExtractorValues = {
   ...initialLlmBaseValues,
   keywords: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   questions: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   tags: {
+    enabled: false,
     top_n: 0,
     tag_file_id: '',
   },
