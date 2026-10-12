@@ -314,6 +314,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// With no explicit tools, use the requested template. The config reloads
 	// when its mtime changes so operators can change the tool list and prompt.
 	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
+	if err != nil {
+		return "", err
+	}
 
 	maxIter := in.MaxIterations
 	if maxIter <= 0 {
@@ -347,7 +351,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          "smart-reasoning",
 		Instruction:   tmpl.Content,
-		Model:         in.Model,
+		Model:         agentModel,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,
 		// network hiccups) with seconds-scale backoff on EVERY model call of
