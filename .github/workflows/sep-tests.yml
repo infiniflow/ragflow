@@ -1355,7 +1355,7 @@ jobs:
         # Testdata is pre-seeded on the runner at /opt/ragflow-testdata
         # (asserted by the previous step). RAGFLOW_TESTDATA_DIR points the fetch
         # script at it so the network clone is skipped (see
-        # scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
+        # tools/scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
         # is needed here. XDG_CACHE_HOME remains the location the script falls
         # back to when it runs outside this job (local dev, no mount).
         env:

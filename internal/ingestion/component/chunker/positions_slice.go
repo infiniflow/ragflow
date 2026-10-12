@@ -119,6 +119,50 @@ func slicePositionsByTextRatio(raw json.RawMessage, startRatio, endRatio float64
 	return json.RawMessage(b)
 }
 
+// slicePositionsByCounts slices both position matrices by per-piece visible
+// counts so adjacent pieces abut instead of each carrying the full source
+// box. counts[i] is the visible-text weight of piece i; parser tags and
+// synthetic glue must already be excluded by the caller (see removeTag).
+// A piece whose slice is empty (zero-weight piece or malformed matrix)
+// falls back to the source matrix so it keeps its preview instead of none.
+// When the total weight is not positive every piece falls back the same way.
+// Shared by the Token path (chunkFromItem/splitOversizedText) and the General
+// path (sliceGeneralSplitPieces) so the three stay mirrored.
+func slicePositionsByCounts(pdfSrc, posSrc json.RawMessage, counts []int) ([]json.RawMessage, []json.RawMessage) {
+	pdfOut := make([]json.RawMessage, len(counts))
+	posOut := make([]json.RawMessage, len(counts))
+	total := 0
+	for _, c := range counts {
+		total += c
+	}
+	if total <= 0 {
+		for i := range counts {
+			if len(pdfSrc) > 0 {
+				pdfOut[i] = pdfSrc
+			}
+			if len(posSrc) > 0 {
+				posOut[i] = posSrc
+			}
+		}
+		return pdfOut, posOut
+	}
+	cum := 0
+	for i, c := range counts {
+		startRatio := float64(cum) / float64(total)
+		endRatio := float64(cum+c) / float64(total)
+		pdfOut[i] = slicePositionsByTextRatio(pdfSrc, startRatio, endRatio)
+		posOut[i] = slicePositionsByTextRatio(posSrc, startRatio, endRatio)
+		if len(pdfOut[i]) == 0 && len(pdfSrc) > 0 {
+			pdfOut[i] = pdfSrc
+		}
+		if len(posOut[i]) == 0 && len(posSrc) > 0 {
+			posOut[i] = posSrc
+		}
+		cum += c
+	}
+	return pdfOut, posOut
+}
+
 // sliceAnyPositions is the map-value variant used by the title chunker
 // (GroupTitle/HierarchyTitle) where positions are stored as any
 // (typically [][]float64). It round-trips through JSON so the same

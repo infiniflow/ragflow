@@ -719,3 +719,58 @@ func TestMergeCaptions_MergedCaptionKeepsOnlySharedPages(t *testing.T) {
 		t.Errorf("primary box changed: %v", pn)
 	}
 }
+
+// TestMergeCaptions_FigureTextCaptionOnOwnLine locks the product requirement
+// that an attached figure caption stays in the SAME chunk as its figure but
+// reads as its own line, instead of being glued to (or space-joined with) the
+// figure's own text.
+//
+// This shape — a figure section that already carries text, plus a caption —
+// had no coverage: every other figure test uses a text-less (pure image)
+// figure, where the separator never applies. It is the shape product sees on
+// real documents.
+//
+// Python joins the same way: _extract_table_figure inserts the caption into
+// the figure's box list (figures[fk].insert(0, c)) and renders the figure's
+// text as "\n".join([b["text"] for b in bxs if b.get("text")]). Go previously
+// used a single space, and for a CJK-only caption captionSep returns "" — no
+// separator at all, so "图内容图 1 各分片延迟分布" ran together.
+func TestMergeCaptions_FigureTextCaptionOnOwnLine(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "axes: latency (ms), shards", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "图 1 各分片延迟分布", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 510, Bottom: 525}}},
+	}
+	result := MergeCaptions(sections)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with caption), got %d: %v", len(result), textsOf(result))
+	}
+	if got, want := result[0].Text, "axes: latency (ms), shards\n图 1 各分片延迟分布"; got != want {
+		t.Errorf("figure caption must sit on its own line, got %q, want %q", got, want)
+	}
+}
+
+// TestMergeCaptions_FigureCaptionThenSecondCaptionOnNewLines locks the
+// multi-caption case: two caption boxes of one figure are concatenated with a
+// NEWLINE separator too (not captionSep's language-dependent space/empty
+// string), so each one stays readable on its own line.
+func TestMergeCaptions_FigureCaptionThenSecondCaptionOnNewLines(t *testing.T) {
+	sections := []pdf.Section{
+		{Text: "chart body", LayoutType: pdf.LayoutTypeFigure, Image: "img",
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 300, Bottom: 500}}},
+		{Text: "图 2 分片延迟", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 505, Bottom: 520}}},
+		{Text: "图 2 分片吞吐", LayoutType: pdf.DLALabelFigureCaption,
+			Positions: []pdf.Position{{PageNumbers: []int{0}, Left: 100, Right: 400, Top: 522, Bottom: 537}}},
+	}
+	result := MergeCaptions(sections)
+
+	if len(result) != 1 {
+		t.Fatalf("expected 1 section (figure with two captions), got %d: %v", len(result), textsOf(result))
+	}
+	if got, want := result[0].Text, "chart body\n图 2 分片延迟\n图 2 分片吞吐"; got != want {
+		t.Errorf("captions must be newline-separated in reading order, got %q, want %q", got, want)
+	}
+}
