@@ -132,8 +132,9 @@ export const isDocumentProcessing = (
 // no model (missingModel). The tenant default is deliberately not consulted:
 // parsing reads the operator setup, so a global default does not make the
 // file parsable. Image files only need their family declared: the image
-// parser always runs OCR and merely supplements it with the vision model
-// (picked as the image parse_method, with the tenant default as fallback).
+// OCR switch runs local extraction independently, and the vision model is a
+// global supplement picked from the top-level vlm.llm_id (falling back to the
+// tenant default).
 // These helpers power the upload warning and the parse-click validation.
 
 export type ParserModelGap = {
