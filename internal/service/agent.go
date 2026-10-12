@@ -2386,6 +2386,20 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 				return state, nil
 			}
+			// Surface a visible technical error when the run failed without
+			// emitting any content. Otherwise the SSE stream closes silently
+			// and the client cannot tell an exhausted-rounds or provider
+			// failure from a slow answer. Client disconnects are harmless:
+			// the emit just has no consumer.
+			if answer == "" && !messageEventsEmitted && shouldEmitMessage {
+				failureText := agentRunFailureText(err)
+				emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
+				meData, _ := json.Marshal(canvas.MessageEndEvent{
+					Attachment: attachment,
+					Reference:  referencePayload,
+				})
+				emit("message_end", string(meData))
+			}
 			s.markRunFailed(ctx2, runID, "invoke: "+err.Error())
 			return nil, canvasInvokeError(err)
 		}
@@ -2913,6 +2927,29 @@ func tenantIDFromRoot(root map[string]any) string {
 		return s
 	}
 	return ""
+}
+
+// agentRunFailureText renders a visible technical-error message for run
+// failures that produced no content, so the client sees a reason instead
+// of a silently closed stream. Mirrors the TECHNICKÁ CHYBA label the
+// agent prompt uses for tool failures.
+func agentRunFailureText(err error) string {
+	msg := ""
+	if err != nil {
+		msg = strings.ToLower(err.Error())
+	}
+	switch {
+	case strings.Contains(msg, "exceeds max steps"):
+		return "**TECHNICKÁ CHYBA**: Agent nedokončil odpoveď — vyčerpal limit interných krokov (max_rounds). Skúste otázku zopakovať alebo ju spresniť."
+	case strings.Contains(msg, "deadline exceeded") || strings.Contains(msg, "timeout"):
+		return "**TECHNICKÁ CHYBA**: Modelový endpoint neodpovedal včas (timeout). Skúste otázku zopakovať."
+	case strings.Contains(msg, "no choices in response"):
+		return "**TECHNICKÁ CHYBA**: Modelový endpoint vrátil prázdnu odpoveď. Skúste otázku zopakovať."
+	case strings.Contains(msg, "context canceled"):
+		return "**TECHNICKÁ CHYBA**: Spojenie bolo predčasne ukončené. Skúste otázku zopakovať."
+	default:
+		return "**TECHNICKÁ CHYBA**: Agent nedokončil odpoveď pre internú chybu. Skúste otázku zopakovať."
+	}
 }
 
 // deferredAgentStreamFailureText returns the user-facing failure text the
