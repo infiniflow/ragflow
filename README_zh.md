@@ -56,15 +56,16 @@
 
 - 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
 - 🎮 [快速开始](#-快速开始)
-- 📌 [近期更新](#-近期更新)
+- 🔥 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系统架构](#-系统架构)
 - 🏠 [本地部署](#-本地部署)
 - 📚 [技术文档](#-技术文档)
 - 📜 [路线图](#-路线图)
-- 🏄 [贡献指南](#-贡献指南)
-- 🙌 [加入社区](#-加入社区)
+- 🏄 [开源社区](#-开源社区)
+- 🙌 [贡献指南](#-贡献指南)
 - 🤝 [商务合作](#-商务合作)
+- 👥 [加入社区](#-加入社区)
 
 </details>
 
@@ -268,7 +269,6 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。镜像、端
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
    ```
 
    下载脚本准备构建所需的静态库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。

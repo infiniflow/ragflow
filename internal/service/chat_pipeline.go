@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -270,7 +271,10 @@ func (s *ChatPipelineService) AsyncChat(
 		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
 	}
 	if agenticSelected && hasKBs {
-		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch, quoteEnabled(kwargs, chat.PromptConfig))
+		if useWebSearch {
+			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
+		}
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -437,6 +441,17 @@ func (s *ChatPipelineService) AsyncChat(
 				zap.Int("image_files", len(imageFiles)),
 				zap.Int("attachment_bytes", len(attachments)))
 		}
+
+		var historyImageFiles []string
+		for _, previous := range messages[:len(messages)-1] {
+			if previous["role"] == "user" && previous["files"] != nil {
+				_, images := s.splitChatAttachments(ctx, userID, previous["files"])
+				modelType, _ := llmModelConfig["model_type"].(string)
+				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				historyImageFiles = append(historyImageFiles, images...)
+			}
+		}
+		hasImageAttachments = hasImageAttachments || len(historyImageFiles) > 0
 
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
@@ -643,34 +658,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// meta_data_filter — use LLM to map the question to metadata
 		// criteria, then filter docIDs to matching
 		// documents only.
-		if chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0 && len(kbs) > 0 {
-			kbIDs := kbIDStrings(kbs)
-			if metaQ := questions[len(questions)-1]; metaQ != "" {
-				var flattedMeta common.MetaData
-				var mErr error
-				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
-				}
-				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
-						ctx,
-						*chat.MetaDataFilter,
-						flattedMeta,
-						metaQ,
-						chatModel,
-						docIDs,
-						kbIDs,
-					); filtered != nil {
-						common.Debug("meta_data_filter applied",
-							zap.Int("filtered_count", len(filtered)),
-							zap.Int("pre_filter_count", len(docIDs)))
-						docIDs = filtered
-					}
-				} else {
-					common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(mErr))
-				}
-			}
-		}
+		docIDs = s.chatMetadataDocIDs(ctx, chat, questions[len(questions)-1], chatModel, docIDs, kbIDStrings(kbs))
 
 		// keyword — extract top-N keywords from the question via LLM and
 		// append them to the question text to boost lexical retrieval recall.
@@ -862,11 +850,12 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
+				harnessImages := append(historyImageFiles, imageFiles...)
 				var history []map[string]interface{}
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
 					TopN:                   int(chat.TopN),
 					SimilarityThreshold:    chat.SimilarityThreshold,
 					VectorSimilarityWeight: chat.VectorSimilarityWeight,
@@ -1161,12 +1150,16 @@ func (s *ChatPipelineService) AsyncChat(
 		if factoryName == "" {
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
-		for _, m := range messages {
+		modelType, _ := llmModelConfig["model_type"].(string)
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
+			if i < len(messages)-1 {
+				llmMessage["files"] = m["files"]
+			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
@@ -1182,6 +1175,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
+		for i := range llmMessages[:len(llmMessages)-1] {
+			llmMessages[i] = s.chatHistoryMessage(ctx, userID, llmMessages[i], modelType, factoryName)
+		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
 			zap.Int("used_token_count", usedTokenCount),
@@ -1652,10 +1648,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
-		for _, m := range messages {
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && config["store_history_messages"] != false {
 				continue
+			}
+			if i < len(messages)-1 {
+				m = s.chatHistoryMessage(ctx, userID, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -2525,29 +2524,67 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 }
 
 // cleanTTSText sanitizes text for TTS synthesis.
-// Mirrors dialog_service.py:1404-1423.
 func cleanTTSText(text string) string {
 	if text == "" {
 		return ""
 	}
+	// Drop invalid UTF-8 before applying the character limit.
+	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
 	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
 	text = controlRe.ReplaceAllString(text, "")
 	// Strip emojis.
 	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
 	text = emojiRe.ReplaceAllString(text, "")
+	text = stripTTSTags(text)
 	// Collapse whitespace.
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
-	if len(text) > 500 {
-		text = text[:500]
+	if r := []rune(text); len(r) > 500 {
+		text = string(r[:500])
 	}
 	return text
 }
 
+// stripTTSTags removes paired markup and standalone reasoning/void tags.
+// Unmatched tags stay literal so compact comparisons such as a<b>c survive.
+func stripTTSTags(text string) string {
+	// Quoted attributes may contain > without ending the tag.
+	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	strip := make([]bool, len(matches))
+	open := make(map[string][]int)
+	for i, match := range matches {
+		name := strings.ToLower(text[match[4]:match[5]])
+		switch name {
+		case "think", "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr":
+			strip[i] = true
+		default:
+			if strings.HasSuffix(text[match[0]:match[1]], "/>") {
+				strip[i] = true
+			} else if match[2] == match[3] {
+				open[name] = append(open[name], i)
+			} else if stack := open[name]; len(stack) > 0 {
+				strip[stack[len(stack)-1]] = true
+				strip[i] = true
+				open[name] = stack[:len(stack)-1]
+			}
+		}
+	}
+	var result strings.Builder
+	last := 0
+	for i, match := range matches {
+		if strip[i] {
+			result.WriteString(text[last:match[0]])
+			last = match[1]
+		}
+	}
+	result.WriteString(text[last:])
+	return result.String()
+}
+
 // synthesizeTTS calls the TTS model to convert text to audio.
-// Mirrors dialog_service.py:1426-1432.
 func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
@@ -2841,6 +2878,21 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, userID string, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+	if message["role"] != "user" || message["files"] == nil {
+		return message
+	}
+	_, images := s.splitChatAttachments(ctx, userID, message["files"])
+	images, _ = gateImageAttachments("", modelType, images)
+	msg := normalizeLLMMessage(message)
+	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
+	if err != nil {
+		common.Warn("chat history multimodal conversion failed", zap.Error(err))
+		return msg
+	}
+	return converted
 }
 
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {

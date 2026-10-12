@@ -75,6 +75,7 @@ type ChatCardProps = {
   id: string;
   idx: number;
   conversation: IClientConversation;
+  isAnyBoxLoading: boolean;
   setLoading(id: string, loading: boolean): void;
 } & Pick<
   MultipleChatBoxProps,
@@ -98,6 +99,7 @@ const ChatCard = forwardRef(function ChatCard(
     files,
     clearFiles,
     setLoading,
+    isAnyBoxLoading,
   }: ChatCardProps,
   ref,
 ) {
@@ -215,7 +217,7 @@ const ChatCard = forwardRef(function ChatCard(
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  disabled={isEmpty(llmId)}
+                  disabled={isEmpty(llmId) || isAnyBoxLoading}
                   onClick={handleApplyConfig}
                   data-testid="chat-detail-multimodel-card-apply"
                   data-card-index={idx}
@@ -231,6 +233,7 @@ const ChatCard = forwardRef(function ChatCard(
               <Button
                 variant="ghost"
                 size="icon-sm"
+                disabled={isAnyBoxLoading}
                 onClick={handleRemoveChatBox}
                 data-testid="chat-detail-multimodel-card-remove"
                 data-card-index={idx}
@@ -242,6 +245,7 @@ const ChatCard = forwardRef(function ChatCard(
               <Button
                 variant="ghost"
                 size="icon-sm"
+                disabled={isAnyBoxLoading}
                 onClick={addChatBox}
                 data-testid="chat-detail-multimodel-add-card"
               >
@@ -313,6 +317,7 @@ export function MultipleChatBox({
   }, []);
 
   const allChatBoxLoading = [...chatBoxLoading.values()];
+  const isAnyBoxLoading = allChatBoxLoading.some((loading) => loading);
 
   const showInternet = useShowInternet();
 
@@ -367,6 +372,7 @@ export function MultipleChatBox({
             setValue={setValue}
             clearFiles={clearFiles}
             setLoading={setLoading}
+            isAnyBoxLoading={isAnyBoxLoading}
           ></ChatCard>
         ))}
       </div>
@@ -374,7 +380,7 @@ export function MultipleChatBox({
         <NextMessageInput
           disabled={disabled}
           sendDisabled={sendDisabled}
-          sendLoading={allChatBoxLoading.some((loading) => loading)}
+          sendLoading={isAnyBoxLoading}
           value={value}
           resize="vertical"
           onInputChange={handleInputChange}

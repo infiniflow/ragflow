@@ -18,6 +18,8 @@ package agentic_rag
 
 import (
 	"context"
+	"crypto/sha256"
+	"fmt"
 	"strings"
 	"sync"
 )
@@ -34,14 +36,15 @@ import (
 // A passage that reaches the model twice keeps its first number, so the same
 // chunk cited on two lines is one place, cited the same way.
 type EvidenceRegistry struct {
-	mu    sync.Mutex
-	order []string
-	numOf map[string]int
+	mu         sync.Mutex
+	order      []string
+	numOf      map[string]int
+	webResults map[string]WebResult
 }
 
 // NewEvidenceRegistry returns an empty registry.
 func NewEvidenceRegistry() *EvidenceRegistry {
-	return &EvidenceRegistry{numOf: map[string]int{}}
+	return &EvidenceRegistry{numOf: map[string]int{}, webResults: map[string]WebResult{}}
 }
 
 // Stamp returns the stable handle for a chunk id, allocating the next one the
@@ -57,6 +60,10 @@ func (r *EvidenceRegistry) Stamp(id string) int {
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	return r.stampLocked(id)
+}
+
+func (r *EvidenceRegistry) stampLocked(id string) int {
 	if n, ok := r.numOf[id]; ok {
 		return n
 	}
@@ -66,7 +73,38 @@ func (r *EvidenceRegistry) Stamp(id string) int {
 	return n
 }
 
-// Resolve returns the chunk id a handle names, and whether it is published.
+// StampWebResult retains the snippet shown to the model and assigns its
+// citation handle. Different snippets from one URL remain distinct passages.
+func (r *EvidenceRegistry) StampWebResult(result WebResult) int {
+	if r == nil || strings.TrimSpace(result.URL) == "" {
+		return -1
+	}
+	id := webResultID(result)
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if _, exists := r.webResults[id]; !exists {
+		r.webResults[id] = result
+	}
+	return r.stampLocked(id)
+}
+
+func webResultID(result WebResult) string {
+	return fmt.Sprintf("web-%x", sha256.Sum256([]byte(result.URL+"\n"+result.Content)))
+}
+
+// WebResult returns a retained web passage. Corpus ids are resolved through
+// the dataset index instead.
+func (r *EvidenceRegistry) WebResult(id string) (WebResult, bool) {
+	if r == nil {
+		return WebResult{}, false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	result, ok := r.webResults[id]
+	return result, ok
+}
+
+// Resolve returns the source id a handle names, and whether it is published.
 func (r *EvidenceRegistry) Resolve(n int) (string, bool) {
 	if r == nil {
 		return "", false
@@ -80,7 +118,7 @@ func (r *EvidenceRegistry) Resolve(n int) (string, bool) {
 }
 
 // IDs returns a snapshot of the registry in first-seen order: IDs[n] is the
-// chunk the model was shown as [ID:n].
+// corpus chunk or web passage the model was shown as [ID:n].
 func (r *EvidenceRegistry) IDs() []string {
 	if r == nil {
 		return nil

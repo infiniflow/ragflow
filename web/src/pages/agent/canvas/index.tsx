@@ -24,15 +24,16 @@ import {
   AgentChatContext,
   AgentChatLogContext,
   AgentInstanceContext,
+  CanvasReadonlyContext,
   HandleContext,
 } from '../context';
 
 import FormSheet from '../form-sheet/next';
 import { useIsPipeline } from '../hooks/use-is-pipeline';
+import { useCanvasBackground } from '../hooks/use-canvas-background';
 import { hasPipelineNextOperators } from '../utils/pipeline-connection';
 import { useSelectCanvasData, useValidateConnection } from '../hooks';
 import { useAddNode } from '../hooks/use-add-node';
-import { useCanvasBackground } from '../hooks/use-canvas-background';
 import { useBeforeDelete } from '../hooks/use-before-delete';
 import { useCacheChatLog } from '../hooks/use-cache-chat-log';
 import { useConnectionDrag } from '../hooks/use-connection-drag';
@@ -56,6 +57,7 @@ import { useStopMessageUnmount } from '../hooks/use-stop-message';
 import { LogSheet } from '../log-sheet';
 import RunSheet from '../run-sheet';
 import { ButtonEdge } from './edge';
+import { ReadonlyEdge } from './edge/readonly-edge';
 import styles from './index.module.less';
 import { RagNode } from './node';
 import { AgentNode } from './node/agent-node';
@@ -119,12 +121,28 @@ const edgeTypes = {
   buttonEdge: ButtonEdge,
 };
 
+// ReadonlyEdgeTypes swaps ButtonEdge for ReadonlyEdge on the read-only canvas.
+// The mapping covers both the persisted edge `type: 'buttonEdge'` in DSL graph
+// data and `defaultEdgeOptions.type`, so every edge renders without the delete
+// button and without ButtonEdge's useFetchAgent call (a built-in pipeline id
+// would 404 against GET /agents/:id).
+const ReadonlyEdgeTypes = {
+  buttonEdge: ReadonlyEdge,
+};
+
 interface IProps {
-  drawerVisible: boolean;
-  hideDrawer(): void;
+  drawerVisible?: boolean;
+  hideDrawer?: () => void;
+  readOnly?: boolean;
 }
 
-function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
+const NoopDrawer = () => {};
+
+function AgentCanvas({
+  drawerVisible = false,
+  hideDrawer = NoopDrawer,
+  readOnly = false,
+}: IProps) {
   const { t } = useTranslation();
   const {
     nodes,
@@ -341,153 +359,162 @@ function AgentCanvas({ drawerVisible, hideDrawer }: IProps) {
           </marker>
         </defs>
       </svg>
-      <AgentInstanceContext.Provider
-        value={{
-          addCanvasNode,
-          showFormDrawer,
-          lastNode,
-          currentSendLoading,
-          startButNotFinishedNodeIds,
-        }}
-      >
-        <ReactFlow
-          connectionMode={ConnectionMode.Loose}
-          nodes={nodes}
-          onNodesChange={onNodesChange}
-          edges={edges}
-          onEdgesChange={onEdgesChange}
-          fitView
-          onConnect={handleConnect}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          onConnectStart={onConnectStart}
-          onConnectEnd={onConnectEnd}
-          onMove={onMove}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          onInit={setReactFlowInstance}
-          onSelectionChange={onSelectionChange}
-          nodeOrigin={[0.5, 0]}
-          isValidConnection={isValidConnection}
-          onEdgeMouseEnter={onEdgeMouseEnter}
-          onEdgeMouseLeave={onEdgeMouseLeave}
-          className="h-full"
-          colorMode={theme}
-          defaultEdgeOptions={{
-            type: 'buttonEdge',
-            markerEnd: 'logo',
-            zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
-          }}
-          deleteKeyCode={['Delete', 'Backspace']}
-          onBeforeDelete={handleBeforeDelete}
-          panActivationKeyCode={null}
-        >
-          {canvasBackground.setting ? (
-            <AgentBackground
-              setting={canvasBackground.setting}
-            ></AgentBackground>
-          ) : null}
-          {canvasBackground.setting?.mode === 'default' ? (
-            <Spotlight className="z-0" opcity={0.7} coverage={70} />
-          ) : null}
-          <Controls
-            position={'bottom-center'}
-            orientation="horizontal"
-            className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
-          >
-            <CanvasBackgroundControl
-              setting={canvasBackground.setting ?? { mode: 'default' }}
-              onChange={canvasBackground.update}
-            />
-            <ControlButton>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <NotebookPen className="!fill-none" onClick={showImage} />
-                </TooltipTrigger>
-                <TooltipContent>{t('flow.note')}</TooltipContent>
-              </Tooltip>
-            </ControlButton>
-          </Controls>
-        </ReactFlow>
-        {visible && (
-          <HandleContext.Provider
-            value={
-              getConnectionStartContext() || {
-                nodeId: '',
-                id: '',
-                type: 'source',
-                position: Position.Right,
-                isFromConnectionDrag: true,
-              }
-            }
-          >
-            <NextStepDropdown
-              hideModal={() => {
-                removePlaceholderNode();
-                hideModal();
-                clearActiveDropdown();
-              }}
-              position={dropdownPosition}
-              onNodeCreated={onNodeCreated}
-              nodeId={nodeId}
-            >
-              <span></span>
-            </NextStepDropdown>
-          </HandleContext.Provider>
-        )}
-      </AgentInstanceContext.Provider>
-      <NotebookPen
-        className={cn('hidden absolute size-6', { block: imgVisible })}
-        ref={ref}
-      ></NotebookPen>
-      {formDrawerVisible && (
+      <CanvasReadonlyContext.Provider value={readOnly}>
         <AgentInstanceContext.Provider
-          value={{ addCanvasNode, showFormDrawer }}
+          value={{
+            addCanvasNode,
+            showFormDrawer,
+            lastNode,
+            currentSendLoading,
+            startButNotFinishedNodeIds,
+          }}
         >
-          <FormSheet
-            node={clickedNode}
-            visible={formDrawerVisible}
-            hideModal={hideFormDrawer}
-            chatVisible={chatVisible}
-            singleDebugDrawerVisible={singleDebugDrawerVisible}
-            hideSingleDebugDrawer={hideSingleDebugDrawer}
-            showSingleDebugDrawer={showSingleDebugDrawer}
-          ></FormSheet>
-        </AgentInstanceContext.Provider>
-      )}
-
-      {chatVisible && (
-        <AgentChatContext.Provider
-          value={{ showLogSheet, setLastSendLoadingFunc, setDerivedMessages }}
-        >
-          <AgentChatLogContext.Provider
-            value={{ addEventList, setCurrentMessageId }}
+          <ReactFlow
+            connectionMode={ConnectionMode.Loose}
+            nodes={nodes}
+            onNodesChange={onNodesChange}
+            edges={edges}
+            onEdgesChange={onEdgesChange}
+            fitView
+            onConnect={readOnly ? undefined : handleConnect}
+            nodeTypes={nodeTypes}
+            edgeTypes={readOnly ? ReadonlyEdgeTypes : edgeTypes}
+            onConnectStart={readOnly ? undefined : onConnectStart}
+            onConnectEnd={readOnly ? undefined : onConnectEnd}
+            onMove={onMove}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            onInit={setReactFlowInstance}
+            onSelectionChange={onSelectionChange}
+            nodeOrigin={[0.5, 0]}
+            isValidConnection={isValidConnection}
+            onEdgeMouseEnter={onEdgeMouseEnter}
+            onEdgeMouseLeave={onEdgeMouseLeave}
+            className="h-full"
+            colorMode={theme}
+            defaultEdgeOptions={{
+              type: 'buttonEdge',
+              markerEnd: 'logo',
+              zIndex: 1001, // https://github.com/xyflow/xyflow/discussions/3498
+            }}
+            nodesDraggable={!readOnly}
+            nodesConnectable={!readOnly}
+            deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
+            onBeforeDelete={handleBeforeDelete}
+            panActivationKeyCode={null}
           >
-            <ChatSheet
-              hideModal={() => {
-                hideRunOrChatDrawer();
-                hideLogSheet();
-              }}
-            ></ChatSheet>
-          </AgentChatLogContext.Provider>
-        </AgentChatContext.Provider>
-      )}
-      {runVisible && (
-        <RunSheet
-          hideModal={hideRunOrChatDrawer}
-          showModal={showChatModal}
-        ></RunSheet>
-      )}
-      {logSheetVisible && (
-        <LogSheet
-          hideModal={hideLogSheet}
-          currentEventListWithoutMessageById={
-            currentEventListWithoutMessageById
-          }
-          currentMessageId={currentMessageId}
-          sendLoading={lastSendLoading}
-        ></LogSheet>
-      )}
+            {canvasBackground.setting ? (
+              <AgentBackground
+                setting={canvasBackground.setting}
+              ></AgentBackground>
+            ) : null}
+            {canvasBackground.setting?.mode === 'default' ? (
+              <Spotlight className="z-0" opcity={0.7} coverage={70} />
+            ) : null}
+            <Controls
+              position={'bottom-center'}
+              orientation="horizontal"
+              className="bg-bg-base h-auto w-auto !flex !flex-row !items-stretch !gap-0 rounded-md [&>button]:!m-0 [&>button]:bg-transparent [&>button]:!box-border [&>button]:!flex [&>button]:!size-8 [&>button]:!items-center [&>button]:!justify-center [&>button]:!border-y-0 [&>button]:!border-l-0 [&>button]:!border-r [&>button]:!border-solid [&>button]:!border-border-button [&>button]:!p-0 [&>button]:text-text-primary [&>button]:hover:bg-bg-base-hover [&>button]:hover:text-text-primary [&>button]:active:bg-bg-base-active [&>button]:last:!border-r-0 [&_svg]:!h-3 [&_svg]:!w-3 [&_svg]:!max-h-3 [&_svg]:!max-w-3"
+            >
+              {!readOnly && (
+                <CanvasBackgroundControl
+                  setting={canvasBackground.setting ?? { mode: 'default' }}
+                  onChange={canvasBackground.update}
+                />
+              )}
+              {!readOnly && (
+                <ControlButton>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <NotebookPen className="!fill-none" onClick={showImage} />
+                    </TooltipTrigger>
+                    <TooltipContent>{t('flow.note')}</TooltipContent>
+                  </Tooltip>
+                </ControlButton>
+              )}
+            </Controls>
+          </ReactFlow>
+          {!readOnly && visible && (
+            <HandleContext.Provider
+              value={
+                getConnectionStartContext() || {
+                  nodeId: '',
+                  id: '',
+                  type: 'source',
+                  position: Position.Right,
+                  isFromConnectionDrag: true,
+                }
+              }
+            >
+              <NextStepDropdown
+                hideModal={() => {
+                  removePlaceholderNode();
+                  hideModal();
+                  clearActiveDropdown();
+                }}
+                position={dropdownPosition}
+                onNodeCreated={onNodeCreated}
+                nodeId={nodeId}
+              >
+                <span></span>
+              </NextStepDropdown>
+            </HandleContext.Provider>
+          )}
+        </AgentInstanceContext.Provider>
+        <NotebookPen
+          className={cn('hidden absolute size-6', { block: imgVisible })}
+          ref={ref}
+        ></NotebookPen>
+        {formDrawerVisible && (
+          <AgentInstanceContext.Provider
+            value={{ addCanvasNode, showFormDrawer }}
+          >
+            <FormSheet
+              node={clickedNode}
+              visible={formDrawerVisible}
+              hideModal={hideFormDrawer}
+              chatVisible={chatVisible}
+              singleDebugDrawerVisible={singleDebugDrawerVisible}
+              hideSingleDebugDrawer={hideSingleDebugDrawer}
+              showSingleDebugDrawer={showSingleDebugDrawer}
+              readOnly={readOnly}
+            ></FormSheet>
+          </AgentInstanceContext.Provider>
+        )}
+
+        {chatVisible && (
+          <AgentChatContext.Provider
+            value={{ showLogSheet, setLastSendLoadingFunc, setDerivedMessages }}
+          >
+            <AgentChatLogContext.Provider
+              value={{ addEventList, setCurrentMessageId }}
+            >
+              <ChatSheet
+                hideModal={() => {
+                  hideRunOrChatDrawer();
+                  hideLogSheet();
+                }}
+              ></ChatSheet>
+            </AgentChatLogContext.Provider>
+          </AgentChatContext.Provider>
+        )}
+        {runVisible && (
+          <RunSheet
+            hideModal={hideRunOrChatDrawer}
+            showModal={showChatModal}
+          ></RunSheet>
+        )}
+        {logSheetVisible && (
+          <LogSheet
+            hideModal={hideLogSheet}
+            currentEventListWithoutMessageById={
+              currentEventListWithoutMessageById
+            }
+            currentMessageId={currentMessageId}
+            sendLoading={lastSendLoading}
+          ></LogSheet>
+        )}
+      </CanvasReadonlyContext.Provider>
     </div>
   );
 }

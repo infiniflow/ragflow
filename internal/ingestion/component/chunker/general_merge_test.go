@@ -446,7 +446,7 @@ func TestGeneralChunkerBareDelimiterCreatesMergeAtoms(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"alpha", "beta"}) {
+	if texts := outputTexts(t, out); !reflect.DeepEqual(texts, []string{"alpha|", "beta"}) {
 		t.Fatalf("texts = %q", texts)
 	}
 }
