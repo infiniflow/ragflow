@@ -5,6 +5,10 @@
 // so the consuming tests can run. A fetch failure is fatal under this build tag:
 // it sets testdataFetchFailed so TestMain fails the package instead of silently
 // skipping — a missing fixture must never be a green CI run.
+//
+// FetchTestdata is exported so the native_analyzer package — whose tests read
+// native's testdata directory via a relative path — can reuse the same logic
+// instead of duplicating it.
 package native
 
 import (
@@ -15,23 +19,33 @@ import (
 	"runtime"
 )
 
-func init() {
-	if err := fetchTestdata(); err != nil {
-		fmt.Fprintf(os.Stderr, "fetch_deepdoc_testdata: not fetched (%v)\n", err)
-		testdataFetchFailed = true
-		return
-	}
-	testdataFetchAttempted = true
+// fetchScriptOverride is a test-only seam; empty means use the real script
+// location. It lets tests exercise the error and happy paths deterministically.
+var fetchScriptOverride string
+
+// scriptPath returns the on-disk location of fetch_deepdoc_testdata.sh relative
+// to the repository root.
+func scriptPath(root string) string {
+	return filepath.Join(root, "tools", "scripts", "fetch_deepdoc_testdata.sh")
 }
 
-// fetchTestdata resolves the repo root, then invokes scripts/fetch_deepdoc_testdata.sh
-// with this package's directory name as <pkg>.
-func fetchTestdata() error {
+// resolveScript returns the script path to invoke, honoring the test override.
+func resolveScript(root string) string {
+	if fetchScriptOverride != "" {
+		return fetchScriptOverride
+	}
+	return scriptPath(root)
+}
+
+// FetchTestdata resolves the repository root (via go.mod) and invokes
+// tools/scripts/fetch_deepdoc_testdata.sh with the given <pkg> (the package
+// directory that owns internal/deepdoc/<pkg>/testdata). The script resolves its
+// own repo root, so cmd.Dir here is advisory.
+func FetchTestdata(pkg string) error {
 	_, thisFile, _, ok := runtime.Caller(0)
 	if !ok {
 		return fmt.Errorf("cannot resolve caller path")
 	}
-	// thisFile = <root>/internal/deepdoc/native/testdata_fetch.go
 	dir := filepath.Dir(thisFile)
 	root := dir
 	for {
@@ -44,8 +58,7 @@ func fetchTestdata() error {
 		}
 		root = parent
 	}
-	pkg := filepath.Base(dir)
-	script := filepath.Join(root, "scripts", "fetch_deepdoc_testdata.sh")
+	script := resolveScript(root)
 	if _, err := os.Stat(script); err != nil {
 		return fmt.Errorf("fetch script not found at %s", script)
 	}
@@ -54,4 +67,13 @@ func fetchTestdata() error {
 	cmd.Stdout = os.Stderr
 	cmd.Stderr = os.Stderr
 	return cmd.Run()
+}
+
+func init() {
+	if err := FetchTestdata("native"); err != nil {
+		fmt.Fprintf(os.Stderr, "fetch_deepdoc_testdata: not fetched (%v)\n", err)
+		testdataFetchFailed = true
+		return
+	}
+	testdataFetchAttempted = true
 }
