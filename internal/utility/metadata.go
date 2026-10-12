@@ -108,7 +108,8 @@ func normalizeMetaValue(v any) (any, bool) {
 	return v, true
 }
 
-// metadataStringList recognizes both typed and JSON-decoded string lists.
+// metadataStringList recognizes JSON-decoded string lists and string slices
+// or arrays, including named collection types.
 func metadataStringList(v any) ([]string, bool) {
 	switch list := v.(type) {
 	case []string:
@@ -124,7 +125,18 @@ func metadataStringList(v any) ([]string, bool) {
 		}
 		return strings, true
 	default:
-		return nil, false
+		value := reflect.ValueOf(v)
+		if !value.IsValid() || (value.Kind() != reflect.Slice && value.Kind() != reflect.Array) {
+			return nil, false
+		}
+		if value.Type().Elem().Kind() != reflect.String {
+			return nil, false
+		}
+		strings := make([]string, value.Len())
+		for i := range strings {
+			strings[i] = value.Index(i).String()
+		}
+		return strings, true
 	}
 }
 

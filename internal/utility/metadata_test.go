@@ -49,6 +49,7 @@ func TestUpdateMetadataTo_PreservesTypedValues(t *testing.T) {
 }
 
 func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
+	type tags []string
 	tests := []struct {
 		name                   string
 		target, incoming, want any
@@ -79,6 +80,12 @@ func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
 		{"structured target keeps string", []any{1, 2}, "old", []any{1, 2}},
 		{"decoded string list merges", []any{"a", "b"}, []any{"b", "c"}, []string{"a", "b", "c"}},
 		{"decoded string list appends", []any{"a"}, "b", []string{"a", "b"}},
+		{"named string slice merges", tags{"a", "b"}, []string{"b", "c"}, []string{"a", "b", "c"}},
+		{"incoming named string slice merges", []string{"a"}, tags{"a", "b"}, []string{"a", "b"}},
+		{"named string slice appends", tags{"a"}, "b", []string{"a", "b"}},
+		{"string array merges", [2]string{"a", "b"}, []any{"b", "c"}, []string{"a", "b", "c"}},
+		{"incoming string array merges", []string{"a"}, [2]string{"a", "b"}, []string{"a", "b"}},
+		{"string array appends", [1]string{"a"}, "b", []string{"a", "b"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -86,6 +93,21 @@ func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
 			value, exists := got["key"]
 			if !exists || !reflect.DeepEqual(value, tt.want) {
 				t.Fatalf("value = %#v, want %#v", got["key"], tt.want)
+			}
+		})
+	}
+}
+
+func TestUpdateMetadataTo_NormalizesTypedStringCollections(t *testing.T) {
+	type tags []string
+	for name, incoming := range map[string]any{
+		"named slice": tags{"a", "", "a", "b"},
+		"array":       [4]string{"a", "", "a", "b"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := UpdateMetadataTo(map[string]any{}, map[string]any{"tags": incoming})
+			if !reflect.DeepEqual(got["tags"], []string{"a", "b"}) {
+				t.Fatalf("tags = %#v, want [a b]", got["tags"])
 			}
 		})
 	}
