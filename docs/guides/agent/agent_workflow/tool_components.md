@@ -315,7 +315,7 @@ Search1API Crawl reads one web page and returns its title and full content. A co
 
 ### AnySearch
 
-AnySearch searches the web and specialised verticals, such as finance, academic papers, code documentation, legal, and health data, through one API. It works without an API key. A key raises the usage quota and can be created at [anysearch.com](https://anysearch.com/console/api-keys). In an Agent it is available as two tools, AnySearch and AnySearch Discover. The search component can also be used as a standalone node.
+AnySearch searches the web and specialised verticals, such as finance, academic papers, code documentation, legal, and health data, through one API. It works without an API key. A key raises the usage quota and can be created at [anysearch.com](https://anysearch.com/console/api-keys). In an Agent it is available as three tools: AnySearch, AnySearch Discover, and AnySearch Extract. The search component can also be used as a standalone node. To read a whole page instead of search results, use AnySearch Extract, described below.
 
 An Agent that needs a vertical search first calls AnySearch Discover to list the current domains and the tags and parameters of the ones it picks, then calls AnySearch with the tag and parameters it found. The catalog changes over time, so it is read from the service and not fixed in the Agent.
 
@@ -363,6 +363,38 @@ The tag, params and queries are chosen for each call and are not stored in the n
 Searches in a `queries` call are independent. If one fails, for example because of an unknown tag, the other results are still returned, and the failed record carries the AnySearch message and `request_id`. The whole call reports an error only when every search failed. An invalid argument, such as an unsupported zone, a missing query, or more than 5 queries, is rejected before any search runs. An invalid API key is reported as an error and is never retried without the key.
 
 The standalone component records its results as references that a later Message node can cite. When the tools are used by an Agent node, the Agent reads the results from the tool output and no references are added.
+
+### AnySearch Extract
+
+AnySearch Extract reads one web page through AnySearch and returns its text. A common workflow is to use AnySearch to find links, then let the Agent read the most relevant page with this component. It works without an API key, and it uses the same optional key as AnySearch.
+
+It reads HTML pages, plain text, JSON, and Markdown. PDF, Office files, images, audio, video, and archives are not supported and are reported as a failure. The text of a page is limited to about 50,000 characters, and the result says when it may have been cut. The page content comes from an external site, so treat it as data to read and never as instructions to follow.
+
+#### Parameter Description
+
+| Field | Type | Required | Default Value | Description |
+| --- | --- | --- | --- | --- |
+| url | string | Yes | Empty | The absolute HTTP or HTTPS URL of the page. As an Agent tool, the Agent supplies the URL. On the standalone component, enter a fixed URL, or pass the URL from an upstream component, for example a Begin input named `url`. A variable reference typed into this field is not resolved. |
+| api_key | string | Node configuration | Empty | Optional AnySearch API key. Leave it empty for anonymous access. |
+
+A URL is checked before anything is sent to AnySearch. It must use `http` or `https`, must not contain a user name or password, and must not point to this machine or to a private network, such as `localhost`, `127.0.0.1`, or `192.168.0.1`. A rejected URL is reported as an error and no request is made.
+
+#### Configuration Example
+
+| Configuration Item | Example Value |
+| --- | --- |
+| URL | `https://ragflow.io/docs/dev/` |
+| API Key |  |
+
+#### Output Result
+
+`json` contains the page `url`, its `title` (empty when the page has none), the `content`, `content_chars` (the length of the content), `truncated`, and the AnySearch `request_id`. `formalized_content` renders the title, link, and content for use as Agent context.
+
+`truncated` is `true` when the content may be shorter than the page. AnySearch does not always mark a cut page, so the result is also treated as cut when the content reaches 49,000 characters or more.
+
+A page that cannot be read, such as a PDF or an unreachable address, is reported as an error that carries the AnySearch message and `request_id`. An invalid API key is reported as an error and is never retried without the key.
+
+The standalone component records the page as a reference that a later Message node can cite. When the tool is used by an Agent node, the Agent reads the page from the tool output and no reference is added.
 
 ### Wikipedia
 The Wikipedia component searches encyclopedia entries and extracts entry summaries. It is suitable for querying clear entities, concepts, and historical events. Query terms should be as close as possible to the entry title.
