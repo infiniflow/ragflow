@@ -300,6 +300,21 @@ func AgentMessageEventsEmittedRun(ctx context.Context) bool {
 	return state.runEmitted
 }
 
+// AgentContentEventsEmittedRun reports whether any non-thinking content
+// deltas were emitted during the canvas run. Thinking-only emissions
+// (reasoning without a visible answer) return false, allowing the
+// service layer to inject a fallback answer when the agent exhausts
+// its rounds without producing content.
+func AgentContentEventsEmittedRun(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.agentContent.Len() > 0
+}
+
 // AgentMessageEventsSuppressedRun reports whether any Agent invocation
 // suppressed terminal message emission during the entire canvas run.
 func AgentMessageEventsSuppressedRun(ctx context.Context) bool {

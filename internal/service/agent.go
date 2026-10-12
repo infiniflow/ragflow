@@ -2392,8 +2392,11 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 
 		// When the model returns no content (e.g. provider timeout, empty
 		// stream, reasoning exhaustion), surface a visible message so the
-		// user knows the request did not succeed silently.
-		if strings.TrimSpace(answer) == "" && !messageEventsEmitted {
+		// user knows the request did not succeed silently. Use content-only
+		// check: thinking-only emissions (reasoning without a final answer)
+		// must not suppress this fallback.
+		contentEventsEmitted := runtime.AgentContentEventsEmittedRun(ctx2)
+		if strings.TrimSpace(answer) == "" && !contentEventsEmitted {
 			answer = "Ospravedlňujem sa, nepodarilo sa mi zostaviť odpoveď. Skúste otázku zopakovať alebo ju preformulovať."
 		}
 
