@@ -18,6 +18,8 @@ package service
 
 import (
 	"context"
+	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -32,6 +34,7 @@ type stubDocStateSvc struct {
 	gotTokenNum     int
 	gotDuration     float64
 	setCalled       bool
+	setMeta         map[string]any
 	incrementCalled bool
 }
 
@@ -44,12 +47,8 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
-	}
-	for k, v := range meta {
-		s.metaData[k] = v
-	}
+	s.setMeta = meta
+	s.metaData = meta
 	return nil
 }
 
@@ -159,6 +158,33 @@ func TestDocStateUpdater_PreservesExistingScalar(t *testing.T) {
 	})
 	if svc.metaData["author"] != "Alice" {
 		t.Fatalf("stored scalar must win: got %q", svc.metaData["author"])
+	}
+}
+
+func TestDocStateUpdater_CompleteReplacementPreservesExistingStructuredMetadata(t *testing.T) {
+	outline := []map[string]any{{"title": "Overview", "depth": 1}}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"_isCurrent": true, "_version": json.Number("7"), "outline": outline,
+		"dimensions": []int{10, 20}, "config": map[string]any{"source": "pdf"}, "nullable": nil,
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	u.apply(t.Context(), &taskpkg.PipelineResult{
+		DocID: "doc-1",
+		Metadata: map[string]any{
+			"title": "new extraction",
+		},
+		ChunkCount: 1, TokenConsumption: 10,
+	})
+	want := map[string]any{
+		"_isCurrent": true, "_version": json.Number("7"), "outline": outline,
+		"dimensions": []int{10, 20}, "config": map[string]any{"source": "pdf"}, "nullable": nil,
+		"title": "new extraction",
+	}
+	if !svc.setCalled {
+		t.Fatal("SetDocumentMetadata was not called")
+	}
+	if !reflect.DeepEqual(svc.setMeta, want) {
+		t.Fatalf("complete replacement = %#v, want %#v", svc.setMeta, want)
 	}
 }
 
