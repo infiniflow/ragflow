@@ -147,20 +147,8 @@ func TestDocStateUpdater_ReplacesListValues(t *testing.T) {
 		t.Fatalf("people should be []string, got %T", svc.metaData["people"])
 	}
 	want := []string{"张辽", "刘备"}
-	if len(got) != len(want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("people=%v, want replacement %v", got, want)
-	}
-	seen := map[string]bool{}
-	for _, p := range got {
-		if seen[p] {
-			t.Fatalf("duplicate %q in %v", p, got)
-		}
-		seen[p] = true
-	}
-	for _, w := range want {
-		if !seen[w] {
-			t.Fatalf("missing %q in %v", w, got)
-		}
 	}
 }
 
