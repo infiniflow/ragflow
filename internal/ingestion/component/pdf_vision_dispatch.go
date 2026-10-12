@@ -551,7 +551,8 @@ func dispatchMinerUPDF(
 			zipBytes = result.Zip
 		}
 		sections, extractErr := mineruExtractSections(zipBytes)
-		if extractErr != nil || len(sections) == 0 {
+		parts := mineruNonblankSections(sections)
+		if extractErr != nil || len(parts) == 0 {
 			if v1Markdown != "" {
 				return buildMarkdownOCRDispatchResult(result.Markdown), nil
 			}
@@ -559,12 +560,6 @@ func dispatchMinerUPDF(
 				return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
 			}
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
-		}
-		var parts []string
-		for _, s := range sections {
-			if s != "" {
-				parts = append(parts, s)
-			}
 		}
 		return buildMarkdownOCRDispatchResult(strings.Join(parts, "\n")), nil
 	}
@@ -579,19 +574,12 @@ func dispatchMinerUPDF(
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
-	if len(sections) == 0 {
+	parts := mineruNonblankSections(sections)
+	if len(parts) == 0 {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
 	}
 
-	var parts []string
-	for _, s := range sections {
-		if s != "" {
-			parts = append(parts, s)
-		}
-	}
-	md := strings.Join(parts, "\n")
-
-	return buildMarkdownOCRDispatchResult(md), nil
+	return buildMarkdownOCRDispatchResult(strings.Join(parts, "\n")), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -865,6 +853,16 @@ func mineruExtractSections(zipBytes []byte) ([]string, error) {
 		}
 	}
 	return sections, nil
+}
+
+func mineruNonblankSections(sections []string) []string {
+	var parts []string
+	for _, s := range sections {
+		if s != "" {
+			parts = append(parts, s)
+		}
+	}
+	return parts
 }
 
 func stringSlice(raw any) []string {
