@@ -391,9 +391,13 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 				if msg.Content == "" && msg.ReasoningContent == "" {
 					continue
 				}
-				// Retrieval tools can add chunks during this call. Hold the first
-				// answer until we know whether citation grounding will run.
+				// When citation grounding will run, hold content deltas
+				// but still stream thinking so the client sees progress
+				// and the SSE connection stays alive.
 				if cite {
+					if msg.ReasoningContent != "" {
+						runtime.EmitAgentMessage(ctx, "", msg.ReasoningContent)
+					}
 					continue
 				}
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
