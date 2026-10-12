@@ -193,6 +193,11 @@ Docker подходит для быстрой оценки, интеграцио
 
 1. Клонируйте репозиторий и установите Go из `go.mod`, Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 и нативные библиотеки для CGO.
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
 2. Подготовьте зависимости:
 
    ```bash

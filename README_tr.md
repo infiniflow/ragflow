@@ -193,6 +193,11 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
 1. Depoyu klonlayın ve `go.mod` içindeki Go sürümünü, Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 ve CGO için gereken yerel kitaplıkları yükleyin.
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
 2. Bağımlılıkları hazırlayın:
 
    ```bash

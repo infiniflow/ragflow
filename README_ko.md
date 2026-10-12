@@ -195,6 +195,11 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
 1. 저장소를 클론하고 `go.mod`에 지정된 Go, Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 및 CGO에 필요한 네이티브 라이브러리를 설치합니다.
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
 2. 의존성을 준비합니다:
 
    ```bash

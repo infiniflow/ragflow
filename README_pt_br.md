@@ -191,6 +191,11 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 
 1. Clone o repositório e instale o Go indicado em `go.mod`, Clang 20, LLD 20, CMake ≥ 4.0, PCRE2 e as bibliotecas nativas exigidas pelo CGO.
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
 2. Prepare as dependências:
 
    ```bash

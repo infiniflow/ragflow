@@ -194,6 +194,11 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
 1. リポジトリをクローンし、`go.mod` で指定された Go、Clang 20、LLD 20、CMake ≥ 4.0、PCRE2、および CGO に必要なネイティブライブラリをインストールします。
 
+   ```bash
+   git clone https://github.com/infiniflow/ragflow.git
+   cd ragflow
+   ```
+
 2. 依存関係を準備します:
 
    ```bash
