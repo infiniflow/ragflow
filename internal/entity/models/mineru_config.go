@@ -10,22 +10,77 @@ import (
 	"strings"
 )
 
+// MinerU 3.x /file_parse backend names. MinerU 4.0 dropped --backend in favor of
+// quality tiers (basic/standard/advanced/flash); see MinerUTierFromBackend.
 var ValidMinerUBackends = map[string]struct{}{
 	"pipeline":           {},
 	"vlm-engine":         {},
 	"hybrid-engine":      {},
 	"vlm-http-client":    {},
 	"hybrid-http-client": {},
+	"vlm-auto-engine":    {},
+	"hybrid-auto-engine": {},
+	"basic":              {},
+	"standard":           {},
+	"advanced":           {},
+	"flash":              {},
+}
+
+var validMinerUTiers = map[string]struct{}{
+	"basic":    {},
+	"standard": {},
+	"advanced": {},
+	"flash":    {},
 }
 
 func MinerUBackendRequiresServerURL(backend string) bool {
 	return backend == "vlm-http-client" || backend == "hybrid-http-client"
 }
 
+func MinerUIsV1Tier(name string) bool {
+	_, ok := validMinerUTiers[strings.ToLower(strings.TrimSpace(name))]
+	return ok
+}
+
+// MinerUTierFromBackend maps a 3.x backend or a 4.0 tier onto a V1 `tier`.
+// MinerU 4.0 changelog: pipeline → basic; vlm-* → advanced; hybrid-* → standard.
+func MinerUTierFromBackend(backend string) string {
+	switch strings.ToLower(strings.TrimSpace(backend)) {
+	case "basic", "pipeline":
+		return "basic"
+	case "flash":
+		return "flash"
+	case "advanced", "vlm-engine", "vlm-auto-engine", "vlm-http-client":
+		return "advanced"
+	case "standard", "hybrid-engine", "hybrid-auto-engine", "hybrid-http-client", "":
+		return "standard"
+	default:
+		return "standard"
+	}
+}
+
 func ValidateMinerUConfig(backend, serverURL string) error {
+	return validateMinerUConfig(backend, serverURL, false)
+}
+
+func ValidateMinerUConfigForAPI(backend, serverURL string, v1 bool) error {
+	return validateMinerUConfig(backend, serverURL, v1)
+}
+
+func validateMinerUConfig(backend, serverURL string, v1 bool) error {
 	if _, ok := ValidMinerUBackends[backend]; !ok {
 		return fmt.Errorf(
-			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client)",
+			"parser: MinerU invalid backend %q (valid: pipeline, vlm-engine, hybrid-engine, vlm-http-client, hybrid-http-client, vlm-auto-engine, hybrid-auto-engine, basic, standard, advanced, flash)",
+			backend,
+		)
+	}
+	if v1 {
+		// MinerU 4 configures the VLM on the service itself; server_url is not a V1 job field.
+		return nil
+	}
+	if MinerUIsV1Tier(backend) {
+		return fmt.Errorf(
+			"parser: MinerU backend %q is a 4.0 tier, but the connected service does not speak V1 (/v1/health). Use pipeline, vlm-engine, hybrid-engine, vlm-http-client, or hybrid-http-client, or upgrade MinerU to 4.0",
 			backend,
 		)
 	}
