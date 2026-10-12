@@ -16,7 +16,11 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"ragflow/internal/entity"
+)
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
 // wire payloads.
@@ -99,34 +103,39 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text          string                     `json:"text,omitempty"`
-	DocType       string                     `json:"doc_type_kwd,omitempty"`
-	CKType        string                     `json:"ck_type,omitempty"`
-	TKNums        *int                       `json:"tk_nums,omitempty"`
-	Mom           string                     `json:"mom,omitempty"`
-	ImgID         string                     `json:"img_id,omitempty"`
-	ID            string                     `json:"id,omitempty"`
-	Layout        string                     `json:"layout,omitempty"`
-	LayoutType    string                     `json:"layout_type,omitempty"`
-	LayoutNo      string                     `json:"layoutno,omitempty"`
-	Image         string                     `json:"image,omitempty"`
-	ContextAbove  string                     `json:"context_above,omitempty"`
-	ContextBelow  string                     `json:"context_below,omitempty"`
-	Questions     string                     `json:"questions,omitempty"`
-	Keywords      string                     `json:"keywords,omitempty"`
-	Summary       string                     `json:"summary,omitempty"`
-	ChunkOrderInt *int                       `json:"chunk_order_int,omitempty"`
-	TitleTks      string                     `json:"title_tks,omitempty"`
-	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
-	ContentLtks   string                     `json:"content_ltks,omitempty"`
-	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	PageNumber    *int                       `json:"page_number,omitempty"`
-	TopInt        []int                      `json:"top_int,omitempty"`
-	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
-	Positions     json.RawMessage            `json:"positions,omitempty"`
-	Sheet         string                     `json:"sheet,omitempty"`
-	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Extra         map[string]json.RawMessage `json:"-"`
+	Text          string          `json:"text,omitempty"`
+	DocType       string          `json:"doc_type_kwd,omitempty"`
+	CKType        string          `json:"ck_type,omitempty"`
+	TKNums        *int            `json:"tk_nums,omitempty"`
+	Mom           string          `json:"mom,omitempty"`
+	ImgID         string          `json:"img_id,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	Layout        string          `json:"layout,omitempty"`
+	LayoutType    string          `json:"layout_type,omitempty"`
+	LayoutNo      string          `json:"layoutno,omitempty"`
+	Image         string          `json:"image,omitempty"`
+	ContextAbove  string          `json:"context_above,omitempty"`
+	ContextBelow  string          `json:"context_below,omitempty"`
+	Questions     string          `json:"questions,omitempty"`
+	Keywords      string          `json:"keywords,omitempty"`
+	Summary       string          `json:"summary,omitempty"`
+	ChunkOrderInt *int            `json:"chunk_order_int,omitempty"`
+	TitleTks      string          `json:"title_tks,omitempty"`
+	TitleSmTks    string          `json:"title_sm_tks,omitempty"`
+	ContentLtks   string          `json:"content_ltks,omitempty"`
+	ContentSmLtks string          `json:"content_sm_ltks,omitempty"`
+	PageNumber    *int            `json:"page_number,omitempty"`
+	TopInt        []int           `json:"top_int,omitempty"`
+	PDFPositions  json.RawMessage `json:"_pdf_positions,omitempty"`
+	Positions     json.RawMessage `json:"positions,omitempty"`
+	Sheet         string          `json:"sheet,omitempty"`
+	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	// TableData is the structured table contract. When a chunk carries it
+	// the table content is consumed directly from here instead of being
+	// re-parsed from Text markup. It must stay out of Extra (see the
+	// deletion list in UnmarshalJSON).
+	TableData *entity.TableData          `json:"table,omitempty"`
+	Extra     map[string]json.RawMessage `json:"-"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -149,7 +158,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index",
+		"sheet", "sheet_index", "table",
 	} {
 		delete(raw, key)
 	}

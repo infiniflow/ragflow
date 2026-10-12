@@ -367,7 +367,7 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	body := `{"params":{"sys.query":{"value":"hello sys"}}}`
+	body := `{"params":{"sys.query":{"value":"hello sys"},"sys.user_id":{"value":"attacker"},"sys.canvas_id":{"value":"other-canvas"}}}`
 	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
@@ -387,6 +387,12 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	if env.Data["query"] != "hello sys" {
 		t.Fatalf("data.query = %v, want 'hello sys'", env.Data["query"])
+	}
+	if env.Data["user_id"] != "u-1" {
+		t.Errorf("data.user_id = %v, want authenticated caller u-1", env.Data["user_id"])
+	}
+	if env.Data["canvas_id"] != "c1" {
+		t.Errorf("data.canvas_id = %v, want loaded canvas c1", env.Data["canvas_id"])
 	}
 }
 

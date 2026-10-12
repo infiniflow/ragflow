@@ -348,9 +348,6 @@ type agentDetailResponse struct {
 	LastPublishTime *int64 `json:"last_publish_time,omitempty"`
 }
 
-// updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest map[string]interface{}
-
 func decodeJSONWithNumber(body io.Reader, target any) error {
 	decoder := json.NewDecoder(body)
 	decoder.UseNumber()
@@ -373,13 +370,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	var req updateAgentRequest
+	var req map[string]interface{}
 	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if req == nil {
-		req = updateAgentRequest{}
+		req = map[string]interface{}{}
 	}
 	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req); err != nil {
 		ec, em := mapAgentError(err)

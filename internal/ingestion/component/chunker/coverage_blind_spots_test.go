@@ -97,8 +97,8 @@ func TestGeneralChunkerTextAppliesOverlapThroughInvoke(t *testing.T) {
 	if len(texts) != 2 {
 		t.Fatalf("texts = %q, want two overlapped chunks", texts)
 	}
-	if texts[1] == "gamma delta" || !strings.HasSuffix(texts[1], "\ngamma delta") {
-		t.Fatalf("text overlap = %q, want previous tail plus current text", texts[1])
+	if texts[1] != " betagamma delta" {
+		t.Fatalf("text overlap = %q, want previous tail directly followed by current text", texts[1])
 	}
 }
 
@@ -175,7 +175,12 @@ func TestGeneralChunkerKeepsHeaderOnlySheetsSeparate(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want one header-only chunk per sheet", chunks)
 	}
-	if chunks[0]["text"] != segOne["text"] || chunks[1]["text"] != segTwo["text"] {
-		t.Fatalf("header-only chunks = %#v", chunks)
+	// Header-only segments carry no data rows; the chunk keeps a plain-text
+	// body derived from the structured TableData (caption + header cells).
+	if got, _ := chunks[0]["text"].(string); got == "" || !strings.Contains(got, "Name") {
+		t.Fatalf("header-only chunk 0 lost content: %#v", chunks[0])
+	}
+	if got, _ := chunks[1]["text"].(string); got == "" || !strings.Contains(got, "Amount") {
+		t.Fatalf("header-only chunk 1 lost content: %#v", chunks[1])
 	}
 }

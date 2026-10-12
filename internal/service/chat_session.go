@@ -1411,6 +1411,10 @@ func (s *ChatSessionService) ChatCompletions(
 						s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 					}
 				}
+				if result.AnswerIsAuthoritative {
+					fullAnswer.Reset()
+					fullAnswer.WriteString(result.Answer)
+				}
 			}
 			if legacy {
 				if result.Final {

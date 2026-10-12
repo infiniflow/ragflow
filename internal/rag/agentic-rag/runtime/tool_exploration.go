@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 
@@ -106,7 +107,7 @@ func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (To
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
 
-	topN, _ := toInt(args["top_n"])
+	topN, _ := common.ToInt(args["top_n"])
 	if topN <= 0 {
 		topN = 12
 	}

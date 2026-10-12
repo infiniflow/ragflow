@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"ragflow/internal/common"
 	"strconv"
 	"strings"
 	"time"
@@ -1548,7 +1549,7 @@ func ComputeFromFacts(ctx context.Context, model SessionModel, question string, 
 	uses := make([]int, 0, 4)
 	if raw, ok := data["uses"].([]any); ok {
 		for _, n := range raw {
-			if v, ok := toIntStrict(n); ok {
+			if v, ok := common.ToIntNum(n); ok {
 				uses = append(uses, v)
 			}
 		}

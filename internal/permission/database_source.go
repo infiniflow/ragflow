@@ -19,6 +19,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/entity"
 
@@ -32,7 +33,6 @@ type databaseSource struct {
 }
 
 // NewDatabaseChecker creates a Checker backed by the application's SQL database.
-// It currently loads dataset authorization facts.
 func NewDatabaseChecker(db *gorm.DB) *Checker {
 	return NewChecker(&databaseSource{db: db})
 }
@@ -73,21 +73,62 @@ func (s *databaseSource) GetResources(ctx context.Context, refs []ResourceRef) (
 	}
 	refs = uniqueRefs(refs)
 	datasetIDs := make([]string, 0, len(refs))
+	canvasIDs := make([]string, 0, len(refs))
+	agentSessionIDs := make([]string, 0, len(refs))
 	for _, ref := range refs {
-		if ref.Kind != ResourceKindDataset {
+		switch ref.Kind {
+		case ResourceKindDataset:
+			datasetIDs = append(datasetIDs, ref.ID)
+		case ResourceKindCanvas:
+			canvasIDs = append(canvasIDs, ref.ID)
+		case ResourceKindAgentSession:
+			agentSessionIDs = append(agentSessionIDs, ref.ID)
+		default:
 			return nil, fmt.Errorf("%w: unsupported resource kind %q", ErrInvalidPermission, ref.Kind)
 		}
-		datasetIDs = append(datasetIDs, ref.ID)
 	}
-	datasetsByID, ownerIDsByTenant, err := s.loadDatasets(ctx, datasetIDs)
+	agentSessionsByID, err := s.loadAgentSessions(ctx, agentSessionIDs)
+	if err != nil {
+		return nil, err
+	}
+	for _, session := range agentSessionsByID {
+		canvasIDs = append(canvasIDs, session.DialogID)
+	}
+	var datasetsByID map[string]*entity.Knowledgebase
+	var ownerIDsByTenant map[string]string
+	if len(datasetIDs) > 0 {
+		var err error
+		datasetsByID, ownerIDsByTenant, err = s.loadDatasets(ctx, datasetIDs)
+		if err != nil {
+			return nil, err
+		}
+	}
+	canvasesByID, err := s.loadCanvases(ctx, canvasIDs)
 	if err != nil {
 		return nil, err
 	}
 
 	resources := make([]Resource, 0, len(refs))
 	for _, ref := range refs {
-		if dataset, ok := datasetsByID[ref.ID]; ok {
-			resources = append(resources, datasetResource(dataset, ownerIDsByTenant))
+		switch ref.Kind {
+		case ResourceKindDataset:
+			if dataset, ok := datasetsByID[ref.ID]; ok {
+				resources = append(resources, datasetResource(dataset, ownerIDsByTenant))
+			}
+		case ResourceKindCanvas:
+			if canvas, ok := canvasesByID[ref.ID]; ok {
+				resources = append(resources, canvasResource(canvas))
+			}
+		case ResourceKindAgentSession:
+			session, ok := agentSessionsByID[ref.ID]
+			if !ok {
+				continue
+			}
+			canvas, ok := canvasesByID[session.DialogID]
+			if !ok {
+				continue
+			}
+			resources = append(resources, agentSessionResource(session, canvas))
 		}
 	}
 	return resources, nil
@@ -106,9 +147,7 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		var tenantIDs []string
 		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
 			Distinct("tenant_id").
-			Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
-				string(RoleOwner), string(RoleAdmin), string(RoleNormal),
-			}).
+			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
 			Pluck("tenant_id", &tenantIDs).Error; err != nil {
 			return nil, err
 		}
@@ -121,6 +160,34 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if err != nil {
 			return nil, err
 		}
+	case ResourceKindCanvas:
+		if parent.ID != "" || parent.Kind != "" {
+			return nil, fmt.Errorf("%w: canvases cannot have a parent scope", ErrInvalidPermission)
+		}
+		var tenantIDs []string
+		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
+			Distinct("tenant_id").
+			Where("user_id = ? AND status = ? AND role IN ?", subject.UserID, string(entity.StatusValid), []string{
+				string(RoleOwner), string(RoleAdmin), string(RoleNormal),
+			}).
+			Pluck("tenant_id", &tenantIDs).Error; err != nil {
+			return nil, err
+		}
+		ownerIDs := append(append(make([]string, 0, len(tenantIDs)+1), tenantIDs...), subject.UserID)
+		if err := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).
+			Where("user_id IN ?", ownerIDs).
+			Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
+	case ResourceKindAgentSession:
+		if parent.Kind != ResourceKindCanvas || strings.TrimSpace(parent.ID) == "" {
+			return nil, fmt.Errorf("%w: agent sessions require a canvas parent scope", ErrInvalidPermission)
+		}
+		if err := s.db.WithContext(ctx).Model(&entity.API4Conversation{}).
+			Where("dialog_id = ?", parent.ID).
+			Pluck("id", &ids).Error; err != nil {
+			return nil, err
+		}
 	default:
 		return nil, fmt.Errorf("%w: unsupported scope resource kind %q", ErrInvalidPermission, kind)
 	}
@@ -130,6 +197,44 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		refs = append(refs, ResourceRef{Kind: kind, ID: id})
 	}
 	return refs, nil
+}
+
+func (s *databaseSource) loadCanvases(ctx context.Context, ids []string) (map[string]*entity.UserCanvas, error) {
+	canvasesByID := make(map[string]*entity.UserCanvas)
+	if len(ids) == 0 {
+		return canvasesByID, nil
+	}
+	query := s.db.WithContext(ctx).Model(&entity.UserCanvas{}).Where("id IN ?", ids)
+	if s.lockRows {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var canvases []*entity.UserCanvas
+	if err := query.Find(&canvases).Error; err != nil {
+		return nil, err
+	}
+	for _, canvas := range canvases {
+		canvasesByID[canvas.ID] = canvas
+	}
+	return canvasesByID, nil
+}
+
+func (s *databaseSource) loadAgentSessions(ctx context.Context, ids []string) (map[string]*entity.API4Conversation, error) {
+	sessionsByID := make(map[string]*entity.API4Conversation)
+	if len(ids) == 0 {
+		return sessionsByID, nil
+	}
+	query := s.db.WithContext(ctx).Model(&entity.API4Conversation{}).Where("id IN ?", ids)
+	if s.lockRows {
+		query = query.Clauses(clause.Locking{Strength: "UPDATE"})
+	}
+	var sessions []*entity.API4Conversation
+	if err := query.Find(&sessions).Error; err != nil {
+		return nil, err
+	}
+	for _, session := range sessions {
+		sessionsByID[session.ID] = session
+	}
+	return sessionsByID, nil
 }
 
 func (s *databaseSource) loadDatasets(ctx context.Context, ids []string) (map[string]*entity.Knowledgebase, map[string]string, error) {
@@ -198,5 +303,34 @@ func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]
 		Visibility:      visibility,
 		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
 		Active:          dataset.Status != nil && *dataset.Status == string(entity.StatusValid),
+	}
+}
+
+func canvasResource(canvas *entity.UserCanvas) Resource {
+	visibility := VisibilityPrivate
+	if canvas.Permission == string(entity.TenantPermissionTeam) {
+		visibility = VisibilityTenant
+	}
+	return Resource{
+		Ref:               ResourceRef{Kind: ResourceKindCanvas, ID: canvas.ID},
+		TenantID:          canvas.UserID,
+		CreatedBy:         canvas.UserID,
+		OwnerUserID:       canvas.UserID,
+		Visibility:        visibility,
+		TenantRequirement: TenantMember,
+		OwnerOperations:   []Operation{OperationRead, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
+		Active:            true,
+	}
+}
+
+func agentSessionResource(session *entity.API4Conversation, canvas *entity.UserCanvas) Resource {
+	return Resource{
+		Ref:             ResourceRef{Kind: ResourceKindAgentSession, ID: session.ID},
+		TenantID:        canvas.UserID,
+		CreatedBy:       session.UserID,
+		OwnerUserID:     session.UserID,
+		Visibility:      VisibilityPrivate,
+		OwnerOperations: []Operation{OperationRead, OperationRun, OperationUpdate, OperationDelete},
+		Active:          true,
 	}
 }

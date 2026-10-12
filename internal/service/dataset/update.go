@@ -185,6 +185,29 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, userID st
 			txCode = code
 			return authErr
 		}
+		if sel != nil || pipelineID != nil || req.ParserConfig != nil || req.ParserConfigProvided {
+			current := service.CurrentSelection(lockedKB.ParserID, lockedKB.PipelineID)
+			effective, resolveErr := service.Resolve(current, sel)
+			if resolveErr != nil {
+				txCode = common.CodeDataError
+				return resolveErr
+			}
+			isPipeline, _, effectivePipelineID := effective.Effective()
+			if isPipeline && effectivePipelineID != nil && strings.TrimSpace(*effectivePipelineID) != "" {
+				accessErr := permission.NewLockingDatabaseChecker(tx).CheckDependency(
+					ctx,
+					permission.Subject{UserID: userID, TenantID: lockedKB.TenantID},
+					permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: lockedKB.ID},
+					permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effectivePipelineID)},
+					permission.OperationUpdate,
+					permission.OperationUse,
+				)
+				if accessErr != nil {
+					txCode, accessErr = permissionresponse.Normalize(accessErr)
+					return accessErr
+				}
+			}
+		}
 
 		updates := make(map[string]interface{}, len(simpleUpdates)+6)
 		for key, value := range simpleUpdates {

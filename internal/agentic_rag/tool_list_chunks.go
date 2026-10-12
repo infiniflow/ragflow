@@ -153,6 +153,9 @@ func (l *ListChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	if docID == "" {
 		return "", fmt.Errorf("list_chunks: doc_id is required")
 	}
+	if _, err := resolveDocumentScope(ctx, []string{docID}); err != nil {
+		return "", fmt.Errorf("list_chunks: %w", err)
+	}
 	anchors := nonEmptyStrings(args.AnchorChunkIDs)
 	if len(anchors) == 0 {
 		return "", fmt.Errorf(
