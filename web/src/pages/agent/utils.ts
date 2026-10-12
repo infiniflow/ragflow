@@ -492,7 +492,7 @@ export const LlmSettingParamKeys = [
 // the transitional "metadata_config", ...). Accept them as read
 // fallbacks — flat "metadata" is an array, which distinguishes it from
 // the group object — but never re-emit them.
-function transformExtractorParamsGo(
+export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
   const raw = params as Record<string, any>;
@@ -580,12 +580,6 @@ function transformExtractorParamsGo(
       built_in_metadata: builtInMetadataList,
     },
   };
-}
-
-export function transformExtractorParams(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  return transformExtractorParamsGo(params);
 }
 
 // The Compiler reads the compilation template group plus the same LLM runtime
