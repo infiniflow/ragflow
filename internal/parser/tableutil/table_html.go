@@ -118,10 +118,14 @@ type origin struct {
 // buildGrid normalizes ragged cell rows into a dense grid where every logical
 // position appears exactly once. A merged cell (ColSpan/RowSpan > 1) occupies
 // its origin slot and the engulfed positions become Covered markers pointing
-// back at the origin; overlapping spans clamp rather than double-count, ragged
-// rows pad to a uniform width, and trailing rows that carry no origin cell are
-// trimmed. Spans are clamped to the surviving grid so a stored ColSpan/RowSpan
-// never exceeds the positions it actually owns (mirrors AnyDoc's GridBuilder).
+// back at the origin; overlapping spans clamp rather than double-count. A row
+// that is genuinely shorter than the widest row is NOT padded with empty cells
+// (a real gap stays a shorter row), but a row can be extended by Covered
+// markers produced by an ancestor's rowspan so the grid stays dense. Trailing
+// rows that carry no cell at all (neither a real cell nor a Covered marker)
+// are trimmed. Spans are clamped to the surviving grid so a stored
+// ColSpan/RowSpan never exceeds the positions it actually owns (mirrors
+// AnyDoc's GridBuilder).
 func buildGrid(rows [][]cellInput) [][]entity.TableCell {
 	width := 0
 	for _, row := range rows {
@@ -153,7 +157,13 @@ func buildGrid(rows [][]cellInput) [][]entity.TableCell {
 				continue
 			}
 			if ci >= len(row) {
-				break
+				// No more real cells in this source row, but an ancestor's
+				// rowspan may still own columns further right: keep advancing
+				// so those Covered markers are emitted instead of stopping
+				// early (which would drop a rowspan continuation and break the
+				// dense-grid invariant).
+				col++
+				continue
 			}
 			c := row[ci]
 			ci++
@@ -215,20 +225,12 @@ func buildGrid(rows [][]cellInput) [][]entity.TableCell {
 			}
 		}
 	}
-	// Trim trailing rows that carry no origin cell (every slot is a Covered
-	// marker or an empty 1x1, contributing no text).
-	for len(grid) > 0 {
-		last := grid[len(grid)-1]
-		hasOrigin := false
-		for _, c := range last {
-			if !c.Covered && (c.Text != "" || c.ColSpan > 1 || c.RowSpan > 1) {
-				hasOrigin = true
-				break
-			}
-		}
-		if hasOrigin {
-			break
-		}
+	// Trim trailing rows that are completely empty: a row with no real cell
+	// and no Covered marker carries no information. A row that only carries
+	// Covered markers is a genuine rowspan continuation and MUST stay so the
+	// grid stays dense and every origin's RowSpan remains backed by a real
+	// row; dropping it would make the claimed span exceed the available rows.
+	for len(grid) > 0 && len(grid[len(grid)-1]) == 0 {
 		grid = grid[:len(grid)-1]
 	}
 	return grid

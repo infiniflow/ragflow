@@ -115,8 +115,44 @@ func TestGridRowspan(t *testing.T) {
 	}
 }
 
-// combined colspan+rowspan with a trailing all-covered row that must be
-// trimmed so no empty rows survive.
+// A rowspan that extends into a trailing row whose own cells do not reach the
+// spanned column must still keep the continuation Covered marker, so the grid
+// stays dense and the origin's RowSpan never exceeds the available rows. This
+// guards the invariant that every claimed position is backed by a real row.
+func TestGridRowspanKeepsContinuationRow(t *testing.T) {
+	td, _ := ParseTableHTML(`<table>
+<tr><td rowspan="3">A</td><td>B</td></tr>
+<tr><td>C</td></tr>
+<tr></tr>
+</table>`)
+	// r0: A(rs3) + B ; r1: C (with a covered continuation of A at c0) ;
+	// r2: an empty <tr> must become a covered continuation of A, not be
+	// dropped, otherwise the grid is no longer dense and A.RowSpan (3) would
+	// exceed the available rows.
+	if len(td.Grid) != 3 {
+		t.Fatalf("grid rows=%d want 3 (rowspan continuation must survive)", len(td.Grid))
+	}
+	if td.Grid[0][0].RowSpan != 3 {
+		t.Fatalf("origin RowSpan=%d want 3", td.Grid[0][0].RowSpan)
+	}
+	if !td.Grid[2][0].Covered || td.Grid[2][0].OriginRow != 0 || td.Grid[2][0].OriginCol != 0 {
+		t.Fatalf("r2c0 must be a covered continuation of A: %+v", td.Grid[2][0])
+	}
+	// Density invariant: every origin's claimed rows exist.
+	for r, row := range td.Grid {
+		for c, cell := range row {
+			if cell.Covered {
+				continue
+			}
+			if r+cell.RowSpan > len(td.Grid) {
+				t.Fatalf("cell (%d,%d) RowSpan=%d exceeds grid rows %d", r, c, cell.RowSpan, len(td.Grid))
+			}
+		}
+	}
+}
+
+// combined colspan+rowspan: the big cell covers (r0c0,r0c1,r1c0,r1c1) while c
+// and d are real cells, so 2 rows survive with r1's first two slots Covered.
 func TestGridSpanAndTrailingTrim(t *testing.T) {
 	td, _ := ParseTableHTML(`<table>
 <tr><td colspan="2" rowspan="2">big</td><td>c</td></tr>
@@ -186,9 +222,10 @@ func TestGridBadSpanAttrsClamped(t *testing.T) {
 	}
 }
 
-// ragged source rows (a merged row is shorter after span accounting) pad to a
-// uniform width so the grid stays rectangular.
-func TestGridRaggedPadsUniformWidth(t *testing.T) {
+// A colspan origin's engulfed slot becomes a Covered marker, so the row stays
+// dense (no empty cell) and its width matches rows that have no spans. Ragged
+// (genuinely shorter) source rows are NOT padded with empty cells.
+func TestGridColspanFillsCoveredSlot(t *testing.T) {
 	td, _ := ParseTableHTML(`<table>
 <tr><td colspan="2">wide</td></tr>
 <tr><td>p</td><td>q</td></tr>
@@ -225,6 +262,31 @@ func TestRenderMergedEmitsSpanAttrs(t *testing.T) {
 	}
 	if back.Grid[0][0].ColSpan != 2 {
 		t.Fatalf("round-trip lost colspan: %+v", back.Grid[0][0])
+	}
+}
+
+// RenderTableHTML -> ParseTableHTML round-trip must preserve both colspan and
+// rowspan geometry (not just the text view), so a downstream consumer that
+// renders or indexes the grid from the re-serialized markup sees the same
+// merge geometry.
+func TestRenderRoundTripPreservesSpans(t *testing.T) {
+	td, _ := ParseTableHTML(`<table>
+<tr><td colspan="2" rowspan="2">big</td><td>c</td></tr>
+<tr><td>d</td></tr>
+</table>`)
+	h := RenderTableHTML(td)
+	back, err := ParseTableHTML(h)
+	if err != nil || back == nil {
+		t.Fatalf("round-trip: %v", err)
+	}
+	if back.Grid[0][0].ColSpan != 2 || back.Grid[0][0].RowSpan != 2 {
+		t.Fatalf("round-trip lost spans: %+v", back.Grid[0][0])
+	}
+	if !back.Grid[1][0].Covered || !back.Grid[1][1].Covered {
+		t.Fatalf("round-trip lost covered continuation: %+v", back.Grid[1])
+	}
+	if got := gridTexts(back); !reflect.DeepEqual(got, gridTexts(td)) {
+		t.Fatalf("round-trip texts differ: %v vs %v", gridTexts(back), gridTexts(td))
 	}
 }
 
