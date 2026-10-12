@@ -109,10 +109,8 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // break, never a character to delete, so "。" must not vanish (or be swapped
 // for "\n") after chunking.
 //
-// When keepDelim is false the delimiter is DISCARDED (mirroring Python's
-// _split_text_by_pattern, which keeps only the even-index text parts); that
-// mode is used by the GeneralChunker legacy paths that still match Python's
-// drop behaviour, and by any caller that needs the historical contract.
+// When keepDelim is false the delimiter is discarded. Custom backtick
+// delimiters use this mode because they explicitly mark content to split away.
 func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
 	if pattern == nil {
 		return []string{text}
@@ -154,6 +152,28 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		out = append(out, tail)
 	}
 	return out
+}
+
+// foldWhitespaceSegments attaches blank runs to neighboring text without
+// changing their position in the reconstructed source.
+func foldWhitespaceSegments(parts []string) []string {
+	var kept []string
+	var leading string
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			leading += part
+			continue
+		}
+		if leading != "" {
+			part = leading + part
+			leading = ""
+		}
+		kept = append(kept, part)
+	}
+	if leading != "" && len(kept) > 0 {
+		kept[len(kept)-1] += leading
+	}
+	return kept
 }
 
 // ---------------------------------------------------------------------------
