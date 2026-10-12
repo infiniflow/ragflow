@@ -125,6 +125,9 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// FilenameType returns the upload category for a filename.
+// It classifies supported extensions and returns FileTypeOTHER for invalid
+// filenames or unsupported extensions.
 func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {

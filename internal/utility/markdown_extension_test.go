@@ -18,6 +18,8 @@ package utility
 
 import "testing"
 
+// TestMarkdownUploadAliases verifies that supported Markdown aliases retain
+// Markdown parser selection and pass the document upload gate.
 func TestMarkdownUploadAliases(t *testing.T) {
 	for _, name := range []string{"notes.markdown", "NOTES.MARKDOWN", "folder/notes.markdown", "notes.md", "notes.mdx"} {
 		t.Run(name, func(t *testing.T) {
@@ -31,6 +33,8 @@ func TestMarkdownUploadAliases(t *testing.T) {
 	}
 }
 
+// TestUnsupportedFilenameRemainsRejected verifies that executable filenames and
+// unsupported Markdown-like suffixes are rejected by the upload classifier.
 func TestUnsupportedFilenameRemainsRejected(t *testing.T) {
 	for _, name := range []string{"payload.exe", "notes.markdown.exe", "notes.markdownx"} {
 		if got := FilenameType(name); got != FileTypeOTHER {
