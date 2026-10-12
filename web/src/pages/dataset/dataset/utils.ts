@@ -128,13 +128,14 @@ export const isDocumentProcessing = (
 // --- Parser prerequisite checks -------------------------------------------
 // A file cannot be parsed under the dataset's current Parser operator when
 // the operator does not declare the file's type family at all
-// (unsupportedType), or — for audio/video — when the declared setup carries
-// no model (missingModel). The tenant default is deliberately not consulted:
-// parsing reads the operator setup, so a global default does not make the
-// file parsable. Image files only need their family declared: the image
+// (unsupportedType), or when the family is declared but the model it needs
+// is not set (missingModel): audio reads its per-setup ASR model, while
+// video reads the Parser-level vision enhancement (enable_vision_enhancement
+// + vlm.llm_id) — its model no longer lives on the family setup. The tenant
+// default is deliberately not consulted: a global default does not make the
+// file parsable here. Image files only need their family declared: the image
 // OCR switch runs local extraction independently, and the vision model is a
-// global supplement picked from the top-level vlm.llm_id (falling back to the
-// tenant default).
+// global supplement for it.
 // These helpers power the upload warning and the parse-click validation.
 
 export type ParserModelGap = {
@@ -168,6 +169,22 @@ export function pickByGapKind<T>(
 
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
+/**
+ * The Parser-level vision enhancement globals (enable_vision_enhancement +
+ * vlm.llm_id): one switch and model serve every media family. Undefined marks
+ * a config saved before the model moved off the per-family setups — those
+ * still carry the video model on the video setup itself.
+ */
+export type ParserVisionEnhancement = {
+  enabled: boolean;
+  modelId: string;
+};
+
+export type SavedParserConfig = {
+  setups: ParserSetup[];
+  visionEnhancement?: ParserVisionEnhancement;
+};
+
 const ExtensionToFileTypeMap: Record<string, FileType> = Object.entries(
   FileTypeSuffixMap,
 ).reduce<Record<string, FileType>>((acc, [fileType, suffixes]) => {
@@ -183,18 +200,37 @@ export function getFileTypeByExtension(
   return ExtensionToFileTypeMap[extension.toLowerCase()];
 }
 
+// Reads the Parser-level vision globals from a saved Parser entry. A boolean
+// enable_vision_enhancement marks the current contract; configs saved before
+// the model moved to the top level do not have it, and their video setup
+// still holds the model — so the absence is meaningful, not a default-off.
+function readVisionEnhancement(
+  parserEntry: unknown,
+): ParserVisionEnhancement | undefined {
+  if (typeof parserEntry !== 'object' || parserEntry === null) {
+    return undefined;
+  }
+  const params = parserEntry as Record<string, any>;
+  const enabled = params.enable_vision_enhancement;
+  if (typeof enabled !== 'boolean') {
+    return undefined;
+  }
+  const modelId = params.vlm?.llm_id;
+  return { enabled, modelId: typeof modelId === 'string' ? modelId : '' };
+}
+
 /**
- * Parser setups exactly as saved, keyed by file format — the keys are the
- * type families the pipeline/built-in method declares. Accepts either a
- * dataset or a document row: a document's parser_config snapshots the parser
- * it actually runs with (dataset config at upload, the override after a
- * parser change). Returns null when parser_config has no Parser operator
- * entry (legacy flat-shape configs, pipelines without a Parser stage): type
- * support cannot be determined then and validation is skipped.
+ * Parser config exactly as saved: the per-family setups plus the Parser-level
+ * vision enhancement globals. Accepts either a dataset or a document row: a
+ * document's parser_config snapshots the parser it actually runs with
+ * (dataset config at upload, the override after a parser change). Returns
+ * null when parser_config has no Parser operator entry (legacy flat-shape
+ * configs, pipelines without a Parser stage): type support cannot be
+ * determined then and validation is skipped.
  */
-export function getSavedParserSetups(
+export function getSavedParserConfig(
   source: { parser_config?: unknown } | null | undefined,
-): ParserSetup[] | null {
+): SavedParserConfig | null {
   const parserConfig = source?.parser_config as Record<string, any> | undefined;
 
   const parserEntry = Object.entries(parserConfig ?? {}).find(
@@ -204,24 +240,29 @@ export function getSavedParserSetups(
   if (!parserEntry) {
     return null;
   }
-  return transformParserConfigSetups(parserEntry);
+  return {
+    setups: transformParserConfigSetups(parserEntry),
+    visionEnhancement: readVisionEnhancement(parserEntry),
+  };
 }
 
 export function findParserGap(
   fileType: FileType | undefined,
-  setups: ParserSetup[],
+  config: SavedParserConfig,
 ): ParserGap | null {
   if (!fileType) {
     return null;
   }
 
-  const setup = setups.find((x) => x.fileFormat === fileType);
+  const setup = config.setups.find((x) => x.fileFormat === fileType);
   if (!setup) {
     return { reason: ParserGapReason.UnsupportedType, fileType };
   }
 
   switch (fileType) {
     case FileType.Audio: {
+      // Audio keeps a per-setup model: it is an ASR model, not the shared
+      // vision one.
       return setup.vlm?.llm_id
         ? null
         : {
@@ -231,7 +272,10 @@ export function findParserGap(
           };
     }
     case FileType.Video: {
-      return setup.vlm?.llm_id
+      const hasVisionModel = config.visionEnhancement
+        ? config.visionEnhancement.enabled && !!config.visionEnhancement.modelId
+        : !!setup.vlm?.llm_id;
+      return hasVisionModel
         ? null
         : {
             reason: ParserGapReason.MissingModel,
@@ -246,11 +290,11 @@ export function findParserGap(
 
 export function findFilesParserGaps(
   names: string[],
-  setups: ParserSetup[],
+  config: SavedParserConfig,
 ): FileParserGap[] {
   return names.flatMap((name) => {
     const fileType = getFileTypeByExtension(getExtension(name));
-    const gap = findParserGap(fileType, setups);
+    const gap = findParserGap(fileType, config);
     return gap ? [{ ...gap, name }] : [];
   });
 }
@@ -258,15 +302,15 @@ export function findFilesParserGaps(
 /**
  * Per-document parse validation: each document row carries the parser config
  * it actually runs with (dataset snapshot at upload, the override after a
- * parser change), so it is validated against its own setups. Rows without a
- * Parser entry fall back to `fallbackSetups` (the dataset-level config).
+ * parser change), so it is validated against its own config. Rows without a
+ * Parser entry fall back to `fallbackConfig` (the dataset-level config).
  */
 export function findDocumentsParserGaps(
   documents: Array<{ name: string; parser_config?: unknown }>,
-  fallbackSetups: ParserSetup[] | null,
+  fallbackConfig: SavedParserConfig | null,
 ): FileParserGap[] {
   return documents.flatMap((doc) => {
-    const setups = getSavedParserSetups(doc) ?? fallbackSetups;
-    return setups ? findFilesParserGaps([doc.name], setups) : [];
+    const config = getSavedParserConfig(doc) ?? fallbackConfig;
+    return config ? findFilesParserGaps([doc.name], config) : [];
   });
 }
