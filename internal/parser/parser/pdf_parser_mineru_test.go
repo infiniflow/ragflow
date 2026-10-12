@@ -283,10 +283,14 @@ func TestPDFParser_ParseWithResult_MinerUReadsBackendFromProviderJSONApiKey(t *t
 }
 
 func TestPDFParser_ParseWithResult_MinerURequiresServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":     "MinerU",
-		"mineru_apiserver": "http://mineru-api:8888",
+		"mineru_apiserver": server.URL,
 		"mineru_backend":   "hybrid-http-client",
 	})
 

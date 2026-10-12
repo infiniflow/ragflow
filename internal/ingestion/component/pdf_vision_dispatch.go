@@ -482,10 +482,9 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model
-// via the streaming /file_parse endpoint and returns parsed sections.
-// Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
-// stream=True and reads the zip response body directly (no polling).
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
+// MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
+// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -516,7 +515,6 @@ func dispatchMinerUPDF(
 	if strings.TrimSpace(baseURL) == "" {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
 	}
-	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	// MinerU's language is an OCR engine parameter, not the caption language:
@@ -531,10 +529,40 @@ func dispatchMinerUPDF(
 	mineruLang := mineruLangCode(lang)
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
-	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+
+	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
+	}
+	if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return parser.ParseResult{}, err
 	}
 
+	if v1 {
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, 0)
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
+		}
+		v1Markdown := ""
+		var zipBytes []byte
+		if result != nil {
+			v1Markdown = strings.TrimSpace(result.Markdown)
+			zipBytes = result.Zip
+		}
+		items, extractErr := mineruExtractJSONItems(zipBytes)
+		if extractErr == nil && len(items) > 0 {
+			return mineruJSONParseResult(filename, items), nil
+		}
+		if v1Markdown != "" {
+			return buildMarkdownOCRDispatchResult(result.Markdown), nil
+		}
+		if extractErr != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
+		}
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
+	}
+
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
@@ -545,16 +573,7 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
-	return parser.ParseResult{
-		OutputFormat: "json",
-		File: map[string]any{
-			"name":         filename,
-			"page_count":   mineruItemPageCount(items),
-			"outline":      []map[string]any{},
-			"parse_method": "mineru",
-		},
-		JSON: items,
-	}, nil
+	return mineruJSONParseResult(filename, items), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -1026,6 +1045,19 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 		mediaType = http.DetectContentType(data)
 	}
 	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
+}
+
+func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
+	return parser.ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":         filename,
+			"page_count":   mineruItemPageCount(items),
+			"outline":      []map[string]any{},
+			"parse_method": "mineru",
+		},
+		JSON: items,
+	}
 }
 
 func mineruItemPageCount(items []map[string]any) int {
