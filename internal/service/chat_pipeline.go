@@ -853,7 +853,7 @@ func (s *ChatPipelineService) AsyncChat(
 				harnessImages := append(historyImageFiles, imageFiles...)
 				var history []map[string]interface{}
 				if kwargs["store_history_messages"] == false {
-					history = messages
+					history = stripHistoryCitations(messages)
 				}
 				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
 					TopN:                   int(chat.TopN),
@@ -2623,6 +2623,25 @@ func historyMessageContent(role, content string) string {
 		return stripCitations(content)
 	}
 	return cleanCitationMarkers(content)
+}
+
+// stripHistoryCitations returns a copy of messages whose text contents went
+// through historyMessageContent, for the history handed to the agentic
+// harness. messages itself is left untouched.
+func stripHistoryCitations(messages []map[string]interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(messages))
+	for _, m := range messages {
+		cleaned := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			cleaned[k] = v
+		}
+		if content, ok := m["content"].(string); ok {
+			role, _ := m["role"].(string)
+			cleaned["content"] = historyMessageContent(role, content)
+		}
+		out = append(out, cleaned)
+	}
+	return out
 }
 
 // resolveReferenceMetadata mirrors Python's

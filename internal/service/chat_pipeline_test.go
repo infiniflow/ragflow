@@ -1991,6 +1991,54 @@ func TestDecorateHarnessAnswerRewritesSlotCitations(t *testing.T) {
 	}
 }
 
+// TestAsyncChatHarnessHistoryWithoutCitations pins that the history a
+// non-storing reasoning turn hands to the agentic harness carries no [ID:n]
+// marker of a previous answer, like the history of the regular path, and that
+// the caller's messages are left as they were.
+func TestAsyncChatHarnessHistoryWithoutCitations(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
+	var got []map[string]interface{}
+	previousHarness := harnessRetriever
+	t.Cleanup(func() { harnessRetriever = previousHarness })
+	harnessRetriever = func(_ context.Context, req HarnessRequest) (HarnessResult, error) {
+		got = req.Messages
+		return HarnessResult{Answer: "done"}, nil
+	}
+
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	chat.KBIDs = entity.JSONSlice{"kb-1"}
+	chat.PromptConfig["system"] = "Answer using {knowledge}"
+	const previous = "Resolution 815 [ID:20] and [ID: 21]."
+	messages := []map[string]interface{}{
+		{"role": "user", "content": "First question"},
+		{"role": "assistant", "content": previous},
+		{"role": "user", "content": "Follow-up"},
+	}
+	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat, messages, true,
+		map[string]interface{}{"reasoning": 1, "store_history_messages": false})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range results {
+	}
+	if len(got) != 3 {
+		t.Fatalf("harness history = %#v, want the three messages", got)
+	}
+	if content := got[1]["content"]; content != "Resolution 815  and ." {
+		t.Fatalf("assistant history content = %q, want it without [ID:n] markers", content)
+	}
+	if messages[1]["content"] != previous {
+		t.Fatalf("caller's message changed to %q", messages[1]["content"])
+	}
+}
+
 func TestAsyncChatHarnessQuote(t *testing.T) {
 	db := setupChatPipelineVisionTestDB(t)
 	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
