@@ -158,7 +158,25 @@ Docker подходит для быстрой оценки, интеграцио
 
 #### 🚀 Запуск сервера
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+1. Если вы используете Elasticsearch, задайте `vm.max_map_count` на хосте Docker не менее 262144. При использовании Infinity этот шаг обычно не требуется:
+
+   > Проверить текущее значение:
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > Если вы используете Elasticsearch и значение меньше 262144, измените его:
+   >
+   > ```bash
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > Чтобы изменение сохранилось после перезагрузки, добавьте в **/etc/sysctl.conf**:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
 
 2. `git clone https://github.com/infiniflow/ragflow.git`
 
