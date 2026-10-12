@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -44,13 +45,31 @@ func (s *stubDocStateSvc) GetDocumentMetadataByID(ctx context.Context, docID str
 
 func (s *stubDocStateSvc) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]any) error {
 	s.setCalled = true
-	if s.metaData == nil {
-		s.metaData = make(map[string]any)
-	}
+	s.metaData = make(map[string]any, len(meta))
 	for k, v := range meta {
 		s.metaData[k] = v
 	}
 	return nil
+}
+
+func TestDocStateUpdater_PreservesTypedMetadataOnReplacement(t *testing.T) {
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"year": float64(2024), "verified": false, "null": nil,
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro", "depth": float64(1)}},
+	}}
+	u := &docStateUpdater{docSvc: svc}
+	u.apply(t.Context(), &taskpkg.PipelineResult{
+		DocID: "doc-1", Metadata: map[string]any{"author": "Alice", "year": "new"},
+	})
+	want := map[string]any{
+		"author": "Alice", "year": float64(2024), "verified": false, "null": nil,
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro", "depth": float64(1)}},
+	}
+	if !svc.setCalled || !reflect.DeepEqual(svc.metaData, want) {
+		t.Fatalf("stored metadata = %#v, want %#v", svc.metaData, want)
+	}
 }
 
 func (s *stubDocStateSvc) ApplyDocCounts(ctx context.Context, docID, kbID string, chunkNum, tokenNum int, duration float64) error {

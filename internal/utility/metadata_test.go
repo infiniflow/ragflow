@@ -1,6 +1,7 @@
 package utility
 
 import (
+	"reflect"
 	"testing"
 )
 
@@ -34,13 +35,41 @@ func TestUpdateMetadataTo_ExistingKeyScalarOverwrite(t *testing.T) {
 	}
 }
 
-func TestUpdateMetadataTo_StringValuesOnly(t *testing.T) {
-	result := UpdateMetadataTo(map[string]any{}, map[string]any{"num": 42, "ok": true})
-	if _, exists := result["num"]; exists {
-		t.Errorf("numeric values should be skipped")
+func TestUpdateMetadataTo_PreservesTypedValues(t *testing.T) {
+	values := map[string]any{
+		"integer": int64(42), "decimal": 1.5, "zero": 0, "false": false,
+		"null": nil, "object": map[string]any{"title": "Intro"},
+		"mixed": []any{"contract", 123, false}, "numbers": []any{1, 2},
+		"outline": []any{map[string]any{"title": "Intro", "depth": 1}},
 	}
-	if _, exists := result["ok"]; exists {
-		t.Errorf("bool values should be skipped")
+	got := UpdateMetadataTo(map[string]any{}, values)
+	if !reflect.DeepEqual(got, values) {
+		t.Fatalf("metadata = %#v, want %#v", got, values)
+	}
+}
+
+func TestUpdateMetadataTo_TypedConflicts(t *testing.T) {
+	tests := []struct {
+		name                   string
+		target, incoming, want any
+	}{
+		{"number overwrites scalar", "new", int64(42), int64(42)},
+		{"false overwrites list", []string{"new"}, false, false},
+		{"null overwrites scalar", "new", nil, nil},
+		{"object keeps target", "new", map[string]any{"x": 1}, "new"},
+		{"mixed list keeps target", "new", []any{"old", 1}, "new"},
+		{"structured target keeps list", []any{"new", 1}, []string{"old"}, []any{"new", 1}},
+		{"structured target keeps string", []any{1, 2}, "old", []any{1, 2}},
+		{"decoded string list merges", []any{"a", "b"}, []any{"b", "c"}, []string{"a", "b", "c"}},
+		{"decoded string list appends", []any{"a"}, "b", []string{"a", "b"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := UpdateMetadataTo(map[string]any{"key": tt.target}, map[string]any{"key": tt.incoming})
+			if !reflect.DeepEqual(got["key"], tt.want) {
+				t.Fatalf("value = %#v, want %#v", got["key"], tt.want)
+			}
+		})
 	}
 }
 

@@ -1,9 +1,29 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
+	want := map[string]any{
+		"year": float64(2024), "verified": false,
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro"}},
+	}
+	chunks := []map[string]any{{"text": "report", "metadata": want}}
+	got, err := ProcessChunksForPipeline(chunks, "doc-1", "report.pdf", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata = %#v, want %#v", got, want)
+	}
+	if _, exists := chunks[0]["metadata"]; exists {
+		t.Fatal("consumed metadata must be removed from chunk")
+	}
+}
 
 // =============================================================================
 // RenameTextToContentWithWeight - Python processChunks logic

@@ -16,10 +16,11 @@
 
 package utility
 
+import "encoding/json"
+
 // UpdateMetadataTo merges metadata into an existing metadata map.
-// Only string and []string values are accepted. Existing keys are preserved
-// (not overwritten). List values are merged and deduplicated.
-// Mirrors Python: common.metadata_utils.update_metadata_to()
+// String lists are merged and deduplicated. Incoming scalars overwrite
+// existing values; objects and structured lists are added only for missing keys.
 func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	if target == nil {
 		return nil
@@ -34,8 +35,8 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	}
 
 	for k, v := range metaMap {
-		normVal := normalizeMetaValue(v)
-		if normVal == nil {
+		normVal, accepted := normalizeMetaValue(v)
+		if !accepted {
 			continue
 		}
 
@@ -45,15 +46,23 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			continue
 		}
 
-		// Merge with existing value, mirroring Python
-		// common.metadata_utils.update_metadata_to exactly:
-		//   - both lists: extend + dedupe
-		//   - target is list, incoming is scalar: append + dedupe
-		//   - target is scalar (or any non-list): overwrite with the
-		//     incoming value (the stored/merged-in side wins), NOT a list.
-		targetList, targetIsList := existing.([]string)
+		switch normVal.(type) {
+		case nil, string, []string, bool, json.Number,
+			int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64,
+			float32, float64:
+		default:
+			// Structured values never replace an existing key.
+			continue
+		}
+		targetList, targetIsList := metadataStringList(existing)
 		normList, normIsList := normVal.([]string)
-		if targetIsList {
+		_, normIsString := normVal.(string)
+		if normIsList || normIsString {
+			if _, structuredList := existing.([]any); structuredList && !targetIsList {
+				continue
+			}
+		}
+		if targetIsList && (normIsList || normIsString) {
 			if normIsList {
 				target[k] = dedupeStrings(append(targetList, normList...))
 			} else if s, ok := normVal.(string); ok {
@@ -61,46 +70,51 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			}
 			continue
 		}
-		// target is a scalar: overwrite with the incoming value.
+		// Incoming scalars, including false, zero and null, win.
 		target[k] = normVal
 	}
 
 	return target
 }
 
-// normalizeMetaValue normalizes a metadata value.
-// Returns a string, []string, or nil if the value is not acceptable.
-func normalizeMetaValue(v any) any {
-	switch val := v.(type) {
-	case string:
-		if val == "" {
-			return nil
-		}
-		return val
-	case []string:
-		filtered := make([]string, 0, len(val))
-		for _, s := range val {
+// normalizeMetaValue filters empty strings without changing other value types.
+// The acceptance flag distinguishes a retained null from a skipped value.
+func normalizeMetaValue(v any) (any, bool) {
+	if s, ok := v.(string); ok {
+		return s, s != ""
+	}
+	if list, ok := metadataStringList(v); ok {
+		filtered := make([]string, 0, len(list))
+		for _, s := range list {
 			if s != "" {
 				filtered = append(filtered, s)
 			}
 		}
 		if len(filtered) == 0 {
-			return nil
+			return nil, false
 		}
-		return dedupeStrings(filtered)
+		return dedupeStrings(filtered), true
+	}
+	return v, true
+}
+
+// metadataStringList recognizes both typed and JSON-decoded string lists.
+func metadataStringList(v any) ([]string, bool) {
+	switch list := v.(type) {
+	case []string:
+		return list, true
 	case []any:
-		filtered := make([]string, 0, len(val))
-		for _, elem := range val {
-			if s, ok := elem.(string); ok && s != "" {
-				filtered = append(filtered, s)
+		strings := make([]string, 0, len(list))
+		for _, item := range list {
+			s, ok := item.(string)
+			if !ok {
+				return nil, false
 			}
+			strings = append(strings, s)
 		}
-		if len(filtered) == 0 {
-			return nil
-		}
-		return dedupeStrings(filtered)
+		return strings, true
 	default:
-		return nil
+		return nil, false
 	}
 }
 
