@@ -14,19 +14,11 @@
 //  limitations under the License.
 //
 
-// self_managed.go is the Go port of
-// `agent/sandbox/providers/self_managed.py`.
+// Self-managed execution calls the external service maintained at
+// https://github.com/infiniflow/sandbox. That service owns container lifecycle
+// and isolation; this file implements only its HTTP client.
 //
-// The provider wraps the existing executor_manager HTTP API
-// (default `http://sandbox-executor-manager:9385`) which manages a
-// pool of Docker containers with gVisor for secure code execution.
-// We do NOT port the container pool itself — that's the Python
-// FastAPI service and stays in Python. We only port the *client*
-// surface that the Go CodeExec tool needs to dispatch a code
-// execution request.
-//
-// Wire format (matches the Python `requests.post` call in
-// self_managed.py::execute_code):
+// Request:
 //
 //   POST {endpoint}/run
 //   Content-Type: application/json
@@ -37,7 +29,7 @@
 //   }
 //
 // Response (executor_manager's CodeExecutionResult, see
-// agent/sandbox/executor_manager/models/schemas.py):
+// https://github.com/infiniflow/sandbox/blob/main/executor_manager/models/schemas.py):
 //
 //   {
 //     "status":          "ok" | "PROGRAM_RUNNER_ERROR" | ...,
@@ -74,12 +66,11 @@ import (
 )
 
 // selfManagedDefaultEndpoint is the canonical executor_manager
-// endpoint baked into the Python side. Operators override via
+// endpoint for the optional Compose service. Operators override via
 // SANDBOX_EXECUTOR_MANAGER_URL.
 const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
 
-// SelfManagedProvider is the Go port of
-// `agent/sandbox/providers/self_managed.py::SelfManagedProvider`.
+// SelfManagedProvider calls the external executor-manager API.
 type SelfManagedProvider struct {
 	endpoint     string
 	timeout      time.Duration
@@ -94,18 +85,13 @@ type SelfManagedProvider struct {
 	// fully-qualified Docker image references. Empty string means
 	// "use the executor_manager's default" — no override.
 	//
-	// Mirrors the Python side's
-	// `SANDBOX_BASE_PYTHON_IMAGE` / `SANDBOX_BASE_NODEJS_IMAGE`
-	// env vars (default: `infiniflow/sandbox-base-python:latest`
-	// and `infiniflow/sandbox-base-nodejs:latest`). The Go port
-	// reads the same env vars; operators who customize one
-	// language's image get a per-language override path that the
-	// executor_manager can then route at container-create time.
+	// Sent as base_image for custom managers; the reference service uses
+	// its deployment environment instead of this request field.
 	baseImages map[string]string
 	// apiToken is the shared secret authenticating this RAGFlow
 	// instance towards the executor_manager's /run endpoint
-	// (Authorization: Bearer). Empty means the executor_manager runs
-	// without authentication (backwards compatibility).
+	// (Authorization: Bearer). Empty omits the header; the service decides
+	// whether unauthenticated requests are accepted.
 	apiToken string
 }
 
@@ -120,15 +106,7 @@ func newSelfManagedProviderFromEnv() *SelfManagedProvider {
 	return newSelfManagedProviderFromConfig(map[string]any{})
 }
 
-// The provider resolves each field through one canonical chain: the
-// lowercase admin-panel settings schema first (endpoint, timeout,
-// max_retries, pool_size, api_token — the exact schema
-// agent/sandbox/providers/self_managed.py persists and reads; pool_size
-// additionally accepts its executor_manager_pool_size spelling, which the
-// Python provider reads first), then the SANDBOX_* environment variable for
-// fields absent from persisted settings, then the built-in default. Keeping
-// a single resolution path on both runtimes means a settings row plus
-// environment variables configures Python and Go identically.
+// Settings take precedence over environment variables and built-in defaults.
 func configStringEnv(cfg map[string]any, envName string, keys ...string) string {
 	for _, key := range keys {
 		// Blank-after-trim values count as absent so they fall through to
@@ -313,7 +291,7 @@ func (p *SelfManagedProvider) ExecuteCode(
 
 	start := time.Now()
 	// Shared-secret authentication towards the executor_manager; empty
-	// token keeps the request unauthenticated (backwards compatibility).
+	// token omits the header; it does not change service authentication policy.
 	var reqHeaders map[string]string
 	if p.apiToken != "" {
 		reqHeaders = map[string]string{"Authorization": "Bearer " + p.apiToken}

@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// local.go is the Go port of `agent/sandbox/providers/local.py`.
+// Local execution runs trusted code on the RAGFlow host.
 //
 // LocalProvider runs the user's code on the Go host itself via
 // os/exec. There is no sandboxing — the code runs with the Go
@@ -107,8 +107,7 @@ func (c *localOutputCapture) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// LocalProvider is the Go port of
-// `agent/sandbox/providers/local.py::LocalProvider`.
+// LocalProvider executes code on the current host.
 type LocalProvider struct {
 	pythonBin        string
 	nodeBin          string

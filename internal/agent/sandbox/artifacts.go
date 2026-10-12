@@ -20,16 +20,6 @@
 // model sees a uniform `artifacts: [{name, content_b64,
 // mime_type, size}, ...]` shape across providers.
 //
-// The set is ported verbatim from the Python side:
-//
-//	agent/sandbox/providers/local.py  (the _collect_artifacts
-//	    allowlist)
-//	agent/sandbox/providers/ssh.py    (ALLOWED_ARTIFACT_EXTENSIONS)
-//
-// Python's allowlist includes `.csv .html .jpeg .jpg .json .pdf
-// .png .svg`. We mirror it 1:1. To extend, add here AND in
-// both Python files.
-
 package sandbox
 
 // allowedArtifactExts is the set of file extensions the Local
