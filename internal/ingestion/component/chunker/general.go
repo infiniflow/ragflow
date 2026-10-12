@@ -1261,58 +1261,27 @@ func normalizeGeneralNewlines(text string) string {
 }
 
 // sliceGeneralSplitPieces builds one output piece per text part, slicing the
-// source paragraph bbox vertically by visible-text ratio so adjacent pieces
-// abut instead of each carrying the full paragraph box. Parser position tags
+// source paragraph bbox via slicePositionsByCounts so adjacent pieces abut
+// instead of each carrying the full paragraph box. Parser position tags
 // (@@...##) carry no visual height and are excluded from the ratio, mirroring
-// the Token path (chunkFromItem/splitOversizedText). Malformed or empty
-// matrices fall back to the original bbox so the piece keeps its preview.
+// the Token path (chunkFromItem/splitOversizedText).
 func sliceGeneralSplitPieces(unit schema.ChunkDoc, parts []string) []schema.ChunkDoc {
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	if len(parts) == 0 {
 		return out
 	}
-	if len(unit.PDFPositions) == 0 && len(unit.Positions) == 0 {
-		for _, part := range parts {
-			piece := cloneChunkDoc(unit)
-			piece.Text = part
-			piece.TKNums = intPtr(tokenizeStr(part))
-			out = append(out, piece)
-		}
-		return out
-	}
 	counts := make([]int, len(parts))
-	total := 0
 	for i, part := range parts {
-		n := utf8.RuneCountInString(removeTag(part))
-		counts[i] = n
-		total += n
+		counts[i] = utf8.RuneCountInString(removeTag(part))
 	}
-	if total == 0 {
-		for _, part := range parts {
-			piece := cloneChunkDoc(unit)
-			piece.Text = part
-			piece.TKNums = intPtr(tokenizeStr(part))
-			out = append(out, piece)
-		}
-		return out
-	}
-	cum := 0
+	pdfSliced, posSliced := slicePositionsByCounts(unit.PDFPositions, unit.Positions, counts)
 	for i, part := range parts {
-		startRatio := float64(cum) / float64(total)
-		endRatio := float64(cum+counts[i]) / float64(total)
 		piece := cloneChunkDoc(unit)
 		piece.Text = part
 		piece.TKNums = intPtr(tokenizeStr(part))
-		piece.PDFPositions = slicePositionsByTextRatio(unit.PDFPositions, startRatio, endRatio)
-		piece.Positions = slicePositionsByTextRatio(unit.Positions, startRatio, endRatio)
-		if len(piece.PDFPositions) == 0 && len(unit.PDFPositions) > 0 {
-			piece.PDFPositions = unit.PDFPositions
-		}
-		if len(piece.Positions) == 0 && len(unit.Positions) > 0 {
-			piece.Positions = unit.Positions
-		}
+		piece.PDFPositions = pdfSliced[i]
+		piece.Positions = posSliced[i]
 		out = append(out, piece)
-		cum += counts[i]
 	}
 	return out
 }
