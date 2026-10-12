@@ -33,6 +33,13 @@ import (
 // search_after.
 func newMetadataIndexServer(t *testing.T, n int) *httptest.Server {
 	t.Helper()
+	return newCountingMetadataIndexServer(t, n, nil)
+}
+
+// newCountingMetadataIndexServer is newMetadataIndexServer that also counts the
+// search requests it answers.
+func newCountingMetadataIndexServer(t *testing.T, n int, searches *int) *httptest.Server {
+	t.Helper()
 	ids := make([]string, n)
 	for i := range ids {
 		ids[i] = fmt.Sprintf("doc-%05d", i)
@@ -42,6 +49,9 @@ func newMetadataIndexServer(t *testing.T, n int) *httptest.Server {
 		if r.Method == http.MethodHead {
 			w.WriteHeader(http.StatusOK)
 			return
+		}
+		if searches != nil {
+			*searches++
 		}
 		raw, _ := io.ReadAll(r.Body)
 		var body struct {
@@ -126,5 +136,36 @@ func TestSearchMetadataPastTheResultWindow(t *testing.T) {
 	}
 	if got := len(read(10000, 5000, false).MetadataRecords); got != 0 {
 		t.Fatalf("unsorted page past the window returned %d rows, want none", got)
+	}
+}
+
+// TestSearchMetadataScanWalksTheWindowOnce pins the cost of reading 50,000
+// sorted rows the way the metadata scan does, a first page and then the rest
+// in one request: the search_after walk to the offset happens once, so the
+// requests grow with the rows, not with the rows squared.
+func TestSearchMetadataScanWalksTheWindowOnce(t *testing.T) {
+	const n = 50000
+	searches := 0
+	e := newTestEngine(t, newCountingMetadataIndexServer(t, n, &searches).URL)
+	read := func(offset, limit int) int {
+		t.Helper()
+		res, err := e.SearchMetadata(t.Context(), &types.SearchMetadataRequest{
+			TenantID: "tenant-1", Offset: offset, Limit: limit,
+			Filter:  map[string]interface{}{"kb_id": []string{"kb-1"}},
+			OrderBy: (&types.OrderByExpr{}).Asc("id"),
+		})
+		if err != nil {
+			t.Fatalf("SearchMetadata(offset=%d, limit=%d): %v", offset, limit, err)
+		}
+		return len(res.MetadataRecords)
+	}
+	if got := read(0, 5000) + read(5000, n-5000); got != n {
+		t.Fatalf("read %d rows, want %d", got, n)
+	}
+	// 1 from/size page, then a 5,000-row skip and a 45,000-row take in
+	// batches of SearchAfterBatchSize.
+	want := 1 + (n+common.SearchAfterBatchSize-1)/common.SearchAfterBatchSize
+	if searches > want {
+		t.Fatalf("%d search requests, want at most %d", searches, want)
 	}
 }

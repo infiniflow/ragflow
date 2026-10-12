@@ -140,20 +140,25 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	return response, nil
 }
 
-// metadataScanPage is the page size of scanMetadata.
+// metadataScanPage is the size of the first page scanMetadata reads.
 const metadataScanPage = 5000
 
-// scanMetadata reads every metadata row of a tenant that matches filter, page
-// by page. The pages are sorted on id so an engine can page past its result
-// window: Elasticsearch walks offsets past index.max_result_window with
-// search_after, which needs a sort.
+// scanMetadata reads every metadata row of a tenant that matches filter. The
+// rows are sorted on id so an engine can page past its result window:
+// Elasticsearch walks offsets past index.max_result_window with search_after,
+// which needs a sort, and walks again from the first row on every request.
+// So after the first page, the rest is read in one request sized by the
+// reported total, and the walk to the offset happens once instead of once per
+// page. Without a total, or when rows were added meanwhile, the scan goes on
+// page by page until a short page.
 func (s *MetadataService) scanMetadata(ctx context.Context, tenantID string, filter map[string]interface{}) ([]map[string]interface{}, error) {
 	records := []map[string]interface{}{}
-	for offset := 0; ; offset += metadataScanPage {
+	offset, limit := 0, metadataScanPage
+	for {
 		searchResult, err := s.docEngine.SearchMetadata(ctx, &types.SearchMetadataRequest{
 			TenantID: tenantID,
 			Offset:   offset,
-			Limit:    metadataScanPage,
+			Limit:    limit,
 			Filter:   filter,
 			OrderBy:  (&types.OrderByExpr{}).Asc("id"),
 		})
@@ -161,9 +166,14 @@ func (s *MetadataService) scanMetadata(ctx context.Context, tenantID string, fil
 			return nil, err
 		}
 		records = append(records, searchResult.MetadataRecords...)
-		if len(searchResult.MetadataRecords) < metadataScanPage {
+		if len(searchResult.MetadataRecords) < limit {
 			return records, nil
 		}
+		offset += len(searchResult.MetadataRecords)
+		if total := int(searchResult.Total); total > 0 && offset >= total {
+			return records, nil
+		}
+		limit = max(int(searchResult.Total)-offset, metadataScanPage)
 	}
 }
 

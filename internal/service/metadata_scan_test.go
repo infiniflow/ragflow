@@ -33,8 +33,10 @@ import (
 // sorted on id, and records every request, so the scan's paging is observable.
 type metadataPagesDocEngine struct {
 	fakeChatDocEngine
-	n    int
-	reqs []types.SearchMetadataRequest
+	n int
+	// noTotal makes the engine report no total, as a store that cannot count.
+	noTotal bool
+	reqs    []types.SearchMetadataRequest
 }
 
 func (e *metadataPagesDocEngine) SearchMetadata(_ context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
@@ -43,7 +45,11 @@ func (e *metadataPagesDocEngine) SearchMetadata(_ context.Context, req *types.Se
 	for i := req.Offset; i < e.n && i < req.Offset+req.Limit; i++ {
 		rows = append(rows, map[string]interface{}{"id": fmt.Sprintf("%s-doc-%05d", req.TenantID, i)})
 	}
-	return &types.SearchMetadataResult{MetadataRecords: rows, Total: int64(e.n)}, nil
+	total := int64(e.n)
+	if e.noTotal {
+		total = 0
+	}
+	return &types.SearchMetadataResult{MetadataRecords: rows, Total: total}, nil
 }
 
 // TestSearchMetadataByKBsReadsPastTheResultWindow pins that the scan returns
@@ -83,12 +89,30 @@ func TestSearchMetadataByKBsReadsPastTheResultWindow(t *testing.T) {
 	if len(res.MetadataRecords) != 2*docs || len(seen) != 2*docs {
 		t.Fatalf("read %d rows (%d distinct), want all %d of both tenants", len(res.MetadataRecords), len(seen), 2*docs)
 	}
+	// Per tenant: the first page, then the rest in one request sized by the
+	// total, so an engine that walks to the offset does it once.
+	want := []string{"tenant1:0:5000", "tenant1:5000:7345", "tenant2:0:5000", "tenant2:5000:7345"}
+	var got []string
 	for _, req := range eng.reqs {
-		if req.Limit > metadataScanPage {
-			t.Fatalf("page of %d rows, want at most %d", req.Limit, metadataScanPage)
-		}
+		got = append(got, fmt.Sprintf("%s:%d:%d", req.TenantID, req.Offset, req.Limit))
 		if req.OrderBy == nil || len(req.OrderBy.Fields) != 1 || req.OrderBy.Fields[0].Field != "id" {
-			t.Fatalf("page request is not sorted on id: %+v", req.OrderBy)
+			t.Fatalf("request is not sorted on id: %+v", req.OrderBy)
 		}
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("requests = %v, want %v", got, want)
+	}
+}
+
+// TestScanMetadataWithoutTotal pins the fallback for a store that reports no
+// total: the scan reads page by page until a short page.
+func TestScanMetadataWithoutTotal(t *testing.T) {
+	eng := &metadataPagesDocEngine{n: 12345, noTotal: true}
+	records, err := NewMetadataServiceForTest(nil, eng).scanMetadata(t.Context(), "tenant1", map[string]interface{}{"kb_id": []string{"kb1"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(records) != 12345 || len(eng.reqs) != 3 {
+		t.Fatalf("read %d rows in %d requests, want 12345 in 3 pages", len(records), len(eng.reqs))
 	}
 }
