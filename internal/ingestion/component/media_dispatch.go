@@ -115,7 +115,7 @@ func maybeDispatchImage(
 		text, err = extractImageText(ctx, img)
 	}
 	release()
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups)
+	parsed := dispatchParse(ctx, fileType, filename, binary, setups, fractionWindow{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}

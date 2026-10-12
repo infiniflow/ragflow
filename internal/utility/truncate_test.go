@@ -29,7 +29,7 @@ func TestTruncateRunes(t *testing.T) {
 		{"ascii shorter than max", "hello", 10, "hello"},
 		{"ascii exactly max", "hello", 5, "hello"},
 		{"ascii truncated", "hello world", 5, "hello"},
-		// Multi-byte: each CJK rune is 3 bytes; ensure truncation counts RUNES,
+		// Multibyte: each CJK rune is 3 bytes; ensure truncation counts RUNES,
 		// not bytes, so we keep exactly `max` characters, not `max` bytes.
 		{"unicode truncated by rune", "中文测试abc", 4, "中文测试"},
 		{"unicode shorter than max", "中文", 10, "中文"},

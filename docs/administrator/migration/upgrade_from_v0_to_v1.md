@@ -22,12 +22,12 @@ The `v0.27.2` to `v1.0.0-rc1` migration is irreversible. Create and verify a com
 
 ## Quick navigation
 
-- [Upgrade within v0.x releases](#1-upgrade-within-between-v0x-releases)
+- [Upgrade within v0.x releases](#1-upgrade-within-v0x-releases)
 - [Special instructions for each v0.x checkpoint](#2-handle-each-key-release)
 - [Upgrade from v0.27.2 to v1.0.0-rc1](#3-upgrade-from-v0272-to-v100-rc1)
 - [Upgrade from v1.0.0-rc1 to a later v1.x release](#4-upgrade-from-v100-rc1-to-a-later-v1x-release)
 
-For every v0.x checkpoint below, first follow the [v0.x-to-v0.x upgrade steps](#1-upgrade-between-v0x-releases), and then complete the linked version-specific instructions.
+For every v0.x checkpoint below, first follow the [v0.x-to-v0.x upgrade steps](#1-upgrade-within-v0x-releases), and then complete the linked version-specific instructions.
 
 **Upgrade route:**
 
@@ -105,7 +105,7 @@ Do not continue to the next checkpoint until failures at the current release hav
 
 ## 2. Handle each key release
 
-These sections contain only the additional checks for each release. Use them together with the [v0.x-to-v0.x upgrade steps](#1-upgrade-between-v0x-releases).
+These sections contain only the additional checks for each release. Use them together with the [v0.x-to-v0.x upgrade steps](#1-upgrade-within-v0x-releases).
 
 ### 2.1. v0.22.1
 
