@@ -11,9 +11,11 @@ jest.mock('@/utils/api', () => ({
   default: { completionUrl: '/fixture' },
 }));
 Object.assign(globalThis, { TextDecoderStream });
+/** Wrap an owned stream as the response body consumed by the SSE parser. */
 function responseFor(body: unknown): Response {
   return { body } as unknown as Response;
 }
+/** Collect parser output while preserving the original stream rejection. */
 async function collect(response: Response) {
   const chunks = [];
   for await (const chunk of parseCompletionEventStream(response))
