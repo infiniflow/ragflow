@@ -158,7 +158,28 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
 #### 🚀 Sunucuyu Başlatma
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+1. Elasticsearch kullanıyorsanız Docker ana makinesinde `vm.max_map_count` değerini en az 262144 olarak ayarlayın. Infinity kullanılırken bu adım genellikle gerekli değildir:
+
+   > `vm.max_map_count` değerini kontrol etmek için:
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > Elasticsearch kullanıyorsanız ve değer 262144'in altındaysa sıfırlayın:
+   >
+   > ```bash
+   > # Bu örnekte 262144 olarak ayarlıyoruz:
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > Bu değişiklik sistem yeniden başlatıldığında sıfırlanacaktır. Değişikliğin kalıcı olmasını sağlamak için
+   > **/etc/sysctl.conf** dosyasındaki `vm.max_map_count` değerini buna göre ekleyin veya güncelleyin:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+   >
 
 2. `git clone https://github.com/infiniflow/ragflow.git`
 
