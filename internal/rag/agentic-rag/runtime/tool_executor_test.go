@@ -1816,12 +1816,12 @@ func TestNamedTermSeatsReachTermsThePhraseSearchMissed(t *testing.T) {
 		// The phrase batch returns ONLY the passage matching several names at
 		// once — the ranking that strands the rare ones.
 		"关羽 斩华雄 荀正": {famous},
-		"关羽 斩颜良":      {},
-		"关羽":             {famous},
-		"斩华雄":           {famous},
-		"荀正":             {rare},
-		"斩颜良":           {predicate},
-		"杨龄":             {third},
+		"关羽 斩颜良":    {},
+		"关羽":        {famous},
+		"斩华雄":       {famous},
+		"荀正":        {rare},
+		"斩颜良":       {predicate},
+		"杨龄":        {third},
 		// 庞德 reaches nothing anywhere: the corpus does not carry it.
 		"庞德": {},
 	}}
