@@ -127,6 +127,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 		inputKey  string
 	}{
 		{
+			name:      "AnySearchExtract",
+			toolName:  "AnySearchExtract",
+			params:    map[string]any{"api_key": "stored-key", "url": "", "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "url",
+		},
+		{
 			name:      "AnySearchSearch",
 			toolName:  "AnySearchSearch",
 			params:    map[string]any{"api_key": "stored-key", "top_n": float64(3), "zone": "intl", "language": "en", "outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}}},
@@ -320,7 +327,7 @@ func TestToolBackedComponentWenCaiInvoke(t *testing.T) {
 }
 
 func TestToolBackedComponentRegisteredBuildWorkflow(t *testing.T) {
-	for _, componentName := range []string{"AnySearchSearch", "ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
+	for _, componentName := range []string{"AnySearchExtract", "AnySearchSearch", "ArXiv", "BGPT", "DuckDuckGo", "Email", "Google", "GoogleScholar", "KeenableSearch", "PubMed", "QueritContents", "QueritSearch", "Search1APICrawl", "Search1APISearch", "SearXNG", "SofyaSearch", "WenCai", "TavilyExtract", "TavilySearch", "Wikipedia", "YahooFinance"} {
 		t.Run(componentName, func(t *testing.T) {
 			c := &canvas.Canvas{
 				Components: map[string]canvas.CanvasComponent{
@@ -671,6 +678,208 @@ func TestToolBackedComponentAnySearchKeepsReferencesWhoseOldHashesCollided(t *te
 	state.SetRetrievalReferences(chunks, docAggs)
 	if got := len(state.GetRetrievalChunks()); got != 2 {
 		t.Fatalf("the run state kept %d of 2 references", got)
+	}
+}
+
+// anySearchExtractFixture is a fake AnySearch /v1/extract endpoint that records
+// how often it was called and which url it was asked for.
+type anySearchExtractFixture struct {
+	requests atomic.Int32
+	lastURL  atomic.Value
+	helper   *agenttool.HTTPHelper
+}
+
+func newAnySearchExtractFixture(t *testing.T) *anySearchExtractFixture {
+	t.Helper()
+	fixture := &anySearchExtractFixture{}
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		fixture.requests.Add(1)
+		body, _ := io.ReadAll(request.Body)
+		var sent struct {
+			URL string `json:"url"`
+		}
+		_ = json.Unmarshal(body, &sent)
+		fixture.lastURL.Store(sent.URL)
+		writer.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(sent.URL, "/bad"):
+			writer.WriteHeader(http.StatusUnprocessableEntity)
+			_, _ = writer.Write([]byte(`{"code":-1,"message":"Unable to extract content from the URL.","request_id":"rid-422","error_code":"extract_failed"}`))
+		case strings.HasSuffix(sent.URL, "/long"):
+			page, _ := json.Marshal(map[string]any{"code": 0, "request_id": "rid-long", "data": map[string]any{
+				"url": sent.URL, "title": "Long page", "content": "partial text\n\n...(content truncated)",
+			}})
+			_, _ = writer.Write(page)
+		default:
+			page, _ := json.Marshal(map[string]any{"code": 0, "request_id": "rid-ok", "data": map[string]any{
+				"url": sent.URL, "title": "Example Domain", "content": "This domain is for use in documentation examples.",
+			}})
+			_, _ = writer.Write(page)
+		}
+	}))
+	t.Cleanup(server.Close)
+	target, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatalf("parse test server URL: %v", err)
+	}
+	fixture.helper = agenttool.NewHTTPHelper().WithClient(&http.Client{Transport: roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		cloned := request.Clone(request.Context())
+		cloned.URL.Scheme = target.Scheme
+		cloned.URL.Host = target.Host
+		return http.DefaultTransport.RoundTrip(cloned)
+	})})
+	return fixture
+}
+
+func (f *anySearchExtractFixture) sentURL() string {
+	sent, _ := f.lastURL.Load().(string)
+	return sent
+}
+
+func TestToolBackedComponentAnySearchExtractPartialAndErrors(t *testing.T) {
+	fixture := newAnySearchExtractFixture(t)
+	extract := agenttool.NewAnySearchExtractToolWith(fixture.helper, "")
+	component := &ToolBackedComponent{name: "AnySearchExtract", tool: extract, spec: extract.ComponentSpec()}
+	invoke := func(pageURL string) (map[string]any, *runtime.CanvasState) {
+		t.Helper()
+		state := runtime.NewCanvasState("run-extract", "task-extract")
+		out, err := component.Invoke(runtime.WithState(t.Context(), state), nil, map[string]any{"url": pageURL})
+		if err != nil {
+			t.Fatalf("Invoke(%s): %v", pageURL, err)
+		}
+		return out, state
+	}
+
+	out, state := invoke("https://example.com/")
+	if failure, exists := out["_ERROR"]; exists {
+		t.Fatalf("success set _ERROR %q", failure)
+	}
+	page, _ := out["json"].(map[string]any)
+	if page["title"] != "Example Domain" || page["truncated"] != false || page["request_id"] != "rid-ok" {
+		t.Fatalf("json = %#v, want the page object", out["json"])
+	}
+	if rendered, _ := out["formalized_content"].(string); !strings.Contains(rendered, "Title: Example Domain") || !strings.Contains(rendered, "documentation examples") {
+		t.Fatalf("formalized_content = %q", out["formalized_content"])
+	}
+	if chunks := state.GetRetrievalChunks(); len(chunks) != 1 || chunks[0]["document_name"] != "Example Domain" || chunks[0]["url"] != "https://example.com/" {
+		t.Fatalf("recorded references = %#v", chunks)
+	}
+
+	out, state = invoke("https://example.com/long")
+	page, _ = out["json"].(map[string]any)
+	if _, exists := out["_ERROR"]; exists || page["truncated"] != true {
+		t.Fatalf("truncated page outputs = %#v, want a normal result flagged truncated", out)
+	}
+	if len(state.GetRetrievalChunks()) != 1 {
+		t.Fatalf("a truncated page is still a usable reference: %#v", state.GetRetrievalChunks())
+	}
+
+	out, state = invoke("https://example.com/bad")
+	if failure, _ := out["_ERROR"].(string); !strings.Contains(failure, "HTTP 422") {
+		t.Fatalf("outputs = %#v, want the vendor HTTP 422 error", out)
+	}
+	page, _ = out["json"].(map[string]any)
+	if out["formalized_content"] != "" || page == nil || page["content"] != "" || page["request_id"] != "rid-422" {
+		t.Fatalf("failure outputs = %#v, want no rendered content and an empty page object", out)
+	}
+	if len(state.GetRetrievalChunks()) != 0 {
+		t.Fatalf("error path recorded references: %#v", state.GetRetrievalChunks())
+	}
+
+	before := fixture.requests.Load()
+	out, state = invoke("http://127.0.0.1:8080/")
+	if failure, _ := out["_ERROR"].(string); !strings.Contains(failure, "not a public") || fixture.requests.Load() != before {
+		t.Fatalf("outputs = %#v after %d new requests, want a client-side rejection with no request", out, fixture.requests.Load()-before)
+	}
+	if len(state.GetRetrievalChunks()) != 0 {
+		t.Fatalf("a rejected url recorded references: %#v", state.GetRetrievalChunks())
+	}
+}
+
+// TestToolBackedComponentAnySearchExtractRealCanvasRun compiles and runs a real
+// Begin -> AnySearchExtract workflow. It proves that the url reaches a
+// standalone tool node, both when it is a direct workflow input and when it is
+// a field declared on the Begin node, and that the page and its reference land
+// in the run state.
+func TestToolBackedComponentAnySearchExtractRealCanvasRun(t *testing.T) {
+	cases := []struct {
+		name        string
+		beginParams map[string]any
+		input       map[string]any
+		wantURL     string
+	}{
+		{
+			name:        "direct workflow input",
+			beginParams: map[string]any{},
+			input:       map[string]any{"query": "unrelated chat text", "url": "https://example.com/direct"},
+			wantURL:     "https://example.com/direct",
+		},
+		{
+			name:        "field declared on the Begin node",
+			beginParams: map[string]any{"inputs": map[string]any{"url": map[string]any{"name": "URL", "type": "line"}}},
+			input:       map[string]any{"query": map[string]any{"url": "https://example.com/from-begin"}},
+			wantURL:     "https://example.com/from-begin",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fixture := newAnySearchExtractFixture(t)
+			extract := agenttool.NewAnySearchExtractToolWith(fixture.helper, "")
+			factory := func(name string, params map[string]any) (runtime.Component, error) {
+				if name == "AnySearchExtract" {
+					return &ToolBackedComponent{name: name, tool: extract, spec: extract.ComponentSpec()}, nil
+				}
+				return New(name, params)
+			}
+			c := &canvas.Canvas{
+				Components: map[string]canvas.CanvasComponent{
+					"begin_0": {
+						Obj:        canvas.CanvasComponentObj{ComponentName: "Begin", Params: tc.beginParams},
+						Downstream: []string{"extract_0"},
+					},
+					"extract_0": {
+						Obj: canvas.CanvasComponentObj{ComponentName: "AnySearchExtract", Params: map[string]any{
+							"api_key": "",
+							"url":     "",
+							"outputs": map[string]any{"formalized_content": map[string]any{}, "json": map[string]any{}},
+						}},
+						Upstream: []string{"begin_0"},
+					},
+				},
+				Path: []string{"begin_0", "extract_0"},
+			}
+
+			state := runtime.NewCanvasState("run-extract-canvas", "task-extract-canvas")
+			ctx := runtime.WithState(canvas.WithComponentFactory(t.Context(), factory), state)
+			compiled, err := canvas.Compile(ctx, c)
+			if err != nil {
+				t.Fatalf("Compile: %v", err)
+			}
+			if _, err = compiled.Workflow.Invoke(ctx, tc.input); err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+
+			if n := fixture.requests.Load(); n != 1 {
+				t.Fatalf("%d upstream requests, want exactly 1", n)
+			}
+			if sent := fixture.sentURL(); sent != tc.wantURL {
+				t.Fatalf("the tool node extracted %q, want the workflow url %q", sent, tc.wantURL)
+			}
+			page, err := state.GetVar("extract_0@json")
+			if err != nil {
+				t.Fatalf("extract_0@json: %v", err)
+			}
+			if object, ok := page.(map[string]any); !ok || object["title"] != "Example Domain" || object["url"] != tc.wantURL {
+				t.Fatalf("extract_0@json = %#v, want the extracted page", page)
+			}
+			rendered, err := state.GetVar("extract_0@formalized_content")
+			if err != nil || !strings.Contains(rendered.(string), "URL: "+tc.wantURL) {
+				t.Fatalf("extract_0@formalized_content = %#v, %v", rendered, err)
+			}
+			if chunks := state.GetRetrievalChunks(); len(chunks) != 1 || chunks[0]["document_name"] != "Example Domain" {
+				t.Fatalf("recorded references = %#v", chunks)
+			}
+		})
 	}
 }
 

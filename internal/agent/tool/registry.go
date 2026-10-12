@@ -34,6 +34,7 @@ type Factory func(params map[string]any) (einotool.BaseTool, error)
 var registry = map[string]Factory{
 	"akshare":                    buildAkShareTool,
 	"anysearch_discover":         buildAnySearchDiscoverTool,
+	"anysearch_extract":          buildAnySearchExtractTool,
 	"anysearch_search":           buildAnySearchTool,
 	"arxiv":                      buildArxivTool,
 	"bgpt":                       buildBGPTTool,
@@ -83,6 +84,7 @@ var registry = map[string]Factory{
 // snake_case names for several tools.
 var canvasToolNames = map[string]string{
 	"anysearchdiscover": "anysearch_discover",
+	"anysearchextract":  "anysearch_extract",
 	"anysearchsearch":   "anysearch_search",
 	"codeexec":          "code_exec",
 	"googlescholar":     "google_scholar",
@@ -893,6 +895,22 @@ func buildAnySearchDiscoverTool(params map[string]any) (einotool.BaseTool, error
 		return nil, err
 	}
 	return NewAnySearchDiscoverToolWith(nil, apiKey), nil
+}
+
+func buildAnySearchExtractTool(params map[string]any) (einotool.BaseTool, error) {
+	apiKey, err := anySearchAPIKeyParam(params, anySearchExtractToolName)
+	if err != nil {
+		return nil, err
+	}
+	defaultURL := ""
+	if value, ok := params["url"]; ok && value != nil {
+		var valid bool
+		defaultURL, valid = value.(string)
+		if !valid {
+			return nil, fmt.Errorf("agent tool: tool %q requires string node-level param url", anySearchExtractToolName)
+		}
+	}
+	return newAnySearchExtractTool(nil, apiKey, defaultURL), nil
 }
 
 func buildWikipediaTool(params map[string]any) (einotool.BaseTool, error) {
