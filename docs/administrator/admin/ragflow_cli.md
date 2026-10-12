@@ -110,7 +110,7 @@ Avoid passing a real password with `--password`: command-line arguments can be v
 | `-u`, `--user <email>`        | Administrator email address.                                                                          |
 | `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
 | `-k`, `--key <path>`          | RSA public key file used to encrypt passwords sent to the Admin Service.                               |
-| `-o`, `--output <format>`     | Admin command responses are displayed in table format.                                                |
+| `-o`, `--output <format>`     | Output format: `table` (default), `plain`, or `json`.                                                  |
 | `-v`, `--verbose`             | Enable verbose output.                                                                                |
 
 ## Commands
