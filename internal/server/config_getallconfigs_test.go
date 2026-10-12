@@ -18,15 +18,58 @@ package server
 
 import (
 	"fmt"
+	"github.com/spf13/viper"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
+	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestPrintAllOmitsPasswords(t *testing.T) {
+	oldViper, oldLogger := globalViper, common.Logger
+	t.Cleanup(func() {
+		globalViper, common.Logger = oldViper, oldLogger
+	})
+	globalViper = viper.New()
+	globalViper.SetConfigType("yaml")
+	if err := globalViper.ReadConfig(strings.NewReader(`
+password: test-only-root-password
+os: {hosts: search.example, username: admin, password: test-only-search-password}
+backends:
+  - config: {password: test-only-nested-password, enabled: true}
+password_policy: strict
+`)); err != nil {
+		t.Fatal(err)
+	}
+	original := fmt.Sprint(globalViper.AllSettings())
+	core, logs := observer.New(zapcore.InfoLevel)
+	common.Logger = zap.New(core)
+	PrintAll()
+
+	settings := make(map[string]any)
+	for _, entry := range logs.FilterMessage("config").All() {
+		fields := entry.ContextMap()
+		settings[fields["key"].(string)] = fields["value"]
+	}
+	want := map[string]any{
+		"os": map[string]any{"hosts": "search.example", "username": "admin"},
+		"backends": []any{
+			map[string]any{"config": map[string]any{"enabled": true}},
+		},
+		"password_policy": "strict",
+	}
+	if !reflect.DeepEqual(settings, want) {
+		t.Fatalf("logged settings = %#v, want %#v", settings, want)
+	}
+	if fmt.Sprint(globalViper.AllSettings()) != original {
+		t.Fatal("logging mutated the loaded configuration")
+	}
+}
 
 // TestGetAllConfigsKvrocksCacheEngine reproduces Finding 1: when the Go stack is
 // configured with `cache_engine: kvrocks`, GetAllConfigs must export the Kvrocks
