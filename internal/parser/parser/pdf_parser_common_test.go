@@ -505,7 +505,7 @@ func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
 func TestIsPDFParseMethod(t *testing.T) {
 	named := []string{
 		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
-		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
+		"monkeyocr", "monkeyocrv2", "docling", "opendataloader", "tcadp parser",
 		"paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -537,6 +537,7 @@ func TestIsPDFParseMethod(t *testing.T) {
 func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 	suffixed := []string{
 		"foo@mineru", "@mineru",
+		"foo@monkeyocr", "@monkeyocr",
 		"foo@monkeyocrv2", "@monkeyocrv2",
 		"foo@paddleocr", "@paddleocr",
 		"foo@somark", "@somark",
@@ -558,9 +559,9 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 //
 //   - "" (the unset sentinel) is accepted by the parser as the default
 //     method but has no spelling, so IsPDFParseMethod("") stays false;
-//   - "monkeyocrv2" is dispatched by the ingestion vision dispatcher
-//     before PDFParser runs, so it is a recognized method without being
-//     executable by the parser switch itself.
+//   - "monkeyocr" and "monkeyocrv2" are dispatched by the ingestion vision
+//     dispatcher before PDFParser runs, so they are recognized methods
+//     without being executable by the parser switch itself.
 //
 // Any other difference means one table was updated without the other: a
 // spelling whose canonical token is not executable dies in
@@ -568,10 +569,11 @@ func TestIsPDFParseMethodLayoutSuffixes(t *testing.T) {
 // misclassified as a VLM model name by Check and the dispatcher (the
 // "Plain Text" bug class).
 func TestPDFParseMethodTablesAgree(t *testing.T) {
-	const (
-		unsetSentinel     = ""
-		dispatcherHandled = "monkeyocrv2"
-	)
+	const unsetSentinel = ""
+	dispatcherHandled := map[string]bool{
+		"monkeyocr":   true,
+		"monkeyocrv2": true,
+	}
 	reachable := make(map[string]bool, len(pdfParseMethodSpellings))
 	for spelling, canonical := range pdfParseMethodSpellings {
 		if canonical == unsetSentinel {
@@ -579,12 +581,12 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 			continue
 		}
 		reachable[canonical] = true
-		if canonical == dispatcherHandled {
+		if dispatcherHandled[canonical] {
 			continue
 		}
 		if _, ok := supportedPDFParseMethods[canonical]; !ok {
-			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like %q",
-				spelling, canonical, canonical, dispatcherHandled)
+			t.Errorf("spelling %q maps to canonical %q, which supportedPDFParseMethods cannot execute; add %q to that set, or handle it in the ingestion dispatcher like monkeyocr/monkeyocrv2",
+				spelling, canonical, canonical)
 		}
 	}
 	for supported := range supportedPDFParseMethods {
@@ -593,8 +595,10 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 		}
 		t.Errorf("supportedPDFParseMethods contains %q that no spelling maps to; without a spelling, Check() and the vision dispatcher route it to the VLM path", supported)
 	}
-	if !IsPDFParseMethod(dispatcherHandled) {
-		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
+	for method := range dispatcherHandled {
+		if !IsPDFParseMethod(method) {
+			t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", method)
+		}
 	}
 }
 
