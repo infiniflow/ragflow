@@ -19,9 +19,11 @@ import (
 	"runtime"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	pdfpos "ragflow/internal/deepdoc/parser/pdf/type"
@@ -118,8 +120,12 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 	}
 
 	out := make([]schema.ChunkDoc, len(chunks))
-	sem := make(chan struct{}, cropConcurrency())
-	var wg sync.WaitGroup
+	type cropTask struct {
+		index     int
+		chunk     schema.ChunkDoc
+		positions []pdfpos.Position
+	}
+	var tasks []cropTask
 	for i := range chunks {
 		ck := chunks[i]
 		out[i] = ck
@@ -153,17 +159,32 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		if len(positions) == 0 {
 			continue
 		}
+		tasks = append(tasks, cropTask{index: i, chunk: ck, positions: positions})
+	}
+	if len(tasks) == 0 {
+		return out
+	}
+
+	total := int64(len(tasks))
+	var settled atomic.Int64
+	sem := make(chan struct{}, cropConcurrency())
+	var wg sync.WaitGroup
+	for _, task := range tasks {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(i int, ck schema.ChunkDoc, positions []pdfpos.Position) {
+		go func(t cropTask) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			defer func() {
+				done := settled.Add(1)
+				agentruntime.ReportComponentFraction(ctx, float64(done)/float64(total))
+			}()
 			if err := ctx.Err(); err != nil {
 				return
 			}
-			single := make(map[int]image.Image, len(positions))
-			acquired := make([]int, 0, len(positions))
-			for _, pos := range positions {
+			single := make(map[int]image.Image, len(t.positions))
+			acquired := make([]int, 0, len(t.positions))
+			for _, pos := range t.positions {
 				for _, pn := range pos.PageNumbers {
 					if _, ok := single[pn]; ok {
 						continue
@@ -179,7 +200,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if len(single) == 0 {
 				return
 			}
-			img := util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+			img := util.CropSectionPositions(t.positions, single, deepdoctype.DlaScale)
 			// Release the page bitmaps now that cropping is done. They are no
 			// longer needed and may be evicted under the LRU cap; the image
 			// below is encoded from single and does not depend on the pages.
@@ -189,7 +210,7 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if img == "" {
 				return
 			}
-			out[i].Image = "data:image/png;base64," + img
+			out[t.index].Image = "data:image/png;base64," + img
 
 			// Stream the freshly cropped preview to object storage and drop
 			// the in-memory base64 immediately, instead of carrying every
@@ -214,11 +235,11 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					// positions, so reading the canonical text here does not
 					// alter the cropped image or the chunker's later output
 					// text.
-					chunkID := canonicalChunkID(docID, out[i])
+					chunkID := canonicalChunkID(docID, out[t.index])
 					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, raw); uerr == nil {
-						out[i].ImgID = imgID
-						out[i].Image = ""
-						out[i].ID = chunkID
+						out[t.index].ImgID = imgID
+						out[t.index].Image = ""
+						out[t.index].ID = chunkID
 					} else {
 						// Note: the document text is intentionally NOT logged
 						// here (CWE-532). The upload is retried at the persist
@@ -228,9 +249,12 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 					}
 				}
 			}
-		}(i, ck, positions)
+		}(task)
 	}
 	wg.Wait()
+	if ctx.Err() == nil {
+		agentruntime.ReportComponentFraction(ctx, 1.0)
+	}
 	return out
 }
 

@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -166,7 +167,13 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	vision visionSettings,
+	window ...fractionWindow,
 ) (parser.ParseResult, bool, error) {
+	var w fractionWindow
+	if len(window) > 0 {
+		w = window[0]
+	}
+
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
@@ -249,6 +256,8 @@ func maybeDispatchVisionEnhancement(
 	failures := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
+	var settled atomic.Int64
+	total := int64(len(items))
 	for slot, itemIdx := range items {
 		if err := ctx.Err(); err != nil {
 			break
@@ -318,6 +327,8 @@ func maybeDispatchVisionEnhancement(
 		}
 		if resource == nil {
 			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
@@ -325,12 +336,18 @@ func maybeDispatchVisionEnhancement(
 				failures[slot] = "image payload is invalid or exceeds configured limits"
 			}
 			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
 			continue
 		}
 		wg.Add(1)
 		go func(slot int, imageData string) {
 			defer wg.Done()
 			defer releaseSlot()
+			defer func() {
+				n := settled.Add(1)
+				w.report(ctx, float64(n)/float64(total))
+			}()
 
 			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
@@ -352,6 +369,7 @@ func maybeDispatchVisionEnhancement(
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
+	w.report(ctx, 1.0)
 	failedItems := 0
 	firstFailure := ""
 	for _, failure := range failures {
