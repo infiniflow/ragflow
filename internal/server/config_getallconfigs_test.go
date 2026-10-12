@@ -30,7 +30,7 @@ import (
 	"testing"
 )
 
-func TestPrintAllMasksPasswords(t *testing.T) {
+func TestPrintAllMasksCredentials(t *testing.T) {
 	oldViper, oldLogger := globalViper, common.Logger
 	t.Cleanup(func() {
 		globalViper, common.Logger = oldViper, oldLogger
@@ -40,13 +40,24 @@ func TestPrintAllMasksPasswords(t *testing.T) {
 	if err := globalViper.ReadConfig(strings.NewReader(`
 password: test-only-root-password
 os: {hosts: search.example, username: admin, password: test-only-search-password}
+mcp: {host_api_key: test-only-mcp-key}
 backends:
   - config: {password: test-only-nested-password, enabled: true}
   - password: ""
   - password: null
 password_policy: strict
+disable_password_login: true
+max_token: 64
 `)); err != nil {
 		t.Fatal(err)
+	}
+	wantCredentials := make(map[string]any)
+	for _, key := range []string{
+		"mail_password", "secret", "secret_key", "client_secret", "api_key",
+		"host_api_key", "http_secret_key", "access_key", "secret_id", "session_token", "sas_token",
+	} {
+		globalViper.Set("credentials."+key, "test-only-credential")
+		wantCredentials[key] = "******"
 	}
 	original := fmt.Sprint(globalViper.AllSettings())
 	core, logs := observer.New(zapcore.InfoLevel)
@@ -61,12 +72,16 @@ password_policy: strict
 	want := map[string]any{
 		"password": "******",
 		"os":       map[string]any{"hosts": "search.example", "username": "admin", "password": "******"},
+		"mcp":      map[string]any{"host_api_key": "******"},
 		"backends": []any{
 			map[string]any{"config": map[string]any{"password": "******", "enabled": true}},
 			map[string]any{"password": "******"},
 			map[string]any{"password": "******"},
 		},
-		"password_policy": "strict",
+		"credentials":            wantCredentials,
+		"password_policy":        "strict",
+		"disable_password_login": true,
+		"max_token":              int64(64),
 	}
 	if !reflect.DeepEqual(settings, want) {
 		t.Fatalf("logged settings = %#v, want %#v", settings, want)

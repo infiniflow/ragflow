@@ -276,18 +276,29 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	return allConfigs, nil
 }
 
-// PrintAll logs all configuration settings with passwords masked.
+var sensitiveConfigKeys = map[string]struct{}{
+	"password":        {},
+	"mail_password":   {},
+	"secret":          {},
+	"secret_key":      {},
+	"client_secret":   {},
+	"api_key":         {},
+	"host_api_key":    {},
+	"http_secret_key": {},
+	"access_key":      {},
+	"secret_id":       {},
+	"session_token":   {},
+	"sas_token":       {},
+}
+
+// PrintAll logs all configuration settings with credentials masked.
 func PrintAll() {
 	if globalViper == nil {
 		common.Info("Configuration not initialized")
 		return
 	}
 
-	allSettings := maskConfigPasswords(globalViper.AllSettings()).(map[string]any)
-	// The standalone MCP key grants every self-host client the same identity.
-	if mcp, ok := allSettings["mcp"].(map[string]interface{}); ok {
-		delete(mcp, "host_api_key")
-	}
+	allSettings := maskConfigCredentials(globalViper.AllSettings()).(map[string]any)
 	common.Info("=== All Configurations ===")
 	for key, value := range allSettings {
 		common.Info("config", zap.String("key", key), zap.Any("value", value))
@@ -295,22 +306,22 @@ func PrintAll() {
 	common.Info("=== End Configurations ===")
 }
 
-func maskConfigPasswords(value any) any {
+func maskConfigCredentials(value any) any {
 	switch value := value.(type) {
 	case map[string]any:
 		settings := make(map[string]any, len(value))
 		for key, child := range value {
-			if strings.EqualFold(key, "password") {
+			if _, sensitive := sensitiveConfigKeys[strings.ToLower(key)]; sensitive {
 				settings[key] = "******"
 				continue
 			}
-			settings[key] = maskConfigPasswords(child)
+			settings[key] = maskConfigCredentials(child)
 		}
 		return settings
 	case []any:
 		settings := make([]any, len(value))
 		for i, child := range value {
-			settings[i] = maskConfigPasswords(child)
+			settings[i] = maskConfigCredentials(child)
 		}
 		return settings
 	default:
