@@ -206,7 +206,6 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
    ```
 
 3. 서비스를 빌드합니다:

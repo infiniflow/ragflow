@@ -269,7 +269,6 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
    ```
 
    下載腳本準備構建所需的靜態庫和模型資源，並需要 `requests` 和 `huggingface-hub`。如果已通過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。

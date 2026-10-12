@@ -262,7 +262,6 @@ For document-engine changes, configuration updates, restarting services, and ret
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
    ```
 
    The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.

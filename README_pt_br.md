@@ -156,7 +156,21 @@ O Docker é indicado para avaliação rápida, testes de integração e produç�
 
 #### 🚀 Iniciar o servidor
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+1. Se você usa Elasticsearch, defina `vm.max_map_count` como pelo menos `262144` no host Docker antes de iniciar o Compose. Com Infinity, normalmente essa etapa não é necessária:
+
+   > Para verificar o valor atual de `vm.max_map_count`:
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > Se o valor for inferior a `262144`, redefina-o:
+   >
+   > ```bash
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > Essa alteração será perdida após a reinicialização do sistema. Para mantê-la, adicione `vm.max_map_count=262144` a **/etc/sysctl.conf**.
 
 2. `git clone https://github.com/infiniflow/ragflow.git`
 
@@ -202,7 +216,6 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
    python3 -m venv /tmp/ragflow-go-download-venv
    /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
    /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
    ```
 
 3. Compile os serviços:
