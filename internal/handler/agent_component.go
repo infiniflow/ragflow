@@ -208,11 +208,23 @@ func (h *AgentHandler) DebugComponent(c *gin.Context) {
 	// tables (e.g. AgentComponent) can find the API key in single-
 	// component debug mode. Mirrors Python's @add_tenant_id_to_kwargs
 	// decorator for the debug endpoint.
+	//
+	// Also seed cpnID@param inputs into state.Outputs so a single-component
+	// debug can resolve the {{cpn@param}} references its prompt/template
+	// declares (e.g. Agent reading an upstream Retrieval's
+	// formalized_content) without running the upstream components. Split on
+	// the first '@' because cpn IDs may contain ':' but never '@'; SetVar
+	// nests any dotted tail the same way getVarLocked reads it back.
 	debugState := canvas.NewCanvasState("debug-"+componentID, "debug-task")
 	debugState.Sys["tenant_id"] = user.ID
 	for key, value := range inputs {
-		if strings.HasPrefix(key, "sys.") && key != "sys.tenant_id" {
+		switch {
+		case strings.HasPrefix(key, "sys.") && key != "sys.tenant_id":
 			debugState.Sys[strings.TrimPrefix(key, "sys.")] = value
+		case strings.Contains(key, "@"):
+			if idx := strings.Index(key, "@"); idx > 0 && idx < len(key)-1 {
+				debugState.SetVar(key[:idx], key[idx+1:], value)
+			}
 		}
 	}
 	invokeCtx := runtime.WithState(c.Request.Context(), debugState)
