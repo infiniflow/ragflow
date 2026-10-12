@@ -464,21 +464,13 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 
 	var pollRangeStart *time.Time
 	var totalDocsIndexed int64
-	if taskType == connectorTaskTypeSync {
-		var latest entity.SyncLogs
-		err := tx.WithContext(ctx).Where("connector_id = ? AND kb_id = ? AND task_type = ? AND status = ?", connectorID, kbID, taskType, string(entity.TaskStatusDone)).
-			Order("update_time DESC").
-			First(&latest).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+	if taskType == connectorTaskTypeSync && !reindex {
+		cursor, indexed, err := nextSyncPollRangeStart(ctx, tx, connectorID, kbID)
+		if err != nil {
 			return "", err
 		}
-		if err == nil {
-			totalDocsIndexed = latest.TotalDocsIndexed
-			if latest.PollRangeEnd != nil {
-				pollRangeEnd := latest.PollRangeEnd.Time()
-				pollRangeStart = &pollRangeEnd
-			}
-		}
+		pollRangeStart = cursor
+		totalDocsIndexed = indexed
 	}
 
 	fromBeginning := "0"
@@ -499,6 +491,80 @@ func scheduleConnectorTask(ctx context.Context, tx *gorm.DB, connectorID, kbID, 
 		ErrorMsg:         "",
 		TotalDocsIndexed: totalDocsIndexed,
 	}).Error
+}
+
+// nextSyncPollRangeStart keeps a failed sync from pulling the whole source again.
+// Progress already stored on the latest sync row wins. A failed row that committed
+// nothing keeps the window it was given. An explicit full reindex with no progress
+// starts over. Otherwise the newest successful sync is the fallback.
+func nextSyncPollRangeStart(ctx context.Context, tx *gorm.DB, connectorID, kbID string) (*time.Time, int64, error) {
+	latest, err := latestSyncLog(ctx, tx, connectorID, kbID, "")
+	if err != nil {
+		return nil, 0, err
+	}
+	if latest != nil {
+		if cursor := syncResumeCursor(latest); cursor != nil || failedFullReindexWithoutProgress(latest) {
+			return cursor, latest.TotalDocsIndexed, nil
+		}
+	}
+	done, err := latestSyncLog(ctx, tx, connectorID, kbID, string(entity.TaskStatusDone))
+	if err != nil {
+		return nil, 0, err
+	}
+	if done == nil {
+		return nil, 0, nil
+	}
+	return syncResumeCursor(done), done.TotalDocsIndexed, nil
+}
+
+func latestSyncLog(ctx context.Context, tx *gorm.DB, connectorID, kbID, status string) (*entity.SyncLogs, error) {
+	query := tx.WithContext(ctx).Where("connector_id = ? AND kb_id = ? AND task_type = ?", connectorID, kbID, connectorTaskTypeSync)
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	var task entity.SyncLogs
+	err := query.Order("update_time DESC").First(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func syncResumeCursor(task *entity.SyncLogs) *time.Time {
+	if task == nil {
+		return nil
+	}
+	if task.PollRangeEnd != nil {
+		end := task.PollRangeEnd.Time()
+		return &end
+	}
+	if fromBeginning(task) {
+		return nil
+	}
+	if task.PollRangeStart != nil {
+		start := task.PollRangeStart.Time()
+		return &start
+	}
+	return nil
+}
+
+func failedFullReindexWithoutProgress(task *entity.SyncLogs) bool {
+	return task != nil && fromBeginning(task) && task.PollRangeEnd == nil
+}
+
+func fromBeginning(task *entity.SyncLogs) bool {
+	if task == nil || task.FromBeginning == nil {
+		return false
+	}
+	switch *task.FromBeginning {
+	case "1", "true", "TRUE":
+		return true
+	default:
+		return false
+	}
 }
 
 func connectorConfigBool(config map[string]interface{}, key string) bool {
