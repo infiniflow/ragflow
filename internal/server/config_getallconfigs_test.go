@@ -30,7 +30,7 @@ import (
 	"testing"
 )
 
-func TestPrintAllOmitsPasswords(t *testing.T) {
+func TestPrintAllMasksPasswords(t *testing.T) {
 	oldViper, oldLogger := globalViper, common.Logger
 	t.Cleanup(func() {
 		globalViper, common.Logger = oldViper, oldLogger
@@ -42,6 +42,8 @@ password: test-only-root-password
 os: {hosts: search.example, username: admin, password: test-only-search-password}
 backends:
   - config: {password: test-only-nested-password, enabled: true}
+  - password: ""
+  - password: null
 password_policy: strict
 `)); err != nil {
 		t.Fatal(err)
@@ -57,9 +59,12 @@ password_policy: strict
 		settings[fields["key"].(string)] = fields["value"]
 	}
 	want := map[string]any{
-		"os": map[string]any{"hosts": "search.example", "username": "admin"},
+		"password": "******",
+		"os":       map[string]any{"hosts": "search.example", "username": "admin", "password": "******"},
 		"backends": []any{
-			map[string]any{"config": map[string]any{"enabled": true}},
+			map[string]any{"config": map[string]any{"password": "******", "enabled": true}},
+			map[string]any{"password": "******"},
+			map[string]any{"password": "******"},
 		},
 		"password_policy": "strict",
 	}

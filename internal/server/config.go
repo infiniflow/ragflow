@@ -276,14 +276,14 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 	return allConfigs, nil
 }
 
-// PrintAll logs all configuration settings except passwords.
+// PrintAll logs all configuration settings with passwords masked.
 func PrintAll() {
 	if globalViper == nil {
 		common.Info("Configuration not initialized")
 		return
 	}
 
-	allSettings := omitConfigPasswords(globalViper.AllSettings()).(map[string]any)
+	allSettings := maskConfigPasswords(globalViper.AllSettings()).(map[string]any)
 	// The standalone MCP key grants every self-host client the same identity.
 	if mcp, ok := allSettings["mcp"].(map[string]interface{}); ok {
 		delete(mcp, "host_api_key")
@@ -295,21 +295,22 @@ func PrintAll() {
 	common.Info("=== End Configurations ===")
 }
 
-func omitConfigPasswords(value any) any {
+func maskConfigPasswords(value any) any {
 	switch value := value.(type) {
 	case map[string]any:
 		settings := make(map[string]any, len(value))
 		for key, child := range value {
 			if strings.EqualFold(key, "password") {
+				settings[key] = "******"
 				continue
 			}
-			settings[key] = omitConfigPasswords(child)
+			settings[key] = maskConfigPasswords(child)
 		}
 		return settings
 	case []any:
 		settings := make([]any, len(value))
 		for i, child := range value {
-			settings[i] = omitConfigPasswords(child)
+			settings[i] = maskConfigPasswords(child)
 		}
 		return settings
 	default:
