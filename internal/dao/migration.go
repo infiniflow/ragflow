@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"regexp"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -661,6 +662,7 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 			definition: "datetime",
 		},
 	}
+	specs = append(specs, tenantModelIDColumnSpecs()...)
 
 	for _, spec := range specs {
 		if err := applyColumnSpec(ctx, db, spec); err != nil {
@@ -669,6 +671,45 @@ func modifyColumnTypes(ctx context.Context, db *gorm.DB) error {
 	}
 
 	return nil
+}
+
+// tenantModelIDColumnSpecs projects tenantModelIDFields into column specs for
+// the tenant model id columns. These columns were once declared *int64, so a
+// database built by one of those releases holds them as bigint and the daily
+// cast back to varchar(32) is what lets AutoMigrate succeed at all. Sharing
+// tenantModelIDFields keeps this list and the backfill reading one inventory.
+func tenantModelIDColumnSpecs() []columnSpec {
+	tables := tenantModelIDFieldTables()
+
+	total := 0
+	for _, table := range tables {
+		total += len(tenantModelIDFields[table])
+	}
+
+	specs := make([]columnSpec, 0, total)
+	for _, table := range tables {
+		for _, field := range tenantModelIDFields[table] {
+			specs = append(specs, columnSpec{
+				table:      table,
+				column:     field.tenantIDColumn,
+				columnType: "varchar(32)", nullable: true,
+				definition: "varchar(32)",
+				keepLength: 32,
+			})
+		}
+	}
+	return specs
+}
+
+// tenantModelIDFieldTables lists the tables carrying tenant model id columns in
+// a stable order, so both the spec builder and anything reporting on them agree.
+func tenantModelIDFieldTables() []string {
+	tables := make([]string, 0, len(tenantModelIDFields))
+	for table := range tenantModelIDFields {
+		tables = append(tables, table)
+	}
+	sort.Strings(tables)
+	return tables
 }
 
 // renameColumnIfExists renames a column if it exists and the new column doesn't exist
@@ -968,6 +1009,7 @@ type columnSpec struct {
 	columnType string // compared against INFORMATION_SCHEMA.COLUMNS.COLUMN_TYPE
 	nullable   bool
 	definition string // used verbatim when an ALTER is required
+	keepLength int    // when non-zero, values wider or narrower than this are orphaned by the type change and reset to NULL
 }
 
 // applyColumnSpec aligns a column with its expected definition, issuing DDL only
@@ -1001,6 +1043,49 @@ func applyColumnSpec(ctx context.Context, db *gorm.DB, spec columnSpec) error {
 			zap.String("table", spec.table),
 			zap.String("column", spec.column),
 			zap.Error(err))
+		return nil
 	}
+	discardOrphanedColumnValues(ctx, db, spec)
 	return nil
+}
+
+// discardOrphanedColumnValues clears values that the type change in spec leaves
+// behind. This exists because a successful MODIFY says nothing about whether
+// the surviving values are still meaningful: an int column converted to a
+// hex-id column keeps "3", which every reader treats as an unresolved model
+// reference rather than as the unset value it has become.
+//
+// LENGTH() is NULL on NULL rows and NULL <> any number is not true, so rows
+// already unset are never counted or rewritten.
+func discardOrphanedColumnValues(ctx context.Context, db *gorm.DB, spec columnSpec) {
+	if spec.keepLength <= 0 {
+		return
+	}
+
+	stale := fmt.Sprintf("SELECT COUNT(1) FROM %s WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.keepLength)
+	var count int64
+	if err := db.WithContext(ctx).Raw(stale).Scan(&count).Error; err != nil {
+		common.Warn("Failed to count orphaned values",
+			zap.String("table", spec.table),
+			zap.String("column", spec.column),
+			zap.Error(err))
+		return
+	}
+	if count == 0 {
+		return
+	}
+
+	common.Info("Discarding orphaned values from converted column",
+		zap.String("table", spec.table),
+		zap.String("column", spec.column),
+		zap.Int64("count", count))
+	result := db.WithContext(ctx).Exec(
+		fmt.Sprintf("UPDATE %s SET %s = NULL WHERE LENGTH(%s) <> %d", spec.table, spec.column, spec.column, spec.keepLength),
+	)
+	if result.Error != nil {
+		common.Warn("Failed to discard orphaned values",
+			zap.String("table", spec.table),
+			zap.String("column", spec.column),
+			zap.Error(result.Error))
+	}
 }

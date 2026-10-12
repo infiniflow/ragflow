@@ -46,7 +46,6 @@ After clicking **Add File** in the upper-right corner of the page, select **Uplo
 3. Click the **Upload Folder** area and select a local folder. The system will upload the files inside that folder.
 4. After the upload is complete, check the result in the current directory or the corresponding folder.
 
-![Upload file 2](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_file_2.jpg)
+![Upload folder](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/upload_folder.jpg)
 
 The upload process displays progress. If an upload failure message appears, check the file size, network connection, login status, and whether the file format is allowed by the current deployment.
-

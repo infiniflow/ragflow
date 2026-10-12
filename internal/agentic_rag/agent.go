@@ -396,6 +396,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
 	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
+	// Runner assigns IDs to input messages before persisting them. Exclude
+	// these from recovery so a failed turn cannot reuse a historical answer.
+	inputMessageIDs := make(map[string]bool, len(runMessages))
+	for _, msg := range runMessages {
+		inputMessageIDs[adk.GetMessageID(msg)] = true
+	}
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
@@ -406,7 +412,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// that tripped the cooldown).
 	if final == "" || runErr != nil {
 		if carried := sess.explorer.lastAssistant(ctx, func(m *schema.Message) bool {
-			return strings.TrimSpace(m.Content) != ""
+			return !inputMessageIDs[adk.GetMessageID(m)] && strings.TrimSpace(m.Content) != ""
 		}); carried != "" {
 			final = carried
 			runErr = nil
