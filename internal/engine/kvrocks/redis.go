@@ -814,17 +814,20 @@ func (r *Client) QueueInfo(ctx context.Context, queue, groupName string) (map[st
 	return nil, nil
 }
 
-// DeleteIfEqual deletes key if its value equals expected value (atomic)
-func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) bool {
-	if r.client == nil {
-		return false
+// deleteIfEqual deletes key if its value equals expected value atomically.
+func (r *Client) deleteIfEqual(ctx context.Context, key, expectedValue string) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
 	}
-	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Result()
+	if r.luaDeleteIfEqual == nil {
+		return false, errors.New("kvrocks delete-if-equal script is not initialized")
+	}
+	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Int64()
 	if err != nil {
-		common.Warn("Redis DeleteIfEqual error", zap.Error(err))
-		return false
+		common.Warn("Redis DeleteIfEqual error", zap.String("key", key), zap.Error(err))
+		return false, fmt.Errorf("delete key %q if value matches: %w", key, err)
 	}
-	return result.(int64) == 1
+	return result == 1, nil
 }
 
 // Delete deletes a key
@@ -896,8 +899,10 @@ func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
 	if l == nil || l.client == nil {
 		return false, errors.New("distributed lock client is not initialized")
 	}
-	// Delete if stale
-	l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	// Remove a lock left by this owner before trying to acquire it again.
+	if _, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue); err != nil {
+		return false, err
+	}
 	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
 }
 
@@ -922,10 +927,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 
 // Release releases the lock
 func (l *DistributedLock) Release(ctx context.Context) bool {
-	if l.client == nil {
+	if l == nil || l.client == nil {
 		return false
 	}
-	return l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	released, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue)
+	return err == nil && released
 }
 
 // TokenBucket token bucket rate limiter

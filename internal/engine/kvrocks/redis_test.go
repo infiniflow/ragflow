@@ -114,6 +114,33 @@ func TestDistributedLockSpinAcquireReturnsTransportError(t *testing.T) {
 	}
 }
 
+func TestDistributedLockAcquireReturnsCleanupError(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	r.luaDeleteIfEqual = redis.NewScript(`return redis.error_reply("cleanup failed")`)
+	lock := &DistributedLock{
+		client:    r,
+		lockKey:   "lock:document",
+		lockValue: "owner-1",
+		timeout:   time.Minute,
+	}
+
+	acquired, err := lock.Acquire(t.Context())
+	if err == nil {
+		t.Fatal("Acquire error = nil, want cleanup error")
+	}
+	if acquired {
+		t.Fatal("Acquire acquired = true on cleanup failure, want false")
+	}
+
+	exists, err := r.client.Exists(t.Context(), lock.lockKey).Result()
+	if err != nil {
+		t.Fatalf("check lock key after cleanup failure: %v", err)
+	}
+	if exists != 0 {
+		t.Fatal("Acquire attempted SetNX after cleanup failure")
+	}
+}
+
 // TestEvalTokenBucketStrict_AllowedThenDenied walks the bucket through
 // capacity=2, rate=0.1 (slow refill). Two calls should be allowed; the
 // third should be denied. This is the happy-path security gate.
