@@ -26,7 +26,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -255,7 +254,7 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	conv := &entity.ChatSession{
-		ID:        utility.GenerateUUID(),
+		ID:        common.GenerateUUID(),
 		DialogID:  chatID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -1412,6 +1411,10 @@ func (s *ChatSessionService) ChatCompletions(
 						s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 					}
 				}
+				if result.AnswerIsAuthoritative {
+					fullAnswer.Reset()
+					fullAnswer.WriteString(result.Answer)
+				}
 			}
 			if legacy {
 				if result.Final {
@@ -1659,7 +1662,7 @@ func (s *ChatSessionService) normalizeCompletionMessages(
 	message := requestMsg[len(requestMsg)-1]
 	messageID, _ = message["id"].(string)
 	if messageID == "" {
-		messageID = utility.GenerateToken()
+		messageID = common.GenerateToken()
 		message["id"] = messageID
 	}
 	return requestMsg, messageID, nil
@@ -1717,7 +1720,7 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 		UserID:    &userID,
 		Reference: refJSON,
 	}
-	session.ID = utility.GenerateUUID()
+	session.ID = common.GenerateUUID()
 	if err := s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		return nil, err
 	}

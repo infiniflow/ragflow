@@ -50,6 +50,12 @@ func TestValidateParserID_RejectsUnknown(t *testing.T) {
 
 // --- validateDatasetAvatar ---
 
+func TestValidateDatasetAvatar_Empty(t *testing.T) {
+	if err := validateDatasetAvatar(""); err != nil {
+		t.Fatalf("expected nil for empty avatar (clear signal), got %v", err)
+	}
+}
+
 func TestValidateDatasetAvatar_MissingPrefix(t *testing.T) {
 	err := validateDatasetAvatar("iVBORw0KGgo=")
 	if err == nil {

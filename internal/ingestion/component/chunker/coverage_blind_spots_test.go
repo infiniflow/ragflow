@@ -175,7 +175,12 @@ func TestGeneralChunkerKeepsHeaderOnlySheetsSeparate(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want one header-only chunk per sheet", chunks)
 	}
-	if chunks[0]["text"] != segOne["text"] || chunks[1]["text"] != segTwo["text"] {
-		t.Fatalf("header-only chunks = %#v", chunks)
+	// Header-only segments carry no data rows; the chunk keeps a plain-text
+	// body derived from the structured TableData (caption + header cells).
+	if got, _ := chunks[0]["text"].(string); got == "" || !strings.Contains(got, "Name") {
+		t.Fatalf("header-only chunk 0 lost content: %#v", chunks[0])
+	}
+	if got, _ := chunks[1]["text"].(string); got == "" || !strings.Contains(got, "Amount") {
+		t.Fatalf("header-only chunk 1 lost content: %#v", chunks[1])
 	}
 }

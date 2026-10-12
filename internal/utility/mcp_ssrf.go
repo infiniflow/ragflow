@@ -19,6 +19,7 @@ package utility
 import (
 	"net/url"
 	"ragflow/internal/common"
+	"ragflow/internal/server"
 	"strings"
 )
 
@@ -34,8 +35,9 @@ import (
 // AssertMCPURLSafeSameOrigin so a malicious server cannot redirect POSTs to an
 // unrelated internal host.
 func AssertMCPURLSafe(rawURL string) (hostname, resolvedIP string, err error) {
+	globalConfig := server.GetConfig()
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
-	if err == nil || !mcpPrivateHostsAllowed() {
+	if err == nil || !globalConfig.GetMCPAllowPrivateHosts() {
 		return hostname, resolvedIP, err
 	}
 	strictErr := err
@@ -64,7 +66,8 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string) (hostname, resolvedIP 
 	if err == nil {
 		return hostname, resolvedIP, nil
 	}
-	if !mcpPrivateHostsAllowed() {
+	globalConfig := server.GetConfig()
+	if !globalConfig.GetMCPAllowPrivateHosts() {
 		return "", "", err
 	}
 	origin, perr := url.Parse(strings.TrimSpace(originURL))
@@ -79,11 +82,4 @@ func AssertMCPURLSafeSameOrigin(rawURL, originURL string) (hostname, resolvedIP 
 		return "", "", err
 	}
 	return AssertMCPURLSafe(rawURL)
-}
-
-// mcpPrivateHostsAllowed reports whether RAGFLOW_MCP_ALLOW_PRIVATE_HOSTS is
-// enabled (true/1/yes, case-insensitive).
-func mcpPrivateHostsAllowed() bool {
-	v := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvMCPAllowPrivateHosts)))
-	return v == "true" || v == "1" || v == "yes"
 }

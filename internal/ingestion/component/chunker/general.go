@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/tableutil"
 )
 
 const ComponentNameGeneralChunker = "GeneralChunker"
@@ -500,10 +501,14 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 	case "text":
 		return doc.Text, true
 	case "table":
-		if !hasSpreadsheetIdentity(doc) || !isTableStrictHTML(doc.Text) {
+		if !hasSpreadsheetIdentity(doc) {
 			return "", false
 		}
-		rows, headerCount := tableRowsWithHeader(doc.Text)
+		td := tableDataOf(doc)
+		if td == nil {
+			return "", false
+		}
+		rows, headerCount := td.Rows, td.HeaderRows
 		lines := make([]string, 0, len(rows)-headerCount)
 		for _, row := range rows[headerCount:] {
 			cells := make([]string, 0, len(row))
@@ -897,7 +902,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
-		if itemDocType(unit) == "table" && isTableStrictHTML(unit.Text) {
+		if itemDocType(unit) == "table" && tableDataOf(unit) != nil {
 			chunks = append(chunks, c.splitSpreadsheetTable(unit)...)
 			continue
 		}
@@ -922,7 +927,11 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 // and deferred the header; a segment now passes through whole unless the
 // budget forces a cut, and the header repeats in every part.
 func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []schema.ChunkDoc {
-	parts, ranges, headerRows := splitLargeHTMLTable(unit.Text, c.param.ChunkTokenSize, tokenizeStr)
+	td := tableDataOf(unit)
+	if td == nil {
+		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+	}
+	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr)
 	if ranges == nil {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
@@ -934,9 +943,8 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 			matrix = nil
 		}
 	}
-	// The matrix carries one five-field tuple per <tr>; the splitter cut those
-	// same rows, so its last range end is the total data-row count — no second
-	// full parse of the markup is needed to compare lengths.
+	// The matrix carries one five-field tuple per row; the splitter cut those
+	// same rows, so its last range end is the total data-row count.
 	aligned := false
 	if len(ranges) > 0 {
 		if expected := headerRows + ranges[len(ranges)-1][1]; expected > 0 && len(matrix) == expected {
@@ -952,7 +960,11 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
-		piece.Text = part
+		// Text carries a plain-text rendering (no markup) for the rare embed
+		// path without a downstream TableChunker; the structured TableData is
+		// the authoritative content for chunkers that read it.
+		piece.Text = tableutil.RenderTableText(&part)
+		piece.TableData = &part
 		piece.Positions = nil
 		lo := headerRows + ranges[i][0]
 		hi := headerRows + ranges[i][1]

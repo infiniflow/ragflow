@@ -4,7 +4,7 @@ import { Handle, HandleProps, Position } from '@xyflow/react';
 import { Plus, ChevronDown } from 'lucide-react';
 import { useMemo, type MouseEvent } from 'react';
 import { NodeHandleId } from '../../constant';
-import { HandleContext } from '../../context';
+import { HandleContext, useCanvasReadonly } from '../../context';
 import { useIsPipeline } from '../../hooks/use-is-pipeline';
 import useGraphStore from '../../store';
 import { useDropdownManager } from '../context';
@@ -22,6 +22,7 @@ export function CommonHandle({
     (state) => state,
   );
   const isPipeline = useIsPipeline();
+  const readOnly = useCanvasReadonly();
 
   let isConnectable = true;
 
@@ -48,7 +49,7 @@ export function CommonHandle({
     <HandleContext.Provider value={value}>
       <Handle
         {...props}
-        isConnectable={isConnectable}
+        isConnectable={isConnectable && !readOnly}
         className={cn(
           'inline-flex justify-center items-center !bg-accent-primary !border-none group-hover:!size-4 group-hover:!rounded-sm',
           className,
@@ -56,7 +57,10 @@ export function CommonHandle({
         onClick={(e) => {
           e.stopPropagation();
 
-          if (!isConnectable) {
+          // A read-only canvas never opens the next-step menu: the click
+          // handler is a custom add-node entry that nodesConnectable={false}
+          // does not cover.
+          if (readOnly || !isConnectable) {
             return;
           }
 
@@ -69,7 +73,7 @@ export function CommonHandle({
         }}
       >
         <Plus className="size-3 pointer-events-none text-white hidden group-hover:inline-block" />
-        {visible && (
+        {!readOnly && visible && (
           <NextStepDropdown
             nodeId={nodeId}
             hideModal={() => {

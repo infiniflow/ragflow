@@ -19,13 +19,10 @@ package dao
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/server"
@@ -40,8 +37,6 @@ import (
 )
 
 var DB *gorm.DB
-var modelProviderManager *models.ProviderManager
-var modelProviderManagerMu sync.Mutex
 
 // migrationAwareDialector hands out a namedIndexMigrator instead of the stock
 // one.
@@ -306,46 +301,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
-}
-
-// GetModelProviderManager get database instance
-func GetModelProviderManager() *models.ProviderManager {
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-
-	modelProviderManagerMu.Lock()
-	defer modelProviderManagerMu.Unlock()
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-	if existing := models.GetProviderManager(); existing != nil {
-		modelProviderManager = existing
-		return modelProviderManager
-	}
-	modelConfigDir, err := findModelConfigDir()
-	if err != nil {
-		common.Fatal("Failed to locate model providers", zap.Error(err))
-	}
-	if err = models.InitProviderManager(modelConfigDir); err != nil {
-		common.Fatal("Failed to load model providers", zap.Error(err))
-	}
-	modelProviderManager = models.GetProviderManager()
-	return modelProviderManager
-}
-
-func findModelConfigDir() (string, error) {
-	candidates := []string{
-		"conf/models",
-		filepath.Join("..", "..", "conf", "models"),
-		filepath.Join("..", "..", "..", "conf", "models"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors

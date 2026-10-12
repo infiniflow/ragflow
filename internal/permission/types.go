@@ -43,7 +43,9 @@ type Subject struct {
 type ResourceKind string
 
 const (
-	ResourceKindDataset ResourceKind = "dataset"
+	ResourceKindDataset      ResourceKind = "dataset"
+	ResourceKindCanvas       ResourceKind = "canvas"
+	ResourceKindAgentSession ResourceKind = "agent_session"
 )
 
 // ResourceRef identifies a persisted resource.
@@ -126,6 +128,7 @@ type Resource struct {
 	CreatedBy           string
 	OwnerUserID         string
 	Visibility          Visibility
+	TenantRequirement   TenantRequirement
 	OwnerOperations     []Operation
 	SharedWithUserIDs   []string
 	SharedWithTenantIDs []string

@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -237,6 +238,10 @@ func parseResultText(res parser.ParseResult) (string, error) {
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
 					parts = append(parts, text)
+					continue
+				}
+				if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+					parts = append(parts, tableutil.RenderTableHTML(td))
 					continue
 				}
 				raw, err := json.Marshal(item)

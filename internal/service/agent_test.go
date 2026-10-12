@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func TestBuildAgentMessageEventsThinkingProtocol(t *testing.T) {
@@ -887,7 +888,7 @@ func TestLoadCanvasForUser_StorageErrorWrap(t *testing.T) {
 
 	ctx := t.Context()
 	svc := NewAgentService()
-	_, err := svc.loadCanvasForUser(ctx, "user-1", "canvas-1")
+	_, err := svc.loadCanvasForUser(ctx, "user-1", "canvas-1", permission.OperationRead)
 	if err == nil {
 		t.Fatal("expected storage error from closed DB")
 	}
@@ -1045,6 +1046,129 @@ func TestGetAgentSessionServiceSuccess(t *testing.T) {
 	}
 	if session.DialogID != "canvas-1" {
 		t.Fatalf("expected dialog_id canvas-1, got %s", session.DialogID)
+	}
+}
+
+func TestCreateAgentSessionWritesLatestVersionTitle(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	now := time.Now()
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "version-old",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("owner_Test Agent_old"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+			UpdateTime: ptr(now.Add(-time.Hour).UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to create old version: %v", err)
+	}
+	if err := dao.DB.Create(&entity.UserCanvasVersion{
+		ID:           "version-newest",
+		UserCanvasID: "canvas-1",
+		Title:        sptr("owner_Test Agent_newest"),
+		BaseModel: entity.BaseModel{
+			CreateTime: ptr(now.UnixMilli()),
+			UpdateTime: ptr(now.UnixMilli()),
+		},
+	}).Error; err != nil {
+		t.Fatalf("failed to create newest version: %v", err)
+	}
+
+	ctx := t.Context()
+	svc := NewAgentService()
+	session, code, err := svc.CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+		Name:    "hello",
+	})
+	if err != nil {
+		t.Fatalf("CreateAgentSession failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if session.VersionTitle == nil {
+		t.Fatal("expected version_title to be set")
+	}
+	if *session.VersionTitle != "owner_Test Agent_newest" {
+		t.Fatalf("expected newest version title, got %q", *session.VersionTitle)
+	}
+
+	stored, err := dao.NewAPI4ConversationDAO().GetMetadataBySessionID(ctx, dao.DB, session.ID, "canvas-1")
+	if err != nil {
+		t.Fatalf("failed to reload session: %v", err)
+	}
+	if stored == nil || stored.VersionTitle == nil {
+		t.Fatalf("expected persisted version_title, got %+v", stored)
+	}
+	if *stored.VersionTitle != "owner_Test Agent_newest" {
+		t.Fatalf("expected persisted newest title, got %q", *stored.VersionTitle)
+	}
+
+	// The list surface used by the agent log page must expose it too.
+	resp, code, err := svc.ListAgentSessions(ctx, "user-1", "user-1", "canvas-1", ListAgentSessionsRequest{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("ListAgentSessions failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if len(resp.Data) != 1 {
+		t.Fatalf("expected 1 session, got %d", len(resp.Data))
+	}
+	listed, _ := resp.Data[0]["version_title"].(*string)
+	if listed == nil || *listed != "owner_Test Agent_newest" {
+		t.Fatalf("expected list version_title newest, got %v", resp.Data[0]["version_title"])
+	}
+}
+
+func TestCreateAgentSessionNoVersionLeavesTitleNil(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	ctx := t.Context()
+	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+	})
+	if err != nil {
+		t.Fatalf("CreateAgentSession failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %d, got %d", common.CodeSuccess, code)
+	}
+	if session.VersionTitle != nil {
+		t.Fatalf("expected nil version_title, got %q", *session.VersionTitle)
+	}
+}
+
+func TestCreateAgentSessionVersionLookupErrorReturnsServerError(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+
+	createAgentSessionTestCanvas(t, "canvas-1", "user-1")
+
+	if err := dao.DB.Exec("DROP TABLE user_canvas_version").Error; err != nil {
+		t.Fatalf("failed to drop user_canvas_version: %v", err)
+	}
+
+	ctx := t.Context()
+	session, code, err := NewAgentService().CreateAgentSession(ctx, &CreateAgentSessionRequest{
+		UserID:  "user-1",
+		AgentID: "canvas-1",
+	})
+	if err == nil {
+		t.Fatal("expected version lookup error")
+	}
+	if code != common.CodeServerError {
+		t.Fatalf("expected code %d, got %d", common.CodeServerError, code)
+	}
+	if session != nil {
+		t.Fatalf("expected nil session, got %+v", session)
 	}
 }
 
@@ -1607,7 +1731,7 @@ func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentTeamMemberPermissionAndOwnerTitleChecks(t *testing.T) {
+func TestUpdateAgentTeamMemberCanUpdateAndShareCanvas(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	ctx := t.Context()
 
@@ -1653,17 +1777,24 @@ func TestUpdateAgentTeamMemberPermissionAndOwnerTitleChecks(t *testing.T) {
 		t.Fatalf("UpdateAgent with same permission failed: %v", err)
 	}
 
-	nextPermission := "me"
-	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
-		"permission": nextPermission,
-	}); err == nil {
-		t.Fatal("UpdateAgent permission change error = nil, want error")
-	}
-
 	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
 		"title": "Owner Duplicate",
 	}); err == nil || err.Error() != "Owner Duplicate already exists." {
 		t.Fatalf("UpdateAgent duplicate title error = %v, want Owner Duplicate already exists.", err)
+	}
+
+	nextPermission := "me"
+	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
+		"permission": nextPermission,
+	}); err != nil {
+		t.Fatalf("UpdateAgent permission change failed: %v", err)
+	}
+	var canvas entity.UserCanvas
+	if err := dao.DB.WithContext(ctx).Where("id = ?", "canvas-team-edit").Take(&canvas).Error; err != nil {
+		t.Fatalf("reload canvas: %v", err)
+	}
+	if canvas.Permission != nextPermission {
+		t.Fatalf("canvas permission = %q, want %q", canvas.Permission, nextPermission)
 	}
 }
 
@@ -2554,9 +2685,6 @@ func TestOpenAICompatPriorHistoryPreservesConversation(t *testing.T) {
 	}
 }
 
-// Shared-agent readonly rule: deleting a session is a write, so only the
-// canvas owner or the session's creator may do it. Team members who can
-// read the shared agent see its sessions readonly.
 func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sessionID, sessionOwner string) {
 	t.Helper()
 	if err := dao.DB.Create(&entity.UserCanvas{
@@ -2580,27 +2708,27 @@ func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sess
 	createAgentSessionTestConversation(t, sessionID, "canvas-1", sessionOwner, 1000)
 }
 
-func TestDeleteAgentSessionItem_SharedSessionReadonlyForTeammate(t *testing.T) {
+func TestDeleteAgentSessionItem_SharedCanvasGrantsDeleteAccess(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "owner-1")
 
 	deleted, code, err := NewAgentService().DeleteAgentSessionItem(t.Context(), "user-1", "canvas-1", "session-1")
-	if err == nil || err.Error() != "shared session is readonly" {
-		t.Fatalf("err=%v", err)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
 	}
-	if code != common.CodeAuthenticationError {
+	if code != common.CodeSuccess {
 		t.Fatalf("code=%v", code)
 	}
-	if deleted {
-		t.Fatal("shared session must not be deleted by a team member")
+	if !deleted {
+		t.Fatal("team member with access to the shared canvas should be able to delete its session")
 	}
 
 	var count int64
 	if err = dao.DB.Model(&entity.API4Conversation{}).Where("id = ?", "session-1").Count(&count).Error; err != nil {
 		t.Fatalf("failed to count session: %v", err)
 	}
-	if count != 1 {
-		t.Fatalf("session should remain, count=%d", count)
+	if count != 0 {
+		t.Fatalf("session should be deleted, count=%d", count)
 	}
 }
 
