@@ -1083,7 +1083,11 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 				content = grounded
 				groundingStatus = "applied"
 			} else if gErr != nil {
-				if ctx.Err() != nil || runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx) {
+				// Fatal only when the parent context itself is dead.
+				// A transient model failure in the grounding call must
+				// not discard the agent's completed answer; return it
+				// without citation tags instead.
+				if ctx.Err() != nil {
 					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
 				}
 				groundingStatus = "error: " + gErr.Error()
