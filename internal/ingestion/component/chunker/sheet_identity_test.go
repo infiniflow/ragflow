@@ -122,3 +122,67 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 		}
 	}
 }
+
+func TestQAChunkerSheetNameOnlyPreservesSourceRows(t *testing.T) {
+	book := excelize.NewFile()
+	defer book.Close()
+	for cell, value := range map[string]string{"A1": "question", "B1": "answer", "A42": "source question", "B42": "source answer"} {
+		if err := book.SetCellValue("Sheet1", cell, value); err != nil {
+			t.Fatal(err)
+		}
+	}
+	data, err := book.WriteToBuffer()
+	if err != nil {
+		t.Fatal(err)
+	}
+	xlsx, err := parser.NewXLSXParser("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed := xlsx.ParseWithResult(t.Context(), "rows.xlsx", data.Bytes())
+	if parsed.Err != nil {
+		t.Fatal(parsed.Err)
+	}
+	if len(parsed.JSON) != 1 {
+		t.Fatalf("parser items=%d, want 1", len(parsed.JSON))
+	}
+	// Keep real parser selections, but exercise the supported name-only identity.
+	delete(parsed.JSON[0], "sheet_index")
+	comp, err := NewQAChunker(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := comp.Invoke(t.Context(), nil, map[string]any{"name": "rows.xlsx", "output_format": parsed.OutputFormat, "json": parsed.JSON})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := indexdoc.NormalizeChunks(out)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks=%d, want 2", len(chunks))
+	}
+	for i, row := range []int{1, 42} {
+		chunk := chunks[i]
+		if chunk["sheet"] != "Sheet1" {
+			t.Fatalf("sheet=%v, want Sheet1", chunk["sheet"])
+		}
+		if _, ok := chunk["sheet_index"]; ok {
+			t.Fatal("name-only identity acquired sheet_index")
+		}
+		wantTop := []any{float64(row - 1)}
+		if !reflect.DeepEqual(chunk["top_int"], wantTop) {
+			t.Errorf("chunk %d row=%v, want %v", i, chunk["top_int"], wantTop)
+		}
+		if want := [][]float64{{1, float64(row), float64(row), 1, 2}}; !reflect.DeepEqual(chunk["positions"], want) {
+			t.Errorf("chunk %d selection=%v, want %v", i, chunk["positions"], want)
+		}
+		if _, err = indexdoc.ProcessChunksForPipeline([]map[string]any{chunk}, "doc", "rows.xlsx", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+		if !reflect.DeepEqual(chunk["top_int"], wantTop) || !reflect.DeepEqual(chunk["position_int"], [][]int{{1, row, row, 1, 2}}) {
+			t.Errorf("chunk %d indexed row/selection=%v", i, chunk)
+		}
+		if _, ok := chunk["page_num_int"]; ok {
+			t.Fatal("sheet interpreted as PDF")
+		}
+	}
+}

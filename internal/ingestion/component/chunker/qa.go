@@ -435,7 +435,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			rows = td.Rows
 		}
 		if len(rows) > 0 {
-			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
+			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
 		} else {
 			tmp = extractQAText(txt)
 		}
