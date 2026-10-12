@@ -2294,6 +2294,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		messageEventsEmitted := runtime.AgentMessageEventsEmittedRun(ctx2)
 		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
 		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
+		contentEventsEmitted := runtime.AgentContentEventsEmittedRun(ctx2)
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -2317,7 +2318,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					)
 				}
 				if answer != "" && shouldEmitMessage {
-					if !messageEventsEmitted {
+					if !contentEventsEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 					}
 
@@ -2337,7 +2338,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 						fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
 					)
 				}
-				if !messageEventsEmitted && shouldEmitMessage {
+				if !contentEventsEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 				}
 
@@ -2391,7 +2392,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			// and the client cannot tell an exhausted-rounds or provider
 			// failure from a slow answer. Client disconnects are harmless:
 			// the emit just has no consumer.
-			if answer == "" && !messageEventsEmitted && shouldEmitMessage {
+			if answer == "" && !contentEventsEmitted && shouldEmitMessage {
 				failureText := agentRunFailureText(err)
 				emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
@@ -2409,7 +2410,6 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// user knows the request did not succeed silently. Use content-only
 		// check: thinking-only emissions (reasoning without a final answer)
 		// must not suppress this fallback.
-		contentEventsEmitted := runtime.AgentContentEventsEmittedRun(ctx2)
 		if strings.TrimSpace(answer) == "" && !contentEventsEmitted {
 			answer = "Ospravedlňujem sa, nepodarilo sa mi zostaviť odpoveď. Skúste otázku zopakovať alebo ju preformulovať."
 		}
@@ -2425,7 +2425,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
 			)
 		}
-		if !messageEventsEmitted && shouldEmitMessage {
+		if !contentEventsEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
 
