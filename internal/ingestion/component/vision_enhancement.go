@@ -248,6 +248,11 @@ func maybeDispatchVisionEnhancement(
 		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
 		return dispatched, false, nil
 	}
+	// Close is invoked explicitly after materialization so the engine and the
+	// source bytes are released while model requests are still in flight. Keep
+	// a deferred Close as a panic/early-return safety net: Close is idempotent
+	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
+	defer cropper.Close()
 	modified := false
 	descriptions := make([]string, len(items))
 	failures := make([]string, len(items))

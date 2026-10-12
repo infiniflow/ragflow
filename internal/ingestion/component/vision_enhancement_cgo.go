@@ -96,6 +96,26 @@ func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]a
 	}, nil
 }
 
+// pdfSourcePositions returns the cropped positions when item requires the
+// source PDF: no inlined image but usable PDF positions. Prepare and Crop
+// share this predicate so a future condition change cannot make Prepare skip a
+// fetch that Crop then performs under image admission, silently reintroducing
+// the admission block.
+func pdfSourcePositions(item map[string]any) ([]deepdoctype.Position, bool) {
+	if img, _ := item["image"].(string); img != "" {
+		return nil, false
+	}
+	matrix, ok := parser.ExtractPDFPositions(item)
+	if !ok {
+		return nil, false
+	}
+	positions := util.PositionsFromMatrix(matrix)
+	if len(positions) == 0 {
+		return nil, false
+	}
+	return positions, true
+}
+
 func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -105,12 +125,8 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if img, _ := item["image"].(string); img != "" {
 		return materializeInlineVisionImage(img)
 	}
-	matrix, ok := parser.ExtractPDFPositions(item)
+	positions, ok := pdfSourcePositions(item)
 	if !ok {
-		return nil, nil
-	}
-	positions := util.PositionsFromMatrix(matrix)
-	if len(positions) == 0 {
 		return nil, nil
 	}
 	if err := c.ensureEngine(); err != nil {
@@ -170,11 +186,7 @@ func (c *visionPDFCropper) Prepare(ctx context.Context, item map[string]any) err
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	if img, _ := item["image"].(string); img != "" {
-		return nil
-	}
-	matrix, ok := parser.ExtractPDFPositions(item)
-	if !ok || len(util.PositionsFromMatrix(matrix)) == 0 {
+	if _, ok := pdfSourcePositions(item); !ok {
 		return nil
 	}
 	if err := c.ensureEngine(); err != nil {
