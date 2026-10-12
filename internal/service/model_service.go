@@ -90,9 +90,7 @@ type CheckConnectionModelInfo struct {
 }
 
 type CheckConnectionRequest struct {
-	// APIKey may be a JSON string or a JSON object (credential bundles such
-	// as XunFei Spark's); the handler normalizes it to a string before use.
-	APIKey     json.RawMessage            `json:"api_key"`
+	APIKey     string                     `json:"api_key"`
 	Region     string                     `json:"region"`
 	BaseURL    string                     `json:"base_url"`
 	InstanceID string                     `json:"instance_id"`
@@ -1334,6 +1332,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	if permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner) == nil {
 		_ = m.ensureMineruFromEnv(ctx, tenantID)
 		_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
+		_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 		_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 		_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 	}
@@ -1613,6 +1612,19 @@ func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, ten
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
 }
 
+// ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	apiserver, _ := config[common.EnvMonkeyOCRAPIServer].(string)
+	if strings.TrimSpace(apiserver) == "" {
+		return nil
+	}
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+}
+
 // Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
@@ -1654,6 +1666,20 @@ var (
 	monkeyOCRv2DefaultConfig = map[string]interface{}{
 		common.EnvMonkeyOCRv2ServerURL: "",
 		common.EnvMonkeyOCRv2Timeout:   600,
+	}
+	monkeyOCREnvKeys = []string{
+		common.EnvMonkeyOCRAPIServer,
+		common.EnvMonkeyOCROutputDir,
+		common.EnvMonkeyOCRServerURL,
+		common.EnvMonkeyOCRBackend,
+		common.EnvMonkeyOCRDeleteOutput,
+	}
+	monkeyOCRDefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRAPIServer:    "",
+		common.EnvMonkeyOCROutputDir:    "",
+		common.EnvMonkeyOCRServerURL:    "",
+		common.EnvMonkeyOCRBackend:      "vlm-engine",
+		common.EnvMonkeyOCRDeleteOutput: 1,
 	}
 )
 

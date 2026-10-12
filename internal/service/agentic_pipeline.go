@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -112,6 +113,25 @@ func (s *ChatPipelineService) agenticRag(
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
 		}
+		docIDs := s.chatMetadataDocIDs(runCtx, chat, lastUserQuestion(messages), chain[0], nil, chatDatasetIDs(chat))
+		modelType := "chat"
+		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+			modelType = "image2text"
+		}
+		agentMessages := s.convertMessagesToEino(runCtx, userID, modelType, messages)
+		// Image-bearing turns cannot fail over to a text-only model.
+		for _, msg := range agentMessages {
+			if len(msg.UserInputMultiContent) > 0 {
+				visionChain := chain[:0]
+				for _, candidate := range chain {
+					if info := candidate.Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+						visionChain = append(visionChain, candidate)
+					}
+				}
+				chain = visionChain
+				break
+			}
+		}
 
 		// Apply the dialog's LLM settings with per-request overrides exactly
 		// like the regular AsyncChat path does, then let the template pin its
@@ -157,17 +177,20 @@ func (s *ChatPipelineService) agenticRag(
 		// StartToThink marker is emitted once and EndToThink fires when the
 		// agent's final answer arrives.
 		thinking := false
+		var reasoning strings.Builder
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
 			Model:          model,
 			SynthModel:     synth,
-			Messages:       convertMessagesToEino(messages),
+			Messages:       agentMessages,
 			TemplateID:     mode,
 			TenantID:       chat.TenantID,
 			DatasetIDs:     chatDatasetIDs(chat),
+			DocIDs:         docIDs,
 			Stream:         stream,
 			ToolCallCounts: toolCounts,
 			ToolCallErrors: toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
+				reasoning.WriteString(thinkingDelta)
 				startToThink, endToThink := false, false
 				if thinkingDelta != "" {
 					if !thinking {
@@ -185,15 +208,15 @@ func (s *ChatPipelineService) agenticRag(
 				if startToThink {
 					emitResult(AsyncChatResult{Final: false, StartToThink: true})
 				}
+				if endToThink {
+					emitResult(AsyncChatResult{Final: false, EndToThink: true})
+				}
 				if contentDelta != "" || thinkingDelta != "" {
 					emitResult(AsyncChatResult{
 						Answer:    contentDelta,
 						Reasoning: thinkingDelta,
 						Final:     false,
 					})
-				}
-				if endToThink {
-					emitResult(AsyncChatResult{Final: false, EndToThink: true})
 				}
 			},
 		})
@@ -215,16 +238,17 @@ func (s *ChatPipelineService) agenticRag(
 		// payload, matching what the regular pipeline ships when quote is
 		// false. The answer text is still whatever the agent wrote.
 		answer := final
+		if reasoning.Len() > 0 {
+			answer = agentSessionMessageContent("\n\n"+final, reasoning.String())
+		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final, registry)
-		} else if len(agentic_rag.CitedIDsFromMarkers(final, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
-		// The agentic answer is the run's whole output — <think> stretch included
-		// — with its handles already compacted against `reference`, so the session
-		// writer must persist THIS text and not the streamed deltas, which still
-		// carry the raw handles the model emitted.
+		// Persist the same thinking and final answer the stream renders, with
+		// the final answer's citation handles compacted against its reference.
 		emitResult(AsyncChatResult{
 			Answer:                answer,
 			Reference:             reference,
@@ -346,16 +370,30 @@ func (s *ChatPipelineService) agenticWebSearch(promptConfig map[string]interface
 }
 
 // convertMessagesToEino converts pre-filtered user/assistant messages into
-// eino schema messages. Only string content is supported; multimodal parts are
-// not carried into the ReAct loop.
-func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message {
+// eino schema messages, resolving uploaded attachments throughout the history.
+func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
 		switch role {
 		case "user":
-			out = append(out, schema.UserMessage(content))
+			text, images := s.splitChatAttachments(ctx, userID, m["files"])
+			if text != "" {
+				content += "\n\n" + text
+			}
+			msg := schema.UserMessage(content)
+			images, _ = gateImageAttachments("", modelType, images)
+			if len(images) > 0 {
+				msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: content})
+				for _, uri := range images {
+					msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: new(uri)}},
+					})
+				}
+			}
+			out = append(out, msg)
 		case "assistant":
 			out = append(out, schema.AssistantMessage(content, nil))
 		default:

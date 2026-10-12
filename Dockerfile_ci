@@ -66,7 +66,6 @@ COPY --from=builder ${VIRTUAL_ENV} ${VIRTUAL_ENV}
 ENV PATH="${VIRTUAL_ENV}/bin:${PATH}"
 
 ENV PYTHONPATH=/ragflow/
-# copy entrypoint.sh and entrypoint-pasar.sh
 COPY docker/service_conf.yaml.template ./conf/service_conf.yaml.template
 COPY docker/entrypoint*.sh ./
 RUN chmod +x ./entrypoint*.sh

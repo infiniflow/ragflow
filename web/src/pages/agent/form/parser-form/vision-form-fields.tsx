@@ -4,6 +4,7 @@ import {
 } from '@/components/model-tree-select';
 import { RAGFlowFormItem } from '@/components/ragflow-form';
 import { Switch } from '@/components/ui/switch';
+import { Textarea } from '@/components/ui/textarea';
 import { ModelTypeToField } from '@/constants/llm';
 import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
 import { useCallback } from 'react';
@@ -42,10 +43,11 @@ function VisionEnhancementSwitch({
   return <Switch checked={!!enabled} onCheckedChange={handleCheckedChange} />;
 }
 
-// Global vision enhancement: one switch + img2txt model shared by every
-// vision-capable file type. The fields live at the form's top level
-// (`enable_vision_enhancement` and `vlm.llm_id`) alongside `setups`, matching
-// the backend Parser component's params contract.
+// Global vision enhancement: one switch + img2txt model + description prompt.
+// The fields live at the form's top level (`enable_vision_enhancement` and
+// `vlm.{llm_id, system_prompt}`) alongside `setups`, matching the backend Parser
+// component's params contract. Response language is not offered here on purpose:
+// it belongs to the knowledge base, which also drives tokenization.
 export function VisionEnhancementFormFields() {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
@@ -76,6 +78,15 @@ export function VisionEnhancementFormFields() {
           allowClear
           ownerTenantId={ownerTenantId}
         />
+      )}
+      {enabled && (
+        <RAGFlowFormItem
+          name="vlm.system_prompt"
+          label={t('flow.systemPrompt')}
+          tooltip={t('flow.visionEnhancementPromptTip')}
+        >
+          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
+        </RAGFlowFormItem>
       )}
     </>
   );

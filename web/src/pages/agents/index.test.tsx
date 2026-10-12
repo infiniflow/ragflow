@@ -35,6 +35,7 @@ jest.mock('@/hooks/logic-hooks/navigate-hooks', () => ({
   useNavigatePage: () => ({
     navigateToAgent: jest.fn(),
     navigateToAgentTemplates: jest.fn(),
+    navigateToBuiltinPipeline: jest.fn(() => jest.fn()),
   }),
 }));
 // Avoid loading routes.tsx (it builds a data router that needs the `Request`
