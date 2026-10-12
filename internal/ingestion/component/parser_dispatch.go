@@ -86,14 +86,9 @@ func withPDFSetup(setups map[string]schema.ParserSetup, pdf schema.ParserSetup) 
 }
 
 func isAutoPDFSetup(setup schema.ParserSetup) bool {
-	v := getStringOr(setup, "layout_recognizer", "")
-	if v == "" {
-		v = getStringOr(setup, "layout_recognize", "")
-	}
-	if v == "" {
-		v = getStringOr(setup, "parse_method", "")
-	}
-	return strings.EqualFold(strings.TrimSpace(v), "auto")
+	return isAutoLayoutRecognize(getStringOr(setup, parserConfigLayoutRecognizerKey, "")) ||
+		isAutoLayoutRecognize(getStringOr(setup, parserConfigLayoutRecognizeKey, "")) ||
+		isAutoLayoutRecognize(getStringOr(setup, parserConfigParseMethodKey, ""))
 }
 
 func resolveAutoPDFSetups(setups map[string]schema.ParserSetup, filename string, binary []byte) map[string]schema.ParserSetup {
@@ -113,11 +108,7 @@ func resolveAutoPDFSetups(setups map[string]schema.ParserSetup, filename string,
 		for k, v := range setup {
 			fallback[k] = v
 		}
-		fallback["layout_recognizer"] = "DeepDOC"
-		if strings.EqualFold(strings.TrimSpace(getStringOr(setup, "parse_method", "")), "auto") {
-			fallback["parse_method"] = "DeepDOC"
-		}
-		return withPDFSetup(setups, fallback)
+		return withPDFSetup(setups, applyChosenAutoPDFLayout(setup, "DeepDOC"))
 	}
 	if resolved == nil {
 		return setups

@@ -101,6 +101,12 @@ func TestIsAutoPDFSetup(t *testing.T) {
 	if !isAutoPDFSetup(schema.ParserSetup{"layout_recognize": "auto"}) {
 		t.Fatal("layout_recognize auto should match")
 	}
+	if !isAutoPDFSetup(schema.ParserSetup{
+		"layout_recognizer": "DeepDOC",
+		"parse_method":      "Auto",
+	}) {
+		t.Fatal("parse_method Auto should match even with leftover layout_recognizer")
+	}
 	if isAutoPDFSetup(schema.ParserSetup{"parse_method": "DeepDOC"}) {
 		t.Fatal("DeepDOC must not match Auto")
 	}

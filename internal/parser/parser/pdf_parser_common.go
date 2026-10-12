@@ -301,7 +301,6 @@ func (p *PDFParser) ConfigureFromSetup(setup map[string]any) {
 // persists for its plain-text option (ParseDocumentType.PlainText), so they
 // are parse methods rather than model names.
 var pdfParseMethodSpellings = map[string]string{
-	"auto":           "auto",
 	"deepdoc":        "deepdoc",
 	"plain_text":     "plain_text",
 	"plaintext":      "plain_text",
