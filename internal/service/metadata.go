@@ -117,9 +117,9 @@ func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID str
 	}, nil
 }
 
-// SearchMetadataByKBs searches each tenant's metadata store, with size as the
-// per-tenant limit and the KB filter scoped to that tenant.
-func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
+// SearchMetadataByKBs returns the metadata rows of every document of the
+// knowledge bases, reading each tenant's metadata store.
+func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
 		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
@@ -131,20 +131,40 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 
 	response := &SearchMetadataResponse{MetadataRecords: make([]map[string]interface{}, 0)}
 	for _, group := range groups {
-		searchReq := &types.SearchMetadataRequest{
-			TenantID: group.TenantID,
-			Limit:    size,
-			Filter: map[string]interface{}{
-				"kb_id": group.KBIDs,
-			},
-		}
-		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+		records, err := s.scanMetadata(ctx, group.TenantID, map[string]interface{}{"kb_id": group.KBIDs})
 		if err != nil {
 			return nil, fmt.Errorf("metadata search for tenant %s failed: %w", group.TenantID, err)
 		}
-		response.MetadataRecords = append(response.MetadataRecords, searchResult.MetadataRecords...)
+		response.MetadataRecords = append(response.MetadataRecords, records...)
 	}
 	return response, nil
+}
+
+// metadataScanPage is the page size of scanMetadata.
+const metadataScanPage = 5000
+
+// scanMetadata reads every metadata row of a tenant that matches filter, page
+// by page. The pages are sorted on id so an engine can page past its result
+// window: Elasticsearch walks offsets past index.max_result_window with
+// search_after, which needs a sort.
+func (s *MetadataService) scanMetadata(ctx context.Context, tenantID string, filter map[string]interface{}) ([]map[string]interface{}, error) {
+	records := []map[string]interface{}{}
+	for offset := 0; ; offset += metadataScanPage {
+		searchResult, err := s.docEngine.SearchMetadata(ctx, &types.SearchMetadataRequest{
+			TenantID: tenantID,
+			Offset:   offset,
+			Limit:    metadataScanPage,
+			Filter:   filter,
+			OrderBy:  (&types.OrderByExpr{}).Asc("id"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		records = append(records, searchResult.MetadataRecords...)
+		if len(searchResult.MetadataRecords) < metadataScanPage {
+			return records, nil
+		}
+	}
 }
 
 // MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
@@ -214,8 +234,7 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 		return make(common.MetaData), nil
 	}
 
-	// Get metadata for all docs in KBs (use large limit like Python's 10000)
-	result, err := s.SearchMetadataByKBs(ctx, kbIDs, 10000)
+	result, err := s.SearchMetadataByKBs(ctx, kbIDs)
 	if err != nil {
 		return nil, err
 	}
