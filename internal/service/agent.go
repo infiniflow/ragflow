@@ -2258,8 +2258,8 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 		}
 		referencePayload := agentRunReferencePayload(c, state, legacyReference)
-		assistantOutput := terminalCanvasOutput(c, state, workflowOutput, runStartedAt)
-		thinking := agentRunThinking(state, assistantOutput, runStartedAt)
+		assistantID, assistantOutput := selectTerminalCanvasOutput(c, state, workflowOutput, runStartedAt)
+		thinking := agentRunThinking(c, state, assistantID, assistantOutput, runStartedAt)
 		// The selected Message owns the answer, including empty text when it
 		// intentionally selected attachments only.
 		answer, _ := assistantOutput["content"].(string)
@@ -2687,6 +2687,18 @@ func terminalCanvasOutput(
 	workflowOutput map[string]any,
 	runStartedAt time.Time,
 ) map[string]any {
+	_, output := selectTerminalCanvasOutput(c, state, workflowOutput, runStartedAt)
+	return output
+}
+
+// selectTerminalCanvasOutput is terminalCanvasOutput that also returns the ID
+// of the component whose output was selected ("" when none was).
+func selectTerminalCanvasOutput(
+	c *canvas.Canvas,
+	state *canvas.CanvasState,
+	workflowOutput map[string]any,
+	runStartedAt time.Time,
+) (string, map[string]any) {
 	terminalIDs := make([]string, 0)
 	messageIDs := make([]string, 0)
 	if c != nil {
@@ -2708,7 +2720,7 @@ func terminalCanvasOutput(
 	sort.Strings(messageIDs)
 	for _, cpnID := range terminalIDs {
 		if output, ok := workflowOutput[cpnID].(map[string]any); ok && len(output) > 0 {
-			return cloneCanvasOutput(output)
+			return cpnID, cloneCanvasOutput(output)
 		}
 	}
 	if state != nil {
@@ -2718,71 +2730,108 @@ func terminalCanvasOutput(
 				created, _ := output["_created_time"].(string)
 				createdAt, err := time.Parse(time.RFC3339Nano, created)
 				if err == nil && !createdAt.Before(runStartedAt) {
-					return cloneCanvasOutput(output)
+					return cpnID, cloneCanvasOutput(output)
 				}
 			}
 		}
 		// A Message may have emitted a prompt before the next node paused.
 		// Persist that partial answer, but never replay an earlier turn.
 		var partial map[string]any
+		var partialID string
 		latest := runStartedAt
 		for _, cpnID := range messageIDs {
 			output := snapshot[cpnID]
 			created, _ := output["_created_time"].(string)
 			createdAt, err := time.Parse(time.RFC3339Nano, created)
 			if err == nil && !createdAt.Before(latest) {
-				partial, latest = output, createdAt
+				partialID, partial, latest = cpnID, output, createdAt
 			}
 		}
 		if partial != nil {
-			return cloneCanvasOutput(partial)
+			return partialID, cloneCanvasOutput(partial)
 		}
 	}
-	return map[string]any{}
+	return "", map[string]any{}
 }
 
 // agentRunThinking picks the reasoning saved with the run's answer. Message
 // outputs normally carry no thinking, so use the selected output's own
-// thinking when present, otherwise the most recently started node of this run
-// that produced thinking (the node feeding the final answer). Buckets are
-// walked in sorted order so the result never depends on map iteration.
-func agentRunThinking(state *canvas.CanvasState, assistantOutput map[string]any, runStartedAt time.Time) string {
+// thinking when present. Otherwise use the thinking of the most recently
+// started node of this run that is upstream of the selected output, so a node
+// on a parallel branch is never saved with this answer. That node's thinking
+// is kept even when empty; an earlier node's thinking is not substituted.
+// Candidates are walked in sorted order so the result never depends on map
+// iteration.
+func agentRunThinking(
+	c *canvas.Canvas,
+	state *canvas.CanvasState,
+	selectedID string,
+	assistantOutput map[string]any,
+	runStartedAt time.Time,
+) string {
 	if v, ok := assistantOutput["thinking"].(string); ok && v != "" {
 		return v
 	}
-	if state == nil {
+	if c == nil || state == nil || selectedID == "" {
 		return ""
 	}
-	snapshot := state.Snapshot()
-	ids := make([]string, 0, len(snapshot))
-	for cpnID := range snapshot {
+	ancestors := canvasUpstreamIDs(c, selectedID)
+	ids := make([]string, 0, len(ancestors))
+	for cpnID := range ancestors {
 		ids = append(ids, cpnID)
 	}
 	sort.Strings(ids)
-	var latestThinking, untimedThinking string
+	snapshot := state.Snapshot()
+	var thinking, untimedThinking string
+	found, untimedFound := false, false
 	latest := runStartedAt
 	for _, cpnID := range ids {
-		bucket := snapshot[cpnID]
-		v, ok := bucket["thinking"].(string)
-		if !ok || v == "" {
+		v, ok := snapshot[cpnID]["thinking"].(string)
+		if !ok {
 			continue
 		}
-		created, _ := bucket["_created_time"].(string)
+		created, _ := snapshot[cpnID]["_created_time"].(string)
 		createdAt, err := time.Parse(time.RFC3339Nano, created)
 		if err != nil {
-			if untimedThinking == "" {
-				untimedThinking = v
+			if !untimedFound && v != "" {
+				untimedThinking, untimedFound = v, true
 			}
 			continue
 		}
 		if !createdAt.Before(latest) {
-			latestThinking, latest = v, createdAt
+			thinking, latest, found = v, createdAt, true
 		}
 	}
-	if latestThinking != "" {
-		return latestThinking
+	if found {
+		return thinking
 	}
 	return untimedThinking
+}
+
+// canvasUpstreamIDs returns every component that can reach target through
+// Downstream (or Upstream) edges, excluding target itself.
+func canvasUpstreamIDs(c *canvas.Canvas, target string) map[string]struct{} {
+	parents := make(map[string][]string)
+	for cpnID, component := range c.Components {
+		for _, down := range component.Downstream {
+			parents[down] = append(parents[down], cpnID)
+		}
+		parents[cpnID] = append(parents[cpnID], component.Upstream...)
+	}
+	seen := make(map[string]struct{})
+	queue := []string{target}
+	for len(queue) > 0 {
+		cur := queue[0]
+		queue = queue[1:]
+		for _, parent := range parents[cur] {
+			if _, ok := seen[parent]; ok || parent == target {
+				continue
+			}
+			seen[parent] = struct{}{}
+			queue = append(queue, parent)
+		}
+	}
+	return seen
 }
 
 func cloneCanvasOutput(input map[string]any) map[string]any {
