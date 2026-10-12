@@ -76,7 +76,7 @@ services:
   infinity:
     profiles:
       - infinity
-    image: infiniflow/infinity:v0.7.3-x64-v3
+    image: infiniflow/infinity:v0.7.4-x64-v3
     volumes:
       - infinity_data:/var/infinity
       - ./infinity_conf.toml:/infinity_conf.toml
@@ -273,7 +273,7 @@ services:
       timeout: 10s
       retries: 120
     restart: unless-stopped
-  
+
   vastbase:
     profiles:
       - vastbase
