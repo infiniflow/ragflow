@@ -17,11 +17,16 @@
 package common
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 )
 
 func ToInt(v any) (int, bool) {
+	if v == nil {
+		return 0, true
+	}
+
 	switch n := v.(type) {
 	case int:
 		return n, true
@@ -42,6 +47,50 @@ func ToInt(v any) (int, bool) {
 		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
 			return i, true
 		}
+	}
+	return 0, false
+}
+
+func ToIntNum(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case float64:
+		return int(n), true
+	}
+	return 0, false
+}
+
+func ToFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, true
+	case float32:
+		return float64(x), true
+	case int:
+		return float64(x), true
+	case int32:
+		return float64(x), true
+	case int64:
+		return float64(x), true
+	case json.Number:
+		f, err := x.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	case string:
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
+		if err != nil {
+			return 0, false
+		}
+		return f, true
 	}
 	return 0, false
 }
