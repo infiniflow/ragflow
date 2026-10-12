@@ -72,8 +72,8 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 					}
 					cells = append(cells, cellInput{
 						Text:    cellText(c),
-						ColSpan: attrInt(c, "colspan"),
-						RowSpan: attrInt(c, "rowspan"),
+						ColSpan: attrInt(c, "colspan", maxColSpan),
+						RowSpan: attrInt(c, "rowspan", maxRowSpan),
 					})
 				}
 			}
@@ -288,15 +288,29 @@ func nextCoveredCol(m map[int]origin, col int) int {
 	return next
 }
 
+// maxColSpan and maxRowSpan are the HTML standard's own limits: browsers
+// clamp a colspan above 1000 and a rowspan above 65534, so the grid must
+// apply the same limits. Without an upper bound a malformed or hostile
+// attribute (e.g. colspan="100000000") would reach buildGrid and drive a
+// multi-gigabyte allocation (row capacity, covered-slot insertion) inside
+// the ingestion worker.
+const (
+	maxColSpan = 1000
+	maxRowSpan = 65534
+)
+
 // attrInt reads a non-negative integer HTML attribute, clamping 0, negative,
-// and non-numeric values to 1 so a malformed colspan/rowspan never produces a
-// huge or negative grid.
-func attrInt(n *html.Node, name string) int {
+// non-numeric, and above-max values (to 1 and max respectively) so a
+// malformed colspan/rowspan never produces a huge or negative grid.
+func attrInt(n *html.Node, name string, max int) int {
 	for _, a := range n.Attr {
 		if strings.EqualFold(a.Key, name) {
 			v, err := strconv.Atoi(strings.TrimSpace(a.Val))
 			if err != nil || v < 1 {
 				return 1
+			}
+			if v > max {
+				return max
 			}
 			return v
 		}

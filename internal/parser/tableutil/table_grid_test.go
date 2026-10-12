@@ -362,3 +362,80 @@ func TestRenderTextMergedSameAsNonMerged(t *testing.T) {
 		t.Fatalf("merged text %q != plain text %q", RenderTableText(merged), RenderTableText(plain))
 	}
 }
+
+// A colspan far beyond any real table must be clamped to the HTML-standard
+// maximum (1000, the limit browsers enforce) before buildGrid sees it, so a
+// malformed or hostile attribute can never drive a multi-gigabyte allocation
+// or hang the parser. The grid still stays dense: the origin claims 1000
+// columns, the engulfed positions become Covered markers, and the text view
+// is unchanged.
+func TestGridHugeColSpanClampedToSpecMax(t *testing.T) {
+	td, _ := ParseTableHTML(`<table><tr><td colspan="100000000">wide</td><td>narrow</td></tr></table>`)
+	if len(td.Grid) != 1 {
+		t.Fatalf("rows=%d want 1", len(td.Grid))
+	}
+	row := td.Grid[0]
+	if row[0].Text != "wide" || row[0].ColSpan != 1000 {
+		t.Fatalf("origin ColSpan=%d want 1000 (HTML standard max): %+v", row[0].ColSpan, row[0])
+	}
+	if len(row) != 1001 {
+		t.Fatalf("row width=%d want 1001 (origin + 999 covered + narrow)", len(row))
+	}
+	for c := 1; c <= 999; c++ {
+		if !row[c].Covered || row[c].OriginCol != 0 {
+			t.Fatalf("engulfed slot %d must be Covered pointing at origin col 0: %+v", c, row[c])
+		}
+	}
+	if row[1000].Text != "narrow" || row[1000].ColSpan != 1 {
+		t.Fatalf("trailing cell wrong: %+v", row[1000])
+	}
+	if got := gridTexts(td); !reflect.DeepEqual(got, [][]string{{"wide", "narrow"}}) {
+		t.Fatalf("texts=%v want [[wide narrow]]", got)
+	}
+}
+
+// A rowspan beyond the HTML-standard maximum (65534) must be clamped too; in a
+// small table the surviving extent is additionally bounded by the number of
+// rows below the origin, so the stored span always names rows that exist.
+func TestGridHugeRowSpanClamped(t *testing.T) {
+	td, _ := ParseTableHTML(`<table>
+<tr><td rowspan="999999">A</td><td>x</td></tr>
+<tr><td>y</td></tr>
+<tr><td>z</td></tr>
+</table>`)
+	if len(td.Grid) != 3 {
+		t.Fatalf("rows=%d want 3", len(td.Grid))
+	}
+	if td.Grid[0][0].RowSpan != 3 {
+		t.Fatalf("RowSpan=%d want 3 (clamped to 65534, then to grid rows)", td.Grid[0][0].RowSpan)
+	}
+	if !td.Grid[1][0].Covered || !td.Grid[2][0].Covered {
+		t.Fatalf("continuation rows must stay Covered: %+v / %+v", td.Grid[1][0], td.Grid[2][0])
+	}
+	if got := gridTexts(td); !reflect.DeepEqual(got, [][]string{{"A", "x"}, {"y"}, {"z"}}) {
+		t.Fatalf("texts=%v", got)
+	}
+}
+
+// The renderer must emit the clamped span, never the raw attribute value, so a
+// pathological table round-trips without leaking a huge span attribute.
+func TestRenderHugeSpanRoundTripBounded(t *testing.T) {
+	td, _ := ParseTableHTML(`<table><tr><td colspan="100000000">wide</td><td>narrow</td></tr></table>`)
+	h := RenderTableHTML(td)
+	if strings.Contains(h, "100000000") {
+		t.Fatalf("render leaked the raw span attribute: %s", h)
+	}
+	if !strings.Contains(h, `colspan="1000"`) {
+		t.Fatalf("render must emit the clamped colspan: %s", h)
+	}
+	back, err := ParseTableHTML(h)
+	if err != nil || back == nil {
+		t.Fatalf("round-trip parse: %v", err)
+	}
+	if back.Grid[0][0].ColSpan != 1000 {
+		t.Fatalf("round-trip lost the clamped span: %+v", back.Grid[0][0])
+	}
+	if !reflect.DeepEqual(gridTexts(back), gridTexts(td)) {
+		t.Fatalf("round-trip texts differ: %v vs %v", gridTexts(back), gridTexts(td))
+	}
+}
