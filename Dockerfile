@@ -260,6 +260,7 @@ RUN rm -f /etc/nginx/sites-enabled/default
 COPY conf conf
 COPY internal/agent/templates agent/templates
 COPY rag/prompts rag/prompts
+COPY internal/rag/res/ner.json internal/rag/res/synonym.json ./internal/rag/res/
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).
