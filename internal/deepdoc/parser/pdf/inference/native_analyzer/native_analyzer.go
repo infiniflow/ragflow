@@ -118,7 +118,10 @@ func (a *NativeAnalyzer) DLA(ctx context.Context, img image.Image) ([]deepdoctyp
 	}
 	labels := deepdoctype.DefaultDLALabels()
 	out := make([]deepdoctype.DLARegion, 0, len(res.Boxes))
-	for _, b := range res.Boxes {
+	// Clamp into the source image bounds (mirrors dla_adapter.py): this
+	// backend replaced the HTTP service whose adapter clamped every
+	// coordinate, and its consumers never see the raw postprocess values.
+	for _, b := range res.ClampBoxes() {
 		label := ""
 		if b.Class >= 0 && int(b.Class) < len(labels) {
 			label = labels[b.Class]
@@ -144,7 +147,10 @@ func (a *NativeAnalyzer) TSR(ctx context.Context, img image.Image) ([]deepdoctyp
 		return nil, err
 	}
 	out := make([]deepdoctype.TSRCell, 0, len(res.Boxes))
-	for _, b := range res.Boxes {
+	// Clamp into the source image bounds (mirrors tsr_adapter.py): this
+	// backend replaced the HTTP service whose adapter clamped every
+	// coordinate, and its consumers never see the raw postprocess values.
+	for _, b := range res.ClampBoxes() {
 		out = append(out, deepdoctype.TSRCell{
 			X0: float64(b.X0), Y0: float64(b.Top),
 			X1: float64(b.X1), Y1: float64(b.Bottom),

@@ -412,8 +412,8 @@ func (m *EinoChatModel) generateOnce(ctx context.Context, cm *ChatModel, msgs []
 	// Once a tool result is in context the model must be free to answer in
 	// prose. Code-exec agents pin tool_choice to "required"/execute_code, and
 	// keeping that pin on the follow-up turn would loop forever instead of
-	// returning the answer.
-	if chatCfg != nil && containsToolResult(internal) {
+	// returning the answer. Explicit per-call choices can require further tools.
+	if chatCfg != nil && containsToolResult(internal) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
@@ -581,7 +581,7 @@ func toolChoiceBody(choice string) map[string]any {
 // chatConfigWithOptsTools overlays tools supplied via the per-call
 // model.WithTools option onto base. eino's ChatModelAgent binds tools this way,
 // so Generate/Stream must honor opts or the model will never emit tool_calls.
-// Per-call tool choice overrides the bound model's defaults.
+// Explicit per-call tool choices override the wrapper's initial-turn choice.
 func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.Option) (*ChatConfig, error) {
 	co := model.GetCommonOptions(nil, opts...)
 	if co == nil || (len(co.Tools) == 0 && co.ToolChoice == nil) {
@@ -598,21 +598,53 @@ func (m *EinoChatModel) chatConfigWithOptsTools(base *ChatConfig, opts []model.O
 			return nil, err
 		}
 		cfg.Tools = tools
-		cfg.ToolChoice = new("auto")
 	}
+	choice := "auto"
+	// ADK supplies tools per call. Preserve the wrapper's explicit choice
+	// when binding them, including its named-function request body.
+	if m.toolChoice != nil && *m.toolChoice != "" {
+		choice = *m.toolChoice
+		cfg.ToolChoiceValue = nil
+		if body := toolChoiceBody(choice); body != nil {
+			cfg.ToolChoiceValue = body
+		}
+	}
+	cfg.ToolChoice = &choice
 	if co.ToolChoice != nil {
 		switch *co.ToolChoice {
-		case schema.ToolChoiceForbidden:
-			cfg.ToolChoice = new("none")
-			cfg.Tools = nil
 		case schema.ToolChoiceAllowed:
-			cfg.ToolChoice = new("auto")
+			choice = "auto"
+		case schema.ToolChoiceForbidden:
+			choice = "none"
+			cfg.Tools = nil
 		case schema.ToolChoiceForced:
-			cfg.ToolChoice = new("required")
+			choice = "required"
+			if len(co.AllowedToolNames) == 1 {
+				choice = co.AllowedToolNames[0]
+			}
 		default:
 			return nil, fmt.Errorf("models: unsupported tool choice %q", *co.ToolChoice)
 		}
 		cfg.ToolChoiceValue = nil
+		if body := toolChoiceBody(choice); body != nil {
+			cfg.ToolChoiceValue = body
+		}
+		if len(co.AllowedToolNames) > 0 && *co.ToolChoice != schema.ToolChoiceForbidden && (*co.ToolChoice != schema.ToolChoiceForced || len(co.AllowedToolNames) > 1) {
+			allowed := make(map[string]bool, len(co.AllowedToolNames))
+			for _, name := range co.AllowedToolNames {
+				allowed[name] = true
+			}
+			tools, _ := cfg.Tools.([]map[string]any)
+			filtered := make([]map[string]any, 0, len(tools))
+			for _, t := range tools {
+				function, _ := t["function"].(map[string]any)
+				name, _ := function["name"].(string)
+				if allowed[name] {
+					filtered = append(filtered, t)
+				}
+			}
+			cfg.Tools = filtered
+		}
 	}
 	return cfg, nil
 }
@@ -738,8 +770,8 @@ func toolCallsFromInternal(calls []map[string]interface{}) []schema.ToolCall {
 }
 
 // containsToolResult reports whether any message already carries a tool
-// result. ReAct turns that contain results must keep tool_choice free: the
-// model is expected to answer, not to fire another tool.
+// result. Initial-turn constraints are released after a result, while an
+// explicit per-call choice may still require another retrieval step.
 func containsToolResult(messages []Message) bool {
 	for _, message := range messages {
 		if message.Role == "tool" {
@@ -786,8 +818,8 @@ func (m *EinoChatModel) Stream(ctx context.Context, msgs []*schema.Message, opts
 	}
 	// Same tool_choice release as generateOnce: a turn carrying tool results
 	// must be able to produce the final text instead of being forced to call
-	// a tool again.
-	if chatCfg != nil && containsToolResult(internalMessage) {
+	// a tool again, unless an explicit per-call choice requires it.
+	if chatCfg != nil && containsToolResult(internalMessage) && model.GetCommonOptions(nil, opts...).ToolChoice == nil {
 		choice := "auto"
 		chatCfg.ToolChoice = &choice
 		chatCfg.ToolChoiceValue = nil
