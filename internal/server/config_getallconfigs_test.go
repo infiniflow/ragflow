@@ -55,6 +55,8 @@ max_token: 64
 	for _, key := range []string{
 		"mail_password", "secret", "secret_key", "client_secret", "api_key",
 		"host_api_key", "http_secret_key", "access_key", "secret_id", "session_token", "sas_token",
+		"open_dataloader_api_key", "paddle_ocr_access_token", "somark_api_key", "tcad_api_key",
+		"docling_api_key", "mineru_api_key", "tavily_api_key", "querit_api_key",
 	} {
 		globalViper.Set("credentials."+key, "test-only-credential")
 		wantCredentials[key] = "******"
@@ -88,6 +90,14 @@ max_token: 64
 	}
 	if fmt.Sprint(globalViper.AllSettings()) != original {
 		t.Fatal("logging mutated the loaded configuration")
+	}
+}
+
+func TestMaskConfigCredentialsIgnoresCase(t *testing.T) {
+	input := map[string]any{"API_KEY": "test-only-secret", "PASSWORD_POLICY": "strict"}
+	want := map[string]any{"API_KEY": "******", "PASSWORD_POLICY": "strict"}
+	if got := maskConfigCredentials(input); !reflect.DeepEqual(got, want) {
+		t.Fatalf("masked settings = %#v, want %#v", got, want)
 	}
 }
 

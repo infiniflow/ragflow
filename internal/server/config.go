@@ -289,6 +289,15 @@ var sensitiveConfigKeys = map[string]struct{}{
 	"secret_id":       {},
 	"session_token":   {},
 	"sas_token":       {},
+
+	"open_dataloader_api_key": {},
+	"paddle_ocr_access_token": {},
+	"somark_api_key":          {},
+	"tcad_api_key":            {},
+	"docling_api_key":         {},
+	"mineru_api_key":          {},
+	"tavily_api_key":          {},
+	"querit_api_key":          {},
 }
 
 // PrintAll logs all configuration settings with credentials masked.
