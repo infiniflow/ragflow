@@ -152,6 +152,35 @@ func TestRerankModelShrinksOnOverLimit(t *testing.T) {
 	}
 }
 
+// An exact tokenizer has no calibration: Limiter.Calibration() returns nil. A
+// provider can still reject such an input (its physical batch may be smaller than
+// the declared window), and the retry must keep working - ObserveOverLimit is
+// nil-safe, so there is nothing to guard.
+func TestRerankModelRetriesWithExactCounter(t *testing.T) {
+	t.Setenv(common.EnvRerankTokenLimitMode, "truncate")
+	t.Setenv("TOKENIZER_EMBEDDING_TOKENIZER", tokenizer.CounterCL100K)
+	document := strings.Repeat("token ", 2000)
+	driver := &scriptedRerankDriver{
+		fail: func(request RerankRequest, _ int) error {
+			if len(request.Documents[0]) > 1024 {
+				return llamaRerankOverLimit()
+			}
+			return nil
+		},
+	}
+	name := "cl100k-model"
+	model := NewRerankModel(driver, &name, nil, 512)
+	if cal, _ := model.limiter.Calibration(); cal != nil {
+		t.Fatalf("expected an exact limiter (nil calibration), got %v", cal)
+	}
+	if _, err := model.Rerank(t.Context(), RerankRequest{Query: "q", Documents: []string{document}}, nil, nil); err != nil {
+		t.Fatalf("Rerank() error = %v, want success after shrinking", err)
+	}
+	if driver.calls < 2 {
+		t.Fatalf("driver calls = %d, want a retry with a smaller budget", driver.calls)
+	}
+}
+
 // Only over-limit rejections are retried; a genuine failure is returned at once.
 func TestRerankModelDoesNotRetryOtherErrors(t *testing.T) {
 	t.Setenv(common.EnvRerankTokenLimitMode, "truncate")
