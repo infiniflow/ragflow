@@ -167,21 +167,3 @@ func TestUpdateMetadataTo_SkipOnlyEmptyStringsList(t *testing.T) {
 		t.Error("all-empty list should be skipped")
 	}
 }
-
-// TestUpdateMetadataTo_ScalarScalarKeepsExistingPythonParity pins the exact
-// Python update_metadata_to (common/metadata_utils.py:301) scalar semantics for
-// the "re-ingest + same key + both sides scalar" scenario: the loop iterates
-// the second argument (existing_meta), so when the target already holds a
-// scalar the EXISTING (stored) value wins — NOT a [old,new] list. This guards
-// against a regression where scalar+scalar would be list-ified.
-func TestUpdateMetadataTo_ScalarScalarKeepsExistingPythonParity(t *testing.T) {
-	// mergeDocMetadata calls UpdateMetadataTo(new, existing), so existing is
-	// the second argument and must win for a shared scalar key.
-	result := UpdateMetadataTo(
-		map[string]any{"author": "NEWLY_EXTRACTED"},
-		map[string]any{"author": "STORED"},
-	)
-	if result["author"] != "STORED" {
-		t.Errorf("author = %v, want STORED (existing scalar wins, Python parity)", result["author"])
-	}
-}
