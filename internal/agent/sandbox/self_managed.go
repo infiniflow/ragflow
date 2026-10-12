@@ -62,7 +62,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -83,8 +82,6 @@ const selfManagedDefaultEndpoint = "http://sandbox-executor-manager:9385"
 type SelfManagedProvider struct {
 	endpoint     string
 	timeout      time.Duration
-	poolSize     int
-	maxRetries   int
 	helper       *HTTPClient
 	healthHelper *HTTPClient
 	mu           sync.Mutex
@@ -120,15 +117,7 @@ func newSelfManagedProviderFromEnv() *SelfManagedProvider {
 	return newSelfManagedProviderFromConfig(map[string]any{})
 }
 
-// The provider resolves each field through one canonical chain: the
-// lowercase admin-panel settings schema first (endpoint, timeout,
-// max_retries, pool_size, api_token — the exact schema
-// agent/sandbox/providers/self_managed.py persists and reads; pool_size
-// additionally accepts its executor_manager_pool_size spelling, which the
-// Python provider reads first), then the SANDBOX_* environment variable for
-// fields absent from persisted settings, then the built-in default. Keeping
-// a single resolution path on both runtimes means a settings row plus
-// environment variables configures Python and Go identically.
+// Settings take precedence over environment variables and built-in defaults.
 func configStringEnv(cfg map[string]any, envName string, keys ...string) string {
 	for _, key := range keys {
 		// Blank-after-trim values count as absent so they fall through to
@@ -139,20 +128,6 @@ func configStringEnv(cfg map[string]any, envName string, keys ...string) string 
 		}
 	}
 	return common.GetEnv(envName)
-}
-
-func configIntEnv(cfg map[string]any, fallback int, envName string, keys ...string) int {
-	for _, key := range keys {
-		if _, ok := cfg[key]; ok && cfg[key] != nil {
-			return configInt(cfg, key, fallback)
-		}
-	}
-	if envValue := common.GetEnv(envName); envValue != "" {
-		if parsed, err := strconv.Atoi(envValue); err == nil {
-			return parsed
-		}
-	}
-	return fallback
 }
 
 func configDurationEnv(cfg map[string]any, fallback time.Duration, envName string, keys ...string) time.Duration {
@@ -169,13 +144,7 @@ func configDurationEnv(cfg map[string]any, fallback time.Duration, envName strin
 	return fallback
 }
 
-// newSelfManagedProviderFromConfig builds the provider from the persisted
-// settings JSON (the `sandbox.self_managed` row written by the admin panel,
-// lowercase keys: endpoint, timeout, max_retries, pool_size, api_token,
-// optionally base_python_image / base_nodejs_image). Fields absent from the
-// settings fall back to their SANDBOX_* environment variable before the
-// built-in default, mirroring the Python provider's config-over-env
-// resolution.
+// newSelfManagedProviderFromConfig resolves connection settings and image overrides.
 func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	endpoint := configStringEnv(cfg, common.EnvSandboxExecutorManagerURL, "endpoint")
 	if endpoint == "" {
@@ -184,10 +153,6 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	endpoint = strings.TrimRight(endpoint, "/")
 
 	timeout := configDurationEnv(cfg, 30*time.Second, common.EnvSandboxExecutorManagerTimeout, "timeout")
-	poolSize := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerPoolSize, "executor_manager_pool_size", "pool_size")
-	// max_retries maps to the HTTP client's total attempt count (first try
-	// included), matching its default of 3 attempts.
-	maxRetries := configIntEnv(cfg, 3, common.EnvSandboxExecutorManagerMaxRetries, "max_retries")
 
 	// Per-language base image overrides. Empty = executor_manager
 	// default; non-empty = the operator picked a custom base image
@@ -204,12 +169,11 @@ func newSelfManagedProviderFromConfig(cfg map[string]any) *SelfManagedProvider {
 	return &SelfManagedProvider{
 		endpoint:   endpoint,
 		timeout:    timeout,
-		poolSize:   poolSize,
 		baseImages: baseImages,
 		apiToken:   apiToken,
 		helper: NewHTTPClient(HTTPConfig{
 			Timeout:     timeout,
-			MaxAttempts: maxRetries,
+			MaxAttempts: 1,
 		}),
 		healthHelper: NewHTTPClient(HTTPConfig{
 			Timeout: 5 * time.Second,
@@ -256,9 +220,8 @@ func (p *SelfManagedProvider) CreateInstance(ctx context.Context, template strin
 		Provider:   ProviderSelfManaged,
 		Status:     "running",
 		Metadata: map[string]any{
-			"language":  lang,
-			"endpoint":  p.endpoint,
-			"pool_size": p.poolSize,
+			"language": lang,
+			"endpoint": p.endpoint,
 		},
 	}, nil
 }
