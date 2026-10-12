@@ -9,7 +9,7 @@ import (
 )
 
 func TestGeneralChunkerPreservesBareDelimiters(t *testing.T) {
-	for _, fileType := range []string{"txt", "docx"} {
+	for _, fileType := range []string{"txt", "docx", "pdf", "md"} {
 		for _, source := range []string{
 			"第一句。第二句。",
 			"First!Second?Third;第四句；第五句！第六句？",
@@ -42,7 +42,7 @@ func TestGeneralChunkerPreservesBareDelimiters(t *testing.T) {
 
 func TestGeneralChunkerPreservesDelimitersAcrossChunks(t *testing.T) {
 	const source = "Alpha one.\nBeta two; Gamma three!\nDelta four? Epsilon five。Zeta six；Eta seven！Theta eight？Iota nine."
-	for _, fileType := range []string{"txt", "docx"} {
+	for _, fileType := range []string{"txt", "docx", "pdf", "md"} {
 		t.Run(fileType, func(t *testing.T) {
 			component, err := NewGeneralChunker(map[string]any{
 				"chunk_token_size": 5,
@@ -107,7 +107,7 @@ func TestGeneralChunkerDOCXPreservesParagraphBoundaries(t *testing.T) {
 }
 
 func TestGeneralChunkerOverlapPreservesSentenceDelimiters(t *testing.T) {
-	for _, fileType := range []string{"txt", "docx"} {
+	for _, fileType := range []string{"txt", "docx", "pdf", "md"} {
 		t.Run(fileType, func(t *testing.T) {
 			component, err := NewGeneralChunker(map[string]any{
 				"chunk_token_size": 1, "overlapped_percent": 50,
@@ -131,7 +131,7 @@ func TestGeneralChunkerOverlapPreservesSentenceDelimiters(t *testing.T) {
 }
 
 func TestGeneralChunkerDelimiterSplitPreservesMetadata(t *testing.T) {
-	for _, fileType := range []string{"txt", "docx"} {
+	for _, fileType := range []string{"txt", "docx", "pdf", "md"} {
 		t.Run(fileType, func(t *testing.T) {
 			component, err := NewGeneralChunker(map[string]any{
 				"chunk_token_size": 0, "delimiters": []string{";"},

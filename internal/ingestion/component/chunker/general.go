@@ -231,7 +231,10 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
-	units = splitGeneralUnits(units, primaryPattern, false)
+	customDelimiter := hasCustomDelim(c.param.Delimiters)
+	if customDelimiter {
+		units = splitGeneralUnits(units, primaryPattern, false)
+	}
 	units = sortPDFUnits(units)
 	if hasPDFPositions(units) && hasUnpositionedPDFMedia(units) {
 		common.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
@@ -244,7 +247,13 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 		if len(body) == 0 {
 			return
 		}
-		chunks = append(chunks, mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")...)
+		joinSep := "\n"
+		if !customDelimiter {
+			body = separateGeneralTextBlocks(body)
+			body = splitGeneralUnits(body, primaryPattern, true)
+			joinSep = ""
+		}
+		chunks = append(chunks, mergeGeneralUnits(body, c.param.ChunkTokenSize, c.param.OverlappedPercent, joinSep)...)
 		body = body[:0]
 	}
 	for _, unit := range units {
@@ -252,7 +261,11 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			body = append(body, unit)
 		} else {
 			flushBody()
-			chunks = append(chunks, cloneChunkDoc(unit))
+			media := cloneChunkDoc(unit)
+			media.Text = normalizeGeneralNewlines(media.Text)
+			media.DocType = itemDocType(media)
+			media.CKType = media.DocType
+			chunks = append(chunks, media)
 		}
 	}
 	flushBody()
@@ -392,7 +405,7 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if !customDelimiter {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
-		units = separateDOCXParagraphs(units)
+		units = separateGeneralTextBlocks(units)
 	}
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	if customDelimiter {
@@ -408,9 +421,9 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	return chunkOutputs(units), nil
 }
 
-// separateDOCXParagraphs retains parser paragraph boundaries in the text before
+// separateGeneralTextBlocks retains parser block boundaries in the text before
 // delimiter splitting. Sentence fragments can then be concatenated directly.
-func separateDOCXParagraphs(units []schema.ChunkDoc) []schema.ChunkDoc {
+func separateGeneralTextBlocks(units []schema.ChunkDoc) []schema.ChunkDoc {
 	units = append([]schema.ChunkDoc(nil), units...)
 	previousText := -1
 	for i := range units {
@@ -632,9 +645,22 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	}
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
-	units = splitMarkdownUnits(units, primaryPattern)
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
-	units = mergeMarkdownUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "\n")
+	customDelimiter := hasCustomDelim(c.param.Delimiters)
+	if !customDelimiter {
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+	}
+	parts := splitMarkdownUnits(units, primaryPattern, !customDelimiter)
+	if customDelimiter {
+		contextUnits := make([]schema.ChunkDoc, len(parts))
+		for i := range parts {
+			contextUnits[i] = parts[i].chunk
+		}
+		attachGeneralMediaContext(contextUnits, c.param.TableContextSize, c.param.ImageContextSize)
+		for i := range parts {
+			parts[i].chunk = contextUnits[i]
+		}
+	}
+	units = mergeMarkdownUnits(parts, c.param.ChunkTokenSize, c.param.OverlappedPercent)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
@@ -642,32 +668,49 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	return chunkOutputs(units), nil
 }
 
+// markdownUnit distinguishes parser block boundaries from sentence splits.
+type markdownUnit struct {
+	chunk       schema.ChunkDoc
+	startsBlock bool
+}
+
 // splitMarkdownUnits expands only text units while retaining the semantic
 // parser type on every piece. Markdown heading detection depends on ck_type,
 // so the generic splitter's type normalization cannot be used here.
-func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp) []schema.ChunkDoc {
-	result := make([]schema.ChunkDoc, 0, len(units))
+func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) []markdownUnit {
+	result := make([]markdownUnit, 0, len(units))
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
-		unit.Text = strings.TrimSpace(normalizeGeneralNewlines(itemTextOrFallback(unit)))
+		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
+		if !keepDelimiter || unit.CKType == "heading" {
+			unit.Text = strings.TrimSpace(unit.Text)
+		}
 		unit.DocType = itemDocType(unit)
 		if unit.DocType == "table" || unit.DocType == "image" {
 			unit.CKType = unit.DocType
 		}
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
-			result = append(result, unit)
+			result = append(result, markdownUnit{chunk: unit, startsBlock: true})
 			continue
 		}
-		for _, part := range splitByDelim(unit.Text, pattern, false) {
-			part = strings.TrimSpace(part)
-			if part == "" {
-				continue
+		parts := splitByDelim(unit.Text, pattern, keepDelimiter)
+		if keepDelimiter {
+			parts = foldWhitespaceSegments(parts)
+		}
+		startsBlock := true
+		for _, part := range parts {
+			if !keepDelimiter {
+				part = strings.TrimSpace(part)
+				if part == "" {
+					continue
+				}
 			}
 			piece := cloneChunkDoc(unit)
 			piece.Text = part
 			piece.TKNums = intPtr(tokenizeStr(part))
-			result = append(result, piece)
+			result = append(result, markdownUnit{chunk: piece, startsBlock: startsBlock})
+			startsBlock = !keepDelimiter
 		}
 	}
 	return result
@@ -698,18 +741,22 @@ func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
 	return unit.ContextAbove != "" || unit.ContextBelow != ""
 }
 
-// mergeMarkdownUnits mirrors the Markdown branch of Python naive.chunk:
-// ordinary units use a projected token cap, while a short heading is always
+// mergeMarkdownUnits uses a projected token cap, while a short heading is always
 // kept with the following unit. Markdown images are block attachments rather
 // than standalone media chunks, so image-bearing units participate in the
 // text merge and retain their image payload. Images with configured media
 // context are emitted as standalone chunks instead.
-func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep string) []schema.ChunkDoc {
+func mergeMarkdownUnits(units []markdownUnit, target int, overlapPct float64) []schema.ChunkDoc {
 	overlapPct = max(0, min(100, overlapPct))
 	merged := make([]schema.ChunkDoc, 0, len(units))
 	current := -1
 	currentTokens := 0
-	for _, unit := range units {
+	for _, part := range units {
+		unit := part.chunk
+		joinSep := ""
+		if part.startsBlock && current >= 0 && !strings.HasSuffix(merged[current].Text, "\n") && !strings.HasPrefix(unit.Text, "\n") {
+			joinSep = "\n"
+		}
 		if itemDocType(unit) == "table" {
 			if current >= 0 && isShortMarkdownHeading(merged[current]) {
 				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
@@ -775,7 +822,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 
 		previous := &merged[current]
 		unitTokens := generalUnitTokens(unit)
-		if unit.CKType == "heading" && previous.CKType != "heading" {
+		if part.startsBlock && unit.CKType == "heading" && previous.CKType != "heading" {
 			merged = append(merged, unit)
 			current = len(merged) - 1
 			currentTokens = unitTokens
@@ -813,7 +860,9 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 		mergeMarkdownChunk(previous, unit, joinSep)
 		previous.Image = mergedImage
 		previous.DocType = "text"
-		previous.CKType = "text"
+		if part.startsBlock || unit.CKType != "heading" {
+			previous.CKType = "text"
+		}
 		currentTokens = projected
 		previous.TKNums = intPtr(currentTokens)
 	}
