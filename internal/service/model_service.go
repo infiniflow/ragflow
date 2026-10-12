@@ -27,7 +27,6 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 	"sort"
 	"strings"
 
@@ -91,9 +90,7 @@ type CheckConnectionModelInfo struct {
 }
 
 type CheckConnectionRequest struct {
-	// APIKey may be a JSON string or a JSON object (credential bundles such
-	// as XunFei Spark's); the handler normalizes it to a string before use.
-	APIKey     json.RawMessage            `json:"api_key"`
+	APIKey     string                     `json:"api_key"`
 	Region     string                     `json:"region"`
 	BaseURL    string                     `json:"base_url"`
 	InstanceID string                     `json:"instance_id"`
@@ -122,7 +119,7 @@ func (m *ModelProviderService) AddModelProvider(ctx context.Context, providerNam
 		return common.CodeSuccess, nil
 	}
 
-	providerID := utility.GenerateToken()
+	providerID := common.GenerateToken()
 
 	tenantModelProvider := &entity.TenantModelProvider{
 		ID:           providerID,
@@ -374,7 +371,7 @@ func (m *ModelProviderService) CreateProviderInstance(ctx context.Context, provi
 	}
 	providerName := provider.ProviderName
 
-	instanceID := utility.GenerateToken()
+	instanceID := common.GenerateToken()
 
 	extra := make(map[string]string)
 	extra["region"] = region
@@ -490,7 +487,7 @@ func (m *ModelProviderService) CreateNameOnlyProviderInstance(ctx context.Contex
 		return common.CodeNotFound, fmt.Errorf("provider '%s' does not exist", providerIDOrName)
 	}
 
-	instanceID := utility.GenerateToken()
+	instanceID := common.GenerateToken()
 
 	tenantModelInstance := &entity.TenantModelInstance{
 		ID:           instanceID,
@@ -549,7 +546,7 @@ func (m *ModelProviderService) addModelToInstance(ctx context.Context, tenantID,
 		return fmt.Errorf("fail to marshal extra: %w", err)
 	}
 
-	modelID := utility.GenerateToken()
+	modelID := common.GenerateToken()
 	tenantModel := &entity.TenantModel{
 		ID:         modelID,
 		ModelName:  model.ModelName,
@@ -1301,6 +1298,7 @@ func (m *ModelProviderService) ListTenantAddedModels(ctx context.Context, userID
 	// Mirror Python's ensure_*_from_env calls.
 	_ = m.ensureMineruFromEnv(ctx, tenantID)
 	_ = m.ensureMonkeyOCRv2FromEnv(ctx, tenantID)
+	_ = m.ensureMonkeyOCRFromEnv(ctx, tenantID)
 	_ = m.ensurePaddleOCREnabledFromEnv(ctx, tenantID)
 	_ = m.ensureOpenDataLoaderFromEnv(ctx, tenantID)
 
@@ -1551,6 +1549,19 @@ func (m *ModelProviderService) ensureMonkeyOCRv2FromEnv(ctx context.Context, ten
 	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCRv2", "monkeyocrv2-from-env", config)
 }
 
+// ensureMonkeyOCRFromEnv mirrors Python's ensure_monkeyocr_from_env.
+func (m *ModelProviderService) ensureMonkeyOCRFromEnv(ctx context.Context, tenantID string) error {
+	config := collectEnvConfig(monkeyOCREnvKeys, monkeyOCRDefaultConfig)
+	if config == nil {
+		return nil
+	}
+	apiserver, _ := config[common.EnvMonkeyOCRAPIServer].(string)
+	if strings.TrimSpace(apiserver) == "" {
+		return nil
+	}
+	return m.ensureOCRProviderFromEnv(ctx, tenantID, "MonkeyOCR", "monkeyocr-from-env", config)
+}
+
 // Environment-key/default tables mirror the Python OCR provider settings.
 var (
 	mineruEnvKeys = []string{
@@ -1593,6 +1604,20 @@ var (
 		common.EnvMonkeyOCRv2ServerURL: "",
 		common.EnvMonkeyOCRv2Timeout:   600,
 	}
+	monkeyOCREnvKeys = []string{
+		common.EnvMonkeyOCRAPIServer,
+		common.EnvMonkeyOCROutputDir,
+		common.EnvMonkeyOCRServerURL,
+		common.EnvMonkeyOCRBackend,
+		common.EnvMonkeyOCRDeleteOutput,
+	}
+	monkeyOCRDefaultConfig = map[string]interface{}{
+		common.EnvMonkeyOCRAPIServer:    "",
+		common.EnvMonkeyOCROutputDir:    "",
+		common.EnvMonkeyOCRServerURL:    "",
+		common.EnvMonkeyOCRBackend:      "vlm-engine",
+		common.EnvMonkeyOCRDeleteOutput: 1,
+	}
 )
 
 // collectEnvConfig collects environment variable values for the given keys
@@ -1630,7 +1655,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 		if !dao.IsNotFoundErr(err) {
 			return fmt.Errorf("failed to get provider %s: %w", providerName, err)
 		}
-		providerID := utility.GenerateToken()
+		providerID := common.GenerateToken()
 		provider = &entity.TenantModelProvider{
 			ID:           providerID,
 			TenantID:     tenantID,
@@ -1653,7 +1678,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 		if !dao.IsNotFoundErr(err) {
 			return fmt.Errorf("failed to get instance for %s: %w", providerName, err)
 		}
-		instanceID := utility.GenerateToken()
+		instanceID := common.GenerateToken()
 		instance = &entity.TenantModelInstance{
 			ID:           instanceID,
 			ProviderID:   provider.ID,
@@ -1684,7 +1709,7 @@ func (m *ModelProviderService) ensureOCRProviderFromEnv(ctx context.Context, ten
 		if err != nil {
 			return fmt.Errorf("failed to marshal extra for %s model: %w", providerName, err)
 		}
-		modelID := utility.GenerateToken()
+		modelID := common.GenerateToken()
 		tenantModel := &entity.TenantModel{
 			ID:         modelID,
 			ModelName:  modelName,
@@ -2560,7 +2585,7 @@ func (m *ModelProviderService) AddModel(ctx context.Context, request *AddModelRe
 		return common.CodeServerError, errors.New("fail to marshal extra")
 	}
 
-	modelID := utility.GenerateToken()
+	modelID := common.GenerateToken()
 	tenantModel := &entity.TenantModel{
 		ID:         modelID,
 		ModelName:  modelName,

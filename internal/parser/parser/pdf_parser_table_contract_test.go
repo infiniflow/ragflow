@@ -3,11 +3,15 @@ package parser
 import (
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // Consumers of doc_type_kwd "table" parse the item text as <table> markup
 // (the QA chunker reads its <tr> rows), so a table item that carries other
-// text loses its rows downstream.
+// text loses its rows downstream. The structured TableData contract must also
+// be present on every table item so the chunker no longer re-parses HTML.
 func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 	cells := []any{
 		map[string]any{"row": 0, "content": "What is RAGFlow?"},
@@ -73,11 +77,23 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 			item := items[0]
 			docType, _ := item["doc_type_kwd"].(string)
 			text, _ := item["text"].(string)
-			if docType == "table" && !strings.HasPrefix(strings.TrimSpace(text), "<table") {
-				t.Fatalf("doc_type_kwd table carries non-<table> text %q", text)
+			if docType == "table" && text != "" {
+				t.Fatalf("doc_type_kwd table must not carry legacy HTML text %q", text)
 			}
 			if docType != tc.wantDocType {
 				t.Fatalf("doc_type_kwd = %q, want %q (text %q)", docType, tc.wantDocType, text)
+			}
+			if docType == "table" {
+				td, ok := item["table"].(*entity.TableData)
+				if !ok || td == nil {
+					t.Fatalf("doc_type_kwd table item missing structured *entity.TableData: %#v", item)
+				}
+				if len(td.Rows) == 0 {
+					t.Fatalf("structured table has no rows: %#v", td)
+				}
+				if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") {
+					t.Fatalf("structured table missing cell text %q: %#v", got, td)
+				}
 			}
 		})
 	}

@@ -19,8 +19,8 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/utility"
 	"sync"
 	"time"
 )
@@ -48,7 +48,7 @@ type ConnectorLock struct {
 
 // NewConnectorLock creates an empty connector/KB lock.
 func NewConnectorLock() *ConnectorLock {
-	return &ConnectorLock{holder: utility.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*kvrocks.DistributedLock{}}
+	return &ConnectorLock{holder: common.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*kvrocks.DistributedLock{}}
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.

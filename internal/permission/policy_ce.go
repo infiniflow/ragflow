@@ -316,7 +316,11 @@ func (e *evaluation) resolveResource(ctx context.Context, subject Subject, resou
 	case VisibilityPrivate:
 		return Access{}, ErrPermissionDenied
 	case VisibilityTenant:
-		if err := e.checkTenant(ctx, subject, resource.TenantID, TenantNormalMember); err != nil {
+		requirement := resource.TenantRequirement
+		if requirement == "" {
+			requirement = TenantNormalMember
+		}
+		if err := e.checkTenant(ctx, subject, resource.TenantID, requirement); err != nil {
 			if errors.Is(err, ErrMembershipNotFound) {
 				return Access{}, ErrPermissionDenied
 			}
@@ -489,10 +493,7 @@ func resourceAccess(resource Resource, source AccessSource) Access {
 }
 
 func accessAllows(access Access, operation Operation) bool {
-	if !access.Allows(operation) {
-		return false
-	}
-	return operation != OperationShare || access.Source == AccessSourceOwner
+	return access.Allows(operation)
 }
 
 func contains(values []string, target string) bool {

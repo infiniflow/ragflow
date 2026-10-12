@@ -97,6 +97,15 @@ func maybeDispatchImage(
 	}
 	method := getStringOr(setup, "parse_method", "")
 	useOCR := method == "" || strings.EqualFold(method, "ocr")
+	// A model named as parse_method is an explicit VLM request (mirrors
+	// Python rag/flow/parser/parser.py:_image: "ocr" runs OCR, anything
+	// else is the vision model). It must run the description even when the
+	// global enhancement switch is off, otherwise the image item carries no
+	// text and the Tokenizer's retrievability filter drops the chunk.
+	modelFromParseMethod := ""
+	if !useOCR {
+		modelFromParseMethod = method
+	}
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
@@ -129,10 +138,10 @@ func maybeDispatchImage(
 	if err := ctx.Err(); err != nil {
 		return parsed, true, err
 	}
-	if enableVisionEnhancement {
+	if enableVisionEnhancement || modelFromParseMethod != "" {
 		modelRef := visionModelID
-		if !useOCR {
-			modelRef = method
+		if modelFromParseMethod != "" {
+			modelRef = modelFromParseMethod
 		}
 		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, modelRef)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
@@ -151,8 +160,14 @@ func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parser: decode image: %w", err)
 	}
-	if config.Width <= 0 || config.Height <= 0 || config.Width > parser.MaxImageEdge || config.Height > parser.MaxImageEdge || int64(config.Width)*int64(config.Height) > parser.MaxImagePixels {
-		return nil, fmt.Errorf("parser: image dimensions %dx%d exceed limits", config.Width, config.Height)
+	if config.Width <= 0 || config.Height <= 0 {
+		return nil, fmt.Errorf("parser: image has invalid dimensions %dx%d", config.Width, config.Height)
+	}
+	// Length/width are unbounded (mirrors Python's picture.py); the decoded
+	// raster byte ceiling is opt-in via RAGFLOW_IMAGE_RASTER_MAX_BYTES (0 =
+	// unlimited).
+	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
 	}
 	// VLM consumes the original bytes; only local OCR needs a decoded raster.
 	if !decodeRaster {

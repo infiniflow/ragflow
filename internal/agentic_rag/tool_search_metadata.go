@@ -195,6 +195,7 @@ func (m *MetadataSearchTool) invokableRun(ctx context.Context, argumentsInJSON s
 			Logic:      logic,
 		})
 	}
+	docIDs = intersectDocumentScope(ctx, docIDs)
 	if len(docIDs) == 0 {
 		return metadataSearchResult([]string{}, nil,
 			"No documents match the given metadata conditions. Loosen or change the filters, or use search_chunks / grep_chunks for unfiltered search.")

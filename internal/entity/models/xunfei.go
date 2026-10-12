@@ -22,47 +22,7 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/common"
-	"strings"
 )
-
-// sparkModelVersions maps the catalog model names to the version identifiers
-// the XunFei Spark HTTP API expects in the request body's "model" field.
-// Mirrors SparkChat.model2version in rag/llm/chat_model.py.
-var sparkModelVersions = map[string]string{
-	"Spark-Max":       "generalv3.5",
-	"Spark-Max-32K":   "max-32k",
-	"Spark-Lite":      "lite",
-	"Spark-Pro":       "generalv3",
-	"Spark-Pro-128K":  "pro-128k",
-	"Spark-4.0-Ultra": "4.0Ultra",
-}
-
-func resolveSparkModel(modelName string) string {
-	if version, ok := sparkModelVersions[modelName]; ok {
-		return version
-	}
-	return modelName
-}
-
-// resolveBearerToken extracts the credential used as the Bearer token. The
-// instance stores the XunFei credential bundle (API password, APPID, API
-// secret, API key) as a JSON object string; the Spark HTTP API authenticates
-// with the bundle's spark_api_password.
-func resolveBearerToken(apiConfig *APIConfig) string {
-	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return ""
-	}
-	key := strings.TrimSpace(*apiConfig.ApiKey)
-	if strings.HasPrefix(key, "{") {
-		var bundle map[string]interface{}
-		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
-			if password, ok := bundle["spark_api_password"].(string); ok && password != "" {
-				return password
-			}
-		}
-	}
-	return key
-}
 
 type XunFeiModel struct {
 	baseModel BaseModel
@@ -77,7 +37,7 @@ func NewXunFeiModel(baseURL map[string]string, urlSuffix URLSuffix) *XunFeiModel
 			// The Spark HTTP API authenticates with the credential bundle's
 			// spark_api_password, not the raw stored key.
 			authHeader: func(cfg *APIConfig) (string, string) {
-				return "Authorization", "Bearer " + resolveBearerToken(cfg)
+				return "Authorization", "Bearer " + *cfg.ApiKey
 			},
 		},
 	}
@@ -105,7 +65,7 @@ func (x *XunFeiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, err
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
-	reqBody := buildRequestBody(chatModelConfig, resolveSparkModel(modelName), messages, false)
+	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
 		if chatModelConfig.Thinking != nil {
@@ -144,7 +104,7 @@ func (x *XunFeiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
-	reqBody := buildRequestBody(modelConfig, resolveSparkModel(modelName), messages, true)
+	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
 		if modelConfig.Thinking != nil {
@@ -242,7 +202,7 @@ func (x *XunFeiModel) CheckConnection(ctx context.Context, apiConfig *APIConfig)
 	// free Spark-Lite model.
 	maxTokens := 1
 	chatConfig := &ChatConfig{MaxTokens: &maxTokens}
-	_, err := x.ChatWithMessages(ctx, "Spark-Lite", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
+	_, err := x.ChatWithMessages(ctx, "spark-x2.5-1.7b", []Message{{Role: "user", Content: "Hi"}}, apiConfig, chatConfig, nil)
 	return err
 }
 
