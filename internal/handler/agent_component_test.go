@@ -339,6 +339,7 @@ func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]
 		"query":     state.Sys["query"],
 		"tenant_id": state.Sys["tenant_id"],
 		"user_id":   state.Sys["user_id"],
+		"canvas_id": state.Sys["canvas_id"],
 	}, nil
 }
 
