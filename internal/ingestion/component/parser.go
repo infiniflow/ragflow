@@ -523,12 +523,21 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
+		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+		enhanceOn := c.enableVisionEnhancement
+		split := newFractionSplit(parsePagesOn, enhanceOn)
+		pageWin := split.take(parsePagesOn)
+		visionWin := split.take(enhanceOn)
+
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if dispatched.Err == nil && ctx.Err() == nil {
+			pageWin.report(ctx, 1.0)
+		}
 
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or
