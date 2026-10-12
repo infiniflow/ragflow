@@ -169,8 +169,9 @@ func GetConfig() *config.Config {
 	return globalConfig
 }
 
-// GetAllConfigs collects every backend's connection settings as exportable
-// maps, for diagnostics and the admin configuration view.
+// GetAllConfigs collects backend connection settings for administrator inspection.
+// ExportConfigs intentionally retains plaintext credentials; the admin configuration
+// endpoint restricts access to superusers, while PrintAll masks credentials in logs.
 func GetAllConfigs() ([]map[string]interface{}, error) {
 	var allConfigs []map[string]interface{}
 
@@ -284,6 +285,7 @@ var sensitiveConfigKeys = map[string]struct{}{
 	"client_secret":   {},
 	"api_key":         {},
 	"host_api_key":    {},
+	"http_app_key":    {},
 	"http_secret_key": {},
 	"access_key":      {},
 	"secret_id":       {},

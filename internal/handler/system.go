@@ -84,7 +84,8 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	common.SuccessWithData(c, config, "success")
 }
 
-// GetConfigs get all system configurations
+// GetConfigs returns the global configuration object containing plaintext credentials.
+// This handler currently has no registered route. Do not call it directly.
 // @Summary Get All System Configurations
 // @Description Get all system configurations from globalConfig
 // @Tags system

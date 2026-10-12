@@ -462,8 +462,8 @@ func (s *SystemService) SetVariable(ctx context.Context, varName, varValue strin
 
 // Config methods
 
-// ListAllConfigs list all configs
-// Returns all service configurations from the config file
+// ListAllConfigs returns backend connection settings with plaintext credentials.
+// This method currently has no callers. Do not call it directly.
 func (s *SystemService) ListAllConfigs() ([]map[string]interface{}, error) {
 	result, err := server.GetAllConfigs()
 	if err != nil {

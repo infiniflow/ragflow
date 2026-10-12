@@ -54,7 +54,7 @@ max_token: 64
 	wantCredentials := make(map[string]any)
 	for _, key := range []string{
 		"mail_password", "secret", "secret_key", "client_secret", "api_key",
-		"host_api_key", "http_secret_key", "access_key", "secret_id", "session_token", "sas_token",
+		"host_api_key", "http_app_key", "http_secret_key", "access_key", "secret_id", "session_token", "sas_token",
 		"open_dataloader_api_key", "paddle_ocr_access_token", "somark_api_key", "tcad_api_key",
 		"docling_api_key", "mineru_api_key", "tavily_api_key", "querit_api_key",
 	} {
