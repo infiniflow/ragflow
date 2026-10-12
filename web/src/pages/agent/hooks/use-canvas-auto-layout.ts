@@ -1,7 +1,10 @@
 import { useStore, useStoreApi } from '@xyflow/react';
 import { useCallback, useEffect, useRef } from 'react';
 import useGraphStore from '../store';
-import { layoutCanvasNodes } from '../utils/canvas-auto-layout';
+import {
+  type CanvasLayoutNode,
+  layoutCanvasNodes,
+} from '../utils/canvas-auto-layout';
 import { useCanvasEdgeRoute } from '../utils/canvas-edge-route';
 
 function isTypingTarget(target: EventTarget | null): boolean {
@@ -50,7 +53,10 @@ export function useCanvasAutoLayout(enabled = true): () => void {
                   y: handle.y,
                 })),
               ];
-              return handles.length > 0 ? { ...node, handles } : node;
+              return {
+                ...node,
+                handles: handles.length > 0 ? handles : undefined,
+              } as CanvasLayoutNode;
             }),
             edges: state.edges,
             selectedNodeIds: state.selectedNodeIds,

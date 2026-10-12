@@ -19,6 +19,7 @@ const RANK_GAP = 16 * 8;
 
 export type ElkLayoutNode = {
   id: string;
+  position: { x: number; y: number };
   data?: {
     form?: {
       items?: Array<{ uuid?: string } | null>;

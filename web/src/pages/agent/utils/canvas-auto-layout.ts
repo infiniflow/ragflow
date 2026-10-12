@@ -59,6 +59,7 @@ export type CanvasLayoutNode = {
 };
 
 export type CanvasLayoutEdge = {
+  id?: string;
   source: string;
   target: string;
   sourceHandle?: string | null;
@@ -437,7 +438,7 @@ function layoutConnected(
   sizeOfNode: (node: CanvasLayoutNode) => Size,
   layout: CanvasLayoutSettings = defaultCanvasLayout,
 ): Promise<Map<string, Box>[]> {
-  if (nodes.length === 0) return [];
+  if (nodes.length === 0) return Promise.resolve([]);
   const byId = new Map(nodes.map((node) => [node.id, node]));
   const { clusters, hiddenIds } = buildClusters(nodes, edges, sizeOfNode);
   const clusterByRoot = new Map(
