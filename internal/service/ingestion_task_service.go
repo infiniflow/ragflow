@@ -113,7 +113,8 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+		// Validate dataset membership before creating or reusing a task.
+		_, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -121,14 +122,6 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			})
 			continue
 		}
-		if doc == nil {
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     "no such document",
-			})
-			continue
-		}
-
 		task := &entity.IngestionTask{
 			DocumentID: docID,
 			UserID:     userID,
@@ -576,6 +569,9 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		return nil, err
 	}
 	if existing != nil {
+		if existing.DatasetID != task.DatasetID {
+			return nil, fmt.Errorf("document id %s has an ingestion task in a different dataset", task.DocumentID)
+		}
 		switch existing.Status {
 		case common.CREATED:
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
