@@ -24,7 +24,6 @@ import (
 	"ragflow/internal/common"
 	taskpkg "ragflow/internal/ingestion/task"
 	documentpkg "ragflow/internal/service/document"
-	"ragflow/internal/utility"
 )
 
 // docStateSvc is the subset of *service.DocumentService needed to finalize a
@@ -122,14 +121,5 @@ func applyBuiltInMetadata(ctx context.Context, svc docStateSvc, docID, docName s
 	if len(builtIn) == 0 {
 		return nil
 	}
-	existing, err := svc.GetDocumentMetadataByID(ctx, docID)
-	if err != nil {
-		return err
-	}
-	if existing == nil {
-		existing = map[string]any{}
-	}
-	merged := utility.UpdateMetadataTo(existing, builtIn)
-	merged = common.SplitCombinedMetadataValues(merged)
-	return svc.SetDocumentMetadata(ctx, docID, merged)
+	return mergeDocMetadata(ctx, svc, docID, builtIn)
 }

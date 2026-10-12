@@ -257,21 +257,31 @@ func TestDocStateUpdater_BuiltInMetadataGatedOff(t *testing.T) {
 }
 
 func TestDocStateUpdater_BuiltInMetadataOverwritesExisting(t *testing.T) {
-	svc := &stubDocStateSvc{metaData: map[string]any{"update_time": "2020-01-01 00:00:00"}}
+	svc := &stubDocStateSvc{metaData: map[string]any{
+		"update_time": []any{float64(2020)},
+		"file_name":   map[string]any{"old": true},
+		"keep":        false,
+	}}
 	u := &docStateUpdater{docSvc: svc}
 	ctx := t.Context()
 	u.apply(ctx, &taskpkg.PipelineResult{
-		DocID:                 "doc-1",
-		DocName:               "annual-report.pdf",
-		AutoMetadataEnabled:   true,
-		BuiltInMetadataConfig: []any{map[string]any{"key": "update_time", "type": "time"}},
-		ChunkCount:            1, TokenConsumption: 10,
+		DocID:               "doc-1",
+		DocName:             "annual-report.pdf",
+		AutoMetadataEnabled: true,
+		BuiltInMetadataConfig: []any{
+			map[string]any{"key": "update_time", "type": "time"},
+			map[string]any{"key": "file_name", "type": "string"},
+		},
+		ChunkCount: 1, TokenConsumption: 10,
 	})
 	if svc.metaData["update_time"] == "2020-01-01 00:00:00" {
 		t.Errorf("built-in update_time must overwrite the stored value: %v", svc.metaData["update_time"])
 	}
 	if _, ok := svc.metaData["update_time"].(string); !ok {
 		t.Fatalf("update_time = %T, want string", svc.metaData["update_time"])
+	}
+	if svc.metaData["file_name"] != "annual-report.pdf" || svc.metaData["keep"] != false {
+		t.Fatalf("built-in fields must overwrite structures and retain other keys: %#v", svc.metaData)
 	}
 }
 

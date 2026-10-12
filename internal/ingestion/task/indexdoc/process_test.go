@@ -8,7 +8,7 @@ import (
 
 func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
 	want := map[string]any{
-		"year": float64(2025), "verified": false, "scalar": nil,
+		"year": float64(2025), "verified": false, "scalar": map[string]any{"x": 1},
 		"labels": []string{"a", "b", "c"}, "object": map[string]any{"x": 1},
 		"tags":    []any{"contract", float64(123)},
 		"outline": []any{map[string]any{"title": "Intro"}},
@@ -23,7 +23,7 @@ func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
 		{"text": "second", "metadata": map[string]any{
 			"year": float64(2025), "verified": false, "scalar": float64(42),
 			"labels": []any{"b", "c"}, "object": map[string]any{"x": 2},
-			"tags": []any{"replacement", float64(456)}, "outline": "replacement",
+			"tags": false, "outline": float64(42),
 		}},
 		{"text": "third", "metadata": map[string]any{
 			"scalar": nil, "labels": "c",

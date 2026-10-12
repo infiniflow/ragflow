@@ -16,12 +16,12 @@
 
 package utility
 
-import "encoding/json"
+import "reflect"
 
 // UpdateMetadataTo merges metadata into an existing metadata map.
-// String lists are merged and deduplicated. Incoming scalars overwrite
-// existing values; objects and structured lists are added only for missing keys.
-// Strings and string lists are not merged into existing structured lists.
+// String lists are merged and deduplicated; incoming scalars otherwise win.
+// If either value at an existing key is a map or a non-string list or array,
+// the target value wins. Missing keys retain incoming values intact.
 func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	if target == nil {
 		return nil
@@ -47,22 +47,12 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 			continue
 		}
 
-		switch normVal.(type) {
-		case nil, string, []string, bool, json.Number,
-			int, int8, int16, int32, int64, uint, uint8, uint16, uint32, uint64,
-			float32, float64:
-		default:
-			// Structured values never replace an existing key.
+		if isStructuredMetadataValue(existing) || isStructuredMetadataValue(normVal) {
 			continue
 		}
 		targetList, targetIsList := metadataStringList(existing)
 		normList, normIsList := normVal.([]string)
 		_, normIsString := normVal.(string)
-		if normIsList || normIsString {
-			if _, structuredList := existing.([]any); structuredList && !targetIsList {
-				continue
-			}
-		}
 		if targetIsList && (normIsList || normIsString) {
 			// Appending must not write into a backing array shared by the caller.
 			targetList = targetList[:len(targetList):len(targetList)]
@@ -78,6 +68,23 @@ func UpdateMetadataTo(target map[string]any, meta any) map[string]any {
 	}
 
 	return target
+}
+
+// isStructuredMetadataValue recognizes maps and non-string slices or arrays.
+// Typed and JSON-decoded string lists use the string-list merge rules instead.
+func isStructuredMetadataValue(v any) bool {
+	if v == nil {
+		return false
+	}
+	if _, ok := metadataStringList(v); ok {
+		return false
+	}
+	switch reflect.TypeOf(v).Kind() {
+	case reflect.Map, reflect.Slice, reflect.Array:
+		return true
+	default:
+		return false
+	}
 }
 
 // normalizeMetaValue filters empty strings without changing other value types.
