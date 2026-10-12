@@ -70,6 +70,9 @@ type Input struct {
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
+	// DocIDs is the server-bound document scope. Nil leaves retrieval unrestricted;
+	// a non-nil empty slice restricts all corpus tools to no documents.
+	DocIDs []string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
 	// The web_search tool is NOT passed here: it is injected from the run's
@@ -292,6 +295,9 @@ func Run(ctx context.Context, in Input) (string, error) {
 	if in.Model == nil {
 		return "", errNilModel
 	}
+	if in.DocIDs != nil {
+		ctx = withDocumentScope(ctx, in.DocIDs)
+	}
 
 	tmpl, errT := resolveTemplateFor(in.TemplateID)
 	if errT != nil {
@@ -302,7 +308,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// Shared per-run duration tally: every tool invocation is timed and
 	// accumulated here for per-question usage accounting.
 	if in.ToolCallDurations == nil {
-		in.ToolCallDurations = NewDurationAccumulator()
+		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
 	tools := in.Tools
@@ -384,9 +390,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	// EnableStreaming lives on RunnerConfig, not ChatModelAgentConfig.
 	explorerHead := sess.explorer.head(ctx)
-	question := lastUserQuestion(in.Messages)
+	question := schema.UserMessage(lastUserQuestion(in.Messages))
 	seed := in.Messages
 	if len(seed) > 0 {
+		question = seed[len(seed)-1]
 		// The final user message is the new turn and must be appended exactly
 		// once by turnMessages.
 		seed = seed[:len(seed)-1]
@@ -715,10 +722,12 @@ func finalizeAnswer(
 		"assumption explicitly, and still provide the computed answer. Do not request any tools " +
 		"and do not hedge with \"I would need\" or \"I could not find\".")
 
-	resp, err := m.Generate(ctx, []*schema.Message{{
+	finalMessages := append([]*schema.Message(nil), messages...)
+	finalMessages = append(finalMessages, &schema.Message{
 		Role:    schema.User,
 		Content: body.String(),
-	}})
+	})
+	resp, err := m.Generate(ctx, finalMessages)
 	if err != nil {
 		return "", err
 	}

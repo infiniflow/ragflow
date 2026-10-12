@@ -2773,3 +2773,101 @@ func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
 		t.Error("a flipped is_tools flag was not seen by the next resolution")
 	}
 }
+
+// ttsSpyDriver records the text a TTS driver is asked to synthesize.
+type ttsSpyDriver struct {
+	modelModule.ModelDriver
+	input  string
+	called bool
+}
+
+func (d *ttsSpyDriver) AudioSpeech(_ context.Context, _ *string, audioContent *string, _ *modelModule.APIConfig, _ *modelModule.TTSConfig, _ *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	d.input = *audioContent
+	d.called = true
+	return &modelModule.TTSResponse{Audio: []byte("audio")}, nil
+}
+
+// TestSynthesizeTTS_CutsAtFiveHundredCharacters pins the cap to 500 characters,
+// so a CJK answer keeps its length and never ends in half a rune.
+func TestSynthesizeTTS_CutsAtFiveHundredCharacters(t *testing.T) {
+	spy := &ttsSpyDriver{}
+	name := "tts"
+	ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+	s := &ChatPipelineService{}
+	if audio := s.synthesizeTTS(t.Context(), ttsModel, strings.Repeat("知", 600)); audio == nil {
+		t.Fatal("expected audio")
+	}
+	if want := strings.Repeat("知", 500); spy.input != want {
+		t.Errorf("TTS input is %d bytes / %d runes, want 500 whole characters", len(spy.input), len([]rune(spy.input)))
+	}
+}
+
+func TestCleanTTSText(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty"},
+		{name: "ASCII below limit", text: strings.Repeat("a", 499), want: strings.Repeat("a", 499)},
+		{name: "ASCII at limit", text: strings.Repeat("a", 500), want: strings.Repeat("a", 500)},
+		{name: "ASCII over limit", text: strings.Repeat("a", 501), want: strings.Repeat("a", 500)},
+		{name: "CJK below limit", text: strings.Repeat("知", 499), want: strings.Repeat("知", 499)},
+		{name: "CJK at limit", text: strings.Repeat("知", 500), want: strings.Repeat("知", 500)},
+		{name: "CJK over limit", text: strings.Repeat("知", 501), want: strings.Repeat("知", 500)},
+		{name: "mixed rune widths", text: strings.Repeat("aé知𐐀", 126), want: strings.Repeat("aé知𐐀", 125)},
+		{name: "control emoji and whitespace", text: "\x00\t你好🙂\nworld\x7f  ", want: "你好 world"},
+		{name: "tags", text: "<think>reason</think> <b>answer</b>", want: "reason answer"},
+		{name: "comparisons", text: "2 < 3 and 4 > 1; a < b and c > d", want: "2 < 3 and 4 > 1; a < b and c > d"},
+		{name: "compact comparisons", text: "a<b>c; x<value>y", want: "a<b>c; x<value>y"},
+		{name: "unclosed tag", text: "<B>answer", want: "<B>answer"},
+		{name: "unmatched closing tag", text: "a</b>c", want: "a</b>c"},
+		{name: "nested tags", text: "<B><i>answer</i></b>", want: "answer"},
+		{name: "unmatched outer tag", text: "<b>unclosed <b>paired</b>", want: "<b>unclosed paired"},
+		{name: "encoded comparisons", text: "a&lt;b&gt;c", want: "a&lt;b&gt;c"},
+		{name: "incomplete tag", text: `answer <b title="unfinished`, want: `answer <b title="unfinished`},
+		{name: "quoted attributes", text: `<b title="a > b">answer</b> <span title='c > d'>text</span><br/>`, want: "answer text"},
+		{name: "trailing reasoning tag", text: "答案</think>", want: "答案"},
+		{name: "invalid UTF-8", text: "\xff知\xc3é\xe7\x9f", want: "知é"},
+		{name: "valid replacement character", text: "知\ufffdé", want: "知\ufffdé"},
+		{name: "cleanup before limit", text: "<think>" + strings.Repeat("知", 499) + "</think>\xff界🙂\x00余", want: strings.Repeat("知", 499) + "界"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanTTSText(tc.text); got != tc.want {
+				t.Errorf("cleanTTSText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "mixed answer", text: "\xff<think>思考</think> \x00hello🙂", want: "思考 hello"},
+		{name: "compact comparison", text: "a<b>c", want: "a<b>c"},
+		{name: "empty"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &ttsSpyDriver{}
+			name := "tts"
+			ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+			s := &ChatPipelineService{}
+			audio := s.synthesizeTTS(t.Context(), ttsModel, tc.text)
+			wantCall := tc.want != ""
+			if spy.called != wantCall {
+				t.Errorf("TTS driver called = %v, want %v", spy.called, wantCall)
+			}
+			if spy.input != tc.want {
+				t.Errorf("TTS input = %q, want %q", spy.input, tc.want)
+			}
+			if (audio != nil) != wantCall {
+				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
+			}
+		})
+	}
+}

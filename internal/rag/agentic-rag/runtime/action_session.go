@@ -356,28 +356,6 @@ func truncateRunes(s string, n int) string {
 	return string([]rune(s)[:n])
 }
 
-// toInt coerces a JSON-decoded value to int. Handles float64 (the default for
-// JSON numbers), the integer types, and numeric strings.
-func toInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int32:
-		return int(n), true
-	case int64:
-		return int(n), true
-	case float32:
-		return int(n), true
-	case float64:
-		return int(n), true
-	case string:
-		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
 // toIntStrict converts JSON NUMBER types only. Unlike toInt it does NOT parse strings: a
 // patch whose id is "1" must match nothing.
 func toIntStrict(v any) (int, bool) {

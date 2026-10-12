@@ -84,6 +84,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -254,6 +255,20 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	}
 	if err := out.Validate(); err != nil {
 		return out, err
+	}
+	// A structured table carries no markup text of its own. Derive a plain
+	// (tag-free) text from its cells so consumers that read Text — TokenChunker
+	// and the embed path — still receive a searchable body when the producer
+	// emitted only the TableData contract (decision 1-B: no HTML in Text).
+	for i := range out.JSONResult {
+		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
+			out.JSONResult[i].Text = tableutil.RenderTableText(out.JSONResult[i].TableData)
+		}
+	}
+	for i := range out.Chunks {
+		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
+			out.Chunks[i].Text = tableutil.RenderTableText(out.Chunks[i].TableData)
+		}
 	}
 	return out, nil
 }
@@ -724,32 +739,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	// Fold whitespace-only pieces into an adjacent real piece instead of
-	// dropping them, so a bare retained delimiter that produces a blank run
-	// (the blank line between two "\n", or a leading "\n") survives in the
-	// emitted text. This mirrors the text/children paths and keeps the chunk
-	// reconstruction lossless for the common case.
-	var kept []string
-	var leading string
-	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
-			leading += p
-			continue
-		}
-		if leading != "" {
-			p = leading + p
-			leading = ""
-		}
-		kept = append(kept, p)
-	}
-	// A pending blank run belongs to the source and must be preserved. A run
-	// that preceded the first real piece is already prepended during the loop;
-	// any run left over after the last real piece (a trailing delimiter) is
-	// appended to the last kept piece so the emitted text reconstructs the
-	// source exactly instead of being shifted to the front.
-	if leading != "" && len(kept) > 0 {
-		kept[len(kept)-1] += leading
-	}
+	kept := foldWhitespaceSegments(parts)
 	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}

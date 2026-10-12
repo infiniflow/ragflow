@@ -14,6 +14,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -273,6 +274,26 @@ func TestDatasetsHandlerSearchDatasetsPropagatesServiceError(t *testing.T) {
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeDataError) || body["message"] != "boom" {
 		t.Fatalf("response=%v want code=%d message=boom", body, common.CodeDataError)
+	}
+}
+
+func TestDatasetsHandlerSearchDatasetsNormalizesPermissionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{err: permission.ErrPermissionDenied}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.SearchDatasets(c)
+
+	body := decodeSearchResponse(t, rec)
+	if body["code"] != float64(common.CodeForbidden) || body["message"] != "Permission denied" {
+		t.Fatalf("response=%v want forbidden permission error", body)
 	}
 }
 

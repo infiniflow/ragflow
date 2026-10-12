@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	"github.com/xuri/excelize/v2"
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
@@ -31,14 +33,14 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
 		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
 	}
-	text, _ := item["text"].(string)
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>ID</th><th>Status</th></tr>\n" +
 		"<tr><td>A-100</td><td>paid</td></tr>\n" +
 		"<tr><td>A-101</td><td>pending</td></tr>\n" +
 		"</table>\n"
-	if text != wantText {
-		t.Fatalf("text = %q, want %q", text, wantText)
+	rendered := tableItemHTML(t, item)
+	if rendered != wantText {
+		t.Fatalf("table HTML = %q, want %q", rendered, wantText)
 	}
 	if item["sheet"] != "Sheet1" || item["sheet_index"] != 1 {
 		t.Fatalf("sheet metadata = %#v", item)
@@ -79,7 +81,7 @@ func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table" || !strings.Contains(res.JSON[0]["text"].(string), "<table>") {
+	if res.JSON[0]["ck_type"] != "table" || res.JSON[0]["table"] == nil {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -111,7 +113,7 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if last[1] != float64(dataRows+1) || last[2] != float64(dataRows+1) {
 		t.Fatalf("last tuple = %v, want source row %d", last, dataRows+1)
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text := tableItemHTML(t, res.JSON[0])
 	if !strings.Contains(text, "<td>258</td>") {
 		t.Fatalf("last data row missing from markup:\n%s", text)
 	}
@@ -170,8 +172,8 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>Name</th><th>Amount</th></tr>\n" +
 		"</table>\n"
-	if item["text"] != wantText {
-		t.Fatalf("text = %q, want %q", item["text"], wantText)
+	if rendered := tableItemHTML(t, item); rendered != wantText {
+		t.Fatalf("table HTML = %q, want %q", rendered, wantText)
 	}
 	positions, _ := item["positions"].([][]float64)
 	if len(positions) != 1 || !reflect.DeepEqual(positions[0], []float64{1, 1, 1, 1, 2}) {
@@ -188,7 +190,7 @@ func TestBuildSheetItemsEscapesCellText(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want one segment", len(items))
 	}
-	text, _ := items[0]["text"].(string)
+	text := tableItemHTML(t, items[0])
 	if strings.Contains(text, "<b>") || !strings.Contains(text, "&lt;b&gt;") {
 		t.Fatalf("cell text was not escaped: %q", text)
 	}
@@ -244,7 +246,7 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 		}
 		for segIdx, want := range [][]string{wantFirst, wantSecond} {
 			item := items[segIdx*2]
-			text, _ := item["text"].(string)
+			text := tableItemHTML(t, item)
 			rows := markupRows(t, text)
 			if len(rows) != len(want)+1 {
 				t.Fatalf("segment %d rows = %d, want header plus %d", segIdx, len(rows), len(want))
@@ -303,11 +305,37 @@ func markupRows(t *testing.T, markup string) [][]string {
 	return rows
 }
 
+// tableItemHTML renders a parser-produced structured table item back to the
+// legacy spreadsheet HTML so the byte-level assertions in these tests keep
+// pinning the same wire shape. The producer emits *entity.TableData now, and
+// RenderTableHTML reproduces the legacy markup exactly.
+func tableItemHTML(t *testing.T, item map[string]any) string {
+	t.Helper()
+	td, ok := item["table"].(*entity.TableData)
+	if !ok {
+		t.Fatalf("item missing *entity.TableData table field: %#v", item)
+	}
+	return tableutil.RenderTableHTML(td)
+}
+
+// renderedText returns the legacy HTML rendering of an item's structured table
+// when present, otherwise its text field. It lets table-contract tests pin
+// the byte-level wire shape whether the producer emitted TableData or plain
+// text (e.g. non-table items).
+func renderedText(item map[string]any) string {
+	if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+		return tableutil.RenderTableHTML(td)
+	}
+	text, _ := item["text"].(string)
+	return text
+}
+
 func spreadsheetText(res ParseResult) string {
 	var out strings.Builder
 	for _, item := range res.JSON {
-		text, _ := item["text"].(string)
-		out.WriteString(text)
+		if td, ok := item["table"].(*entity.TableData); ok {
+			out.WriteString(tableutil.RenderTableHTML(td))
+		}
 	}
 	return out.String()
 }
@@ -317,10 +345,11 @@ func spreadsheetText(res ParseResult) string {
 // table item exists.
 func spreadsheetHeaderText(res ParseResult) string {
 	for _, item := range res.JSON {
-		text, _ := item["text"].(string)
-		if !strings.Contains(strings.ToLower(text), "<table") {
+		td, ok := item["table"].(*entity.TableData)
+		if !ok {
 			continue
 		}
+		text := tableutil.RenderTableHTML(td)
 		row := text
 		if i := strings.Index(row, "<tr>"); i >= 0 {
 			row = row[i+len("<tr>"):]

@@ -189,9 +189,9 @@ func (c *conversation) markSeeded() {
 // deliverable first — a repair turn that lost its predecessor's events to a
 // restart must still see the question it is answering — every later turn sends
 // the directive alone and lets the Runner replay the rest.
-func (c *conversation) turnMessages(seed []*schema.Message, final, directive string) []adk.Message {
+func (c *conversation) turnMessages(seed []*schema.Message, final string, directive *schema.Message) []adk.Message {
 	if c.seeded {
-		return []adk.Message{schema.UserMessage(directive)}
+		return []adk.Message{directive}
 	}
 	c.markSeeded()
 	msgs := make([]adk.Message, 0, len(seed)+2)
@@ -201,7 +201,7 @@ func (c *conversation) turnMessages(seed []*schema.Message, final, directive str
 		// standing deliverable the directive alone carries the ask.
 		msgs = append(msgs, schema.AssistantMessage(final, nil))
 	}
-	return append(msgs, schema.UserMessage(directive))
+	return append(msgs, directive)
 }
 
 // lastAssistant walks the conversation's message events NEWEST FIRST and
