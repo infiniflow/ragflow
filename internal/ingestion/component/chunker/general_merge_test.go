@@ -135,7 +135,7 @@ func TestMergeMarkdownUnitsCarriesCharacterOverlapIntoNextBudget(t *testing.T) {
 	}
 	target := intValue(units[0].TKNums) + intValue(units[1].TKNums)
 
-	got := mergeMarkdownUnits(units, target, 50, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true, true, true}, shortHeadings: []bool{false, false, false, false}}, target, 50)
 	want := []string{
 		"alpha beta\ngamma delta",
 		"gamma delta\nepsilon zeta",
@@ -174,7 +174,7 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	}
 
 	target := intValue(units[0].TKNums)
-	got := mergeMarkdownUnits(units, target, 50, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true}, shortHeadings: []bool{false, false}}, target, 50)
 	if len(got) != 2 {
 		t.Fatalf("chunks = %#v, want previous and overlapped current chunks", got)
 	}
@@ -212,7 +212,7 @@ func TestMergeMarkdownUnitsStripsFoldedHeadingFromTableContextAbove(t *testing.T
 			TKNums:       intPtr(1),
 		},
 	}
-	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true}, shortHeadings: []bool{true, false}}, 10, 0)
 	if len(got) != 1 {
 		t.Fatalf("chunks = %#v, want one table chunk", got)
 	}
@@ -236,7 +236,7 @@ func TestMergeMarkdownUnitsStripsOnlyFoldedHeadingFromTableContextAbove(t *testi
 			TKNums:       intPtr(1),
 		},
 	}
-	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true, true}, shortHeadings: []bool{false, true, false}}, 10, 0)
 	if len(got) != 2 {
 		t.Fatalf("chunks = %#v, want intro text and table", got)
 	}
@@ -259,7 +259,7 @@ func TestMergeMarkdownUnitsKeepsImageWithMediaContextStandalone(t *testing.T) {
 		},
 		{Text: "after", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
-	got := mergeMarkdownUnits(units, 10, 0, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true, true}, shortHeadings: []bool{false, false, false}}, 10, 0)
 	if len(got) != 3 {
 		t.Fatalf("chunks = %d, want text, image, text", len(got))
 	}
@@ -275,7 +275,7 @@ func TestMergeMarkdownUnitsStartsNewChunkForIncomingHeading(t *testing.T) {
 		{Text: "The architecture is split into parser and chunker.", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
 
-	got := mergeMarkdownUnits(units, 3, 0, "\n")
+	got := mergeMarkdownUnits(markdownSplit{chunks: units, blockStarts: []bool{true, true, true}, shortHeadings: []bool{false, true, false}}, 3, 0)
 	if texts := generalChunkTexts(got); !reflect.DeepEqual(texts, []string{
 		"Background details",
 		"## Architecture\nThe architecture is split into parser and chunker.",
@@ -327,10 +327,10 @@ func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) 
 
 func TestTakeContextSentencesPreservesBoundarySelection(t *testing.T) {
 	text := "one!two!three!"
-	if got, want := takeContextSentences(text, tokenizeStr("two!three!"), true), "two!three!"; got != want {
+	if got, want := takeContextSentences(text, tokenizeStr("two!three!"), true, contextSentencePattern), "two!three!"; got != want {
 		t.Fatalf("suffix context = %q, want %q", got, want)
 	}
-	if got, want := takeContextSentences(text, tokenizeStr("one!two!"), false), "one!two!"; got != want {
+	if got, want := takeContextSentences(text, tokenizeStr("one!two!"), false, contextSentencePattern), "one!two!"; got != want {
 		t.Fatalf("prefix context = %q, want %q", got, want)
 	}
 }

@@ -29,7 +29,6 @@ import { memo, useCallback, useMemo } from 'react';
 import { DocumentDownloadButton } from '../document-download-button';
 import { LoadingDots } from '../loading-dots';
 import MarkdownContent from '../markdown-content';
-import { ReferenceDocumentList } from '../next-message-item/reference-document-list';
 import { ReferenceImageList } from '../next-message-item/reference-image-list';
 import { UploadedMessageFiles } from '../next-message-item/uploaded-message-files';
 import { RAGFlowAvatar } from '../ragflow-avatar';
@@ -80,10 +79,6 @@ const MessageItem = ({
   const uploadedFiles = useMemo(() => {
     return item?.files ?? [];
   }, [item?.files]);
-
-  const referenceDocumentList = useMemo(() => {
-    return reference?.doc_aggs ?? [];
-  }, [reference?.doc_aggs]);
 
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
@@ -187,11 +182,6 @@ const MessageItem = ({
                 referenceChunks={reference.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-            {isAssistant && referenceDocumentList.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocumentList}
-              ></ReferenceDocumentList>
             )}
             {isUser &&
               Array.isArray(uploadedFiles) &&

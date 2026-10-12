@@ -4,7 +4,9 @@
 
 package models
 
-import "testing"
+import (
+	"testing"
+)
 
 func TestMinerUProviderConfigFromAPIKey(t *testing.T) {
 	t.Run("plain bearer token", func(t *testing.T) {
@@ -69,5 +71,25 @@ func TestResolveMinerUBackendAndServerURL(t *testing.T) {
 	}
 	if got := ResolveMinerUBackend("pipeline", apiKey); got != "pipeline" {
 		t.Fatalf("setup should win, backend = %q", got)
+	}
+}
+
+func TestResolveMinerUAPIServer(t *testing.T) {
+	t.Setenv("MINERU_APISERVER", "http://env-mineru:8000")
+
+	fromJSON := `{"mineru_apiserver":"http://json-mineru:8000"}`
+	empty := ""
+	jsonKey := fromJSON
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &empty, ApiKey: &jsonKey}); got != "http://json-mineru:8000" {
+		t.Fatalf("api_key JSON = %q", got)
+	}
+
+	direct := "http://instance-mineru:8000"
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &direct, ApiKey: &jsonKey}); got != "http://instance-mineru:8000" {
+		t.Fatalf("instance base_url should win, got %q", got)
+	}
+
+	if got := ResolveMinerUAPIServer(&APIConfig{BaseURL: &empty}); got != "http://env-mineru:8000" {
+		t.Fatalf("env fallback = %q", got)
 	}
 }

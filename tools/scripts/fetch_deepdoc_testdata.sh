@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fetch external DeepDoc testdata into the repo on demand.
 #
-# Usage: scripts/fetch_deepdoc_testdata.sh <pkg>
+# Usage: tools/scripts/fetch_deepdoc_testdata.sh <pkg>
 #   <pkg> = the package directory that owns the testdata, e.g. "native"
 #          (mirrors internal/deepdoc/<pkg>/testdata).
 #
@@ -44,9 +44,9 @@ if [ $# -lt 1 ]; then
 fi
 PKG="$1"
 
-# Resolve repo root from this script's location (scripts/ -> repo root).
+# Resolve repo root from this script's location (tools/scripts/ -> repo root).
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
 TARGET="$ROOT/internal/deepdoc/$PKG/testdata"
 
