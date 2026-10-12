@@ -1,9 +1,48 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
+	want := map[string]any{
+		"year": float64(2025), "verified": false, "scalar": map[string]any{"x": 1},
+		"labels": []string{"a", "b", "c"}, "object": map[string]any{"x": 1},
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro"}},
+	}
+	chunks := []map[string]any{
+		{"text": "first", "metadata": map[string]any{
+			"year": float64(2024), "verified": true, "scalar": map[string]any{"x": 1},
+			"labels": []any{"a", "b"}, "object": map[string]any{"x": 1},
+			"tags":    []any{"contract", float64(123)},
+			"outline": []any{map[string]any{"title": "Intro"}},
+		}},
+		{"text": "second", "metadata": map[string]any{
+			"year": float64(2025), "verified": false, "scalar": float64(42),
+			"labels": []any{"b", "c"}, "object": map[string]any{"x": 2},
+			"tags": false, "outline": float64(42),
+		}},
+		{"text": "third", "metadata": map[string]any{
+			"scalar": nil, "labels": "c",
+			"outline": []any{map[string]any{"title": "Replacement"}},
+		}},
+	}
+	got, err := ProcessChunksForPipeline(chunks, "doc-1", "report.pdf", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata = %#v, want %#v", got, want)
+	}
+	for i, chunk := range chunks {
+		if _, exists := chunk["metadata"]; exists {
+			t.Fatalf("consumed metadata must be removed from chunk %d", i)
+		}
+	}
+}
 
 // =============================================================================
 // RenameTextToContentWithWeight - Python processChunks logic

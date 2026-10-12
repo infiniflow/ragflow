@@ -60,7 +60,13 @@ func TestGeneralChunkerPDFPunctuationPreservesMediaOrderAndContext(t *testing.T)
 		t.Fatalf("chunks = %#v", chunks)
 	}
 	assertMaterializedMediaContext(t, chunks[1], "前文。还有一句。<table>A</table>后文。还有一句。")
-	if got, want := chunks[0]["positions"], [][]float64{{1, 0, 10, 10, 15}}; !reflect.DeepEqual(got, want) {
+	// The unit "前文。还有一句。" is delimiter-split into "前文。" (3 visible
+	// runes) and "还有一句。" (5 visible runes) whose bboxes partition the
+	// source [10,15] box proportionally (3:5), then merged back into one
+	// chunk. The two rows cover exactly the source span — the Token path
+	// likewise retains one row per merged item — so expect the partition
+	// rather than a single full-span row.
+	if got, want := chunks[0]["positions"], [][]float64{{1, 0, 10, 10, 11.875}, {1, 0, 10, 11.875, 15}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("positions = %#v, want %#v", got, want)
 	}
 }

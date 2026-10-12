@@ -386,7 +386,7 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 			continue
 		}
 		if b.Len() > 0 {
-			b.WriteString(captionSep(c))
+			b.WriteString("\n")
 		}
 		b.WriteString(t)
 	}
@@ -394,7 +394,7 @@ func appendRawCaptions(target *pdf.Section, captions []string) {
 		return
 	}
 	if target.Text != "" {
-		target.Text += " " + b.String()
+		target.Text += "\n" + b.String()
 	} else {
 		target.Text = b.String()
 	}

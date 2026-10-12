@@ -961,6 +961,7 @@ export const NodeMap = {
   [Operator.GeneralChunker]: 'chunkerNode',
   [Operator.TokenChunker]: 'chunkerNode',
   [Operator.TitleChunker]: 'chunkerNode',
+  [Operator.ManualChunker]: 'chunkerNode',
   [Operator.Extractor]: 'contextNode',
   [Operator.Compiler]: 'compilationNode',
   [Operator.DataOperations]: 'dataOperationsNode',

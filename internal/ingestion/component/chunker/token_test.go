@@ -718,6 +718,9 @@ func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
 	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
 		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
 	}
+	if got := chunks[0]["sheet"]; got != "Sheet1" {
+		t.Errorf("sheet = %v, want Sheet1", got)
+	}
 }
 
 // TestTokenChunker_NewRejectsBadParam enforces the param validation
