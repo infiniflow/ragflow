@@ -35,6 +35,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // invokeAsTokenChunker constructs a TokenChunker component and
@@ -114,16 +115,16 @@ func TestChunker_PreservesLayoutField(t *testing.T) {
 // pass-through. DeepDOC's PDF parser attaches bounding boxes under this key;
 // downstream layout-aware components use them to rebuild page geometry.
 func TestChunker_PassesPDFPositionsThrough(t *testing.T) {
-	positions := [][]float64{{0.1, 0.2, 0.3, 0.4}, {0.5, 0.6, 0.7, 0.8}}
+	positions := [][]float64{{1, 0.1, 0.2, 0.3, 0.4}, {2, 0.5, 0.6, 0.7, 0.8}}
 	items := []map[string]any{
-		{"text": "PDF paragraph.", "doc_type_kwd": "text", "_pdf_positions": positions},
+		{"text": "PDF paragraph.", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": positions})},
 	}
 	out := invokeAsTokenChunker(t, items)
 	chunks := chunksFromOutput(t, out)
 	if len(chunks) == 0 {
 		t.Fatal("no chunks emitted")
 	}
-	got, ok := chunks[0]["_pdf_positions"]
+	got, ok := locationFieldPresent(chunks[0], "_pdf_positions")
 	if !ok {
 		t.Fatalf("chunks[0] missing _pdf_positions; keys=%v", keysOf(chunks[0]))
 	}

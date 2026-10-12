@@ -19,6 +19,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
@@ -34,7 +36,7 @@ func TestCropTitleChunks_CropsPositionedChunk(t *testing.T) {
 	ctx := context.Background()
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	in := []map[string]any{
-		{"text": "page text", "doc_type_kwd": "text", "positions": pos},
+		{"text": "page text", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": pos})},
 		{"text": "no coords", "doc_type_kwd": "text"},
 	}
 

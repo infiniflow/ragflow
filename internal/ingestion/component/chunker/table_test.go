@@ -22,6 +22,7 @@ import (
 	"strings"
 	"testing"
 
+	sourceposition "ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -172,9 +173,7 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			tableItem(t, table, map[string]any{
-				"ck_type":     "table",
-				"sheet_index": 1,
-				"positions":   [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}},
+				"ck_type": "table", "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 1, "positions": [][]float64{{1, 1, 1, 1, 2}, {1, 2, 2, 1, 2}, {1, 3, 3, 1, 2}}}),
 			}),
 		},
 	})
@@ -188,11 +187,11 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 	if chunks[1]["text"] != "- ID: A-2" {
 		t.Errorf("chunk1 text = %v", chunks[1]["text"])
 	}
-	if got := fmt.Sprintf("%v", chunks[0]["positions"]); !strings.Contains(got, "2") || strings.Contains(got, "3") {
-		t.Errorf("chunk0 positions should hold only its own tuple, got %v", chunks[0]["positions"])
+	if got := fmt.Sprintf("%v", locationField(chunks[0], "positions")); !strings.Contains(got, "2") || strings.Contains(got, "3") {
+		t.Errorf("chunk0 positions should hold only its own tuple, got %v", locationField(chunks[0], "positions"))
 	}
-	if got := fmt.Sprintf("%v", chunks[1]["positions"]); !strings.Contains(got, "3") {
-		t.Errorf("chunk1 positions should hold its own tuple, got %v", chunks[1]["positions"])
+	if got := fmt.Sprintf("%v", locationField(chunks[1], "positions")); !strings.Contains(got, "3") {
+		t.Errorf("chunk1 positions should hold its own tuple, got %v", locationField(chunks[1], "positions"))
 	}
 }
 
@@ -206,17 +205,14 @@ func TestTableChunker_WholeTableTupleNotCopiedToRows(t *testing.T) {
 		"name":          "sheet.csv",
 		"output_format": "json",
 		"json": []map[string]any{
-			tableItem(t, table, map[string]any{
-				"sheet_index": 1,
-				"positions":   [][]float64{{1, 1, 2, 1, 1}},
-			}),
+			tableItem(t, table, map[string]any{"source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 1, "positions": [][]float64{{1, 1, 2, 1, 1}}})}),
 		},
 	})
 	if len(chunks) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(chunks))
 	}
 	for i, c := range chunks {
-		if p, ok := c["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+		if p, ok := locationFieldPresent(c, "positions"); ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
 			t.Errorf("chunk %d leaked whole-table positions: %v", i, p)
 		}
 	}
@@ -233,8 +229,7 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			tableItem(t, table, map[string]any{
-				"ck_type":   "table",
-				"positions": [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}},
+				"ck_type": "table", "source_location": sourceposition.FromParserMap(map[string]any{"positions": [][]float64{{1, 1, 1, 1, 1}, {1, 2, 2, 1, 1}, {1, 3, 3, 1, 1}}}),
 			}),
 		},
 	})
@@ -242,7 +237,7 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 		t.Fatalf("got %d chunks, want one per data row", len(chunks))
 	}
 	for i, c := range chunks {
-		if p, ok := c["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+		if p, ok := locationFieldPresent(c, "positions"); ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
 			t.Errorf("chunk %d kept positions without spreadsheet identity: %v", i, p)
 		}
 	}

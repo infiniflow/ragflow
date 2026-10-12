@@ -23,6 +23,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // manualChunkerInput is a small builder for a structured (output_format=chunks)
@@ -35,14 +36,11 @@ func manualChunkerInput(name string, items ...map[string]any) map[string]any {
 	}
 }
 
-// posItem builds a chunk item carrying a PDF position matrix
-// [page,left,right,top,bottom] under the `_pdf_positions` key (matching
-// schema.ChunkDoc.PDFPositions).
+// posItem builds a chunk item carrying typed page preview geometry.
 func posItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
-		"text":           text,
-		"doc_type_kwd":   "text",
-		"_pdf_positions": [][]float64{{page, left, right, top, bottom}},
+		"text":         text,
+		"doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": [][]float64{{page, left, right, top, bottom}}}),
 	}
 }
 
@@ -264,9 +262,9 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 		if strings.Contains(text, "@@") {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
-		pos, ok := ck["_pdf_positions"].([][]float64)
+		pos, ok := locationField(ck, "_pdf_positions").([][]float64)
 		if !ok {
-			t.Fatalf("_pdf_positions missing or wrong type %T on merged group chunk", ck["_pdf_positions"])
+			t.Fatalf("_pdf_positions missing or wrong type %T on merged group chunk", locationField(ck, "_pdf_positions"))
 		}
 		if len(pos) != 2 {
 			// Hard fail: the page/top/left checks below would index out of
@@ -274,8 +272,8 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 			t.Fatalf("merged _pdf_positions = %d rows, want 2 (both records)", len(pos))
 		}
 		// Merged matrix must itself be sorted by (page, top, left) — the
-		// same key pdfPosRowLess uses when merging.
-		if pdfPosRowLess(pos[1], pos[0]) {
+		// same key pageMatrixLess uses when merging.
+		if pageMatrixLess(pos[1], pos[0]) {
 			t.Errorf("merged _pdf_positions not sorted by (page, top, left): %v", pos)
 		}
 	}
@@ -289,9 +287,9 @@ func TestManualChunker_MergesPositions(t *testing.T) {
 // their original relative order (so a no-coordinate payload is untouched).
 func TestSortRecordsByPosition_Unit(t *testing.T) {
 	recs := []lineRecord{
-		{text: "a", pdfPositions: mustPosJSON(t, 1, 200, 300, 400, 500)},
-		{text: "b", pdfPositions: mustPosJSON(t, 1, 10, 100, 300, 400)},
-		{text: "c", pdfPositions: mustPosJSON(t, 1, 10, 100, 100, 200)},
+		{text: "a", location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": mustPosJSON(t, 1, 200, 300, 400, 500)})},
+		{text: "b", location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": mustPosJSON(t, 1, 10, 100, 300, 400)})},
+		{text: "c", location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": mustPosJSON(t, 1, 10, 100, 100, 200)})},
 		{text: "d"}, // no position
 	}
 	sortRecordsByPosition(recs)
@@ -308,10 +306,10 @@ func TestHasPdfPositions(t *testing.T) {
 	if hasPdfPositions([]lineRecord{{text: "x"}}) {
 		t.Error("plain record should report no positions")
 	}
-	if !hasPdfPositions([]lineRecord{{text: "x", pdfPositions: mustPosJSON(t, 1, 1, 1, 1, 1)}}) {
+	if !hasPdfPositions([]lineRecord{{text: "x", location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": mustPosJSON(t, 1, 1, 1, 1, 1)})}}) {
 		t.Error("record with pdf_positions should report positions")
 	}
-	if !hasPdfPositions([]lineRecord{{text: "x", positions: mustPosJSON(t, 1, 1, 1, 1, 1)}}) {
+	if !hasPdfPositions([]lineRecord{{text: "x", location: sourceposition.FromParserMap(map[string]any{"positions": mustPosJSON(t, 1, 1, 1, 1, 1)})}}) {
 		t.Error("record with positions should report positions")
 	}
 }
@@ -325,11 +323,9 @@ func TestHasPdfPositions(t *testing.T) {
 // after the chunksFromInputs JSON round-trip.
 func parserShapedItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
-		"text":           text,
-		"doc_type_kwd":   "text",
-		"layout":         "text",
-		"page_number":    int(page),
-		"_pdf_positions": [][]any{{page, left, right, top, bottom}},
+		"text":         text,
+		"doc_type_kwd": "text",
+		"layout":       "text", "source_location": sourceposition.FromParserMap(map[string]any{"page_number": int(page), "_pdf_positions": [][]any{{page, left, right, top, bottom}}}),
 	}
 }
 
@@ -338,8 +334,7 @@ func parserShapedItem(text string, page, left, right, top, bottom float64) map[s
 func legacyPosItem(text string, page, left, right, top, bottom float64) map[string]any {
 	return map[string]any{
 		"text":         text,
-		"doc_type_kwd": "text",
-		"positions":    [][]float64{{page, left, right, top, bottom}},
+		"doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": [][]float64{{page, left, right, top, bottom}}}),
 	}
 }
 
@@ -378,7 +373,7 @@ func TestManualChunker_RealParserShapedPayload(t *testing.T) {
 
 // TestManualChunker_LegacyPositionsKeyTriggersSort pins that the resort fires
 // when records carry the LEGACY `positions` key rather than the structured
-// `_pdf_positions` key. firstPositionRow (and thus the shared pdfPosRowLess
+// `_pdf_positions` key. firstPositionRow (and thus the shared pageMatrixLess
 // comparator) must read both forms, otherwise a payload emitted with the old
 // key would silently skip the resort.
 func TestManualChunker_LegacyPositionsKeyTriggersSort(t *testing.T) {

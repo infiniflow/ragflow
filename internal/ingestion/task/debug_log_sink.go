@@ -285,7 +285,7 @@ func endOutputMessage(entries []debugLogEntry, runOutput map[string]any) string 
 	if !ok || len(out) == 0 {
 		return ""
 	}
-	b, err := json.Marshal(deepCopy(out, true))
+	b, err := json.Marshal(publicDebugPayload(out))
 	if err != nil {
 		return ""
 	}

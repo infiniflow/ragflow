@@ -28,12 +28,13 @@ import (
 	"fmt"
 	"strings"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/position"
 	"ragflow/internal/utility"
-
-	"go.uber.org/zap"
 )
 
 type parserSetupConfigurer interface {
@@ -319,7 +320,23 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = "json"
-		out["json"] = normalizeParserJSON(ctx, name, dispatched)
+		items := normalizeParserJSON(ctx, name, dispatched)
+		normalized := make([]map[string]any, len(items))
+		for i, backendItem := range items {
+			item := make(map[string]any, len(backendItem))
+			for key, value := range backendItem {
+				item[key] = value
+			}
+			location := position.FromParserMap(item)
+			for _, key := range []string{"positions", "_pdf_positions", "sheet", "sheet_index", "page_number"} {
+				delete(item, key)
+			}
+			if location != nil {
+				item["source_location"] = location
+			}
+			normalized[i] = item
+		}
+		out["json"] = normalized
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
 		}

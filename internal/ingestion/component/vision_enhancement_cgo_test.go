@@ -9,6 +9,7 @@ import (
 	"time"
 
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // mockVisionEngine returns a fixed image for any rendered page so the
@@ -52,9 +53,7 @@ func (m mockVisionEngine) Close() error {
 
 func cgoPositions() map[string]any {
 	// 1-based page 1 region; PositionsFromMatrix shifts to 0-based.
-	return map[string]any{
-		"_pdf_positions": [][]any{{1, 10.0, 100.0, 10.0, 100.0}},
-	}
+	return map[string]any{"source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": [][]any{{1, 10.0, 100.0, 10.0, 100.0}}})}
 }
 
 // TestVisionCropImage_OnDemandFromPositions verifies the core fix: a parsed
@@ -144,9 +143,7 @@ func TestVisionCropImage_RejectsAggregatePagePixelsBeforeRendering(t *testing.T)
 		return mockVisionEngine{pageWidth: 2000, pageHeight: 2000, renderCalls: &renderCalls}, nil
 	}
 
-	item := map[string]any{
-		"_pdf_positions": [][]any{{[]any{1, 2}, 10.0, 100.0, 10.0, 100.0}},
-	}
+	item := map[string]any{"source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": [][]any{{[]any{1, 2}, 10.0, 100.0, 10.0, 100.0}}})}
 	cropper, err := newVisionImageCropper(context.Background(), nil, map[string]any{"bucket": "b", "path": "p"})
 	if err != nil {
 		t.Fatalf("newVisionImageCropper: %v", err)

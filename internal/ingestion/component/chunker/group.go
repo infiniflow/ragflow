@@ -38,7 +38,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
-	"sort"
 	"strings"
 
 	"go.uber.org/zap"
@@ -48,6 +47,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/position"
 	"ragflow/internal/tokenizer"
 )
 
@@ -316,20 +316,12 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 		// Merge PDF coordinate matrices across the merged records
 		// instead of keeping only the leading record's (diff 1.6).
 		// Mirrors pdf_chunk_metadata.py:127 merge_pdf_positions.
-		var pdfSrc, posSrc []json.RawMessage
+		var location *position.Location
 		for _, r := range g {
-			if len(r.pdfPositions) > 0 {
-				pdfSrc = append(pdfSrc, r.pdfPositions)
-			}
-			if len(r.positions) > 0 {
-				posSrc = append(posSrc, r.positions)
-			}
+			location = location.MergePage(r.location)
 		}
-		if m := mergePositionMatrix(pdfSrc...); m != nil {
-			chunk["_pdf_positions"] = m
-		}
-		if m := mergePositionMatrix(posSrc...); m != nil {
-			chunk["positions"] = m
+		if location != nil {
+			chunk["source_location"] = location
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -352,59 +344,6 @@ var posTagRemove = regexp.MustCompile(`@@[\t0-9.-]+?##`)
 // Mirrors deepdoc RAGFlowPdfParser.remove_tag.
 func removeTag(text string) string {
 	return posTagRemove.ReplaceAllString(text, "")
-}
-
-// pdfPosRowLess orders two PDF coordinate 5-tuples [page,left,right,top,bottom]
-// by (page, top, left) — i.e. by indices (0, 3, 1). It is the single shared
-// (page, top, left) comparator used both when re-sorting chunker records
-// (ManualChunker) and when de-duplicating/merging position matrices
-// (mergePositionMatrix). Both rows must have length >= 5.
-func pdfPosRowLess(a, b []float64) bool {
-	if a[0] != b[0] {
-		return a[0] < b[0]
-	}
-	if a[3] != b[3] {
-		return a[3] < b[3]
-	}
-	return a[1] < b[1]
-}
-
-// mergePositionMatrix aggregates multiple PDF coordinate matrices into a
-// single de-duplicated, sorted matrix. Mirrors Python
-// pdf_chunk_metadata.py:127 merge_pdf_positions: rows are 5-tuples
-// [page,left,right,top,bottom]; duplicates (by the first five columns)
-// are dropped and rows are sorted by (page, top, left). Returns nil when
-// no source carries any usable coordinates.
-func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
-	var out [][]float64
-	seen := make(map[string]bool)
-	for _, src := range sources {
-		if len(src) == 0 {
-			continue
-		}
-		var mat [][]float64
-		if err := json.Unmarshal(src, &mat); err != nil {
-			continue
-		}
-		for _, row := range mat {
-			if len(row) < 5 {
-				continue
-			}
-			key := fmt.Sprintf("%v|%v|%v|%v|%v", row[0], row[1], row[2], row[3], row[4])
-			if seen[key] {
-				continue
-			}
-			seen[key] = true
-			out = append(out, row)
-		}
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return pdfPosRowLess(out[i], out[j])
-	})
-	return out
 }
 
 // extractLineRecords reads the chunker inputs in the same order the
@@ -460,14 +399,13 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 				meta[k] = json.RawMessage(v)
 			}
 			out = append(out, lineRecord{
-				text:         recordText,
-				docType:      dt,
-				imgID:        imgID,
-				layout:       it.Layout,
-				ckType:       it.CKType,
-				pdfPositions: it.PDFPositions,
-				positions:    it.Positions,
-				parentMeta:   meta,
+				text:       recordText,
+				docType:    dt,
+				imgID:      imgID,
+				layout:     it.Layout,
+				ckType:     it.CKType,
+				location:   it.Location.Clone(),
+				parentMeta: meta,
 			})
 		}
 		// TextParser intentionally emits one coordinate-free text item for the
@@ -475,7 +413,7 @@ func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 		// so heading regexes can see headings after the first line. Structured
 		// media/table items and positioned text remain atomic.
 		plainText := itemDocType(it) == "text" && (it.CKType == "" || it.CKType == "text")
-		unpositioned := len(it.PDFPositions) == 0 && len(it.Positions) == 0
+		unpositioned := !it.Location.HasCoordinates()
 		if plainText && unpositioned && strings.Contains(text, "\n") {
 			for _, line := range strings.Split(normalizeGeneralNewlines(text), "\n") {
 				if trim(line) != "" {

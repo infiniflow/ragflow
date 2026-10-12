@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestCropImageChunks_ConcurrentCropsAll verifies the parallel fan-out still
@@ -22,7 +23,7 @@ func TestCropImageChunks_ConcurrentCropsAll(t *testing.T) {
 	const n = 64
 	chunks := make([]schema.ChunkDoc, n)
 	for i := 0; i < n; i++ {
-		chunks[i] = schema.ChunkDoc{CKType: "image", Text: "cap", PDFPositions: pos}
+		chunks[i] = schema.ChunkDoc{CKType: "image", Text: "cap", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos})}
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	if len(out) != n {
@@ -48,7 +49,7 @@ func TestCropImageChunks_ConcurrentPageCacheReuse(t *testing.T) {
 	const n = 200
 	chunks := make([]schema.ChunkDoc, n)
 	for i := 0; i < n; i++ {
-		chunks[i] = schema.ChunkDoc{CKType: "table", Text: "cap", Positions: pos}
+		chunks[i] = schema.ChunkDoc{CKType: "table", Text: "cap", Location: sourceposition.FromParserMap(map[string]any{"positions": pos})}
 	}
 	out := cropImageChunks(ctx, eng, chunks)
 	for i, ck := range out {

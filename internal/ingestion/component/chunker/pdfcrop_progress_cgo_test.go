@@ -11,6 +11,7 @@ import (
 
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/position"
 )
 
 type chunkFractionRecorder struct {
@@ -42,19 +43,19 @@ func TestCropImageChunks_ReportsFractions(t *testing.T) {
 
 	chunks := []schema.ChunkDoc{
 		{
-			Text:      "content 1",
-			Positions: jsonPositions(t, []float64{1, 0, 100, 0, 100}),
-			CKType:    "text",
+			Text:     "content 1",
+			Location: position.FromParserMap(map[string]any{"positions": []float64{1, 0, 100, 0, 100}}),
+			CKType:   "text",
 		},
 		{
-			Text:      "content 2",
-			Positions: jsonPositions(t, []float64{1, 100, 200, 100, 200}),
-			CKType:    "text",
+			Text:     "content 2",
+			Location: position.FromParserMap(map[string]any{"positions": []float64{1, 100, 200, 100, 200}}),
+			CKType:   "text",
 		},
 		{
-			Text:      "content 3",
-			Positions: jsonPositions(t, []float64{1, 200, 300, 200, 300}),
-			CKType:    "text",
+			Text:     "content 3",
+			Location: position.FromParserMap(map[string]any{"positions": []float64{1, 200, 300, 200, 300}}),
+			CKType:   "text",
 		},
 	}
 
@@ -114,14 +115,14 @@ func TestCropImageChunks_CancelledContextDoesNotReport(t *testing.T) {
 
 	chunks := []schema.ChunkDoc{
 		{
-			Text:      "content 1",
-			Positions: jsonPositions(t, []float64{1, 0, 100, 0, 100}),
-			CKType:    "text",
+			Text:     "content 1",
+			Location: position.FromParserMap(map[string]any{"positions": []float64{1, 0, 100, 0, 100}}),
+			CKType:   "text",
 		},
 		{
-			Text:      "content 2",
-			Positions: jsonPositions(t, []float64{1, 100, 200, 100, 200}),
-			CKType:    "text",
+			Text:     "content 2",
+			Location: position.FromParserMap(map[string]any{"positions": []float64{1, 100, 200, 100, 200}}),
+			CKType:   "text",
 		},
 	}
 

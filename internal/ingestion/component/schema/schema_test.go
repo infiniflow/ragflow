@@ -21,6 +21,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // ---------------------------------------------------------------------------
@@ -239,11 +241,9 @@ func TestChunkerFromUpstreamJSONRoundTrip(t *testing.T) {
 func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 	sheetIndex := 2
 	original := ChunkDoc{
-		Text:       "<table><tr><th>ID</th></tr></table>",
-		DocType:    "table",
-		CKType:     "table",
-		Sheet:      "Orders",
-		SheetIndex: &sheetIndex,
+		Text:    "<table><tr><th>ID</th></tr></table>",
+		DocType: "table",
+		CKType:  "table", Location: sourceposition.FromParserMap(map[string]any{"sheet": "Orders", "sheet_index": &sheetIndex}),
 	}
 
 	data, err := json.Marshal(original)
@@ -254,11 +254,11 @@ func TestChunkDocSpreadsheetFieldsRoundTrip(t *testing.T) {
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if decoded.Sheet != original.Sheet {
-		t.Fatalf("sheet mismatch: got %q", decoded.Sheet)
+	if decoded.Location.Spreadsheet.Sheet != original.Location.Spreadsheet.Sheet {
+		t.Fatalf("sheet mismatch: got %q", decoded.Location.Spreadsheet.Sheet)
 	}
-	if decoded.SheetIndex == nil || *decoded.SheetIndex != sheetIndex {
-		t.Fatalf("sheet index mismatch: got %v", decoded.SheetIndex)
+	if decoded.Location.Spreadsheet.Index == nil || *decoded.Location.Spreadsheet.Index != sheetIndex {
+		t.Fatalf("sheet index mismatch: got %v", decoded.Location.Spreadsheet.Index)
 	}
 }
 

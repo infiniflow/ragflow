@@ -79,14 +79,15 @@ import (
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-	"ragflow/internal/parser/tableutil"
-
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/position"
+	"ragflow/internal/parser/tableutil"
 )
 
 const ComponentNameTokenChunker = "TokenChunker"
@@ -746,7 +747,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	// If the item carries PDF positions, slice them proportionally so each
 	// delimiter-split piece's screenshot crops only its own region instead of
 	// the whole item bbox (fix for chunk-screenshot mismatch).
-	if len(it.PDFPositions) == 0 && len(it.Positions) == 0 {
+	if !it.Location.HasCoordinates() {
 		out := make([]schema.ChunkDoc, 0, len(kept))
 		for _, p := range kept {
 			out = append(out, buildChunkDoc(it, "text", p, "", ""))
@@ -774,53 +775,27 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 		startRatio := float64(cumRunes) / float64(runCount)
 		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
 		ck := buildChunkDoc(it, "text", p, "", "")
-		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
-		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
-		if len(ck.PDFPositions) == 0 && len(it.PDFPositions) > 0 {
-			ck.PDFPositions = it.PDFPositions
-		}
-		if len(ck.Positions) == 0 && len(it.Positions) > 0 {
-			ck.Positions = it.Positions
-		}
+		ck.Location = it.Location.SlicePage(startRatio, endRatio)
 		out = append(out, ck)
 		cumRunes += pcRunes
 	}
 	return out
 }
 
-// buildChunkMap constructs the python-compatible chunk payload.
-//
-// The chunker output carries the basic text+doc_type_kwd+ck_type
-// fields plus the per-chunk meta fields the python
-// rag/flow/chunker/token_chunker.py emits:
-//
-//   - tk_nums       — tokenized list (used downstream by Tokenizer)
-//   - mom           — parent-section identifier (title / hierarchy
-//     chunkers populate; TokenChunker pass-through)
-//   - img_id        — image attachment identifier
-//   - layout        — layout classification (text / table / image / figure)
-//   - _pdf_positions — PDF bbox coordinates when the parser path
-//     emitted them on the upstream item
-//   - context_above / context_below — surrounding media context
-//     when attachMediaContext was invoked
-//
-// Pass-through fields are sourced from the input item map. Missing
-// fields are simply absent from the output (the python side does
-// the same — see python `_build_json_chunks`).
+// buildChunkDoc derives text, type and token count while retaining the source
+// location, media attachment and parent metadata of one parser item.
 func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) schema.ChunkDoc {
 	out := schema.ChunkDoc{
-		Text:         text,
-		DocType:      ckType,
-		CKType:       ckType,
-		TKNums:       intPtr(tokenizeStr(text)),
-		Mom:          it.Mom,
-		ImgID:        it.ImgID,
-		Layout:       it.Layout,
-		PDFPositions: it.PDFPositions,
-		Positions:    it.Positions,
-		Image:        it.Image,
-		PageNumber:   it.PageNumber,
-		Extra:        cloneExtra(it.Extra),
+		Text:     text,
+		DocType:  ckType,
+		CKType:   ckType,
+		TKNums:   intPtr(tokenizeStr(text)),
+		Mom:      it.Mom,
+		ImgID:    it.ImgID,
+		Layout:   it.Layout,
+		Location: it.Location.Clone(),
+		Image:    it.Image,
+		Extra:    cloneExtra(it.Extra),
 	}
 	if ctxAbove != "" {
 		out.ContextAbove = ctxAbove
@@ -970,9 +945,8 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 // range back to the exact boxes that belong to it, so the overlap prefix
 // carries only the previous chunk's tail coordinates (#18148).
 type mergeItem struct {
-	Text         string
-	PDFPositions json.RawMessage
-	Positions    json.RawMessage
+	Text     string
+	Location *position.Location
 }
 
 // overlapTailItems returns the previous chunk's source items whose visible span
@@ -1044,7 +1018,7 @@ func overlapTailItems(prevItems []mergeItem, overlapStart int, joinSep string) [
 			}
 			runes := []rune(visible[i])
 			slice := string(runes[lo-start : hi-start])
-			out = append(out, mergeItem{Text: slice, PDFPositions: it.PDFPositions, Positions: it.Positions})
+			out = append(out, mergeItem{Text: slice, Location: it.Location.Clone()})
 		}
 	}
 	return out
@@ -1083,7 +1057,7 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 		if tk <= 0 {
 			tk = tokenizeStr(ck.Text)
 		}
-		cur := mergeItem{Text: ck.Text, PDFPositions: ck.PDFPositions, Positions: ck.Positions}
+		cur := mergeItem{Text: ck.Text, Location: ck.Location.Clone()}
 		if prevIdx < 0 {
 			// First text chunk (or first after a non-text chunk): no prior
 			// text to overlap with.
@@ -1130,14 +1104,20 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 				// over-carry fix). The flattened tail boxes are still carried
 				// into the output chunk so the overlap region stays highlighted.
 				tailItems := overlapTailItems(mergedItems[prevIdx], overlapCut(prev.Text, overlapPct)+trimRunes, joinSep)
-				var pdfTail, posTail json.RawMessage
+				var tail *position.Location
 				for _, it := range tailItems {
-					pdfTail = extendRawJSONArray(pdfTail, it.PDFPositions)
-					posTail = extendRawJSONArray(posTail, it.Positions)
+					tail = tail.Append(it.Location)
 				}
 				cp.Text = overlap + cp.Text
-				cp.PDFPositions = extendRawJSONArray(pdfTail, cp.PDFPositions)
-				cp.Positions = extendRawJSONArray(posTail, cp.Positions)
+				currentLocation := cp.Location
+				cp.Location = tail.Append(cp.Location)
+				if cp.Location != nil && cp.Location.Page != nil {
+					cp.Location.Page.Number = nil
+					if currentLocation != nil && currentLocation.Page != nil && currentLocation.Page.Number != nil {
+						n := *currentLocation.Page.Number
+						cp.Location.Page.Number = &n
+					}
+				}
 				cp.TKNums = intPtr(tokenizeStr(cp.Text))
 				merged = append(merged, cp)
 				mergedItems = append(mergedItems, append(append([]mergeItem{}, tailItems...), cur))
@@ -1157,8 +1137,7 @@ func mergeUnits(units []schema.ChunkDoc, target int, overlapPct float64, joinSep
 			prev.Text = prev.Text + ck.Text
 		}
 		prev.TKNums = intPtr(intValue(prev.TKNums) + tk)
-		prev.PDFPositions = extendRawJSONArray(prev.PDFPositions, ck.PDFPositions)
-		prev.Positions = extendRawJSONArray(prev.Positions, ck.Positions)
+		prev.Location = prev.Location.Append(ck.Location)
 		mergedItems[prevIdx] = append(mergedItems[prevIdx], cur)
 	}
 	return merged
@@ -1305,7 +1284,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	// survives the split. PDF positions are proportionally sliced vertically so
 	// each piece's screenshot crops only its own region instead of the whole
 	// paragraph (fix for chunk-screenshot mismatch).
-	if len(ck.PDFPositions) == 0 && len(ck.Positions) == 0 {
+	if !ck.Location.HasCoordinates() {
 		for i := range pieces {
 			inherited := cloneChunkDoc(ck)
 			inherited.Text = pieces[i].Text
@@ -1351,16 +1330,7 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 		inherited.Text = p.Text
 		inherited.TKNums = p.TKNums
 		inherited.CKType = "text"
-		inherited.PDFPositions = slicePositionsByTextRatio(ck.PDFPositions, startRatio, endRatio)
-		inherited.Positions = slicePositionsByTextRatio(ck.Positions, startRatio, endRatio)
-		// Fall back to original positions if slicing produced nothing (e.g.
-		// malformed matrix) so the piece still gets a preview rather than none.
-		if len(inherited.PDFPositions) == 0 && len(ck.PDFPositions) > 0 {
-			inherited.PDFPositions = ck.PDFPositions
-		}
-		if len(inherited.Positions) == 0 && len(ck.Positions) > 0 {
-			inherited.Positions = ck.Positions
-		}
+		inherited.Location = ck.Location.SlicePage(startRatio, endRatio)
 		pieces[i] = inherited
 		cumRunes += counts[i]
 	}
@@ -1621,18 +1591,7 @@ func cloneChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		v := *in.ChunkOrderInt
 		out.ChunkOrderInt = &v
 	}
-	if in.PageNumber != nil {
-		v := *in.PageNumber
-		out.PageNumber = &v
-	}
-	// Deep-copy the coordinate byte slices so the clone does not alias
-	// the source's backing array (diff 2.5 defensive fix).
-	if in.PDFPositions != nil {
-		out.PDFPositions = append(json.RawMessage(nil), in.PDFPositions...)
-	}
-	if in.Positions != nil {
-		out.Positions = append(json.RawMessage(nil), in.Positions...)
-	}
+	out.Location = in.Location.Clone()
 	out.Extra = cloneExtra(in.Extra)
 	return out
 }
@@ -1644,77 +1603,6 @@ func cloneExtra(in map[string]json.RawMessage) map[string]json.RawMessage {
 	out := make(map[string]json.RawMessage, len(in))
 	for key, value := range in {
 		out[key] = append(json.RawMessage(nil), value...)
-	}
-	return out
-}
-
-// extendRawJSONArray concatenates two JSON array payloads, mirroring
-// Python's `merged[prev][KEY].extend(current[KEY])`. Either operand may be
-// empty; the result is always a valid JSON array (or an empty raw message).
-//
-// It is used to accumulate PDF coordinate lists (`_pdf_positions`,
-// `positions`) when text chunks are merged (diffs 2.5 / 2.3).
-//
-// Fast path (compact arrays): the positions that flow through here are always
-// json.Marshal'd parser output, i.e. compact `[...]` arrays with no internal
-// whitespace. Instead of the old per-step json.Unmarshal + json.Marshal
-// (which re-serialised the ENTIRE growing array on every merge step — O(n^2)
-// bytes plus reflection — and dominated the chunker's wall time / heap peak on
-// large PDFs, see the 10k-unit benchmark: ~11 GB allocated per merge), we strip
-// the outer brackets and append the element bytes directly. Appending into `a`'s
-// (re)growing buffer is O(n) total. The merged coordinate list is semantically
-// identical (extend, not replace) and byte-for-byte equal to the old path for
-// compact input.
-//
-// Slow path: for any non-compact-array / malformed operand we fall back to the
-// exact prior behaviour (unmarshal + marshal), so output never diverges from the
-// historical contract.
-//
-// Mutation contract (append-like): the fast path grows `a`'s backing buffer in
-// place to accumulate the result, so the returned slice may alias / reuse `a`'s
-// storage and `a` must be treated as consumed after the call. Callers that pass
-// a shared or reused buffer as `a` must copy it first; the merge path satisfies
-// this naturally because `pdfTail`/`posTail` are dedicated accumulators that own
-// their buffers. When `a` is empty the result is a fresh COPY of `b` (never `b`
-// itself) so the first extension never aliases the caller's source coordinate
-// bytes.
-func extendRawJSONArray(a, b json.RawMessage) json.RawMessage {
-	if len(a) == 0 {
-		// Return a COPY of b, not b itself: the caller stores the result and
-		// the fast path may later mutate its backing array in place. Returning
-		// b directly would alias the caller's (possibly shared) source bytes,
-		// e.g. the overlap branch re-extends the same growing buffer and would
-		// corrupt the original unit coordinate list (see #18148 overlap chain).
-		return append(json.RawMessage(nil), b...)
-	}
-	if len(b) == 0 {
-		return append(json.RawMessage(nil), a...)
-	}
-	if a[0] == '[' && a[len(a)-1] == ']' && b[0] == '[' && b[len(b)-1] == ']' {
-		innerA := a[1 : len(a)-1]
-		innerB := b[1 : len(b)-1]
-		// Drop a's trailing ']' and append b's elements followed by a fresh
-		// ']'. append reuses/grows a's buffer (amortised O(n) total).
-		a = a[:len(a)-1]
-		if len(innerA) > 0 && len(innerB) > 0 {
-			a = append(a, ',')
-		}
-		a = append(a, innerB...)
-		a = append(a, ']')
-		return a
-	}
-	// Slow path (unchanged semantics).
-	var arrA, arrB []json.RawMessage
-	if err := json.Unmarshal(a, &arrA); err != nil {
-		return b
-	}
-	if err := json.Unmarshal(b, &arrB); err != nil {
-		return a
-	}
-	arrA = append(arrA, arrB...)
-	out, err := json.Marshal(arrA)
-	if err != nil {
-		return a
 	}
 	return out
 }

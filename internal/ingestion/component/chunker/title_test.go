@@ -22,6 +22,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestTitleChunker_Registered asserts the registry has a CategoryIngestion
@@ -445,8 +446,8 @@ func TestOutlineFromInputs(t *testing.T) {
 	inputs := map[string]any{
 		"file": map[string]any{
 			"outline": []any{
-				map[string]any{"title": "第一章", "level": float64(0), "page_number": float64(1)},
-				map[string]any{"title": "第二章", "level": float64(1), "page_number": float64(3)},
+				map[string]any{"title": "第一章", "level": float64(0), "source_location": sourceposition.FromParserMap(map[string]any{"page_number": float64(1)})},
+				map[string]any{"title": "第二章", "level": float64(1), "source_location": sourceposition.FromParserMap(map[string]any{"page_number": float64(3)})},
 			},
 		},
 	}

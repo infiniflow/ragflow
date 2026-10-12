@@ -735,22 +735,13 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 		v := *in.ChunkOrderInt
 		out.ChunkOrderInt = &v
 	}
-	if in.PageNumber != nil {
-		v := *in.PageNumber
-		out.PageNumber = &v
-	}
 	if in.Extra != nil {
 		out.Extra = make(map[string]json.RawMessage, len(in.Extra))
 		for k, v := range in.Extra {
 			out.Extra[k] = append(json.RawMessage(nil), v...)
 		}
 	}
-	if len(in.PDFPositions) > 0 {
-		out.PDFPositions = append(json.RawMessage(nil), in.PDFPositions...)
-	}
-	if len(in.Positions) > 0 {
-		out.Positions = append(json.RawMessage(nil), in.Positions...)
-	}
+	out.Location = in.Location.Clone()
 	return out
 }
 

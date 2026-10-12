@@ -35,11 +35,16 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
-	"ragflow/internal/common"
 	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+	"gorm.io/gorm"
+
+	"ragflow/internal/common"
 	"ragflow/internal/deepdoc/parser/pdf"
 	deepdoctype "ragflow/internal/deepdoc/parser/pdf/type"
 	doctype "ragflow/internal/deepdoc/parser/type"
@@ -47,12 +52,8 @@ import (
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	sourceposition "ragflow/internal/parser/position"
 	"ragflow/internal/utility"
-
-	"github.com/glebarez/sqlite"
-	"go.uber.org/zap"
-	"go.uber.org/zap/zaptest/observer"
-	"gorm.io/gorm"
 )
 
 // useMockDocAnalyzer installs a test-only MockDocAnalyzer as the in-process
@@ -169,7 +170,7 @@ func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
 }
 
 func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
-	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "page_number": 1}}
+	wantOutline := []map[string]any{{"title": "Overview", "level": 0, "source_location": sourceposition.FromParserMap(map[string]any{"page_number": 1})}}
 	out := buildParserOutputs(t.Context(), parser.ParseResult{
 		OutputFormat: "json",
 		File: map[string]any{
@@ -552,8 +553,8 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 	}
 	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
-			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
-			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
+			{WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa", PageNumber: 1},
+			{WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb", PageNumber: 2},
 		}, nil
 	}
 	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
@@ -599,11 +600,11 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		if !ok || len(jsonItems) != 2 {
 			t.Fatalf("json payload = %#v, want 2 items", out["json"])
 		}
-		if got, want := jsonItems[0]["page_number"], 1; got != want {
+		if got, want := locationField(jsonItems[0], "page_number"), 1; got != want {
 			t.Fatalf("json[0].page_number = %v, want %v", got, want)
 		}
-		if positions, ok := jsonItems[0]["_pdf_positions"].([][]any); !ok || len(positions) != 1 {
-			t.Fatalf("json[0]._pdf_positions = %#v, want one normalized page box", jsonItems[0]["_pdf_positions"])
+		if positions, ok := locationField(jsonItems[0], "_pdf_positions").([][]float64); !ok || len(positions) != 1 {
+			t.Fatalf("json[0]._pdf_positions = %#v, want one normalized page box", locationField(jsonItems[0], "_pdf_positions"))
 		}
 		if file, ok := out["file"].(map[string]any); !ok || file["parse_method"] != "CustomVLM" || file["page_count"] != 2 {
 			t.Fatalf("file metadata = %#v, want parse_method/page_count", out["file"])
@@ -631,8 +632,8 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
 	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
-			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
-			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
+			{WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa", PageNumber: 1},
+			{WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb", PageNumber: 2},
 		}, nil
 	}
 	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
@@ -692,8 +693,8 @@ func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
 			return nil, fmt.Errorf("renderer ranges = %v, want %v", ranges, want)
 		}
 		return []pdfVisionPage{
-			{PageNumber: 2, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,bbb"},
-			{PageNumber: 3, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,ccc"},
+			{WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,bbb", PageNumber: 2},
+			{WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,ccc", PageNumber: 3},
 		}, nil
 	}
 	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
@@ -725,7 +726,7 @@ func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
 	}
 	var pageNumbers []any
 	for _, item := range jsonItems {
-		pageNumbers = append(pageNumbers, item["page_number"])
+		pageNumbers = append(pageNumbers, locationField(item, "page_number"))
 	}
 	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {
 		t.Fatalf("page numbers = %v, want %v", pageNumbers, want)

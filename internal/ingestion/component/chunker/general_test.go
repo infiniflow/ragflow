@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	sourceposition "ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -72,9 +73,7 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 		// assertions (e.g. TokenChunker boundary tests) stay valid.
 		"text":         tableutil.RenderTableText(td),
 		"doc_type_kwd": "table",
-		"ck_type":      "table",
-		"sheet_index":  sheetIndex,
-		"positions":    matrix,
+		"ck_type":      "table", "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": sheetIndex, "positions": matrix}),
 	}
 }
 
@@ -933,9 +932,9 @@ func TestGeneralChunkerPDFUsesPositionOrderForMediaContext(t *testing.T) {
 		"file_type":     "pdf",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "after", "doc_type_kwd": "text", "positions": position(30)},
-			{"text": "<table>A</table>", "doc_type_kwd": "table", "positions": position(20)},
-			{"text": "before", "doc_type_kwd": "text", "positions": position(10)},
+			{"text": "after", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(30)})},
+			{"text": "<table>A</table>", "doc_type_kwd": "table", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(20)})},
+			{"text": "before", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(10)})},
 		},
 	})
 	if err != nil {
@@ -956,9 +955,9 @@ func TestSortPDFUnitsKeepsUnpositionedMediaInInputOrder(t *testing.T) {
 		return json.RawMessage(fmt.Sprintf("[[1,0,10,%g,%g]]", top, top+5))
 	}
 	units := []schema.ChunkDoc{
-		{Text: "before", DocType: "text", CKType: "text", Positions: position(10)},
+		{Text: "before", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"positions": position(10)})},
 		{Text: "figure", DocType: "image", CKType: "image"},
-		{Text: "after", DocType: "text", CKType: "text", Positions: position(30)},
+		{Text: "after", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"positions": position(30)})},
 	}
 
 	got := sortPDFUnits(units)
@@ -1006,7 +1005,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 1})},
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Growth"}}, 1, 3),
 		},
 	})
@@ -1034,7 +1033,7 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 		"output_format": "json",
 		"json": []map[string]any{
 			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Sheet one"}}, 1, 2),
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 1})},
 			spreadsheetSegmentItem("Sheet2", []string{"Name"}, [][]string{{"Sheet two"}}, 2, 2),
 		},
 	})
@@ -1093,9 +1092,9 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
 		}
 		var matrix [][]float64
-		raw, _ := json.Marshal(chunk["positions"])
+		raw, _ := json.Marshal(locationField(chunk, "positions"))
 		if err := json.Unmarshal(raw, &matrix); err != nil {
-			t.Fatalf("chunk %d positions = %v, want a row-aligned matrix", i, chunk["positions"])
+			t.Fatalf("chunk %d positions = %v, want a row-aligned matrix", i, locationField(chunk, "positions"))
 		}
 		// One header tuple + this sub-table's own data tuples, never the
 		// full segment matrix.
@@ -1130,7 +1129,7 @@ func TestGeneralChunkerSpreadsheetDropsMisalignedPositionsOnSplit(t *testing.T) 
 	}
 	item := spreadsheetSegmentItem("Sheet1", []string{"Name"}, rows, 1, 2)
 	// One whole-segment tuple instead of the per-row matrix.
-	item["positions"] = [][]float64{{1, 1, 7, 1, 1}}
+	setLocationField(item, "positions", [][]float64{{1, 1, 7, 1, 1}})
 	out, err := component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "long.xlsx",
 		"file_type":     "xlsx",
@@ -1145,8 +1144,8 @@ func TestGeneralChunkerSpreadsheetDropsMisalignedPositionsOnSplit(t *testing.T) 
 		t.Fatalf("chunks = %d, want the segment split under the token budget", len(chunks))
 	}
 	for i, chunk := range chunks {
-		if _, exists := chunk["positions"]; exists {
-			t.Errorf("chunk %d keeps a misaligned positions payload: %v", i, chunk["positions"])
+		if _, exists := locationFieldPresent(chunk, "positions"); exists {
+			t.Errorf("chunk %d keeps a misaligned positions payload: %v", i, locationField(chunk, "positions"))
 		}
 	}
 }
@@ -1227,9 +1226,9 @@ func TestGeneralChunkerMediaContextStripsPositionTags(t *testing.T) {
 		"file_type":     "pdf",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "before@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text", "positions": position(10)},
-			{"text": "<table>A</table>", "doc_type_kwd": "table", "positions": position(20)},
-			{"text": "after@@1\t0.0\t10.0\t10.0\t30.0\t35.0##", "doc_type_kwd": "text", "positions": position(30)},
+			{"text": "before@@1\t0.0\t10.0\t10.0\t20.0##", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(10)})},
+			{"text": "<table>A</table>", "doc_type_kwd": "table", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(20)})},
+			{"text": "after@@1\t0.0\t10.0\t10.0\t30.0\t35.0##", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": position(30)})},
 		},
 	})
 	if err != nil {
@@ -1331,9 +1330,9 @@ func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T
 		name   string
 		mutate func(item map[string]any)
 	}{
-		{"no spreadsheet identity", func(item map[string]any) { delete(item, "sheet_index") }},
+		{"no spreadsheet identity", func(item map[string]any) { setLocationField(item, "sheet_index", nil) }},
 		{"short tuples", func(item map[string]any) {
-			item["positions"] = [][]float64{{1}, {1}, {1}, {1}, {1}, {1}, {1}}
+			setLocationField(item, "positions", [][]float64{{1}, {1}, {1}, {1}, {1}, {1}, {1}})
 		}},
 	}
 	for _, tc := range cases {
@@ -1358,7 +1357,7 @@ func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T
 				t.Fatalf("expected the segment to be split, got %d chunks", len(chunks))
 			}
 			for i, chunk := range chunks {
-				if p, ok := chunk["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+				if p, ok := locationFieldPresent(chunk, "positions"); ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
 					t.Errorf("chunk %d kept positions without a usable spreadsheet matrix: %v", i, p)
 				}
 			}

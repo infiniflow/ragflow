@@ -33,6 +33,7 @@ import (
 	"strings"
 
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
+	"ragflow/internal/parser/position"
 )
 
 // ResultSink is an OPTIONAL capability a ProgressSink may implement to receive
@@ -150,7 +151,7 @@ func BuildDebugResultDSL(dsl string, output map[string]any, includeOutputs bool)
 			runOut, _ := lookupComponentOutput(output, id).(map[string]any)
 			outputsWrapper := map[string]any{}
 			if format, payload := detectFormat(runOut); format != "" {
-				value := deepCopy(payload, true)
+				value := publicDebugPayload(payload)
 				outputsWrapper[format] = map[string]any{
 					"value": value,
 					"type":  pythonTypeName(value),
@@ -309,5 +310,34 @@ func deepCopy(v any, stripVector bool) any {
 		return cp
 	default:
 		return v
+	}
+}
+
+// publicDebugPayload keeps the preview/export contract at the debug boundary.
+// Geometry is projected only on chunk/parser rows, not on user metadata.
+func publicDebugPayload(v any) any {
+	copy := deepCopy(v, true)
+	projectDebugRows(copy)
+	return copy
+}
+
+func projectDebugRows(v any) {
+	switch rows := v.(type) {
+	case []map[string]any:
+		for _, row := range rows {
+			_ = position.ProjectPublic(row)
+		}
+	case []any:
+		for _, raw := range rows {
+			if row, ok := raw.(map[string]any); ok {
+				_ = position.ProjectPublic(row)
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{"chunks", "json"} {
+			if rows[key] != nil {
+				projectDebugRows(rows[key])
+			}
+		}
 	}
 }

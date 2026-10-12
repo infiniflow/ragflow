@@ -3,6 +3,8 @@ package indexdoc
 import (
 	"testing"
 	"time"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // =============================================================================
@@ -126,8 +128,7 @@ func TestProcessChunksForPipeline_RejectsNonStringText(t *testing.T) {
 // deletes it at the chunker stage.
 func TestProcessChunksForPipeline_RemovesInternalPipelineFields(t *testing.T) {
 	chunks := []map[string]any{{
-		"text":           "hello",
-		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
+		"text": "hello", "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}}}),
 	}}
 
 	_, err := ProcessChunksForPipeline(chunks, "doc-1", "test-doc.pdf", time.Now())
@@ -347,11 +348,11 @@ func TestProcessChunksForPipeline_RejectsMissingText(t *testing.T) {
 }
 
 func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
-	chunk := map[string]any{
-		// positions is 1-indexed (parser normalized before we see it)
-		"positions": []float64{1, 100, 50, 200, 150},
+	chunk := map[string]any{"source_location":
+	// positions is 1-indexed (parser normalized before we see it)
+	sourceposition.FromParserMap(map[string]any{"positions": []float64{1, 100, 50, 200, 150}}),
 	}
-	processChunkPositions(chunk, false)
+	processChunkLocation(chunk, sourceposition.FromParserMap(chunk))
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -363,13 +364,12 @@ func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
 }
 
 func TestProcessChunkPositions_2DFloat64(t *testing.T) {
-	chunk := map[string]any{
-		"positions": [][]float64{
-			{1, 100, 50, 200, 150},
-			{2, 200, 60, 300, 250},
-		},
+	chunk := map[string]any{"source_location": sourceposition.FromParserMap(map[string]any{"positions": [][]float64{
+		{1, 100, 50, 200, 150},
+		{2, 200, 60, 300, 250},
+	}}),
 	}
-	processChunkPositions(chunk, false)
+	processChunkLocation(chunk, sourceposition.FromParserMap(chunk))
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -388,10 +388,9 @@ func TestProcessChunkPositions_NoPositions(t *testing.T) {
 	// _pdf_positions is pruned unconditionally, even on the early-return path
 	// where "positions" is absent, since the two fields are independent.
 	chunk := map[string]any{
-		"text":           "hello",
-		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
+		"text": "hello", "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}}}),
 	}
-	processChunkPositions(chunk, false)
+	processChunkLocation(chunk, sourceposition.FromParserMap(chunk))
 	if _, exists := chunk["page_num_int"]; exists {
 		t.Error("page_num_int must not be set when positions is missing")
 	}
@@ -475,10 +474,10 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 		// Every bookkeeping key the chunkers/parsers can leave on a chunk.
 		"ck_type": "text", "tk_nums": 3, "layout": "text", "layout_type": "text",
 		"layoutno": "0", "image": "data:image/png;base64,AAAA",
-		"context_above": "above", "context_below": "below", "page_number": 2,
-		"table_id": "t1", "sheet": "s1", "sheet_index": 0,
-		"headers": []string{"h"}, "cells": []string{"c"},
-		"row_start": 0, "row_end": 1, "col_start": 0, "col_end": 1,
+		"context_above": "above", "context_below": "below",
+		"table_id": "t1",
+		"headers":  []string{"h"}, "cells": []string{"c"},
+		"row_start": 0, "row_end": 1, "col_start": 0, "col_end": 1, "source_location": sourceposition.FromParserMap(map[string]any{"page_number": 2, "sheet": "s1", "sheet_index": 0}),
 	}
 
 	if _, err := ProcessChunksForPipeline([]map[string]any{ck}, "doc-1", "Doc", time.Now()); err != nil {
@@ -508,10 +507,10 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 // index, aligned with Python's beAdoc) survives.
 func TestProcessChunkPositions_SpreadsheetKeepsRowIndex(t *testing.T) {
 	chunk := map[string]any{
-		"positions": [][]float64{{2, 42, 42, 1, 3}},
-		"top_int":   []int{41},
+
+		"top_int": []int{41}, "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 2, "positions": [][]float64{{2, 42, 42, 1, 3}}}),
 	}
-	processChunkPositions(chunk, true)
+	processChunkLocation(chunk, sourceposition.FromParserMap(chunk))
 
 	matrix, ok := chunk["position_int"].([][]int)
 	if !ok || len(matrix) != 1 || matrix[0][0] != 2 || matrix[0][4] != 3 {
@@ -534,10 +533,9 @@ func TestProcessChunkPositions_SpreadsheetKeepsRowIndex(t *testing.T) {
 // spreadsheet chunk would be decoded as PDF layout boxes.
 func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T) {
 	chunks := []map[string]any{{
-		"text":        "<table><tr><th>q</th><th>a</th></tr></table>",
-		"sheet_index": 1,
-		"top_int":     []int{41},
-		"positions":   [][]float64{{1, 42, 42, 1, 3}},
+		"text": "<table><tr><th>q</th><th>a</th></tr></table>",
+
+		"top_int": []int{41}, "source_location": sourceposition.FromParserMap(map[string]any{"sheet_index": 1, "positions": [][]float64{{1, 42, 42, 1, 3}}}),
 	}}
 	if _, err := ProcessChunksForPipeline(chunks, "doc-1", "doc.xlsx", time.Now()); err != nil {
 		t.Fatalf("ProcessChunksForPipeline: %v", err)

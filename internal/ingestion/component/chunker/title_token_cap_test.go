@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 func testCtx() context.Context { return context.Background() }
@@ -282,7 +283,7 @@ func TestEnforceTitleTokenCap_SubChunksHaveSlicedPositions(t *testing.T) {
 	pos := [][]float64{{1, 10, 200, 50, 80}}
 	body := strings.Join(joinSentences(12), "") // 48 runes
 	chunks := []map[string]any{
-		{"text": body, "positions": pos},
+		{"text": body, "source_location": sourceposition.FromParserMap(map[string]any{"positions": pos})},
 	}
 	got := enforceTitleTokenCap(chunks, 20)
 	if len(got) != 3 { // 20 + 20 + 8 runes
@@ -292,9 +293,9 @@ func TestEnforceTitleTokenCap_SubChunksHaveSlicedPositions(t *testing.T) {
 	// of the whole body (heights 12.5 / 12.5 / 5 on the 30-high box).
 	wantBounds := [][2]float64{{50, 62.5}, {62.5, 75}, {75, 80}}
 	for i := range got {
-		v, ok := got[i]["positions"].([][]float64)
+		v, ok := locationField(got[i], "positions").([][]float64)
 		if !ok || len(v) != 1 {
-			t.Fatalf("sub-chunk %d positions = %#v, want one sliced row", i, got[i]["positions"])
+			t.Fatalf("sub-chunk %d positions = %#v, want one sliced row", i, locationField(got[i], "positions"))
 		}
 		row := v[0]
 		if row[0] != 1 || row[1] != 10 || row[2] != 200 {
@@ -311,22 +312,22 @@ func TestEnforceTitleTokenCap_SubChunksHaveSlicedPositions(t *testing.T) {
 // fallback contract: a position matrix that cannot be sliced (no valid
 // [page,left,right,top,bottom] rows) is carried to every sub-chunk verbatim,
 // so the preview is degraded to the shared coarse bbox instead of being lost.
-func TestEnforceTitleTokenCap_MalformedPositionsFallbackKeepsOriginal(t *testing.T) {
+func TestEnforceTitleTokenCap_ZeroHeightPositionsKeepOriginal(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	src := []any{map[string]any{"page": float64(1)}}
+	src := [][]float64{{1, 0, 10, 5, 5}}
 	chunks := []map[string]any{
-		{"text": body, "_pdf_positions": src},
+		{"text": body, "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": src})},
 	}
 	got := enforceTitleTokenCap(chunks, 20)
 	if len(got) <= 1 {
 		t.Fatalf("expected split, got %d", len(got))
 	}
 	for i := range got {
-		v, ok := got[i]["_pdf_positions"].([]any)
+		v, ok := locationField(got[i], "_pdf_positions").([][]float64)
 		if !ok || len(v) == 0 {
-			t.Fatalf("sub-chunk %d _pdf_positions = %#v, want the original matrix", i, got[i]["_pdf_positions"])
+			t.Fatalf("sub-chunk %d _pdf_positions = %#v, want the original matrix", i, locationField(got[i], "_pdf_positions"))
 		}
 		if !reflect.DeepEqual(v[0], src[0]) {
 			t.Errorf("sub-chunk %d _pdf_positions = %#v, want the source value verbatim", i, v[0])
@@ -334,7 +335,7 @@ func TestEnforceTitleTokenCap_MalformedPositionsFallbackKeepsOriginal(t *testing
 	}
 }
 
-func TestEnforceTitleTokenCap_UnknownPositionsTypeCarriedAsIs(t *testing.T) {
+func TestEnforceTitleTokenCap_BadPositionsDoNotAffectTextSplit(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
@@ -342,16 +343,15 @@ func TestEnforceTitleTokenCap_UnknownPositionsTypeCarriedAsIs(t *testing.T) {
 	// shallow-copied to every sub-chunk verbatim; the cap split never inspects
 	// or normalizes position payloads.
 	chunks := []map[string]any{
-		{"text": body, "positions": "not-a-matrix"},
+		{"text": body, "source_location": sourceposition.FromParserMap(map[string]any{"positions": "not-a-matrix"})},
 	}
 	got := enforceTitleTokenCap(chunks, 20)
 	if len(got) <= 1 {
 		t.Fatalf("expected split, got %d", len(got))
 	}
 	for i := range got {
-		v, ok := got[i]["positions"].(string)
-		if !ok || v != "not-a-matrix" {
-			t.Errorf("sub-chunk %d positions = %#v, want the source value carried as-is", i, got[i]["positions"])
+		if _, ok := locationFieldPresent(got[i], "positions"); ok {
+			t.Errorf("sub-chunk %d retained invalid positions", i)
 		}
 	}
 }
@@ -545,7 +545,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepPositions(t *testing.T) {
 	inputs := map[string]any{
 		"output_format": "chunks",
 		"chunks": []schema.ChunkDoc{
-			{Text: body, DocType: "text", Positions: json.RawMessage(`[[1,10,200,50,80]]`)},
+			{Text: body, DocType: "text", Location: sourceposition.FromParserMap(map[string]any{"positions": json.RawMessage(`[[1,10,200,50,80]]`)})},
 		},
 	}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
@@ -559,7 +559,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepPositions(t *testing.T) {
 	// Every sub-chunk carries a sliced position row: the on-demand crop pass
 	// must attach a preview of its own vertical region, not the whole box.
 	for i := range chunks {
-		v, ok := chunks[i]["positions"]
+		v, ok := locationFieldPresent(chunks[i], "positions")
 		if !ok {
 			t.Errorf("sub-chunk %d missing positions", i)
 			continue

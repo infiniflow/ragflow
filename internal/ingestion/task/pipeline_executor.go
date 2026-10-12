@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
@@ -37,8 +39,7 @@ import (
 	"ragflow/internal/ingestion/knowledge_compile"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 	indexdoc "ragflow/internal/ingestion/task/indexdoc"
-
-	"gorm.io/gorm"
+	"ragflow/internal/parser/position"
 )
 
 // PipelineResult is the outcome of a pipeline run: chunks have been
@@ -255,6 +256,11 @@ func (s *PipelineExecutor) Execute(ctx context.Context) (*PipelineResult, error)
 // pipeline run are left on the chunks. This keeps debug runs side-effect free.
 func (s *PipelineExecutor) collectDebugOutput(ctx context.Context, pipelineOutput map[string]any, start time.Time) (*PipelineResult, error) {
 	chunks := indexdoc.NormalizeChunks(pipelineOutput)
+	for _, chunk := range chunks {
+		if err := position.ProjectPublic(chunk); err != nil {
+			return nil, err
+		}
+	}
 	return &PipelineResult{
 		DocID:            s.taskCtx.Doc.ID,
 		KbID:             s.taskCtx.Doc.KbID,

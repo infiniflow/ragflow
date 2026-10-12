@@ -35,7 +35,7 @@ import (
 //
 // It parses a real PDF, normalizes its records through the SAME extractLineRecords
 // path the chunker uses in production, then asserts the resort yields a
-// non-decreasing physical order — i.e. the shared pdfPosRowLess comparator
+// non-decreasing physical order — i.e. the shared pageMatrixLess comparator
 // genuinely consumes the parser-emitted _pdf_positions rather than silently
 // no-op'ing. The assertion is layout-independent: whether or not the reading
 // order differed from the physical order, the sorted result must be monotonic.
@@ -100,7 +100,7 @@ func TestManualChunker_RealPDFResort(t *testing.T) {
 	sortRecordsByPosition(records)
 
 	// After the resort, the physical (page, top, left) order must be
-	// non-decreasing. pdfPosRowLess(cur, prev) being true would mean a record
+	// non-decreasing. pageMatrixLess(cur, prev) being true would mean a record
 	// physically precedes its predecessor — a resort violation. A coordinate-free
 	// record (no firstPositionRow) is skipped and never becomes prev, so prev may
 	// be nil until the first positioned record; guard against that.
@@ -110,7 +110,7 @@ func TestManualChunker_RealPDFResort(t *testing.T) {
 		if !ok {
 			continue
 		}
-		if prev != nil && pdfPosRowLess(cur, prev) {
+		if prev != nil && pageMatrixLess(cur, prev) {
 			t.Fatalf("resort produced out-of-order records at %d: row %v precedes %v", i, cur, prev)
 		}
 		prev = cur

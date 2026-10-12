@@ -20,6 +20,8 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // qaInvoke is a small helper that runs the QA chunker on an upstream-style
@@ -113,9 +115,8 @@ func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			{
-				"text":           "Q\tA",
-				"image":          "img-42",
-				"_pdf_positions": [][]int{{1, 2, 3, 4, 5}},
+				"text":  "Q\tA",
+				"image": "img-42", "source_location": sourceposition.FromParserMap(map[string]any{"_pdf_positions": [][]int{{1, 2, 3, 4, 5}}}),
 			},
 		},
 	}
@@ -127,7 +128,7 @@ func TestQAChunker_CarriesImageAndPositions(t *testing.T) {
 	if c["image"] != "img-42" {
 		t.Errorf("QA chunk lost upstream image: %#v", c["image"])
 	}
-	if _, ok := c["_pdf_positions"]; !ok {
+	if _, ok := locationFieldPresent(c, "_pdf_positions"); !ok {
 		t.Errorf("QA chunk lost upstream _pdf_positions")
 	}
 	// The prefix-stripped content must still be present.

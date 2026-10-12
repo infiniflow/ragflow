@@ -60,17 +60,17 @@ package chunker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
 	"unicode/utf8"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
-
-	"gorm.io/gorm"
+	"ragflow/internal/parser/position"
 )
 
 const ComponentNameTitleChunker = "TitleChunker"
@@ -620,12 +620,11 @@ func lineRecordsFromText(text string) []lineRecord {
 			continue
 		}
 		out = append(out, lineRecord{
-			text:         ln,
-			docType:      "text",
-			imgID:        nil,
-			layout:       "",
-			pdfPositions: nil,
-			positions:    nil,
+			text:     ln,
+			docType:  "text",
+			imgID:    nil,
+			layout:   "",
+			location: nil,
 		})
 	}
 	return out
@@ -635,14 +634,13 @@ func lineRecordsFromText(text string) []lineRecord {
 // common.py:extract_line_records yields. Used by Group/Hierarchy
 // chunk-builders.
 type lineRecord struct {
-	text         string
-	docType      string
-	imgID        *string
-	layout       string
-	ckType       string
-	pdfPositions json.RawMessage
-	positions    json.RawMessage
-	parentMeta   map[string]any
+	text       string
+	docType    string
+	imgID      *string
+	layout     string
+	ckType     string
+	location   *position.Location
+	parentMeta map[string]any
 }
 
 func (r lineRecord) textOrEmpty() string { return r.text }

@@ -32,10 +32,10 @@ import (
 	"fmt"
 	"strings"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
-
-	"gorm.io/gorm"
 )
 
 const ComponentNameOneChunker = "OneChunker"
@@ -147,12 +147,11 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		}
 		out := schema.ChunkDoc{
 			// Strip parser coordinate tags (see emitOne).
-			Text:         removeTag(text),
-			DocType:      docType,
-			CKType:       docType,
-			Image:        it.Image,
-			Positions:    it.Positions,
-			PDFPositions: it.PDFPositions,
+			Text:     removeTag(text),
+			DocType:  docType,
+			CKType:   docType,
+			Image:    it.Image,
+			Location: it.Location.Clone(),
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}
@@ -173,11 +172,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 		return emptyOutputs()
 	}
 	out := schema.ChunkDoc{Text: merged, DocType: "text", CKType: "text"}
-	// Multi-item merge produces a single text-only chunk mirroring Python
-	// one.py:166-168. Per-item Positions/PDFPositions are intentionally
-	// not carried — merging coordinates from different source items would
-	// produce meaningless composite geometry, and the downstream
-	// processChunkPositions would map them to incorrect pages.
+	// A whole-document chunk retains no partial selection from its individual
+	// items. The first available image remains the document's media attachment.
 	if img != "" {
 		out.Image = img
 	}

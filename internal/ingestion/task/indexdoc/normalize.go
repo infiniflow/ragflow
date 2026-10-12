@@ -74,8 +74,8 @@ func toChunkMaps(v any) ([]map[string]any, bool) {
 // the pipeline actually emits — []float64 (vectors), []int, and []string — are
 // element-wise copied so callers cannot mutate the originals through them.
 // Other value types (nested maps, [][]float64 positions, etc.) are shared by
-// reference, not recursively deep-copied; positions are later flattened and
-// copied independently by processChunkPositions. It is therefore NOT a full
+// reference, not recursively deep-copied; source locations are decoded and
+// projected independently at the index boundary. It is therefore NOT a full
 // recursive deep copy (unlike Python's copy.deepcopy), only the copy needed
 // for the post-processing pass over pipeline output.
 func DeepCopyChunks(chunks []map[string]any) []map[string]any {

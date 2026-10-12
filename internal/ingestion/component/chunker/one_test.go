@@ -19,6 +19,8 @@ package chunker
 import (
 	"context"
 	"testing"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // oneChunksOf drives OneChunker.Invoke and returns the emitted chunk maps.
@@ -122,17 +124,15 @@ func TestOneChunker_PreservesPositions(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{
 			{
-				"text":           "page text",
-				"positions":      []any{[]any{10.0, 20.0, 30.0, 40.0}},
-				"_pdf_positions": []any{[]any{1.0, 2.0, 3.0, 4.0, 5.0}},
+				"text": "page text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": []any{[]any{10.0, 20.0, 30.0, 40.0, 50.0}}, "_pdf_positions": []any{[]any{1.0, 2.0, 3.0, 4.0, 5.0}}}),
 			},
 		},
 	})
 	if len(chunks) != 1 {
 		t.Fatalf("want 1 chunk, got %d", len(chunks))
 	}
-	assertCoordTuple(t, "positions", chunks[0]["positions"], []float64{10.0, 20.0, 30.0, 40.0})
-	assertCoordTuple(t, "_pdf_positions", chunks[0]["_pdf_positions"], []float64{1.0, 2.0, 3.0, 4.0, 5.0})
+	assertCoordTuple(t, "positions", locationField(chunks[0], "positions"), []float64{10.0, 20.0, 30.0, 40.0, 50.0})
+	assertCoordTuple(t, "_pdf_positions", locationField(chunks[0], "_pdf_positions"), []float64{1.0, 2.0, 3.0, 4.0, 5.0})
 }
 
 // assertCoordTuple verifies a positions/_pdf_positions field round-tripped

@@ -13,7 +13,6 @@ package chunker
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"image"
 	"os"
 	"runtime"
@@ -22,6 +21,7 @@ import (
 	"sync/atomic"
 
 	"go.uber.org/zap"
+	"gorm.io/gorm"
 
 	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
@@ -30,8 +30,6 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/schema"
-
-	"gorm.io/gorm"
 )
 
 // newPDFEngineFromUpstream re-acquires the source PDF from storage using the
@@ -141,13 +139,6 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		if isMediaChunk(ck) && canonicalChunkText(ck) == "" {
 			continue
 		}
-		raw := ck.PDFPositions
-		if len(raw) == 0 {
-			raw = ck.Positions
-		}
-		if len(raw) == 0 {
-			continue
-		}
 		candidateIndices = append(candidateIndices, i)
 	}
 	if len(candidateIndices) == 0 {
@@ -178,13 +169,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			}()
 
 			ck := out[chunkIdx]
-			raw := ck.PDFPositions
-			if len(raw) == 0 {
-				raw = ck.Positions
-			}
 			var matrix [][]any
-			if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
-				return
+			for _, box := range ck.Location.Preview() {
+				matrix = append(matrix, []any{box.Page, box.Left, box.Right, box.Top, box.Bottom})
 			}
 			positions := util.PositionsFromMatrix(matrix)
 			if len(positions) == 0 {
@@ -289,7 +276,12 @@ func needsCrop(ck schema.ChunkDoc) bool {
 	}
 	switch typ {
 	case "image", "table", "text":
-		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
+		for _, box := range ck.Location.Preview() {
+			if box.Right > box.Left && box.Bottom > box.Top {
+				return true
+			}
+		}
+		return false
 	default:
 		return false
 	}

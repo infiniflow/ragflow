@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/ingestion/chunkcache"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/position"
 )
 
 // vecOf reads a float64 vector stored by SetExtraValue back out of the chunk.
@@ -123,6 +124,7 @@ func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
 
 	store := newMemCacheStore()
 	chunks := []schema.ChunkDoc{chunkWithID("chunk-1", "hello world")}
+	chunks[0].Location = position.FromParserMap(map[string]any{"sheet_index": 1, "positions": [][]float64{{1, 42, 42, 1, 3}}})
 
 	// First pass: cache miss -> embedder is called once.
 	out1, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", chunks, store)
@@ -138,12 +140,17 @@ func TestEmbedChunks_PerChunkCacheMissThenHit(t *testing.T) {
 	}
 
 	// Second pass with the same chunk id: cache hit -> embedder NOT called again.
+	chunks = append([]schema.ChunkDoc(nil), chunks...)
+	chunks[0].Location = position.FromParserMap(map[string]any{"sheet_index": 2, "positions": [][]float64{{2, 7, 7, 1, 3}}})
 	out2, _, err := comp.embedChunks(context.Background(), "tenant", "kb", "", chunks, store)
 	if err != nil {
 		t.Fatalf("embedChunks (hit): %v", err)
 	}
 	if got := stub.calls.Load(); got != 1 {
 		t.Fatalf("expected embedder to be skipped on cache hit, but calls=%d", got)
+	}
+	if out1[0].Location.Spreadsheet.Ranges[0].RowStart != 42 || out2[0].Location.Spreadsheet.Ranges[0].RowStart != 7 || *out2[0].Location.Spreadsheet.Index != 2 {
+		t.Fatal("cached embedding changed the current source location")
 	}
 	vec2 := vecOf(t, out2[0], "q_4_vec")
 	if len(vec1) != len(vec2) {

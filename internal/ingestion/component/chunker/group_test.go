@@ -23,6 +23,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 func TestGroupTitleChunker_Registered(t *testing.T) {
@@ -311,8 +312,8 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 	}
 	items := []map[string]any{
 		{"text": "# Heading", "doc_type_kwd": "text"},
-		{"text": "body one @@1\t10.0\t20.0\t30.0\t40.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{1, 10, 20, 30, 40}}},
-		{"text": "body two @@2\t15.0\t25.0\t35.0\t45.0## tail", "doc_type_kwd": "text", "positions": [][]float64{{2, 15, 25, 35, 45}}},
+		{"text": "body one @@1\t10.0\t20.0\t30.0\t40.0## tail", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": [][]float64{{1, 10, 20, 30, 40}}})},
+		{"text": "body two @@2\t15.0\t25.0\t35.0\t45.0## tail", "doc_type_kwd": "text", "source_location": sourceposition.FromParserMap(map[string]any{"positions": [][]float64{{2, 15, 25, 35, 45}}})},
 	}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc",
@@ -337,9 +338,9 @@ func TestGroupChunker_MergesPDFPositionsAndRemovesTags(t *testing.T) {
 			t.Errorf("parser position tags leaked into chunk text: %q", text)
 		}
 		// (b) positions must be merged across both records.
-		pos, ok := ck["positions"].([][]float64)
+		pos, ok := locationField(ck, "positions").([][]float64)
 		if !ok {
-			t.Fatalf("positions missing or wrong type %T on merged group chunk", ck["positions"])
+			t.Fatalf("positions missing or wrong type %T on merged group chunk", locationField(ck, "positions"))
 		}
 		if len(pos) != 2 {
 			t.Errorf("merged positions = %d groups, want 2 (both records)", len(pos))

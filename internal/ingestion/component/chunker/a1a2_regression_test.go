@@ -28,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestFinalizeGeneralChunks_KeepsUploadedTagOnlyChunk is the regression test
@@ -83,7 +84,7 @@ func TestCropImageChunks_UploadFailureRedactsChunkText(t *testing.T) {
 	eng := mockCropEngine{}
 	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
 	secret := "SECRET_DOC_TEXT_9f3a"
-	chunks := []schema.ChunkDoc{{CKType: "image", Text: secret, PDFPositions: pos}}
+	chunks := []schema.ChunkDoc{{CKType: "image", Text: secret, Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos})}}
 	cropImageChunks(ctx, eng, chunks)
 
 	for _, e := range observedLogs.All() {

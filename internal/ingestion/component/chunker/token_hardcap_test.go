@@ -17,10 +17,12 @@
 package chunker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // ---------------------------------------------------------------------------
@@ -137,16 +139,16 @@ func TestMergeUnits_ExpandsOversizedSentence(t *testing.T) {
 func TestMergeUnits_SubChunksKeepPositions(t *testing.T) {
 	const target = 30
 	body := strings.Repeat("word ", 100)
-	pos := []byte(`[{"page":1}]`)
+	pos := json.RawMessage(`[[1,0,10,0,0]]`)
 	got := mergeUnits([]schema.ChunkDoc{
-		{Text: body, CKType: "text", TKNums: intPtr(tokenizeStr(body)), PDFPositions: pos},
+		{Text: body, CKType: "text", TKNums: intPtr(tokenizeStr(body)), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos})},
 	}, target, 0, "")
 	if len(got) < 2 {
 		t.Fatalf("want >=2 chunks, got %d", len(got))
 	}
 	for i := range got {
-		if string(got[i].PDFPositions) != string(pos) {
-			t.Errorf("sub-chunk %d must carry the original positions, got %q", i, got[i].PDFPositions)
+		if string(locationJSON(got[i].Location, true)) != string(pos) {
+			t.Errorf("sub-chunk %d must carry the original positions, got %q", i, locationJSON(got[i].Location, true))
 		}
 	}
 }
@@ -260,17 +262,17 @@ func TestMergeUnits_ExpandedPiecesCarryMetadata(t *testing.T) {
 	const target = 30
 	body := strings.Repeat("word ", 100)
 	unit := schema.ChunkDoc{
-		Text:          body,
-		DocType:       "text",
-		CKType:        "text",
-		TKNums:        intPtr(tokenizeStr(body)),
-		PDFPositions:  []byte(`[{"page":1}]`),
-		Mom:           "parent-id",
-		ImgID:         "img-1",
-		Layout:        "text",
-		Image:         "raw-image",
-		PageNumber:    intPtr(3),
-		ChunkOrderInt: intPtr(7),
+		Text:    body,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(body)),
+
+		Mom:    "parent-id",
+		ImgID:  "img-1",
+		Layout: "text",
+		Image:  "raw-image",
+
+		ChunkOrderInt: intPtr(7), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,0,10,0,0]]`), "page_number": intPtr(3)}),
 	}
 	got := mergeUnits([]schema.ChunkDoc{unit}, target, 0, "\n")
 	if len(got) < 2 {
@@ -280,13 +282,13 @@ func TestMergeUnits_ExpandedPiecesCarryMetadata(t *testing.T) {
 		if ck.Mom != "parent-id" || ck.ImgID != "img-1" || ck.Layout != "text" || ck.Image != "raw-image" {
 			t.Errorf("sub-piece %d lost item metadata: %#v", i, ck)
 		}
-		if ck.PageNumber == nil || *ck.PageNumber != 3 {
-			t.Errorf("sub-piece %d lost PageNumber: %#v", i, ck.PageNumber)
+		if locationPage(ck.Location) == nil || *locationPage(ck.Location) != 3 {
+			t.Errorf("sub-piece %d lost PageNumber: %#v", i, locationPage(ck.Location))
 		}
 		if ck.ChunkOrderInt == nil || *ck.ChunkOrderInt != 7 {
 			t.Errorf("sub-piece %d lost ChunkOrderInt: %#v", i, ck.ChunkOrderInt)
 		}
-		if len(ck.PDFPositions) == 0 {
+		if len(locationJSON(ck.Location, true)) == 0 {
 			t.Errorf("sub-piece %d must carry the original positions", i)
 		}
 	}

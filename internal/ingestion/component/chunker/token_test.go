@@ -27,6 +27,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
 	textparser "ragflow/internal/parser/parser"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestTokenChunker_Registered asserts the registry has a CategoryIngestion
@@ -700,9 +701,7 @@ func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
 		"output_format": "json",
 		"json": []map[string]any{{
 			"text":         "<table><tr><td>A</td></tr>\n<tr><td>B</td></tr></table>",
-			"doc_type_kwd": "table",
-			"positions":    wantPositions,
-			"sheet":        "Sheet1",
+			"doc_type_kwd": "table", "source_location": sourceposition.FromParserMap(map[string]any{"positions": wantPositions, "sheet": "Sheet1"}),
 		}},
 	})
 	if err != nil {
@@ -715,7 +714,7 @@ func TestTokenChunker_SpreadsheetTablePreservesSelectionRange(t *testing.T) {
 	if got := chunks[0]["ck_type"]; got != "table" {
 		t.Errorf("ck_type = %v, want table", got)
 	}
-	if got := chunks[0]["positions"]; !reflect.DeepEqual(got, wantPositions) {
+	if got := locationField(chunks[0], "positions"); !reflect.DeepEqual(got, wantPositions) {
 		t.Errorf("positions = %#v, want unchanged %#v", got, wantPositions)
 	}
 }

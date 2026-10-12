@@ -19,6 +19,8 @@ package chunker
 import (
 	"context"
 	"testing"
+
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // slideChunksOf drives PageChunker.Invoke and returns the emitted maps.
@@ -50,19 +52,18 @@ func TestPageChunker_OneChunkPerSlide(t *testing.T) {
 			{
 				"text":         "Slide 1 content",
 				"doc_type_kwd": "image",
-				"page_number":  float64(1),
-				"image":        "base64slide1",
+
+				"image": "base64slide1", "source_location": sourceposition.FromParserMap(map[string]any{"page_number": float64(1)}),
 			},
 			{
 				"text":         "Slide 2 content",
 				"doc_type_kwd": "image",
-				"page_number":  float64(2),
-				"image":        "base64slide2",
+
+				"image": "base64slide2", "source_location": sourceposition.FromParserMap(map[string]any{"page_number": float64(2)}),
 			},
 			{
 				"text":         "Slide 3 content",
-				"doc_type_kwd": "image",
-				"page_number":  float64(3),
+				"doc_type_kwd": "image", "source_location": sourceposition.FromParserMap(map[string]any{"page_number": float64(3)}),
 			},
 		},
 	})
@@ -73,8 +74,8 @@ func TestPageChunker_OneChunkPerSlide(t *testing.T) {
 
 	for i, ck := range chunks {
 		wantPage := float64(i + 1)
-		if ck["page_number"] != wantPage {
-			t.Errorf("slide %d: page_number = %v, want %v", i+1, ck["page_number"], wantPage)
+		if locationField(ck, "page_number") != wantPage {
+			t.Errorf("slide %d: page_number = %v, want %v", i+1, locationField(ck, "page_number"), wantPage)
 		}
 		if ck["doc_type_kwd"] != "image" {
 			t.Errorf("slide %d: doc_type_kwd = %v, want image", i+1, ck["doc_type_kwd"])

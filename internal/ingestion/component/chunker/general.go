@@ -39,6 +39,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -283,12 +284,12 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 	type positionedUnit struct {
 		unit       schema.ChunkDoc
-		row        []float64
+		row        position.Box
 		positioned bool
 	}
 	ordered := make([]positionedUnit, 0, len(units))
 	for _, unit := range units {
-		row, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions})
+		row, ok := firstPositionRow(lineRecord{location: unit.Location})
 		ordered = append(ordered, positionedUnit{unit: cloneChunkDoc(unit), row: row, positioned: ok})
 	}
 	runStart := -1
@@ -297,7 +298,7 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 			return
 		}
 		sort.SliceStable(ordered[runStart:end], func(i, j int) bool {
-			return pdfPosRowLess(ordered[runStart+i].row, ordered[runStart+j].row)
+			return position.Less(ordered[runStart+i].row, ordered[runStart+j].row)
 		})
 		runStart = -1
 	}
@@ -320,7 +321,7 @@ func sortPDFUnits(units []schema.ChunkDoc) []schema.ChunkDoc {
 
 func hasPDFPositions(units []schema.ChunkDoc) bool {
 	for _, unit := range units {
-		if _, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions}); ok {
+		if _, ok := firstPositionRow(lineRecord{location: unit.Location}); ok {
 			return true
 		}
 	}
@@ -332,7 +333,7 @@ func hasUnpositionedPDFMedia(units []schema.ChunkDoc) bool {
 		if itemDocType(unit) == "text" {
 			continue
 		}
-		if _, ok := firstPositionRow(lineRecord{pdfPositions: unit.PDFPositions, positions: unit.Positions}); !ok {
+		if _, ok := firstPositionRow(lineRecord{location: unit.Location}); !ok {
 			return true
 		}
 	}
@@ -527,7 +528,7 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 	case "text":
 		return doc.Text, true
 	case "table":
-		if !hasSpreadsheetIdentity(doc) {
+		if !doc.Location.IsSpreadsheet() {
 			return "", false
 		}
 		td := tableDataOf(doc)
@@ -554,14 +555,10 @@ func generalContextSourceText(doc schema.ChunkDoc) (string, bool) {
 }
 
 func generalMediaContextCrossesSpreadsheetBoundary(media, candidate schema.ChunkDoc) bool {
-	if !hasSpreadsheetIdentity(media) && !hasSpreadsheetIdentity(candidate) {
+	if !media.Location.IsSpreadsheet() && !candidate.Location.IsSpreadsheet() {
 		return false
 	}
-	return !sameSpreadsheetTable(media, candidate)
-}
-
-func hasSpreadsheetIdentity(doc schema.ChunkDoc) bool {
-	return doc.Sheet != "" || doc.SheetIndex != nil
+	return !media.Location.SameSheet(candidate.Location)
 }
 
 // takeContextSentences returns the whole sentences at one end of text whose
@@ -727,8 +724,7 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 					table.Text = heading.Text + table.Text
 				}
 				table.TKNums = intPtr(currentTokens + generalUnitTokens(unit))
-				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
-				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
+				table.Location = table.Location.MergePage(heading.Location)
 				mergeGeneralMetadata(&table, heading)
 				table.Image = mergedImage
 				table.DocType = "table"
@@ -800,8 +796,15 @@ func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64,
 				next.Text = joinGeneralOverlapText(overlap, unit.Text, joinSep)
 				currentTokens = tokenizeStr(overlap) + unitTokens
 				next.TKNums = intPtr(currentTokens)
-				next.PDFPositions = mergeGeneralPositions(previous.PDFPositions, next.PDFPositions)
-				next.Positions = mergeGeneralPositions(previous.Positions, next.Positions)
+				currentLocation := next.Location
+				next.Location = previous.Location.MergePage(next.Location)
+				if next.Location != nil && next.Location.Page != nil {
+					next.Location.Page.Number = nil
+					if currentLocation != nil && currentLocation.Page != nil && currentLocation.Page.Number != nil {
+						n := *currentLocation.Page.Number
+						next.Location.Page.Number = &n
+					}
+				}
 				merged = append(merged, next)
 			} else {
 				merged = append(merged, unit)
@@ -961,26 +964,16 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	if ranges == nil {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
-	var matrix [][]float64
-	// Spreadsheet items only: PDF items write layout boxes into the same
-	// field, and those must never be sliced into sub-tables as row tuples.
-	if unit.SheetIndex != nil && len(unit.Positions) > 0 {
-		if err := json.Unmarshal(unit.Positions, &matrix); err != nil {
-			matrix = nil
-		}
+	var cells []position.CellRange
+	if unit.Location.IsSpreadsheet() && unit.Location.Spreadsheet.Index != nil {
+		cells = unit.Location.Spreadsheet.Ranges
 	}
 	// The matrix carries one five-field tuple per row; the splitter cut those
 	// same rows, so its last range end is the total data-row count.
 	aligned := false
 	if len(ranges) > 0 {
-		if expected := headerRows + ranges[len(ranges)-1][1]; expected > 0 && len(matrix) == expected {
+		if expected := headerRows + ranges[len(ranges)-1][1]; expected > 0 && len(cells) == expected {
 			aligned = true
-			for _, tuple := range matrix {
-				if len(tuple) != 5 {
-					aligned = false
-					break
-				}
-			}
 		}
 	}
 	out := make([]schema.ChunkDoc, 0, len(parts))
@@ -991,16 +984,18 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 		// the authoritative content for chunkers that read it.
 		piece.Text = tableutil.RenderTableText(&part)
 		piece.TableData = &part
-		piece.Positions = nil
+		piece.Location = unit.Location.WithoutIndex()
 		lo := headerRows + ranges[i][0]
 		hi := headerRows + ranges[i][1]
-		if aligned && hi <= len(matrix) {
-			sub := make([][]float64, 0, headerRows+hi-lo)
-			sub = append(sub, matrix[:headerRows]...)
-			sub = append(sub, matrix[lo:hi]...)
-			if encoded, err := json.Marshal(sub); err == nil {
-				piece.Positions = encoded
+		if aligned && hi <= len(cells) {
+			indices := make([]int, 0, headerRows+hi-lo)
+			for row := 0; row < headerRows; row++ {
+				indices = append(indices, row)
 			}
+			for row := lo; row < hi; row++ {
+				indices = append(indices, row)
+			}
+			piece.Location = unit.Location.SelectRows(indices)
 		}
 		out = append(out, piece)
 	}
@@ -1073,28 +1068,6 @@ func mergeGeneralUnits(units []schema.ChunkDoc, target int, overlapPct float64, 
 	return applyGeneralOverlap(merged, overlapPct, joinSep)
 }
 
-func sameSpreadsheetTable(first, second schema.ChunkDoc) bool {
-	if first.SheetIndex != nil || second.SheetIndex != nil {
-		return first.SheetIndex != nil && second.SheetIndex != nil && *first.SheetIndex == *second.SheetIndex
-	}
-	if firstSheet, firstOK := spreadsheetPositionSheet(first); firstOK {
-		secondSheet, secondOK := spreadsheetPositionSheet(second)
-		return secondOK && firstSheet == secondSheet
-	}
-	if first.Sheet != "" || second.Sheet != "" {
-		return first.Sheet != "" && second.Sheet != "" && first.Sheet == second.Sheet
-	}
-	return false
-}
-
-func spreadsheetPositionSheet(doc schema.ChunkDoc) (float64, bool) {
-	row, ok := firstPositionRow(lineRecord{positions: doc.Positions})
-	if !ok {
-		return 0, false
-	}
-	return row[0], true
-}
-
 func generalUnitTokens(unit schema.ChunkDoc) int {
 	if unit.TKNums != nil && *unit.TKNums > 0 {
 		return *unit.TKNums
@@ -1108,8 +1081,7 @@ func mergeGeneralChunk(dst *schema.ChunkDoc, src schema.ChunkDoc, joinSep string
 	}
 	dst.Text += src.Text
 	dst.TKNums = intPtr(intValue(dst.TKNums) + generalUnitTokens(src))
-	dst.PDFPositions = mergeGeneralPositions(dst.PDFPositions, src.PDFPositions)
-	dst.Positions = mergeGeneralPositions(dst.Positions, src.Positions)
+	dst.Location = dst.Location.MergePage(src.Location)
 	mergeGeneralMetadata(dst, src)
 }
 
@@ -1129,9 +1101,6 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 	if dst.LayoutNo == "" {
 		dst.LayoutNo = src.LayoutNo
 	}
-	if dst.PageNumber == nil {
-		dst.PageNumber = src.PageNumber
-	}
 	if dst.Extra == nil && len(src.Extra) > 0 {
 		dst.Extra = make(map[string]json.RawMessage, len(src.Extra))
 	}
@@ -1140,16 +1109,6 @@ func mergeGeneralMetadata(dst *schema.ChunkDoc, src schema.ChunkDoc) {
 			dst.Extra[key] = append(json.RawMessage(nil), value...)
 		}
 	}
-}
-
-func mergeGeneralPositions(first, second json.RawMessage) json.RawMessage {
-	if positions := mergePositionMatrix(first, second); len(positions) > 0 {
-		encoded, err := json.Marshal(positions)
-		if err == nil {
-			return encoded
-		}
-	}
-	return extendRawJSONArray(first, second)
 }
 
 func applyGeneralOverlap(chunks []schema.ChunkDoc, overlapPct float64, joinSep string) []schema.ChunkDoc {

@@ -28,8 +28,17 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"ragflow/internal/parser/position"
 	"ragflow/internal/tokenizer"
 )
+
+func totalRunes(strs []string) int {
+	n := 0
+	for _, s := range strs {
+		n += utf8.RuneCountInString(s)
+	}
+	return n
+}
 
 // realNumTokens / realTrimToTokenLimit are the production tokenizer functions.
 // They are referenced through package-level vars (numTokens /
@@ -213,9 +222,8 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 	// Proportionally slice PDF positions so each sub-chunk's screenshot
 	// crops only its own vertical region (fix for chunk-screenshot mismatch).
 	// When no positions are present the old shallow-copy behaviour is kept.
-	_, hasPDF := chunk["_pdf_positions"]
-	_, hasPos := chunk["positions"]
-	if !hasPDF && !hasPos {
+	location, _ := position.FromMap(chunk)
+	if !location.HasCoordinates() {
 		out := make([]map[string]any, 0, len(finalGroups))
 		for _, g := range finalGroups {
 			sub := shallowCopyChunk(chunk)
@@ -242,16 +250,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		endRatio := float64(cum+pcRunes) / float64(total)
 		sub := shallowCopyChunk(chunk)
 		sub["text"] = g
-		if hasPDF {
-			if sliced := sliceAnyPositions(chunk["_pdf_positions"], startRatio, endRatio); sliced != nil {
-				sub["_pdf_positions"] = sliced
-			}
-		}
-		if hasPos {
-			if sliced := sliceAnyPositions(chunk["positions"], startRatio, endRatio); sliced != nil {
-				sub["positions"] = sliced
-			}
-		}
+		sub["source_location"] = location.SlicePage(startRatio, endRatio)
 		out = append(out, sub)
 		cum += pcRunes
 	}

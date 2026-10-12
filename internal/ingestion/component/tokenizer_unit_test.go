@@ -34,6 +34,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 	"ragflow/internal/tokenizer"
 )
 
@@ -436,17 +437,16 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {
 	pos := json.RawMessage(`[[1,10,20,30,40],[2,15,25,35,45]]`)
 	chunks := []schema.ChunkDoc{
-		{Text: "PDF paragraph", DocType: "text", CKType: "text",
-			Positions: pos, PDFPositions: pos},
+		{Text: "PDF paragraph", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"positions": pos, "_pdf_positions": pos})},
 	}
 	maps := schema.ChunkDocsToMaps(chunks)
 
-	got, ok := maps[0]["positions"].([][]float64)
+	got, ok := locationField(maps[0], "positions").([][]float64)
 	if !ok || len(got) != 2 {
-		t.Fatalf("positions not preserved through tokenizer output mapping: %#v", maps[0]["positions"])
+		t.Fatalf("positions not preserved through tokenizer output mapping: %#v", locationField(maps[0], "positions"))
 	}
-	if _, ok := maps[0]["_pdf_positions"].([][]float64); !ok {
-		t.Errorf("_pdf_positions not preserved through tokenizer output mapping: %#v", maps[0]["_pdf_positions"])
+	if _, ok := locationField(maps[0], "_pdf_positions").([][]float64); !ok {
+		t.Errorf("_pdf_positions not preserved through tokenizer output mapping: %#v", locationField(maps[0], "_pdf_positions"))
 	}
 	// Sanity: page numbers are still raw 1-indexed, i.e. not yet converted
 	// to page_num_int (the executor owns that step).

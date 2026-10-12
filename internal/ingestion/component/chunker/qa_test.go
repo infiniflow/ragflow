@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 )
 
@@ -469,13 +470,13 @@ func TestQAChunkerSpreadsheetWireTreatsFirstRowAsQAData(t *testing.T) {
 	}
 	// R1: each pair carries only its own row's tuple, not the segment matrix.
 	for i, wantRow := range []float64{1, 2} {
-		raw, _ := json.Marshal(chunks[i]["positions"])
+		raw, _ := json.Marshal(locationField(chunks[i], "positions"))
 		var matrix [][]float64
 		if err := json.Unmarshal(raw, &matrix); err != nil {
-			t.Fatalf("chunk[%d] positions = %v: %v", i, chunks[i]["positions"], err)
+			t.Fatalf("chunk[%d] positions = %v: %v", i, locationField(chunks[i], "positions"), err)
 		}
 		if len(matrix) != 1 {
-			t.Fatalf("chunk[%d] positions = %v, want one tuple", i, chunks[i]["positions"])
+			t.Fatalf("chunk[%d] positions = %v, want one tuple", i, locationField(chunks[i], "positions"))
 		}
 		if tuple := matrix[0]; len(tuple) != 5 || tuple[1] != wantRow {
 			t.Errorf("chunk[%d] tuple = %v, want rowStart %v", i, tuple, wantRow)
@@ -558,10 +559,8 @@ func TestQAChunkerPositionsRequireSpreadsheetIdentityAndFiveFields(t *testing.T)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			item := schema.ChunkDoc{
-				TableData:  mustTableData(t, table),
-				DocType:    "table",
-				Positions:  json.RawMessage(tc.positions),
-				SheetIndex: tc.sheetIndex,
+				TableData: mustTableData(t, table),
+				DocType:   "table", Location: sourceposition.FromParserMap(map[string]any{"positions": json.RawMessage(tc.positions), "sheet_index": tc.sheetIndex}),
 			}
 			pairs := extractQAJSON([]schema.ChunkDoc{item}, "")
 			if len(pairs) != 1 {

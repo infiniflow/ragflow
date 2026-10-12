@@ -24,6 +24,7 @@ import (
 	"testing"
 
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 func TestMergeGeneralUnitsAllowsOneBoundaryOverflow(t *testing.T) {
@@ -42,17 +43,19 @@ func TestMergeGeneralUnitsAllowsOneBoundaryOverflow(t *testing.T) {
 	}
 }
 
-// TestSameSpreadsheetTableUsesPositionSheet covers the media-context sheet
-// guard once carried by merged row runs: identity falls through to the
-// positions matrix when the sheet fields are absent.
-func TestSameSpreadsheetTableUsesPositionSheet(t *testing.T) {
-	one := schema.ChunkDoc{Text: "sheet-1", Positions: json.RawMessage(`[[1,2,2,1,2]]`)}
-	two := schema.ChunkDoc{Text: "sheet-2", Positions: json.RawMessage(`[[2,2,2,1,2]]`)}
-	if !sameSpreadsheetTable(one, one) {
+// Sheet boundaries use explicit identity, never page coordinates.
+func TestSameSpreadsheetTableRequiresExplicitSheetIdentity(t *testing.T) {
+	one := schema.ChunkDoc{Text: "sheet-1", Location: sourceposition.FromParserMap(map[string]any{"sheet_index": 1, "positions": json.RawMessage(`[[1,2,2,1,2]]`)})}
+	two := schema.ChunkDoc{Text: "sheet-2", Location: sourceposition.FromParserMap(map[string]any{"sheet_index": 2, "positions": json.RawMessage(`[[2,2,2,1,2]]`)})}
+	if !one.Location.SameSheet(one.Location) {
 		t.Errorf("same position sheet rejected")
 	}
-	if sameSpreadsheetTable(one, two) {
+	if one.Location.SameSheet(two.Location) {
 		t.Errorf("different position sheets accepted")
+	}
+	page := schema.ChunkDoc{Location: sourceposition.FromParserMap(map[string]any{"positions": json.RawMessage(`[[1,2,2,1,2]]`)})}
+	if page.Location.SameSheet(page.Location) {
+		t.Fatal("page position interpreted as sheet identity")
 	}
 }
 
@@ -106,20 +109,20 @@ func TestApplyGeneralOverlapDoesNotAccumulatePositions(t *testing.T) {
 		return json.RawMessage(fmt.Sprintf("[[%d,0,10,0,5]]", page))
 	}
 	chunks := []schema.ChunkDoc{
-		{Text: "alpha beta", DocType: "text", CKType: "text", PDFPositions: position(1), Positions: position(1)},
-		{Text: "gamma delta", DocType: "text", CKType: "text", PDFPositions: position(2), Positions: position(2)},
-		{Text: "epsilon zeta", DocType: "text", CKType: "text", PDFPositions: position(3), Positions: position(3)},
+		{Text: "alpha beta", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": position(1), "positions": position(1)})},
+		{Text: "gamma delta", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": position(2), "positions": position(2)})},
+		{Text: "epsilon zeta", DocType: "text", CKType: "text", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": position(3), "positions": position(3)})},
 	}
 
 	got := applyGeneralOverlap(chunks, 50, "\n")
 	if len(got) != 3 {
 		t.Fatalf("chunks = %d, want 3", len(got))
 	}
-	if string(got[1].PDFPositions) != string(position(2)) || string(got[1].Positions) != string(position(2)) {
-		t.Fatalf("second overlap chunk inherited prior positions: pdf=%s positions=%s", got[1].PDFPositions, got[1].Positions)
+	if string(locationJSON(got[1].Location, true)) != string(position(2)) || string(locationJSON(got[1].Location, false)) != string(position(2)) {
+		t.Fatalf("second overlap chunk inherited prior positions: pdf=%s positions=%s", locationJSON(got[1].Location, true), locationJSON(got[1].Location, false))
 	}
-	if string(got[2].PDFPositions) != string(position(3)) || string(got[2].Positions) != string(position(3)) {
-		t.Fatalf("third overlap chunk accumulated prior positions: pdf=%s positions=%s", got[2].PDFPositions, got[2].Positions)
+	if string(locationJSON(got[2].Location, true)) != string(position(3)) || string(locationJSON(got[2].Location, false)) != string(position(3)) {
+		t.Fatalf("third overlap chunk accumulated prior positions: pdf=%s positions=%s", locationJSON(got[2].Location, true), locationJSON(got[2].Location, false))
 	}
 }
 
@@ -151,22 +154,20 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	currentPage := 5
 	units := []schema.ChunkDoc{
 		{
-			Text:       "alpha beta",
-			DocType:    "text",
-			CKType:     "text",
-			Image:      "previous-image",
-			ImgID:      "previous-image-id",
-			PageNumber: &previousPage,
-			Positions:  json.RawMessage(`[[0,0,10,0,10]]`),
-			Extra:      map[string]json.RawMessage{"previous": json.RawMessage(`true`)},
+			Text:    "alpha beta",
+			DocType: "text",
+			CKType:  "text",
+			Image:   "previous-image",
+			ImgID:   "previous-image-id",
+
+			Extra: map[string]json.RawMessage{"previous": json.RawMessage(`true`)}, Location: sourceposition.FromParserMap(map[string]any{"page_number": &previousPage, "positions": json.RawMessage(`[[0,0,10,0,10]]`)}),
 		},
 		{
-			Text:       "gamma delta",
-			DocType:    "text",
-			CKType:     "text",
-			PageNumber: &currentPage,
-			Positions:  json.RawMessage(`[[0,0,10,20,30]]`),
-			Extra:      map[string]json.RawMessage{"current": json.RawMessage(`true`)},
+			Text:    "gamma delta",
+			DocType: "text",
+			CKType:  "text",
+
+			Extra: map[string]json.RawMessage{"current": json.RawMessage(`true`)}, Location: sourceposition.FromParserMap(map[string]any{"page_number": &currentPage, "positions": json.RawMessage(`[[0,0,10,20,30]]`)}),
 		},
 	}
 	for i := range units {
@@ -187,11 +188,11 @@ func TestMergeMarkdownUnitsOverlapKeepsCurrentChunkMetadata(t *testing.T) {
 	if got[1].ImgID != "" {
 		t.Errorf("overlap chunk inherited previous image id %q", got[1].ImgID)
 	}
-	if got[1].PageNumber == nil || *got[1].PageNumber != currentPage {
-		t.Errorf("overlap chunk page number = %v, want current page %d", got[1].PageNumber, currentPage)
+	if locationPage(got[1].Location) == nil || *locationPage(got[1].Location) != currentPage {
+		t.Errorf("overlap chunk page number = %v, want current page %d", locationPage(got[1].Location), currentPage)
 	}
-	if string(got[1].Positions) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
-		t.Errorf("overlap chunk positions = %s, want previous and current positions", got[1].Positions)
+	if string(locationJSON(got[1].Location, false)) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
+		t.Errorf("overlap chunk positions = %s, want previous and current positions", locationJSON(got[1].Location, false))
 	}
 	if _, ok := got[1].Extra["previous"]; ok {
 		t.Errorf("overlap chunk inherited previous extra metadata: %#v", got[1].Extra)
@@ -304,7 +305,7 @@ func TestShortMarkdownHeadingBudgetIgnoresATXMarker(t *testing.T) {
 func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) {
 	previousPage := 4
 	units := []schema.ChunkDoc{
-		{Text: "first", DocType: "text", CKType: "text", TKNums: intPtr(2), Image: "previous-image", ImgID: "previous-image-id", PageNumber: &previousPage, Extra: map[string]json.RawMessage{"source": json.RawMessage(`"previous"`)}},
+		{Text: "first", DocType: "text", CKType: "text", TKNums: intPtr(2), Image: "previous-image", ImgID: "previous-image-id", Extra: map[string]json.RawMessage{"source": json.RawMessage(`"previous"`)}, Location: sourceposition.FromParserMap(map[string]any{"page_number": &previousPage})},
 		{Text: "second", DocType: "text", CKType: "text", TKNums: intPtr(2)},
 		{Text: "third", DocType: "text", CKType: "text", TKNums: intPtr(2)},
 	}
@@ -317,8 +318,8 @@ func TestMergeGeneralUnitsOverlapDoesNotCopyPreviousMediaMetadata(t *testing.T) 
 	if current.Image != "" || current.ImgID != "" {
 		t.Fatalf("overlap chunk copied previous media: image=%q img_id=%q", current.Image, current.ImgID)
 	}
-	if current.PageNumber != nil {
-		t.Fatalf("overlap chunk copied previous page number: %v", current.PageNumber)
+	if locationPage(current.Location) != nil {
+		t.Fatalf("overlap chunk copied previous page number: %v", locationPage(current.Location))
 	}
 	if _, ok := current.Extra["source"]; ok {
 		t.Fatalf("overlap chunk copied previous extra metadata: %#v", current.Extra)
@@ -353,24 +354,21 @@ func TestMergeGeneralUnitsKeepsMediaAtomicAndBreaksTextRun(t *testing.T) {
 
 func TestMergeGeneralUnitsCombinesPositionsAndMetadata(t *testing.T) {
 	first := schema.ChunkDoc{
-		Text:         "alpha",
-		DocType:      "text",
-		CKType:       "text",
-		TKNums:       intPtr(1),
-		Image:        "image-a",
-		Positions:    json.RawMessage(`[[0,0,10,0,10]]`),
-		PDFPositions: json.RawMessage(`[[0,0,10,0,10]]`),
-		Extra:        map[string]json.RawMessage{"source_order": json.RawMessage(`1`)},
-		PageNumber:   intPtr(4),
+		Text:    "alpha",
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(1),
+		Image:   "image-a",
+
+		Extra: map[string]json.RawMessage{"source_order": json.RawMessage(`1`)}, Location: sourceposition.FromParserMap(map[string]any{"positions": json.RawMessage(`[[0,0,10,0,10]]`), "_pdf_positions": json.RawMessage(`[[0,0,10,0,10]]`), "page_number": intPtr(4)}),
 	}
 	second := schema.ChunkDoc{
-		Text:         "beta",
-		DocType:      "text",
-		CKType:       "text",
-		TKNums:       intPtr(1),
-		Positions:    json.RawMessage(`[[0,0,10,20,30]]`),
-		PDFPositions: json.RawMessage(`[[0,0,10,20,30]]`),
-		Extra:        map[string]json.RawMessage{"heading_level": json.RawMessage(`2`)},
+		Text:    "beta",
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(1),
+
+		Extra: map[string]json.RawMessage{"heading_level": json.RawMessage(`2`)}, Location: sourceposition.FromParserMap(map[string]any{"positions": json.RawMessage(`[[0,0,10,20,30]]`), "_pdf_positions": json.RawMessage(`[[0,0,10,20,30]]`)}),
 	}
 
 	got := mergeGeneralUnits([]schema.ChunkDoc{first, second}, 1, 0, "\n")
@@ -380,14 +378,14 @@ func TestMergeGeneralUnitsCombinesPositionsAndMetadata(t *testing.T) {
 	if got[0].Image != "image-a" {
 		t.Errorf("image = %q, want image-a", got[0].Image)
 	}
-	if got[0].PageNumber == nil || *got[0].PageNumber != 4 {
-		t.Errorf("page number = %v, want 4", got[0].PageNumber)
+	if locationPage(got[0].Location) == nil || *locationPage(got[0].Location) != 4 {
+		t.Errorf("page number = %v, want 4", locationPage(got[0].Location))
 	}
-	if string(got[0].Positions) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
-		t.Errorf("positions = %s", got[0].Positions)
+	if string(locationJSON(got[0].Location, false)) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
+		t.Errorf("positions = %s", locationJSON(got[0].Location, false))
 	}
-	if string(got[0].PDFPositions) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
-		t.Errorf("PDF positions = %s", got[0].PDFPositions)
+	if string(locationJSON(got[0].Location, true)) != `[[0,0,10,0,10],[0,0,10,20,30]]` {
+		t.Errorf("PDF positions = %s", locationJSON(got[0].Location, true))
 	}
 	if string(got[0].Extra["source_order"]) != "1" || string(got[0].Extra["heading_level"]) != "2" {
 		t.Errorf("extra metadata = %#v", got[0].Extra)

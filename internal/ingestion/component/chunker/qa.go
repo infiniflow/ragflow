@@ -31,7 +31,6 @@ package chunker
 import (
 	"context"
 	"encoding/csv"
-	"encoding/json"
 	"fmt"
 	"regexp"
 	"strings"
@@ -42,6 +41,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
@@ -147,21 +147,14 @@ func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (m
 			DocType:       "text",
 			ContentLtks:   contentLTKS,
 			ContentSmLtks: contentSMLTKS,
+			Location:      pair.Location.Clone(),
 		}
-		//
-		// index), image id + coordinates carried from the source item.
 		if pair.RowNum >= 0 {
 			chunk.TopInt = []int{pair.RowNum}
 		}
 		if pair.Image != "" {
 			chunk.Image = pair.Image
 			chunk.DocType = "image"
-		}
-		if len(pair.PDFPositions) > 0 {
-			chunk.PDFPositions = pair.PDFPositions
-		}
-		if len(pair.Positions) > 0 {
-			chunk.Positions = pair.Positions
 		}
 		chunks = append(chunks, chunk)
 	}
@@ -181,12 +174,9 @@ type qaPair struct {
 	// RowNum is the 0-based source line/record index, mapped to Python's
 	// top_int (qa.py beAdoc(..., row_num=i)). -1 means unset.
 	RowNum int
-	// Image and positions are carried from the upstream item so the QA
-	// chunk preserves metadata that Python sets via beAdocPdf/beAdocDocx
-	//
-	Image        string
-	PDFPositions json.RawMessage
-	Positions    json.RawMessage
+	// Each pair retains its image and complete source location.
+	Image    string
+	Location *position.Location
 }
 
 // rmQAPrefixRe mirrors Python qa.py:241 `[\t:： ]+` — one-or-more separator
@@ -431,7 +421,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			rows = td.Rows
 		}
 		if len(rows) > 0 {
-			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil)
+			tmp = qaPairsFromRows(rows, strictCSV, item.Location)
 		} else {
 			tmp = extractQAText(txt)
 		}
@@ -441,9 +431,8 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// table's matrix in positions[0]).
 		for _, p := range tmp {
 			p.Image = item.Image
-			p.PDFPositions = item.PDFPositions
-			if len(p.Positions) == 0 {
-				p.Positions = item.Positions
+			if p.Location == nil {
+				p.Location = item.Location.Clone()
 			}
 			pairs = append(pairs, p)
 		}
@@ -462,7 +451,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if err != nil || td == nil {
 		return nil
 	}
-	return qaPairsFromRows(td.Rows, strictPairs, nil, false)
+	return qaPairsFromRows(td.Rows, strictPairs, nil)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
@@ -470,31 +459,11 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 // contract (Python qa.py:365) and requires a row to have exactly two cells
 // instead of taking the first two.
 //
-// positions is the item's own positions payload, and spreadsheetPositions
-// says whether it may be read as the spreadsheet wire's matrix. When it is
-// (identity present, one five-field tuple per <tr>), each pair carries only
-// its row's tuple and takes its 0-based record index from that tuple's
-// rowStart (top_int = positions[i][1] - 1), which reproduces the legacy
-// row-IR numbering. Otherwise pairs are numbered by extraction order,
-// mirroring Python qa.py's enumerate over the extracted pairs — PDF items
-// write layout boxes into the same field, so they must not be reinterpreted
-// as spreadsheet rows.
-func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
-	var matrix [][]float64
-	if len(positions) > 0 {
-		if err := json.Unmarshal(positions, &matrix); err != nil {
-			matrix = nil
-		}
-	}
-	rowAligned := spreadsheetPositions && len(matrix) == len(rows) && len(rows) > 0
-	if rowAligned {
-		for _, tuple := range matrix {
-			if len(tuple) != 5 {
-				rowAligned = false
-				break
-			}
-		}
-	}
+// A row-aligned spreadsheet location assigns each pair its own cell range
+// and the zero-based source row. Other inputs use extraction order; page
+// rectangles are never interpreted as spreadsheet records.
+func qaPairsFromRows(rows [][]string, strictPairs bool, location *position.Location) []qaPair {
+	rowAligned := location.IsSpreadsheet() && location.Spreadsheet.Index != nil && len(location.Spreadsheet.Ranges) == len(rows) && len(rows) > 0
 	pairs := make([]qaPair, 0, len(rows))
 	for i, cells := range rows {
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
@@ -515,10 +484,8 @@ func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessag
 		}
 		pair := qaPair{Question: texts[0], Answer: texts[1], RowNum: len(pairs)}
 		if rowAligned {
-			pair.RowNum = int(matrix[i][1]) - 1
-			if encoded, err := json.Marshal([][]float64{matrix[i]}); err == nil {
-				pair.Positions = encoded
-			}
+			pair.RowNum = location.Spreadsheet.Ranges[i].RowStart - 1
+			pair.Location = location.SelectRows([]int{i})
 		}
 		pairs = append(pairs, pair)
 	}

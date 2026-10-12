@@ -32,6 +32,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
+	"ragflow/internal/parser/position"
 	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/utility"
 )
@@ -983,6 +984,20 @@ func projectPDFTable(item map[string]any) {
 // were empty or not actually a matrix (e.g. an empty []any or a stray scalar),
 // which escaped the figure-caption → image normalization and the crop path.
 func ExtractPDFPositions(item map[string]any) ([][]any, bool) {
+	if position.FromParserMap(item).IsSpreadsheet() {
+		return nil, false
+	}
+	if _, exists := item["source_location"]; exists {
+		location, err := position.FromMap(item)
+		if err != nil {
+			return nil, false
+		}
+		var matrix [][]any
+		for _, b := range location.Preview() {
+			matrix = append(matrix, []any{b.Page, b.Left, b.Right, b.Top, b.Bottom})
+		}
+		return matrix, len(matrix) > 0
+	}
 	for _, key := range []string{"_pdf_positions", "positions"} {
 		switch v := item[key].(type) {
 		case [][]any:

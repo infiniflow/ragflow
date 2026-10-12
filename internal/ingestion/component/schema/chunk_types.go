@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/position"
 )
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
@@ -103,33 +104,29 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text          string          `json:"text,omitempty"`
-	DocType       string          `json:"doc_type_kwd,omitempty"`
-	CKType        string          `json:"ck_type,omitempty"`
-	TKNums        *int            `json:"tk_nums,omitempty"`
-	Mom           string          `json:"mom,omitempty"`
-	ImgID         string          `json:"img_id,omitempty"`
-	ID            string          `json:"id,omitempty"`
-	Layout        string          `json:"layout,omitempty"`
-	LayoutType    string          `json:"layout_type,omitempty"`
-	LayoutNo      string          `json:"layoutno,omitempty"`
-	Image         string          `json:"image,omitempty"`
-	ContextAbove  string          `json:"context_above,omitempty"`
-	ContextBelow  string          `json:"context_below,omitempty"`
-	Questions     string          `json:"questions,omitempty"`
-	Keywords      string          `json:"keywords,omitempty"`
-	Summary       string          `json:"summary,omitempty"`
-	ChunkOrderInt *int            `json:"chunk_order_int,omitempty"`
-	TitleTks      string          `json:"title_tks,omitempty"`
-	TitleSmTks    string          `json:"title_sm_tks,omitempty"`
-	ContentLtks   string          `json:"content_ltks,omitempty"`
-	ContentSmLtks string          `json:"content_sm_ltks,omitempty"`
-	PageNumber    *int            `json:"page_number,omitempty"`
-	TopInt        []int           `json:"top_int,omitempty"`
-	PDFPositions  json.RawMessage `json:"_pdf_positions,omitempty"`
-	Positions     json.RawMessage `json:"positions,omitempty"`
-	Sheet         string          `json:"sheet,omitempty"`
-	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	Text          string             `json:"text,omitempty"`
+	DocType       string             `json:"doc_type_kwd,omitempty"`
+	CKType        string             `json:"ck_type,omitempty"`
+	TKNums        *int               `json:"tk_nums,omitempty"`
+	Mom           string             `json:"mom,omitempty"`
+	ImgID         string             `json:"img_id,omitempty"`
+	ID            string             `json:"id,omitempty"`
+	Layout        string             `json:"layout,omitempty"`
+	LayoutType    string             `json:"layout_type,omitempty"`
+	LayoutNo      string             `json:"layoutno,omitempty"`
+	Image         string             `json:"image,omitempty"`
+	ContextAbove  string             `json:"context_above,omitempty"`
+	ContextBelow  string             `json:"context_below,omitempty"`
+	Questions     string             `json:"questions,omitempty"`
+	Keywords      string             `json:"keywords,omitempty"`
+	Summary       string             `json:"summary,omitempty"`
+	ChunkOrderInt *int               `json:"chunk_order_int,omitempty"`
+	TitleTks      string             `json:"title_tks,omitempty"`
+	TitleSmTks    string             `json:"title_sm_tks,omitempty"`
+	ContentLtks   string             `json:"content_ltks,omitempty"`
+	ContentSmLtks string             `json:"content_sm_ltks,omitempty"`
+	TopInt        []int              `json:"top_int,omitempty"`
+	Location      *position.Location `json:"source_location,omitempty"`
 	// TableData is the structured table contract. When a chunk carries it
 	// the table content is consumed directly from here instead of being
 	// re-parsed from Text markup. It must stay out of Extra (see the
@@ -148,6 +145,19 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return err
 	}
+	var source map[string]any
+	if err := json.Unmarshal(data, &source); err != nil {
+		return err
+	}
+	if _, exists := source["source_location"]; exists {
+		location, err := position.FromMap(source)
+		if err != nil {
+			return err
+		}
+		decoded.Location = location
+	} else {
+		decoded.Location = position.FromParserMap(source)
+	}
 	// Known ChunkDoc fields plus tag_kwd, which has no ChunkDoc field: Go's
 	// tagger emits tag_feas and the vocabulary comes from a tag source file,
 	// so no chunk carries tag_kwd. Deleted rather than left in raw so it
@@ -158,7 +168,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index", "table",
+		"sheet", "sheet_index", "table", "source_location",
 	} {
 		delete(raw, key)
 	}
@@ -170,6 +180,9 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 }
 
 func (d ChunkDoc) MarshalJSON() ([]byte, error) {
+	if err := d.Location.Validate(); err != nil {
+		return nil, err
+	}
 	type alias ChunkDoc
 	base, err := json.Marshal(alias(d))
 	if err != nil {
@@ -180,6 +193,9 @@ func (d ChunkDoc) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 	for k, v := range d.Extra {
+		if isLocationField(k) {
+			continue
+		}
 		if _, exists := raw[k]; !exists {
 			raw[k] = v
 		}
@@ -250,6 +266,9 @@ func (d ChunkDoc) ToMap() map[string]any {
 		return map[string]any{}
 	}
 	for k, raw := range d.Extra {
+		if isLocationField(k) {
+			continue
+		}
 		out[k] = decodeExtraValue(raw)
 	}
 	// Every pre-index chunk has one canonical text field. Keep the key even
@@ -257,13 +276,16 @@ func (d ChunkDoc) ToMap() map[string]any {
 	// wire contract; contextual text remains explicit retrieval metadata.
 	out["text"] = d.Text
 	delete(out, "content_with_weight")
-	if len(d.PDFPositions) > 0 {
-		out["_pdf_positions"] = decodeStructuredValue(d.PDFPositions)
-	}
-	if len(d.Positions) > 0 {
-		out["positions"] = decodeStructuredValue(d.Positions)
-	}
 	return out
+}
+
+func isLocationField(key string) bool {
+	switch key {
+	case "source_location", "positions", "_pdf_positions", "sheet", "sheet_index", "page_number":
+		return true
+	default:
+		return false
+	}
 }
 
 // ChunkDocsToMaps converts a typed chunk slice to the generic map form.

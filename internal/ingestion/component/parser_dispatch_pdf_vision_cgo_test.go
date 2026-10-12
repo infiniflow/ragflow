@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"testing"
 
-	modelModule "ragflow/internal/entity/models"
-
 	"gorm.io/gorm"
+
+	modelModule "ragflow/internal/entity/models"
 )
 
 func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
@@ -94,7 +94,7 @@ func TestDispatch_PDFVisionJSON_RealPDFFixture(t *testing.T) {
 	if got, _ := jsonItems[0]["text"].(string); !strings.Contains(got, "Recognized Describe page 1.") {
 		t.Fatalf("json[0].text = %q, want rendered vision answer", got)
 	}
-	if positions, ok := jsonItems[0]["_pdf_positions"].([][]any); !ok || len(positions) == 0 {
-		t.Fatalf("json[0]._pdf_positions = %#v, want normalized page positions", jsonItems[0]["_pdf_positions"])
+	if positions, ok := locationField(jsonItems[0], "_pdf_positions").([][]float64); !ok || len(positions) == 0 {
+		t.Fatalf("json[0]._pdf_positions = %#v, want normalized page positions", locationField(jsonItems[0], "_pdf_positions"))
 	}
 }

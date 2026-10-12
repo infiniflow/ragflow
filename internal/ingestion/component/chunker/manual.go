@@ -37,14 +37,14 @@ package chunker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 
+	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
-
-	"gorm.io/gorm"
+	"ragflow/internal/parser/position"
 )
 
 const ComponentNameManualChunker = "ManualChunker"
@@ -120,11 +120,10 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	return chunkFromRecords(ctx, db, inputs, &c.param, records, 0)
 }
 
-// hasPdfPositions reports whether any record carries a PDF coordinate matrix
-// (either the structured `_pdf_positions` or the legacy `positions` form).
+// hasPdfPositions reports whether a record has paginated preview geometry.
 func hasPdfPositions(records []lineRecord) bool {
 	for _, r := range records {
-		if len(r.pdfPositions) > 0 || len(r.positions) > 0 {
+		if len(r.location.Preview()) > 0 {
 			return true
 		}
 	}
@@ -155,7 +154,7 @@ func sortRecordsByPosition(records []lineRecord) {
 		sort.SliceStable(records[runStart:end], func(i, j int) bool {
 			ar, _ := firstPositionRow(records[runStart+i])
 			br, _ := firstPositionRow(records[runStart+j])
-			return pdfPosRowLess(ar, br)
+			return position.Less(ar, br)
 		})
 		runStart = -1
 	}
@@ -174,31 +173,13 @@ func sortRecordsByPosition(records []lineRecord) {
 	}
 }
 
-// firstPositionRow returns the first PDF coordinate 5-tuple
-// [page,left,right,top,bottom] of a record's coordinate matrix, or
-// (nil, false) when the record carries no usable coordinates. It reads the
-// structured `_pdf_positions` key first and falls back to the legacy
-// `positions` key. Callers (pdfPosRowLess) index offsets 0/1/3, so we enforce
-// len(row) >= 5 here.
-func firstPositionRow(r lineRecord) ([]float64, bool) {
-	var raw json.RawMessage
-	switch {
-	case len(r.pdfPositions) > 0:
-		raw = r.pdfPositions
-	case len(r.positions) > 0:
-		raw = r.positions
-	default:
-		return nil, false
+// firstPositionRow returns the first page rectangle used for reading order.
+func firstPositionRow(r lineRecord) (position.Box, bool) {
+	boxes := r.location.Preview()
+	if len(boxes) == 0 {
+		return position.Box{}, false
 	}
-	var mat [][]float64
-	if err := json.Unmarshal(raw, &mat); err != nil || len(mat) == 0 {
-		return nil, false
-	}
-	row := mat[0]
-	if len(row) < 5 {
-		return nil, false
-	}
-	return row, true
+	return boxes[0], true
 }
 
 // init registers ManualChunker under CategoryIngestion.

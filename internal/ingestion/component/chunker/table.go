@@ -30,16 +30,15 @@ package chunker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
+
+	"gorm.io/gorm"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/tableutil"
-
-	"gorm.io/gorm"
 )
 
 const ComponentNameTableChunker = "TableChunker"
@@ -163,19 +162,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	// whole-table tuple must not be copied onto every row, and PDF items write
 	// layout boxes into the same field, so misaligned or non-spreadsheet
 	// payloads get no positions at all.
-	var matrix [][]float64
-	aligned := false
-	if item.SheetIndex != nil && len(item.Positions) > 0 {
-		if err := json.Unmarshal(item.Positions, &matrix); err == nil && len(matrix) == len(rows) {
-			aligned = true
-			for _, tuple := range matrix {
-				if len(tuple) != 5 {
-					aligned = false
-					break
-				}
-			}
-		}
-	}
+	aligned := item.Location.IsSpreadsheet() && item.Location.Spreadsheet.Index != nil && len(item.Location.Spreadsheet.Ranges) == len(rows)
 	out := make([]schema.ChunkDoc, 0, len(rows)-headerCount)
 	for i, row := range rows[headerCount:] {
 		text := tableRowRecordText(names, row)
@@ -185,12 +172,10 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		doc := item
 		doc.Text = text
 		doc.TKNums = nil
-		doc.Positions = nil
+		doc.Location = item.Location.WithoutIndex()
 		doc.TableData = nil
 		if aligned {
-			if tuple, err := json.Marshal([][]float64{matrix[headerCount+i]}); err == nil {
-				doc.Positions = tuple
-			}
+			doc.Location = item.Location.SelectRows([]int{headerCount + i})
 		}
 		out = append(out, doc)
 	}

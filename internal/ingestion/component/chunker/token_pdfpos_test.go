@@ -25,6 +25,7 @@ import (
 	"unicode/utf8"
 
 	"ragflow/internal/ingestion/component/schema"
+	sourceposition "ragflow/internal/parser/position"
 )
 
 // TestMergeByTokenSizeFromJSON_ExtendsPDFPositions is the TDD test for
@@ -37,8 +38,8 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 	posB := json.RawMessage(`[[2,15,25,35,45]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
+			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posA})},
+			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posB})},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
@@ -46,7 +47,7 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 	if len(merged) != 1 {
 		t.Fatalf("want 1 merged chunk, got %d", len(merged))
 	}
-	combined := string(merged[0].PDFPositions)
+	combined := string(locationJSON(merged[0].Location, true))
 	if !strings.Contains(combined, "1,10,20,30,40") {
 		t.Errorf("merged chunk lost first item _pdf_positions: %s", combined)
 	}
@@ -58,16 +59,16 @@ func TestMergeByTokenSizeFromJSON_ExtendsPDFPositions(t *testing.T) {
 // TestMergeByTokenSizeFromJSON_ExtendsPositions covers the parallel
 // `positions` field (diff 2.3).
 func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
-	posA := json.RawMessage(`[[1,2,3]]`)
-	posB := json.RawMessage(`[[4,5,6]]`)
+	posA := json.RawMessage(`[[1,2,3,4,5]]`)
+	posB := json.RawMessage(`[[4,5,6,7,8]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"positions": posA})},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"positions": posB})},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
-	combined := string(got[0][0].Positions)
+	combined := string(locationJSON(got[0][0].Location, false))
 	if !strings.Contains(combined, "1,2,3") || !strings.Contains(combined, "4,5,6") {
 		t.Errorf("merged chunk dropped/omitted `positions`: %s", combined)
 	}
@@ -78,15 +79,16 @@ func TestMergeByTokenSizeFromJSON_ExtendsPositions(t *testing.T) {
 // defensive fix).
 func TestCloneChunkDoc_DeepCopiesPDFPositions(t *testing.T) {
 	pos := json.RawMessage(`[[1,2,3,4,5]]`)
-	orig := schema.ChunkDoc{Text: "x", PDFPositions: pos, Positions: pos}
+	orig := schema.ChunkDoc{Text: "x", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos, "positions": pos})}
 	cp := cloneChunkDoc(orig)
-	// Mutate the source's backing array after the clone.
-	pos[0] = '9'
-	if string(cp.PDFPositions) != "[[1,2,3,4,5]]" {
-		t.Errorf("clone shares _pdf_positions backing array: %s", string(cp.PDFPositions))
+	// Mutate the source geometry after cloning.
+	orig.Location.Page.IndexBoxes[0].Left = 9
+	orig.Location.Page.PreviewBoxes[0].Left = 9
+	if string(locationJSON(cp.Location, true)) != "[[1,2,3,4,5]]" {
+		t.Errorf("clone shares _pdf_positions backing array: %s", string(locationJSON(cp.Location, true)))
 	}
-	if string(cp.Positions) != "[[1,2,3,4,5]]" {
-		t.Errorf("clone shares positions backing array: %s", string(cp.Positions))
+	if string(locationJSON(cp.Location, false)) != "[[1,2,3,4,5]]" {
+		t.Errorf("clone shares positions backing array: %s", string(locationJSON(cp.Location, false)))
 	}
 }
 
@@ -102,13 +104,13 @@ func TestMergeByTokenSizeFromJSON_PositionsDecodeToMatrix(t *testing.T) {
 	posB := json.RawMessage(`[[6,7,8,9,10]]`)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Positions: posB},
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"positions": posA})},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"positions": posB})},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 128, 0)
 	m := got[0][0].ToMap()
-	raw, ok := m["positions"]
+	raw, ok := locationFieldPresent(m, "positions")
 	if !ok {
 		t.Fatal("positions missing from ToMap output")
 	}
@@ -144,9 +146,9 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 	// first starts a fresh chunk carrying the WHOLE previous chunk as overlap.
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posA},
-			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posB},
-			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), PDFPositions: posC},
+			{Text: "alpha", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posA})},
+			{Text: "beta", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posB})},
+			{Text: "gamma", DocType: "text", CKType: "text", TKNums: intPtr(5), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posC})},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 20, 100)
@@ -161,11 +163,11 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 	}
 	// The overlap prefix is shown, so chunk[1] must also carry chunk[0]'s
 	// coordinates. BUG: only chunk[1]'s own (posB) coordinates survive today.
-	if !strings.Contains(string(merged[1].PDFPositions), "1,0,10,0,5") {
-		t.Errorf("chunk[1] dropped overlap-head coordinates (prev chunk[0] posA): pdf_positions=%s", string(merged[1].PDFPositions))
+	if !strings.Contains(string(locationJSON(merged[1].Location, true)), "1,0,10,0,5") {
+		t.Errorf("chunk[1] dropped overlap-head coordinates (prev chunk[0] posA): pdf_positions=%s", string(locationJSON(merged[1].Location, true)))
 	}
-	if !strings.Contains(string(merged[1].PDFPositions), "2,0,20,0,8") {
-		t.Errorf("chunk[1] lost its own coordinates: pdf_positions=%s", string(merged[1].PDFPositions))
+	if !strings.Contains(string(locationJSON(merged[1].Location, true)), "2,0,20,0,8") {
+		t.Errorf("chunk[1] lost its own coordinates: pdf_positions=%s", string(locationJSON(merged[1].Location, true)))
 	}
 
 	// chunk[2]'s overlap prefix is the full chunk[1] text; its coordinates must
@@ -174,8 +176,8 @@ func TestMergeByTokenSizeFromJSON_OverlapPrefixCarriesPrevPositions(t *testing.T
 		t.Errorf("chunk[2] missing overlap prefix from prev chunk: text=%q", merged[2].Text)
 	}
 	for _, want := range []string{"1,0,10,0,5", "2,0,20,0,8", "3,0,30,0,12"} {
-		if !strings.Contains(string(merged[2].PDFPositions), want) {
-			t.Errorf("chunk[2] missing coordinates %s (overlap chain not carried): pdf_positions=%s", want, string(merged[2].PDFPositions))
+		if !strings.Contains(string(locationJSON(merged[2].Location, true)), want) {
+			t.Errorf("chunk[2] missing coordinates %s (overlap chain not carried): pdf_positions=%s", want, string(locationJSON(merged[2].Location, true)))
 		}
 	}
 }
@@ -208,12 +210,12 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 	// actual-count check agrees with the declared TKNums.)
 	items := [][]schema.ChunkDoc{
 		{
-			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posA},
-			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posB},
-			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posC},
-			{Text: "d", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posD},
-			{Text: "e", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posE},
-			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), PDFPositions: posF},
+			{Text: "a", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posA})},
+			{Text: "b", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posB})},
+			{Text: "c", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posC})},
+			{Text: "d", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posD})},
+			{Text: "e", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posE})},
+			{Text: "f", DocType: "text", CKType: "text", TKNums: intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": posF})},
 		},
 	}
 	got := mergeByTokenSizeFromJSON(items, 5, 20)
@@ -227,7 +229,7 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 		t.Errorf("chunk[1] missing overlap tail text from prev chunk: text=%q", merged[1].Text)
 	}
 	// The tail item's coordinates MUST be carried.
-	pdf := string(merged[1].PDFPositions)
+	pdf := string(locationJSON(merged[1].Location, true))
 	if !strings.Contains(pdf, "5,0,50,0,20") {
 		t.Errorf("chunk[1] dropped tail-item coordinates (prev posE): pdf_positions=%s", pdf)
 	}
@@ -252,17 +254,16 @@ func TestMergeByTokenSizeFromJSON_PartialOverlapPrefixCarriesOnlyTailPositions(t
 // abut so the pieces jointly tile the original box.
 func TestChunkFromItem_SlicesPositionsAcrossDelimiterPieces(t *testing.T) {
 	it := schema.ChunkDoc{
-		Text:         "AAAA\nBBBB",
-		DocType:      "text",
-		CKType:       "text",
-		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+		Text:    "AAAA\nBBBB",
+		DocType: "text",
+		CKType:  "text", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,0,200,0,40]]`)}),
 	}
 	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
-	p0 := matrixOfRaw(t, got[0].PDFPositions)
-	p1 := matrixOfRaw(t, got[1].PDFPositions)
+	p0 := matrixOfRaw(t, locationJSON(got[0].Location, true))
+	p1 := matrixOfRaw(t, locationJSON(got[1].Location, true))
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
@@ -292,11 +293,10 @@ func TestSplitOversizedText_SlicedPositionsTrackPieceTextShare(t *testing.T) {
 	const boxTop, boxBottom = 50.0, 80.0 // height 30
 	build := func(text string) schema.ChunkDoc {
 		return schema.ChunkDoc{
-			Text:         text,
-			DocType:      "text",
-			CKType:       "text",
-			TKNums:       intPtr(tokenizeStr(text)),
-			PDFPositions: json.RawMessage(`[[1,10,200,50,80]]`),
+			Text:    text,
+			DocType: "text",
+			CKType:  "text",
+			TKNums:  intPtr(tokenizeStr(text)), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,10,200,50,80]]`)}),
 		}
 	}
 	run := func(ck schema.ChunkDoc, lead bool) {
@@ -320,7 +320,7 @@ func TestSplitOversizedText_SlicedPositionsTrackPieceTextShare(t *testing.T) {
 		}
 		prevBottom := boxTop
 		for i, p := range got {
-			m := matrixOfRaw(t, p.PDFPositions)
+			m := matrixOfRaw(t, locationJSON(p.Location, true))
 			if len(m) != 1 {
 				t.Fatalf("piece %d: want one sliced row, got %v", i, m)
 			}
@@ -356,17 +356,16 @@ func TestChunkFromItem_SlicesPositionsIgnoresPositionTags(t *testing.T) {
 	// Raw first piece contains a 16-rune tag; if counted it would shift
 	// the boundary to ~33.3, reproducing the screenshot mismatch.
 	it := schema.ChunkDoc{
-		Text:         "AAAA@@1\t0\t200\t0\t40##\nCCCC",
-		DocType:      "text",
-		CKType:       "text",
-		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+		Text:    "AAAA@@1\t0\t200\t0\t40##\nCCCC",
+		DocType: "text",
+		CKType:  "text", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,0,200,0,40]]`)}),
 	}
 	got := chunkFromItem(it, compileDelimPattern([]string{"`\n`"}), false)
 	if len(got) != 2 {
 		t.Fatalf("want 2 delimiter-split pieces, got %d", len(got))
 	}
-	p0 := matrixOfRaw(t, got[0].PDFPositions)
-	p1 := matrixOfRaw(t, got[1].PDFPositions)
+	p0 := matrixOfRaw(t, locationJSON(got[0].Location, true))
+	p1 := matrixOfRaw(t, locationJSON(got[1].Location, true))
 	if len(p0) != 1 || len(p1) != 1 {
 		t.Fatalf("single-row input must yield single-row slices: %v / %v", p0, p1)
 	}
@@ -390,11 +389,10 @@ func TestSplitOversizedText_SlicesPositionsIgnoreTags(t *testing.T) {
 	tag := "@@1\t0\t200\t0\t40##"
 	body := strings.Repeat("word ", 30) + tag + strings.Repeat("word ", 30)
 	ck := schema.ChunkDoc{
-		Text:         body,
-		DocType:      "text",
-		CKType:       "text",
-		TKNums:       intPtr(tokenizeStr(body)),
-		PDFPositions: json.RawMessage(`[[1,0,200,0,40]]`),
+		Text:    body,
+		DocType: "text",
+		CKType:  "text",
+		TKNums:  intPtr(tokenizeStr(body)), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,0,200,0,40]]`)}),
 	}
 	got := splitOversizedText(ck, 30)
 	if len(got) < 2 {
@@ -410,7 +408,7 @@ func TestSplitOversizedText_SlicesPositionsIgnoreTags(t *testing.T) {
 	}
 	prevBottom := boxTop
 	for i, p := range got {
-		m := matrixOfRaw(t, p.PDFPositions)
+		m := matrixOfRaw(t, locationJSON(p.Location, true))
 		if len(m) != 1 {
 			t.Fatalf("piece %d: want one sliced row, got %v", i, m)
 		}
@@ -459,11 +457,10 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapNoHeadAccumulation(t *testing.T)
 	var row []schema.ChunkDoc
 	for i := 0; i < n; i++ {
 		row = append(row, schema.ChunkDoc{
-			Text:         string(rune('a' + i)),
-			DocType:      "text",
-			CKType:       "text",
-			TKNums:       intPtr(1),
-			PDFPositions: pos(i + 1),
+			Text:    string(rune('a' + i)),
+			DocType: "text",
+			CKType:  "text",
+			TKNums:  intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos(i + 1)}),
 		})
 	}
 	items := [][]schema.ChunkDoc{row}
@@ -472,7 +469,7 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapNoHeadAccumulation(t *testing.T)
 	if len(merged) < 3 {
 		t.Fatalf("want several chained chunks (>2), got %d", len(merged))
 	}
-	last := string(merged[len(merged)-1].PDFPositions)
+	last := string(locationJSON(merged[len(merged)-1].Location, true))
 	// The final chunk must NOT still carry unit0's (page 1) coordinates: the
 	// overlap window converges to only the tail of the previous chunk + its own.
 	if strings.Contains(last, "1,0,10,0,5") {
@@ -492,8 +489,8 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapNoHeadAccumulation(t *testing.T)
 // coordinates into the next overlap.
 func TestOverlapTailItemsTruncatesToOverlapPortion(t *testing.T) {
 	prev := []mergeItem{
-		{Text: "aaaaa", PDFPositions: json.RawMessage("[[1,0,10,0,5]]"), Positions: json.RawMessage("[[1,0,10,0,5]]")},
-		{Text: "bbbbb", PDFPositions: json.RawMessage("[[2,0,20,0,8]]"), Positions: json.RawMessage("[[2,0,20,0,8]]")},
+		{Text: "aaaaa", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage("[[1,0,10,0,5]]"), "positions": json.RawMessage("[[1,0,10,0,5]]")})},
+		{Text: "bbbbb", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage("[[2,0,20,0,8]]"), "positions": json.RawMessage("[[2,0,20,0,8]]")})},
 	}
 	// total = 10 visible runes; overlap tail is [8,10).
 	tail := overlapTailItems(prev, 8, "")
@@ -503,12 +500,12 @@ func TestOverlapTailItemsTruncatesToOverlapPortion(t *testing.T) {
 	if tail[0].Text != "bb" {
 		t.Errorf("tail item Text not truncated to overlap portion: got %q, want %q", tail[0].Text, "bb")
 	}
-	if string(tail[0].PDFPositions) != "[[2,0,20,0,8]]" {
-		t.Errorf("tail item carried wrong PDF positions: %s", tail[0].PDFPositions)
+	if string(locationJSON(tail[0].Location, true)) != "[[2,0,20,0,8]]" {
+		t.Errorf("tail item carried wrong PDF positions: %s", locationJSON(tail[0].Location, true))
 	}
 	// The head item (page 1) must not appear in the tail.
 	for _, it := range tail {
-		if string(it.PDFPositions) == "[[1,0,10,0,5]]" {
+		if string(locationJSON(it.Location, true)) == "[[1,0,10,0,5]]" {
 			t.Errorf("head item (page1) leaked into overlap tail: %+v", it)
 		}
 	}
@@ -533,8 +530,8 @@ func TestOverlapTailItemsTruncatesToOverlapPortion(t *testing.T) {
 // separator before the final (cur) item.
 func TestOverlapTailItems_JoinSepNoSeparatorBeforeCur(t *testing.T) {
 	prev := []mergeItem{
-		{Text: "aaaaa", PDFPositions: json.RawMessage("[[1,0,10,0,5]]"), Positions: json.RawMessage("[[1,0,10,0,5]]")},
-		{Text: "bbbbb", PDFPositions: json.RawMessage("[[2,0,20,0,8]]"), Positions: json.RawMessage("[[2,0,20,0,8]]")},
+		{Text: "aaaaa", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage("[[1,0,10,0,5]]"), "positions": json.RawMessage("[[1,0,10,0,5]]")})},
+		{Text: "bbbbb", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage("[[2,0,20,0,8]]"), "positions": json.RawMessage("[[2,0,20,0,8]]")})},
 	}
 	// Real overlap-chunk text = "aaaaa" + "bbbbb" (10 visible runes, no sep).
 	// Overlap tail is the last 3 runes [7,10) of cur.
@@ -545,12 +542,12 @@ func TestOverlapTailItems_JoinSepNoSeparatorBeforeCur(t *testing.T) {
 	if tail[0].Text != "bbb" {
 		t.Errorf("tail item Text not truncated to overlap portion under joinSep: got %q, want %q (phantom separator shifted the offset)", tail[0].Text, "bbb")
 	}
-	if string(tail[0].PDFPositions) != "[[2,0,20,0,8]]" {
-		t.Errorf("tail item carried wrong PDF positions: %s", tail[0].PDFPositions)
+	if string(locationJSON(tail[0].Location, true)) != "[[2,0,20,0,8]]" {
+		t.Errorf("tail item carried wrong PDF positions: %s", locationJSON(tail[0].Location, true))
 	}
 	// The head item (page 1) must not appear in the tail.
 	for _, it := range tail {
-		if string(it.PDFPositions) == "[[1,0,10,0,5]]" {
+		if string(locationJSON(it.Location, true)) == "[[1,0,10,0,5]]" {
 			t.Errorf("head item (page1) leaked into overlap tail: %+v", it)
 		}
 	}
@@ -567,8 +564,8 @@ func TestOverlapTailItems_TagBearingUsesVisibleRuneOffsets(t *testing.T) {
 		// to 23 runes. If the code measured RAW length, item0 would span [0,23)
 		// and overlapStart=12 would fall inside it (leaking head coords). Using
 		// the tag-free visible length, item0 spans [0,11) and item1 owns [11,15).
-		{Text: "hello@@1\t2\t3\t4## world", PDFPositions: json.RawMessage(`[["p0"]]`), Positions: json.RawMessage(`[["q0"]]`)},
-		{Text: "tail", PDFPositions: json.RawMessage(`[["p1"]]`), Positions: json.RawMessage(`[["q1"]]`)},
+		{Text: "hello@@1\t2\t3\t4## world", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[1,0,1,0,1]]`), "positions": json.RawMessage(`[[1,0,1,0,1]]`)})},
+		{Text: "tail", Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": json.RawMessage(`[[2,0,1,0,1]]`), "positions": json.RawMessage(`[[2,0,1,0,1]]`)})},
 	}
 	// Visible layout (no separator before cur, matching the overlap path):
 	// item0 [0,11), item1 [11,15). overlapStart=12 lands inside item1 only, so
@@ -578,8 +575,8 @@ func TestOverlapTailItems_TagBearingUsesVisibleRuneOffsets(t *testing.T) {
 	if len(tail) != 1 {
 		t.Fatalf("want 1 tail item in overlap [12,15), got %d: %+v", len(tail), tail)
 	}
-	if string(tail[0].PDFPositions) != `[["p1"]]` {
-		t.Errorf("pdf positions = %s, want only item1 [\"p1\"] (item0 head must be excluded)", tail[0].PDFPositions)
+	if string(locationJSON(tail[0].Location, true)) != `[[2,0,1,0,1]]` {
+		t.Errorf("pdf positions = %s, want only item1 [\"p1\"] (item0 head must be excluded)", locationJSON(tail[0].Location, true))
 	}
 	if tail[0].Text != "ail" {
 		t.Errorf("tail item Text = %q, want %q (visible rune offsets must ignore the tag and truncate to the overlap portion)", tail[0].Text, "ail")
@@ -599,11 +596,10 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T
 	var row []schema.ChunkDoc
 	for i := 0; i < n; i++ {
 		row = append(row, schema.ChunkDoc{
-			Text:         string(rune('a' + i)),
-			DocType:      "text",
-			CKType:       "text",
-			TKNums:       intPtr(1),
-			PDFPositions: pos(i + 1),
+			Text:    string(rune('a' + i)),
+			DocType: "text",
+			CKType:  "text",
+			TKNums:  intPtr(1), Location: sourceposition.FromParserMap(map[string]any{"_pdf_positions": pos(i + 1)}),
 		})
 	}
 	items := [][]schema.ChunkDoc{row}
@@ -616,7 +612,7 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T
 	// tail + the current unit, so the ultimate head (unit0) must never reappear
 	// after chunk 0. unit1 (page 2) must not reappear after chunk 1 either.
 	for k := 1; k < len(merged); k++ {
-		p := string(merged[k].PDFPositions)
+		p := string(locationJSON(merged[k].Location, true))
 		if strings.Contains(p, "1,0,10,0,5") {
 			t.Errorf("chunk %d carries stale head coords (unit0/page1): pdf_positions=%s", k, p)
 		}
@@ -625,7 +621,7 @@ func TestMergeByTokenSizeFromJSON_ChainedOverlapPerChunkConvergence(t *testing.T
 		}
 	}
 	// Sanity: the final chunk must still carry its own most-recent unit's coords.
-	last := string(merged[len(merged)-1].PDFPositions)
+	last := string(locationJSON(merged[len(merged)-1].Location, true))
 	if !strings.Contains(last, fmt.Sprintf("%d,0,%d,0,%d", n, n*10, n*5)) {
 		t.Errorf("final chunk lost its own coordinates (unit%d): pdf_positions=%s", n, last)
 	}
