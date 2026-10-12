@@ -18,6 +18,7 @@ package utility
 
 import (
 	"ragflow/internal/common"
+	"ragflow/internal/server"
 	"testing"
 )
 
@@ -26,11 +27,15 @@ func stubLookupHost(t *testing.T, ips []string) {
 	original := common.LookupHost
 	common.LookupHost = func(string) ([]string, error) { return ips, nil }
 	t.Cleanup(func() { common.LookupHost = original })
+	err := server.Init("")
+	if err != nil {
+		t.Fatalf("failed to init server: %v", err)
+	}
 }
 
 func TestAssertMCPURLSafePrivateHostAllowed(t *testing.T) {
-	stubLookupHost(t, []string{"172.18.0.5"})
 	t.Setenv(common.EnvMCPAllowPrivateHosts, "true")
+	stubLookupHost(t, []string{"172.18.0.5"})
 
 	host, ip, err := AssertMCPURLSafe("http://navigo-mcp:8765/mcp")
 	if err != nil {
@@ -42,8 +47,8 @@ func TestAssertMCPURLSafePrivateHostAllowed(t *testing.T) {
 }
 
 func TestAssertMCPURLSafeRejectsPrivateHostWhenDisabled(t *testing.T) {
-	stubLookupHost(t, []string{"172.18.0.5"})
 	t.Setenv(common.EnvMCPAllowPrivateHosts, "")
+	stubLookupHost(t, []string{"172.18.0.5"})
 
 	if _, _, err := AssertMCPURLSafe("http://navigo-mcp:8765/mcp"); err == nil {
 		t.Fatal("expected private host to be rejected when disabled")
@@ -63,8 +68,8 @@ func TestAssertMCPURLSafePublicHostUnaffected(t *testing.T) {
 }
 
 func TestAssertMCPURLSafeSameOriginAllowsPrivateAdvertisedURL(t *testing.T) {
-	stubLookupHost(t, []string{"172.18.0.5"})
 	t.Setenv(common.EnvMCPAllowPrivateHosts, "true")
+	stubLookupHost(t, []string{"172.18.0.5"})
 
 	host, ip, err := AssertMCPURLSafeSameOrigin("http://navigo-mcp:8765/mcp/messages", "http://navigo-mcp:8765/mcp/sse")
 	if err != nil {
@@ -76,8 +81,8 @@ func TestAssertMCPURLSafeSameOriginAllowsPrivateAdvertisedURL(t *testing.T) {
 }
 
 func TestAssertMCPURLSafeSameOriginRejectsCrossOriginPrivateAdvertisedURL(t *testing.T) {
-	stubLookupHost(t, []string{"172.18.0.6"})
 	t.Setenv(common.EnvMCPAllowPrivateHosts, "true")
+	stubLookupHost(t, []string{"172.18.0.6"})
 
 	if _, _, err := AssertMCPURLSafeSameOrigin("http://other-internal:8765/mcp/messages", "http://navigo-mcp:8765/mcp/sse"); err == nil {
 		t.Fatal("expected cross-origin private advertised URL to be rejected")

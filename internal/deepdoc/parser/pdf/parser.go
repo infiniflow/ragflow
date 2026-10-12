@@ -447,7 +447,7 @@ func (p *Parser) runPageWorkers(ctx context.Context, engine pdf.PDFEngine,
 // state. Document-wide layout, table merge/replace, cross-page figures, and
 // metrics aggregation happen here so page workers never mutate shared state.
 // pageResults are expected to be sorted by page number.
-func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult, outlines []pdf.Outline) (*pdf.ParseResult, error) {
+func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults []*pageResult, outlines []pdf.Outline, totalPages int) (*pdf.ParseResult, error) {
 	result := &pdf.ParseResult{
 		PageHeight: make(map[int]float64),
 		PageWidth:  make(map[int]float64),
@@ -502,10 +502,15 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 	}
 
 	// A TOC is a document prefix, so the box-shape signal is only meaningful
-	// when this parse covers the document's first page.
-	coversDocumentStart := len(pages) > 0 && pages[0] == 0
+	// when this parse begins in the document's front matter. Pass the first
+	// parsed page (0-based) so RemoveTOCBoxes can decide; -1 when nothing was
+	// parsed.
+	firstParsedPage := -1
+	if len(pages) > 0 {
+		firstParsedPage = pages[0]
+	}
 	if err := p.buildLayout(ctx, result, boxes, pageChars,
-		medianHeights, medianWidths, pageEnglish, coversDocumentStart); err != nil {
+		medianHeights, medianWidths, pageEnglish, firstParsedPage, totalPages); err != nil {
 		return nil, fmt.Errorf("buildLayout: %w", err)
 	}
 	return result, nil
@@ -516,14 +521,20 @@ func (p *Parser) assembleDocument(ctx context.Context, pages []int, pageResults 
 // AssignColumn, TextMerge, FinalReadingOrderMerge, NaiveVerticalMerge, table
 // merge, figure consolidation, BoxesToSections, and caption merge.
 //
-// coversDocumentStart reports whether `pages` started at the document's first
-// page, which is what the TOC box-shape signal requires (see RemoveTOCBoxes).
+// firstParsedPage is the first 0-based page of the parsed subset, or -1 when
+// unknown; RemoveTOCBoxes uses it to gate the TOC box-shape signal (see that
+// function's doc comment).
+// totalPages is the document's full page count, forwarded to
+// RemoveHeaderFooterBoxes and RemoveTOCBoxes so their document-level judgments
+// are not derived from the parsed page subset (see those functions' doc
+// comments).
 func (p *Parser) buildLayout(ctx context.Context,
 	result *pdf.ParseResult,
 	boxes []pdf.TextBox, pageChars map[int][]pdf.TextChar,
 	medianHeights, medianWidths map[int]float64,
 	pageEnglish map[int]bool,
-	coversDocumentStart bool,
+	firstParsedPage int,
+	totalPages int,
 ) error {
 	result.Metrics.BoxesInitial = len(boxes)
 
@@ -570,18 +581,18 @@ func (p *Parser) buildLayout(ctx context.Context,
 	// exactly on that threshold can fall below it and be kept — a missed TOC
 	// page, which is the direction this detector errs in regardless.
 	//
-	// coversDocumentStart gates the TOC box-shape signal: a TOC is a document
+	// firstParsedPage gates the TOC box-shape signal: a TOC is a document
 	// prefix, so a parse restricted to a later page range must not read its own
-	// first page as one. The outline signal uses absolute page numbers and needs
-	// no such gate.
+	// first page as one (RemoveTOCBoxes allows it only inside the front-matter
+	// window). The outline signal uses absolute page numbers and needs no gate.
 	boxesBefore := len(boxes)
 	if p.Config.RemoveHeaderFooter {
-		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight)
+		boxes = lyt.RemoveHeaderFooterBoxes(boxes, result.PageHeight, totalPages)
 		result.Metrics.BoxesHeaderFooterRemoved = boxesBefore - len(boxes)
 		boxesBefore = len(boxes)
 	}
 	if p.Config.RemoveTOC {
-		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), coversDocumentStart)
+		boxes = lyt.RemoveTOCBoxes(boxes, lyt.TOCPageRangeFromOutlines(result.Outlines), firstParsedPage, totalPages)
 		result.Metrics.BoxesTOCRemoved = boxesBefore - len(boxes)
 	}
 
@@ -659,7 +670,7 @@ func (p *Parser) processPages(ctx context.Context, engine pdf.PDFEngine, docAnal
 			zap.Error(pageErr))
 	}
 
-	result, err := p.assembleDocument(ctx, pages, pageResults, outlines)
+	result, err := p.assembleDocument(ctx, pages, pageResults, outlines, pageCount)
 	if err != nil {
 		return nil, err
 	}

@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -157,6 +158,7 @@ func (s *ChatPipelineService) agenticRag(
 		// StartToThink marker is emitted once and EndToThink fires when the
 		// agent's final answer arrives.
 		thinking := false
+		var reasoning strings.Builder
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
 			Model:          model,
 			SynthModel:     synth,
@@ -168,6 +170,7 @@ func (s *ChatPipelineService) agenticRag(
 			ToolCallCounts: toolCounts,
 			ToolCallErrors: toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
+				reasoning.WriteString(thinkingDelta)
 				startToThink, endToThink := false, false
 				if thinkingDelta != "" {
 					if !thinking {
@@ -185,15 +188,15 @@ func (s *ChatPipelineService) agenticRag(
 				if startToThink {
 					emitResult(AsyncChatResult{Final: false, StartToThink: true})
 				}
+				if endToThink {
+					emitResult(AsyncChatResult{Final: false, EndToThink: true})
+				}
 				if contentDelta != "" || thinkingDelta != "" {
 					emitResult(AsyncChatResult{
 						Answer:    contentDelta,
 						Reasoning: thinkingDelta,
 						Final:     false,
 					})
-				}
-				if endToThink {
-					emitResult(AsyncChatResult{Final: false, EndToThink: true})
 				}
 			},
 		})
@@ -215,16 +218,17 @@ func (s *ChatPipelineService) agenticRag(
 		// payload, matching what the regular pipeline ships when quote is
 		// false. The answer text is still whatever the agent wrote.
 		answer := final
+		if reasoning.Len() > 0 {
+			answer = agentSessionMessageContent("\n\n"+final, reasoning.String())
+		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final, registry)
-		} else if len(agentic_rag.CitedIDsFromMarkers(final, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
-		// The agentic answer is the run's whole output — <think> stretch included
-		// — with its handles already compacted against `reference`, so the session
-		// writer must persist THIS text and not the streamed deltas, which still
-		// carry the raw handles the model emitted.
+		// Persist the same thinking and final answer the stream renders, with
+		// the final answer's citation handles compacted against its reference.
 		emitResult(AsyncChatResult{
 			Answer:                answer,
 			Reference:             reference,

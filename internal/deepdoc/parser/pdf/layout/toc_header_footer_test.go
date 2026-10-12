@@ -19,6 +19,12 @@ func tb(text string, page int, x0, x1, top, bottom float64) pdf.TextBox {
 	}
 }
 
+// removeHeaderFooterWholeDoc runs the removal for fixtures whose parsed pages
+// cover the whole document, so the document page count equals len(heights).
+func removeHeaderFooterWholeDoc(boxes []pdf.TextBox, heights map[int]float64) []pdf.TextBox {
+	return RemoveHeaderFooterBoxes(boxes, heights, len(heights))
+}
+
 func texts(boxes []pdf.TextBox) []string {
 	out := make([]string, 0, len(boxes))
 	for _, b := range boxes {
@@ -59,7 +65,7 @@ func TestRemoveTOCBoxes_DropsDottedTOCPage(t *testing.T) {
 		tb("The named is the mother of ten thousand things. Ever desireless, one can see the mystery. Ever desiring, one can see the manifestations.", 1, 72, 500, 190, 210),
 		tb("These two spring from the same source but differ in name. This appears as darkness. Darkness within darkness. The gate to all mystery.", 1, 72, 500, 220, 240),
 	}
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	// Only the body paragraphs on page 1 should survive.
 	want := []string{
 		"The way that can be told of is not the eternal way; the name that can be named is not the eternal name. The nameless is the origin of heaven and earth.",
@@ -78,7 +84,7 @@ func TestRemoveTOCBoxes_KeepsBodyPage(t *testing.T) {
 		tb("This paragraph explains the background of the work in some detail so the reader can follow.", 0, 72, 500, 130, 150),
 		tb("It continues with more context and supporting material for the main argument.", 0, 72, 500, 160, 180),
 	}
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if len(got) != len(boxes) {
 		t.Fatalf("body page should be untouched, got %d boxes, want %d", len(got), len(boxes))
 	}
@@ -105,7 +111,7 @@ func TestRemoveTOCBoxes_ThresholdBoundary(t *testing.T) {
 		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
 		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
 	)
-	if got := RemoveTOCBoxes(below, nil, true); len(got) != len(below) {
+	if got := removeTOCWholeDoc(below, nil); len(got) != len(below) {
 		t.Fatalf("2 entries should keep page: got %d boxes, want %d", len(got), len(below))
 	}
 	above := append(mkPage(3, 0),
@@ -113,7 +119,7 @@ func TestRemoveTOCBoxes_ThresholdBoundary(t *testing.T) {
 		tb("Another paragraph of body text that is also quite long and exceeds the thirty rune threshold easily.", 1, 72, 400, 190, 210),
 		tb("A third paragraph of body text that ensures the book is not classified as compact by the detector.", 1, 72, 400, 220, 240),
 	)
-	if got := RemoveTOCBoxes(above, nil, true); len(got) != 3 {
+	if got := removeTOCWholeDoc(above, nil); len(got) != 3 {
 		t.Fatalf("3 entries should drop the whole TOC page: got %d boxes, want 3", len(got))
 	}
 }
@@ -129,7 +135,7 @@ func TestRemoveTOCBoxes_LeaderMergedIntoBox(t *testing.T) {
 		tb("Body paragraph that must survive on page 1 and is definitely longer than thirty runes.", 1, 72, 400, 160, 180),
 		tb("Another body paragraph that ensures the book has enough long boxes to not be compact.", 1, 72, 400, 190, 210),
 	}
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	want := []string{
 		"Body paragraph that must survive on page 1 and is definitely longer than thirty runes.",
 		"Another body paragraph that ensures the book has enough long boxes to not be compact.",
@@ -156,7 +162,7 @@ func TestRemoveTOCBoxes_ChineseChapterMarkers(t *testing.T) {
 		tb("天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。", 1, 72, 500, 190, 210),
 		tb("是以圣人处无为之事，行不言之教。万物作焉而不辞，生而不有，为而不恃，功成而弗居。夫唯弗居，是以不去。", 1, 72, 500, 220, 240),
 	}
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	want := []string{
 		"正文内容，道可道，非常道。名可名，非常名。无名天地之始，有名万物之母。故常无欲以观其妙，常有欲以观其徼。此两者同出而异名，同谓之玄。玄之又玄，众妙之门。",
 		"天下皆知美之为美，斯恶已。皆知善之为善，斯不善已。故有无相生，难易相成，长短相形，高下相倾，音声相和，前后相随。",
@@ -174,7 +180,7 @@ func TestRemoveTOCBoxes_BodyPageWithLongBoxIsNotTOC(t *testing.T) {
 		tb("This is a long body paragraph that clearly belongs to the main content of the document and should never be classified as a table of contents entry under any reasonable heuristic.", 0, 72, 500, 100, 120),
 		tb("Another sentence here to make the point clear and ensure the page is recognized as a body page.", 0, 72, 500, 130, 150),
 	}
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if len(got) != len(boxes) {
 		t.Fatalf("body page with long boxes must be kept, got %d, want %d", len(got), len(boxes))
 	}
@@ -212,6 +218,17 @@ func countPage(boxes []pdf.TextBox, pg int) int {
 		}
 	}
 	return n
+}
+
+// removeTOCWholeDoc runs the detector for fixtures whose parsed pages cover the
+// whole document: the parse starts at page 0 and the document page count equals
+// the number of distinct pages in the box set.
+func removeTOCWholeDoc(boxes []pdf.TextBox, outlinePages map[int]bool) []pdf.TextBox {
+	seen := make(map[int]struct{}, 8)
+	for i := range boxes {
+		seen[boxes[i].PageNumber] = struct{}{}
+	}
+	return RemoveTOCBoxes(boxes, outlinePages, 0, len(seen))
 }
 
 // TestTOCPageRangeFromOutlines pins the 1-based to 0-based conversion: pdfium
@@ -315,10 +332,10 @@ func TestRemoveTOCBoxes_OutlineCoversLeaderlessMergedBlock(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
+	if got := removeTOCWholeDoc(boxes, nil); len(got) != len(boxes) {
 		t.Fatalf("box shape alone cannot see a leaderless merged TOC block, got %d of %d", len(got), len(boxes))
 	}
-	got := RemoveTOCBoxes(boxes, map[int]bool{0: true}, true)
+	got := removeTOCWholeDoc(boxes, map[int]bool{0: true})
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("an outline-selected page must be dropped, %d boxes survived", n)
 	}
@@ -337,7 +354,7 @@ func TestRemoveTOCBoxes_MergedBlockWithLeaders(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("a merged TOC block carrying leader runs must be dropped, %d boxes survived", n)
 	}
@@ -358,7 +375,7 @@ func TestRemoveTOCBoxes_MergedBlockNeedsThreeRuns(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
+	if got := removeTOCWholeDoc(boxes, nil); len(got) != len(boxes) {
 		t.Fatalf("two leader runs are below the merged-block threshold, got %d of %d", len(got), len(boxes))
 	}
 }
@@ -375,7 +392,7 @@ func TestRemoveTOCBoxes_MergedBlockFullWidthPageNumbers(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("full-width page numbers in a merged TOC block must be counted, %d boxes survived", n)
 	}
@@ -396,7 +413,7 @@ func TestRemoveTOCBoxes_MergedBlockRespectsProseGuard(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 4 {
 		t.Fatalf("a page carrying prose must never be dropped, %d of 4 boxes survived", n)
 	}
@@ -410,7 +427,7 @@ func TestRemoveTOCBoxes_OutlineRespectsProseGuard(t *testing.T) {
 	boxes = append(boxes, bodyPageBoxes(1)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, map[int]bool{1: true}, true)
+	got := removeTOCWholeDoc(boxes, map[int]bool{1: true})
 	if n := countPage(got, 1); n != 3 {
 		t.Fatalf("a page carrying prose must never be dropped, %d of 3 boxes survived", n)
 	}
@@ -423,7 +440,7 @@ func TestRemoveTOCBoxes_OutlineRespectsProseGuard(t *testing.T) {
 // TOC page keeps it rather than being emptied.
 func TestRemoveTOCBoxes_KeepsTOCOnlyDocument(t *testing.T) {
 	boxes := tocPageBoxes(0, 3)
-	if got := RemoveTOCBoxes(boxes, nil, true); len(got) != len(boxes) {
+	if got := removeTOCWholeDoc(boxes, nil); len(got) != len(boxes) {
 		t.Fatalf("a document consisting only of a TOC must be left untouched, got %d of %d", len(got), len(boxes))
 	}
 }
@@ -433,24 +450,84 @@ func TestRemoveTOCBoxes_KeepsTOCOnlyDocument(t *testing.T) {
 // as one deleted content from the middle of the book.
 func TestRemoveTOCBoxes_MidDocumentParseSkipsShapeSignal(t *testing.T) {
 	var boxes []pdf.TextBox
-	boxes = append(boxes, tocPageBoxes(10, 3)...)
-	boxes = append(boxes, bodyPageBoxes(11)...)
+	boxes = append(boxes, tocPageBoxes(50, 3)...)
+	boxes = append(boxes, bodyPageBoxes(51)...)
 
-	if got := RemoveTOCBoxes(boxes, nil, false); len(got) != len(boxes) {
+	// A range starting beyond the front-matter window must not read its leading
+	// page as a document TOC prefix.
+	if got := RemoveTOCBoxes(boxes, nil, 50, 100); len(got) != len(boxes) {
 		t.Fatalf("a page range starting mid-document must not be read as a TOC prefix, dropped %d of %d",
 			len(boxes)-len(got), len(boxes))
 	}
-	if got := RemoveTOCBoxes(boxes, nil, true); len(got) == len(boxes) {
+	// The same shapes beginning in the front matter are read as a prefix.
+	if got := RemoveTOCBoxes(boxes, nil, 0, 100); len(got) == len(boxes) {
 		t.Fatalf("the same boxes as a document prefix must still drop the TOC page")
 	}
 	// The outline signal carries absolute page numbers, so the gate must not
 	// silence it.
-	got := RemoveTOCBoxes(boxes, map[int]bool{10: true}, false)
-	if n := countPage(got, 10); n != 0 {
+	got := RemoveTOCBoxes(boxes, map[int]bool{50: true}, 50, 100)
+	if n := countPage(got, 50); n != 0 {
 		t.Fatalf("an outline-selected page must be dropped even mid-document, %d boxes survived", n)
 	}
-	if n := countPage(got, 11); n != 3 {
+	if n := countPage(got, 51); n != 3 {
 		t.Fatalf("the body page must survive, %d of 3 boxes", n)
+	}
+}
+
+// TestRemoveTOCBoxes_RangeStartingAtTOC: a no-bookmark TOC dropped when the
+// selected range starts at the TOC, even though the parse does not cover the
+// document's first page.
+func TestRemoveTOCBoxes_RangeStartingAtTOC(t *testing.T) {
+	var boxes []pdf.TextBox
+	boxes = append(boxes, tocPageBoxes(2, 3)...)
+	boxes = append(boxes, tocPageBoxes(3, 3)...)
+
+	got := RemoveTOCBoxes(boxes, nil, 2, 20)
+	if n := countPage(got, 2); n != 0 {
+		t.Fatalf("TOC page 2 must be dropped when the range starts at it, %d boxes survived", n)
+	}
+	if n := countPage(got, 3); n != 0 {
+		t.Fatalf("TOC page 3 must be dropped, %d boxes survived", n)
+	}
+}
+
+// TestRemoveTOCBoxes_AllTOCSubsetRemoved: a parsed range that happens to be all
+// TOC pages is dropped; only a document that is entirely TOC is kept.
+func TestRemoveTOCBoxes_AllTOCSubsetRemoved(t *testing.T) {
+	var boxes []pdf.TextBox
+	for pg := 2; pg <= 6; pg++ {
+		boxes = append(boxes, tocPageBoxes(pg, 3)...)
+	}
+
+	got := RemoveTOCBoxes(boxes, nil, 2, 20)
+	if len(got) != 0 {
+		t.Fatalf("an all-TOC subset of a larger document must be dropped, %d boxes survived", len(got))
+	}
+}
+
+// TestRemoveTOCBoxes_MidBookShapeKept: a TOC-shaped page beyond the front-matter
+// window is not read as a document prefix.
+func TestRemoveTOCBoxes_MidBookShapeKept(t *testing.T) {
+	boxes := tocPageBoxes(50, 3)
+
+	got := RemoveTOCBoxes(boxes, nil, 50, 100)
+	if len(got) != len(boxes) {
+		t.Fatalf("a mid-book TOC-shaped page must be kept, dropped %d of %d",
+			len(boxes)-len(got), len(boxes))
+	}
+}
+
+// TestRemoveTOCBoxes_WholeDocAllTOCKept: a document that is nothing but TOC
+// pages is left untouched, preserving the original all-TOC guard.
+func TestRemoveTOCBoxes_WholeDocAllTOCKept(t *testing.T) {
+	var boxes []pdf.TextBox
+	for pg := 0; pg < 3; pg++ {
+		boxes = append(boxes, tocPageBoxes(pg, 3)...)
+	}
+
+	got := RemoveTOCBoxes(boxes, nil, 0, 3)
+	if len(got) != len(boxes) {
+		t.Fatalf("a document consisting only of a TOC must be left untouched, got %d of %d", len(got), len(boxes))
 	}
 }
 
@@ -461,7 +538,7 @@ func TestRemoveTOCBoxes_MultiPageTOC(t *testing.T) {
 	boxes = append(boxes, tocPageBoxes(1, 3)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("TOC page 0 must be dropped, %d boxes survived", n)
 	}
@@ -485,7 +562,7 @@ func TestRemoveTOCBoxes_LongTOCRun(t *testing.T) {
 	}
 	boxes = append(boxes, bodyPageBoxes(tocPages)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	for pg := 0; pg < tocPages; pg++ {
 		if n := countPage(got, pg); n != 0 {
 			t.Fatalf("TOC page %d must be dropped, %d boxes survived", pg, n)
@@ -508,7 +585,7 @@ func TestRemoveTOCBoxes_TOCBehindCoverPage(t *testing.T) {
 	boxes := append(cover, tocPageBoxes(1, 3)...)
 	boxes = append(boxes, bodyPageBoxes(2)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 4 {
 		t.Fatalf("the cover page must be kept, %d of 4 boxes", n)
 	}
@@ -528,7 +605,7 @@ func TestRemoveTOCBoxes_StopsAtProsePage(t *testing.T) {
 	boxes = append(boxes, tocPageBoxes(2, 3)...)
 	boxes = append(boxes, bodyPageBoxes(3)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 2); n != 10 {
 		t.Fatalf("a TOC-shaped page behind a body page must be kept, %d of 10 boxes", n)
 	}
@@ -549,7 +626,7 @@ func TestRemoveTOCBoxes_BareCJKChapterTitles(t *testing.T) {
 	boxes = append(boxes, tb("第一章 绪论", 1, 72, 200, 160, 175))
 	boxes = append(boxes, bodyPageBoxes(1)...)
 
-	got := RemoveTOCBoxes(boxes, nil, true)
+	got := removeTOCWholeDoc(boxes, nil)
 	if n := countPage(got, 0); n != 0 {
 		t.Fatalf("the bare-title TOC page must be dropped, %d boxes survived", n)
 	}
@@ -586,7 +663,7 @@ func TestRemoveHeaderFooterBoxes_DropsRepeatedHeader(t *testing.T) {
 		tb("THE WAY OF GO", 2, 72, 200, 30, 45),
 		tb("Body text on page two that is long enough.", 2, 72, 400, 160, 180),
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	var headers, bodies int
 	for _, b := range got {
 		if strings.Contains(b.Text, "THE WAY") {
@@ -616,7 +693,7 @@ func TestRemoveHeaderFooterBoxes_KeepsUniqueZoneText(t *testing.T) {
 		tb("Chapter Three: Concurrency", 2, 72, 260, 30, 45),
 		tb("Body two.", 2, 72, 400, 160, 180),
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	if len(got) != len(boxes) {
 		t.Fatalf("unique per-page headers must be kept, got %d, want %d", len(got), len(boxes))
 	}
@@ -632,7 +709,7 @@ func TestRemoveHeaderFooterBoxes_PageCountGuard(t *testing.T) {
 		tb("Repeated", 1, 72, 150, 30, 45),
 		tb("Body one.", 1, 72, 400, 160, 180),
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	if len(got) != len(boxes) {
 		t.Fatalf("short documents must be untouched, got %d, want %d", len(got), len(boxes))
 	}
@@ -653,7 +730,7 @@ func TestRemoveHeaderFooterBoxes_SkipsNonTextLayout(t *testing.T) {
 			tb("Body text.", pg, 72, 400, 160, 180),
 		)
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 
 	var tableKept, textKept int
 	for _, b := range got {
@@ -685,7 +762,7 @@ func TestRemoveHeaderFooterBoxes_FullWidthPageNumbers(t *testing.T) {
 			tb("第 "+string(rune('０'+pg+1))+" 页", pg, 280, 340, 820, 835),
 		)
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if b.Top >= 800 {
 			t.Fatalf("full-width page-number footer %q must be removed", b.Text)
@@ -714,7 +791,7 @@ func TestRemoveHeaderFooterBoxes_HalfOfOddPageCount(t *testing.T) {
 		tb("Body three.", 3, 72, 400, 160, 180),
 		tb("Body four.", 4, 72, 400, 160, 180),
 	}
-	if got := RemoveHeaderFooterBoxes(below, heights); len(got) != len(below) {
+	if got := removeHeaderFooterWholeDoc(below, heights); len(got) != len(below) {
 		t.Fatalf("2 of 5 pages is not half, the boxes must be kept: got %d, want %d", len(got), len(below))
 	}
 
@@ -729,7 +806,7 @@ func TestRemoveHeaderFooterBoxes_HalfOfOddPageCount(t *testing.T) {
 		tb("Body three.", 3, 72, 400, 160, 180),
 		tb("Body four.", 4, 72, 400, 160, 180),
 	}
-	got := RemoveHeaderFooterBoxes(above, heights)
+	got := removeHeaderFooterWholeDoc(above, heights)
 	if len(got) != 5 {
 		t.Fatalf("3 of 5 pages is half, the headers must be dropped: got %d boxes, want 5", len(got))
 	}
@@ -748,7 +825,7 @@ func TestRemoveHeaderFooterBoxes_DropsPageNumberFooter(t *testing.T) {
 		tb("Body two.", 2, 72, 400, 160, 180),
 		tb("- 3 -", 2, 280, 320, 820, 835),
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "- ") && strings.Contains(b.Text, " -") {
 			t.Fatalf("footer %q should have been removed", b.Text)
@@ -775,7 +852,7 @@ func TestRemoveHeaderFooterBoxes_AlternatingEvenOdd(t *testing.T) {
 		boxes = append(boxes, tb("Body text on this page that represents substantial content.", pg, 72, 450, 160, 180))
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "DEEP LEARNING") || strings.Contains(b.Text, "CHAPTER THREE") {
 			t.Fatalf("alternating header %q should have been removed", b.Text)
@@ -807,7 +884,7 @@ func TestRemoveHeaderFooterBoxes_ChapterVaryingConsecutiveRun(t *testing.T) {
 		boxes = append(boxes, tb("Body paragraph for chapter 2.", pg, 72, 450, 160, 180))
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "Chapter 1:") || strings.Contains(b.Text, "Chapter 2:") {
 			t.Fatalf("chapter header %q should have been removed by locality run", b.Text)
@@ -831,7 +908,7 @@ func TestRemoveHeaderFooterBoxes_WhitespaceGapExpandedZone(t *testing.T) {
 		boxes = append(boxes, tb("First line of body text sitting comfortably below the gap.", pg, 72, 450, 135, 155))
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "COMPANY CONFIDENTIAL") {
 			t.Fatalf("expanded zone header %q should have been removed", b.Text)
@@ -855,7 +932,7 @@ func TestRemoveHeaderFooterBoxes_WhitespaceGapProtectsTightBody(t *testing.T) {
 		boxes = append(boxes, tb("Tight paragraph line directly following heading.", pg, 72, 450, 98, 115))
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	var headings int
 	for _, b := range got {
 		if strings.Contains(b.Text, "Section Heading") {
@@ -879,7 +956,7 @@ func TestRemoveHeaderFooterBoxes_ShortDocumentPageNumbers(t *testing.T) {
 		tb("Page 2 of 2", 1, 250, 350, 810, 825),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "of 2") {
 			t.Fatalf("page number %q must be removed on 2-page doc", b.Text)
@@ -901,7 +978,7 @@ func TestRemoveHeaderFooterBoxes_DLASemanticTagDirectDrop(t *testing.T) {
 		{Text: "Footer Tagged By DLA", PageNumber: 0, X0: 72, X1: 300, Top: 820, Bottom: 835, LayoutType: "footer"},
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	if len(got) != 1 || got[0].Text != "Body text here." {
 		t.Fatalf("DLA tagged header and footer must be dropped, got %v", got)
 	}
@@ -921,7 +998,7 @@ func TestRemoveHeaderFooterBoxes_LayoutTypeTitleAllowed(t *testing.T) {
 		tb("Body on page 2.", 2, 72, 400, 160, 180),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "PROCEEDINGS") {
 			t.Fatalf("header %q with LayoutType 'title' should have been removed", b.Text)
@@ -945,7 +1022,7 @@ func TestRemoveHeaderFooterBoxes_RomanNumerals(t *testing.T) {
 		tb("- vi -", 2, 280, 320, 820, 835),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "- ") {
 			t.Fatalf("roman numeral footer %q should have been removed", b.Text)
@@ -969,7 +1046,7 @@ func TestRemoveHeaderFooterBoxes_ChineseNumerals(t *testing.T) {
 		tb("第 三 页", 2, 280, 350, 820, 835),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.HasPrefix(b.Text, "第 ") {
 			t.Fatalf("Chinese page number footer %q should have been removed", b.Text)
@@ -1016,7 +1093,7 @@ func TestRemoveHeaderFooterBoxes_ChineseSlashGong(t *testing.T) {
 		tb("第3页/共10页", 2, 280, 380, 820, 835),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "共10页") {
 			t.Fatalf("Chinese page footer %q should have been removed", b.Text)
@@ -1114,7 +1191,7 @@ func TestRemoveHeaderFooterBoxes_LocalRunPreservesDistantIsolatedBox(t *testing.
 	boxes = append(boxes, isolatedBox)
 	boxes = append(boxes, tb("Body text on page 10 referencing chapter 1.", 10, 72, 450, 160, 180))
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 
 	// Pages 1, 2, 3 headers must be removed:
 	for _, b := range got {
@@ -1148,7 +1225,7 @@ func TestRemoveHeaderFooterBoxes_BareFooterPageNumberWithGapDropped(t *testing.T
 		tb("2", 1, 290, 310, 810, 825),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if b.Text == "1" || b.Text == "2" {
 			t.Fatalf("bare page number %q with clear whitespace above must be dropped", b.Text)
@@ -1170,7 +1247,7 @@ func TestRemoveHeaderFooterBoxes_FootnoteTightNumberPreserved(t *testing.T) {
 		tb("1", 0, 72, 85, 810, 822),                                     // top = 810, gapAbove = 6pt < 18pt!
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	foundFootnoteNum := false
 	for _, b := range got {
 		if b.Text == "1" {
@@ -1197,7 +1274,7 @@ func TestRemoveHeaderFooterBoxes_FooterYearPreservedOnShortDocument(t *testing.T
 		tb("Legal Agreement Page 2", 1, 72, 400, 160, 200),
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	foundYear := false
 	for _, b := range got {
 		if b.Text == "2024" {
@@ -1237,7 +1314,7 @@ func TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved(t *testing.T) {
 			heights[pg] = pageHeight
 			boxes = append(boxes, tightFooter(pg, fmt.Sprintf("%d", pg+1))...)
 		}
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		for _, b := range got {
 			if _, ok := parseBareNumberValue(b.Text); ok {
 				t.Fatalf("page number %q survived the sequence track", b.Text)
@@ -1255,7 +1332,7 @@ func TestRemoveHeaderFooterBoxes_TightSequenceFootersRemoved(t *testing.T) {
 			heights[pg] = pageHeight
 			boxes = append(boxes, tightFooter(pg, r)...)
 		}
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		for _, b := range got {
 			if _, ok := parseBareNumberValue(b.Text); ok {
 				t.Fatalf("Roman page number %q survived the sequence track", b.Text)
@@ -1280,7 +1357,7 @@ func TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved(t *testing.T) {
 			heights[pg] = pageHeight
 			boxes = append(boxes, tightFooter(pg, n)...)
 		}
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		if len(got) != 10 {
 			t.Fatalf("non-stepping numbers must be preserved, got %d kept boxes", len(got))
 		}
@@ -1298,7 +1375,7 @@ func TestRemoveHeaderFooterBoxes_NumbersNoSequencePreserved(t *testing.T) {
 		boxes = append(boxes, tightFooter(4, "5")...)
 		boxes = append(boxes, tb("Plain body line, no number box on this page.", 2, 72, 500, 100, 750))
 		boxes = append(boxes, tb("Plain body line here too.", 5, 72, 500, 100, 750))
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		if len(got) != 10 {
 			t.Fatalf("2-page number chains must be preserved, got %d kept boxes", len(got))
 		}
@@ -1324,7 +1401,7 @@ func TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard(t *testing.T) {
 		for pg, top := range tops {
 			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
 		}
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		if len(got) != 6 {
 			t.Fatalf("chain drifting 8pt in total must be preserved, got %d kept boxes", len(got))
 		}
@@ -1336,7 +1413,7 @@ func TestRemoveHeaderFooterBoxes_SequenceDriftSpanGuard(t *testing.T) {
 		for pg, top := range tops {
 			boxes = append(boxes, footerAt(pg, fmt.Sprintf("%d", pg+1), top)...)
 		}
-		got := RemoveHeaderFooterBoxes(boxes, heights)
+		got := removeHeaderFooterWholeDoc(boxes, heights)
 		for _, b := range got {
 			if _, ok := parseBareNumberValue(b.Text); ok {
 				t.Fatalf("page number %q survived the sequence track", b.Text)
@@ -1360,7 +1437,7 @@ func TestRemoveHeaderFooterBoxes_YearFooterSequenceCeilingPreserved(t *testing.T
 		heights[pg] = pageHeight
 		boxes = append(boxes, tightFooter(pg, y)...)
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	keptYears := make(map[string]bool, len(years))
 	for _, b := range got {
 		keptYears[b.Text] = true
@@ -1387,7 +1464,7 @@ func TestRemoveHeaderFooterBoxes_TightBottomTextHeadingPreserved(t *testing.T) {
 		boxes = append(boxes, tb("Body text filling most of the page above the heading.", pg, 72, 500, 100, 724))
 		boxes = append(boxes, tb("Quarterly Report Summary", pg, 72, 300, 730, 742)) // gapAbove = 6pt, repeats identically
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	var headings int
 	for _, b := range got {
 		if b.Text == "Quarterly Report Summary" {
@@ -1416,7 +1493,7 @@ func TestRemoveHeaderFooterBoxes_SitePromoVariantInHeaderRemoved(t *testing.T) {
 			boxes = append(boxes, tb("欢迎访问！http://forum.law58.cn/?fromuid=381879", pg, 60, 300, 40, 52))
 		}
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "law58") {
 			t.Fatalf("site promo %q survived despite varying wrappers", b.Text)
@@ -1440,7 +1517,7 @@ func TestRemoveHeaderFooterBoxes_BodyUrlKept(t *testing.T) {
 		tb("See http://example.com/very/long/path/for/the/annual/errata/annex which continues well beyond sixty runes.", 1, 72, 500, 40, 55),
 		tb("Ordinary body text.", 1, 72, 300, 500, 520),
 	}
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	if len(got) != 3 {
 		t.Fatalf("body URLs must be preserved, got %d", len(got))
 	}
@@ -1468,7 +1545,7 @@ func TestRemoveHeaderFooterBoxes_DropsPromoCompanion(t *testing.T) {
 		tb("Substantive body content of page 3.", 3, 72, 450, 200, 700),
 	)
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	for _, b := range got {
 		if strings.Contains(b.Text, "law58") {
 			t.Fatalf("site promo survived: %q", b.Text)
@@ -1498,7 +1575,7 @@ func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsTitle(t *testing.T) {
 		)
 	}
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	seenTitle := 0
 	for _, b := range got {
 		if strings.Contains(b.Text, "law58") {
@@ -1534,7 +1611,7 @@ func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer(t *testing.T) {
 	// A short slogan-like peer present only on page 0, next to its ad.
 	boxes = append(boxes, tb("扫码加入读书群", 0, 60, 300, 80, 92))
 
-	got := RemoveHeaderFooterBoxes(boxes, heights)
+	got := removeHeaderFooterWholeDoc(boxes, heights)
 	var keptRare int
 	for _, b := range got {
 		if strings.Contains(b.Text, "law58") || strings.Contains(b.Text, "木瓜树") {
@@ -1549,5 +1626,79 @@ func TestRemoveHeaderFooterBoxes_PromoCompanionKeepsRarePeer(t *testing.T) {
 	}
 	if len(got) != 4 {
 		t.Fatalf("expected 3 bodies + 1 rare peer, got %d", len(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_TotalPagesDrivesCeiling pins that the bare
+// page-number ceiling is judged against the document's page count, not the
+// parsed subset. The footers sit inside the sequence track's 80%+ band but
+// above the 86% footer zone, so only the sequence track can see them.
+func TestRemoveHeaderFooterBoxes_TotalPagesDrivesCeiling(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 11)
+	var boxes []pdf.TextBox
+	top := 0.82 * pageHeight
+	for pg := 30; pg <= 40; pg++ {
+		heights[pg] = pageHeight
+		boxes = append(boxes, tb(fmt.Sprintf("%d", pg+1), pg, 280, 340, top, top+12))
+	}
+
+	count := func(got []pdf.TextBox) int {
+		n := 0
+		for _, b := range got {
+			if b.Top >= 0.80*pageHeight {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Document page count 100: the 31..41 footers are plausible and form a +1
+	// run across consecutive pages, so the sequence track removes them.
+	if got := RemoveHeaderFooterBoxes(boxes, heights, 100); count(got) != 0 {
+		t.Fatalf("document-total ceiling must accept and drop the footer run, %d survived", count(got))
+	}
+
+	// Parsed subset 11: the old behavior — ceiling 20 rejects 31..41 as
+	// implausible years/IDs, so nothing is removed.
+	if got := RemoveHeaderFooterBoxes(boxes, heights, 11); count(got) != 11 {
+		t.Fatalf("subset ceiling must keep the high page numbers, %d survived", count(got))
+	}
+}
+
+// TestRemoveHeaderFooterBoxes_GlobalThresholdIsDocumentRelative pins that the
+// global half-pages threshold uses the document page count. The header is >60
+// runes (locality is skipped) and sits on pages 0/1/2 of a five-page subset
+// (parity needs 3 even or odd pages).
+func TestRemoveHeaderFooterBoxes_GlobalThresholdIsDocumentRelative(t *testing.T) {
+	pageHeight := 842.0
+	heights := make(map[int]float64, 5)
+	for pg := 0; pg < 5; pg++ {
+		heights[pg] = pageHeight
+	}
+	longHeader := strings.Repeat("long running header text ", 4)
+	var boxes []pdf.TextBox
+	for pg := 0; pg <= 2; pg++ {
+		boxes = append(boxes, tb(longHeader, pg, 72, 500, 30, 45))
+	}
+
+	count := func(got []pdf.TextBox) int {
+		n := 0
+		for _, b := range got {
+			if strings.Contains(b.Text, "long running header") {
+				n++
+			}
+		}
+		return n
+	}
+
+	// Half of a 100-page document is 50, far above the 3 observed pages: kept.
+	if got := RemoveHeaderFooterBoxes(boxes, heights, 100); count(got) != 3 {
+		t.Fatalf("document-relative global threshold must keep 3/100 pages, %d survived", count(got))
+	}
+
+	// Half of the 5-page subset is 3, met exactly: removed.
+	if got := RemoveHeaderFooterBoxes(boxes, heights, 5); count(got) != 0 {
+		t.Fatalf("subset-relative global threshold must drop 3/5 pages, %d survived", count(got))
 	}
 }

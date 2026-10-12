@@ -203,6 +203,9 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	if err := checkCanvasRetrievalDependencies(ctx, db, merged); err != nil {
+		return nil, fmt.Errorf("agent Retrieval dependency permission: %w", err)
+	}
 	query, _ := merged["query"].(string)
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
@@ -240,6 +243,38 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
 
+}
+
+func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return nil
+	}
+	canvasID, _ := state.Sys["canvas_id"].(string)
+	userID, _ := state.Sys["user_id"].(string)
+	if canvasID == "" && userID == "" {
+		return nil
+	}
+	if canvasID == "" {
+		return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
+	}
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
+
+	checker := permission.NewDatabaseChecker(db)
+	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+	for _, datasetID := range toStringSlice(inputs["dataset_ids"]) {
+		datasetID = strings.TrimSpace(datasetID)
+		if datasetID == "" {
+			continue
+		}
+		dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
+		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+			return fmt.Errorf("dataset %q: %w", datasetID, err)
+		}
+	}
+	return nil
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
