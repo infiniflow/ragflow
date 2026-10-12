@@ -18,7 +18,6 @@ package agentic_rag
 
 import (
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -27,31 +26,5 @@ func TestRun_NilModel(t *testing.T) {
 	_, err := Run(context.Background(), Input{Model: nil})
 	if err == nil {
 		t.Fatal("expected error for nil model")
-	}
-}
-
-// TestPrompt: the fallback prompt must declare the toolset the template ships
-// and carry the mechanical provenance contract, with no removed tool
-// references (get_document_info / query_knowledge_graph), no leftover
-// placeholders and no trace of the removed intermediate deliverable.
-func TestPrompt(t *testing.T) {
-	p := Prompt()
-	for _, want := range []string{
-		"grep_chunks", "search_bm25_chunks", "search_semantic_chunks", "list_chunks",
-		"todo_write", "think", "run_javascript", "[ID:", "Evidence-First",
-	} {
-		if !strings.Contains(p, want) {
-			t.Errorf("prompt must mention %q", want)
-		}
-	}
-	for _, banned := range []string{
-		"get_document_info", "query_knowledge_graph", "web_fetch",
-		"Candidate Matrix", "Reasoning Chain", "Sub-question",
-		"question decomposition", "auditor", "Final Answer", "Guessed Answer",
-		"{{", "}}",
-	} {
-		if strings.Contains(p, banned) {
-			t.Errorf("prompt must not contain %q", banned)
-		}
 	}
 }

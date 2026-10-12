@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,19 +106,18 @@ var (
 	cachedPath    string
 )
 
-// LoadConfigFile reads and parses the agent config file. On any error it
-// returns nil so the caller falls back to the embedded defaults.
+// LoadConfigFile reads and parses the agent config file.
 func LoadConfigFile(path string) (*configFile, error) {
 	common.Debug("agentic_rag: load config", zap.String("path", path))
 	data, err := os.ReadFile(path)
 	if err != nil {
-		common.Warn("agentic_rag: cannot read config, using fallback",
+		common.Warn("agentic_rag: cannot read config",
 			zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 	var f configFile
 	if err := yaml.Unmarshal(data, &f); err != nil {
-		common.Warn("agentic_rag: cannot parse config, using fallback",
+		common.Warn("agentic_rag: cannot parse config",
 			zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
@@ -143,8 +143,7 @@ func GetConfigFile() *configFile {
 
 	f, err := LoadConfigFile(path)
 	if err != nil || f == nil {
-		// Keep the last good config if we have one; otherwise leave nil so the
-		// caller uses fallbackConfig().
+		// Keep the last successfully loaded YAML configuration, if available.
 		if cachedFile != nil {
 			return cachedFile
 		}
@@ -173,6 +172,9 @@ func resolveTemplateFor(id string) (Template, error) {
 	if f := GetConfigFile(); f != nil {
 		for _, t := range f.Templates {
 			if t.ID == id {
+				if strings.TrimSpace(t.Content) == "" {
+					return Template{}, fmt.Errorf("agentic_rag: template %q has no prompt content in %s", id, defaultConfigPath())
+				}
 				return t, nil
 			}
 		}
@@ -192,15 +194,6 @@ func TemplateTemperature(templateID string) *float64 {
 	}
 	t := *tmpl.Temperature
 	return &t
-}
-
-// instructionFor resolves the system instruction: prefer the JSON-configured
-// prompt, otherwise the embedded Prompt().
-func instructionFor(t Template) string {
-	if t.Content != "" {
-		return t.Content
-	}
-	return Prompt()
 }
 
 // toolsFor builds the agent tool set from the template's tool list, falling back

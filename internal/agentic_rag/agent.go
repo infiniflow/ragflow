@@ -351,10 +351,6 @@ func Run(ctx context.Context, in Input) (string, error) {
 		}
 	}
 	tools = wrapped
-	instruction := instructionFor(tmpl)
-	if initialWebTool != nil {
-		instruction += "\n\n" + webSearchInstruction
-	}
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),
@@ -364,7 +360,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          "smart-reasoning",
-		Instruction:   instruction,
+		Instruction:   tmpl.Content,
 		Model:         in.Model,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,

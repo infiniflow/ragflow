@@ -37,11 +37,6 @@ import (
 // it whenever the caller supplies one.
 const webSearchToolName = "web_search"
 
-const webSearchInstruction = `### Web search enabled for this turn
-The user enabled internet search. An initial web_search query for the current question has already run; its result is included as a tool message. Use that web evidence alongside corpus retrieval, even when the corpus returns a match. Call web_search again with refined queries when the initial results are insufficient.
-Use web results to supplement the corpus, check current facts, and distinguish public meanings of a name from unrelated corpus matches.
-Deep-read corpus evidence with list_chunks; web results are snippets and cannot be opened with list_chunks. Ground web-backed claims in the returned snippets and cite each result's ref attribute as [ID:n], just like corpus evidence. These handles become clickable citations to the source URLs. Clearly distinguish corpus facts from web facts. If web search fails or finds no useful evidence, state that limitation and answer from the evidence available.`
-
 const webSearchToolDescription = `Web search tool: queries the public internet through the conversation's configured search provider and returns the top snippets with their URLs.
 
 ## When to use it
