@@ -76,14 +76,56 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window fractionWindow) parser.ParseResult {
-	if fileType == utility.FileTypePDF {
-		if setup, ok := setups["pdf"]; ok {
-			if resolved, err := maybeResolveAutoPDFLayout(setup, filename, data); err == nil {
-				setups["pdf"] = resolved
-			}
-		}
+func withPDFSetup(setups map[string]schema.ParserSetup, pdf schema.ParserSetup) map[string]schema.ParserSetup {
+	out := make(map[string]schema.ParserSetup, len(setups))
+	for k, v := range setups {
+		out[k] = v
 	}
+	out["pdf"] = pdf
+	return out
+}
+
+func isAutoPDFSetup(setup schema.ParserSetup) bool {
+	v := getStringOr(setup, "layout_recognizer", "")
+	if v == "" {
+		v = getStringOr(setup, "layout_recognize", "")
+	}
+	if v == "" {
+		v = getStringOr(setup, "parse_method", "")
+	}
+	return strings.EqualFold(strings.TrimSpace(v), "auto")
+}
+
+func resolveAutoPDFSetups(setups map[string]schema.ParserSetup, filename string, binary []byte) map[string]schema.ParserSetup {
+	if setups == nil {
+		return setups
+	}
+	setup, ok := setups["pdf"]
+	if !ok || !isAutoPDFSetup(setup) {
+		return setups
+	}
+	resolved, err := maybeResolveAutoPDFLayout(setup, filename, binary)
+	if err != nil {
+		common.Warn("Auto PDF layout probe failed; using DeepDOC",
+			zap.String("filename", filename),
+			zap.Error(err))
+		fallback := make(schema.ParserSetup, len(setup)+1)
+		for k, v := range setup {
+			fallback[k] = v
+		}
+		fallback["layout_recognizer"] = "DeepDOC"
+		if strings.EqualFold(strings.TrimSpace(getStringOr(setup, "parse_method", "")), "auto") {
+			fallback["parse_method"] = "DeepDOC"
+		}
+		return withPDFSetup(setups, fallback)
+	}
+	if resolved == nil {
+		return setups
+	}
+	return withPDFSetup(setups, resolved)
+}
+
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window fractionWindow) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no

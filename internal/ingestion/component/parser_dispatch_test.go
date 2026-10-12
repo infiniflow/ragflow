@@ -94,6 +94,18 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	t.Fatalf("json payload does not contain %q: %#v", want, items)
 }
 
+func TestIsAutoPDFSetup(t *testing.T) {
+	if !isAutoPDFSetup(schema.ParserSetup{"parse_method": "Auto"}) {
+		t.Fatal("parse_method Auto should match")
+	}
+	if !isAutoPDFSetup(schema.ParserSetup{"layout_recognize": "auto"}) {
+		t.Fatal("layout_recognize auto should match")
+	}
+	if isAutoPDFSetup(schema.ParserSetup{"parse_method": "DeepDOC"}) {
+		t.Fatal("DeepDOC must not match Auto")
+	}
+}
+
 func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 	tests := []struct {
 		name       string

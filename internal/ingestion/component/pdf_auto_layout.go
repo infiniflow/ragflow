@@ -7,7 +7,7 @@
 package component
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
 	"go.uber.org/zap"
@@ -15,6 +15,7 @@ import (
 	"ragflow/internal/common"
 	pdfoxide "ragflow/internal/deepdoc/parser/pdf/pdfoxide"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 )
 
 const (
@@ -27,6 +28,7 @@ const (
 	parserConfigAutoMinCharsKey     = "layout_recognize_auto_min_chars_per_page"
 	parserConfigLayoutRecognizeKey  = "layout_recognize"
 	parserConfigLayoutRecognizerKey = "layout_recognizer"
+	parserConfigParseMethodKey      = "parse_method"
 )
 
 func isAutoLayoutRecognize(value string) bool {
@@ -37,7 +39,20 @@ func pdfLayoutRecognizerFromSetup(setup schema.ParserSetup) string {
 	if v := getStringOr(setup, parserConfigLayoutRecognizerKey, ""); v != "" {
 		return v
 	}
-	return getStringOr(setup, parserConfigLayoutRecognizeKey, "")
+	if v := getStringOr(setup, parserConfigLayoutRecognizeKey, ""); v != "" {
+		return v
+	}
+	return getStringOr(setup, parserConfigParseMethodKey, "")
+}
+
+func autoProbePageWindow(setup schema.ParserSetup) (fromPage, toPage int) {
+	ranges, err := utility.NormalizePDFPages(setup["pages"])
+	if err != nil || len(ranges) == 0 {
+		return 0, -1
+	}
+	// NormalizePDFPages is 1-indexed inclusive; AverageNonWhitespaceCharsPerPage
+	// is 0-indexed [from, to). Use the span of the requested ranges.
+	return ranges[0][0] - 1, ranges[len(ranges)-1][1]
 }
 
 // resolveAutoPDFLayoutRecognizer probes the PDF text layer and picks the text or
@@ -62,7 +77,8 @@ func resolveAutoPDFLayoutRecognizer(setup schema.ParserSetup, filename string, b
 			}
 		}
 	}
-	avg, err := pdfoxide.AverageNonWhitespaceCharsPerPage(binary, 0, -1)
+	fromPage, toPage := autoProbePageWindow(setup)
+	avg, err := pdfoxide.AverageNonWhitespaceCharsPerPage(binary, fromPage, toPage)
 	if err != nil {
 		return "", err
 	}
@@ -94,30 +110,19 @@ func maybeResolveAutoPDFLayout(setup schema.ParserSetup, filename string, binary
 		updated[k] = v
 	}
 	updated[parserConfigLayoutRecognizerKey] = chosen
+	if isAutoLayoutRecognize(getStringOr(setup, parserConfigParseMethodKey, "")) {
+		updated[parserConfigParseMethodKey] = chosen
+	}
 	return updated, nil
 }
 
 func parsePositiveInt(raw string) (int, error) {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return 0, fmt.Errorf("empty")
-	}
-	n := 0
-	for _, ch := range raw {
-		if ch < '0' || ch > '9' {
-			return 0, fmt.Errorf("not an integer")
-		}
-		n = n*10 + int(ch-'0')
+	n, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		return 0, err
 	}
 	if n <= 0 {
-		return 0, fmt.Errorf("not positive")
+		return 0, strconv.ErrRange
 	}
 	return n, nil
-}
-
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
