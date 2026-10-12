@@ -44,6 +44,7 @@ export function useAutoResizeTextarea(
     const el = ref.current;
     if (!el) return;
 
+    /** Fit the rendered box to its content and borders within maxHeight. */
     const measure = () => {
       el.style.height = 'auto';
       // scrollHeight excludes borders while height is border-box, so the
