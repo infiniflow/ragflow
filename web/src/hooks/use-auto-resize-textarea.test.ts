@@ -15,6 +15,7 @@ describe('textarea automatic border height', () => {
     globalThis.ResizeObserver = OriginalResizeObserver;
     document.body.replaceChildren();
   });
+  /** Create a mounted textarea with controlled dimensions for resize checks. */
   function textarea(scrollHeight: number, boxSizing = 'border-box') {
     const el = document.createElement('textarea');
     Object.assign(el.style, {
