@@ -221,7 +221,7 @@ missing from the model directory.
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 
-- **Run the Go Docker image** — the container entrypoint only starts the server 
+- **Run the Go Docker image** — the container entrypoint only starts the server
   (`bin/ragflow_server --api/--ingestor/--admin`)
 
 - ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
