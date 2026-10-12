@@ -137,24 +137,6 @@ func asSliceOfAny(v any) []any {
 	}
 }
 
-// toIntStrict parses an int-like value (JSON numbers arrive as float64).
-func toIntStrict(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case string:
-		var n int
-		if _, err := fmt.Sscanf(x, "%d", &n); err == nil {
-			return n, true
-		}
-	}
-	return 0, false
-}
-
 // toFloat parses a numeric value.
 func toFloat(v any) (float64, bool) {
 	switch x := v.(type) {
