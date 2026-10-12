@@ -2974,6 +2974,12 @@ Best for: Documents with flowing, contextually connected content — such as boo
       anySearchDiscover: 'AnySearch Discover',
       anySearchDiscoverDescription:
         "Lists AnySearch's current domains and the vertical tags and params each one takes, so the Agent can choose a valid tag.",
+      anySearchExtract: 'AnySearch Extract',
+      anySearchExtractDescription:
+        'Reads one web page through AnySearch and returns its text. Supports HTML, text, JSON and Markdown (not PDF or Office files). Works without an API key.',
+      anySearchExtractUrl: 'URL',
+      anySearchExtractUrlTip:
+        'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       anySearchApiKeyTip:
         "Optional. AnySearch works without a key. Add one to use your account's quota; service limits apply.",
       anySearchZone: 'Zone',
@@ -3537,6 +3543,7 @@ This process aggregates variables from multiple branches into a single variable 
         queritContents: 'Reading web pages with Querit',
         anySearchSearch: 'Searching with AnySearch',
         anySearchDiscover: 'Looking up AnySearch verticals',
+        anySearchExtract: 'Reading the page with AnySearch',
         tavilyExtract: 'Reading the page',
         exeSQL: 'Querying database',
         google: 'Searching the web',

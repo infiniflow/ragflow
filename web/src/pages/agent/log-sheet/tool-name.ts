@@ -26,6 +26,9 @@ export function getToolOperatorName(toolName?: string | null) {
   if (normalizedName === Operator.AnySearchDiscover.toLowerCase()) {
     return Operator.AnySearchDiscover;
   }
+  if (normalizedName === Operator.AnySearchExtract.toLowerCase()) {
+    return Operator.AnySearchExtract;
+  }
 
   return toolName
     .split('_')

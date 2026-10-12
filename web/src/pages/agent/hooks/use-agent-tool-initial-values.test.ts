@@ -54,4 +54,12 @@ describe('useAgentToolInitialValues', () => {
       result.current.initializeAgentToolValues(Operator.AnySearchDiscover),
     ).toEqual({ api_key: '' });
   });
+
+  it('creates AnySearch Extract tool params with only the optional key', () => {
+    const { result } = renderHook(() => useAgentToolInitialValues());
+
+    expect(
+      result.current.initializeAgentToolValues(Operator.AnySearchExtract),
+    ).toEqual({ api_key: '' });
+  });
 });

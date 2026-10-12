@@ -2562,6 +2562,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       anySearchDiscover: 'AnySearch 领域发现',
       anySearchDiscoverDescription:
         '列出 AnySearch 当前支持的领域，以及各领域可用的垂直标签和参数，便于智能体选择有效的标签。',
+      anySearchExtract: 'AnySearch 网页提取',
+      anySearchExtractDescription:
+        '通过 AnySearch 读取单个网页并返回其文本。支持 HTML、文本、JSON 和 Markdown（不支持 PDF 或 Office 文件）。无需 API Key 即可使用。',
+      anySearchExtractUrl: '网页地址',
+      anySearchExtractUrlTip:
+        '要读取页面的完整 HTTP 或 HTTPS 地址。作为智能体工具时，由智能体提供地址。',
       anySearchApiKeyTip:
         '可选。AnySearch 无需 Key 即可使用。填写后将使用你账户的额度，服务限制仍然适用。',
       anySearchZone: '区域',
@@ -3065,6 +3071,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         queritContents: '正在使用 Querit 读取网页',
         anySearchSearch: '正在使用 AnySearch 搜索',
         anySearchDiscover: '正在查询 AnySearch 垂直领域',
+        anySearchExtract: '正在使用 AnySearch 读取网页',
         tavilyExtract: '读取网页内容',
         exeSQL: '查询数据库',
         google: '正在网上搜索',

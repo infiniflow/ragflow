@@ -84,6 +84,7 @@ export const SVGIconMap = {
   [Operator.Search1APICrawl]: 'search1api',
   [Operator.AnySearchSearch]: 'anysearch',
   [Operator.AnySearchDiscover]: 'anysearch',
+  [Operator.AnySearchExtract]: 'anysearch',
   [Operator.Wikipedia]: 'wikipedia',
   [Operator.YahooFinance]: 'yahoo-finance',
   [Operator.WenCai]: 'wencai',
@@ -155,7 +156,8 @@ const OperatorIcon = ({ name, className }: IProps) => {
 
   if (
     name === Operator.AnySearchSearch ||
-    name === Operator.AnySearchDiscover
+    name === Operator.AnySearchDiscover ||
+    name === Operator.AnySearchExtract
   ) {
     return (
       <img
