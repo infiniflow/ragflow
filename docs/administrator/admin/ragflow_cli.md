@@ -553,7 +553,7 @@ If the name does not exist in the local configuration, the command returns `api_
 
 ### 7. Message queue commands
 
-The MQ commands operate on the NATS JetStream task stream used by ingestors. When an ingestor is running, it can consume a published test message before a subsequent `MQ PULL` command observes it.
+The MQ commands manage the NATS JetStream task stream used by ingestors.
 
 #### 7.1 MQ SHOW
 
@@ -571,7 +571,23 @@ MQ SHOW;
 RAGFlow(admin)> MQ SHOW;
 ```
 
-#### 7.2 MQ PUBLISH
+#### 7.2 MQ LIST
+
+Lists messages currently retained in the task stream.
+
+**Syntax**
+
+```sql
+MQ LIST;
+```
+
+**Example**
+
+```text
+RAGFlow(admin)> MQ LIST;
+```
+
+#### 7.3 MQ PUBLISH
 
 Publishes a test message to the ingestion task subject.
 
@@ -594,7 +610,7 @@ SUCCESS
 
 A successful response confirms that NATS JetStream accepted the message. If an ingestor is waiting for work, it can consume and acknowledge the message immediately.
 
-#### 7.3 MQ PULL
+#### 7.4 MQ PULL
 
 Manually pulls messages from the ingestion task consumer. The default count is `1`. By default, pulled messages are acknowledged; `NOACK` negatively acknowledges them so that they can be redelivered.
 
