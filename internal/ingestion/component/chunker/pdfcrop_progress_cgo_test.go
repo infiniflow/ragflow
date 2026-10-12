@@ -5,6 +5,7 @@ package chunker
 import (
 	"context"
 	"math"
+	"sort"
 	"sync"
 	"testing"
 
@@ -63,15 +64,23 @@ func TestCropImageChunks_ReportsFractions(t *testing.T) {
 	}
 
 	fractions := rec.getFractions()
-	// 3 tasks settled monotonically + 1 terminal 1.0 = 4 reports
+	// 3 tasks settled + 1 terminal 1.0 = 4 reports
 	if len(fractions) != 4 {
 		t.Fatalf("expected 4 reports, got %d (%v)", len(fractions), fractions)
 	}
+	if last := fractions[len(fractions)-1]; last != 1.0 {
+		t.Errorf("last fraction = %f, want 1.0", last)
+	}
+
+	// Verify the multiset of reported fractions regardless of concurrent arrival order.
+	sorted := make([]float64, len(fractions))
+	copy(sorted, fractions)
+	sort.Float64s(sorted)
 
 	wantFractions := []float64{1.0 / 3.0, 2.0 / 3.0, 1.0, 1.0}
 	for i, want := range wantFractions {
-		if math.Abs(fractions[i]-want) > 1e-6 {
-			t.Errorf("fraction[%d] = %f, want %f", i, fractions[i], want)
+		if math.Abs(sorted[i]-want) > 1e-6 {
+			t.Errorf("sorted fraction[%d] = %f, want %f", i, sorted[i], want)
 		}
 	}
 }
