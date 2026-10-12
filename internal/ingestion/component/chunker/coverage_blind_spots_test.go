@@ -97,8 +97,8 @@ func TestGeneralChunkerTextAppliesOverlapThroughInvoke(t *testing.T) {
 	if len(texts) != 2 {
 		t.Fatalf("texts = %q, want two overlapped chunks", texts)
 	}
-	if texts[1] == "gamma delta" || !strings.HasSuffix(texts[1], "\ngamma delta") {
-		t.Fatalf("text overlap = %q, want previous tail plus current text", texts[1])
+	if texts[1] != " betagamma delta" {
+		t.Fatalf("text overlap = %q, want previous tail directly followed by current text", texts[1])
 	}
 }
 

@@ -70,6 +70,9 @@ type Input struct {
 	// DatasetIDs is the conversation's bound dataset scope, decided by the
 	// session created in the UI. It is injected into the retrieval tools.
 	DatasetIDs []string
+	// DocIDs is the server-bound document scope. Nil leaves retrieval unrestricted;
+	// a non-nil empty slice restricts all corpus tools to no documents.
+	DocIDs []string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
 	// The web_search tool is NOT passed here: it is injected from the run's
@@ -292,6 +295,9 @@ func Run(ctx context.Context, in Input) (string, error) {
 	if in.Model == nil {
 		return "", errNilModel
 	}
+	if in.DocIDs != nil {
+		ctx = withDocumentScope(ctx, in.DocIDs)
+	}
 
 	tmpl, errT := resolveTemplateFor(in.TemplateID)
 	if errT != nil {
@@ -305,17 +311,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
-	tools := in.Tools
-	if len(tools) == 0 {
-		// No explicit tool set: build it from the requested template, which
-		// lets operators change the tool list without recompiling. The config
-		// is reloaded from disk when its mtime changes, so a quick edit +
-		// re-run is enough to try a different tool subset or prompt variant.
-		tools = toolsFor(tmpl, in.TenantID, in.DatasetIDs)
-		// Web search is injected, never declared: the template's tool list
-		// describes the corpus toolset, and a conversation whose context
-		// carries a provider gets one extra tool at run time.
-		tools = append(tools, webSearchTools(ctx)...)
+	// With no explicit tools, use the requested template. The config reloads
+	// when its mtime changes so operators can change the tool list and prompt.
+	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
+	if err != nil {
+		return "", err
 	}
 
 	maxIter := in.MaxIterations
@@ -330,10 +331,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	wrapped := make([]tool.BaseTool, len(tools))
 	for i, t := range tools {
 		if it, ok := t.(tool.InvokableTool); ok {
-			wrapped[i] = &instrumentedTool{
+			timed := &instrumentedTool{
 				InvokableTool: it,
 				acc:           in.ToolCallDurations,
 			}
+			wrapped[i] = timed
 		} else {
 			wrapped[i] = t
 		}
@@ -348,8 +350,8 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          "smart-reasoning",
-		Instruction:   instructionFor(tmpl),
-		Model:         in.Model,
+		Instruction:   tmpl.Content,
+		Model:         agentModel,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,
 		// network hiccups) with seconds-scale backoff on EVERY model call of
@@ -384,9 +386,10 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	// EnableStreaming lives on RunnerConfig, not ChatModelAgentConfig.
 	explorerHead := sess.explorer.head(ctx)
-	question := lastUserQuestion(in.Messages)
+	question := schema.UserMessage(lastUserQuestion(in.Messages))
 	seed := in.Messages
 	if len(seed) > 0 {
+		question = seed[len(seed)-1]
 		// The final user message is the new turn and must be appended exactly
 		// once by turnMessages.
 		seed = seed[:len(seed)-1]
@@ -715,10 +718,12 @@ func finalizeAnswer(
 		"assumption explicitly, and still provide the computed answer. Do not request any tools " +
 		"and do not hedge with \"I would need\" or \"I could not find\".")
 
-	resp, err := m.Generate(ctx, []*schema.Message{{
+	finalMessages := append([]*schema.Message(nil), messages...)
+	finalMessages = append(finalMessages, &schema.Message{
 		Role:    schema.User,
 		Content: body.String(),
-	}})
+	})
+	resp, err := m.Generate(ctx, finalMessages)
 	if err != nil {
 		return "", err
 	}

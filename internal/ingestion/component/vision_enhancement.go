@@ -32,6 +32,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"go.uber.org/zap"
@@ -40,7 +41,6 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 
@@ -166,9 +166,11 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parser.ParseResult,
 	inputs map[string]any,
-	setups map[string]schema.ParserSetup,
-	modelRef string,
+	vision visionSettings,
+	window fractionWindow,
 ) (parser.ParseResult, bool, error) {
+	w := window
+
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
@@ -176,8 +178,10 @@ func maybeDispatchVisionEnhancement(
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
 	family := resolveParserFamily(fileType)
-	setup := setups[family]
-	language := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// Captions follow the knowledge base language, which also drives
+	// tokenization. The family setup's lang is an OCR engine parameter
+	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
+	language := resolveVisionLanguage(inputs)
 
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
@@ -207,11 +211,11 @@ func maybeDispatchVisionEnhancement(
 	var resolveErr error
 	if tenantID != "" {
 		var err error
-		if modelRef != "" {
-			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
+		if vision.modelID != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
 			if err != nil {
 				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-					zap.String("family", family), zap.String("modelRef", modelRef), zap.String("tenant", tenantID), zap.Error(err))
+					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
 				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 			}
 		} else {
@@ -249,6 +253,8 @@ func maybeDispatchVisionEnhancement(
 	failures := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
+	var settled atomic.Int64
+	total := int64(len(items))
 	for slot, itemIdx := range items {
 		if err := ctx.Err(); err != nil {
 			break
@@ -318,6 +324,8 @@ func maybeDispatchVisionEnhancement(
 		}
 		if resource == nil {
 			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
@@ -325,12 +333,20 @@ func maybeDispatchVisionEnhancement(
 				failures[slot] = "image payload is invalid or exceeds configured limits"
 			}
 			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
 			continue
 		}
 		wg.Add(1)
 		go func(slot int, imageData string) {
 			defer wg.Done()
 			defer releaseSlot()
+			defer func() {
+				if ctx.Err() == nil {
+					n := settled.Add(1)
+					w.report(ctx, float64(n)/float64(total))
+				}
+			}()
 
 			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
@@ -352,6 +368,7 @@ func maybeDispatchVisionEnhancement(
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
+	w.report(ctx, 1.0)
 	failedItems := 0
 	firstFailure := ""
 	for _, failure := range failures {

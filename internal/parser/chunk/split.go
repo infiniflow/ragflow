@@ -18,6 +18,7 @@ package chunk
 
 import (
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"unicode/utf8"
 )
@@ -43,47 +44,42 @@ func NewSplitOperator(config map[string]interface{}) (*SplitOperator, error) {
 		}
 	}
 
-	if params, ok := config["params"].(map[string]interface{}); ok {
-		if b, ok := params["boundaries"]; ok {
-			if boundStrs, ok := b.([]interface{}); ok {
-				for _, bs := range boundStrs {
-					if s, ok := bs.(string); ok {
-						op.boundaries = append(op.boundaries, s)
-					}
+	params, ok := config["params"].(map[string]interface{})
+	if !ok {
+		return op, nil
+	}
+
+	if b, ok := params["boundaries"]; ok {
+		if boundStrs, ok := b.([]interface{}); ok {
+			for _, bs := range boundStrs {
+				if s, ok := bs.(string); ok {
+					op.boundaries = append(op.boundaries, s)
 				}
 			}
 		}
-		if ks, ok := params["keep_separators"]; ok {
-			if b, ok := ks.(bool); ok {
-				op.keepSeparators = b
-			}
+	}
+	if ks, ok := params["keep_separators"]; ok {
+		if b, ok := ks.(bool); ok {
+			op.keepSeparators = b
 		}
-		// chunk_size / overlap drive the "length" strategy. JSON numbers
-		// decode as float64, so accept that alongside the integer types.
-		if cs, ok := params["chunk_size"]; ok {
-			op.chunkSize = toInt(cs)
+	}
+	// chunk_size / overlap drive the "length" strategy. JSON numbers
+	// decode as float64, so accept that alongside the integer types.
+	if cs, ok := params["chunk_size"]; ok {
+		op.chunkSize, ok = common.ToInt(cs)
+		if !ok {
+			return nil, fmt.Errorf("invalid chunk_size %v", cs)
 		}
-		if ov, ok := params["overlap"]; ok {
-			op.overlap = toInt(ov)
+	}
+
+	if ov, ok := params["overlap"]; ok {
+		op.overlap, ok = common.ToInt(ov)
+		if !ok {
+			return nil, fmt.Errorf("invalid overlap %v", ov)
 		}
 	}
 
 	return op, nil
-}
-
-// toInt coerces a DSL numeric value (float64 from JSON, or a native integer)
-// to int. Any other type yields 0.
-func toInt(v interface{}) int {
-	switch n := v.(type) {
-	case float64:
-		return int(n)
-	case int:
-		return n
-	case int64:
-		return int(n)
-	default:
-		return 0
-	}
 }
 
 func (o *SplitOperator) Prepare(ctx *ChunkContext) error {

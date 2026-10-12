@@ -83,7 +83,7 @@ type nodeBodyFn = func(ctx context.Context, in map[string]any) (map[string]any, 
 // (componentFactoryFromContext): the override is threaded through
 // canvas.Compile → BuildWorkflow → buildNodeBody without the canvas
 // package ever importing the ingestion layer.
-const ctxKeyOverrideParams ctxKey = "canvas_override_params"
+const ctxKeyOverrideParams = "canvas_override_params"
 
 // withOverrideParams attaches a run-level override map to ctx. It is
 // a no-op when m is nil so callers can pass a possibly-nil run parameter

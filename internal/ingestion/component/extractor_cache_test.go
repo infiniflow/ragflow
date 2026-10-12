@@ -290,7 +290,7 @@ func TestExtractor_ResolvesDefaultModelOncePerRun(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:    "", // default-model path — the one #3 is about
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 		Metadata: schema.MetadataExtractConfig{
 			Enabled:  true,
 			Metadata: []common.MetadataFieldDef{{Key: "category", Type: "string"}},
