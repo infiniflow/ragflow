@@ -68,6 +68,8 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
+// GetFileType classifies a filename by its case-insensitive extension.
+// It returns FileTypeOTHER when the extension is missing or unsupported.
 func GetFileType(filename string) FileType {
 
 	ext := filepath.Ext(filename)
