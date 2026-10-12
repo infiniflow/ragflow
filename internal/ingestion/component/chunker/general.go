@@ -239,7 +239,7 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 	if hasPDFPositions(units) && hasUnpositionedPDFMedia(units) {
 		common.Warn("GeneralChunker: PDF media is missing position metadata; using degraded context/order fallback")
 	}
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	body := make([]schema.ChunkDoc, 0, len(units))
@@ -404,12 +404,12 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if !customDelimiter {
-		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 		units = separateGeneralTextBlocks(units)
 	}
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	if customDelimiter {
-		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	} else {
 		units = mergeDOCXUnits(units, c.param.ChunkTokenSize)
 	}
@@ -469,11 +469,16 @@ func mergeDOCXUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc {
 	return merged
 }
 
-// attachGeneralMediaContext follows Python's sentence-aware media context
-// extraction. The shared TokenChunker helper intentionally returns the
-// smallest token-fitting rune suffix/prefix; DOCX/PDF general strategies use
-// complete sentence units instead.
-func attachGeneralMediaContext(units []schema.ChunkDoc, tableTokens, imageTokens int) {
+// attachGeneralMediaContext selects complete configured delimiter units or
+// sentences from the neighboring source blocks.
+func attachGeneralMediaContext(units []schema.ChunkDoc, tableTokens, imageTokens int, primaryPattern *regexp.Regexp) {
+	if tableTokens <= 0 && imageTokens <= 0 {
+		return
+	}
+	pattern := contextSentencePattern
+	if primaryPattern != nil {
+		pattern = regexp.MustCompile("(?:" + primaryPattern.String() + ")|(?:" + pattern.String() + ")")
+	}
 	for i := range units {
 		docType := itemDocType(units[i])
 		if docType != "table" && docType != "image" {
@@ -486,12 +491,12 @@ func attachGeneralMediaContext(units []schema.ChunkDoc, tableTokens, imageTokens
 		if budget <= 0 {
 			continue
 		}
-		units[i].ContextAbove = collectGeneralMediaContext(units, i, budget, true)
-		units[i].ContextBelow = collectGeneralMediaContext(units, i, budget, false)
+		units[i].ContextAbove = collectGeneralMediaContext(units, i, budget, true, pattern)
+		units[i].ContextBelow = collectGeneralMediaContext(units, i, budget, false, pattern)
 	}
 }
 
-func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, above bool) string {
+func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, above bool, pattern *regexp.Regexp) string {
 	var parts []string
 	remaining := budget
 	step := -1
@@ -509,7 +514,7 @@ func collectGeneralMediaContext(units []schema.ChunkDoc, index, budget int, abov
 		text = normalizeGeneralNewlines(text)
 		tokens := tokenizeStr(text)
 		if tokens >= remaining {
-			piece := takeContextSentences(text, remaining, above)
+			piece := takeContextSentences(text, remaining, above, pattern)
 			if above {
 				parts = append([]string{piece}, parts...)
 			} else {
@@ -581,13 +586,10 @@ func hasSpreadsheetIdentity(doc schema.ChunkDoc) bool {
 // combined token count reaches the budget, taking the last sentence even when
 // it overshoots: a sentence is the smallest unit a context window may cut at,
 // so a text without a sentence boundary comes back whole. Shared by the media
-// context collectors of both chunkers (general.go, token.go).
-func takeContextSentences(text string, budget int, fromEnd bool) string {
-	sentences := splitContextSentences(text)
-	if len(sentences) == 0 {
-		return text
-	}
-	// The sentence pieces are contiguous slices of text. Track byte offsets
+// context collectors of both chunkers use the supplied boundary pattern.
+func takeContextSentences(text string, budget int, fromEnd bool, pattern *regexp.Regexp) string {
+	sentences := splitByDelim(text, pattern, true)
+	// The sentence pieces cover contiguous source segments. Track byte offsets
 	// instead of repeatedly prepending slices and joining the selected text;
 	// each candidate is still tokenized independently because BPE token counts
 	// are not additive across sentence boundaries.
@@ -612,26 +614,6 @@ func takeContextSentences(text string, budget int, fromEnd bool) string {
 	return text[:end]
 }
 
-func splitContextSentences(text string) []string {
-	indices := contextSentencePattern.FindAllStringIndex(text, -1)
-	if len(indices) == 0 {
-		if text == "" {
-			return nil
-		}
-		return []string{text}
-	}
-	parts := make([]string, 0, len(indices)+1)
-	start := 0
-	for _, index := range indices {
-		parts = append(parts, text[start:index[1]])
-		start = index[1]
-	}
-	if start < len(text) {
-		parts = append(parts, text[start:])
-	}
-	return parts
-}
-
 func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream schema.ChunkerFromUpstream) (map[string]any, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, fmt.Errorf("GeneralChunker: %w", err)
@@ -647,11 +629,11 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	if !customDelimiter {
-		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	}
 	parts := splitMarkdownUnits(units, primaryPattern, !customDelimiter)
 	if customDelimiter {
-		attachGeneralMediaContext(parts.chunks, c.param.TableContextSize, c.param.ImageContextSize)
+		attachGeneralMediaContext(parts.chunks, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	}
 	units = mergeMarkdownUnits(parts, c.param.ChunkTokenSize, c.param.OverlappedPercent)
 	units = finalizeGeneralChunks(units, childrenPattern)
@@ -663,8 +645,9 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 
 // markdownSplit keeps each fragment's parser block boundary beside its chunk.
 type markdownSplit struct {
-	chunks      []schema.ChunkDoc
-	blockStarts []bool
+	chunks        []schema.ChunkDoc
+	blockStarts   []bool
+	shortHeadings []bool // Classified from the complete source heading.
 }
 
 // splitMarkdownUnits expands only text units while retaining the semantic
@@ -672,8 +655,9 @@ type markdownSplit struct {
 // so the generic splitter's type normalization cannot be used here.
 func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) markdownSplit {
 	result := markdownSplit{
-		chunks:      make([]schema.ChunkDoc, 0, len(units)),
-		blockStarts: make([]bool, 0, len(units)),
+		chunks:        make([]schema.ChunkDoc, 0, len(units)),
+		blockStarts:   make([]bool, 0, len(units)),
+		shortHeadings: make([]bool, 0, len(units)),
 	}
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
@@ -685,10 +669,12 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 		if unit.DocType == "table" || unit.DocType == "image" {
 			unit.CKType = unit.DocType
 		}
+		shortHeading := isShortMarkdownHeading(unit)
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
 			result.chunks = append(result.chunks, unit)
 			result.blockStarts = append(result.blockStarts, true)
+			result.shortHeadings = append(result.shortHeadings, shortHeading)
 			continue
 		}
 		parts := splitByDelim(unit.Text, pattern, keepDelimiter)
@@ -708,6 +694,7 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 			piece.TKNums = intPtr(tokenizeStr(part))
 			result.chunks = append(result.chunks, piece)
 			result.blockStarts = append(result.blockStarts, startsBlock)
+			result.shortHeadings = append(result.shortHeadings, shortHeading)
 			startsBlock = !keepDelimiter
 		}
 	}
@@ -715,11 +702,14 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 }
 
 // stripTextLinesFromMediaContextAbove removes folded unit text from collected
-// media context so materializeMediaContext does not emit it twice.
+// media context, including a suffix selected by a small context budget.
 func stripTextLinesFromMediaContextAbove(contextAbove, folded string) string {
 	folded = strings.TrimSpace(folded)
 	if folded == "" || contextAbove == "" {
 		return contextAbove
+	}
+	if strings.HasSuffix(folded, strings.TrimSpace(contextAbove)) {
+		return ""
 	}
 	parts := strings.Split(contextAbove, "\n")
 	filtered := make([]string, 0, len(parts))
@@ -751,12 +741,13 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 	currentTokens := 0
 	for index, unit := range parts.chunks {
 		startsBlock := parts.blockStarts[index]
+		previousShortHeading := index > 0 && parts.shortHeadings[index-1]
 		joinSep := ""
 		if startsBlock && current >= 0 && !strings.HasSuffix(merged[current].Text, "\n") && !strings.HasPrefix(unit.Text, "\n") {
 			joinSep = "\n"
 		}
 		if itemDocType(unit) == "table" {
-			if current >= 0 && isShortMarkdownHeading(merged[current]) {
+			if current >= 0 && merged[current].CKType == "heading" && previousShortHeading {
 				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
 				if !imagesOK {
 					merged = append(merged, cloneChunkDoc(unit))
@@ -826,7 +817,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			currentTokens = unitTokens
 			continue
 		}
-		forceMerge := isShortMarkdownHeading(*previous)
+		forceMerge := previous.CKType == "heading" && previousShortHeading
 		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
 		if !imagesOK {
 			merged = append(merged, unit)
@@ -968,7 +959,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	if len(units) == 0 {
 		return emptyOutputs(), nil
 	}
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, nil)
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		if itemDocType(unit) == "table" && tableDataOf(unit) != nil {
@@ -1065,7 +1056,7 @@ func (c *GeneralChunkerComponent) chunkGeneral(ctx context.Context, upstream sch
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
 	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
+	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	if !customDelimiter {
 		units = mergeGeneralUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, "")
 	}

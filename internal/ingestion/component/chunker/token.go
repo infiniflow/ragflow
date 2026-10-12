@@ -902,7 +902,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append([]string{takeContextSentences(txt, remain, true)}, parts...)
+					parts = append([]string{takeContextSentences(txt, remain, true, contextSentencePattern)}, parts...)
 					remain = 0
 					break
 				}
@@ -918,7 +918,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append(parts, takeContextSentences(txt, remain, false))
+					parts = append(parts, takeContextSentences(txt, remain, false, contextSentencePattern))
 					remain = 0
 					break
 				}
