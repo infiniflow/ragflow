@@ -26,6 +26,7 @@ function usage() {
     exit 1
 }
 
+ENABLE_ADMIN_SERVER=0 # Default close admin server
 ENABLE_API_SERVER=1 # Default to enable web server
 ENABLE_INGESTOR=1  # Default to enable ingestor
 ENABLE_DATASYNC=1
@@ -47,6 +48,10 @@ for arg in "$@"; do
       ;;
     --disable-syncer)
       ENABLE_DATASYNC=0
+      shift
+      ;;
+    --enable-adminserver)
+      ENABLE_ADMIN_SERVER=1
       shift
       ;;
     --init-model-provider-tables)
@@ -118,7 +123,7 @@ function go_backend_enabled() {
     if [[ "${ENABLE_DATASYNC}" -eq 1 ]]; then
         return 0
     fi
-    if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
+    if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]] || [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
         return 0
     fi
     return 1
@@ -156,8 +161,10 @@ if go_backend_enabled; then
     run_go_migrations
 fi
 
-echo "Starting Admin go server..."
-run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
+if [[ "${ENABLE_ADMIN_SERVER}" -eq 1 ]]; then
+    echo "Starting Admin go server..."
+    run_with_restart "Admin go server" bin/ragflow_server --admin ${INIT_SUPERUSER_ARGS} &
+fi
 
 if [[ "${ENABLE_API_SERVER}" -eq 1 ]]; then
     echo "Starting nginx..."

@@ -100,27 +100,11 @@ func resolveTreeOrder(param common.Param) int {
 	if !ok {
 		return DefaultTreeOrder
 	}
-	v, ok := toInt(raw)
+	v, ok := rfcommon.ToInt(raw)
 	if !ok || v < MinTreeOrder || v > MaxTreeOrder {
 		return DefaultTreeOrder
 	}
 	return v
-}
-
-// toInt coerces the common param-extra value types to int.
-func toInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case float32:
-		return int(x), true
-	default:
-		return 0, false
-	}
 }
 
 const (
@@ -141,7 +125,7 @@ var raptorTruncationMarkerRE = regexp.MustCompile(
 // extra["max_token"] override with the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			if n < raptorDefaultMaxToken {
 				return raptorDefaultMaxToken
 			}
@@ -156,7 +140,7 @@ func resolveMaxToken(param common.Param) int {
 // that threshold (raptor.py:_summarize_texts).
 func resolveMaxErrors(param common.Param) int {
 	if v, ok := param.Extra["max_errors"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			return n
 		}
 	}

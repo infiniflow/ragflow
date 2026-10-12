@@ -270,9 +270,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,
-            parse_method: cur.parse_method,
-            lang: cur.lang,
-            system_prompt: cur.system_prompt,
+            ocr_enabled: cur.ocr_enabled,
           };
           break;
         case FileType.Email:

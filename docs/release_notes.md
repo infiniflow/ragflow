@@ -1271,7 +1271,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
 - [Manage team members](./guides/team/team_management/index.md)
-- [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
+- [Run health check on RAGFlow's dependencies](./administrator/admin/admin_ui/check_system_status.md)
 
 ## v0.13.0
 

@@ -399,7 +399,7 @@ A dictionary representing the attributes to update, with the following keys:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 - `"pagerank"`: (*Body parameter*), `int`
-  refer to [Set page rank](https://ragflow.io/docs/dev/set_page_rank)
+  refer to [Set page rank](https://ragflow.io/docs/dev/dataset_configuration)
   - Default: `0`
   - Minimum: `0`
   - Maximum: `100`
