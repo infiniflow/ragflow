@@ -42,6 +42,45 @@ func GetTenantIDByKBID(ctx context.Context, db *gorm.DB, kbID string) (string, e
 	return kb.TenantID, nil
 }
 
+// TenantKBIDs groups knowledge bases stored in the same tenant index/table.
+type TenantKBIDs struct {
+	TenantID string
+	KBIDs    []string
+}
+
+// GroupKBIDsByTenant resolves every requested knowledge base and preserves
+// first-seen tenant order. Missing datasets must not yield a partial scope.
+func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]TenantKBIDs, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbIDs = common.Deduplicate(kbIDs)
+	kbs, err := NewKnowledgebaseDAO().GetByIDs(ctx, db, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+	tenants := make(map[string]string, len(kbs))
+	for _, kb := range kbs {
+		tenants[kb.ID] = kb.TenantID
+	}
+	groups := make([]TenantKBIDs, 0)
+	positions := make(map[string]int)
+	for _, kbID := range kbIDs {
+		tenantID, ok := tenants[kbID]
+		if !ok || tenantID == "" {
+			return nil, fmt.Errorf("dataset %s has no tenant: %w", kbID, gorm.ErrRecordNotFound)
+		}
+		pos, ok := positions[tenantID]
+		if !ok {
+			pos = len(groups)
+			positions[tenantID] = pos
+			groups = append(groups, TenantKBIDs{TenantID: tenantID})
+		}
+		groups[pos].KBIDs = append(groups[pos].KBIDs, kbID)
+	}
+	return groups, nil
+}
+
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
 
