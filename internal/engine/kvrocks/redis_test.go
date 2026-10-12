@@ -47,6 +47,45 @@ func newStrictTestClient(t *testing.T) (*Client, *miniredis.Miniredis) {
 	}, mr
 }
 
+func TestTotalSystemMemoryHuman(t *testing.T) {
+	t.Parallel()
+	cases := []struct {
+		name string
+		info map[string]string
+		want string
+	}{
+		{
+			name: "prefers total_system_memory_human",
+			info: map[string]string{
+				"total_system_memory_human": "16.00G",
+				"maxmemory_human":           "4.00G",
+			},
+			want: "16.00G",
+		},
+		{
+			name: "falls back to maxmemory_human",
+			info: map[string]string{
+				"maxmemory_human": "4.00G",
+			},
+			want: "4.00G",
+		},
+		{
+			name: "empty when neither field present",
+			info: map[string]string{
+				"used_memory_human": "128.00M",
+			},
+			want: "",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := totalSystemMemoryHuman(tc.info); got != tc.want {
+				t.Fatalf("totalSystemMemoryHuman() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestClientSetNXDistinguishesContention(t *testing.T) {
 	r, _ := newStrictTestClient(t)
 	ctx := t.Context()
