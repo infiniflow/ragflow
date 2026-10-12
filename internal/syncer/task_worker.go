@@ -127,7 +127,7 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			nackEnvelope(envelope)
 			return
 		}
-		w.scheduleRetry(ctx, taskContext.Task.ID, 3*time.Second)
+		w.scheduleRetry(context.WithoutCancel(ctx), taskContext.Task.ID, 3*time.Second)
 		ackEnvelope(envelope)
 		return
 	}
