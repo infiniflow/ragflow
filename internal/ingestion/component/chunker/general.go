@@ -646,12 +646,14 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	primaryPattern := compileDelimPattern(c.param.Delimiters)
 	childrenPattern := compileChildrenPattern(c.param.ChildrenDelimiters)
 	customDelimiter := hasCustomDelim(c.param.Delimiters)
-	if customDelimiter {
-		units = splitMarkdownUnits(units, primaryPattern, false)
-		primaryPattern = nil
+	if !customDelimiter {
+		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
 	}
-	attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize)
-	units = mergeMarkdownUnits(units, c.param.ChunkTokenSize, c.param.OverlappedPercent, primaryPattern)
+	parts := splitMarkdownUnits(units, primaryPattern, !customDelimiter)
+	if customDelimiter {
+		attachGeneralMediaContext(parts.chunks, c.param.TableContextSize, c.param.ImageContextSize)
+	}
+	units = mergeMarkdownUnits(parts, c.param.ChunkTokenSize, c.param.OverlappedPercent)
 	units = finalizeGeneralChunks(units, childrenPattern)
 	if len(units) == 0 {
 		return emptyOutputs(), nil
@@ -659,11 +661,20 @@ func (c *GeneralChunkerComponent) chunkMarkdown(ctx context.Context, upstream sc
 	return chunkOutputs(units), nil
 }
 
+// markdownSplit keeps each fragment's parser block boundary beside its chunk.
+type markdownSplit struct {
+	chunks      []schema.ChunkDoc
+	blockStarts []bool
+}
+
 // splitMarkdownUnits expands only text units while retaining the semantic
 // parser type on every piece. Markdown heading detection depends on ck_type,
 // so the generic splitter's type normalization cannot be used here.
-func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) []schema.ChunkDoc {
-	result := make([]schema.ChunkDoc, 0, len(units))
+func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDelimiter bool) markdownSplit {
+	result := markdownSplit{
+		chunks:      make([]schema.ChunkDoc, 0, len(units)),
+		blockStarts: make([]bool, 0, len(units)),
+	}
 	for _, unit := range units {
 		unit = cloneChunkDoc(unit)
 		unit.Text = normalizeGeneralNewlines(itemTextOrFallback(unit))
@@ -676,13 +687,15 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 		}
 		if unit.DocType != "text" || pattern == nil || !pattern.MatchString(unit.Text) {
 			unit.TKNums = intPtr(tokenizeStr(unit.Text))
-			result = append(result, unit)
+			result.chunks = append(result.chunks, unit)
+			result.blockStarts = append(result.blockStarts, true)
 			continue
 		}
 		parts := splitByDelim(unit.Text, pattern, keepDelimiter)
 		if keepDelimiter {
 			parts = foldWhitespaceSegments(parts)
 		}
+		startsBlock := true
 		for _, part := range parts {
 			if !keepDelimiter {
 				part = strings.TrimSpace(part)
@@ -693,7 +706,9 @@ func splitMarkdownUnits(units []schema.ChunkDoc, pattern *regexp.Regexp, keepDel
 			piece := cloneChunkDoc(unit)
 			piece.Text = part
 			piece.TKNums = intPtr(tokenizeStr(part))
-			result = append(result, piece)
+			result.chunks = append(result.chunks, piece)
+			result.blockStarts = append(result.blockStarts, startsBlock)
+			startsBlock = !keepDelimiter
 		}
 	}
 	return result
@@ -729,124 +744,125 @@ func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
 // than standalone media chunks, so image-bearing units participate in the
 // text merge and retain their image payload. Images with configured media
 // context are emitted as standalone chunks instead.
-func mergeMarkdownUnits(units []schema.ChunkDoc, target int, overlapPct float64, pattern *regexp.Regexp) []schema.ChunkDoc {
+func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []schema.ChunkDoc {
 	overlapPct = max(0, min(100, overlapPct))
-	merged := make([]schema.ChunkDoc, 0, len(units))
+	merged := make([]schema.ChunkDoc, 0, len(parts.chunks))
 	current := -1
 	currentTokens := 0
-	for _, block := range units {
-		for index, unit := range splitMarkdownUnits([]schema.ChunkDoc{block}, pattern, true) {
-			startsBlock := index == 0
-			joinSep := ""
-			if startsBlock && current >= 0 && !strings.HasSuffix(merged[current].Text, "\n") && !strings.HasPrefix(unit.Text, "\n") {
-				joinSep = "\n"
-			}
-			if itemDocType(unit) == "table" {
-				if current >= 0 && isShortMarkdownHeading(merged[current]) {
-					mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
-					if !imagesOK {
-						merged = append(merged, unit)
-						current = -1
-						currentTokens = 0
-						continue
-					}
-					table := unit
-					heading := merged[current]
-					if heading.Text != "" && table.Text != "" {
-						table.Text = heading.Text + joinSep + table.Text
-					} else {
-						table.Text = heading.Text + table.Text
-					}
-					table.TKNums = intPtr(currentTokens + generalUnitTokens(unit))
-					table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
-					table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
-					mergeGeneralMetadata(&table, heading)
-					table.Image = mergedImage
-					table.DocType = "table"
-					table.CKType = "table"
-					table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
-					merged[current] = table
+	for index, unit := range parts.chunks {
+		startsBlock := parts.blockStarts[index]
+		joinSep := ""
+		if startsBlock && current >= 0 && !strings.HasSuffix(merged[current].Text, "\n") && !strings.HasPrefix(unit.Text, "\n") {
+			joinSep = "\n"
+		}
+		if itemDocType(unit) == "table" {
+			if current >= 0 && isShortMarkdownHeading(merged[current]) {
+				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
+				if !imagesOK {
+					merged = append(merged, cloneChunkDoc(unit))
 					current = -1
 					currentTokens = 0
 					continue
 				}
-				merged = append(merged, unit)
+				table := cloneChunkDoc(unit)
+				heading := merged[current]
+				if heading.Text != "" && table.Text != "" {
+					table.Text = heading.Text + joinSep + table.Text
+				} else {
+					table.Text = heading.Text + table.Text
+				}
+				table.TKNums = intPtr(currentTokens + generalUnitTokens(unit))
+				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
+				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
+				mergeGeneralMetadata(&table, heading)
+				table.Image = mergedImage
+				table.DocType = "table"
+				table.CKType = "table"
+				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
+				merged[current] = table
 				current = -1
 				currentTokens = 0
 				continue
 			}
-
-			if itemDocType(unit) == "image" && markdownImageUnitHasMediaContext(unit) {
-				if current >= 0 {
-					current = -1
-					currentTokens = 0
-				}
-				standalone := unit
-				standalone.DocType = "image"
-				if standalone.CKType == "" {
-					standalone.CKType = "image"
-				}
-				standalone.TKNums = intPtr(generalUnitTokens(standalone))
-				merged = append(merged, standalone)
-				continue
-			}
-
-			unit.DocType = "text"
-			if unit.CKType == "" {
-				unit.CKType = "text"
-			}
-			if current < 0 {
-				merged = append(merged, unit)
-				current = len(merged) - 1
-				currentTokens = generalUnitTokens(unit)
-				continue
-			}
-
-			previous := &merged[current]
-			unitTokens := generalUnitTokens(unit)
-			if startsBlock && unit.CKType == "heading" && previous.CKType != "heading" {
-				merged = append(merged, unit)
-				current = len(merged) - 1
-				currentTokens = unitTokens
-				continue
-			}
-			forceMerge := isShortMarkdownHeading(*previous)
-			mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
-			if !imagesOK {
-				merged = append(merged, unit)
-				current = len(merged) - 1
-				currentTokens = unitTokens
-				continue
-			}
-			projected := currentTokens + unitTokens
-			if !forceMerge && projected > target {
-				overlap, _ := computeOverlapPrefix(previous.Text, overlapPct)
-				if overlap != "" {
-					// Only positions cross the overlap boundary; retain the
-					// current unit's remaining metadata.
-					next := unit
-					next.Text = joinGeneralOverlapText(overlap, unit.Text, joinSep)
-					currentTokens = tokenizeStr(overlap) + unitTokens
-					next.TKNums = intPtr(currentTokens)
-					next.PDFPositions = mergeGeneralPositions(previous.PDFPositions, next.PDFPositions)
-					next.Positions = mergeGeneralPositions(previous.Positions, next.Positions)
-					merged = append(merged, next)
-				} else {
-					merged = append(merged, unit)
-					currentTokens = unitTokens
-				}
-				current = len(merged) - 1
-				continue
-			}
-			mergeGeneralChunk(previous, unit, joinSep)
-			previous.Image = mergedImage
-			previous.DocType = "text"
-			if startsBlock || unit.CKType != "heading" {
-				previous.CKType = "text"
-			}
-			currentTokens = projected
-			previous.TKNums = intPtr(currentTokens)
+			merged = append(merged, cloneChunkDoc(unit))
+			current = -1
+			currentTokens = 0
+			continue
 		}
+
+		if itemDocType(unit) == "image" && markdownImageUnitHasMediaContext(unit) {
+			if current >= 0 {
+				current = -1
+				currentTokens = 0
+			}
+			standalone := cloneChunkDoc(unit)
+			standalone.DocType = "image"
+			if standalone.CKType == "" {
+				standalone.CKType = "image"
+			}
+			standalone.TKNums = intPtr(generalUnitTokens(standalone))
+			merged = append(merged, standalone)
+			continue
+		}
+
+		unit = cloneChunkDoc(unit)
+		unit.DocType = "text"
+		if unit.CKType == "" {
+			unit.CKType = "text"
+		}
+		unit.TKNums = intPtr(generalUnitTokens(unit))
+		if current < 0 {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			currentTokens = generalUnitTokens(unit)
+			continue
+		}
+
+		previous := &merged[current]
+		unitTokens := generalUnitTokens(unit)
+		if startsBlock && unit.CKType == "heading" && previous.CKType != "heading" {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			currentTokens = unitTokens
+			continue
+		}
+		forceMerge := isShortMarkdownHeading(*previous)
+		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
+		if !imagesOK {
+			merged = append(merged, unit)
+			current = len(merged) - 1
+			currentTokens = unitTokens
+			continue
+		}
+		projected := currentTokens + unitTokens
+		if !forceMerge && projected > target {
+			overlap, _ := computeOverlapPrefix(previous.Text, overlapPct)
+			if overlap != "" {
+				// The emitted chunk belongs to the current unit. Clone it
+				// first so media and other metadata from the previous chunk
+				// cannot leak through the overlap prefix.
+				next := cloneChunkDoc(unit)
+				next.Text = joinGeneralOverlapText(overlap, unit.Text, joinSep)
+				currentTokens = tokenizeStr(overlap) + unitTokens
+				next.TKNums = intPtr(currentTokens)
+				next.PDFPositions = mergeGeneralPositions(previous.PDFPositions, next.PDFPositions)
+				next.Positions = mergeGeneralPositions(previous.Positions, next.Positions)
+				merged = append(merged, next)
+			} else {
+				merged = append(merged, unit)
+				currentTokens = unitTokens
+			}
+			current = len(merged) - 1
+			continue
+		}
+		mergeGeneralChunk(previous, unit, joinSep)
+		previous.Image = mergedImage
+		previous.DocType = "text"
+		if startsBlock || unit.CKType != "heading" {
+			previous.CKType = "text"
+		}
+		currentTokens = projected
+		previous.TKNums = intPtr(currentTokens)
 	}
 	return merged
 }
