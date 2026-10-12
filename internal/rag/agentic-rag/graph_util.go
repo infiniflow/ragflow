@@ -38,10 +38,10 @@ import (
 // It was written three times (the SCA view, the draft's ordering, the citation
 // reference) before it lived here.
 func similarityOrScore(c map[string]any) float64 {
-	if v, ok := toFloat(c["similarity"]); ok && v != 0 {
+	if v, ok := common.ToFloat(c["similarity"]); ok && v != 0 {
 		return v
 	}
-	if v, ok := toFloat(c["score"]); ok && v != 0 {
+	if v, ok := common.ToFloat(c["score"]); ok && v != 0 {
 		return v
 	}
 	return 0.0
@@ -135,24 +135,6 @@ func asSliceOfAny(v any) []any {
 	default:
 		return []any{v}
 	}
-}
-
-// toFloat parses a numeric value.
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case int:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	case string:
-		var f float64
-		if _, err := fmt.Sscanf(x, "%f", &f); err == nil {
-			return f, true
-		}
-	}
-	return 0, false
 }
 
 // anyString reads a string field from a chunk-like map.

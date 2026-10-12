@@ -316,7 +316,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 			changed = true
 		}
 		if raw, has := pv["candidate_strength"]; has && raw != nil {
-			if f, ok := toFloat(raw); ok {
+			if f, ok := common.ToFloat(raw); ok {
 				v := math.Min(math.Max(f, 0.0), 1.0)
 				nv.CandidateStrength = &v
 				changed = true
@@ -354,25 +354,6 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
-}
-
-// toFloat coerces a JSON-decoded value to float64.
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int32:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		return ParseFloat(n)
-	}
-	return 0, false
 }
 
 // ParseFloat parses a float64 from a string, tolerating surrounding
