@@ -820,6 +820,8 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		Positions:    it.Positions,
 		Image:        it.Image,
 		PageNumber:   it.PageNumber,
+		Sheet:        it.Sheet,
+		SheetIndex:   it.SheetIndex,
 		Extra:        cloneExtra(it.Extra),
 	}
 	if ctxAbove != "" {
