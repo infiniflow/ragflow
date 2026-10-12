@@ -22,6 +22,10 @@ import (
 )
 
 func ToInt(v any) (int, bool) {
+	if v == nil {
+		return 0, true
+	}
+
 	switch n := v.(type) {
 	case int:
 		return n, true
@@ -42,6 +46,22 @@ func ToInt(v any) (int, bool) {
 		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
 			return i, true
 		}
+	}
+	return 0, false
+}
+
+func ToIntNum(v any) (int, bool) {
+	switch n := v.(type) {
+	case int:
+		return n, true
+	case int32:
+		return int(n), true
+	case int64:
+		return int(n), true
+	case float32:
+		return int(n), true
+	case float64:
+		return int(n), true
 	}
 	return 0, false
 }

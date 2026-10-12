@@ -272,7 +272,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 		// and is skipped. Only JSON numbers match, which decode as float64 — accept those,
 		// and reject anything else so the behaviour is strict rather than silently more
 		// permissive.
-		want, ok := toIntStrict(rawID)
+		want, ok := common.ToIntNum(rawID)
 		if !ok {
 			continue
 		}
@@ -354,24 +354,6 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
-}
-
-// toIntStrict converts JSON NUMBER types only. Unlike toInt it does NOT parse strings: a
-// patch whose id is "1" must match nothing.
-func toIntStrict(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int32:
-		return int(n), true
-	case int64:
-		return int(n), true
-	case float32:
-		return int(n), true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
 }
 
 // toFloat coerces a JSON-decoded value to float64.
