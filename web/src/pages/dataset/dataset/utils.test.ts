@@ -12,11 +12,12 @@ import {
   getDocumentRunningStatus,
   getDocumentProgressMessage,
   getFileTypeByExtension,
-  getSavedParserSetups,
+  getSavedParserConfig,
   hasUnsupportedTypeGap,
   ingestionStatusToRunningStatus,
   isDocumentProcessing,
   isDocumentStopping,
+  type SavedParserConfig,
 } from './utils';
 
 describe('isDocumentStopping', () => {
@@ -124,63 +125,96 @@ describe('getFileTypeByExtension', () => {
   });
 });
 
-// Saved setups shaped like a pipeline that declares pdf/image plus audio
-// (model missing) and video (model configured).
-const SavedSetups = [
-  { fileFormat: FileType.PDF, parse_method: 'DeepDOC' },
-  { fileFormat: FileType.Image, parse_method: 'ocr' },
-  { fileFormat: FileType.Audio, vlm: { llm_id: '' } },
-  { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
-] as Record<string, any>[];
+// Saved config shaped like a pipeline that declares pdf/image plus audio
+// (ASR model missing) and video, with the Parser-level vision enhancement
+// enabled and its model configured — the current contract, where media
+// families other than audio carry no model of their own.
+const SavedConfig: SavedParserConfig = {
+  setups: [
+    { fileFormat: FileType.PDF, parse_method: 'DeepDOC' },
+    { fileFormat: FileType.Image, ocr_enabled: true },
+    { fileFormat: FileType.Audio, vlm: { llm_id: '' } },
+    { fileFormat: FileType.Video },
+  ],
+  visionEnhancement: { enabled: true, modelId: 'glm-4v@ZHIPU-AI' },
+};
 
 describe('findParserGap', () => {
   it('flags a file type missing from the saved setups as unsupported', () => {
-    expect(findParserGap(FileType.Docx, SavedSetups)).toEqual({
+    expect(findParserGap(FileType.Docx, SavedConfig)).toEqual({
       reason: ParserGapReason.UnsupportedType,
       fileType: FileType.Docx,
     });
   });
 
   it('flags audio/video without a declared family as unsupported, not missing-model', () => {
-    const setups = [{ fileFormat: FileType.PDF }];
-    expect(findParserGap(FileType.Audio, setups)).toEqual({
+    const config: SavedParserConfig = {
+      setups: [{ fileFormat: FileType.PDF }],
+    };
+    expect(findParserGap(FileType.Audio, config)).toEqual({
       reason: ParserGapReason.UnsupportedType,
       fileType: FileType.Audio,
     });
-    expect(findParserGap(FileType.Video, setups)).toEqual({
+    expect(findParserGap(FileType.Video, config)).toEqual({
       reason: ParserGapReason.UnsupportedType,
       fileType: FileType.Video,
     });
   });
 
   it('flags declared audio without a model as a missing asr model', () => {
-    expect(findParserGap(FileType.Audio, SavedSetups)).toEqual({
+    expect(findParserGap(FileType.Audio, SavedConfig)).toEqual({
       reason: ParserGapReason.MissingModel,
       fileType: FileType.Audio,
       modelKind: ParserModelKind.Asr,
     });
   });
 
-  it('flags declared video without a model as a missing vision model', () => {
-    const setups = [{ fileFormat: FileType.Video, vlm: { llm_id: '' } }];
-    expect(findParserGap(FileType.Video, setups)).toEqual({
+  it('passes video when the Parser-level vision enhancement has a model', () => {
+    expect(findParserGap(FileType.Video, SavedConfig)).toBeNull();
+  });
+
+  it('flags declared video when the vision enhancement is off or has no model', () => {
+    const disabled: SavedParserConfig = {
+      setups: [{ fileFormat: FileType.Video }],
+      visionEnhancement: { enabled: false, modelId: 'glm-4v@ZHIPU-AI' },
+    };
+    const noModel: SavedParserConfig = {
+      setups: [{ fileFormat: FileType.Video }],
+      visionEnhancement: { enabled: true, modelId: '' },
+    };
+    const expected = {
+      reason: ParserGapReason.MissingModel,
+      fileType: FileType.Video,
+      modelKind: ParserModelKind.Vision,
+    };
+    expect(findParserGap(FileType.Video, disabled)).toEqual(expected);
+    expect(findParserGap(FileType.Video, noModel)).toEqual(expected);
+  });
+
+  it('reads the video model from the family setup for configs saved before the move', () => {
+    const withModel: SavedParserConfig = {
+      setups: [
+        { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
+      ],
+    };
+    const withoutModel: SavedParserConfig = {
+      setups: [{ fileFormat: FileType.Video, vlm: { llm_id: '' } }],
+    };
+    expect(findParserGap(FileType.Video, withModel)).toBeNull();
+    expect(findParserGap(FileType.Video, withoutModel)).toEqual({
       reason: ParserGapReason.MissingModel,
       fileType: FileType.Video,
       modelKind: ParserModelKind.Vision,
     });
   });
 
-  it('passes video when the setup carries a model', () => {
-    expect(findParserGap(FileType.Video, SavedSetups)).toBeNull();
-  });
-
   it('passes image with an ocr-only setup — no model required', () => {
-    expect(findParserGap(FileType.Image, SavedSetups)).toBeNull();
+    expect(findParserGap(FileType.Image, SavedConfig)).toBeNull();
   });
 
   it('passes supported non-media types and unknown file types', () => {
-    expect(findParserGap(FileType.PDF, SavedSetups)).toBeNull();
-    expect(findParserGap(undefined, SavedSetups)).toBeNull();
+    expect(findParserGap(FileType.PDF, SavedConfig)).toBeNull();
+    expect(findParserGap(undefined, SavedConfig)).toBeNull();
   });
 });
 
@@ -188,7 +222,7 @@ describe('findFilesParserGaps', () => {
   it('returns a gap per failing file, mixing both reasons', () => {
     const gaps = findFilesParserGaps(
       ['song.mp3', 'notes.docx', 'photo.jpg', 'movie.mp4'],
-      SavedSetups,
+      SavedConfig,
     );
     expect(gaps).toEqual([
       {
@@ -231,11 +265,11 @@ describe('hasUnsupportedTypeGap', () => {
   });
 });
 
-describe('getSavedParserSetups', () => {
+describe('getSavedParserConfig', () => {
   it('returns null without a saved parser config', () => {
-    expect(getSavedParserSetups(null)).toBeNull();
+    expect(getSavedParserConfig(null)).toBeNull();
     expect(
-      getSavedParserSetups({
+      getSavedParserConfig({
         parser_config: {},
       }),
     ).toBeNull();
@@ -245,7 +279,7 @@ describe('getSavedParserSetups', () => {
     const knowledgeBase = {
       parser_config: { chunk_token_num: 128, delimiter: '\n' },
     };
-    expect(getSavedParserSetups(knowledgeBase)).toBeNull();
+    expect(getSavedParserConfig(knowledgeBase)).toBeNull();
   });
 
   it('returns only the saved Parser setups, without merging defaults', () => {
@@ -257,8 +291,42 @@ describe('getSavedParserSetups', () => {
         },
       },
     };
-    const setups = getSavedParserSetups(knowledgeBase);
-    expect(setups?.map((x) => x.fileFormat).sort()).toEqual(['image', 'pdf']);
+    const config = getSavedParserConfig(knowledgeBase);
+    expect(config?.setups.map((x) => x.fileFormat).sort()).toEqual([
+      'image',
+      'pdf',
+    ]);
+  });
+
+  it('reads the vision enhancement globals from the Parser entry top level', () => {
+    const knowledgeBase = {
+      parser_config: {
+        'Parser:1': {
+          enable_vision_enhancement: true,
+          vlm: { llm_id: 'glm-4v@ZHIPU-AI', system_prompt: 'describe' },
+          video: {},
+        },
+      },
+    };
+    expect(getSavedParserConfig(knowledgeBase)).toEqual({
+      setups: [{ fileFormat: FileType.Video }],
+      visionEnhancement: { enabled: true, modelId: 'glm-4v@ZHIPU-AI' },
+    });
+  });
+
+  it('leaves the vision enhancement undefined for configs saved before the move', () => {
+    const knowledgeBase = {
+      parser_config: {
+        'Parser:1': {
+          video: { vlm: { llm_id: 'gpt-4o@OpenAI' } },
+        },
+      },
+    };
+    const config = getSavedParserConfig(knowledgeBase);
+    expect(config?.visionEnhancement).toBeUndefined();
+    expect(config?.setups).toEqual([
+      { fileFormat: FileType.Video, vlm: { llm_id: 'gpt-4o@OpenAI' } },
+    ]);
   });
 
   it('ignores non-parser operator entries', () => {
@@ -267,7 +335,7 @@ describe('getSavedParserSetups', () => {
         'TokenChunker:1': { chunk_token_size: 128 },
       },
     };
-    expect(getSavedParserSetups(knowledgeBase)).toBeNull();
+    expect(getSavedParserConfig(knowledgeBase)).toBeNull();
   });
 });
 
@@ -285,9 +353,9 @@ describe('findDocumentsParserGaps', () => {
     expect(findDocumentsParserGaps([OverriddenDoc], null)).toEqual([]);
   });
 
-  it('falls back to the dataset-level setups for rows without a Parser entry', () => {
+  it('falls back to the dataset-level config for rows without a Parser entry', () => {
     const legacyRow = { name: 'song.mp3', parser_config: {} };
-    expect(findDocumentsParserGaps([legacyRow], SavedSetups)).toEqual([
+    expect(findDocumentsParserGaps([legacyRow], SavedConfig)).toEqual([
       {
         name: 'song.mp3',
         reason: ParserGapReason.MissingModel,
@@ -305,7 +373,11 @@ describe('findDocumentsParserGaps', () => {
       [OverriddenDoc, inheritedRow],
       // Dataset-level config declares only audio: the overridden pdf passes
       // while the inherited jpg is flagged.
-      [{ fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } }],
+      {
+        setups: [
+          { fileFormat: FileType.Audio, vlm: { llm_id: 'whisper@OpenAI' } },
+        ],
+      },
     );
     expect(gaps).toEqual([
       {
@@ -314,5 +386,19 @@ describe('findDocumentsParserGaps', () => {
         fileType: FileType.Image,
       },
     ]);
+  });
+
+  it('reads the document row vision globals for video', () => {
+    const videoDoc = {
+      name: 'movie.mp4',
+      parser_config: {
+        'Parser:1': {
+          enable_vision_enhancement: true,
+          vlm: { llm_id: 'glm-4v@ZHIPU-AI' },
+          video: {},
+        },
+      },
+    };
+    expect(findDocumentsParserGaps([videoDoc], null)).toEqual([]);
   });
 });
