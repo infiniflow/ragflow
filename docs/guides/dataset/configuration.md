@@ -321,7 +321,7 @@ Usage:
 
 If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
 
-> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../../guides/agent/agent_overview.md).
+> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../agent/ingestion_pipeline/create_ingestion_pipeline.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 

@@ -365,20 +365,9 @@ export const initialTitleChunkerValues = {
   groupRules: cloneDeep(originalRules),
 };
 
-// Defaults for the Python backend extractor (legacy flat fields).
+// Defaults for the extractor: the LLM settings plus the nested per-feature
+// groups the Go schema reads (schema.ExtractorParam).
 export const initialExtractorValues = {
-  ...initialLlmBaseValues,
-  field_name: ContextGeneratorFieldName.Summary,
-  auto_tags: 1,
-  tag_file_id: '',
-  outputs: {
-    chunks: { type: 'Array<Object>', value: [] },
-  },
-};
-
-// Defaults for the Go backend extractor: the LLM settings plus the nested
-// per-feature groups the Go schema reads (schema.ExtractorParam).
-export const initialGoExtractorValues = {
   ...initialLlmBaseValues,
   keywords: {
     enabled: false,
@@ -410,7 +399,7 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return initialGoExtractorValues;
+  return initialExtractorValues;
 }
 
 export const initialCompilationValues = {

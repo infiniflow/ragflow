@@ -223,7 +223,7 @@ func (dao *IngestionTaskDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, 
 	err := db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ?", id).
-		First(&task).Error
+		Take(&task).Error
 	return task, err
 }
 

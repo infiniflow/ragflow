@@ -22,7 +22,45 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agentic_rag"
 )
+
+func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
+	for _, answer := range []string{
+		"Public facts. [ID:1]",
+		"Public facts. [Public source](https://example.com/source)",
+	} {
+		t.Run(answer, func(t *testing.T) {
+			registry := agentic_rag.NewEvidenceRegistry()
+			registry.Stamp("uncited-corpus-chunk")
+			web := agentic_rag.WebResult{Title: "Public source", URL: "https://example.com/source", Content: "Public facts."}
+			registry.StampWebResult(web)
+			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
+			s := &ChatPipelineService{}
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
+				t.Errorf("citation was not compacted to its reference position: %q", marked)
+			}
+			chunks, ok := reference["chunks"].([]map[string]interface{})
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected only the cited web chunk: %v", reference)
+			}
+			chunk := chunks[0]
+			if chunk["id"] != registry.IDs()[1] || chunk["document_id"] != web.URL || chunk["document_name"] != web.Title || chunk["content"] != web.Content || chunk["url"] != web.URL {
+				t.Errorf("web reference lost its source metadata: %v", chunk)
+			}
+			aggs, ok := reference["doc_aggs"].([]interface{})
+			if !ok || len(aggs) != 1 {
+				t.Fatalf("expected one web source card: %v", reference["doc_aggs"])
+			}
+			agg, ok := aggs[0].(map[string]interface{})
+			if !ok || agg["url"] != web.URL || agg["doc_name"] != web.Title || agg["count"] != 1 {
+				t.Errorf("web source card lost its URL or snippet count: %v", agg)
+			}
+		})
+	}
+}
 
 func TestSentenceSplit_PlainText(t *testing.T) {
 	result := sentenceSplit("Hello world. This is a test.")

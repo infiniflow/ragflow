@@ -27,8 +27,6 @@ import (
 
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
-	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 )
@@ -63,7 +61,6 @@ func (s *ChatPipelineService) agenticRag(
 	messages []map[string]interface{},
 	stream bool,
 	kwargs map[string]interface{},
-	useWebSearch bool,
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
@@ -160,12 +157,6 @@ func (s *ChatPipelineService) agenticRag(
 			common.ErrorCtx(runCtx, "agentic_rag: build synthesis model", synthErr)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", synthErr.Error()), Final: true})
 			return
-		}
-
-		if useWebSearch {
-			if web := s.agenticWebSearch(chat.PromptConfig); web != nil {
-				runCtx = agentic_rag.WithWebSearch(runCtx, web)
-			}
 		}
 
 		// Per-turn tool accounting, logged (not shipped on the result: the
@@ -343,32 +334,6 @@ func agenticFailoverModelIDs(chat *entity.Chat) []string {
 	return out
 }
 
-// agenticWebSearch adapts the pipeline's configured provider to the agent's
-// per-query web_search tool. nil hides the tool entirely (the same rule the
-// harness path applies).
-func (s *ChatPipelineService) agenticWebSearch(promptConfig map[string]interface{}) agentic_rag.WebSearchFunc {
-	provider := resolveWebSearchProvider(promptConfig)
-	if provider == nil {
-		return nil
-	}
-	return func(ctx context.Context, query string) ([]agentic_rag.WebResult, error) {
-		res, err := s.retrieveWebSearch(ctx, provider, query)
-		if err != nil {
-			return nil, err
-		}
-		chunks, _ := res["chunks"].([]map[string]interface{})
-		out := make([]agentic_rag.WebResult, 0, len(chunks))
-		for _, c := range chunks {
-			out = append(out, agentic_rag.WebResult{
-				Title:   stringValue(c["docnm_kwd"]),
-				URL:     stringValue(c["url"]),
-				Content: stringValue(c["content_with_weight"]),
-			})
-		}
-		return out, nil
-	}
-}
-
 // convertMessagesToEino converts pre-filtered user/assistant messages into
 // eino schema messages, resolving uploaded attachments throughout the history.
 func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
@@ -416,138 +381,4 @@ func chatDatasetIDs(chat *entity.Chat) []string {
 		}
 	}
 	return ids
-}
-
-// buildAgenticReference turns the answer's citations into the reference payload
-// the naive pipeline ships, and rewrites the answer's markers to that payload's
-// numbering. The answer cites the run's evidence handles ([ID:n], the numbering
-// the model was shown); an answer that named passages by raw chunk_id instead
-// (a document-level question has no handle to write) falls back to that path.
-// With no resolvable citations both come back unchanged: an empty reference
-// keeps the SSE shape the UI expects, and the untouched text is the honest state
-// of an answer whose sources could not be loaded.
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
-	// Normalize the answer's markers BEFORE anything reads them. A reasoning
-	// model parks the whole answer inside <think>, so the normalization covers
-	// the entire text rather than a post-`</think>` tail: a handle sitting in
-	// the thinking stretch is cited exactly like one in the visible prose.
-	//
-	// Two shapes need repair, and both are invisible to every scanner
-	// downstream — this package's `\[ID:(\d+)\]` and the client's marker regex
-	// each stop at the first non-digit:
-	//   - a near-canonical marker ("(ID:47)", "[ID: 47]", "【ID:47】"), and
-	//   - several handles compressed into one marker ("[ID:47, ID:115]").
-	normalized := agentic_rag.ExpandCommaCitations(
-		RepairBadCitationFormats(final), len(registry.IDs()))
-
-	// Preferred: the answer's own [ID:n] handles, resolved against the run's
-	// evidence registry — the same numbering the model was shown, so a marker
-	// can only name a passage that actually reached the context.
-	cited := agentic_rag.CitedIDsFromMarkers(normalized, registry)
-	byHandles := len(cited) > 0
-	if !byHandles {
-		// Fallback: an answer that named passages by raw chunk_id. A
-		// document-level question has no [ID:n] handle to write.
-		cited = agentic_rag.ExtractCitedChunkIDs(normalized)
-	}
-	if len(cited) == 0 {
-		return map[string]interface{}{}, normalized
-	}
-	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
-	if len(rows) == 0 {
-		return map[string]interface{}{}, normalized
-	}
-	// Keep only ids that actually resolved, preserving first-appearance
-	// order: the marker number IS the chunk's position in the payload array.
-	byID := make(map[string]map[string]interface{}, len(rows))
-	for _, r := range rows {
-		if id, ok := r["id"].(string); ok {
-			byID[id] = r
-		}
-	}
-	resolved := make([]string, 0, len(cited))
-	for _, id := range cited {
-		if _, ok := byID[id]; ok {
-			resolved = append(resolved, id)
-		}
-	}
-	if len(resolved) == 0 {
-		return map[string]interface{}{}, normalized
-	}
-	ordered := make([]map[string]interface{}, 0, len(resolved))
-	for _, id := range resolved {
-		ordered = append(ordered, byID[id])
-	}
-	marked := normalized
-	if byHandles {
-		// Compact the run-level handles ("[ID:265]") into the answer's own
-		// first-citation order ("[ID:0]"), the numbering the payload ships.
-		marked, _ = agentic_rag.ResolveCitations(normalized, registry, resolved)
-	} else {
-		marked = agentic_rag.InsertCitationMarkers(normalized, resolved)
-	}
-	common.InfoCtx(ctx, "agentic citations built",
-		zap.Int("cited", len(cited)),
-		zap.Int("resolved", len(resolved)),
-		zap.Bool("by_handle", byHandles),
-		zap.Int("final_bytes", len(marked)))
-	return map[string]interface{}{
-		"chunks":   chunksFormat(ordered),
-		"doc_aggs": agenticDocAggs(ordered),
-	}, marked
-}
-
-// fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
-// engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
-// kb_id / img_id / positions) so chunksFormat can normalize it. The index is
-// the chat's OWNING tenant's - the same scoping the agent's retrieval tools
-// use.
-func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
-	de := engine.Get()
-	if de == nil || len(ids) == 0 {
-		return nil
-	}
-	req := &enginetypes.SearchRequest{
-		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
-		KbIDs:        datasetIDs,
-		Filter:       map[string]interface{}{"id": ids},
-		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "positions"},
-		Limit:        len(ids),
-	}
-	res, err := de.Search(ctx, req)
-	if err != nil {
-		common.WarnCtx(ctx, "agentic citation chunk fetch failed", zap.Error(err))
-		return nil
-	}
-	return res.Chunks
-}
-
-// agenticDocAggs aggregates the fetched chunks per document - the doc_aggs
-// shape the UI's citation popover resolves documents from (doc_id + doc_name,
-// plus a chunk count for parity with the naive payload).
-func agenticDocAggs(chunks []map[string]interface{}) []interface{} {
-	order := make([]string, 0, len(chunks))
-	agg := make(map[string]map[string]interface{}, len(chunks))
-	for _, ck := range chunks {
-		docID, _ := ck["doc_id"].(string)
-		if docID == "" {
-			continue
-		}
-		if _, ok := agg[docID]; !ok {
-			order = append(order, docID)
-			agg[docID] = map[string]interface{}{
-				"doc_id":   docID,
-				"doc_name": ck["docnm_kwd"],
-				"count":    0,
-			}
-		}
-		if n, ok := agg[docID]["count"].(int); ok {
-			agg[docID]["count"] = n + 1
-		}
-	}
-	out := make([]interface{}, 0, len(order))
-	for _, docID := range order {
-		out = append(out, agg[docID])
-	}
-	return out
 }
