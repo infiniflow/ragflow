@@ -66,6 +66,16 @@ type LLMParam struct {
 	// same line verbatim.
 	FrequencyPenalty *float64
 
+	// TemperatureDisabled, TopPDisabled, MaxTokensDisabled,
+	// PresencePenaltyDisabled and FrequencyPenaltyDisabled record a DSL
+	// *Enabled switch set to false, so runtime inputs that carry the value
+	// without its switch do not bring it back (see gateSampler).
+	TemperatureDisabled      bool
+	TopPDisabled             bool
+	MaxTokensDisabled        bool
+	PresencePenaltyDisabled  bool
+	FrequencyPenaltyDisabled bool
+
 	// Driver is the configured provider driver to use (e.g. "openai"). When
 	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
 	// test/development-only dummy driver.
@@ -1347,18 +1357,22 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		f := v
 		p.Temperature = &f
 	}
+	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
 	}
+	gateSampler(inputs, "topPEnabled", &p.TopP, &p.TopPDisabled)
 	if v, ok := floatFrom(inputs, "presence_penalty"); ok {
 		f := v
 		p.PresencePenalty = &f
 	}
+	gateSampler(inputs, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 	if v, ok := floatFrom(inputs, "frequency_penalty"); ok {
 		f := v
 		p.FrequencyPenalty = &f
 	}
+	gateSampler(inputs, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 	// visual_files: accept []string or single string with embedded
 	// data URIs. The current implementation only walks top-level
 	// string values; recursive walk is a future enhancement.
@@ -1371,6 +1385,7 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		i := v
 		p.MaxTokens = &i
 	}
+	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
 		// Forward any non-empty, non-"default" value to match the
 		// lenient Python gate: hasattr(self,"thinking") and
@@ -1422,6 +1437,19 @@ func boolFrom(inputs map[string]any, name string) (bool, bool) {
 		return b, true
 	}
 	return false, false
+}
+
+// gateSampler applies the sampler switch inputs[flag] to value. The switch
+// state is kept in disabled, so a later merge whose inputs carry the value
+// without the switch still drops it. Mirrors Python's LLMParam.gen_conf, which
+// only sends a sampler value when its switch is on.
+func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled *bool) {
+	if enabled, ok := boolFrom(inputs, flag); ok {
+		*disabled = !enabled
+	}
+	if *disabled {
+		*value = nil
+	}
 }
 
 // floatFrom extracts a float64 from inputs[name], also accepting int.
@@ -1481,23 +1509,17 @@ func init() {
 			f := v
 			p.Temperature = &f
 		}
-		if enabled, ok := boolFrom(params, "temperatureEnabled"); ok && !enabled {
-			p.Temperature = nil
-		}
+		gateSampler(params, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 		if v, ok := floatFrom(params, "top_p"); ok {
 			f := v
 			p.TopP = &f
 		}
-		if enabled, ok := boolFrom(params, "topPEnabled"); ok && !enabled {
-			p.TopP = nil
-		}
+		gateSampler(params, "topPEnabled", &p.TopP, &p.TopPDisabled)
 		if v, ok := intFrom(params, "max_tokens"); ok {
 			i := v
 			p.MaxTokens = &i
 		}
-		if enabled, ok := boolFrom(params, "maxTokensEnabled"); ok && !enabled {
-			p.MaxTokens = nil
-		}
+		gateSampler(params, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
@@ -1508,16 +1530,12 @@ func init() {
 			f := v
 			p.PresencePenalty = &f
 		}
-		if enabled, ok := boolFrom(params, "presencePenaltyEnabled"); ok && !enabled {
-			p.PresencePenalty = nil
-		}
+		gateSampler(params, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 		if v, ok := floatFrom(params, "frequency_penalty"); ok {
 			f := v
 			p.FrequencyPenalty = &f
 		}
-		if enabled, ok := boolFrom(params, "frequencyPenaltyEnabled"); ok && !enabled {
-			p.FrequencyPenalty = nil
-		}
+		gateSampler(params, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.
 		p.Cite = true
