@@ -819,16 +819,24 @@ func (e *Engine) FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB,
 		return nil
 	}
 
+	return collectMetadataDocIDs(groups, func(group dao.TenantKBIDs) []string {
+		return e.filterDocIDsByMetaInTenant(ctx, group.TenantID, group.KBIDs, whereClause)
+	})
+}
+
+// collectMetadataDocIDs combines complete tenant results within the push-down cap.
+// A failed tenant discards all results; zero matches returns a non-nil slice.
+func collectMetadataDocIDs(groups []dao.TenantKBIDs, query func(dao.TenantKBIDs) []string) []string {
 	docIDs := make([]string, 0)
 	for _, group := range groups {
-		ids := e.filterDocIDsByMetaInTenant(ctx, group.TenantID, group.KBIDs, whereClause)
+		ids := query(group)
 		if ids == nil {
 			return nil
 		}
 		docIDs = append(docIDs, ids...)
 		if len(docIDs) > metaPushdownMaxSize {
 			common.Warn("FilterDocIdsByMetaPushdown: combined result exceeds push-down cap, falling back to in-memory",
-				zap.Int("count", len(docIDs)), zap.Strings("kbIDs", kbIDs))
+				zap.Int("count", len(docIDs)), zap.Any("tenantGroups", groups))
 			return nil
 		}
 	}
