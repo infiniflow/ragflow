@@ -678,8 +678,14 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
           { label: 'pipeline (MinerU 3.x)', value: 'pipeline' },
           { label: 'vlm-engine (MinerU 3.x)', value: 'vlm-engine' },
           { label: 'hybrid-engine (MinerU 3.x)', value: 'hybrid-engine' },
-          { label: 'vlm-http-client (MinerU 3.x)', value: 'vlm-http-client' },
-          { label: 'hybrid-http-client (MinerU 3.x)', value: 'hybrid-http-client' },
+          {
+            label: 'vlm-http-client (MinerU 3.x)',
+            value: 'vlm-http-client',
+          },
+          {
+            label: 'hybrid-http-client (MinerU 3.x)',
+            value: 'hybrid-http-client',
+          },
           { label: 'basic (MinerU 4)', value: 'basic' },
           { label: 'standard (MinerU 4)', value: 'standard' },
           { label: 'advanced (MinerU 4)', value: 'advanced' },

@@ -988,7 +988,7 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
 				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
 			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
-				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"}}}]}`))
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
 			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
 				w.Header().Set("Content-Type", "application/zip")
 				_, _ = w.Write(zipBytes)
@@ -1042,7 +1042,7 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
 				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
 			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
-				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"},"markdown":{"id":"out-md"}}}]}`))
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
 			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
 				http.Error(w, "zip gone", http.StatusInternalServerError)
 			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
@@ -1055,6 +1055,57 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 
 		out := invoke(t, server.URL)
 		requireJSONText(t, out, "Markdown fallback")
+	})
+
+	t.Run("empty content_list without markdown is an error", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := server.URL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["output_format"] = "markdown"
+		setups["pdf"]["mineru_backend"] = "standard"
+		c := &ParserComponent{setups: setups}
+		_, err := c.Invoke(t.Context(), nil, map[string]any{
+			"binary":    []byte("%PDF-1.4"),
+			"file_type": "pdf",
+			"name":      "sample.pdf",
+			"tenant_id": "test-tenant",
+		})
+		if err == nil {
+			t.Fatal("Invoke: want error when V1 zip yields no sections")
+		}
+		if !strings.Contains(err.Error(), "no sections") {
+			t.Fatalf("error = %q, want no sections", err.Error())
+		}
 	})
 }
 

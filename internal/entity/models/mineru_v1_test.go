@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -105,7 +106,7 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"running"}`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"},"markdown":{"id":"out-md"}}}]}`))
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
 			w.Header().Set("Content-Type", "application/zip")
 			_, _ = w.Write(zipBuf)
@@ -141,10 +142,10 @@ func TestParseMinerUV1UploadJobDownload(t *testing.T) {
 }
 
 func TestMinerUV1DownloadStripsAuthOnCrossOriginRedirect(t *testing.T) {
-	var sawAuth bool
+	var sawAuth atomic.Bool
 	redirect := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "" {
-			sawAuth = true
+			sawAuth.Store(true)
 		}
 		_, _ = w.Write([]byte("artifact"))
 	}))
@@ -166,7 +167,7 @@ func TestMinerUV1DownloadStripsAuthOnCrossOriginRedirect(t *testing.T) {
 	if body == nil || string(body) != "artifact" {
 		t.Fatalf("body = %q", body)
 	}
-	if sawAuth {
+	if sawAuth.Load() {
 		t.Fatal("Authorization must not be forwarded to a cross-origin redirect target")
 	}
 }
@@ -235,7 +236,7 @@ func TestParseMinerUV1ZipDownloadFailureFallsBackToMarkdown(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
 			_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
 		case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
-			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"id":"out-zip"},"markdown":{"id":"out-md"}}}]}`))
+			_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"doc.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
 			http.Error(w, "zip gone", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
@@ -260,9 +261,9 @@ func TestParseMinerUV1ZipDownloadFailureFallsBackToMarkdown(t *testing.T) {
 
 func TestMinerUMarkdownFromZip(t *testing.T) {
 	buf := minerUTestZip(t, "out.md", "# Title\n")
-	md, err := MinerUMarkdownFromZip(buf)
+	md, err := minerUMarkdownFromZip(buf)
 	if err != nil {
-		t.Fatalf("MinerUMarkdownFromZip: %v", err)
+		t.Fatalf("minerUMarkdownFromZip: %v", err)
 	}
 	if md != "# Title\n" {
 		t.Fatalf("md = %q", md)

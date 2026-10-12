@@ -558,6 +558,7 @@ func dispatchMinerUPDF(
 			if extractErr != nil {
 				return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
 			}
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
 		}
 		var parts []string
 		for _, s := range sections {
@@ -577,6 +578,9 @@ func dispatchMinerUPDF(
 	sections, err := mineruExtractSections(zipBytes)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
+	}
+	if len(sections) == 0 {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
 	}
 
 	var parts []string

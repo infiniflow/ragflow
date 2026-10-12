@@ -442,7 +442,7 @@ func ParseMinerUV1(ctx context.Context, baseURL, apiKey, filename string, conten
 		}
 	}
 	if result.Markdown == "" && len(result.Zip) > 0 {
-		if md, err := MinerUMarkdownFromZip(result.Zip); err == nil {
+		if md, err := minerUMarkdownFromZip(result.Zip); err == nil {
 			result.Markdown = md
 		}
 	}
@@ -511,8 +511,8 @@ func minerUV1DownloadFile(ctx context.Context, client *http.Client, baseURL, tok
 	return body, nil
 }
 
-// MinerUMarkdownFromZip prefers a .md member, then concatenates content_list.json text.
-func MinerUMarkdownFromZip(zipBytes []byte) (string, error) {
+// minerUMarkdownFromZip prefers a .md member, then concatenates content_list.json text.
+func minerUMarkdownFromZip(zipBytes []byte) (string, error) {
 	zipReader, err := zip.NewReader(bytes.NewReader(zipBytes), int64(len(zipBytes)))
 	if err != nil {
 		return "", fmt.Errorf("open zip: %w", err)
