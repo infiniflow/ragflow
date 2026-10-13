@@ -1,6 +1,5 @@
 import { renderHook } from '@testing-library/react';
 import { useForm } from 'react-hook-form';
-import type { FieldValues } from 'react-hook-form';
 import { useWatchFormChange } from '../use-watch-change';
 
 const mockUpdateNodeForm = jest.fn();
@@ -12,7 +11,7 @@ jest.mock('../../../store', () => ({
 
 test('exposes webhook section fields as Begin output references', () => {
   renderHook(() => {
-    const form = useForm<FieldValues>({
+    const form = useForm<Record<string, any>>({
       defaultValues: {
         mode: 'Webhook',
         schema: {
