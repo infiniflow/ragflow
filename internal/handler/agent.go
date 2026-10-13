@@ -1304,11 +1304,30 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		c.Writer.Header().Set("Connection", "keep-alive")
 		emitted := false
 		doneSent := false
-		for ev := range events {
+		// Heartbeat: long model/tool pauses leave the SSE connection
+		// fully idle and intermediate proxies drop it, killing the run
+		// mid-stream. A lightweight ping every 20s keeps the path alive.
+		// The "ping" type is ignored by clients that filter known events.
+		heartbeat := time.NewTicker(20 * time.Second)
+		defer heartbeat.Stop()
+	streamLoop:
+		for {
+			var ev canvas.RunEvent
+			var ok bool
+			select {
+			case ev, ok = <-events:
+				if !ok {
+					break streamLoop
+				}
+			case <-heartbeat.C:
+				ev = canvas.RunEvent{Type: "ping", Data: "{}"}
+			}
 			if ev.Type == "error" {
 				ev = convertAgentRunErrorToMessage(ev)
 			}
-			emitted = true
+			if ev.Type != "ping" {
+				emitted = true
+			}
 			if ev.Type == "done" {
 				doneSent = true
 			}
