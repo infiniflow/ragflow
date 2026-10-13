@@ -21,33 +21,57 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/url"
 	"ragflow/internal/common"
 	"strings"
 )
 
 // azureAPIVersion is the Azure OpenAI REST API version sent as the
+// api-version query parameter when the instance does not configure one.
 const azureAPIVersion = "2024-10-21"
 
-// azureAPIKey extracts the API key from the stored api_key. When an API
-// version is set, the model settings form stores api_key as a JSON object:
+// azureStreamUsageAPIVersion is the first API version that accepts
+// stream_options.include_usage.
+const azureStreamUsageAPIVersion = "2024-09-01"
+
+// azureCredentials extracts the API key and API version from the stored
+// api_key. When an API version is set, the model settings form stores
+// api_key as a JSON object:
 //
 //	{"api_key": "...", "api_version": "..."}
 //
-// Otherwise api_key is the plain key.
-func azureAPIKey(apiConfig *APIConfig) string {
+// Otherwise api_key is the plain key and azureAPIVersion applies.
+func azureCredentials(apiConfig *APIConfig) (apiKey, apiVersion string) {
 	if apiConfig == nil || apiConfig.ApiKey == nil {
-		return ""
+		return "", azureAPIVersion
 	}
 	key := strings.TrimSpace(*apiConfig.ApiKey)
 	if strings.HasPrefix(key, "{") {
 		var bundle struct {
-			APIKey string `json:"api_key"`
+			APIKey     string `json:"api_key"`
+			APIVersion string `json:"api_version"`
 		}
 		if err := json.Unmarshal([]byte(key), &bundle); err == nil {
-			return strings.TrimSpace(bundle.APIKey)
+			apiVersion = strings.TrimSpace(bundle.APIVersion)
+			if apiVersion == "" {
+				apiVersion = azureAPIVersion
+			}
+			return strings.TrimSpace(bundle.APIKey), apiVersion
 		}
 	}
-	return key
+	return key, azureAPIVersion
+}
+
+// azureSupportsStreamUsage reports whether apiVersion accepts
+// stream_options.include_usage. Dated versions (YYYY-MM-DD, optionally with a
+// -preview suffix) are compared by date; undated ones such as "preview" and
+// "latest" track the newest API.
+func azureSupportsStreamUsage(apiVersion string) bool {
+	const dateLen = len(azureStreamUsageAPIVersion)
+	if len(apiVersion) < dateLen || apiVersion[0] < '0' || apiVersion[0] > '9' {
+		return true
+	}
+	return apiVersion[:dateLen] >= azureStreamUsageAPIVersion
 }
 
 // AzureOpenAIModel implements ModelDriver for Azure OpenAI.
@@ -65,7 +89,8 @@ func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureO
 			// Azure OpenAI authenticates with the non-standard "api-key"
 			// header instead of "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {
-				return "api-key", azureAPIKey(cfg)
+				apiKey, _ := azureCredentials(cfg)
+				return "api-key", apiKey
 			},
 		},
 	}
@@ -82,16 +107,16 @@ func (a *AzureOpenAIModel) Name() string {
 // checkAPIConfig rejects a missing API key, including a stored JSON object
 // whose api_key field is empty.
 func (a *AzureOpenAIModel) checkAPIConfig(apiConfig *APIConfig) error {
-	if azureAPIKey(apiConfig) == "" {
+	if apiKey, _ := azureCredentials(apiConfig); apiKey == "" {
 		return fmt.Errorf("api key is required")
 	}
 	return nil
 }
 
 // deploymentURL builds a deployment-scoped data-plane URL of the form
-func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op string) string {
+func (a *AzureOpenAIModel) deploymentURL(baseURL, deployment, op, apiVersion string) string {
 	return fmt.Sprintf("%s/deployments/%s/%s?api-version=%s",
-		strings.TrimRight(baseURL, "/"), deployment, op, azureAPIVersion)
+		strings.TrimRight(baseURL, "/"), deployment, op, url.QueryEscape(apiVersion))
 }
 
 // ChatWithMessages sends multiple messages with roles and returns the response.
@@ -113,7 +138,8 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
+	_, apiVersion := azureCredentials(apiConfig)
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat, apiVersion)
 
 	// Azure preserves its own body shape (no "model" field; deployment is in
 	// the URL; temperature defaults to 1) rather than using buildRequestBody
@@ -168,7 +194,8 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		return err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat)
+	_, apiVersion := azureCredentials(apiConfig)
+	url := a.deploymentURL(baseURL, modelName, a.baseModel.URLSuffix.Chat, apiVersion)
 
 	reqBody := map[string]interface{}{
 		"messages": buildChatMessages(messages),
@@ -192,8 +219,10 @@ func (a *AzureOpenAIModel) ChatStreamlyWithSender(ctx context.Context, modelName
 
 	// Request token usage in streaming response. Azure OpenAI only
 	// includes usage in the final chunk when stream_options.include_usage
-	// is set.
-	reqBody["stream_options"] = map[string]any{"include_usage": true}
+	// is set, and rejects the option on API versions that predate it.
+	if azureSupportsStreamUsage(apiVersion) {
+		reqBody["stream_options"] = map[string]any{"include_usage": true}
+	}
 
 	return a.baseModel.doStreamRequest(ctx, url, apiConfig, reqBody, streamCallTimeout, func(body io.ReadCloser) error {
 		return HandleStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig, sender)
@@ -226,7 +255,8 @@ func (a *AzureOpenAIModel) Embed(ctx context.Context, modelName *string, request
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := a.deploymentURL(baseURL, *modelName, a.baseModel.URLSuffix.Embedding)
+	_, apiVersion := azureCredentials(apiConfig)
+	url := a.deploymentURL(baseURL, *modelName, a.baseModel.URLSuffix.Embedding, apiVersion)
 
 	// As with chat, the deployment is in the URL path, so no "model" field.
 	reqBody := map[string]interface{}{
@@ -270,8 +300,9 @@ func (a *AzureOpenAIModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
+	_, apiVersion := azureCredentials(apiConfig)
 	url := fmt.Sprintf("%s/%s?api-version=%s",
-		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, azureAPIVersion)
+		strings.TrimRight(baseURL, "/"), a.baseModel.URLSuffix.Models, url.QueryEscape(apiVersion))
 
 	body, err := a.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {

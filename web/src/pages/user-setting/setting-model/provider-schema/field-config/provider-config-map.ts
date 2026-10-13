@@ -76,7 +76,7 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         type: FormFieldType.Text,
         required: false,
         placeholder: 'apiVersionMessage',
-        defaultValue: '2024-02-01',
+        defaultValue: '2024-10-21',
       },
     ],
     verifyTransform: (values) => ({
