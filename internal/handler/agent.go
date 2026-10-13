@@ -483,6 +483,9 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
+	// Canvas runs stream for minutes; lift the server-level WriteTimeout
+	// before starting SSE (same as the other streaming endpoints).
+	clearResponseWriteDeadline(c)
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -1314,6 +1317,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// line — the front-end's use-send-message.ts parser feeds each
 		// `data:` line directly into JSON.parse and expects the event type
 		// in the JSON object's top-level `event` field.
+		// Long agentic runs stream for minutes; lift WriteTimeout first.
+		clearResponseWriteDeadline(c)
 		c.Writer.Header().Set("Content-Type", "text/event-stream")
 		c.Writer.Header().Set("Cache-Control", "no-cache")
 		c.Writer.Header().Set("Connection", "keep-alive")
