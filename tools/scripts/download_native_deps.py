@@ -5,6 +5,7 @@
 # requires-python = ">=3.10"
 # dependencies = [
 #   "requests",
+#   "huggingface-hub",
 # ]
 # ///
 
@@ -12,9 +13,19 @@
 # office_oxide / onnxruntime) and unpack them into ~/ragflow-native-libs, so
 # build.sh can compile the Go server without network access.
 #
-# This is the "build-facing" half of the dependency download split; the
-# "image-facing" half (cl100k BPE table, stagehand server binaries, DeepDoc
-# .ort weights, embedding tokenizer assets) lives in ragflow_deps/download_deps.py.
+# This is the LOCAL-DEV one-stop: it also fetches the runtime resources the Go
+# server needs to actually RUN, parse documents and count tokens (the cl100k
+# BPE table, the DeepDoc `.ort` weights for the in-process PDF/table backend,
+# and the embedding tokenizer assets). Run it ONCE and the local environment is
+# ready — you do NOT also need download_deps.py for local development.
+#
+# The image-facing counterpart ragflow_deps/download_deps.py fetches the same
+# runtime resources PLUS the stagehand server binary (used by the Browser
+# component) and skips the native `.a` files, because the build stage bakes
+# those into the server binary. Both scripts land the shared runtime resources
+# at the SAME paths, so running one after the other never re-downloads an
+# already-present asset.
+#
 # All version numbers and URLs are defined in the block below; bump a version
 # there, not at the call sites.
 #
@@ -374,8 +385,181 @@ def _download_ort_archive(archive_path):
         shutil.rmtree(version_dir)
 
 
+# ── Runtime resources the local Go dev server also needs ───────────────────
+# The build-facing native `.a` libs above let the server LINK; these let it
+# RUN, parse documents and count tokens. Fetched here too so a developer runs
+# THIS script once and the environment is ready. Landing paths match
+# ragflow_deps/download_deps.py, so re-running that image script never
+# re-downloads an already-present asset. stagehand is deliberately NOT fetched
+# here (Browser component only) — that is download_deps.py's job for images.
+
+
+# cl100k BPE table. Hosted on Azure blob storage (NOT a GitHub release), so the
+# GitHub mirror prefix does not apply and is deliberately omitted.
+def cl100k_url() -> str:
+    return "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+
+
+HF_DEEPDOC_REPO = "InfiniFlow/deepdoc"
+HF_DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
+
+
+# Single huggingface_hub import seam, so the module stays importable (and its
+# unit tests stay huggingface-free) without the dep installed.
+def _hf_download(repo_id, filename, local_dir):
+    """Lazy huggingface_hub import + download into LOCAL_DIR."""
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo_id=repo_id, filename=filename, local_dir=local_dir)
+
+
+def download_cl100k():
+    """Fetch the cl100k BPE table into ragflow_deps/ (skip if already present)."""
+    target = os.path.join(RAGFLOW_DEPS_DIR, "cl100k_base.tiktoken")
+    if os.path.isfile(target) and os.path.getsize(target) > 0:
+        print("  ✓ cl100k_base.tiktoken already present")
+        return
+    print(f"Downloading cl100k_base.tiktoken from {cl100k_url()}...")
+    download_with_progress(cl100k_url(), target)
+
+
+def load_tokenizer_assets(manifest=None):
+    """Read ragflow_deps/tokenizer_assets.txt (the single manifest, also
+    cross-checked by internal/tokenizer/tokenizer_assets_consistency_test.go)
+    and return its entries as (repo, file, kind) tuples.
+
+    Fetched per file, not by snapshot: these repos also carry multi-GB weights
+    we do not want. Missing assets fail dependency preparation."""
+    if manifest is None:
+        manifest = os.path.join(RAGFLOW_DEPS_DIR, "tokenizer_assets.txt")
+    if not os.path.isfile(manifest):
+        raise RuntimeError(f"tokenizer asset manifest not found: {manifest}")
+    assets = []
+    with open(manifest, encoding="utf-8") as file:
+        for line_no, raw in enumerate(file, start=1):
+            line = raw.strip()
+            if not line or line.startswith("#"):
+                continue
+            fields = line.split()
+            if len(fields) != 3:
+                raise RuntimeError(f"{manifest}:{line_no}: malformed entry {line!r} (want 'repo file kind')")
+            repo, filename, kind = fields
+            if kind not in ("runtime", "oracle"):
+                raise RuntimeError(f"{manifest}:{line_no}: unknown kind {kind!r} for {repo}/{filename}")
+            if "/" not in repo or not filename:
+                raise RuntimeError(f"{manifest}:{line_no}: malformed repo/file {repo}/{filename}")
+            assets.append((repo, filename, kind))
+    if not assets:
+        raise RuntimeError(f"{manifest} lists no tokenizer assets")
+    return assets
+
+
+def download_go_models(use_china_mirrors=False):
+    """Download the Go DeepDoc `.ort` weights so a Go dev can run the in-process
+    backend with no further setup.
+
+    Written into the repo's canonical model directory
+    internal/rag/res/deepdoc/ (one level up from ragflow_deps/). The Go server
+    auto-discovers that directory, and build.sh --test-native defaults MODEL_DIR
+    there too. A copy also lands under ragflow_deps/huggingface.co/InfiniFlow/deepdoc/
+    to keep the dependency image's existing build-context layout."""
+    if use_china_mirrors:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    target_dir = os.path.join(REPO_ROOT, "internal", "rag", "res", "deepdoc")
+    missing = []
+    for fname in HF_DEEPDOC_MODEL_FILES:
+        dest = os.path.join(target_dir, fname)
+        if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+            print(f"  ✓ {fname} already present")
+            continue
+        print(f"Downloading deepdoc model {fname}...")
+        try:
+            _hf_download(repo_id=HF_DEEPDOC_REPO, filename=fname, local_dir=target_dir)
+            if not os.path.isfile(dest) or os.path.getsize(dest) == 0:
+                raise RuntimeError(f"Empty or missing model: {dest}")
+        except Exception as e:  # noqa: BLE001 - collected and surfaced below
+            missing.append((fname, e))
+    if missing:
+        for fname, e in missing:
+            print(f"  ERROR: failed to download {fname}: {e}", file=sys.stderr)
+        print(
+            "\nThe Go in-process DeepDoc backend loads ONLY the .ort weights listed in\n"
+            "HF_DEEPDOC_MODEL_FILES. They are fetched from "
+            f"{HF_DEEPDOC_REPO} into:\n  {target_dir}\n"
+            "Without them the backend cannot serve — the server exits with a fatal\n"
+            '"no in-process DeepDoc backend serving". To recover:\n'
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or copy the missing files into that directory by hand.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    # Keep the dependency image's existing huggingface.co build-context layout.
+    image_dir = os.path.join(RAGFLOW_DEPS_DIR, "huggingface.co", HF_DEEPDOC_REPO)
+    os.makedirs(image_dir, exist_ok=True)
+    for fname in HF_DEEPDOC_MODEL_FILES:
+        shutil.copyfile(os.path.join(target_dir, fname), os.path.join(image_dir, fname))
+    print(f"  ✓ Go DeepDoc models ready under {target_dir}")
+
+
+def download_tokenizer_assets(use_china_mirrors=False):
+    """Download the embedding tokenizer assets the Go counters load, into
+    ragflow_deps/huggingface.co/<repo>/<file> (the path internal/tokenizer
+    searches and the one ragflow_deps/Dockerfile builds its image from).
+
+    A missing asset is fatal: models declaring its tokenizer refuse ingestion."""
+    if use_china_mirrors:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    base = os.path.join(RAGFLOW_DEPS_DIR, "huggingface.co")
+    missing = []
+    try:
+        entries = load_tokenizer_assets()
+    except Exception as e:  # noqa: BLE001 - manifest missing/malformed is fatal
+        missing.append(("<manifest>", "<manifest>", e))
+    else:
+        for repo_id, filename, _kind in entries:
+            target_dir = os.path.join(base, repo_id)
+            target_file = os.path.join(target_dir, filename)
+            if os.path.isfile(target_file) and os.path.getsize(target_file) > 0:
+                print(f"  ✓ {repo_id}/{filename} already present")
+                continue
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"Downloading tokenizer asset {repo_id}/{filename}...")
+            try:
+                _hf_download(repo_id=repo_id, filename=filename, local_dir=target_dir)
+                if not os.path.isfile(target_file) or os.path.getsize(target_file) == 0:
+                    raise RuntimeError(f"Empty or missing tokenizer asset: {target_file}")
+            except Exception as e:  # noqa: BLE001 - collected and surfaced below
+                missing.append((repo_id, filename, e))
+    if missing:
+        for repo_id, filename, e in missing:
+            print(f"  ERROR: could not fetch {repo_id}/{filename}: {e}", file=sys.stderr)
+        print(
+            "\nThe embedding tokenizer counters in internal/tokenizer load these files from\n"
+            f"  {base}\n"
+            "Without one, models that declare its tokenizer cannot be ingested.\n"
+            "The runtime images refuse to build on the same condition, so this script fails\n"
+            "instead of handing a broken tree to the image build. To recover:\n"
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or point MODEL_ASSETS_DIR at a directory holding the same layout.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("  ✓ embedding tokenizer assets ready")
+
+
 def main():
-    parser = argparse.ArgumentParser(description="Download the native static libraries the Go build links")
+    """Download the native static libraries the Go build links, then the runtime
+    resources (cl100k BPE table, DeepDoc .ort weights, embedding tokenizer assets)
+    the local Go dev server needs to run, parse and count tokens.
+
+    This is the local-dev one-stop: one invocation readies the environment. The
+    Browser component's server binary is intentionally NOT fetched here — that
+    is the image script's job. Run `uv run ragflow_deps/download_deps.py` for the
+    full image resources (it adds that binary and skips the native .a, which the
+    build stage bakes into the binary)."""
+    parser = argparse.ArgumentParser(description="Download the native static libraries and runtime resources the local Go dev server needs")
     parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
     args = parser.parse_args()
     if args.china_mirrors:
@@ -453,9 +637,24 @@ def main():
         print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
         sys.exit(1)
 
+    # The Go server also needs the runtime resources (cl100k BPE table, the
+    # DeepDoc .ort weights for in-process PDF/table parsing, the embedding
+    # tokenizer assets for token counting) to actually RUN and ingest — not
+    # just link. Fetch them here too so a local developer runs THIS script
+    # once and the environment is ready. The Browser component's server binary
+    # is fetched by the image script, not here.
+    print("== cl100k_base.tiktoken ==")
+    download_cl100k()
+    print("== DeepDoc models ==")
+    download_go_models(args.china_mirrors)
+    print("== tokenizer assets ==")
+    download_tokenizer_assets(args.china_mirrors)
+
     print()
     print(f"✓ Native build libraries ready under {NATIVE_LIBS_DIR}/")
     print("  Run: bash build.sh (it will find them without network access).")
+    print("  Runtime resources (cl100k / DeepDoc .ort / tokenizer) are also in place,")
+    print("  so the local Go server is ready to build, run, parse and count tokens.")
 
 
 if __name__ == "__main__":

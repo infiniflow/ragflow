@@ -12,12 +12,14 @@
 # consumer shares one name convention. These tests pin that rename, the stale-dir
 # pruning, the archive member sanitization, and the atomic download behaviour.
 
+import importlib.util
 import io
 import os
 import tarfile
 import threading
 import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from unittest import mock
 
 import download_native_deps as native
 import pytest
@@ -179,3 +181,170 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     assert (target / "existing").read_bytes() == b"keep"
     assert not (target / "lib/library.a").exists()
     assert sorted(path.name for path in tmp_path.iterdir()) == ["native", "outside", "unsafe.tar.gz"]
+
+
+# ── Local-dev one-stop: the native downloader must also fetch the runtime
+# resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
+# script ONCE and the Go server is ready to build, run, parse and count — but it
+# must NOT fetch stagehand (that is the image script's job). ──────────────────
+
+
+@pytest.fixture
+def native_dirs(tmp_path, monkeypatch):
+    """Point the native script's repo-anchored paths at a temp tree so the
+    runtime-resource downloads written by tests never touch the real repo."""
+    deps = tmp_path / "ragflow_deps"
+    deps.mkdir()
+    root = tmp_path / "repo"
+    root.mkdir()
+    monkeypatch.setattr(native, "RAGFLOW_DEPS_DIR", str(deps))
+    monkeypatch.setattr(native, "REPO_ROOT", str(root))
+    return deps, root
+
+
+def _fake_hf(repo_id, filename, local_dir):
+    """Stand-in for huggingface_hub.hf_hub_download that writes a real file so
+    downstream copy/validate steps behave like the real downloader."""
+    os.makedirs(local_dir, exist_ok=True)
+    with open(os.path.join(local_dir, filename), "wb") as f:
+        f.write(b"hf-payload")
+
+
+def test_download_cl100k_skips_when_present(native_dirs, download_server, monkeypatch):
+    deps, _ = native_dirs
+    existing = deps / "cl100k_base.tiktoken"
+    existing.write_bytes(b"previous cl100k")
+    monkeypatch.setattr(native, "cl100k_url", lambda: f"{download_server}/complete")
+    native.download_cl100k()
+    assert existing.read_bytes() == b"previous cl100k"
+
+
+def test_download_cl100k_downloads_when_missing(native_dirs, download_server, monkeypatch):
+    deps, _ = native_dirs
+    monkeypatch.setattr(native, "cl100k_url", lambda: f"{download_server}/complete")
+    native.download_cl100k()
+    assert (deps / "cl100k_base.tiktoken").read_bytes() == b"payload"
+
+
+def test_download_go_models_skips_when_present(native_dirs, monkeypatch):
+    _, root = native_dirs
+    deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
+    deepdoc_dir.mkdir(parents=True)
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        (deepdoc_dir / fname).write_bytes(b"already here")
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_go_models()
+    # Already-present files means hf_hub_download is never called.
+    assert fake.call_count == 0
+
+
+def test_download_go_models_downloads_when_missing(native_dirs, monkeypatch):
+    deps, root = native_dirs
+    monkeypatch.setattr(native, "_hf_download", _fake_hf)
+    native.download_go_models()
+    deepdoc_dir = root / "internal" / "rag" / "res" / "deepdoc"
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        assert (deepdoc_dir / fname).is_file(), f"missing DeepDoc model {fname}"
+    # The image-layout copy under ragflow_deps/huggingface.co must also exist.
+    for fname in native.HF_DEEPDOC_MODEL_FILES:
+        assert (deps / "huggingface.co" / native.HF_DEEPDOC_REPO / fname).is_file()
+
+
+def test_download_go_models_fails_loud(native_dirs, monkeypatch):
+    monkeypatch.setattr(
+        native,
+        "_hf_download",
+        lambda repo_id, filename, local_dir: (_ for _ in ()).throw(RuntimeError("hf down")),
+    )
+    with pytest.raises(SystemExit) as exc:
+        native.download_go_models()
+    assert exc.value.code == 1
+
+
+def test_download_tokenizer_assets_skips_when_present(native_dirs, monkeypatch):
+    deps, _ = native_dirs
+    manifest = deps / "tokenizer_assets.txt"
+    manifest.write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
+    target = deps / "huggingface.co" / "InfiniFlow/deepdoc" / "cl100k_base.tiktoken"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"already here")
+    fake = mock.MagicMock(side_effect=_fake_hf)
+    monkeypatch.setattr(native, "_hf_download", fake)
+    native.download_tokenizer_assets()
+    assert fake.call_count == 0
+
+
+def test_download_tokenizer_assets_downloads_when_missing(native_dirs, monkeypatch):
+    deps, _ = native_dirs
+    manifest = deps / "tokenizer_assets.txt"
+    manifest.write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
+    monkeypatch.setattr(native, "_hf_download", _fake_hf)
+    native.download_tokenizer_assets()
+    assert (deps / "huggingface.co" / "InfiniFlow/deepdoc" / "cl100k_base.tiktoken").is_file()
+
+
+def test_download_tokenizer_assets_fails_loud(native_dirs, monkeypatch):
+    deps, _ = native_dirs
+    (deps / "tokenizer_assets.txt").write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
+    monkeypatch.setattr(
+        native,
+        "_hf_download",
+        lambda repo_id, filename, local_dir: (_ for _ in ()).throw(RuntimeError("hf down")),
+    )
+    with pytest.raises(SystemExit) as exc:
+        native.download_tokenizer_assets()
+    assert exc.value.code == 1
+
+
+def test_download_tokenizer_assets_manifest_missing_fails_loud(native_dirs):
+    # No tokenizer_assets.txt is written. load_tokenizer_assets raises while the
+    # for-loop is being built (outside the per-asset try), so the function must
+    # still fail loud (SystemExit) rather than leaking a raw traceback.
+    with pytest.raises(SystemExit) as exc:
+        native.download_tokenizer_assets()
+    assert exc.value.code == 1
+
+
+def test_load_tokenizer_assets_parses_manifest(native_dirs):
+    deps, _ = native_dirs
+    manifest = deps / "tokenizer_assets.txt"
+    manifest.write_text("# comment\n\nInfiniFlow/deepdoc cl100k_base.tiktoken runtime\nX/y.bin somefile.bin oracle\n")
+    assets = native.load_tokenizer_assets()
+    assert assets == [
+        ("InfiniFlow/deepdoc", "cl100k_base.tiktoken", "runtime"),
+        ("X/y.bin", "somefile.bin", "oracle"),
+    ]
+
+
+def test_load_tokenizer_assets_rejects_malformed(native_dirs):
+    deps, _ = native_dirs
+    manifest = deps / "tokenizer_assets.txt"
+    manifest.write_text("InfiniFlow/deepdoc only-two-fields\n")
+    with pytest.raises(RuntimeError, match="malformed"):
+        native.load_tokenizer_assets()
+
+
+def test_native_script_does_not_fetch_stagehand():
+    # Partition contract: the local-dev one-stop must not pull the Browser
+    # component's stagehand binary — that is download_deps.py's job for images.
+    assert not hasattr(native, "stagehand_url")
+    assert not hasattr(native, "_install_stagehand")
+    assert "stagehand" not in native.main.__doc__.lower()
+
+
+# ── Image script (download_deps.py) must stay runtime-resources only: it must
+# NOT handle the native .a archives (the build stage bakes those into the
+# binary). Imported by path inside the test so the import lives next to the
+# native script and never touches module import timing. ──────────────────────
+
+
+def test_image_script_does_not_handle_native_archives():
+    deps_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "ragflow_deps", "download_deps.py")
+    assert os.path.isfile(deps_path), f"download_deps.py not found at {deps_path}"
+    spec = importlib.util.spec_from_file_location("download_deps_img", deps_path)
+    img = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(img)
+    assert not hasattr(img, "extract_onnxruntime")
+    assert not hasattr(img, "_extract_native_archive")
+    assert "onnxruntime" not in (img.__doc__ or "").lower()

@@ -9,15 +9,18 @@
 # ]
 # ///
 
-# This script prepares the runtime / image resources on Linux x86_64: the
-# cl100k BPE table, the stagehand-server binaries (installed into the Go SDK's
-# cache), the Go DeepDoc `.ort` weights (det/layout/tsr/rec.ort + ocr.res), and
-# the embedding tokenizer assets the Go counters load.
+# This script prepares the runtime / image resources that the dependency image
+# ships on Linux x86_64: the cl100k BPE table, the stagehand-server binaries
+# (installed into the Go SDK's cache), the Go DeepDoc `.ort` weights
+# (det/layout/tsr/rec.ort + ocr.res), and the embedding tokenizer assets the Go
+# counters load.
 #
-# This is the "image-facing" half of the dependency download split; the
-# "build-facing" half (the pdfium / pdf_oxide / office_oxide / onnxruntime
-# static libraries build.sh links) lives in download_native_deps.py. All
-# version numbers and URLs are defined in the block below; bump a version
+# This is the CI / image-build one-stop. It fetches the runtime resources PLUS
+# the stagehand server binary, and deliberately does NOT fetch the native static
+# libraries the Go build links — those come from tools/scripts/download_native_deps.py
+# and are baked into the server binary by the build stage. Run this once to ready
+# a dependency image; for local development, run the native downloader instead.
+# All version numbers and URLs are defined in the block below; bump a version
 # there, not at the call sites.
 #
 # Typical workflow:
@@ -277,20 +280,25 @@ def download_tokenizer_assets(use_china_mirrors=False):
 
     base = os.path.join(SCRIPT_DIR, "huggingface.co")
     missing = []
-    for repo_id, filename, _kind in load_tokenizer_assets():
-        target_dir = os.path.join(base, repo_id)
-        target_file = os.path.join(target_dir, filename)
-        if os.path.isfile(target_file) and os.path.getsize(target_file) > 0:
-            print(f"  ✓ {repo_id}/{filename} already present")
-            continue
-        os.makedirs(target_dir, exist_ok=True)
-        print(f"Downloading tokenizer asset {repo_id}/{filename}...")
-        try:
-            hf_hub_download(repo_id=repo_id, filename=filename, local_dir=target_dir)
-            if not os.path.isfile(target_file) or os.path.getsize(target_file) == 0:
-                raise RuntimeError(f"Empty or missing tokenizer asset: {target_file}")
-        except Exception as e:  # noqa: BLE001 - collected and surfaced below
-            missing.append((repo_id, filename, e))
+    try:
+        entries = load_tokenizer_assets()
+    except Exception as e:  # noqa: BLE001 - manifest missing/malformed is fatal
+        missing.append(("<manifest>", "<manifest>", e))
+    else:
+        for repo_id, filename, _kind in entries:
+            target_dir = os.path.join(base, repo_id)
+            target_file = os.path.join(target_dir, filename)
+            if os.path.isfile(target_file) and os.path.getsize(target_file) > 0:
+                print(f"  ✓ {repo_id}/{filename} already present")
+                continue
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"Downloading tokenizer asset {repo_id}/{filename}...")
+            try:
+                hf_hub_download(repo_id=repo_id, filename=filename, local_dir=target_dir)
+                if not os.path.isfile(target_file) or os.path.getsize(target_file) == 0:
+                    raise RuntimeError(f"Empty or missing tokenizer asset: {target_file}")
+            except Exception as e:  # noqa: BLE001 - collected and surfaced below
+                missing.append((repo_id, filename, e))
 
     if missing:
         for repo_id, filename, e in missing:

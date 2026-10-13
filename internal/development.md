@@ -39,13 +39,12 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-uv run tools/scripts/download_native_deps.py   # native static libs (pdfium / pdf_oxide / office_oxide / onnxruntime)
-uv run ragflow_deps/download_deps.py          # cl100k, DeepDoc .ort weights, embedding tokenizer assets, stagehand server
+uv run tools/scripts/download_native_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
 Install `uv` before running the downloaders; it installs each script's declared Python dependencies.
 
-`download_native_deps.py` provisions the Go native libraries under `~/ragflow-native-libs`; `download_deps.py` provisions the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`, and installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64.
+`download_native_deps.py` is the local-dev one-stop: it provisions the Go native libraries under `~/ragflow-native-libs` AND the `.ort` weights, embedding tokenizer assets, and `cl100k_base.tiktoken` into `internal/rag/res/deepdoc/` and `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready. The image-facing `ragflow_deps/download_deps.py` provisions the same runtime resources plus the stagehand driver (installed into the SDK's cache, using the SDK version from `go.mod`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64.
 
 Build the Go resource image from `ragflow_deps/` after preparing these files:
 
