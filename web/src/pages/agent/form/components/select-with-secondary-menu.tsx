@@ -141,7 +141,9 @@ export function GroupedSelectWithSecondaryMenu({
 
       <PopoverContent className="p-0" align="start">
         <Command value={value}>
-          <CommandInput placeholder="Search..." />
+          <CommandInput
+            placeholder={t('ui.searchInProgress', { keyPrefix: '' })}
+          />
           <CommandList className="overflow-auto">
             {options.map((group, idx) => (
               <CommandGroup key={idx} heading={group.label}>

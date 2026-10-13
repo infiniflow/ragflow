@@ -330,7 +330,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
                 onClick={handleRemove}
                 size="icon"
                 className="border-background focus-visible:border-background absolute -top-2 -right-2 size-6 rounded-full border-2 shadow-none z-10"
-                aria-label="Remove image"
+                aria-label={t('ui.removeImage', { keyPrefix: '' })}
                 type="button"
                 data-testid={removeButtonTestId}
               >
@@ -384,7 +384,7 @@ export const AvatarUpload = forwardRef<HTMLInputElement, AvatarUploadProps>(
                   <img
                     ref={imageRef}
                     src={imageToCrop}
-                    alt="To crop"
+                    alt={t('ui.toCrop', { keyPrefix: '' })}
                     className="absolute block"
                     style={{
                       transform: `scale(${imageScale})`,

@@ -2,6 +2,7 @@ import {
   JSONSchema,
   JsonSchemaVisualizer,
   SchemaVisualEditor,
+  TranslationProvider,
 } from '@/components/jsonjoy-builder';
 import { KeyInputProps } from '@/components/jsonjoy-builder/components/schema-editor/interface';
 import { Button } from '@/components/ui/button';
@@ -36,18 +37,20 @@ export function SchemaDialog({
         <DialogHeader>
           <DialogTitle> {t('flow.structuredOutput.configuration')}</DialogTitle>
         </DialogHeader>
-        <section className="flex overflow-auto">
-          <div className="flex-1">
-            <SchemaVisualEditor
-              schema={schema}
-              onChange={setSchema}
-              pattern={pattern}
-            />
-          </div>
-          <div className="flex-1">
-            <JsonSchemaVisualizer schema={schema} onChange={setSchema} />
-          </div>
-        </section>
+        <TranslationProvider>
+          <section className="flex overflow-auto">
+            <div className="flex-1">
+              <SchemaVisualEditor
+                schema={schema}
+                onChange={setSchema}
+                pattern={pattern}
+              />
+            </div>
+            <div className="flex-1">
+              <JsonSchemaVisualizer schema={schema} onChange={setSchema} />
+            </div>
+          </section>
+        </TranslationProvider>
         <DialogFooter>
           <DialogClose asChild>
             <Button variant="outline">{t('common.cancel')}</Button>

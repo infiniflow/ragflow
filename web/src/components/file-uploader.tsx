@@ -47,11 +47,17 @@ function FilePreview({ file }: FilePreviewProps) {
   }
 
   return (
-    <FileText strokeWidth={1} className="size-10 text-muted-foreground" aria-hidden="true" />
+    <FileText
+      strokeWidth={1}
+      className="size-10 text-muted-foreground"
+      aria-hidden="true"
+    />
   );
 }
 
 function FileCard({ file, progress, onRemove }: FileCardProps) {
+  const { t: translateUi } = useTranslation();
+
   return (
     <div className="relative flex items-center gap-2.5">
       <div className="flex flex-1 gap-2.5 overflow-hidden">
@@ -86,7 +92,7 @@ function FileCard({ file, progress, onRemove }: FileCardProps) {
           onClick={onRemove}
         >
           <LucideTrash2 className="size-4" aria-hidden="true" />
-          <span className="sr-only">Remove file</span>
+          <span className="sr-only">{translateUi('ui.removeFile')}</span>
         </Button>
       </div>
     </div>

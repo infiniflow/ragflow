@@ -154,7 +154,9 @@ function CodeForm({ node }: INextOperatorForm) {
               <div className="flex items-start gap-2 rounded-md border border-state-error/40 bg-state-error/10 px-3 py-2 text-sm text-text-primary">
                 <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-state-error" />
                 <p>
-                  This CodeExec node uses the deprecated multi-output schema:{' '}
+                  {t('ui.thisCodeExecNodeUsesTheDeprecatedMultiOutputSchema', {
+                    keyPrefix: '',
+                  })}{' '}
                   {legacyOutputs.join(', ')}. Keep one business output here and
                   move field extraction to downstream nodes.
                 </p>
@@ -199,7 +201,7 @@ function CodeForm({ node }: INextOperatorForm) {
         </FormWrapper>
         <div className="space-y-4 p-5">
           <Output list={buildOutputList(displayedBusinessOutputs)}>
-            Business
+            {t('ui.business', { keyPrefix: '' })}
           </Output>
           <Output list={buildOutputList(CodeExecPanelSystemOutputs)}>
             System

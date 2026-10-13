@@ -1,5 +1,7 @@
 'use client';
 
+import { useTranslation } from 'react-i18next';
+
 import {
   FileUpload,
   FileUploadDropzone,
@@ -29,6 +31,8 @@ export function FileUploadDirectUpload({
   onChange,
   maxFiles,
 }: FileUploadDirectUploadProps) {
+  const { t: translateUi } = useTranslation();
+
   const [files, setFiles] = React.useState<File[]>([]);
   const uploadedFilesRef = React.useRef<Record<string, any>[]>(
     Array.isArray(value) ? value : value ? [value] : [],
@@ -111,14 +115,16 @@ export function FileUploadDirectUpload({
           <div className="flex items-center justify-center rounded-full border p-2.5">
             <Upload className="size-6 text-muted-foreground" />
           </div>
-          <p className="font-medium text-sm">Drag & drop files here</p>
+          <p className="font-medium text-sm">
+            {translateUi('ui.dragDropFilesHere')}
+          </p>
           <p className="text-muted-foreground text-xs">
             Or click to browse (max {(maxFiles ?? 5) as number} files)
           </p>
         </div>
         <FileUploadTrigger asChild>
           <Button variant="outline" size="sm" className="mt-2 w-fit">
-            Browse files
+            {translateUi('ui.browseFiles')}
           </Button>
         </FileUploadTrigger>
       </FileUploadDropzone>

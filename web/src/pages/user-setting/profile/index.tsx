@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -105,6 +106,8 @@ const passwordSchema = baseSchema
   });
 
 const ProfilePage: FC = () => {
+  const { t: translateUi } = useTranslation();
+
   const { t } = useTranslate('setting');
 
   const {
@@ -311,7 +314,7 @@ const ProfilePage: FC = () => {
                         </FormLabel>
                         <SelectWithSearch
                           options={timezoneOptions}
-                          placeholder="Select a timeZone"
+                          placeholder={translateUi('ui.selectATimeZone')}
                           onChange={field.onChange}
                           value={field.value}
                         />

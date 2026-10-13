@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -113,6 +114,8 @@ const GoogleDriveTokenField = ({
   value,
   onChange,
 }: GoogleDriveTokenFieldProps) => {
+  const { t: translateUi } = useTranslation();
+
   const [files, setFiles] = useState<File[]>([]);
   const [pendingCredentials, setPendingCredentials] = useState<string>('');
   const [redirectUri, setRedirectUri] = useState('');
@@ -367,12 +370,12 @@ const GoogleDriveTokenField = ({
             ) : null}
             {hasUploadedButUnverified ? (
               <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
-                Needs authorization
+                {translateUi('ui.needsAuthorization')}
               </span>
             ) : null}
             {pendingCredentials && !hasVerifiedTokens ? (
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
-                Uploaded (pending)
+                {translateUi('ui.uploadedPending')}
               </span>
             ) : null}
           </div>
@@ -405,7 +408,9 @@ const GoogleDriveTokenField = ({
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Complete Google verification</DialogTitle>
+            <DialogTitle>
+              {translateUi('ui.completeGoogleVerification')}
+            </DialogTitle>
             <DialogDescription>
               The uploaded client credentials do not contain a refresh token.
               Run the verification flow once to mint reusable tokens.
@@ -413,7 +418,9 @@ const GoogleDriveTokenField = ({
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-1">
-              <label className="text-sm font-medium">Redirect URI</label>
+              <label className="text-sm font-medium">
+                {translateUi('ui.redirectURI')}
+              </label>
               <Input
                 value={redirectUri}
                 placeholder="https://example.com/google-drive/oauth/callback"
@@ -422,7 +429,7 @@ const GoogleDriveTokenField = ({
             </div>
             <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
               <div className="text-sm font-semibold text-foreground">
-                Authorize in browser
+                {translateUi('ui.authorizeInBrowser')}
               </div>
               <p className="mt-2">
                 We will open Google&apos;s consent page in a new window. Sign in
@@ -448,7 +455,7 @@ const GoogleDriveTokenField = ({
                   {webAuthLoading && (
                     <Loader2 className="mr-2 size-4 animate-spin" />
                   )}
-                  Authorize with Google
+                  {translateUi('ui.authorizeWithGoogle')}
                 </Button>
                 {webFlowId ? (
                   <Button
@@ -456,7 +463,7 @@ const GoogleDriveTokenField = ({
                     onClick={handleManualWebCheck}
                     disabled={webStatus === 'success'}
                   >
-                    Refresh status
+                    {translateUi('ui.refreshStatus')}
                   </Button>
                 ) : null}
               </div>

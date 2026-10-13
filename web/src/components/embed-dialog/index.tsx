@@ -305,8 +305,12 @@ window.addEventListener('message',e=>{
             <form className="space-y-5">
               <Tabs defaultValue="embed" className="w-full">
                 <TabsList className="grid w-full grid-cols-2">
-                  <TabsTrigger value="embed">Embed Setup</TabsTrigger>
-                  <TabsTrigger value="widget">Widget Customization</TabsTrigger>
+                  <TabsTrigger value="embed">
+                    {t('ui.embedSetup', { keyPrefix: '' })}
+                  </TabsTrigger>
+                  <TabsTrigger value="widget">
+                    {t('ui.widgetCustomization', { keyPrefix: '' })}
+                  </TabsTrigger>
                 </TabsList>
                 <TabsContent value="embed" className="space-y-5">
                   <FormField
@@ -423,10 +427,15 @@ window.addEventListener('message',e=>{
                 </TabsContent>
                 <TabsContent value="widget" className="space-y-5">
                   <div className="rounded-md border border-border p-3 text-xs text-text-secondary">
-                    These settings apply to the floating widget embed.
+                    {t('ui.theseSettingsApplyToTheFloatingWidgetEmbed', {
+                      keyPrefix: '',
+                    })}
                   </div>
                   <div className="grid gap-4 md:grid-cols-2">
-                    <RAGFlowFormItem name="widgetTitle" label="Widget title">
+                    <RAGFlowFormItem
+                      name="widgetTitle"
+                      label={t('ui.widgetTitle', { keyPrefix: '' })}
+                    >
                       <Input placeholder="Chat Support"></Input>
                     </RAGFlowFormItem>
                     <RAGFlowFormItem name="widgetSubtitle" label="Subtitle">
@@ -434,13 +443,17 @@ window.addEventListener('message',e=>{
                     </RAGFlowFormItem>
                     <RAGFlowFormItem
                       name="widgetFooterText"
-                      label="Footer text"
+                      label={t('ui.footerText', { keyPrefix: '' })}
                     >
-                      <Input placeholder="Powered by RAGFlow"></Input>
+                      <Input
+                        placeholder={t('ui.poweredByRAGFlow', {
+                          keyPrefix: '',
+                        })}
+                      ></Input>
                     </RAGFlowFormItem>
                     <RAGFlowFormItem
                       name="widgetFooterLink"
-                      label="Footer redirect link"
+                      label={t('ui.footerRedirectLink', { keyPrefix: '' })}
                     >
                       <Input placeholder="https://ragflow.io"></Input>
                     </RAGFlowFormItem>
@@ -449,7 +462,9 @@ window.addEventListener('message',e=>{
                       name="widgetAccentColor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Widget accent color</FormLabel>
+                          <FormLabel>
+                            {t('ui.widgetAccentColor', { keyPrefix: '' })}
+                          </FormLabel>
                           <FormControl>
                             <div className="flex items-center gap-3">
                               <Input
@@ -473,7 +488,9 @@ window.addEventListener('message',e=>{
                       name="widgetBackgroundColor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Background color</FormLabel>
+                          <FormLabel>
+                            {t('ui.backgroundColor', { keyPrefix: '' })}
+                          </FormLabel>
                           <FormControl>
                             <div className="flex items-center gap-3">
                               <Input
@@ -497,7 +514,9 @@ window.addEventListener('message',e=>{
                       name="widgetTextColor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Text color</FormLabel>
+                          <FormLabel>
+                            {t('ui.textColor', { keyPrefix: '' })}
+                          </FormLabel>
                           <FormControl>
                             <div className="flex items-center gap-3">
                               <Input
@@ -521,7 +540,9 @@ window.addEventListener('message',e=>{
                       name="widgetHeaderTextColor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Header text color</FormLabel>
+                          <FormLabel>
+                            {t('ui.headerTextColor', { keyPrefix: '' })}
+                          </FormLabel>
                           <FormControl>
                             <div className="flex items-center gap-3">
                               <Input
@@ -545,7 +566,9 @@ window.addEventListener('message',e=>{
                       name="widgetFooterTextColor"
                       render={({ field }) => (
                         <FormItem>
-                          <FormLabel>Footer text color</FormLabel>
+                          <FormLabel>
+                            {t('ui.footerTextColor', { keyPrefix: '' })}
+                          </FormLabel>
                           <FormControl>
                             <div className="flex items-center gap-3">
                               <Input

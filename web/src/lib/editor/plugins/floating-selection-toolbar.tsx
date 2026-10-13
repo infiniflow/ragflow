@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /**
  * FloatingSelectionToolbar — appears when text is selected,
  * provides formatting: heading, bold, italic, code, strikethrough, link, quote.
@@ -26,6 +27,8 @@ import {
 import { useEffect, useRef, useState } from 'react';
 
 export default function FloatingSelectionToolbar() {
+  const { t: translateUi } = useTranslation();
+
   const [editor] = useLexicalComposerContext();
   const [show, setShow] = useState(false);
   const [pos, setPos] = useState({ x: 0, y: 0 });
@@ -272,7 +275,7 @@ export default function FloatingSelectionToolbar() {
             fontWeight: 600,
           }}
           onClick={() => setShowHeadingMenu(!showHeadingMenu)}
-          title="Heading"
+          title={translateUi('ui.heading')}
         >
           {headingLabels[currentBlock] || 'H'} ▾
         </button>
@@ -335,14 +338,14 @@ export default function FloatingSelectionToolbar() {
       <button
         style={currentBlock === 'paragraph' ? activeStyle : btnStyle}
         onClick={setParagraph}
-        title="Paragraph"
+        title={translateUi('ui.paragraph')}
       >
         ¶
       </button>
       <button
         style={currentBlock === 'quote' ? activeStyle : btnStyle}
         onClick={setQuote}
-        title="Quote"
+        title={translateUi('ui.quote')}
       >
         ❝
       </button>
@@ -352,7 +355,7 @@ export default function FloatingSelectionToolbar() {
         <button
           style={currentBlock === 'code' ? activeStyle : btnStyle}
           onClick={() => setShowCodeLang(!showCodeLang)}
-          title="Code Block"
+          title={translateUi('ui.codeBlock')}
         >
           {'{}'}
         </button>
@@ -422,27 +425,31 @@ export default function FloatingSelectionToolbar() {
       />
 
       {/* Inline format controls */}
-      <button style={btnStyle} onClick={() => format('bold')} title="Bold">
+      <button
+        style={btnStyle}
+        onClick={() => format('bold')}
+        title={translateUi('ui.bold')}
+      >
         <strong>B</strong>
       </button>
       <button
         style={{ ...btnStyle, fontStyle: 'italic' }}
         onClick={() => format('italic')}
-        title="Italic"
+        title={translateUi('ui.italic')}
       >
         <em>I</em>
       </button>
       <button
         style={{ ...btnStyle, textDecoration: 'line-through' }}
         onClick={() => format('strikethrough')}
-        title="Strikethrough"
+        title={translateUi('ui.strikethrough')}
       >
         <s>S</s>
       </button>
       <button
         style={{ ...btnStyle, fontFamily: 'monospace' }}
         onClick={() => format('code')}
-        title="Inline Code"
+        title={translateUi('ui.inlineCode')}
       >
         &lt;/&gt;
       </button>

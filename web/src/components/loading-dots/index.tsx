@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -21,8 +22,10 @@ interface LoadingDotsProps {
 }
 
 export function LoadingDots({ className }: LoadingDotsProps) {
+  const { t: translateUi } = useTranslation();
+
   return (
-    <span className={className} aria-label="Loading">
+    <span className={className} aria-label={translateUi('ui.loading')}>
       <span className={styles.dot} />
       <span className={styles.dot} />
       <span className={styles.dot} />

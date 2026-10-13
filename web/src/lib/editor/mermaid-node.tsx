@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /**
  * MermaidNode - A Lexical DecoratorNode for rendering Mermaid diagrams.
  * Ported from Nimbalyst — supports click-to-edit source code.
@@ -186,6 +187,8 @@ interface MermaidComponentProps {
 }
 
 function MermaidComponent({ content, nodeKey, editor }: MermaidComponentProps) {
+  const { t: translateUi } = useTranslation();
+
   const containerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [state, setState] = useState<'loading' | 'error' | 'done'>('loading');
@@ -346,7 +349,7 @@ function MermaidComponent({ content, nodeKey, editor }: MermaidComponentProps) {
             outline: 'none',
             boxSizing: 'border-box',
           }}
-          placeholder="Edit mermaid source..."
+          placeholder={translateUi('ui.editMermaidSourceInProgress')}
         />
         <div
           style={{
@@ -357,8 +360,8 @@ function MermaidComponent({ content, nodeKey, editor }: MermaidComponentProps) {
             gap: 12,
           }}
         >
-          <span>Ctrl+Enter to apply</span>
-          <span>Esc to cancel</span>
+          <span>{translateUi('ui.ctrlEnterToApply')}</span>
+          <span>{translateUi('ui.escToCancel')}</span>
         </div>
       </div>
     );
@@ -412,7 +415,7 @@ function MermaidComponent({ content, nodeKey, editor }: MermaidComponentProps) {
       <div
         style={{ textAlign: 'center', cursor: 'pointer', padding: 8 }}
         onClick={handleDiagramClick}
-        title="Click to edit source"
+        title={translateUi('ui.clickToEditSource')}
       >
         <div
           ref={containerRef}

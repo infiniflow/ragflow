@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -41,6 +42,8 @@ export const PdfSheet = ({
   width = '50vw',
   height,
 }: IProps) => {
+  const { t: translateUi } = useTranslation();
+
   const getDocumentUrl = useGetDocumentUrl(documentId);
   const url = getDocumentUrl(documentId);
   const { highlights, setWidthAndHeight } = useGetChunkHighlights(chunk);
@@ -59,7 +62,7 @@ export const PdfSheet = ({
         }}
       >
         <SheetHeader>
-          <SheetTitle>Document Previewer</SheetTitle>
+          <SheetTitle>{translateUi('ui.documentPreviewer')}</SheetTitle>
         </SheetHeader>
         {url && documentId && (
           <DocumentPreview

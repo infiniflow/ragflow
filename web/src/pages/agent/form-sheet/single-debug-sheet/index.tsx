@@ -179,30 +179,33 @@ const SingleDebugSheet = ({
                     })}
                   >
                     <DebugRow
-                      label="Business Output"
+                      label={t('ui.businessOutput', { keyPrefix: '' })}
                       value={contract?.name || legacyOutputs.join(', ')}
                     />
                     <DebugRow
-                      label="Expected Type"
+                      label={t('ui.expectedType', { keyPrefix: '' })}
                       value={grouped.expectedType}
                     />
-                    <DebugRow label="Actual Type" value={grouped.actualType} />
+                    <DebugRow
+                      label={t('ui.actualType', { keyPrefix: '' })}
+                      value={grouped.actualType}
+                    />
                   </div>
                   {!isEmpty(businessOutputPreview) && (
                     <DebugJsonCard
-                      title="Business Output Value"
+                      title={t('ui.businessOutputValue', { keyPrefix: '' })}
                       value={businessOutputPreview}
                       error={hasError}
                     />
                   )}
                   <DebugJsonCard
-                    title="Raw Result"
+                    title={t('ui.rawResult', { keyPrefix: '' })}
                     value={grouped.rawResult}
                     error={hasError}
                   />
                   <DebugTextCard title="Content" value={grouped.content} />
                   <DebugJsonCard
-                    title="System Outputs"
+                    title={t('ui.systemOutputs', { keyPrefix: '' })}
                     value={grouped.systemOutputs}
                     error={hasError}
                   />

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import HighLightMarkdown from '@/components/highlight-markdown';
 import {
   Timeline,
@@ -98,6 +99,8 @@ export const WorkFlowTimeline = ({
   sendLoading,
   isShare,
 }: LogFlowTimelineProps) => {
+  const { t: translateUi } = useTranslation();
+
   // const getNode = useGraphStore((state) => state.getNode);
 
   const {
@@ -283,7 +286,9 @@ export const WorkFlowTimeline = ({
                               { 'bg-state--error': !isEmpty(x.data.error) },
                             )}
                           >
-                            <span className="sr-only">Online</span>
+                            <span className="sr-only">
+                              {translateUi('ui.online')}
+                            </span>
                           </span>
                         </div>
                       </AccordionTrigger>

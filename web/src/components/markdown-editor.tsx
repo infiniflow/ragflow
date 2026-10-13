@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -33,6 +34,8 @@ export default function MarkdownEditor({
   readOnly = false,
   onWikiLinkClick,
 }: MarkdownEditorProps) {
+  const { t: translateUi } = useTranslation();
+
   const [showSource, setShowSource] = useState(false);
   const [rawContent, setRawContent] = useState(content);
   const contentRef = useRef(content);
@@ -100,7 +103,7 @@ export default function MarkdownEditor({
                   onClick={toggleSource}
                   className="px-2.5 py-1 text-xs font-medium border border-accent-primary rounded bg-accent-primary-10 text-accent-primary hover:bg-accent-primary-20 transition-colors"
                 >
-                  WYSIWYG
+                  {translateUi('ui.wysiwyg')}
                 </button>
               </div>
               <pre className="m-0 font-inherit text-inherit leading-inherit whitespace-pre-wrap">

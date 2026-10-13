@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -97,6 +98,8 @@ function MessageItem({
   isShare,
   nickname,
 }: IProps) {
+  const { t: translateUi } = useTranslation();
+
   const { theme } = useTheme();
   const isAssistant = item.role === MessageType.Assistant;
   const isUser = item.role === MessageType.User;
@@ -231,7 +234,7 @@ function MessageItem({
                         className={startedNodeList(item) ? 'animate-spin' : ''}
                       />
                     </div>
-                    Thinking
+                    {translateUi('ui.thinking')}
                     {showThinking ? <ChevronUp /> : <ChevronDown />}
                   </div>
                 </Button>

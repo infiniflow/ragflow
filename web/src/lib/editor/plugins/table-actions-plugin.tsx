@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /**
  * TableActionsPlugin — floating toolbar for table editing.
  * Appears above the table when cursor is inside it.
@@ -50,6 +51,8 @@ function $readTableInfo(): TableInfo | null {
 }
 
 export default function TableActionsPlugin() {
+  const { t: translateUi } = useTranslation();
+
   const [editor] = useLexicalComposerContext();
   const [show, setShow] = useState(false);
   const [rows, setRows] = useState(0);
@@ -247,12 +250,16 @@ export default function TableActionsPlugin() {
         onClick={handleRemoveRow}
         disabled={rows <= 1}
         style={{ ...btnStyle, opacity: rows <= 1 ? 0.35 : 1 }}
-        title="Delete row"
+        title={translateUi('ui.deleteRow')}
       >
         −R
       </button>
       <span style={countStyle}>{rows}</span>
-      <button onClick={handleAddRow} style={btnStyle} title="Add row">
+      <button
+        onClick={handleAddRow}
+        style={btnStyle}
+        title={translateUi('ui.addRow')}
+      >
         +R
       </button>
 
@@ -270,12 +277,16 @@ export default function TableActionsPlugin() {
         onClick={handleRemoveCol}
         disabled={cols <= 1}
         style={{ ...btnStyle, opacity: cols <= 1 ? 0.35 : 1 }}
-        title="Delete column"
+        title={translateUi('ui.deleteColumn')}
       >
         −C
       </button>
       <span style={countStyle}>{cols}</span>
-      <button onClick={handleAddCol} style={btnStyle} title="Add column">
+      <button
+        onClick={handleAddCol}
+        style={btnStyle}
+        title={translateUi('ui.addColumn')}
+      >
         +C
       </button>
 
@@ -292,21 +303,21 @@ export default function TableActionsPlugin() {
       <button
         onClick={() => setAlignment('left')}
         style={btnStyle}
-        title="Align left"
+        title={translateUi('ui.alignLeft')}
       >
         ⇤
       </button>
       <button
         onClick={() => setAlignment('center')}
         style={btnStyle}
-        title="Align center"
+        title={translateUi('ui.alignCenter')}
       >
         ⇔
       </button>
       <button
         onClick={() => setAlignment('right')}
         style={btnStyle}
-        title="Align right"
+        title={translateUi('ui.alignRight')}
       >
         ⇥
       </button>

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -68,6 +69,8 @@ const parseBoxCredentials = (content?: string): BoxCredentials | null => {
 };
 
 const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
+  const { t: translateUi } = useTranslation();
+
   const [dialogOpen, setDialogOpen] = useState(false);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -344,12 +347,12 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
           <div className="flex flex-wrap items-center gap-2">
             {hasAuthorized ? (
               <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-emerald-700">
-                Authorized
+                {translateUi('ui.authorized')}
               </span>
             ) : null}
             {hasConfigured ? (
               <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-blue-700">
-                Configured
+                {translateUi('ui.configured')}
               </span>
             ) : null}
           </div>
@@ -381,7 +384,9 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
           onEscapeKeyDown={(e) => e.preventDefault()}
         >
           <DialogHeader>
-            <DialogTitle>Configure Box OAuth credentials</DialogTitle>
+            <DialogTitle>
+              {translateUi('ui.configureBoxOAuthCredentials')}
+            </DialogTitle>
             <DialogDescription>
               Enter your Box application&apos;s Client ID, Client Secret, and
               Redirect URI. These values will be stored in the form field and
@@ -391,24 +396,30 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
 
           <div className="space-y-3 pt-2">
             <div className="space-y-1">
-              <label className="text-sm font-medium">Client ID</label>
+              <label className="text-sm font-medium">
+                {translateUi('ui.clientID')}
+              </label>
               <Input
                 value={clientId}
-                placeholder="Enter Box Client ID"
+                placeholder={translateUi('ui.enterBoxClientID')}
                 onChange={(e) => setClientId(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">Client Secret</label>
+              <label className="text-sm font-medium">
+                {translateUi('ui.clientSecret')}
+              </label>
               <Input
                 type="password"
                 value={clientSecret}
-                placeholder="Enter Box Client Secret"
+                placeholder={translateUi('ui.enterBoxClientSecret')}
                 onChange={(e) => setClientSecret(e.target.value)}
               />
             </div>
             <div className="space-y-1">
-              <label className="text-sm font-medium">Redirect URI</label>
+              <label className="text-sm font-medium">
+                {translateUi('ui.redirectURI')}
+              </label>
               <Input
                 value={redirectUri}
                 placeholder="https://example.com/box/oauth/callback"
@@ -418,7 +429,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
             {webStatus !== 'idle' && (
               <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/10 px-4 py-4 text-sm text-muted-foreground">
                 <div className="text-sm font-semibold text-foreground">
-                  Browser authorization
+                  {translateUi('ui.browserAuthorization')}
                 </div>
                 <p
                   className={`mt-2 text-xs ${
@@ -436,7 +447,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
                       size="sm"
                       onClick={handleManualWebCheck}
                     >
-                      Refresh status
+                      {translateUi('ui.refreshStatus')}
                     </Button>
                   </div>
                 ) : null}
@@ -456,7 +467,7 @@ const BoxTokenField = ({ value, onChange }: BoxTokenFieldProps) => {
               {submitLoading && (
                 <Loader2 className="mr-2 size-4 animate-spin" />
               )}
-              Submit & Authorize
+              {translateUi('ui.submitAuthorize')}
             </Button>
           </DialogFooter>
         </DialogContent>

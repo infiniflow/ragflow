@@ -147,22 +147,26 @@ const AddChatChannelModal = ({
                 {runtimeQr && runtimeStatus !== 'connected' ? (
                   <img
                     src={runtimeQr}
-                    alt="WhatsApp QR"
+                    alt={t('ui.whatsAppQR', { keyPrefix: '' })}
                     className="mx-auto w-56 max-w-full rounded-lg border border-border-button bg-white"
                   />
                 ) : runtimeStatus === 'connected' ? (
                   <div className="text-sm text-state-success">
-                    Channel is connected.
+                    {t('ui.channelIsConnected', { keyPrefix: '' })}
                   </div>
                 ) : !runtimeStatus ? (
                   <div className="text-sm text-text-secondary">
-                    QR will appear after the channel starts.
+                    {t('ui.qrWillAppearAfterTheChannelStarts', {
+                      keyPrefix: '',
+                    })}
                   </div>
                 ) : null}
               </div>
             ) : (
               <div className="text-sm text-text-secondary">
-                Save this WhatsApp channel first, then scan the QR code here.
+                {t('ui.saveThisWhatsAppChannelFirstThenScanTheQRCodeHere', {
+                  keyPrefix: '',
+                })}
               </div>
             )}
           </div>

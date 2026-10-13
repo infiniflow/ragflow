@@ -354,7 +354,9 @@ const AgentLogPage: React.FC = () => {
                     className="h-24 text-center"
                   >
                     <Spin size="large">
-                      <span className="sr-only">Loading...</span>
+                      <span className="sr-only">
+                        {t('ui.loadingInProgress', { keyPrefix: '' })}
+                      </span>
                     </Spin>
                   </TableCell>
                 </TableRow>

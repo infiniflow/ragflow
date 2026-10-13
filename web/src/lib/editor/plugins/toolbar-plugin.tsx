@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /**
  * ToolbarPlugin — editor toolbar with Toggle Source and Table of Contents.
  */
@@ -24,6 +25,8 @@ interface Props {
 }
 
 export default function ToolbarPlugin({ onToggleSource, showSource }: Props) {
+  const { t: translateUi } = useTranslation();
+
   const [editor] = useLexicalComposerContext();
   const [showToc, setShowToc] = useState(false);
   const [tocItems, setTocItems] = useState<TOCItem[]>([]);
@@ -97,10 +100,10 @@ export default function ToolbarPlugin({ onToggleSource, showSource }: Props) {
             background: showSource ? 'var(--nim-bg-selected)' : 'transparent',
             color: showSource ? 'var(--nim-primary)' : 'var(--nim-text-muted)',
           }}
-          title="Source"
+          title={translateUi('ui.source')}
         >
           <Code className="size-3.5" />
-          Source
+          {translateUi('ui.source')}
         </button>
         <button
           type="button"
@@ -122,7 +125,7 @@ export default function ToolbarPlugin({ onToggleSource, showSource }: Props) {
             fontFamily: 'inherit',
           }}
         >
-          ☰ Outline
+          {translateUi('ui.outline')}
         </button>
       </div>
 
@@ -154,7 +157,7 @@ export default function ToolbarPlugin({ onToggleSource, showSource }: Props) {
               borderBottom: '1px solid var(--nim-border)',
             }}
           >
-            Table of Contents
+            {translateUi('ui.tableOfContents')}
           </div>
           {tocItems.map((item, i) => (
             <div

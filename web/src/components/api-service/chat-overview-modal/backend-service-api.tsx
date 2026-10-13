@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -21,13 +22,15 @@ import { CopyToClipboardWithText } from '@/components/copy-to-clipboard';
 import { useTranslate } from '@/hooks/common-hooks';
 
 const BackendServiceApi = ({ show }: { show(): void }) => {
+  const { t: translateUi } = useTranslation();
+
   const { t } = useTranslate('chat');
 
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center gap-4">
-          <CardTitle>RAGFlow API</CardTitle>
+          <CardTitle>{translateUi('ui.ragflowApi')}</CardTitle>
           <Button onClick={show}>{t('apiKey')}</Button>
         </div>
       </CardHeader>

@@ -507,7 +507,7 @@ const FloatingChatWidget = () => {
     return (
       <div className="fixed bottom-5 right-5 z-50">
         <div className="bg-red-500 text-white p-4 rounded-lg shadow-lg">
-          Error: No conversation ID provided
+          {t('ui.errorNoConversationIDProvided', { keyPrefix: '' })}
         </div>
       </div>
     );

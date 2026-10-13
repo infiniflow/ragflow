@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { FormContainer } from '@/components/form-container';
 import { TopNFormField } from '@/components/top-n-item';
 import {
@@ -22,6 +23,8 @@ const FormSchema = z.object({
 });
 
 function SearXNGForm() {
+  const { t: translateUi } = useTranslation();
+
   const values = useValues();
 
   const form = useForm<z.infer<typeof FormSchema>>({
@@ -40,7 +43,7 @@ function SearXNGForm() {
           name="searxng_url"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>SearXNG URL</FormLabel>
+              <FormLabel>{translateUi('ui.searxngUrl')}</FormLabel>
               <FormControl>
                 <Input {...field} placeholder="http://localhost:4000" />
               </FormControl>

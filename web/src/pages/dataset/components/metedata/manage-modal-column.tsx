@@ -143,7 +143,7 @@ export const useMetadataColumns = ({
                 <Checkbox
                   checked={row.getIsSelected()}
                   onCheckedChange={(value) => row.toggleSelected(!!value)}
-                  aria-label="Select row"
+                  aria-label={t('ui.selectRow', { keyPrefix: '' })}
                 />
               ),
               enableSorting: false,
@@ -343,20 +343,19 @@ export const useMetadataColumns = ({
                   </div>
                 </Button>
               )}
-              {hasMore &&
-                isRowExpanded && (
-                  // <div className="self-end mt-1">
-                  <Button
-                    variant={'ghost'}
-                    className="bg-transparent px-2 py-1"
-                    onClick={handleToggleExpand}
-                  >
-                    <div className="text-text-secondary">
-                      <ListChevronsDownUp size={14} />
-                    </div>
-                  </Button>
-                  // </div>
-                )}
+              {hasMore && isRowExpanded && (
+                // <div className="self-end mt-1">
+                <Button
+                  variant={'ghost'}
+                  className="bg-transparent px-2 py-1"
+                  onClick={handleToggleExpand}
+                >
+                  <div className="text-text-secondary">
+                    <ListChevronsDownUp size={14} />
+                  </div>
+                </Button>
+                // </div>
+              )}
             </div>
           );
         },

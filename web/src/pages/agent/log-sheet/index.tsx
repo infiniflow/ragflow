@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import {
   Sheet,
   SheetContent,
@@ -23,6 +24,8 @@ export function LogSheet({
   currentMessageId,
   sendLoading,
 }: LogSheetProps) {
+  const { t: translateUi } = useTranslation();
+
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
       <SheetContent
@@ -32,7 +35,7 @@ export function LogSheet({
         <SheetHeader>
           <SheetTitle className="flex items-center gap-1">
             <NotebookText className="size-4" />
-            Log
+            {translateUi('ui.log')}
           </SheetTitle>
         </SheetHeader>
         <section className="max-h-[82vh] overflow-auto mt-6">

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { PageHeader } from '@/components/page-header';
 import {
   Breadcrumb,
@@ -19,6 +20,8 @@ import { useMemo } from 'react';
 import { Outlet, useLocation } from 'react-router';
 
 export default function ChunkPage() {
+  const { t: translateUi } = useTranslation();
+
   const { navigateToDataset, getQueryString, navigateToChunk } =
     useNavigatePage();
   const location = useLocation();
@@ -26,7 +29,7 @@ export default function ChunkPage() {
   const options = useMemo(() => {
     return [
       {
-        label: 'Parsed results',
+        label: translateUi('ui.parsedResults'),
         value: Routes.ParsedResult,
       },
       {
@@ -34,11 +37,11 @@ export default function ChunkPage() {
         value: Routes.ChunkResult,
       },
       {
-        label: 'Result view',
+        label: translateUi('ui.resultView'),
         value: Routes.ResultView,
       },
     ];
-  }, []);
+  }, [translateUi]);
 
   const path = useMemo(() => {
     return location.pathname.split('/').slice(0, 3).join('/');

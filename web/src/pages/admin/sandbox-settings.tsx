@@ -596,7 +596,9 @@ function AdminSandboxSettings() {
                                 <CollapsibleTrigger className="group w-full text-left">
                                   <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
                                     <h4 className="text-sm font-medium text-text-primary">
-                                      Runtime Settings
+                                      {t('ui.runtimeSettings', {
+                                        keyPrefix: '',
+                                      })}
                                     </h4>
                                     <LucideChevronDown className="size-4 text-text-secondary transition-transform group-data-[state=open]:rotate-180" />
                                   </div>
@@ -660,7 +662,9 @@ function AdminSandboxSettings() {
                                               <span className="text-state-error">
                                                 *
                                               </span>
-                                              Authentication
+                                              {t('ui.authentication', {
+                                                keyPrefix: '',
+                                              })}
                                             </h4>
                                             <p className="text-xs text-text-secondary mt-1">
                                               Choose one authentication method
@@ -684,7 +688,9 @@ function AdminSandboxSettings() {
                                                 Password
                                               </TabsTrigger>
                                               <TabsTrigger value="private_key">
-                                                Private Key
+                                                {t('ui.privateKey', {
+                                                  keyPrefix: '',
+                                                })}
                                               </TabsTrigger>
                                             </TabsList>
 
@@ -784,7 +790,9 @@ function AdminSandboxSettings() {
                                         <div className="space-y-4 rounded-md border border-border-button p-4">
                                           <div>
                                             <h4 className="text-sm font-medium text-text-primary">
-                                              Execution
+                                              {t('ui.execution', {
+                                                keyPrefix: '',
+                                              })}
                                             </h4>
                                             <p className="text-xs text-text-secondary mt-1">
                                               Configure the remote workspace and
@@ -879,7 +887,9 @@ function AdminSandboxSettings() {
                                   <div className="flex items-center justify-between rounded-md border border-border-button px-4 py-3 transition-colors hover:bg-bg-card">
                                     <div>
                                       <h4 className="text-sm font-medium">
-                                        Deployment Defaults
+                                        {t('ui.deploymentDefaults', {
+                                          keyPrefix: '',
+                                        })}
                                       </h4>
                                       <p className="text-xs text-text-secondary mt-1">
                                         Read-only values loaded from the current

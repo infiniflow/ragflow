@@ -163,7 +163,9 @@ export function EditMcpForm({
           name="authorization_token"
           render={({ field }) => (
             <FormItem>
-              <FormLabel>Authorization Token</FormLabel>
+              <FormLabel>
+                {t('ui.authorizationToken', { keyPrefix: '' })}
+              </FormLabel>
               <FormControl>
                 <Input
                   placeholder={t('common.mcp.tokenPlaceholder')}

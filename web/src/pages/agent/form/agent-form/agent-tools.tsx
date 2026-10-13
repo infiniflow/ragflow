@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { BlockButton, Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -39,6 +40,8 @@ export function ToolCard({
   isNodeTool = true,
   ...props
 }: ToolCardProps) {
+  const { t: translateUi } = useTranslation();
+
   if (children === Operator.Code) {
     return (
       <Tooltip>
@@ -55,7 +58,7 @@ export function ToolCard({
           </LabelCard>
         </TooltipTrigger>
         <TooltipContent>
-          <p>It doesn't have any config.</p>
+          <p>{translateUi('ui.noConfiguration')}</p>
         </TooltipContent>
       </Tooltip>
     );
