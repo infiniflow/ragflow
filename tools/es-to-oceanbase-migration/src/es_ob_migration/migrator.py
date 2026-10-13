@@ -159,6 +159,7 @@ class ESToOceanBaseMigrator:
             console.print("\n[bold blue]Step 4: Migrating data...[/]")
             data_converter = RAGFlowDataConverter()
 
+            failed_before = progress.failed_documents
             migrated = self._migrate_data(
                 es_index=es_index,
                 ob_table=ob_table,
@@ -169,7 +170,10 @@ class ESToOceanBaseMigrator:
             )
 
             result["migrated_documents"] = migrated
-            result["failed_documents"] = progress.failed_documents
+            result["failed_documents"] = progress.failed_documents - failed_before
+
+            if result["failed_documents"] > 0:
+                raise RuntimeError(f"{result['failed_documents']:,} documents failed to insert; rerun with --resume to retry")
 
             # Step 7: Mark completed
             self.progress_manager.mark_completed(progress)
