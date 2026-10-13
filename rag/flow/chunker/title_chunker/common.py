@@ -60,15 +60,23 @@ class BaseTitleChunker(ABC):
         self.process = process
         self.param = process._param
         self.from_upstream = from_upstream
+        self._preview_record_indexes = []
+        self._preview_strategy_data = {}
 
     async def invoke(self):
+        self.process._title_chunker_debug = None
         self.process.set_output("output_format", "chunks")
         self.process.callback(random.randint(1, 5) / 100.0, self.start_message)
         line_records = self.extract_line_records()
         resolved = self.resolve_levels(line_records)
         chunks = self.build_chunks(line_records, resolved)
         await self.set_chunks(chunks)
+        if self._is_preview_target():
+            self.process._title_chunker_debug = self._build_preview(line_records, resolved)
         self.process.callback(1, "Done.")
+
+    def _is_preview_target(self):
+        return getattr(self.process._canvas, "is_preview_target", lambda _id: False)(self.process._id)
 
     def extract_line_records(self):
         """
@@ -128,17 +136,19 @@ class BaseTitleChunker(ABC):
         return extract_pdf_outlines(source)
 
     @staticmethod
-    def match_regex_level(text, level_group):
+    def match_regex_level(text, level_group, return_rule=False):
         stripped = text.strip()
         for level, pattern in enumerate(level_group, start=1):
             if re.match(pattern, stripped) and not not_bullet(stripped):
+                if return_rule:
+                    return level, level - 1, pattern
                 return level
-        return None
+        return (None, None, None) if return_rule else None
 
     @staticmethod
-    def select_level_group(lines, raw_levels):
+    def select_level_group(lines, raw_levels, return_index=False):
         if not raw_levels:
-            return []
+            return ([], None) if return_index else []
 
         # Select one regex family before assigning numeric levels. Mixing
         # patterns across families would make the level numbers ambiguous and
@@ -163,8 +173,9 @@ class BaseTitleChunker(ABC):
             maximum = hit
 
         if selected < 0:
-            return []
-        return [pattern for pattern in raw_levels[selected] if pattern]
+            return ([], None) if return_index else []
+        selected_patterns = [pattern for pattern in raw_levels[selected] if pattern]
+        return (selected_patterns, selected) if return_index else selected_patterns
 
     @staticmethod
     def match_layout_level(text, layout, fallback_level):
@@ -185,46 +196,58 @@ class BaseTitleChunker(ABC):
 
         max_level = max(level for _, level, _ in outlines) + 1
         levels = []
+        matches = []
         for record in line_records:
             if record["doc_type_kwd"] != "text":
                 levels.append(BODY_LEVEL)
+                matches.append(None)
                 continue
             text = record["text"]
             for outline_text, level, _ in outlines:
                 if self._outline_similarity(outline_text, text) > 0.8:
                     levels.append(level + 1)
+                    matches.append({"source": "outline", "pattern": None, "rule_index": None})
                     break
             else:
                 levels.append(BODY_LEVEL)
+                matches.append(None)
 
         return {
             "levels": levels,
             "most_level": max(1, max_level - 1),
             "source": "outline",
+            "matches": matches,
         }
 
     def resolve_frequency_levels(self, line_records):
-        level_group = self.select_level_group(
+        level_group, level_group_index = self.select_level_group(
             [record["text"] for record in line_records],
             self.param.levels,
+            return_index=True,
         )
         fallback_level = len(level_group) + 1
         levels = []
+        matches = []
         for record in line_records:
             if record["doc_type_kwd"] != "text":
                 levels.append(BODY_LEVEL)
+                matches.append(None)
                 continue
-            level = self.match_regex_level(record["text"], level_group)
+            level, rule_index, pattern = self.match_regex_level(record["text"], level_group, return_rule=True)
             if level is not None:
                 levels.append(level)
-                continue
-            levels.append(
-                self.match_layout_level(
-                    record["text"],
-                    record["layout"],
-                    fallback_level,
+                matches.append(
+                    {
+                        "source": "frequency",
+                        "rule_group_index": level_group_index,
+                        "rule_index": rule_index,
+                        "pattern": pattern,
+                    }
                 )
-            )
+                continue
+            layout_level = self.match_layout_level(record["text"], record["layout"], fallback_level)
+            levels.append(layout_level)
+            matches.append({"source": "layout", "pattern": None, "rule_index": None} if layout_level < BODY_LEVEL else None)
 
         most_level = None
         for level, _ in Counter(levels).most_common():
@@ -236,16 +259,20 @@ class BaseTitleChunker(ABC):
             "levels": levels,
             "most_level": most_level,
             "source": "frequency",
+            "matches": matches,
         }
 
     def resolve_title_levels(self, line_records):
         return self.resolve_outline_levels(line_records) or self.resolve_frequency_levels(line_records)
 
-    def build_chunks_from_record_groups(self, record_groups):
+    def build_chunks_from_record_groups(self, record_groups, record_group_indexes=None):
         # Strategy code decides record grouping. This method materializes each
         # group into the output chunk representation. For PDF-like inputs, the
         # chunk box is defined by merged source positions and the text payload
         # is normalized by removing parser tags.
+        if self._is_preview_target():
+            self._preview_record_indexes = record_group_indexes or []
+
         if self.from_upstream.output_format in ["markdown", "text", "html"]:
             chunks = [{"text": "".join(record["text"] + "\n" for record in records)} for records in record_groups if records]
         else:
@@ -275,9 +302,40 @@ class BaseTitleChunker(ABC):
             for ck in chunks[1:]:
                 ck["text"] = root_text + "\n" + ck.get("text", "")
 
+            if self._is_preview_target():
+                root_indexes = self._preview_record_indexes[0]
+                self._preview_record_indexes = [root_indexes + indexes for indexes in self._preview_record_indexes[1:]]
+                if "section_ids" in self._preview_strategy_data:
+                    self._preview_strategy_data["section_ids"] = self._preview_strategy_data["section_ids"][1:]
             return chunks[1:]
 
         return chunks
+
+    def _build_preview(self, line_records, resolved):
+        chunks = self.process.output("chunks") or []
+        headings = []
+        for index, (record, level, match) in enumerate(zip(line_records, resolved["levels"], resolved.get("matches", []))):
+            if level >= BODY_LEVEL:
+                continue
+            headings.append({"record_index": index, "text": record["text"], "level": level, "match": match})
+
+        heading_indexes = {heading["record_index"] for heading in headings}
+
+        preview = {
+            "mode": self.param.method,
+            "headings": headings,
+            "chunks": [
+                {
+                    "index": index,
+                    "record_indexes": record_indexes,
+                    "section_path": [line_records[record_index]["text"] for record_index in record_indexes if record_index in heading_indexes],
+                    "content": chunk.get("text", ""),
+                }
+                for index, (record_indexes, chunk) in enumerate(zip(self._preview_record_indexes, chunks))
+            ],
+        }
+        preview.update(self._preview_strategy_data)
+        return preview
 
     async def set_chunks(self, chunks):
         if self.from_upstream.output_format in ["markdown", "text", "html"]:

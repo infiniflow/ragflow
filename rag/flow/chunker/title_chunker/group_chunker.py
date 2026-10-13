@@ -53,6 +53,8 @@ class GroupTitleChunker(BaseTitleChunker):
         )
         sec_ids = _build_section_ids(resolved["levels"], target_level)
         record_groups = []
+        record_group_indexes = []
+        group_section_ids = []
         tk_cnt = 0
         last_sid = -2
 
@@ -60,9 +62,12 @@ class GroupTitleChunker(BaseTitleChunker):
         # A chunk stays open while records remain in the same logical section,
         # except that very small chunks are allowed to absorb the next record
         # regardless of section change.
-        for record, sec_id in zip(line_records, sec_ids):
+        for index, (record, sec_id) in enumerate(zip(line_records, sec_ids)):
             if record["doc_type_kwd"] != "text":
                 record_groups.append([record])
+                if self._is_preview_target():
+                    record_group_indexes.append([index])
+                group_section_ids.append(sec_id)
                 tk_cnt = 0
                 last_sid = -2
                 continue
@@ -76,11 +81,23 @@ class GroupTitleChunker(BaseTitleChunker):
 
             if should_merge:
                 record_groups[-1].append(record)
+                if self._is_preview_target():
+                    record_group_indexes[-1].append(index)
+                group_section_ids[-1] = sec_id
                 tk_cnt += token_count
             else:
                 record_groups.append([record])
+                if self._is_preview_target():
+                    record_group_indexes.append([index])
+                group_section_ids.append(sec_id)
                 tk_cnt = token_count
 
             last_sid = sec_id
 
-        return self.build_chunks_from_record_groups(record_groups)
+        chunks = self.build_chunks_from_record_groups(
+            record_groups,
+            record_group_indexes if self._is_preview_target() else None,
+        )
+        if self._is_preview_target():
+            self._preview_strategy_data["section_ids"] = group_section_ids
+        return chunks

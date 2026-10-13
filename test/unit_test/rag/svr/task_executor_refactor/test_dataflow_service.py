@@ -26,6 +26,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
 from rag.svr.task_executor_refactor.dataflow_service import DataflowService
+from rag.svr.task_executor_refactor.constants import CANVAS_DEBUG_DOC_ID
 
 
 class TestDataflowServiceRunDataflow:
@@ -48,6 +49,37 @@ class TestDataflowServiceRunDataflow:
         service = DataflowService(ctx=task_context)
         with pytest.raises(AssertionError, match="User pipeline not found"):
             await service.run_dataflow()
+
+    @pytest.mark.asyncio
+    @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")
+    @patch("rag.svr.task_executor_refactor.dataflow_service.UserCanvasService")
+    async def test_debug_target_passes_stop_target_and_skips_writes(self, mock_canvas, mock_pipeline_class, task_context):
+        task_context._task.update(
+            {
+                "task_type": "dataflow",
+                "dataflow_id": "dataflow_test",
+                "doc_id": CANVAS_DEBUG_DOC_ID,
+                "target_component_id": "title",
+            }
+        )
+        mock_canvas.get_by_id.return_value = (True, MagicMock(dsl='{"id": "test"}'))
+        mock_pipeline = MagicMock()
+        mock_pipeline.run = AsyncMock(return_value={"chunks": [{"text": "content"}]})
+        mock_pipeline_class.return_value = mock_pipeline
+
+        with (
+            patch.object(DataflowService, "_embed_chunks", new_callable=AsyncMock) as embed_chunks,
+            patch.object(DataflowService, "_insert_chunks", new_callable=AsyncMock) as insert_chunks,
+            patch("api.db.services.document_service.DocumentService.increment_chunk_num") as increment_chunk_num,
+        ):
+            service = DataflowService(ctx=task_context)
+            await service.run_dataflow()
+
+        mock_pipeline_class.assert_called_once()
+        assert mock_pipeline_class.call_args.kwargs["stop_after_component_id"] == "title"
+        embed_chunks.assert_not_awaited()
+        insert_chunks.assert_not_awaited()
+        increment_chunk_num.assert_not_called()
 
     @pytest.mark.asyncio
     @patch("rag.svr.task_executor_refactor.dataflow_service.Pipeline")

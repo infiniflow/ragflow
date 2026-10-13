@@ -20,7 +20,10 @@ export function useRunDataflow({
     useState<Record<string, any>>();
 
   const run = useCallback(
-    async (fileResponseData: Record<string, any>) => {
+    async (
+      fileResponseData: Record<string, any>,
+      targetComponentId?: string,
+    ) => {
       const saveRet = await saveGraph();
       const success = saveRet?.code === 0;
       if (!success) return;
@@ -32,6 +35,9 @@ export function useRunDataflow({
         'openai-compatible': false,
         session_id: null,
         files: [fileResponseData.file],
+        ...(targetComponentId
+          ? { target_component_id: targetComponentId }
+          : {}),
       });
 
       if (res && res?.response.status === 200 && get(res, 'data.code') === 0) {

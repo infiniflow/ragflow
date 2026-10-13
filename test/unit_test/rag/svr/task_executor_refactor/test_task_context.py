@@ -101,6 +101,15 @@ class TestTaskContextIdentityProperties:
         ctx = _make_ctx(task=task)
         assert ctx.tenant_id == "tenant_1"
 
+    def test_target_component_id_is_optional_and_propagated(self):
+        """Test the optional dataflow target survives task wrapping."""
+        task = {"id": "task_1", "tenant_id": "tenant_1", "target_component_id": "title"}
+        ctx = _make_ctx(task=task)
+        assert ctx.target_component_id == "title"
+
+        default_ctx = _make_ctx(task={"id": "task_2", "tenant_id": "tenant_1"})
+        assert default_ctx.target_component_id == ""
+
     def test_kb_id_default(self):
         """Test kb_id property defaults to empty string."""
         task = {"id": "task_1", "tenant_id": "tenant_1"}

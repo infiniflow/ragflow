@@ -21,11 +21,13 @@ import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import 'react18-json-view/src/style.css';
 import {
+  findEndOutput,
   isEndOutputEmpty,
   useDownloadOutput,
 } from '../hooks/use-download-output';
 import { UseFetchLogReturnType } from '../hooks/use-fetch-pipeline-log';
 import { DataflowTimeline } from './dataflow-timeline';
+import { TitleChunkerPreview } from './title-chunker-preview';
 
 type LogSheetProps = IModalProps<any> & {
   handleCancel(): void;
@@ -51,6 +53,7 @@ export function PipelineLogSheet({
 
   const { handleDownloadJson } = useDownloadOutput(logs);
   const { navigateToDataflowResult } = useNavigatePage();
+  const endOutput = findEndOutput(logs);
 
   return (
     <Sheet open onOpenChange={hideModal} modal={false}>
@@ -86,7 +89,10 @@ export function PipelineLogSheet({
           {isLogEmpty ? (
             <SkeletonCard className="mt-2" />
           ) : (
-            <DataflowTimeline traceList={logs}></DataflowTimeline>
+            <>
+              <TitleChunkerPreview value={endOutput?._title_chunker_debug} />
+              <DataflowTimeline traceList={logs}></DataflowTimeline>
+            </>
           )}
         </section>
         <div className="px-5 pb-5">

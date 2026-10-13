@@ -263,6 +263,8 @@ async def collect():
         task["tenant_id"] = msg["tenant_id"]
         task["dataflow_id"] = msg["dataflow_id"]
         task["kb_id"] = msg.get("kb_id", "")
+        if msg.get("target_component_id"):
+            task["target_component_id"] = msg["target_component_id"]
     if task_type[:6] == "memory":
         task["memory_id"] = msg["memory_id"]
         if msg.get("tenant_id"):

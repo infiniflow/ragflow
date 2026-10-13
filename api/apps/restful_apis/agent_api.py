@@ -1323,6 +1323,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
     req = dict(req)
     req.pop("agent_id", None)
     req.pop("openai-compatible", None)
+    target_component_id = req.pop("target_component_id", None)
     session_id = req.get("session_id")
     workflow_session = False
     workflow_conv = None
@@ -1532,6 +1533,7 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                 CANVAS_DEBUG_DOC_ID,
                 files[0],
                 0,
+                target_component_id=target_component_id,
             )
             if not ok:
                 return get_data_error_result(message=error_message)

@@ -26,7 +26,16 @@ from rag.utils.redis_conn import REDIS_CONN
 
 
 class Pipeline(Graph):
-    def __init__(self, dsl: str | dict, tenant_id=None, doc_id=None, task_id=None, flow_id=None, language=None):
+    def __init__(
+        self,
+        dsl: str | dict,
+        tenant_id=None,
+        doc_id=None,
+        task_id=None,
+        flow_id=None,
+        language=None,
+        stop_after_component_id=None,
+    ):
         if isinstance(dsl, dict):
             dsl = json.dumps(dsl, ensure_ascii=False)
         super().__init__(dsl, tenant_id, task_id)
@@ -35,11 +44,26 @@ class Pipeline(Graph):
         self._doc_id = doc_id
         self._flow_id = flow_id
         self._language = language
+        self._stop_after_component_id = stop_after_component_id
+        if stop_after_component_id and stop_after_component_id not in self.components:
+            raise ValueError(f"Unknown stop target component: {stop_after_component_id}")
         self._kb_id = None
         if self._doc_id:
             self._kb_id = DocumentService.get_knowledgebase_id(doc_id)
             if not self._kb_id:
                 self._doc_id = None
+
+    def is_preview_target(self, component_id):
+        return component_id == self._stop_after_component_id
+
+    def _terminal_message(self, component):
+        output = component.output()
+        diagnostics = getattr(component, "_title_chunker_debug", None)
+        if diagnostics is None:
+            return json.dumps(output, ensure_ascii=False)
+        message = dict(output)
+        message["_title_chunker_debug"] = diagnostics
+        return json.dumps(message, ensure_ascii=False)
 
     def callback(self, component_name: str, progress: float | int | None = None, message: str = "") -> None:
         from common.exceptions import TaskCanceledException
@@ -129,6 +153,10 @@ class Pipeline(Graph):
             if cpn_obj.error():
                 self.error = "[ERROR]" + cpn_obj.error()
                 self.callback(cpn_obj.component_name, -1, self.error)
+            elif cpn_obj._id == self._stop_after_component_id:
+                output = cpn_obj.output()
+                self.callback("END", 1, self._terminal_message(cpn_obj))
+                return output
 
         if self._doc_id:
             TaskService.update_progress(
@@ -160,6 +188,10 @@ class Pipeline(Graph):
                 self.error = "[ERROR]" + cpn_obj.error()
                 self.callback(cpn_obj._id, -1, self.error)
                 break
+            if cpn_obj._id == self._stop_after_component_id:
+                output = cpn_obj.output()
+                self.callback("END", 1, self._terminal_message(cpn_obj))
+                return output
             idx += 1
             self.path.extend(cpn_obj.get_downstream())
 

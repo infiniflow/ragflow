@@ -82,7 +82,9 @@ class HierarchyTitleChunker(BaseTitleChunker):
 
     def build_chunks(self, line_records, resolved):
         record_groups = []
+        record_group_indexes = []
         text_records = []
+        text_record_indexes = []
         text_levels = []
 
         def flush_text_records():
@@ -92,28 +94,45 @@ class HierarchyTitleChunker(BaseTitleChunker):
             target_level = resolve_target_level(text_levels, self.param.hierarchy)
             if target_level is None:
                 record_groups.append(text_records.copy())
+                if self._is_preview_target():
+                    record_group_indexes.append(text_record_indexes.copy())
             else:
                 root = _ChunkNode(0)
                 root.build_tree(list(zip(text_levels, range(len(text_records)))), target_level)
-                record_groups.extend(
-                    [text_records[index] for index in path]
-                    for path in root.get_paths(
-                        target_level,
-                        self.param.include_heading_content,
-                    )
-                    if path
-                )
+                if self._is_preview_target():
+                    self._preview_strategy_data.setdefault("hierarchy", []).append(_serialize_node(root, text_record_indexes))
+                for path in root.get_paths(target_level, self.param.include_heading_content):
+                    if path:
+                        record_groups.append([text_records[index] for index in path])
+                        if self._is_preview_target():
+                            record_group_indexes.append([text_record_indexes[index] for index in path])
             text_records.clear()
+            text_record_indexes.clear()
             text_levels.clear()
 
-        for record, level in zip(line_records, resolved["levels"]):
+        for index, (record, level) in enumerate(zip(line_records, resolved["levels"])):
             if record["doc_type_kwd"] == "text":
                 text_records.append(record)
+                text_record_indexes.append(index)
                 text_levels.append(level)
                 continue
 
             flush_text_records()
             record_groups.append([record])
+            if self._is_preview_target():
+                record_group_indexes.append([index])
 
         flush_text_records()
-        return self.build_chunks_from_record_groups(record_groups)
+        return self.build_chunks_from_record_groups(
+            record_groups,
+            record_group_indexes if self._is_preview_target() else None,
+        )
+
+
+def _serialize_node(node, record_indexes):
+    return {
+        "level": node.level,
+        "title_record_indexes": [record_indexes[index] for index in node.title_indexes],
+        "body_record_indexes": [record_indexes[index] for index in node.body_indexes],
+        "children": [_serialize_node(child, record_indexes) for child in node.children],
+    }

@@ -611,7 +611,16 @@ def has_canceled(task_id):
     return False
 
 
-def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CANVAS_DEBUG_DOC_ID, file: dict = None, priority: int = 0, rerun: bool = False) -> tuple[bool, str]:
+def queue_dataflow(
+    tenant_id: str,
+    flow_id: str,
+    task_id: str,
+    doc_id: str = CANVAS_DEBUG_DOC_ID,
+    file: dict = None,
+    priority: int = 0,
+    rerun: bool = False,
+    target_component_id: str | None = None,
+) -> tuple[bool, str]:
 
     task = dict(
         id=task_id,
@@ -631,6 +640,8 @@ def queue_dataflow(tenant_id: str, flow_id: str, task_id: str, doc_id: str = CAN
     task["tenant_id"] = tenant_id
     task["dataflow_id"] = flow_id
     task["file"] = file
+    if target_component_id:
+        task["target_component_id"] = target_component_id
 
     if not REDIS_CONN.queue_product(settings.get_svr_queue_name(priority, "common"), message=task):
         return False, "Can't access Redis. Please check the Redis' status."

@@ -116,6 +116,7 @@ class DataflowService:
                 task_id=task_id,
                 flow_id=dataflow_id,
                 language=ctx.language,
+                stop_after_component_id=ctx.target_component_id or None,
             )
             chunks = await pipeline.run(file=ctx.file) if ctx.file else await pipeline.run()
 

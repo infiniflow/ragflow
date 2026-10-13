@@ -134,6 +134,9 @@ class TaskDict(TypedDict, total=False):
     dataflow_id: str
     """Dataflow/pipeline identifier."""
 
+    target_component_id: str
+    """Optional component at which a debug dataflow run should stop."""
+
     pagerank: int
     """PageRank value for document scoring."""
 
@@ -240,6 +243,7 @@ class TaskContext:
         "to_page": -1,
         "task_type": "",
         "dataflow_id": "",
+        "target_component_id": "",
         "pagerank": 0,
         "memory_id": "",
         "source_id": "",
@@ -411,6 +415,11 @@ class TaskContext:
     def dataflow_id(self) -> str:
         """Dataflow/pipeline identifier."""
         return self._task.get("dataflow_id", self._DEFAULTS["dataflow_id"])
+
+    @property
+    def target_component_id(self) -> str:
+        """Optional component at which a debug dataflow run should stop."""
+        return self._task.get("target_component_id", self._DEFAULTS["target_component_id"])
 
     # =========================================================================
     # Additional properties
