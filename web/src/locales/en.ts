@@ -3771,6 +3771,9 @@ Important structured information may include: names, dates, locations, events, k
         removeFirst: 'Remove first',
         removeLast: 'Remove last',
       },
+      variableAssignerVariableMissing: 'Variable is required',
+      variableAssignerOperatorMissing: 'Operator is required',
+      variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
         methods: 'Methods',
