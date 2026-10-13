@@ -32,6 +32,7 @@ func TestRouterSetupRemovesActionRoutes(t *testing.T) {
 		{http.MethodPost, "/api/v1/document/list"},
 		{http.MethodPost, "/api/v1/document/metadata/summary"},
 		{http.MethodPost, "/api/v1/document/delete_meta"},
+		{http.MethodPost, "/api/v1/document/set_meta"},
 		{http.MethodPost, "/api/v1/chunk/list"},
 		{http.MethodPost, "/api/v1/chunk/update"},
 	}

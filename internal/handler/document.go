@@ -66,7 +66,6 @@ type documentServiceIface interface {
 	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
 	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
-	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
@@ -1307,98 +1306,6 @@ func stringValue(value *string) string {
 	}
 
 	return *value
-}
-
-// SetMetaRequest represents the request for setting document metadata
-type SetMetaRequest struct {
-	DocID string `json:"doc_id" binding:"required"`
-	Meta  string `json:"meta" binding:"required"`
-}
-
-// SetMeta handles the set metadata request for a document
-// @Summary Set Document Metadata
-// @Description Set metadata for a specific document
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body SetMetaRequest true "metadata info"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/document/set_meta [post]
-func (h *DocumentHandler) SetMeta(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req SetMetaRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, err.Error())
-		return
-	}
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "doc_id is required")
-		return
-	}
-
-	// Parse meta JSON string
-	var meta map[string]interface{}
-	if err := json.Unmarshal([]byte(req.Meta), &meta); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "Json syntax error: "+err.Error())
-		return
-	}
-
-	if meta == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "meta is required")
-		return
-	}
-
-	// Validate meta values - must be str, int, float, or list of those
-	for k, v := range meta {
-		switch val := v.(type) {
-		case string, int, float64:
-			// Valid
-		case []interface{}:
-			for _, item := range val {
-				if _, ok := item.(string); !ok {
-					if _, ok = item.(float64); !ok {
-						common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, fmt.Sprintf("Unsupported type in list for key %s: %T", k, item))
-						return
-					}
-				}
-			}
-		default:
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, fmt.Sprintf("Unsupported type for key %s: %T", k, v))
-			return
-		}
-	}
-
-	// Authorization: user must be able to access the document's dataset.
-	ctx := c.Request.Context()
-	doc, err := h.documentService.GetDocumentByID(ctx, req.DocID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
-		return
-	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
-
-	err = h.documentService.SetDocumentMetadata(ctx, req.DocID, meta)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-		} else {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to set metadata: "+errMsg)
-		}
-		return
-	}
-
-	common.SuccessWithData(c, true, "success")
 }
 
 // Ingest handles document ingestion

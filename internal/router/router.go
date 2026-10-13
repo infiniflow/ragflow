@@ -419,7 +419,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-				searches.POST("/:search_id/completion", r.searchHandler.Completion)
 				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
@@ -681,12 +680,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				system.PUT("/memory", r.systemHandler.SetMemory)
 				system.GET("/concurrency", r.systemHandler.GetConcurrency)
 				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
-			}
-
-			// Document routes
-			doc := v1.Group("/document")
-			{
-				doc.POST("/set_meta", r.documentHandler.SetMeta)
 			}
 
 			// Chat Channel
