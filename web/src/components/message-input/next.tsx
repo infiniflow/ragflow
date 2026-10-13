@@ -51,13 +51,6 @@ export type NextMessageInputOnPressEnterParameter = {
   omitSessionId?: boolean;
 };
 
-// The selector only offers numeric thinking levels; a value persisted by a
-// since-removed mode is not one, so it falls back to the default rather than
-// reaching the request as NaN.
-function normalizeThinkingLevel(level: string) {
-  return /^[0-5]$/.test(level) ? level : '1';
-}
-
 interface NextMessageInputProps {
   disabled: boolean;
   value: string;
@@ -105,7 +98,7 @@ export function NextMessageInput({
   );
 
   const [enableThinking, setEnableThinking] = useState(() =>
-    normalizeThinkingLevel(storage.getThinkingLevel()),
+    storage.getThinkingLevel(),
   );
   const [enableInternet, setEnableInternet] = useState(false);
 
@@ -161,32 +154,12 @@ export function NextMessageInput({
 
   // Level 5 is not a deeper step on the same ladder: the backend hands it to
   // the agentic RAG agent, which runs its own retrieval instead of the
-  // pipeline's. It still sorts first as the highest-effort choice.
+  // pipeline's.
   const thinkingOptions = [
     {
       label: t('chat.thinkingLevelAgentic'),
       value: '5',
       description: t('chat.thinkingLevelAgenticDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelUltra'),
-      value: '4',
-      description: t('chat.thinkingLevelUltraDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelHigh'),
-      value: '3',
-      description: t('chat.thinkingLevelHighDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelMedium'),
-      value: '2',
-      description: t('chat.thinkingLevelMediumDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelLow'),
-      value: '1',
-      description: t('chat.thinkingLevelLowDescription'),
     },
     { label: t('chat.thinkingLevelNone'), value: '0' },
   ];

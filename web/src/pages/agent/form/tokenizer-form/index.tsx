@@ -78,6 +78,7 @@ const TokenizerForm = ({
               onValueChange={field.onChange}
               defaultValue={field.value}
               variant="inverted"
+              disabled
             />
           )}
         </RAGFlowFormItem>
