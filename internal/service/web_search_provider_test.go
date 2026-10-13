@@ -42,6 +42,18 @@ func TestHarnessWebSearchFuncGatedByProvider(t *testing.T) {
 	}
 }
 
+func TestWebSearchFuncGatedByProvider(t *testing.T) {
+	s := &ChatPipelineService{}
+	for _, config := range []map[string]interface{}{nil, {}, {"tavily_api_key": "   "}} {
+		if s.webSearchFunc(config) != nil {
+			t.Errorf("missing provider must yield no agentic web-search callback: %v", config)
+		}
+	}
+	if s.webSearchFunc(map[string]interface{}{"tavily_api_key": "tvly-test"}) == nil {
+		t.Error("configured provider must yield an agentic web-search callback")
+	}
+}
+
 func TestResolveWebSearchProviderUsesExistingTavilyConfig(t *testing.T) {
 	provider := resolveWebSearchProvider(map[string]interface{}{
 		"tavily_api_key": "tvly-test",

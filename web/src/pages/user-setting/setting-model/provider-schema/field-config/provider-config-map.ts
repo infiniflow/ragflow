@@ -675,11 +675,21 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
         defaultValue: 'pipeline',
         placeholder: 'mineruSelectBackend',
         options: [
-          { label: 'pipeline', value: 'pipeline' },
-          { label: 'vlm-engine', value: 'vlm-engine' },
-          { label: 'hybrid-engine', value: 'hybrid-engine' },
-          { label: 'vlm-http-client', value: 'vlm-http-client' },
-          { label: 'hybrid-http-client', value: 'hybrid-http-client' },
+          { label: 'pipeline (MinerU 3.x)', value: 'pipeline' },
+          { label: 'vlm-engine (MinerU 3.x)', value: 'vlm-engine' },
+          { label: 'hybrid-engine (MinerU 3.x)', value: 'hybrid-engine' },
+          {
+            label: 'vlm-http-client (MinerU 3.x)',
+            value: 'vlm-http-client',
+          },
+          {
+            label: 'hybrid-http-client (MinerU 3.x)',
+            value: 'hybrid-http-client',
+          },
+          { label: 'basic (MinerU 4)', value: 'basic' },
+          { label: 'standard (MinerU 4)', value: 'standard' },
+          { label: 'advanced (MinerU 4)', value: 'advanced' },
+          { label: 'flash (MinerU 4)', value: 'flash' },
         ],
         validation: { message: 'mineruBackendMessage' },
       },
@@ -711,14 +721,17 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       instance_name: values.instance_name,
       llm_factory: LLMFactory.MinerU,
       api_key: buildMineruApiKey(values),
-      base_url: '',
+      base_url: values.mineru_apiserver ?? '',
       model_info: [],
     }),
     echoTransform: (instance) => {
       const obj = parseApiKeyAsObject(instance.api_key) ?? {};
       const rawDelete = obj.mineru_delete_output;
       return {
-        mineru_apiserver: obj.mineru_apiserver ?? '',
+        mineru_apiserver:
+          typeof instance.base_url === 'string' && instance.base_url.trim()
+            ? instance.base_url
+            : (obj.mineru_apiserver ?? ''),
         mineru_output_dir: obj.mineru_output_dir ?? '',
         mineru_backend: obj.mineru_backend ?? 'pipeline',
         mineru_server_url: obj.mineru_server_url ?? '',

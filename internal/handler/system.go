@@ -84,24 +84,6 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	common.SuccessWithData(c, config, "success")
 }
 
-// GetConfigs get all system configurations
-// @Summary Get All System Configurations
-// @Description Get all system configurations from globalConfig
-// @Tags system
-// @Accept json
-// @Produce json
-// @Success 200 {object} config.Config
-// @Router /v1/system/configs [get]
-func (h *SystemHandler) GetConfigs(c *gin.Context) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Configuration not initialized")
-		return
-	}
-
-	common.SuccessWithData(c, cfg, "success")
-}
-
 // GetStatus get RAGFlow status
 func (h *SystemHandler) GetStatus(c *gin.Context) {
 	_, errorCode, errorMessage := GetUser(c)

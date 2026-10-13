@@ -5,7 +5,7 @@ import {
   FileParserGap,
   findDocumentsParserGaps,
   findFilesParserGaps,
-  getSavedParserSetups,
+  getSavedParserConfig,
 } from './utils';
 
 /**
@@ -25,11 +25,11 @@ export function useParserGapValidation() {
       if (loading) {
         return [];
       }
-      const setups = getSavedParserSetups(knowledgeBase);
-      if (!setups) {
+      const config = getSavedParserConfig(knowledgeBase);
+      if (!config) {
         return [];
       }
-      return findFilesParserGaps(names, setups);
+      return findFilesParserGaps(names, config);
     },
     [loading, knowledgeBase],
   );
@@ -46,7 +46,7 @@ export function useParserGapValidation() {
       }
       return findDocumentsParserGaps(
         documents,
-        getSavedParserSetups(knowledgeBase),
+        getSavedParserConfig(knowledgeBase),
       );
     },
     [loading, knowledgeBase],

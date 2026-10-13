@@ -40,6 +40,57 @@ func TestPoolExhaustedError_Contract(t *testing.T) {
 	}
 }
 
+// TestResolvePoolMaxSize covers the INFINITY_POOL_MAX_SIZE knob: unset/invalid
+// values fall back to the default rather than becoming unbounded.
+func TestResolvePoolMaxSize(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want int
+	}{
+		{"unset", "", defaultPoolMaxSize},
+		{"valid", "16", 16},
+		{"zero rejected", "0", defaultPoolMaxSize},
+		{"negative rejected", "-3", defaultPoolMaxSize},
+		{"non-numeric rejected", "many", defaultPoolMaxSize},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("INFINITY_POOL_MAX_SIZE", tc.raw)
+			if got := resolvePoolMaxSize(); got != tc.want {
+				t.Fatalf("resolvePoolMaxSize() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestResolvePoolMaxIdle covers the INFINITY_POOL_MAX_IDLE knob: unset/invalid
+// values fall back to the default, and the result is always clamped to MaxOpen.
+func TestResolvePoolMaxIdle(t *testing.T) {
+	cases := []struct {
+		name    string
+		raw     string
+		maxOpen int
+		want    int
+	}{
+		{"unset falls back to default", "", 8, defaultMaxIdleConnections},
+		{"valid value used", "5", 8, 5},
+		{"clamped to maxOpen", "5", 3, 3},
+		{"default clamped to small maxOpen", "", 1, 1},
+		{"zero rejected", "0", 8, defaultMaxIdleConnections},
+		{"negative rejected", "-2", 8, defaultMaxIdleConnections},
+		{"non-numeric rejected", "lots", 8, defaultMaxIdleConnections},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("INFINITY_POOL_MAX_IDLE", tc.raw)
+			if got := resolvePoolMaxIdle(tc.maxOpen); got != tc.want {
+				t.Fatalf("resolvePoolMaxIdle(%d) = %d, want %d", tc.maxOpen, got, tc.want)
+			}
+		})
+	}
+}
+
 // TestEnsureDeadline covers the core of the bounded-latency fix: callers that
 // pass context.Background() (no deadline) must get one applied, while callers
 // that already carry a deadline are left untouched and their cancel is not

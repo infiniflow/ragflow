@@ -802,10 +802,10 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
 
-	if got, want := collectGeneralMediaContext(units, 2, 10, true), "before one\nbefore two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, true, contextSentencePattern), "before one\nbefore two"; got != want {
 		t.Fatalf("above context = %q, want %q", got, want)
 	}
-	if got, want := collectGeneralMediaContext(units, 2, 10, false), "after one\nafter two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, false, contextSentencePattern), "after one\nafter two"; got != want {
 		t.Fatalf("below context = %q, want %q", got, want)
 	}
 }
