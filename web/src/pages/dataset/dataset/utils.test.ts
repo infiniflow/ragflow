@@ -6,6 +6,8 @@ import {
   RunningStatus,
 } from './constant';
 import {
+  attachAutoSwitchTargets,
+  builtinParserSwitchTarget,
   findDocumentsParserGaps,
   findFilesParserGaps,
   findParserGap,
@@ -17,7 +19,9 @@ import {
   ingestionStatusToRunningStatus,
   isDocumentProcessing,
   isDocumentStopping,
+  pickBySwitchFate,
   type SavedParserConfig,
+  type UploadFileParserGap,
 } from './utils';
 
 describe('isDocumentStopping', () => {
@@ -262,6 +266,139 @@ describe('hasUnsupportedTypeGap', () => {
       ]),
     ).toBe(false);
     expect(hasUnsupportedTypeGap([])).toBe(false);
+  });
+});
+
+describe('builtinParserSwitchTarget', () => {
+  it('never switches for a dataset on a custom pipeline', () => {
+    expect(builtinParserSwitchTarget('photo.jpg', 'canvas-1')).toBeNull();
+    expect(builtinParserSwitchTarget('song.mp3', 'canvas-1')).toBeNull();
+    expect(builtinParserSwitchTarget('mail.msg', 'canvas-1')).toBeNull();
+  });
+
+  it('maps owned file types to their built-in pipelines', () => {
+    // The visual bucket includes the video extensions, mirroring the backend.
+    expect(builtinParserSwitchTarget('photo.JPG')).toBe('picture');
+    expect(builtinParserSwitchTarget('movie.mp4')).toBe('picture');
+    expect(builtinParserSwitchTarget('clip.mov')).toBe('picture');
+    expect(builtinParserSwitchTarget('song.mp3')).toBe('audio');
+    expect(builtinParserSwitchTarget('song.opus')).toBe('audio');
+    expect(builtinParserSwitchTarget('deck.ppt')).toBe('presentation');
+    expect(builtinParserSwitchTarget('deck.pptx')).toBe('presentation');
+    expect(builtinParserSwitchTarget('deck.pages')).toBe('presentation');
+    expect(builtinParserSwitchTarget('mail.msg')).toBe('email');
+    expect(builtinParserSwitchTarget('mail.eml')).toBe('email');
+  });
+
+  it('keeps the dataset parser for every other type', () => {
+    expect(builtinParserSwitchTarget('laws.txt')).toBeNull();
+    expect(builtinParserSwitchTarget('laws.pdf')).toBeNull();
+    expect(builtinParserSwitchTarget('book.docx')).toBeNull();
+    expect(builtinParserSwitchTarget('sheet.xlsx')).toBeNull();
+    // Frontend-known audio suffixes the backend rejects at upload keep the
+    // dataset parser too — the switch map mirrors the backend exactly.
+    expect(builtinParserSwitchTarget('song.wma')).toBeNull();
+  });
+});
+
+describe('attachAutoSwitchTargets', () => {
+  it('annotates unsupported gaps with the target and other gaps with null', () => {
+    const gaps = attachAutoSwitchTargets(
+      [
+        {
+          name: 'photo.jpg',
+          reason: ParserGapReason.UnsupportedType,
+          fileType: FileType.Image,
+        },
+        {
+          name: 'song.mp3',
+          reason: ParserGapReason.MissingModel,
+          fileType: FileType.Audio,
+          modelKind: ParserModelKind.Asr,
+        },
+        {
+          name: 'notes.txt',
+          reason: ParserGapReason.UnsupportedType,
+          fileType: FileType.Code,
+        },
+      ],
+      null,
+    );
+    expect(gaps.map((x) => x.autoSwitchTarget)).toEqual([
+      'picture',
+      null,
+      null,
+    ]);
+  });
+
+  it('annotates nothing switchable on a custom pipeline', () => {
+    const gaps = attachAutoSwitchTargets(
+      [
+        {
+          name: 'photo.jpg',
+          reason: ParserGapReason.UnsupportedType,
+          fileType: FileType.Image,
+        },
+      ],
+      'canvas-1',
+    );
+    expect(gaps[0].autoSwitchTarget).toBeNull();
+  });
+});
+
+describe('pickBySwitchFate', () => {
+  const Options = {
+    missingModel: 'missing',
+    autoSwitch: 'auto',
+    manualSwitch: 'manual',
+    mixedSwitch: 'mixed',
+  } as const;
+
+  const unsupportedGap = (
+    autoSwitchTarget: UploadFileParserGap['autoSwitchTarget'],
+  ): UploadFileParserGap => ({
+    name: 'f',
+    reason: ParserGapReason.UnsupportedType,
+    fileType: FileType.PDF,
+    autoSwitchTarget,
+  });
+
+  const missingModelGap: UploadFileParserGap = {
+    name: 'song.mp3',
+    reason: ParserGapReason.MissingModel,
+    fileType: FileType.Audio,
+    modelKind: ParserModelKind.Asr,
+    autoSwitchTarget: null,
+  };
+
+  it('picks the missing-model hint when nothing is unsupported', () => {
+    expect(pickBySwitchFate([missingModelGap], Options)).toBe('missing');
+  });
+
+  it('picks the auto-switch hint only when every unsupported file switches', () => {
+    expect(
+      pickBySwitchFate(
+        [unsupportedGap('picture'), unsupportedGap('email')],
+        Options,
+      ),
+    ).toBe('auto');
+  });
+
+  it('picks the manual hint when no unsupported file switches', () => {
+    expect(pickBySwitchFate([unsupportedGap(null)], Options)).toBe('manual');
+  });
+
+  it('picks the mixed hint when only some unsupported files switch', () => {
+    expect(
+      pickBySwitchFate(
+        [unsupportedGap('picture'), unsupportedGap(null)],
+        Options,
+      ),
+    ).toBe('mixed');
+    // Missing-model gaps join the list without diluting the composition.
+    expect(
+      pickBySwitchFate([unsupportedGap(null), missingModelGap], Options),
+    ).toBe('manual');
   });
 });
 

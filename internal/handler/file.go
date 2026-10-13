@@ -133,33 +133,6 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// GetRootFolder gets root folder for current user
-// @Summary Get Root Folder
-// @Description Get or create root folder for the current user
-// @Tags file
-// @Accept json
-// @Produce json
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/file/root_folder [get]
-func (h *FileHandler) GetRootFolder(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	ctx := c.Request.Context()
-	// Get root folder
-	rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
-	if err != nil {
-		respondFileServiceError(c, err)
-		return
-	}
-
-	common.SuccessWithData(c, gin.H{"root_folder": rootFolder}, common.CodeSuccess.Message())
-}
-
 // GetParentFolder gets parent folder of a file
 // @Summary Get Parent Folder
 // @Description Get parent folder of a file by file ID
@@ -168,7 +141,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 // @Produce json
 // @Param file_id query string true "file ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/file/parent_folder [get]
+// @Router /api/v1/files/{id}/parent [get]
 func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -193,41 +166,6 @@ func (h *FileHandler) GetParentFolder(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, gin.H{"parent_folder": parentFolder}, common.CodeSuccess.Message())
-}
-
-// GetAllParentFolders gets all parent folders in path
-// @Summary Get All Parent Folders
-// @Description Get all parent folders in path from file to root
-// @Tags file
-// @Accept json
-// @Produce json
-// @Param file_id query string true "file ID"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/file/all_parent_folder [get]
-func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	userID := user.ID
-
-	// Get file_id from query
-	fileID := c.Query("file_id")
-	if fileID == "" {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, "file_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
-	if err != nil {
-		respondFileServiceError(c, err)
-		return
-	}
-
-	common.SuccessWithData(c, gin.H{"parent_folders": parentFolders}, common.CodeSuccess.Message())
 }
 
 // GetFileAncestors gets all ancestor folders of a file (matches Python /files/<file_id>/ancestors)
