@@ -11,6 +11,21 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
+# Read a `NAME = "value"` constant out of ragflow_deps/versions.py — the single
+# source of truth for dependency versions and download URLs shared by
+# ragflow_deps/download_native_deps.py and ragflow_deps/download_deps.py.
+# build.sh is pure shell and must stay Python-free, so it greps the file
+# instead of importing it. Keep the assignments there greppable.
+deps_version() {
+    local value
+    value="$(sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$PROJECT_ROOT/ragflow_deps/versions.py" | head -1)"
+    if [ -z "$value" ]; then
+        echo "Error: could not read $1 from ragflow_deps/versions.py" >&2
+        return 1
+    fi
+    echo "$value"
+}
+
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -22,27 +37,32 @@ STRIP_SYMBOLS=""
 
 # Native static library settings. These are the user-cache paths (~/ragflow-native-libs/).
 # If /opt/ragflow-native-libs/ exists (pre-seeded in CI runner image), it takes priority
-# and skips the network (download_deps.py) fallback.
+# and skips the network (download_native_deps.py) fallback.
 SYSTEM_DEPS="/opt/ragflow-native-libs"
 
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
-OFFICE_OXIDE_VERSION="0.1.12"
+# Derived from go.mod (single source of truth: the Go module version). Matches
+# ragflow_deps/versions.py's office_oxide_url derivation.
+OFFICE_OXIDE_VERSION="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' "$PROJECT_ROOT/go.mod" | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')" || {
+    echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1; }
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
-PDFIUM_STATIC_VERSION="7809"
+PDFIUM_STATIC_VERSION="$(deps_version PDFIUM_VERSION)" || {
+    echo -e "${RED}Error: could not read PDFIUM_VERSION from ragflow_deps/versions.py${NC}" >&2; exit 1; }
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="0.3.73"
+PDF_OXIDE_VERSION="$(deps_version PDF_OXIDE_VERSION)" || {
+    echo -e "${RED}Error: could not read PDF_OXIDE_VERSION from ragflow_deps/versions.py${NC}" >&2; exit 1; }
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
 # (--undefined=OrtGetApiBase + --dynamic-list, no --whole-archive); OrtGetApiBase
 # is then resolved via dlopen(NULL) (the process-global symbol table, not the
 # executable's own path), so no libonnxruntime.so is needed at runtime.
-# Downloaded by ragflow_deps/download_deps.py into onnxruntime/static_lib.
+# Downloaded by ragflow_deps/download_native_deps.py into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
 # Copy a dependency from the system pre-seed directory to the user cache.
@@ -224,7 +244,7 @@ check_ort_version_consistency() {
 
     local env_go deps dockerfile
     env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
-    deps="$(grep -m1 -E '^ORT_VERSION[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/ragflow_deps/download_deps.py" | sed -E 's/.*"([^"]+)".*/\1/')"
+    deps="$(deps_version ORT_VERSION)"
     dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
     if [ -z "$env_go" ] || [ -z "$deps" ] || [ -z "$dockerfile" ]; then
@@ -235,7 +255,7 @@ check_ort_version_consistency() {
     if [ "$env_go" != "$deps" ] || [ "$env_go" != "$dockerfile" ]; then
         echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
         printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
-        printf '  %-10s  %s\n' "$deps" "ragflow_deps/download_deps.py:ORT_VERSION"
+        printf '  %-10s  %s\n' "$deps" "ragflow_deps/versions.py:ORT_VERSION"
         printf '  %-10s  %s\n' "$dockerfile" "dockerfile:ARG ORT_VERSION"
         exit 1
     fi
@@ -299,7 +319,7 @@ check_onnxruntime_deps() {
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
-        echo "    uv run python3 ragflow_deps/download_deps.py" >&2
+        echo "    uv run ragflow_deps/download_native_deps.py" >&2
         echo "  or pre-seed /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         return 1
     fi
@@ -314,7 +334,7 @@ check_onnxruntime_deps() {
     #
     # A mismatch means the local copy is corrupt or stale; we only WARN (not
     # fail) so a one-off re-issue cannot break the build. The downloader
-    # ragflow_deps/download_deps.py still verifies against
+    # ragflow_deps/download_native_deps.py still verifies against
     # the published sidecar at download time, so a re-issued archive is picked
     # up on the next download.
     local asset="onnxruntime-v${ort_version}-linux-x86_64.zip"
@@ -329,7 +349,7 @@ check_onnxruntime_deps() {
             echo "  local    sha256: $actual" >&2
             echo "  The local copy may be corrupt or stale. Refresh it with:" >&2
             echo "    rm -f ${zip_path}" >&2
-            echo "    uv run python3 ragflow_deps/download_deps.py" >&2
+            echo "    uv run ragflow_deps/download_native_deps.py" >&2
         else
             echo "  ✓ ${asset} sha256 matches pinned digest"
         fi
@@ -354,7 +374,7 @@ check_office_oxide_deps() {
     if [ ! -f "$lib_path" ] || [ ! -f "$header_path" ]; then
         echo -e "${RED}Error: office_oxide native library not found${NC}"
         echo "  Expected: ${lib_path}"
-        echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+        echo "  Run: uv run ragflow_deps/download_native_deps.py"
         echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
         exit 1
     fi
@@ -368,12 +388,12 @@ check_office_oxide_deps() {
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
         echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
         rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/office_oxide-linux-x86_64.tar.gz"
-        if ! (cd "${PROJECT_ROOT}" && uv run python3 ragflow_deps/download_deps.py); then
+        if ! (cd "${PROJECT_ROOT}" && uv run ragflow_deps/download_native_deps.py); then
             echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
             echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
             echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
             echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
-            echo "    uv run python3 ragflow_deps/download_deps.py"
+            echo "    uv run ragflow_deps/download_native_deps.py"
             exit 1
         fi
         lib_path="${OFFICE_OXIDE_PREFIX}/lib/${lib_file}"
@@ -406,7 +426,7 @@ check_pdfium_deps() {
 
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_native_deps.py"
     echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
@@ -512,7 +532,7 @@ check_pdf_oxide_deps() {
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
                 echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
-                echo "    uv run python3 ragflow_deps/download_deps.py"
+                echo "    uv run ragflow_deps/download_native_deps.py"
                 return 1
                 ;;
         esac
@@ -520,7 +540,7 @@ check_pdf_oxide_deps() {
 
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
-    echo "  Run: uv run python3 ragflow_deps/download_deps.py"
+    echo "  Run: uv run ragflow_deps/download_native_deps.py"
     echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
@@ -650,12 +670,12 @@ build_go() {
         echo "  -Wl,--dynamic-list). Without it the binary compiles but dies" >&2
         echo "  at startup with a fatal 'no in-process DeepDoc backend serving'." >&2
         echo "  Fetch the static libs with:" >&2
-        echo "    uv run python3 ragflow_deps/download_deps.py" >&2
+        echo "    uv run ragflow_deps/download_native_deps.py" >&2
         echo "  or pre-seed them at /opt/ragflow-native-libs/onnxruntime (CI image)." >&2
         echo "  This production binary must statically include ORT — there is no" >&2
         echo "  ORT-free build path. ORT ends up unlinked only via one of:" >&2
         echo "    - the ORT static_lib dir was never seeded: run" >&2
-        echo "      'uv run python3 ragflow_deps/download_deps.py', or pre-seed" >&2
+        echo "      'uv run ragflow_deps/download_native_deps.py', or pre-seed" >&2
         echo "      /opt/ragflow-native-libs/onnxruntime as the CI image does;" >&2
         echo "    - setup_cgo_env did not add libonnxruntime to CGO_LDFLAGS." >&2
         return 1
@@ -1093,7 +1113,7 @@ DEPENDENCIES:
     - cmake >= 4.0
     - go >= 1.26.4
     - clang++ with C++20 support
-    - office_oxide native library (download with: uv run python3 ragflow_deps/download_deps.py)
+    - office_oxide native library (download with: uv run ragflow_deps/download_native_deps.py)
     - lld (Linux only): sudo apt install lld-20 && sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
     - pcre2 development files
         - Debian/Ubuntu: libpcre2-dev

@@ -1,0 +1,353 @@
+#!/usr/bin/env python3
+
+# PEP 723 metadata
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "requests",
+# ]
+# ///
+
+# Download the native static libraries the Go build links (pdfium / pdf_oxide /
+# office_oxide / onnxruntime) and unpack them into ~/ragflow-native-libs, so
+# build.sh can compile the Go server without network access.
+#
+# This is the "build-facing" half of the dependency download split; the
+# "image-facing" half (cl100k BPE table, stagehand server binaries, DeepDoc
+# .ort weights, embedding tokenizer assets) lives in download_deps.py. All
+# version numbers and URLs come from versions.py; bump a version there, not
+# here.
+#
+# Typical workflow:
+#
+#   uv run ragflow_deps/download_native_deps.py
+#
+# Behind the GFW, route GitHub release downloads through a mirror with
+# --china-mirrors (or export GH_PROXY=https://gh-proxy.com/).
+
+import argparse
+import hashlib
+import os
+import shutil
+import sys
+import tarfile
+import tempfile
+import zipfile
+
+import requests
+import versions
+
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+NATIVE_LIBS_DIR = os.path.expanduser("~/ragflow-native-libs")
+
+
+def _sha256_of(path):
+    """sha256 of a file, streamed in chunks so large archives don't blow memory."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download_with_progress(url, filename):
+    """Download URL to FILENAME atomically (temp file, then move on success).
+
+    A failed or empty download leaves any previous valid file untouched, so an
+    interrupted run never destroys a working dependency tree."""
+    filename = os.fspath(filename)
+    temporary = None
+    try:
+        with requests.get(url, stream=True, timeout=(15, 60)) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            with tempfile.NamedTemporaryFile(dir=os.path.dirname(os.path.abspath(filename)), delete=False) as file:
+                temporary = file.name
+                downloaded = 0
+                for data in response.iter_content(1 << 20):
+                    file.write(data)
+                    downloaded += len(data)
+                    if total_size > 0:
+                        progress = (downloaded / total_size) * 100
+                        sys.stdout.write(f"\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
+                        sys.stdout.flush()
+            if downloaded == 0:
+                raise requests.RequestException(f"Empty dependency download: {url}")
+            os.replace(temporary, filename)
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
+    print()
+
+
+def _valid_download(filename):
+    """True when FILENAME is a non-empty, structurally valid archive of its kind."""
+    if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
+        return False
+    if filename.endswith((".tar.gz", ".tgz")):
+        if not tarfile.is_tarfile(filename):
+            return False
+        if os.path.basename(filename) == "office_oxide-linux-x86_64.tar.gz":
+            version = versions.go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+            with tarfile.open(filename) as archive:
+                try:
+                    member = next((m for m in archive.getmembers() if os.path.normpath(m.name) == "lib/liboffice_oxide.a"), None)
+                    if member is None:
+                        return False
+                    library = archive.extractfile(member)
+                    if library is None:
+                        return False
+                    with library:
+                        return b"\x00" + version.encode() + b"\x00" in library.read()
+                except (KeyError, tarfile.TarError, EOFError):
+                    return False
+        return True
+    if filename.endswith(".zip"):
+        return zipfile.is_zipfile(filename)
+    return True
+
+
+def _extract_native_archive(archive_path, target, required_files, version=None):
+    """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
+    files, an optional null-delimited VERSION stamp) before promoting the
+    staged tree.
+
+    Path-traversal / absolute / non-regular members are rejected before
+    extraction, and an incomplete archive raises instead of replacing a
+    previously good directory."""
+
+    def complete(directory):
+        for name in required_files:
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                return False
+            if version is not None and name.endswith(".a"):
+                with open(path, "rb") as file:
+                    if b"\x00" + version.encode() + b"\x00" not in file.read():
+                        return False
+        return True
+
+    if complete(target):
+        print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
+        return
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    staging = tempfile.mkdtemp(dir=os.path.dirname(target))
+    try:
+        with tarfile.open(archive_path) as archive:
+            members = archive.getmembers()
+            for member in members:
+                if os.path.isabs(member.name) or ".." in member.name.split("/") or not (member.isfile() or member.isdir()):
+                    raise tarfile.TarError(f"Unsafe native archive member: {member.name}")
+            archive.extractall(staging, members=members)
+        if not complete(staging):
+            raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        os.replace(staging, target)
+        staging = None
+    finally:
+        # No-op after a successful replace (the dir was renamed away); cleans
+        # up the partial tree when extraction or validation failed.
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+    print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
+
+
+def prune_stale_onnxruntime(static_lib_dir, version):
+    """Remove ONNX Runtime version dirs under static_lib that do NOT match
+    `version`. Without this, a version bump leaves the stale dir next to
+    the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
+    symbols / wrong version, silently)."""
+    if not os.path.isdir(static_lib_dir):
+        return
+    expected = versions.ort_normalized_dir(version)
+    for name in os.listdir(static_lib_dir):
+        if not name.startswith("onnxruntime-linux-x64-static_lib-"):
+            continue
+        if name == expected:
+            continue
+        stale = os.path.join(static_lib_dir, name)
+        print(f"  Removing stale ONNX Runtime dir: {stale}")
+        shutil.rmtree(stale)
+
+
+def has_static_archives(directory):
+    """True when `directory` holds at least one static archive (.a)."""
+    return any(f.endswith(".a") for _, _, files in os.walk(directory) for f in files)
+
+
+def extract_onnxruntime(static_lib_dir, archive_path, version):
+    """Ensure the ONNX Runtime static archives for `version` sit under
+    `static_lib_dir`. Returns True when that version is available afterwards
+    (extracted now or already present), False when the archive is missing.
+
+    The infiniflow/ragflow-build release zip carries a top-level dir named
+    onnxruntime-v{version}-linux-x86_64, so a present
+    `static_lib_dir` is NOT evidence that THIS version is extracted: after a
+    version bump the stale dir is pruned and the new one must be extracted.
+    """
+    if not os.path.isfile(archive_path):
+        print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
+        return False
+    prune_stale_onnxruntime(static_lib_dir, version)
+    version_dir = os.path.join(static_lib_dir, versions.ort_normalized_dir(version))
+    if os.path.isdir(version_dir) and has_static_archives(version_dir):
+        print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
+        return True
+    os.makedirs(static_lib_dir, exist_ok=True)
+    print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
+    with zipfile.ZipFile(archive_path) as zf:
+        zf.extractall(static_lib_dir)
+    # The release zip's top-level dir is onnxruntime-v{version}-linux-x86_64, but
+    # build.sh's glob and the stale checks above all expect
+    # onnxruntime-linux-x64-static_lib-{version}-glibc2_28. Rename it so every
+    # consumer shares one name convention (driven by versions.ORT_VERSION).
+    extracted = os.path.join(static_lib_dir, versions.ort_extracted_dir(version))
+    normalized = os.path.join(static_lib_dir, versions.ort_normalized_dir(version))
+    if os.path.isdir(extracted) and extracted != normalized:
+        if os.path.exists(normalized):
+            shutil.rmtree(normalized)
+        print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
+        os.rename(extracted, normalized)
+    return True
+
+
+def _fetch_ort_sidecar_sha(url):
+    """Fetch the published `<asset>.sha256` sidecar for the ORT archive.
+
+    The infiniflow/ragflow-build zip is occasionally re-issued under the SAME
+    tag/asset name with patched content, so a stale local copy would link the
+    wrong build. Returns the expected digest, or None when the sidecar cannot
+    be fetched (best-effort; the downloader then falls back to the legacy
+    existence check)."""
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.text.split()[0]
+    except Exception as exc:  # noqa: BLE001 - best-effort; fall back to legacy
+        print(f"  WARNING: could not fetch {url} ({exc}); skipping checksum")
+        return None
+
+
+def _download_ort_archive(archive_path):
+    """Download the ORT release zip, verifying it against the published
+    .sha256 sidecar so a re-issued archive is always refreshed.
+
+    A (re-)download drops any previously extracted version dir, so the
+    same-named re-issued archive actually refreshes the .a files instead of
+    being masked by the extraction-time idempotence check."""
+    url = versions.ort_url()
+    expected_sha = _fetch_ort_sidecar_sha(url + ".sha256")
+    if os.path.isfile(archive_path) and os.path.getsize(archive_path) > 0:
+        if expected_sha is not None:
+            actual = _sha256_of(archive_path)
+            if actual == expected_sha:
+                print(f"  ✓ {os.path.basename(archive_path)} checksum matches released {expected_sha}; skipping download")
+                return
+            print(f"  {os.path.basename(archive_path)} checksum mismatch (local {actual} != released {expected_sha}); re-downloading")
+        elif _valid_download(archive_path):
+            return
+    download_with_progress(url, archive_path)
+    if expected_sha is not None:
+        actual = _sha256_of(archive_path)
+        if actual != expected_sha:
+            os.unlink(archive_path)
+            print(f"  ERROR: {os.path.basename(archive_path)} checksum mismatch after download (got {actual}, expected {expected_sha})", file=sys.stderr)
+            sys.exit(1)
+        print(f"  ✓ {os.path.basename(archive_path)} checksum verified ({actual})")
+    if not _valid_download(archive_path):
+        os.unlink(archive_path)
+        raise RuntimeError(f"Invalid downloaded dependency: {os.path.basename(archive_path)}")
+    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", versions.ort_normalized_dir())
+    if os.path.isdir(version_dir):
+        print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
+        shutil.rmtree(version_dir)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Download the native static libraries the Go build links")
+    parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
+    args = parser.parse_args()
+    if args.china_mirrors:
+        os.environ["GH_PROXY"] = "https://gh-proxy.com/"
+
+    # Anchor the downloaded archives to ragflow_deps/ regardless of the
+    # caller's working directory (build.sh invokes this from the repo root).
+    os.chdir(SCRIPT_DIR)
+
+    # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
+    _download_ort_archive(os.path.join(SCRIPT_DIR, versions.ort_asset_name()))
+    archives = [
+        (versions.pdfium_url(), "pdfium-linux-x64-static.tgz"),
+        (versions.pdf_oxide_url(), "pdf_oxide-go-ffi-linux-amd64.tar.gz"),
+        (versions.office_oxide_url(REPO_ROOT), "office_oxide-linux-x86_64.tar.gz"),
+    ]
+    for url, filename in archives:
+        print(f"Downloading {filename} from {url}...")
+        if _valid_download(filename):
+            print(f"  ✓ {filename} already present")
+            continue
+        download_with_progress(url, filename)
+        if not _valid_download(filename):
+            os.unlink(filename)
+            raise RuntimeError(f"Invalid downloaded dependency: {filename}")
+
+    # Extract native static libraries to ~/ragflow-native-libs for the Go build.
+    # Ensures build.sh can find them without network access.
+    office_version = versions.go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+    extractions = [
+        ("pdfium-linux-x64-static.tgz", "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
+        ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide", ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], None),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
+    ]
+
+    for archive, subdir, required_files, version in extractions:
+        archive_path = os.path.join(SCRIPT_DIR, archive)
+        if not os.path.isfile(archive_path):
+            print(f"  Skipping extraction: {archive} not found")
+            continue
+        target = os.path.join(NATIVE_LIBS_DIR, subdir)
+        try:
+            _extract_native_archive(archive_path, target, required_files, version)
+        except (tarfile.TarError, EOFError, RuntimeError):
+            os.unlink(archive_path)
+            raise
+
+    if not extract_onnxruntime(
+        os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib"),
+        os.path.join(SCRIPT_DIR, versions.ort_asset_name()),
+        versions.ORT_VERSION,
+    ):
+        # The archive was not downloaded or failed to extract, so no .a landed.
+        # Fail loud instead of exiting 0: build.sh's ORT guard would otherwise
+        # reject the build later with a less actionable message, and a missing
+        # .a left here is exactly the "silent green" this split must prevent.
+        print(
+            f"  ERROR: ONNX Runtime static archives for {versions.ORT_VERSION} were not "
+            f"extracted to {os.path.join(NATIVE_LIBS_DIR, 'onnxruntime', 'static_lib')}. "
+            f"Check the download above; build.sh will refuse to link without them.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # ONNX Runtime is statically linked into the server binary, so there is no
+    # runtime .so to surface. Log where build.sh (ONNXRUNTIME_STATIC_PREFIX) will
+    # find the archives — the .a files live under
+    # ~/ragflow-native-libs/onnxruntime/static_lib. The in-process backend
+    # resolves OrtGetApiBase via dlopen(NULL); there is no dynamic .so fallback.
+    ort_static_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib")
+    ort_a_files = [os.path.join(root, f) for root, _, files in os.walk(ort_static_dir) for f in files if f.endswith(".a")]
+    if ort_a_files:
+        print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
+    else:
+        print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
+        sys.exit(1)
+
+    print()
+    print(f"✓ Native build libraries ready under {NATIVE_LIBS_DIR}/")
+    print("  Run: bash build.sh (it will find them without network access).")
+
+
+if __name__ == "__main__":
+    main()

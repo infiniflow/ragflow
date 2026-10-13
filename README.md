@@ -256,15 +256,14 @@ For document-engine changes, configuration updates, restarting services, and ret
    cd ragflow
    ```
 
-2. Run the [dependency download script](./ragflow_deps/download_deps.py) to download the static libraries and model files:
+2. Run the dependency download scripts to prepare the native static libraries the Go build links (`download_native_deps.py`) and the model / tokenizer resources the backend loads at runtime (`download_deps.py`):
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run ragflow_deps/download_native_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
 
-   The script prepares native libraries and model resources required for the Go build and needs `requests` and `huggingface-hub`. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
+   `download_native_deps.py` pulls and unpacks pdfium, pdf_oxide, office_oxide, and onnxruntime under `~/ragflow-native-libs`; `download_deps.py` pulls the cl100k vocabulary, DeepDoc models, and embedding tokenizer assets under `ragflow_deps/`. Both are Python scripts; `uv run` installs their declared dependencies (`requests`, plus `huggingface-hub` for the model and tokenizer downloads) automatically. Skip this step if you have prepared the same resources by other means. When started from the repository root, Go services automatically find `internal/rag/res/deepdoc`; to start from another directory, set `DEEPDOC_MODEL_DIR` to its absolute path.
 
 3. Build the services:
 

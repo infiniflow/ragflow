@@ -38,10 +38,11 @@ target/
 # regardless of which resources are prepared for the dependency image.
 # The deps image is built from this directory with:
 #   cd ragflow_deps && docker build -f Dockerfile -t infiniflow/ragflow_deps .
-# The Go downloader is re-included because build.sh reads its ORT version pin.
-# Re-including requires NOT excluding the directory itself.
+# versions.py is re-included because build.sh reads its ORT version pin (and
+# the other download versions) when building the Go server. Re-including
+# requires NOT excluding the directory itself.
 ragflow_deps/*
-!ragflow_deps/download_deps.py
+!ragflow_deps/versions.py
 
 # ── IDE and editor config ──────────────────────────────────────────────────
 .idea/
