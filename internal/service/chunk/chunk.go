@@ -293,8 +293,17 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 			common.Warn("Failed to get flatted metadata", zap.Error(err))
 		} else {
 			common.Info("metadata filter conditions", zap.Any("filter", filter))
-			filteredDocIDs, _ := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
-			docIDs = filteredDocIDs
+			filteredDocIDs, outcome := service.ApplyMetaDataFilter(ctx, filter, flattedMeta, req.Question, chatModelForFilter, req.DocIDs, []string(req.Datasets))
+			switch outcome {
+			case service.MetaFilterOutcomeNoConditions:
+				// No filter was produced, so keep the caller's doc_ids scope.
+			case service.MetaFilterOutcomeMatchedNothing:
+				// Conditions matched no document. An empty doc_ids list would drop the
+				// doc_id scope and search the whole dataset, so restrict to the sentinel.
+				docIDs = []string{service.NoMatchDocIDSentinel}
+			default:
+				docIDs = filteredDocIDs
+			}
 			common.Info("ApplyMetaDataFilter result", zap.Strings("docIDs", docIDs))
 		}
 	}

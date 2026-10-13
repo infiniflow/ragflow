@@ -71,7 +71,7 @@ func (e *Enhancer) FilterDocuments(
 	if err != nil {
 		return nil, err
 	}
-	docIDs, noMatches := service.ApplyMetaDataFilter(
+	docIDs, outcome := service.ApplyMetaDataFilter(
 		ctx,
 		filter,
 		metadata,
@@ -80,10 +80,19 @@ func (e *Enhancer) FilterDocuments(
 		baseDocIDs,
 		kbIDs,
 	)
-	if noMatches {
+	switch outcome {
+	case service.MetaFilterOutcomeNoConditions:
+		// The LLM emitted no usable conditions (or the reply was unparseable).
+		// This is not the same as "conditions matched nothing" — keep the
+		// unfiltered document list, matching the chat / /api/v1/retrieval
+		// behaviour and closing the agent Retrieval tool's "no documents
+		// returned for an unrelated question" regression (#20533).
+		return baseDocIDs, nil
+	case service.MetaFilterOutcomeMatchedNothing:
 		return []string{service.NoMatchDocIDSentinel}, nil
+	default:
+		return docIDs, nil
 	}
-	return docIDs, nil
 }
 
 // LabelQuestion returns tag-based rank features for NLP reranking.

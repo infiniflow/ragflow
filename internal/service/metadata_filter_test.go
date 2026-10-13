@@ -17,6 +17,8 @@
 package service
 
 import (
+	"context"
+	"reflect"
 	"sort"
 	"testing"
 
@@ -520,5 +522,95 @@ func TestCompareValuesDirectly(t *testing.T) {
 		if got != tt.want {
 			t.Errorf("compareValues(%q, %q, %q) = %v, want %v", tt.v1, tt.v2, tt.op, got, tt.want)
 		}
+	}
+}
+
+// TestApplyMetaDataFilter_NilConfigReturnsBaseDocs pins the contract for the
+// "no meta_data_filter config" path: ApplyMetaDataFilter must return the
+// unfiltered baseDocIDs with MetaFilterOutcomeMatched so chat / /api/v1/retrieval
+// and the agent Retrieval tool all keep the original document list. The
+// previous `(_, false)` return collapsed this with the "filter ran and matched"
+// case, which was fine for callers that ignore the bool — but it conflated
+// distinct outcomes and made the regression in #20533 impossible to fix
+// without a 3-state return.
+func TestApplyMetaDataFilter_NilConfigReturnsBaseDocs(t *testing.T) {
+	base := []string{"doc-1", "doc-2", "doc-3"}
+	got, outcome := ApplyMetaDataFilter(
+		context.Background(),
+		nil,
+		common.MetaData{"author": {"Wang Hu": []string{"doc-1"}}},
+		"q",
+		nil,
+		base,
+		[]string{"kb-1"},
+	)
+	if outcome != MetaFilterOutcomeMatched {
+		t.Fatalf("outcome = %d, want MetaFilterOutcomeMatched (%d)", outcome, MetaFilterOutcomeMatched)
+	}
+	if !reflect.DeepEqual(got, base) {
+		t.Fatalf("docIDs = %v, want %v", got, base)
+	}
+}
+
+// TestApplyMetaDataFilter_AutoLLMErrorIsNoConditions pins the contract for
+// the "auto / semi_auto with a nil chat model" path: GenMetaFilter returns
+// an error (chatModel==nil), and ApplyMetaDataFilter must surface
+// MetaFilterOutcomeNoConditions so the agent Retrieval tool can distinguish
+// this from MetaFilterOutcomeMatchedNothing. Without the fix in #20533 the
+// agent tool would have returned the NoMatchDocIDSentinel for a question that
+// simply did not produce a filter.
+func TestApplyMetaDataFilter_AutoLLMErrorIsNoConditions(t *testing.T) {
+	_, outcome := ApplyMetaDataFilter(
+		context.Background(),
+		map[string]interface{}{"method": "auto"},
+		common.MetaData{"author": {"Wang Hu": []string{"doc-1"}}},
+		"q",
+		nil, // nil chat model → GenMetaFilter returns error → NoConditions
+		[]string{"doc-1"},
+		[]string{"kb-1"},
+	)
+	if outcome != MetaFilterOutcomeNoConditions {
+		t.Fatalf("outcome = %d, want MetaFilterOutcomeNoConditions (%d)", outcome, MetaFilterOutcomeNoConditions)
+	}
+}
+
+func TestApplyMetaDataFilter_SemiAutoLLMErrorIsNoConditions(t *testing.T) {
+	_, outcome := ApplyMetaDataFilter(
+		context.Background(),
+		map[string]interface{}{
+			"method":    "semi_auto",
+			"semi_auto": []interface{}{"author"},
+		},
+		common.MetaData{"author": {"Wang Hu": []string{"doc-1"}}},
+		"q",
+		nil, // nil chat model → GenMetaFilter returns error → NoConditions
+		[]string{"doc-1"},
+		[]string{"kb-1"},
+	)
+	if outcome != MetaFilterOutcomeNoConditions {
+		t.Fatalf("outcome = %d, want MetaFilterOutcomeNoConditions (%d)", outcome, MetaFilterOutcomeNoConditions)
+	}
+}
+
+// TestApplyMetaDataFilter_ManualNoFiltersReturnsBaseDocs pins the contract
+// for the manual path with no manual filters configured: there is no LLM
+// involved so the outcome must be MetaFilterOutcomeMatched (not
+// NoConditions — that signal would imply an LLM was consulted).
+func TestApplyMetaDataFilter_ManualNoFiltersReturnsBaseDocs(t *testing.T) {
+	base := []string{"doc-1", "doc-2"}
+	got, outcome := ApplyMetaDataFilter(
+		context.Background(),
+		map[string]interface{}{"method": "manual"},
+		common.MetaData{},
+		"q",
+		nil,
+		base,
+		[]string{"kb-1"},
+	)
+	if outcome != MetaFilterOutcomeMatched {
+		t.Fatalf("outcome = %d, want MetaFilterOutcomeMatched (%d)", outcome, MetaFilterOutcomeMatched)
+	}
+	if !reflect.DeepEqual(got, base) {
+		t.Fatalf("docIDs = %v, want %v", got, base)
 	}
 }
