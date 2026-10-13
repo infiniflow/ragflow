@@ -345,6 +345,14 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// With no explicit tools, use the requested template. The config reloads
 	// when its mtime changes so operators can change the tool list and prompt.
 	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	// The compiled-knowledge tools are injected, never declared: they only make
+	// sense when the bound datasets have produced knowledge-compilation products
+	// (navigation tree / compiled structure / knowledge graph), so an uncompiled
+	// corpus never offers - or pays for - them. A caller that passes explicit
+	// tools owns its own set and is left untouched.
+	if len(in.Tools) == 0 && datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
+		tools = append(tools, compiledKnowledgeTools(in.TenantID, in.DatasetIDs)...)
+	}
 	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
 	if err != nil {
 		return "", err
