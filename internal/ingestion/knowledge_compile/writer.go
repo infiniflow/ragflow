@@ -561,7 +561,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			row["to_entity_kwd"] = b.ToEntity
 		} else {
 			row["type_kwd"] = "entity"
-			row["name_kwd"] = b.Name
+			row["name_kwd"] = strings.ToLower(b.Name)
 			row["entity_type_kwd"] = b.Type
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount

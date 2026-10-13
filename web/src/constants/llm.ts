@@ -111,6 +111,7 @@ export enum LLMFactory {
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
   Opper = 'Opper',
+  DemonRoute = 'Demon Route',
 }
 
 // Please lowercase the file name
@@ -255,7 +256,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',

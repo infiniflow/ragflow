@@ -37,6 +37,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 )
 
@@ -379,16 +380,14 @@ type MemoryFiltersResponse struct {
 }
 
 func (s *MemoryService) ListMemoryFilters(ctx context.Context, userID string) (*MemoryFiltersResponse, error) {
-	userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
+	memoryIDs, err := accessibleMemoryIDs(ctx, userID, permission.OperationRead)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		return nil, err
 	}
-	tenantIDs := make([]string, 0, len(userTenants)+1)
-	tenantIDs = append(tenantIDs, userID)
-	for _, tenant := range userTenants {
-		tenantIDs = append(tenantIDs, tenant.TenantID)
+	if len(memoryIDs) == 0 {
+		return &MemoryFiltersResponse{}, nil
 	}
-	memories, _, err := s.memoryDAO.GetByFilter(ctx, dao.DB, userID, tenantIDs, nil, "", "", 1, 0)
+	memories, _, err := s.memoryDAO.GetByFilter(ctx, dao.DB, memoryIDs, nil, nil, "", "", 1, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -459,26 +458,26 @@ func filterOptionsInOrder(counts map[string]int64, canonicalOrder []string) []Me
 //
 //	req := &CreateMemoryRequest{Name: "MyMemory", MemoryType: []string{"semantic"}, EmbdID: "embd1", LLMID: "llm1"}
 //	resp, err := service.CreateMemory("tenant123", req)
-func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *CreateMemoryRequest) (*CreateMemoryResponse, error) {
+func (s *MemoryService) CreateMemory(ctx context.Context, userID string, req *CreateMemoryRequest) (*CreateMemoryResponse, error) {
 	// Resolve tenant model IDs, mirroring Python's ensure_tenant_model_ids_for_params.
 	// Resolution failure is non-fatal (e.g. Builtin models that have no
 	// tenant_model row) — we leave the tenant_*_id fields nil and proceed.
 	modelFactory := NewModelFactory()
 	if req.LLMID != "" && req.TenantLLMID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeChat, req.LLMID)
+		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: userID}, entity.ModelTypeChat, req.LLMID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant LLM id",
-				zap.String("tenant_id", tenantID), zap.String("llm_id", req.LLMID), zap.Error(err))
+				zap.String("tenant_id", userID), zap.String("llm_id", req.LLMID), zap.Error(err))
 		} else if info != nil && info.ID != "" {
 			tenantLLMID := info.ID
 			req.TenantLLMID = &tenantLLMID
 		}
 	}
 	if req.EmbdID != "" && req.TenantEmbdID == nil {
-		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: tenantID}, entity.ModelTypeEmbedding, req.EmbdID)
+		info, err := modelFactory.ResolveInfo(ctx, ModelAccess{TenantID: userID}, entity.ModelTypeEmbedding, req.EmbdID)
 		if err != nil {
 			common.Warn("CreateMemory: failed to resolve tenant embedding id",
-				zap.String("tenant_id", tenantID), zap.String("embd_id", req.EmbdID), zap.Error(err))
+				zap.String("tenant_id", userID), zap.String("embd_id", req.EmbdID), zap.Error(err))
 		} else if info != nil && info.ID != "" {
 			tenantEmbdID := info.ID
 			req.TenantEmbdID = &tenantEmbdID
@@ -509,7 +508,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	}
 
 	memoryName, err := common.UniqueName(memoryName, MemoryNameLimit, func(candidate string) (bool, error) {
-		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+		existing, err := s.memoryDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
 		if err != nil {
 			return false, err
 		}
@@ -527,7 +526,7 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 	memory := &entity.Memory{
 		ID:               newID,
 		Name:             memoryName,
-		TenantID:         tenantID,
+		TenantID:         userID,
 		MemoryType:       memoryTypeInt,
 		StorageType:      "table",
 		EmbdID:           req.EmbdID,
@@ -574,9 +573,9 @@ func (s *MemoryService) CreateMemory(ctx context.Context, tenantID string, req *
 //
 //	req := &UpdateMemoryRequest{Name: ptr("NewName"), MemorySize: ptr(int64(1000000))}
 //	resp, err := service.UpdateMemory("tenant123", "memory456", req)
-func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
+func (s *MemoryService) UpdateMemory(ctx context.Context, userID string, memoryID string, req *UpdateMemoryRequest) (*CreateMemoryResponse, error) {
 	updateDict := make(map[string]interface{})
-	if ok, err := s.memoryDAO.Accessible(ctx, dao.DB, tenantID, memoryID); !ok || err != nil {
+	if err := checkMemoryPermission(ctx, userID, memoryID, permission.OperationUpdate); err != nil {
 		return nil, err
 	}
 
@@ -609,11 +608,13 @@ func (s *MemoryService) UpdateMemory(ctx context.Context, tenantID string, memor
 
 	if req.Permissions != nil {
 		perm := TenantPermission(strings.ToLower(strings.TrimSpace(*req.Permissions)))
-		if currentMemory.TenantID != tenantID && strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
-			return nil, fmt.Errorf("tenant '%s' is not allowed to modify the memory's permission", tenantID)
-		}
 		if !validPermissions[perm] {
 			return nil, fmt.Errorf("unknown permission '%s'", *req.Permissions)
+		}
+		if strings.ToLower(strings.TrimSpace(currentMemory.Permissions)) != string(perm) {
+			if err := checkMemoryPermission(ctx, userID, memoryID, permission.OperationShare); err != nil {
+				return nil, err
+			}
 		}
 		updateDict["permissions"] = perm
 	}
@@ -921,8 +922,8 @@ func sameStringSet(a, b []string) bool {
 //
 //	err := service.DeleteMemory(ctx, "user123", "memory456")
 func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID string) error {
-	// Verify the caller has access to this memory
-	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	// Verify the caller can delete this memory before removing its stored data.
+	memory, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationDelete)
 	if err != nil {
 		return err
 	}
@@ -946,7 +947,7 @@ func (s *MemoryService) DeleteMemory(ctx context.Context, userID, memoryID strin
 // This mirrors Python memory_api_service.forget_message and keeps the message
 // record for retention/cleanup policies instead of deleting it immediately.
 func (s *MemoryService) ForgetMessage(ctx context.Context, userID string, memoryID string, messageID int64) error {
-	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	memory, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1006,7 +1007,7 @@ func (s *MemoryService) AddMessage(ctx context.Context, currentUserID string, me
 	}
 	missingMemoryIDs := missingRequestedMemoryIDs(requestedMemoryIDs, accessibleMemoryIDs)
 
-	res, err := NewMemoryMessageService(s).QueueSaveToMemoryTask(ctx, accessibleMemoryIDs, msg)
+	res, err := NewMemoryMessageService(s).queueSaveToMemoryTask(ctx, accessibleMemoryIDs, msg)
 	if err != nil {
 		return false, err.Error(), err
 	}
@@ -1024,8 +1025,21 @@ func (s *MemoryService) AddMessage(ctx context.Context, currentUserID string, me
 	return true, "All add to task.", nil
 }
 
-func (s *MemoryService) saveAgentMessage(ctx context.Context, memoryIDs []string, msg MemoryMessage) (bool, string, error) {
-	res, err := NewMemoryMessageService(s).QueueSaveToMemoryTask(ctx, splitFilterValues(memoryIDs), msg)
+func (s *MemoryService) saveAgentMessage(ctx context.Context, userID string, memoryIDs []string, msg MemoryMessage) (bool, string, error) {
+	memories, err := s.filterAccessibleMemories(ctx, userID, memoryIDs)
+	if err != nil {
+		return false, err.Error(), err
+	}
+	if len(memories) == 0 {
+		return false, "Memory not found.", nil
+	}
+	accessibleIDs := make([]string, 0, len(memories))
+	for _, memory := range memories {
+		if memory != nil {
+			accessibleIDs = append(accessibleIDs, memory.ID)
+		}
+	}
+	res, err := NewMemoryMessageService(s).queueSaveToMemoryTask(ctx, accessibleIDs, msg)
 	if err != nil {
 		return false, err.Error(), err
 	}
@@ -1084,7 +1098,7 @@ func memorySaveErrorMessage(res *QueueSaveResult) string {
 }
 
 func (s *MemoryService) UpdateMessageStatus(ctx context.Context, userID, memoryID string, messageID int64, status bool) (bool, error) {
-	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	memory, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationUpdate)
 	if err != nil {
 		return false, err
 	}
@@ -1120,7 +1134,7 @@ func (s *MemoryService) UpdateMessage(ctx context.Context, userID, memoryID stri
 }
 
 func (s *MemoryService) GetMessageContent(ctx context.Context, userID, memoryID string, messageID int64) (map[string]interface{}, error) {
-	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	memory, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1290,51 +1304,14 @@ func (s *MemoryService) filterAccessibleMemories(ctx context.Context, userID str
 		return []*entity.Memory{}, nil
 	}
 
-	memories, err := s.memoryDAO.GetByIDs(ctx, dao.DB, memoryIDs)
+	accessibleIDs, err := filterMemoryIDs(ctx, userID, memoryIDs, permission.OperationUse)
 	if err != nil {
 		return nil, err
 	}
-	if len(memories) == 0 {
+	if len(accessibleIDs) == 0 {
 		return []*entity.Memory{}, nil
 	}
-
-	joinedTenantIDs := map[string]struct{}{userID: {}}
-	needsTeamLookup := false
-	for _, memory := range memories {
-		if memory != nil && memory.TenantID != userID && memory.Permissions == string(TenantPermissionTeam) {
-			needsTeamLookup = true
-			break
-		}
-	}
-	if needsTeamLookup {
-		userTenants, err := NewUserTenantService().GetUserTenantRelationByUserIDWithContext(ctx, userID)
-		if err != nil {
-			return nil, err
-		}
-		for _, tenant := range userTenants {
-			if tenant != nil && tenant.TenantID != "" {
-				joinedTenantIDs[tenant.TenantID] = struct{}{}
-			}
-		}
-	}
-
-	accessible := make([]*entity.Memory, 0, len(memories))
-	for _, memory := range memories {
-		if memory == nil {
-			continue
-		}
-		if memory.TenantID == userID {
-			accessible = append(accessible, memory)
-			continue
-		}
-		if memory.Permissions != string(TenantPermissionTeam) {
-			continue
-		}
-		if _, ok := joinedTenantIDs[memory.TenantID]; ok {
-			accessible = append(accessible, memory)
-		}
-	}
-	return accessible, nil
+	return s.memoryDAO.GetByIDs(ctx, dao.DB, accessibleIDs)
 }
 
 func splitFilterValues(values interface{}) []string {
@@ -1605,47 +1582,29 @@ func isMessageDocumentNotFound(err error) bool {
 	return errors.Is(err, enginetypes.ErrDocumentNotFound)
 }
 
-func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, memoryID string) (*entity.Memory, error) {
+func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID string, operation permission.Operation) (*entity.Memory, error) {
 	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if err := checkMemoryPermission(ctx, userID, memoryID, operation); err != nil {
 		return nil, err
 	}
 	memory, err := s.memoryDAO.GetByIDWithContext(ctx, dao.DB, memoryID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
-			return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+			return nil, permission.ErrResourceNotFound
 		}
 		return nil, fmt.Errorf("failed to get memory '%s': %w", memoryID, err)
 	}
-	if memory.TenantID == userID {
-		return memory, nil
-	}
-	if memory.Permissions != string(TenantPermissionTeam) {
-		return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
-	}
-
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	userTenantService := NewUserTenantService()
-	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	for _, tenant := range userTenants {
-		if tenant.TenantID == memory.TenantID {
-			return memory, nil
-		}
-	}
-
-	return nil, &ResourceNotFoundError{Resource: "Memory", ID: memoryID}
+	return memory, nil
 }
 
-// ListMemories retrieves a paginated list of memories with optional filters
-// When tenantIDs is empty, it retrieves all tenants associated with the user
+// ListMemories retrieves a paginated list of memories visible to the caller,
+// then applies optional tenant and business filters.
 //
 // Parameters:
-//   - userID: The user ID for tenant filtering when tenantIDs is empty
-//   - tenantIDs: Array of tenant IDs to filter by (empty means all user's tenants)
+//   - userID: The authenticated user requesting the memories
+//   - tenantIDs: Optional tenant IDs to filter the caller's authorized memories by
 //   - memoryTypes: Array of memory type names to filter by (empty means all types)
 //   - storageType: Storage type to filter by (empty means all types)
 //   - keywords: Keywords to search in memory names (empty means no keyword filter)
@@ -1659,43 +1618,16 @@ func (s *MemoryService) requireMemoryAccess(ctx context.Context, userID string, 
 // Example:
 //
 //	resp, err := service.ListMemories("user123", []string{}, []string{"semantic"}, "table", "test", 1, 10)
-func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) (*ListMemoryResponse, error) {
-	// The tenant filter may only name tenants the caller belongs to: Python's
-	// list_memory intersects the requested ids with the caller's joined
-	// tenants and returns an empty page when nothing survives. Without the
-	// clamp a caller could list another tenant's team-shared memories by
-	// passing its id in the tenant_id query parameter.
-	userTenantService := NewUserTenantService()
-	userTenants, err := userTenantService.GetUserTenantRelationByUserIDWithContext(ctx, userID)
+func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, canvasID string) (*ListMemoryResponse, error) {
+	memoryIDs, err := accessibleMemoryIDsForCanvas(ctx, userID, canvasID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+		return nil, err
 	}
-	joinedIDs := make([]string, 0, len(userTenants)+1)
-	joinedIDs = append(joinedIDs, userID)
-	for _, tenant := range userTenants {
-		joinedIDs = append(joinedIDs, tenant.TenantID)
+	if len(memoryIDs) == 0 {
+		return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
 	}
 
-	if len(tenantIDs) == 0 {
-		tenantIDs = joinedIDs
-	} else {
-		joined := make(map[string]struct{}, len(joinedIDs))
-		for _, id := range joinedIDs {
-			joined[id] = struct{}{}
-		}
-		allowed := make([]string, 0, len(tenantIDs))
-		for _, id := range tenantIDs {
-			if _, ok := joined[id]; ok {
-				allowed = append(allowed, id)
-			}
-		}
-		if len(allowed) == 0 {
-			return &ListMemoryResponse{MemoryList: []map[string]interface{}{}}, nil
-		}
-		tenantIDs = allowed
-	}
-
-	memories, total, err := s.memoryDAO.GetByFilter(ctx, dao.DB, userID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	memories, total, err := s.memoryDAO.GetByFilter(ctx, dao.DB, memoryIDs, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
 	if err != nil {
 		return nil, err
 	}
@@ -1783,7 +1715,7 @@ func ResolveTenantModelDisplayName(ctx context.Context, db *gorm.DB, tenantModel
 //
 //	resp, err := service.GetMemoryConfig(ctx, "user123", "memory456")
 func (s *MemoryService) GetMemoryConfig(ctx context.Context, userID, memoryID string) (*CreateMemoryResponse, error) {
-	if _, err := s.requireMemoryAccess(ctx, userID, memoryID); err != nil {
+	if _, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationRead); err != nil {
 		return nil, err
 	}
 	return s.getMemoryConfig(ctx, memoryID)
@@ -1800,7 +1732,7 @@ func (s *MemoryService) getMemoryConfig(ctx context.Context, memoryID string) (*
 }
 
 func (s *MemoryService) GetMemoryMessages(ctx context.Context, userID, memoryID string, agentIDs []string, keywords string, page int, pageSize int) (map[string]interface{}, error) {
-	memory, err := s.requireMemoryAccess(ctx, userID, memoryID)
+	memory, err := s.memoryWithAccess(ctx, userID, memoryID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}

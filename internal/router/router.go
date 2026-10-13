@@ -281,7 +281,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.GET("/list", r.tenantHandler.TenantList)
 				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
 				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
 				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
@@ -420,7 +419,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-				searches.POST("/:search_id/completion", r.searchHandler.Completion)
 				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
@@ -439,14 +437,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			workspaceFiles := v1.Group("/workspace-files")
 			{
 				workspaceFiles.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
-			}
-
-			// File routes
-			file := authorized.Group("/v1/file")
-			{
-				file.GET("/root_folder", r.fileHandler.GetRootFolder)
-				file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-				file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
 			}
 
 			// File commit routes — /folders/ takes folder_id directly
@@ -556,13 +546,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PATCH("/:provider_id_or_name/instances/:instance_id_or_name/models/*model_name", r.providerHandler.AlterModel)
 				provider.POST("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.DropInstanceModels)
-				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
-				v1.POST("/embeddings", r.providerHandler.EmbedText)
-				v1.POST("/rerank", r.providerHandler.RerankDocument)
-				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
-				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
-				v1.POST("/file/ocr", r.providerHandler.OCRFile)
-				v1.POST("/file/parse", r.providerHandler.ParseFile)
+			}
+
+			// command is for CLI
+			command := v1
+			{
+				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/embeddings", r.providerHandler.EmbedText)
+				command.POST("/rerank", r.providerHandler.RerankDocument)
+				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
+				command.POST("/audio/speech", r.providerHandler.AudioSpeech)
+				command.POST("/file/ocr", r.providerHandler.OCRFile)
+				command.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")
@@ -690,22 +685,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				system.PUT("/memory", r.systemHandler.SetMemory)
 				system.GET("/concurrency", r.systemHandler.GetConcurrency)
 				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
-			}
-
-			// Document routes
-			doc := v1.Group("/document")
-			{
-				doc.POST("/list", r.documentHandler.ListDocuments)
-				doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
-				doc.POST("/set_meta", r.documentHandler.SetMeta)
-				doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
-			}
-
-			// Chunk routes
-			chunk := v1.Group("/chunk")
-			{
-				chunk.POST("/list", r.chunkHandler.List)
-				chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 			}
 
 			// Chat Channel

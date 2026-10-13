@@ -682,7 +682,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -740,7 +741,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig(c.Request.Context())
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
 		writeSandboxError(c, err)
 		return

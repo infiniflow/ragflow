@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"ragflow/internal/agentic_rag"
 )
 
 // Providers, endpoints and clients are listed alphabetically by provider id
@@ -1057,4 +1059,30 @@ func retrieveYouComWebSearch(
 		})
 	}
 	return webSearchPayload("youcom", hits), nil
+}
+
+// webSearchFunc adapts the pipeline's configured provider to the agent's
+// per-query web_search tool. nil hides the tool entirely (the same rule the
+// harness path applies).
+func (s *ChatPipelineService) webSearchFunc(promptConfig map[string]interface{}) agentic_rag.WebSearchFunc {
+	provider := resolveWebSearchProvider(promptConfig)
+	if provider == nil {
+		return nil
+	}
+	return func(ctx context.Context, query string) ([]agentic_rag.WebResult, error) {
+		res, err := s.retrieveWebSearch(ctx, provider, query)
+		if err != nil {
+			return nil, err
+		}
+		chunks, _ := res["chunks"].([]map[string]interface{})
+		out := make([]agentic_rag.WebResult, 0, len(chunks))
+		for _, c := range chunks {
+			out = append(out, agentic_rag.WebResult{
+				Title:   stringValue(c["docnm_kwd"]),
+				URL:     stringValue(c["url"]),
+				Content: stringValue(c["content_with_weight"]),
+			})
+		}
+		return out, nil
+	}
 }

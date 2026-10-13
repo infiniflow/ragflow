@@ -143,10 +143,13 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 func (h *FileCommitHandler) folderAccessible(c *gin.Context, userID, folderID string) bool {
 	ctx := c.Request.Context()
 	folder, err := h.fileDAO.GetByID(ctx, dao.DB, folderID)
-	if err != nil || folder == nil {
+	if err != nil || folder == nil || folder.Type != "folder" {
 		return false
 	}
-	return service.CheckFileTeamPermission(ctx, h.fileDAO, folder, userID)
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindFolder,
+		ID:   folder.ID,
+	}, permission.OperationRead) == nil
 }
 
 func commitFolderID(c *gin.Context) string {
@@ -676,7 +679,10 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || !service.CheckFileTeamPermission(ctx, h.fileDAO, file, user.ID) {
+	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{
+		Kind: permission.ResourceKindFile,
+		ID:   fileID,
+	}, permission.OperationRead) != nil {
 		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "File not found")
 		return
 	}

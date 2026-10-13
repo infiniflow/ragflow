@@ -102,7 +102,7 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 		t.Fatal("table field missing or not *entity.TableData")
 	}
 	var all strings.Builder
-	for _, row := range td.Rows {
+	for _, row := range td.CellTexts() {
 		for _, c := range row {
 			all.WriteString(c)
 		}
@@ -110,10 +110,10 @@ func TestBuildDOCXJSONSections_Tables(t *testing.T) {
 	s := all.String()
 	if !strings.Contains(s, "A1") || !strings.Contains(s, "B1") ||
 		!strings.Contains(s, "A2") || !strings.Contains(s, "B2") {
-		t.Errorf("table rows = %#v, missing cell content", td.Rows)
+		t.Errorf("table rows = %#v, missing cell content", td.CellTexts())
 	}
-	if len(td.Rows) != 2 {
-		t.Errorf("table rows = %#v, want 2 rows", td.Rows)
+	if len(td.CellTexts()) != 2 {
+		t.Errorf("table rows = %#v, want 2 rows", td.CellTexts())
 	}
 	if got, ok := item["doc_type_kwd"].(string); !ok || got != "table" {
 		t.Errorf("doc_type_kwd = %q, want %q", got, "table")

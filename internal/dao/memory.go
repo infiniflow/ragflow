@@ -292,12 +292,13 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(ctx context.Context, db *gorm.DB, id 
 	}, nil
 }
 
-// GetByFilter retrieves memories with optional filters
-// Supports filtering by tenant_id, memory_type, storage_type, and keywords
-// Returns paginated results with owner_name from user table JOIN
+// GetByFilter retrieves authorized memories with optional business filters.
+// memoryIDs must come from the permission layer; tenantIDs only narrows that
+// authorized set. Results include owner_name from the user table.
 //
 // Parameters:
-//   - tenantIDs: Array of tenant IDs to filter by (empty means all tenants)
+//   - memoryIDs: Authorized memory IDs (empty means no results)
+//   - tenantIDs: Optional tenant IDs to filter the authorized results by
 //   - memoryTypes: Array of memory type names to filter by (empty means all types)
 //   - storageType: Storage type to filter by (empty means all types)
 //   - keywords: Keywords to search in memory names (empty means no keyword filter)
@@ -311,19 +312,17 @@ func (dao *MemoryDAO) GetWithOwnerNameByID(ctx context.Context, db *gorm.DB, id 
 //
 // Example:
 //
-//	memories, total, err := dao.GetByFilter([]string{"tenant1"}, []string{"semantic"}, "table", "test", 1, 10)
-func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
-	var conditions []string
-	var args []interface{}
+//	memories, total, err := dao.GetByFilter(ctx, db, authorizedIDs, nil, []string{"semantic"}, "table", "test", 1, 10)
+func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, memoryIDs, tenantIDs, memoryTypes []string, storageType string, keywords string, page int, pageSize int) ([]*entity.MemoryListItem, int64, error) {
+	if len(memoryIDs) == 0 {
+		return []*entity.MemoryListItem{}, 0, nil
+	}
+	conditions := []string{"m.id IN ?"}
+	args := []interface{}{memoryIDs}
 
 	if len(tenantIDs) > 0 {
 		conditions = append(conditions, "m.tenant_id IN ?")
 		args = append(args, tenantIDs)
-	}
-
-	if userID != "" {
-		conditions = append(conditions, "(m.tenant_id = ? OR m.permissions = ?)")
-		args = append(args, userID, "team")
 	}
 
 	if len(memoryTypes) > 0 {
@@ -389,33 +388,4 @@ func (dao *MemoryDAO) GetByFilter(ctx context.Context, db *gorm.DB, userID strin
 	}
 
 	return memories, total, nil
-}
-
-// Accessible check if it is possible for user to access the memory
-func (dao *MemoryDAO) Accessible(ctx context.Context, db *gorm.DB, userID, memoryID string) (bool, error) {
-	memory, err := dao.GetByID(ctx, db, memoryID)
-	if err != nil {
-		return false, err
-	}
-
-	if memory.TenantID == userID {
-		return true, nil
-	}
-
-	if memory.Permissions != string(entity.TenantPermissionTeam) {
-		return false, fmt.Errorf("user %s have no access to this memory", userID)
-	}
-
-	var count int64
-	err = db.WithContext(ctx).Table("user_tenant").
-		Where("tenant_id = ? AND user_id = ? AND status = ?", memory.TenantID, userID, "1").
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	if count > 0 {
-		return true, nil
-	}
-
-	return false, fmt.Errorf("user %s have no access to this memory", userID)
 }
