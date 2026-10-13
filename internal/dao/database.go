@@ -18,6 +18,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -31,9 +32,10 @@ import (
 	"go.uber.org/zap"
 
 	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
-	// matching the document engine's client; the blank import registers the
-	// database/sql driver regardless of which engines the binary links in.
-	_ "github.com/lib/pq"
+	// matching the document engine's client; the import registers the
+	// database/sql driver regardless of which engines the binary links in,
+	// and autoMigrateSafely classifies its error type.
+	"github.com/lib/pq"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
@@ -476,18 +478,39 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 		return nil
 	}
 
-	// PostgreSQL/Vastbase: the same converging conditions surface as
-	// SQLSTATE 42P07 (relation), 42701 (column) and 42710 (object), all
-	// reported as "<object> already exists". Matching the fragment rather
-	// than the SQLSTATE keeps lib/pq and pgx text forms covered. A blanket
-	// "does not exist" match is deliberately absent: it would also hide a
-	// bad type name, which is a schema bug, not convergence.
-	if strings.Contains(strings.ToLower(errStr), "already exists") {
+	// PostgreSQL/Vastbase: the same converging conditions surface as lib/pq
+	// errors carrying SQLSTATE 42P07 (relation), 42701 (column) and 42710
+	// (constraint/object). Matching the typed SQLSTATE rather than an
+	// "already exists" text fragment keeps unrelated failures that merely
+	// phrase themselves that way from being read as convergence. Verifying
+	// that the named object belongs to the model being migrated is not
+	// feasible: a re-created index reports the index name, not its table. A
+	// blanket "does not exist" match is deliberately absent: it would also
+	// hide a bad type name, which is a schema bug, not convergence.
+	if isPostgresDuplicateObjectErr(err) {
 		common.Warn("Schema object already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 
 	return err
+}
+
+// isPostgresDuplicateObjectErr reports whether err is one of the
+// PostgreSQL-wire SQLSTATEs that mean "the schema object AutoMigrate tried
+// to create already exists": 42P07 (relation), 42701 (column) and 42710
+// (constraint/object). The metadata connection speaks lib/pq, and gorm's
+// postgres error translator maps only 23505/23503/42703, so these driver
+// errors reach this check intact.
+func isPostgresDuplicateObjectErr(err error) bool {
+	var pqErr *pq.Error
+	if !errors.As(err, &pqErr) {
+		return false
+	}
+	switch pqErr.Code {
+	case "42P07", "42701", "42710":
+		return true
+	}
+	return false
 }
 
 // autoMigrateRuntimeModels ensures the Go-exclusive runtime tables exist. The
