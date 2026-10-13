@@ -20,12 +20,28 @@ function validateUniqueKeys(
   });
 }
 
+const WebhookParameterSchema = z.object({
+  key: z.string().trim().min(1, 'The key is required!'),
+  type: z.string(),
+  required: z.boolean(),
+});
+
 const WebhookParametersSchema = z
+  .array(WebhookParameterSchema)
+  .superRefine(validateUniqueKeys)
+  .optional();
+
+const WebhookHeadersSchema = z
   .array(
-    z.object({
-      key: z.string().trim().min(1, 'The key is required!'),
-      type: z.string(),
-      required: z.boolean(),
+    WebhookParameterSchema.extend({
+      key: z
+        .string()
+        .trim()
+        .min(1, 'The key is required!')
+        .regex(
+          /^[0-9a-zA-Z_-]+$/,
+          'Header names may contain only letters, digits, underscores, and hyphens.',
+        ),
     }),
   )
   .superRefine(validateUniqueKeys)
@@ -83,7 +99,7 @@ export const BeginFormSchema = z.object({
   schema: z
     .object({
       query: WebhookParametersSchema,
-      headers: WebhookParametersSchema,
+      headers: WebhookHeadersSchema,
       body: WebhookParametersSchema,
     })
     .optional(),

@@ -17,6 +17,7 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { FormProvider, useForm } from 'react-hook-form';
 import { WebhookRequestSchema } from '../request-schema';
+import { BeginFormSchema } from '../../schema';
 
 jest.mock('@monaco-editor/react', () => ({ loader: { config: jest.fn() } }));
 jest.mock('react-i18next', () => ({
@@ -66,12 +67,14 @@ function RequestSchemaForm() {
   );
 }
 
-test('preserves HTTP header token characters and filters invalid characters', () => {
+test('preserves hyphenated header names and filters unsupported reference characters', () => {
   render(<RequestSchemaForm />);
   const [, headerInput] = screen.getAllByRole('textbox');
-  const headerName = "X-Request-ID!#$%&'*+.^_`|~";
-  fireEvent.change(headerInput, { target: { value: `${headerName}: bad` } });
-  expect(headerInput).toHaveValue(`${headerName}bad`);
+  const headerName = 'X-Request-ID_1';
+  fireEvent.change(headerInput, {
+    target: { value: `${headerName}!#$%&'*+.^\u0060|~: ` },
+  });
+  expect(headerInput).toHaveValue(headerName);
 });
 
 test('keeps query and body key filtering unchanged', () => {
@@ -82,3 +85,27 @@ test('keeps query and body key filtering unchanged', () => {
     expect(input).toHaveValue('fieldname_1');
   }
 });
+
+test.each(['x-request-id', 'X-Request-ID', 'request_id_1'])(
+  'accepts referenceable header name %s when saving',
+  (key) => {
+    expect(
+      BeginFormSchema.safeParse({
+        mode: 'Webhook',
+        schema: { headers: [{ key, type: 'string', required: true }] },
+      }).success,
+    ).toBe(true);
+  },
+);
+
+test.each(['x.request.id', 'x+request', 'x!request', 'x request'])(
+  'rejects unreferenceable header name %s when saving',
+  (key) => {
+    expect(
+      BeginFormSchema.safeParse({
+        mode: 'Webhook',
+        schema: { headers: [{ key, type: 'string', required: true }] },
+      }).success,
+    ).toBe(false);
+  },
+);

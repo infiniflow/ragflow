@@ -11,10 +11,10 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DynamicRequest } from './dynamic-request';
 
-// HTTP field names use the token character set, including hyphens.
-const HeaderNameInvalidCharacters = /[^!#$%&'*+\-.^_`|~0-9a-zA-Z]/g;
+// Dots are path separators; other HTTP token punctuation is not supported by variable references.
+const HeaderNameInvalidCharacters = /[^0-9a-zA-Z_-]/g;
 
-/** Configures query, header, and body fields with HTTP token characters for header names. */
+/** Configures request fields with header names supported by downstream variable references. */
 export function WebhookRequestSchema() {
   const { t } = useTranslation();
   const form = useFormContext();
