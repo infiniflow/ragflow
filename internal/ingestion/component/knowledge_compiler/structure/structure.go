@@ -143,6 +143,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	// The progress callback is supplied by the caller and is not required to be
 	// goroutine-safe; pool workers report out of order, so serialise it.
 	var progressMu sync.Mutex
+	mapDone := deps.Progress.Sub(0, 5).Counter(ctx, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
 		jobs = append(jobs, func() error {
@@ -150,6 +151,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: extracting batch %d/%d", compileType, i+1, len(batches)))
 			packed, batchIDs := PackBatch(batch)
 			if len(batchIDs) == 0 {
+				mapDone()
 				return nil
 			}
 			nodes, edges, err := extractHypergraph(ctx, deps, cfg, nodePrompt, edgePromptTmpl, packed)
@@ -178,6 +180,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 				"%s-template: batch %d/%d done: %d entities, %d relations",
 				compileType, i+1, len(batches), len(nodes), len(edges)))
 			progressMu.Unlock()
+			mapDone()
 			return nil
 		})
 	}
@@ -187,6 +190,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if err := runBatches(ctx, jobs); err != nil {
 		return common.Outputs{}, err
 	}
+	deps.Progress.Sub(0, 5).Report(ctx, 1)
 	// Embed each extracted batch serially after all MAP jobs have returned.
 	// This avoids nesting Embed.Encode (and its batch jobs) inside a worker
 	// already occupied by the shared compiler pool.
@@ -201,27 +205,33 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 		perBatch[i] = rows
 		rowCount += len(rows)
+		deps.Progress.Sub(1, 5).Report(ctx, float64(i+1)/float64(len(extracted)))
 		runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 			"%s-template: embedded batch %d/%d (%d rows so far)", compileType, i+1, len(batches), rowCount))
 	}
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
 		"%s-template: deduplicating %d row(s)", compileType, rowCount))
 
+	deps.Progress.Sub(1, 5).Report(ctx, 1)
 	// ---- DEDUP ----
 	// Sequential in batch order so merge outcomes are deterministic and match
 	// Python's _struct_local_dedup (which folds docs in list order).
 	decider := NewLLMMergeDecider(deps.Chat, llmID, deps.Embed, param.SimilarityThreshold)
 	deduper := NewGroupedDeduper(decider)
+	dedupDone := deps.Progress.Sub(2, 5).Counter(ctx, rowCount)
 	for _, rows := range perBatch {
 		for _, row := range rows {
 			if err := deduper.Add(ctx, row); err != nil {
 				return common.Outputs{}, err
 			}
+			dedupDone()
 		}
 	}
+	deps.Progress.Sub(2, 5).Report(ctx, 1)
 	if err := deduper.RewriteRelations(ctx, decider.Aliases(), deps.Embed); err != nil {
 		return common.Outputs{}, err
 	}
+	deps.Progress.Sub(3, 5).Report(ctx, 1)
 	stats := deduper.Stats()
 	prods := filterSelfLoopRelations(deduper.Rows())
 	runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf(
@@ -265,6 +275,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
 	}
+	deps.Progress.Sub(4, 5).Report(ctx, 1)
 	return out, nil
 }
 

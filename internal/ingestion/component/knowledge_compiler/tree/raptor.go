@@ -56,12 +56,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	deps.Progress.Sub(2, 5).Report(ctx, 1)
 	// Rename duplicate summary titles whose descriptions differ (Python
 	// rewrite_duplicate_tree_names), BEFORE the graph projection: titles are
 	// the entity names and the relation endpoints, so two nodes sharing a
 	// title would render as one ambiguous node. Best-effort — a rewrite
 	// failure must not cost us the tree.
 	rewriteDuplicateTreeNames(ctx, deps, llmID, products)
+	deps.Progress.Sub(3, 5).Report(ctx, 1)
 
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
 	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
@@ -85,6 +87,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		products = append(products, claimProds...)
 	}
 
+	deps.Progress.Sub(4, 5).Report(ctx, 1)
 	out := common.Outputs{
 		Products: products,
 	}
@@ -182,6 +185,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		embeddings = toFloat64Matrix(vectors)
 	}
+	deps.Progress.Sub(0, 5).Report(ctx, 1)
 	// Extract claims before clustering so each cluster can be summarised from
 	// its members' claims instead of their truncated raw text. Claims are far
 	// more compact than the source, so the per-chunk truncation in
@@ -200,6 +204,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			rfcommon.Info("tree: extracted claims", zap.Int("chunks_with_claims", len(claimsByChunk)), zap.Int("chunks", len(chunks)))
 		}
 	}
+	deps.Progress.Sub(1, 5).Report(ctx, 1)
 	if claimOut != nil {
 		*claimOut = claimsByChunk
 	}
