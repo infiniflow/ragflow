@@ -361,50 +361,6 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 	common.SuccessWithData(c, data, message)
 }
 
-// List retrieves chunks for a document.
-// @Summary List Chunks
-// @Description Retrieve paginated chunks for a document with optional filtering.
-// @Tags chunks
-// @Param request body service.ListChunksRequest true "List chunks parameters"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/list [post]
-func (h *ChunkHandler) List(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	// Bind JSON request
-	var req service.ListChunksRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	// Set default values for optional parameters
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.Size == nil {
-		defaultSize := 30
-		req.Size = &defaultSize
-	}
-
-	ctx := c.Request.Context()
-	resp, err := h.chunkService.List(ctx, &req, user.ID)
-	if err != nil {
-		if respondPermissionErrorIf(c, err, false) {
-			return
-		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, resp, "success")
-}
-
 // SwitchChunks enable or disable a chunk
 func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -539,7 +495,7 @@ func optionalBodyString(rawBody map[string]interface{}, field, typeMessage strin
 // @Tags chunks
 // @Param request body service.UpdateChunkRequest true "update chunk"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/update [post]
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -547,7 +503,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// Validate allowed update fields and get IDs from body
+	// Decode the update fields.
 	body, err := io.ReadAll(c.Request.Body)
 	var rawBody map[string]interface{}
 	if err == nil {

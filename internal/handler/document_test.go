@@ -342,12 +342,6 @@ func (f *fakeDocumentService) SetDocumentMetadata(ctx context.Context, docID str
 	f.setMetaValue = meta
 	return nil
 }
-func (f *fakeDocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
-	return nil
-}
-func (f *fakeDocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
-	return nil
-}
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
@@ -457,17 +451,18 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 		body    string
 		params  gin.Params
 		handler gin.HandlerFunc
+		status  int
 	}{
-		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID},
-		{"metadata summary", http.MethodPost, "/api/v1/document/metadata/summary", `{"kb_id":"kb-owner","doc_ids":["doc-1"]}`, nil, h.MetadataSummary},
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusForbidden},
+		{"metadata summary", http.MethodGet, "/api/v1/datasets/kb-owner/metadata/summary?doc_ids=doc-1", "", gin.Params{{Key: "dataset_id", Value: "kb-owner"}}, h.MetadataSummaryByDataset, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
 			c.Params = tt.params
 			tt.handler(c)
-			if w.Code != http.StatusForbidden {
-				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.status, w.Body.String())
 			}
 			var resp struct {
 				Code    common.ErrorCode `json:"code"`

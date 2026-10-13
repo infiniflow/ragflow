@@ -67,8 +67,6 @@ type documentServiceIface interface {
 	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
 	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
-	DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error
-	DeleteDocumentAllMetadata(ctx context.Context, docID string) error
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
@@ -1311,45 +1309,6 @@ func stringValue(value *string) string {
 	return *value
 }
 
-// MetadataSummary handles the metadata summary request
-func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var requestBody struct {
-		KBID   string   `json:"kb_id" binding:"required"`
-		DocIDs []string `json:"doc_ids"`
-	}
-
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "kb_id is required")
-		return
-	}
-
-	kbID := requestBody.KBID
-	if kbID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "kb_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, kbID, permission.OperationRead); err != nil {
-		respondHTTPPermissionError(c, err, false)
-		return
-	}
-
-	summary, err := h.documentService.GetMetadataSummary(ctx, kbID, requestBody.DocIDs)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to get metadata summary: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
-}
-
 // SetMetaRequest represents the request for setting document metadata
 type SetMetaRequest struct {
 	DocID string `json:"doc_id" binding:"required"`
@@ -1472,93 +1431,6 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 	if code, err := h.documentService.Ingest(ctx, userID, &req); err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
-	}
-
-	common.SuccessWithData(c, true, "success")
-}
-
-// DeleteMetaRequest represents the request for deleting document metadata
-type DeleteMetaRequest struct {
-	DocID string `json:"doc_id" binding:"required"`
-	Keys  string `json:"keys"` // optional - if provided, deletes specific keys; otherwise deletes entire document metadata
-}
-
-// DeleteMeta handles the delete metadata request for a document
-// If Keys is provided, deletes specific metadata keys; otherwise deletes entire document metadata
-// @Summary Delete Document Metadata
-// @Description Delete metadata keys or entire document metadata for a specific document
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body DeleteMetaRequest true "metadata keys to delete or empty to delete all"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/document/delete_meta [post]
-func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req DeleteMetaRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, err.Error())
-		return
-	}
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "doc_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	doc, err := h.documentService.GetDocumentByID(ctx, req.DocID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
-		return
-	}
-	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
-		respondPermissionError(c, err, false)
-		return
-	}
-
-	// If Keys is provided, parse and delete specific keys; otherwise delete entire document metadata
-	if req.Keys != "" {
-		// Parse keys JSON string - expected to be a list of key names to delete
-		var keys []string
-		if err = json.Unmarshal([]byte(req.Keys), &keys); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "Json syntax error: "+err.Error())
-			return
-		}
-
-		if keys == nil || len(keys) == 0 {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "keys list is required")
-			return
-		}
-
-		err = h.documentService.DeleteDocumentMetadata(ctx, req.DocID, keys)
-		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-			} else {
-				common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to delete metadata: "+errMsg)
-			}
-			return
-		}
-	} else {
-		// Delete entire document metadata
-		err = h.documentService.DeleteDocumentAllMetadata(ctx, req.DocID)
-		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-			} else {
-				common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to delete metadata: "+errMsg)
-			}
-			return
-		}
 	}
 
 	common.SuccessWithData(c, true, "success")

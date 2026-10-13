@@ -281,7 +281,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.GET("/list", r.tenantHandler.TenantList)
 				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
 				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
 				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
@@ -687,17 +686,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Document routes
 			doc := v1.Group("/document")
 			{
-				doc.POST("/list", r.documentHandler.ListDocuments)
-				doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
 				doc.POST("/set_meta", r.documentHandler.SetMeta)
-				doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
-			}
-
-			// Chunk routes
-			chunk := v1.Group("/chunk")
-			{
-				chunk.POST("/list", r.chunkHandler.List)
-				chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
 			}
 
 			// Chat Channel
