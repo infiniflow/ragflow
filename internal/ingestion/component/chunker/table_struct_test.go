@@ -100,6 +100,43 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 	}
 }
 
+// A cell that spans BOTH rows and columns (RowSpan>1 && ColSpan>1) must keep
+// every column it covers on the continuation rows, not just the first. The
+// active-rowspan state machine in tableChunkRows used to register the span
+// only at the origin's start column, so a 2x2 block left its second covered
+// column blank on the row below — dropping that field's value and misaligning
+// the row under the header.
+func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
+	td := &entity.TableData{
+		HeaderRows: 1,
+		Grid: [][]entity.TableCell{
+			{{Text: "Name"}, {Text: "B"}, {Text: "C"}},
+			{{Text: "Wide", RowSpan: 2, ColSpan: 2}, {Covered: true, OriginRow: 1, OriginCol: 0}, {Text: "x"}},
+			{{Covered: true, OriginRow: 1, OriginCol: 0}, {Covered: true, OriginRow: 1, OriginCol: 0}, {Text: "y"}},
+		},
+	}
+	// Simulate a JSON round-trip that strips the json:"-" OriginRow/OriginCol;
+	// the projection must recover the spanned value from the grid alone.
+	for r := range td.Grid {
+		for c := range td.Grid[r] {
+			td.Grid[r][c].OriginRow = 0
+			td.Grid[r][c].OriginCol = 0
+		}
+	}
+	out := expandHTMLTableRows(schema.ChunkDoc{DocType: "table", TableData: td})
+	if len(out) != 2 {
+		t.Fatalf("got %d chunks, want 2 (one per data row)", len(out))
+	}
+	if out[0].Text != "- Name: Wide\n- B: Wide\n- C: x" {
+		t.Fatalf("row0 text = %q", out[0].Text)
+	}
+	// The continuation row must keep BOTH covered columns resolved to "Wide",
+	// not drop the second one to a blank and misalign under the header.
+	if out[1].Text != "- Name: Wide\n- B: Wide\n- C: y" {
+		t.Fatalf("row1 text = %q (both spanned columns must be preserved)", out[1].Text)
+	}
+}
+
 // A data row whose first cell spans two columns must keep both columns after
 // expansion so the row stays aligned with the two-column header. CellTexts
 // would drop the engulfed slot and leave only one value, misaligning it.

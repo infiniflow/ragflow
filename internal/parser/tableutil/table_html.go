@@ -187,7 +187,17 @@ func buildGrid(rows [][]cellInput) [][]entity.TableCell {
 	}
 	grid := make([][]entity.TableCell, len(rows))
 	for r, row := range rows {
-		grid[r] = make([]entity.TableCell, 0, width)
+		// Size this row to its OWN column count, not the whole-table width: a
+		// wide row elsewhere must not make every short row allocate megabytes
+		// of unused backing capacity. The exact cell count for the row is the
+		// sum of each real cell's colspan plus the ancestor rowspan markers
+		// already recorded in covered[r] — distinct positions, so the total is
+		// exact and append never over-grows the slice.
+		realCols := 0
+		for _, c := range row {
+			realCols += spanOf(c.ColSpan)
+		}
+		grid[r] = make([]entity.TableCell, 0, realCols+len(covered[r]))
 		col := 0
 		ci := 0
 		for col < width {

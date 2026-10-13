@@ -175,9 +175,27 @@ func tableChunkRows(td *entity.TableData) [][]string {
 				}
 			} else {
 				texts = append(texts, cell.Text)
+				// A merged cell that spans rows AND columns must register its
+				// active rowspan across the full [c, c+ColSpan) span, not just
+				// the origin column. Its continuation rows own every covered
+				// column, so each must resolve back to the origin text; had we
+				// only registered the start column, the extra covered columns
+				// would read as blank and the row would lose those fields.
+				// An unset ColSpan (0) normalizes to 1 so a row-only span still
+				// registers its single start column.
 				if cell.RowSpan > 1 {
-					rowspanText[c] = cell.Text
-					rowspanLeft[c] = cell.RowSpan
+					colSpan := cell.ColSpan
+					if colSpan < 1 {
+						colSpan = 1
+					}
+					for cc := c; cc < c+colSpan; cc++ {
+						for len(rowspanText) <= cc {
+							rowspanText = append(rowspanText, "")
+							rowspanLeft = append(rowspanLeft, 0)
+						}
+						rowspanText[cc] = cell.Text
+						rowspanLeft[cc] = cell.RowSpan
+					}
 				}
 				if cell.ColSpan > 1 {
 					colspanLeft = cell.ColSpan

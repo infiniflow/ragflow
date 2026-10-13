@@ -129,6 +129,27 @@ func TestParseTableHTMLBareTrWrapped(t *testing.T) {
 	assertRowsEqual(t, td.CellTexts(), [][]string{{"a", "b"}})
 }
 
+// A huge colspan on one row drives the grid width up, but each row's backing
+// slice must be sized to its OWN column count, not the whole-table width.
+// buildGrid used to pre-allocate every row to the full table width, so a small
+// HTML input with one wide row could allocate megabytes for every short row
+// that followed. The dense grid stays ragged (short rows are not padded), so a
+// short row's capacity must equal its actual length.
+func TestParseTableHTMLRowCapacityNotFullWidth(t *testing.T) {
+	td := mustParse(t, "<table><tr><td colspan=\"1000\">WIDE</td></tr><tr><td>a</td><td>b</td></tr></table>")
+	if len(td.Grid) != 2 {
+		t.Fatalf("got %d rows, want 2", len(td.Grid))
+	}
+	// Row 1 is short (two 1x1 cells, no ancestor rowspan): its length is 2 and
+	// its backing capacity must equal that, not the full table width (1000).
+	if len(td.Grid[1]) != 2 {
+		t.Fatalf("row1 len = %d, want 2", len(td.Grid[1]))
+	}
+	if cap(td.Grid[1]) != len(td.Grid[1]) {
+		t.Fatalf("row1 cap = %d, want %d (no full-width pre-allocation)", cap(td.Grid[1]), len(td.Grid[1]))
+	}
+}
+
 func TestParseTableHTMLCapturesColspan(t *testing.T) {
 	// A colspan is captured, not discarded: the wide cell keeps its text on the
 	// origin slot (ColSpan=2) and the engulfed position becomes a Covered
