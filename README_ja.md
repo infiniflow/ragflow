@@ -222,7 +222,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 2. Go ビルドがリンクするネイティブ静的ライブラリ（`download_native_deps.py`）と、バックエンドが実行時に読み込むモデル / トークナイザーリソース（`download_deps.py`）を、依存関係ダウンロードスクリプトで用意します:
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

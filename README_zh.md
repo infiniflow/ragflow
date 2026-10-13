@@ -266,7 +266,7 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。镜像、端
 2. 运行依赖下载脚本，准备 Go 构建所需链接的原生静态库（`download_native_deps.py`）与后端运行时加载的模型/分词器资源（`download_deps.py`）：
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

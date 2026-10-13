@@ -17,8 +17,8 @@
 # This is the "image-facing" half of the dependency download split; the
 # "build-facing" half (the pdfium / pdf_oxide / office_oxide / onnxruntime
 # static libraries build.sh links) lives in download_native_deps.py. All
-# version numbers and URLs come from versions.py; bump a version there, not
-# here.
+# version numbers and URLs are defined in the block below; bump a version
+# there, not at the call sites.
 #
 # Typical workflow:
 #
@@ -44,15 +44,59 @@
 import argparse
 import os
 import platform
+import re
 import shutil
 import sys
 import tempfile
 
 import requests
-import versions
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO_ROOT = os.path.dirname(SCRIPT_DIR)
+
+# ── Dependency versions & URLs (edit here) ────────────────────────────────
+# Single source of truth for the runtime / image-resource versions and URLs
+# this script fetches. build.sh greps none of these (they are image-facing);
+# keep the `NAME = "value"` form greppable for consistency with
+# tools/scripts/download_native_deps.py.
+
+# stagehand-server release binaries (used by the Browser component in local
+# mode). They are LOOSELY matched to the stagehand-go Go module: both stay on
+# the v3.x line and remain protocol-compatible, but the two version numbers do
+# NOT track each other, so there is no cross-reference to keep in sync here.
+# Kept with the "v" prefix because it is used verbatim in the release tag path.
+STAGEHAND_SERVER_VERSION = "v3.7.2"
+
+
+def gh_proxy() -> str:
+    """GitHub release proxy prefix (gh-proxy.com behind the GFW), else empty."""
+    return os.environ.get("GH_PROXY") or ""
+
+
+def go_module_version(module: str, repo_root: str) -> str:
+    """Read a Go module's pinned version (the "vX.Y.Z" after its require line)
+    from `repo_root`/go.mod. Raises RuntimeError when go.mod or the module is
+    missing — the caller cannot link the right library without it."""
+    go_mod = os.path.join(repo_root, "go.mod")
+    if not os.path.isfile(go_mod):
+        raise RuntimeError(f"go.mod not found at {go_mod}")
+    with open(go_mod, encoding="utf-8") as file:
+        match = re.search(rf"{re.escape(module)}\s+v([^\s]+)", file.read())
+    if match is None:
+        raise RuntimeError(f"{module} version not found in {go_mod}")
+    return match.group(1)
+
+
+def cl100k_url() -> str:
+    """cl100k BPE table. Hosted on Azure blob storage (NOT a GitHub release),
+    so the GitHub mirror prefix does not apply and is deliberately omitted."""
+    return "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+
+
+def stagehand_url(arch: str) -> str:
+    """stagehand-server release binary: stagehand_url("x64" | "arm64")."""
+    return f"{gh_proxy()}https://github.com/browserbase/stagehand/releases/download/stagehand-server-v3/{STAGEHAND_SERVER_VERSION}/stagehand-server-v3-linux-{arch}"
+
 
 # Mirrors internal/common.DeepDocModelFiles (Go in-process DeepDoc backend).
 # These are the ONLY weights the Go backend loads; the full InfiniFlow/deepdoc
@@ -139,7 +183,7 @@ def _install_stagehand():
     architecture = {"x86_64": "x64", "aarch64": "arm64"}.get(platform.machine())
     if architecture is None:
         raise RuntimeError(f"Unsupported stagehand architecture: {platform.machine()}")
-    version = versions.go_module_version("github.com/browserbase/stagehand-go/v3", REPO_ROOT)
+    version = go_module_version("github.com/browserbase/stagehand-go/v3", REPO_ROOT)
     cache_root = os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")
     target_dir = os.path.join(cache_root, "stagehand", "lib", f"go_{version}")
     os.makedirs(target_dir, exist_ok=True)
@@ -283,8 +327,8 @@ def main():
     if os.path.isfile(cl100k) and os.path.getsize(cl100k) > 0:
         print("  ✓ cl100k_base.tiktoken already present")
     else:
-        print(f"Downloading cl100k_base.tiktoken from {versions.cl100k_url()}...")
-        download_with_progress(versions.cl100k_url(), cl100k)
+        print(f"Downloading cl100k_base.tiktoken from {cl100k_url()}...")
+        download_with_progress(cl100k_url(), cl100k)
 
     # ── stagehand-server binaries (image root + local cache) ────────────────
     print("== stagehand-server ==")
@@ -294,8 +338,8 @@ def main():
         if os.path.isfile(target) and os.path.getsize(target) > 0:
             print(f"  ✓ {filename} already present")
             continue
-        print(f"Downloading {filename} from {versions.stagehand_url(arch)}...")
-        download_with_progress(versions.stagehand_url(arch), target)
+        print(f"Downloading {filename} from {stagehand_url(arch)}...")
+        download_with_progress(stagehand_url(arch), target)
         if not _valid_stagehand_binary(target):
             os.unlink(target)
             raise RuntimeError(f"Invalid downloaded dependency: {filename}")

@@ -213,7 +213,7 @@ Use `docker/.env` e `docker/docker-compose.yml`. Consulte a [configuração do D
 2. Execute os scripts de download de dependências para preparar as bibliotecas nativas estáticas que a compilação do Go utiliza (`download_native_deps.py`) e os recursos de modelo / tokenizador carregados em tempo de execução pelo backend (`download_deps.py`):
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

@@ -222,7 +222,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 2. Go 빌드가 링크하는 네이티브 정적 라이브러리(`download_native_deps.py`)와 백엔드가 런타임에 로드하는 모델/토크나이저 리소스(`download_deps.py`)를 의존성 다운로드 스크립트로 준비합니다:
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

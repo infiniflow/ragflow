@@ -195,9 +195,10 @@ COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
 # build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
-# ORT version pin from this file; without it the --go build fails with
-# "could not parse the ONNX Runtime version from one of the pinned locations".
-COPY ragflow_deps/versions.py ./ragflow_deps/
+# ORT version pin from tools/scripts/download_native_deps.py; without it the --go
+# build fails with "could not parse the ONNX Runtime version from one of the
+# pinned locations".
+COPY tools/scripts/download_native_deps.py ./tools/scripts/
 COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT

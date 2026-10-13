@@ -259,7 +259,7 @@ For document-engine changes, configuration updates, restarting services, and ret
 2. Run the dependency download scripts to prepare the native static libraries the Go build links (`download_native_deps.py`) and the model / tokenizer resources the backend loads at runtime (`download_deps.py`):
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

@@ -212,7 +212,7 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 2. Exécutez les scripts de téléchargement des dépendances pour préparer les bibliothèques natives statiques liées par la compilation Go (`download_native_deps.py`) et les ressources de modèles / tokeniseurs chargées à l'exécution par le backend (`download_deps.py`) :
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

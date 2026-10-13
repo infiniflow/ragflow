@@ -222,7 +222,7 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 2. Go derlemesinin bağladığı yerel statik kitaplıkları (`download_native_deps.py`) ve backend'in çalışma zamanında yüklediği model / tokenizer kaynaklarını (`download_deps.py`) hazırlamak için bağımlılık indirme betiklerini çalıştırın:
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

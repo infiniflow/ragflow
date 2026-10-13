@@ -215,7 +215,7 @@
 2. شغّل برامج تنزيل التبعيات لتحضير المكتبات الأصلية الثابتة التي يربطها بناء Go (`download_native_deps.py`) وموارد النماذج/المحلّلات التي يحمّلها الخلفية أثناء التشغيل (`download_deps.py`):
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

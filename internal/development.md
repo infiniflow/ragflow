@@ -39,7 +39,7 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-uv run ragflow_deps/download_native_deps.py   # native static libs (pdfium / pdf_oxide / office_oxide / onnxruntime)
+uv run tools/scripts/download_native_deps.py   # native static libs (pdfium / pdf_oxide / office_oxide / onnxruntime)
 uv run ragflow_deps/download_deps.py          # cl100k, DeepDoc .ort weights, embedding tokenizer assets, stagehand server
 ```
 
@@ -112,7 +112,7 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run ragflow_deps/download_native_deps.py` (or pre-seed
+> `uv run tools/scripts/download_native_deps.py` (or pre-seed
 > `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
 > no ORT-free production build path — if ORT is absent the binary fails at
 > startup, so the remedy is always to seed the static lib above, never to build
@@ -123,7 +123,7 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > build with `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
-> - `ragflow_deps/versions.py` — `ORT_VERSION` (imported by both download scripts)
+> - `tools/scripts/download_native_deps.py` — `ORT_VERSION` (read by build.sh and the native downloader)
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
@@ -139,7 +139,7 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >   `build.sh`, without a network request. The downloader separately checks the
 >   published `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar. A local ZIP
 >   mismatch only emits a warning with the expected/actual SHA-256 and the
->   refresh command (`rm -f <zip>` + `uv run ragflow_deps/download_native_deps.py`);
+>   refresh command (`rm -f <zip>` + `uv run tools/scripts/download_native_deps.py`);
 >   the build continues checking and linking the extracted static libraries. CI seeds
 >   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
 >   is authoritative). This matters because the `onnxruntime_go` binding reaches
@@ -153,7 +153,7 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >   would otherwise silently reuse a stale linked binary. Stamping the path with
 >   the archive's sha256 changes the flag string whenever the content changes →
 >   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
->   re-run `uv run ragflow_deps/download_native_deps.py`
+>   re-run `uv run tools/scripts/download_native_deps.py`
 >   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow

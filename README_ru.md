@@ -219,7 +219,7 @@ Docker подходит для быстрой оценки, интеграцио
 2. Выполните скрипты загрузки зависимостей, чтобы подготовить нативные статические библиотеки, которые линкует сборка Go (`download_native_deps.py`), и ресурсы моделей / токенизаторов, которые бэкенд загружает во время выполнения (`download_deps.py`):
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 

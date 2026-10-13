@@ -325,7 +325,7 @@ func HasModelFiles(dir string) bool {
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
 // DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
 // THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/versions.py and ARG ORT_VERSION in
+// ORT_VERSION in tools/scripts/download_native_deps.py and ARG ORT_VERSION in
 // Dockerfile) — NOT a single source of truth. The
 // download URL and extracted dir name are built from those ORT_VERSION
 // constants, not from this one. The Go binding
@@ -339,7 +339,7 @@ func HasModelFiles(dir string) bool {
 // To bump ORT, the three Go-side native pins above must change together
 // (drift breaks the static link or the runtime OrtGetApiBase lookup):
 //   - DeepDocORTVersion (here, Go)
-//   - ORT_VERSION in ragflow_deps/versions.py
+//   - ORT_VERSION in tools/scripts/download_native_deps.py
 //   - ARG ORT_VERSION in Dockerfile
 //
 // Separately, keep these on the same ORT minor line but version them

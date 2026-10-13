@@ -212,7 +212,7 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
 2. Jalankan skrip pengunduh dependensi untuk menyiapkan pustaka native statis yang ditautkan oleh build Go (`download_native_deps.py`) dan sumber daya model / tokenizer yang dimuat backend saat runtime (`download_deps.py`):
 
    ```bash
-   uv run ragflow_deps/download_native_deps.py
+   uv run tools/scripts/download_native_deps.py
    uv run ragflow_deps/download_deps.py
    ```
 
