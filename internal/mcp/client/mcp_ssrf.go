@@ -17,6 +17,7 @@
 package mcpclient
 
 import (
+	"fmt"
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
@@ -82,27 +83,30 @@ func AssertMCPURLSafe(rawURL string, allowPrivateHosts bool) (hostname, resolved
 }
 
 // AssertMCPURLSafeSameOrigin validates a server-advertised URL (e.g., the POST
-// URL from an SSE endpoint event). Public URLs are accepted. Private URLs are
-// accepted only when allowPrivateHosts is true AND the advertised URL shares the
-// same origin (scheme, port, and host) as originURL, so the server cannot bounce
-// POSTs to another service on the same host but a different port or scheme.
+// URL from an SSE endpoint event). The URL must share the origin (scheme,
+// port, and host) with originURL — checked before any success path — and
+// private URLs additionally require allowPrivateHosts, so the server cannot
+// bounce POSTs to a cleartext downgrade or an unrelated target.
 func AssertMCPURLSafeSameOrigin(rawURL, originURL string, allowPrivateHosts bool) (hostname, resolvedIP string, err error) {
+	// The advertised URL must keep the full origin — scheme, host and
+	// effective port — before any success path, so a server cannot bounce
+	// POSTs to a cleartext downgrade or a different public/internal target.
+	origin, perr := url.Parse(strings.TrimSpace(originURL))
+	if perr != nil || origin.Hostname() == "" {
+		return "", "", fmt.Errorf("invalid MCP origin URL %q", originURL)
+	}
+	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
+	if perr != nil {
+		return "", "", perr
+	}
+	if !sameOrigin(parsed, origin) {
+		return "", "", fmt.Errorf("MCP advertised URL %q does not match origin %q", rawURL, originURL)
+	}
 	hostname, resolvedIP, err = common.AssertURLSafe(rawURL)
 	if err == nil {
 		return hostname, resolvedIP, nil
 	}
 	if !allowPrivateHosts {
-		return "", "", err
-	}
-	origin, perr := url.Parse(strings.TrimSpace(originURL))
-	if perr != nil || origin.Hostname() == "" {
-		return "", "", err
-	}
-	parsed, perr := url.Parse(strings.TrimSpace(rawURL))
-	if perr != nil {
-		return "", "", err
-	}
-	if !sameOrigin(parsed, origin) {
 		return "", "", err
 	}
 	return AssertMCPURLSafe(rawURL, allowPrivateHosts)
