@@ -24,6 +24,46 @@ import (
 	"ragflow/internal/common"
 )
 
+func TestConfiguredSuperuserNickname(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "unset", want: "admin"},
+		{name: "blank", env: " \t", want: "admin"},
+		{name: "configured", env: "  ops  ", want: "ops"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(common.EnvDefaultSuperuserNickname, tt.env)
+			if got := configuredSuperuserNickname(); got != tt.want {
+				t.Fatalf("configuredSuperuserNickname() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestConfiguredSuperuserEmail(t *testing.T) {
+	tests := []struct {
+		name string
+		env  string
+		want string
+	}{
+		{name: "unset", want: "admin@ragflow.io"},
+		{name: "blank", env: " \n", want: "admin@ragflow.io"},
+		{name: "configured", env: "  ops@example.com  ", want: "ops@example.com"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv(common.EnvDefaultSuperuserEmail, tt.env)
+			if got := configuredSuperuserEmail(); got != tt.want {
+				t.Fatalf("configuredSuperuserEmail() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestConfiguredSuperuserPassword(t *testing.T) {
 	tests := []struct {
 		name       string

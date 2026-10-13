@@ -1336,6 +1336,26 @@ func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode
 // is set. docker/.env documents this path on the container logs volume.
 const adminBootstrapPasswordFile = "logs/admin_bootstrap_password.txt"
 
+// configuredSuperuserNickname returns DEFAULT_SUPERUSER_NICKNAME when it is
+// non-empty after trim, and "admin" otherwise. The unset default matches
+// Python's init_default_admin.
+func configuredSuperuserNickname() string {
+	if nickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname)); nickname != "" {
+		return nickname
+	}
+	return "admin"
+}
+
+// configuredSuperuserEmail returns DEFAULT_SUPERUSER_EMAIL when it is
+// non-empty after trim, and "admin@ragflow.io" otherwise. The unset default
+// matches Python's init_default_admin.
+func configuredSuperuserEmail() string {
+	if email := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserEmail)); email != "" {
+		return email
+	}
+	return "admin@ragflow.io"
+}
+
 // configuredSuperuserPassword reads the password for a new superuser.
 // DEFAULT_SUPERUSER_PASSWORD is canonical. ADMIN_DEFAULT_PASSWORD is used
 // when the canonical name is empty. The boolean is false when both are empty.
@@ -1429,12 +1449,15 @@ func writeBootstrapPassword(path, password string) error {
 	return nil
 }
 
-// InitDefaultAdmin initialize default admin user
-// This matches Python's init_default_admin behavior
+// InitDefaultAdmin creates the first superuser when none is active.
+// When DEFAULT_SUPERUSER_NICKNAME and DEFAULT_SUPERUSER_EMAIL are unset,
+// the nickname and email still match Python's init_default_admin
+// ("admin" and "admin@ragflow.io"). The password path does not: it uses
+// DEFAULT_SUPERUSER_PASSWORD or ADMIN_DEFAULT_PASSWORD, or a generated
+// secret, and it does not use Python's literal "admin".
 func (s *Service) InitDefaultAdmin() error {
-	// Default superuser settings (matching Python's DEFAULT_SUPERUSER_* defaults)
-	defaultNickname := "admin"
-	defaultEmail := "admin@ragflow.io"
+	defaultNickname := configuredSuperuserNickname()
+	defaultEmail := configuredSuperuserEmail()
 
 	// Query superusers
 	var users []*entity.User
