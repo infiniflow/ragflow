@@ -99,6 +99,7 @@ def test_csv_multiline_quote_uses_physical_continuation_line():
     [
         b'Who wrote it?,Alice\nHow do I indent?,"Press\tTab"\nWhen?,Today',
         b"Who wrote it?,Alice\nHow do I indent?,Press\tTab\nWhen?,Today",
+        b'Who wrote it?,Alice\r\nHow do I indent?,"Press\tTab"\r\nWhen?,Today\r\n',
     ],
 )
 def test_csv_tab_inside_comma_separated_field(binary):
@@ -134,3 +135,35 @@ def test_csv_tab_separated_with_unclosed_quote_after_comma():
 
     assert len(chunks) == 20001
     assert chunks[0]["content_with_weight"] == 'Question: She said,"hi\tAnswer: there'
+
+
+@pytest.mark.p2
+@pytest.mark.parametrize(
+    ("binary", "expected"),
+    [
+        (
+            b'How do I reset it?\t"Open Settings, then Security.\nClick Reset, and confirm.\nWait a minute, then retry."',
+            "Question: How do I reset it?\tAnswer: Open Settings, then Security.\nClick Reset, and confirm.\nWait a minute, then retry.",
+        ),
+        (
+            b"Account help, part one\nHow do I reset it?\tOpen Settings.\nThen click Reset, and confirm.\nIf it fails, retry.",
+            "Question: How do I reset it?\tAnswer: Open Settings.\nThen click Reset, and confirm.\nIf it fails, retry.",
+        ),
+    ],
+)
+def test_csv_tab_separated_with_commas_in_continuation_lines(binary, expected):
+    chunks = qa.chunk("qa.csv", binary=binary, lang="English", callback=_noop_callback)
+
+    assert [c["content_with_weight"] for c in chunks] == [expected]
+
+
+@pytest.mark.p2
+def test_csv_comma_separated_with_continuation_lines():
+    chunks = qa.chunk(
+        "qa.csv",
+        binary=b"How do I reset it?,Open Settings.\nThen click Reset.\nThen confirm.",
+        lang="English",
+        callback=_noop_callback,
+    )
+
+    assert [c["content_with_weight"] for c in chunks] == ["Question: How do I reset it?\tAnswer: Open Settings.\nThen click Reset.\nThen confirm."]

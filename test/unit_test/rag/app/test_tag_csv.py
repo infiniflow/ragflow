@@ -46,8 +46,16 @@ def _chunk(binary):
 
 
 @pytest.mark.p2
-def test_csv_tab_inside_comma_separated_content():
-    assert _chunk(b'first line,alpha\n"press\tTab",keys\nlast line,omega') == [
+@pytest.mark.parametrize(
+    "binary",
+    [
+        b'first line,alpha\n"press\tTab",keys\nlast line,omega',
+        b"first line,alpha\npress\tTab,keys\nlast line,omega",
+        b'first line,alpha,\n"press\tTab",keys,\nlast line,omega,',
+    ],
+)
+def test_csv_tab_inside_comma_separated_content(binary):
+    assert _chunk(binary) == [
         ("first line", ["alpha"]),
         ("press\tTab", ["keys"]),
         ("last line", ["omega"]),
@@ -61,6 +69,11 @@ def test_csv_tab_inside_comma_separated_content():
         (b"the quick, brown fox\tanimal,fox", [("the quick, brown fox", ["animal", "fox"])]),
         (b"hello world\tgreeting,demo", [("hello world", ["greeting", "demo"])]),
         (b"hello world\tgreeting,demo\t", [("hello world", ["greeting", "demo"])]),
+        (
+            b"Animal tags\ncat on a mat\tanimal,cat\ndog in a park\tanimal,dog",
+            [("Animal tags\ncat on a mat", ["animal", "cat"]), ("dog in a park", ["animal", "dog"])],
+        ),
+        (b"Animal tags, part one\ncat on a mat\tanimal,cat", [("Animal tags, part one\ncat on a mat", ["animal", "cat"])]),
     ],
 )
 def test_csv_tab_separated(binary, expected):

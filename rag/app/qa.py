@@ -297,23 +297,32 @@ def mdQuestionLevel(s):
 
 
 def csv_pair_delimiter(lines):
-    """TAB or comma, whichever splits more rows into exactly two values.
+    """TAB, the documented delimiter, unless the file reads as comma separated.
 
-    A TAB inside one field of a comma separated file must not switch the whole
-    file to TAB. A tie goes to TAB, the documented delimiter.
+    A comma separated file can hold a TAB inside one field. Comma wins only when
+    the first row holds no TAB, every row with a TAB still splits into two values,
+    and the two-value rows with no TAB outnumber all other rows.
     """
     if not any("\t" in line for line in lines):
         return ","
-
-    def pairs(delimiter):
-        reader = csv.reader((line + "\n" for line in lines), delimiter=delimiter)
-        try:
-            return sum(len([field for field in row if field.strip()]) == 2 for row in reader)
-        except csv.Error:
-            # An unclosed quote can run past the field size limit under the wrong delimiter.
-            return 0
-
-    return "\t" if pairs("\t") >= pairs(",") else ","
+    tab_free_pairs = other_rows = 0
+    try:
+        for row in csv.reader((line + "\n" for line in lines), delimiter=","):
+            values = [field for field in row if field.strip()]
+            if not values:
+                continue
+            has_tab = any("\t" in field for field in row)
+            first_row = tab_free_pairs + other_rows == 0
+            if has_tab and (first_row or len(values) != 2):
+                return "\t"
+            if len(values) == 2 and not has_tab:
+                tab_free_pairs += 1
+            else:
+                other_rows += 1
+    except csv.Error:
+        # An unclosed quote can run past the field size limit when a TAB file is read with comma.
+        return "\t"
+    return "," if tab_free_pairs > other_rows else "\t"
 
 
 def chunk(filename, binary=None, from_page=0, to_page=MAXIMUM_PAGE_NUMBER, lang="Chinese", callback=None, **kwargs):
