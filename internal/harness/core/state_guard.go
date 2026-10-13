@@ -30,36 +30,53 @@ func newTypedStateModelWrapper[M MessageType](inner Model[M], cc *cancelContext)
 // copyMessage performs a deep copy of a Message or AgenticMessage to prevent
 // pointer-sharing bugs when the same message flows through multiple wrappers.
 //
-// Extra values use a JSON round-trip to isolate nested maps and slices.
-// Values that cannot be serialized retain their original references.
+// The Extra map uses JSON marshal/unmarshal for deep copy (same approach as
+// checkpoint.deepCopy) so that nested maps/slices are fully independent.
+// If JSON round-trip fails for a value, the original reference is kept as
+// a fallback to avoid data loss.
 func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:
-		cp := *v
-		if v.ToolCalls != nil {
+		cp := &schema.Message{
+			Role:    v.Role,
+			Content: v.Content,
+			Name:    v.Name,
+		}
+		cp.ToolName = v.ToolName
+		if len(v.ToolCalls) > 0 {
 			cp.ToolCalls = make([]schema.ToolCall, len(v.ToolCalls))
 			copy(cp.ToolCalls, v.ToolCalls)
 		}
 		cp.Extra = copyExtra(v.Extra)
-		return any(&cp).(M)
+		return any(cp).(M)
 	case *schema.AgenticMessage:
-		cp := *v
-		if v.ContentBlocks != nil {
+		cp := &schema.AgenticMessage{
+			Role:    v.Role,
+			Content: v.Content,
+		}
+		if len(v.ContentBlocks) > 0 {
 			cp.ContentBlocks = make([]schema.ContentBlock, len(v.ContentBlocks))
+			copy(cp.ContentBlocks, v.ContentBlocks)
 			for i, block := range v.ContentBlocks {
-				cp.ContentBlocks[i] = block
 				if block.ToolCall != nil {
-					call := *block.ToolCall
-					cp.ContentBlocks[i].ToolCall = &call
+					cp.ContentBlocks[i].ToolCall = &schema.ToolCallInfo{
+						ID:        block.ToolCall.ID,
+						Name:      block.ToolCall.Name,
+						Arguments: block.ToolCall.Arguments,
+					}
 				}
 				if block.ToolResult != nil {
-					result := *block.ToolResult
-					result.Extra = copyExtra(block.ToolResult.Extra)
-					cp.ContentBlocks[i].ToolResult = &result
+					cp.ContentBlocks[i].ToolResult = &schema.ToolResult{
+						ToolCallID: block.ToolResult.ToolCallID,
+						Name:       block.ToolResult.Name,
+						Content:    block.ToolResult.Content,
+						Error:      block.ToolResult.Error,
+						Extra:      copyExtra(block.ToolResult.Extra),
+					}
 				}
 			}
 		}
-		return any(&cp).(M)
+		return any(cp).(M)
 	}
 	return msg
 }
