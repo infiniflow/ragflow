@@ -246,6 +246,13 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 			sinkState.emitted = true
 		}
 		sinkState.mu.Unlock()
+		// Track sink-forwarded content in the run accumulator so
+		// AgentContentEventsEmittedRun reflects deferred agents too.
+		if state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState); ok && state != nil && contentDelta != "" {
+			state.mu.Lock()
+			state.agentContent.WriteString(contentDelta)
+			state.mu.Unlock()
+		}
 		return true
 	}
 	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
@@ -371,6 +378,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.agentContent.WriteString(content)
 			}
 			state.mu.Unlock()
 			return true
@@ -381,6 +389,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.agentContent.WriteString(content)
 			}
 			state.mu.Unlock()
 			return true
