@@ -137,6 +137,20 @@ func TestRemoveMemberSelfAllowed(t *testing.T) {
 	}
 }
 
+func TestDeclineOwnTenantInviteAllowed(t *testing.T) {
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "invite", "invitee-user", "tenant-xyz", TenantRoleInvite)
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
+
+	code, err := s.RemoveMember(t.Context(), "invitee-user", "tenant-xyz", "invitee-user")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("RemoveMember(invitation self-decline) = (%v, %v), want success", code, err)
+	}
+	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(t.Context(), db, "invitee-user", "tenant-xyz"); !dao.IsNotFoundErr(err) {
+		t.Fatalf("pending invitation remains after decline: %v", err)
+	}
+}
+
 func TestRemoveMemberCannotRemoveTenantOwner(t *testing.T) {
 	db := setupTenantPermissionTestDB(t)
 	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
