@@ -546,13 +546,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PATCH("/:provider_id_or_name/instances/:instance_id_or_name/models/*model_name", r.providerHandler.AlterModel)
 				provider.POST("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.DropInstanceModels)
-				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
-				v1.POST("/embeddings", r.providerHandler.EmbedText)
-				v1.POST("/rerank", r.providerHandler.RerankDocument)
-				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
-				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
-				v1.POST("/file/ocr", r.providerHandler.OCRFile)
-				v1.POST("/file/parse", r.providerHandler.ParseFile)
+			}
+
+			// command is for CLI
+			command := v1
+			{
+				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/embeddings", r.providerHandler.EmbedText)
+				command.POST("/rerank", r.providerHandler.RerankDocument)
+				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
+				command.POST("/audio/speech", r.providerHandler.AudioSpeech)
+				command.POST("/file/ocr", r.providerHandler.OCRFile)
+				command.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")
