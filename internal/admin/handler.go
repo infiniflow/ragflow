@@ -119,7 +119,7 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -682,7 +682,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -1145,7 +1146,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",

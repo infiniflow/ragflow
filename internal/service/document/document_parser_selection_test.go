@@ -105,7 +105,7 @@ func TestUploadLocalDocuments_RoutesFileTypesToDedicatedParsers(t *testing.T) {
 		t.Fatalf("jpg parser_id = %q, want picture", parserID)
 	}
 	imageSetup := parserFamilySetup(t, got[0], "image")
-	if imageSetup["parse_method"] != "ocr" {
+	if imageSetup["ocr_enabled"] != true {
 		t.Fatalf("jpg image setup = %#v, want the picture pipeline defaults", imageSetup)
 	}
 

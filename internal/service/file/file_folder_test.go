@@ -23,6 +23,66 @@ func TestFileService_CreateFolder_RejectsSlashInName(t *testing.T) {
 	}
 }
 
+func TestFileService_CreateFolderDedupesDuplicateName(t *testing.T) {
+	setupFolderTestDB(t)
+
+	parent := &entity.File{ID: "pf1", ParentID: "pf1", TenantID: "tenant-1", Name: "root", Type: FileTypeFolder}
+	if err := dao.DB.Create(parent).Error; err != nil {
+		t.Fatalf("seed parent folder: %v", err)
+	}
+
+	svc := testFileService()
+	ctx := context.Background()
+
+	created, err := svc.CreateFolder(ctx, "tenant-1", "notes", "pf1", FileTypeFolder)
+	if err != nil {
+		t.Fatalf("CreateFolder failed: %v", err)
+	}
+	if got := created["name"]; got != "notes" {
+		t.Fatalf("first create name = %v, want notes", got)
+	}
+
+	// A second create with the same name in the same folder appends a counter
+	// instead of failing.
+	created, err = svc.CreateFolder(ctx, "tenant-1", "notes", "pf1", FileTypeFolder)
+	if err != nil {
+		t.Fatalf("CreateFolder failed: %v", err)
+	}
+	if got := created["name"]; got != "notes(1)" {
+		t.Fatalf("duplicate create name = %v, want notes(1)", got)
+	}
+
+	// Virtual files keep the extension at the end of the generated name.
+	if _, err = svc.CreateFolder(ctx, "tenant-1", "report.pdf", "pf1", FileTypeVirtual); err != nil {
+		t.Fatalf("CreateFolder failed: %v", err)
+	}
+	created, err = svc.CreateFolder(ctx, "tenant-1", "report.pdf", "pf1", FileTypeVirtual)
+	if err != nil {
+		t.Fatalf("CreateFolder failed: %v", err)
+	}
+	if got := created["name"]; got != "report(1).pdf" {
+		t.Fatalf("duplicate create name = %v, want report(1).pdf", got)
+	}
+
+	// Folders are not files: a dotted folder name keeps its dot at the end.
+	if got := firstCreatedFolderName(t, svc, "v1.2", FileTypeFolder); got != "v1.2" {
+		t.Fatalf("first folder name = %q, want %q", got, "v1.2")
+	}
+	if got := firstCreatedFolderName(t, svc, "v1.2", FileTypeFolder); got != "v1.2(1)" {
+		t.Fatalf("duplicate folder name = %q, want %q", got, "v1.2(1)")
+	}
+}
+
+// firstCreatedFolderName creates one entry and returns its resulting name.
+func firstCreatedFolderName(t *testing.T, svc *FileService, name, fileType string) string {
+	t.Helper()
+	created, err := svc.CreateFolder(context.Background(), "tenant-1", name, "pf1", fileType)
+	if err != nil {
+		t.Fatalf("CreateFolder(%q) failed: %v", name, err)
+	}
+	return created["name"].(string)
+}
+
 func TestFileService_MoveFiles_RejectsSlashInNewName(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
 	if err != nil {
@@ -50,6 +110,76 @@ func TestFileService_MoveFiles_RejectsSlashInNewName(t *testing.T) {
 	ok, msg := svc.MoveFiles(context.Background(), "tenant1", []string{"f1"}, "", "a/b")
 	if ok || !strings.Contains(msg, `cannot contain "/"`) {
 		t.Fatalf("MoveFiles rename = %v, %q, want slash validation error", ok, msg)
+	}
+}
+
+func TestFileService_MoveFilesRejectsDuplicateName(t *testing.T) {
+	setupFolderTestDB(t)
+
+	if err := dao.DB.Create(&entity.File{ID: "t1", ParentID: "pf1", TenantID: "tenant-1", Name: "target", Type: FileTypeFolder}).Error; err != nil {
+		t.Fatalf("seed target folder: %v", err)
+	}
+	if err := dao.DB.Create(&entity.File{ID: "s1", ParentID: "pf1", TenantID: "tenant-1", Name: "source", Type: FileTypeFolder}).Error; err != nil {
+		t.Fatalf("seed source folder: %v", err)
+	}
+
+	svc := testFileService()
+	ctx := context.Background()
+
+	ok, msg := svc.MoveFiles(ctx, "user-1", []string{"s1"}, "", "TARGET")
+	if ok || !strings.Contains(msg, "duplicated file name") {
+		t.Fatalf("rename to case-variant duplicate = %v, %q, want duplicate error", ok, msg)
+	}
+
+	ok, msg = svc.MoveFiles(ctx, "user-1", []string{"s1"}, "", "SOURCE")
+	if !ok {
+		t.Fatalf("case-only rename failed: %q", msg)
+	}
+}
+
+// Moving a file into another folder must check the destination namespace even
+// when the requested name only differs from the source name by case.
+func TestFileService_MoveFilesRejectsCaseVariantDuplicateInDestinationFolder(t *testing.T) {
+	setupFolderTestDB(t)
+
+	for _, f := range []*entity.File{
+		{ID: "pf1", ParentID: "pf1", TenantID: "tenant-1", Name: "root", Type: FileTypeFolder},
+		{ID: "d1", ParentID: "pf1", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "s1", ParentID: "pf1", TenantID: "tenant-1", Name: "report.txt", Type: "pdf"},
+		{ID: "existing", ParentID: "d1", TenantID: "tenant-1", Name: "report.txt", Type: "pdf"},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"s1"}, "d1", "REPORT.TXT")
+	if ok || !strings.Contains(msg, "duplicated file name") {
+		t.Fatalf("move+case-variant rename = %v, %q, want duplicate error", ok, msg)
+	}
+}
+
+// A plain move (no new_name) must detect a case-variant duplicate in the
+// destination folder too, not only the rename path.
+func TestFileService_MoveFilesRejectsCaseVariantDuplicateWithoutRename(t *testing.T) {
+	setupFolderTestDB(t)
+
+	for _, f := range []*entity.File{
+		{ID: "pf1", ParentID: "pf1", TenantID: "tenant-1", Name: "root", Type: FileTypeFolder},
+		{ID: "d1", ParentID: "pf1", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "s1", ParentID: "pf1", TenantID: "tenant-1", Name: "report.txt", Type: "pdf"},
+		{ID: "existing", ParentID: "d1", TenantID: "tenant-1", Name: "REPORT.TXT", Type: "pdf"},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"s1"}, "d1", "")
+	if ok || !strings.Contains(msg, "Duplicated file name") {
+		t.Fatalf("plain move into case-variant duplicate = %v, %q, want duplicate error", ok, msg)
 	}
 }
 
@@ -205,8 +335,9 @@ func TestRenameLinkedDocumentsLookupErrorPropagates(t *testing.T) {
 	}
 }
 
-// Renaming while moving into the same parent folder (no storage move) must
-// also propagate the new name to every linked document.
+// TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments verifies that renaming while
+// moving into the same parent folder (no storage move) must also propagate the new
+// name to every linked document.
 func TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments(t *testing.T) {
 	db := setupFolderTestDB(t)
 	insertFolderTestFile(t, "file-1", "folder-1", "old.pdf")
@@ -242,4 +373,165 @@ func TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments(t *testing.T) {
 			t.Fatalf("%s name = %v, want %q", docID, doc.Name, "new.pdf")
 		}
 	}
+}
+
+// seedMoveHierarchyDB seeds R (root) > D (destination) and R > A > B > C so
+// tests can select an entry together with one of its descendants.
+func seedMoveHierarchyDB(t *testing.T) {
+	t.Helper()
+	setupFolderTestDB(t)
+	for _, f := range []*entity.File{
+		{ID: "R", ParentID: "R", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder},
+		{ID: "D", ParentID: "R", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "A", ParentID: "R", TenantID: "tenant-1", Name: "A", Type: FileTypeFolder},
+		{ID: "B", ParentID: "A", TenantID: "tenant-1", Name: "B", Type: FileTypeFolder},
+		{ID: "C", ParentID: "B", TenantID: "tenant-1", Name: "C", Type: FileTypeFolder},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+}
+
+func requireParent(t *testing.T, id, wantParent string) {
+	t.Helper()
+	f, err := dao.NewFileDAO().GetByID(context.Background(), dao.DB, id)
+	if err != nil {
+		t.Fatalf("get %s: %v", id, err)
+	}
+	if f.ParentID != wantParent {
+		t.Fatalf("%s parent = %q, want %q", id, f.ParentID, wantParent)
+	}
+}
+
+func countChildren(t *testing.T, parentID string) int64 {
+	t.Helper()
+	var count int64
+	if err := dao.DB.Model(&entity.File{}).Where("parent_id = ?", parentID).Count(&count).Error; err != nil {
+		t.Fatalf("count children of %s: %v", parentID, err)
+	}
+	return count
+}
+
+func childByName(t *testing.T, parentID, name string) *entity.File {
+	t.Helper()
+	var f entity.File
+	if err := dao.DB.Where("parent_id = ? AND name = ?", parentID, name).First(&f).Error; err != nil {
+		t.Fatalf("find %q under %s: %v", name, parentID, err)
+	}
+	return &f
+}
+
+// Selecting a folder together with its direct subfolder must be rejected before
+// any mutation: the ancestor's recursive move already relocates and deletes the
+// subfolder, so processing it again would recreate an empty duplicate.
+func TestMoveFilesRejectsFolderAndSubfolder(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "B"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+subfolder = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "B", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// A grandchild (any depth) in the selection is rejected too.
+func TestMoveFilesRejectsFolderAndGrandchild(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "C"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+grandchild = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "C", "B")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// A file contained in a selected folder counts as a descendant relationship.
+func TestMoveFilesRejectsFolderAndContainedFile(t *testing.T) {
+	seedMoveHierarchyDB(t)
+	insertFolderTestFile(t, "f1", "A", "inside.pdf")
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "f1"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+contained file = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "f1", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// The rejection must not depend on the order of src_file_ids.
+func TestMoveFilesRejectsNestedSourcesInEitherOrder(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	for _, src := range [][]string{{"A", "B"}, {"B", "A"}} {
+		ok, msg := svc.MoveFiles(context.Background(), "user-1", src, "D", "")
+		if ok || !strings.Contains(msg, "descendant") {
+			t.Fatalf("move %v = %v, %q, want descendant rejection", src, ok, msg)
+		}
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "B", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// Unrelated entries (no ancestor/descendant relationship) must still move.
+func TestMoveFilesAllowsUnrelatedEntries(t *testing.T) {
+	setupFolderTestDB(t)
+	for _, f := range []*entity.File{
+		{ID: "R", ParentID: "R", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder},
+		{ID: "D", ParentID: "R", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "A", ParentID: "R", TenantID: "tenant-1", Name: "A", Type: FileTypeFolder},
+		{ID: "X", ParentID: "R", TenantID: "tenant-1", Name: "X", Type: FileTypeFolder},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "X"}, "D", "")
+	if !ok {
+		t.Fatalf("move unrelated entries failed: %q", msg)
+	}
+	if got := countChildren(t, "D"); got != 2 {
+		t.Fatalf("destination children = %d, want 2", got)
+	}
+	childByName(t, "D", "A")
+	childByName(t, "D", "X")
+}
+
+// A single folder still moves with its whole subtree; the new check must not
+// block the legitimate case it was designed around.
+func TestMoveFilesSingleFolderWithSubtreeStillMoves(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A"}, "D", "")
+	if !ok {
+		t.Fatalf("move single folder failed: %q", msg)
+	}
+
+	movedA := childByName(t, "D", "A")
+	childByName(t, movedA.ID, "B")
 }

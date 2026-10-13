@@ -20,6 +20,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 
@@ -106,7 +107,7 @@ func (e *searchExecutor) wikiQuery(ctx context.Context, args map[string]any) (To
 		return ToolOutcome{Payload: []any{}, Status: StatusError, Reason: ReasonBadArgs}, nil
 	}
 
-	topN, _ := toInt(args["top_n"])
+	topN, _ := common.ToInt(args["top_n"])
 	if topN <= 0 {
 		topN = 12
 	}
@@ -633,7 +634,7 @@ func defaultSeedEncoder(ctx context.Context, tenantID, text string) []float64 {
 	if dao.GetDB() == nil {
 		return nil
 	}
-	embedder := service.NewNavEmbedder(service.NewModelProviderService(), "")
+	embedder := service.NewNavEmbedder(service.NewModelFactory(), "")
 	// Query-side encoding: the seed is the user's query, not an indexed document.
 	vecs, err := embedder.EncodeQueries(ctx, tenantID, []string{text})
 	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {

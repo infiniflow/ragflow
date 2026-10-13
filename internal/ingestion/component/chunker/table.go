@@ -21,11 +21,11 @@
 // Unlike TokenChunker (which token-shreds a row's text into multiple
 // pieces) or OneChunker (which merges many rows into a single chunk),
 // TableChunker keeps the row as the unit of chunking. Every table arrives as
-// rendered HTML — the spreadsheet parsers emit captioned table segments — and
-// each data row becomes one chunk whose text repeats the column names in the
-// Python "- field: value" line format, carrying its own position tuple when
-// the item is a spreadsheet item with a row-aligned matrix. A table whose only
-// row is the header stays one whole chunk.
+// structured TableData on ChunkDoc.TableData — the parsers emit captioned
+// table segments — and each data row becomes one chunk whose text repeats the
+// column names in the Python "- field: value" line format, carrying its own
+// position tuple when the item is a spreadsheet item with a row-aligned
+// matrix. A table whose only row is the header stays one whole chunk.
 package chunker
 
 import (
@@ -35,7 +35,9 @@ import (
 	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 
 	"gorm.io/gorm"
 )
@@ -114,11 +116,11 @@ func (c *TableChunkerComponent) invoke(_ context.Context, inputs map[string]any)
 }
 
 // tableItems returns the per-row records, preferring JSONResult and
-// falling back to Chunks. Each HTML table row becomes exactly one chunk;
-// every other payload record passes through as one chunk — including
-// pre-upgrade row-IR records (ck_type: table_row/table_header with cells),
-// which hold no markup and therefore keep no per-row positions; documents
-// from before this wire must be re-parsed rather than re-chunked.
+// falling back to Chunks. Each table row becomes exactly one chunk; every
+// other payload record passes through as one chunk — including pre-upgrade
+// row-IR records (ck_type: table_row/table_header with cells), which hold no
+// markup and therefore keep no per-row positions; documents from before this
+// wire must be re-parsed rather than re-chunked.
 func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	source := items
 	if len(source) == 0 {
@@ -134,22 +136,30 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	return filtered
 }
 
-// expandHTMLTableRows turns one HTML <table> payload into one chunk per data
-// row. Non-table payloads pass through unchanged. A table whose only row is
-// the header keeps the whole markup as its single chunk: the header line is
-// then the only searchable representation.
+// expandHTMLTableRows turns one table payload into one chunk per data row.
+// Non-table payloads pass through unchanged. It reads the structured
+// TableData contract that the parser emits on ChunkDoc.TableData; items that
+// do not carry TableData (e.g. pre-upgrade HTML markup or non-table records)
+// pass through as a single chunk. A table whose only row is the header keeps
+// the whole item as its single chunk: the header line is then the only
+// searchable representation. The structured TableData is cleared on every
+// emitted chunk so the whole table is not duplicated into the index.
 func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
-	if !isTableHTML(item.Text) {
+	td := item.TableData
+	if td == nil {
 		return []schema.ChunkDoc{item}
 	}
-	rows, headerCount := tableRowsWithHeader(item.Text)
+	rows, headerCount := td.Rows, td.HeaderRows
 	if len(rows) <= headerCount {
-		return []schema.ChunkDoc{item}
+		out := item
+		out.Text = tableutil.RenderTableText(td)
+		out.TableData = nil
+		return []schema.ChunkDoc{out}
 	}
 	names := rows[0]
 	// R1: a row chunk must carry only its own tuple. That is only sound when
 	// the item carries spreadsheet identity and its matrix was built
-	// row-aligned (one five-field tuple per <tr>, header included); a
+	// row-aligned (one five-field tuple per row, header included); a
 	// whole-table tuple must not be copied onto every row, and PDF items write
 	// layout boxes into the same field, so misaligned or non-spreadsheet
 	// payloads get no positions at all.
@@ -176,6 +186,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		doc.Text = text
 		doc.TKNums = nil
 		doc.Positions = nil
+		doc.TableData = nil
 		if aligned {
 			if tuple, err := json.Marshal([][]float64{matrix[headerCount+i]}); err == nil {
 				doc.Positions = tuple
@@ -184,9 +195,21 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		out = append(out, doc)
 	}
 	if len(out) == 0 {
-		return []schema.ChunkDoc{item}
+		single := item
+		single.Text = tableutil.RenderTableText(td)
+		single.TableData = nil
+		return []schema.ChunkDoc{single}
 	}
 	return out
+}
+
+// tableDataOf returns the structured TableData for an item. The parser emits
+// it on ChunkDoc.TableData; items without it (pre-upgrade HTML markup or
+// non-table records) return nil and pass through unchanged. Re-chunk always
+// re-parses from the source document, so a payload never arrives with HTML
+// but no TableData, and no HTML fallback is performed (decision §9.1).
+func tableDataOf(item schema.ChunkDoc) *entity.TableData {
+	return item.TableData
 }
 
 // tableRowRecordText renders one row in the Python table chunker's line format:

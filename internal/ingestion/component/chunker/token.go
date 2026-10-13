@@ -84,6 +84,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
 )
@@ -254,6 +255,20 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	}
 	if err := out.Validate(); err != nil {
 		return out, err
+	}
+	// A structured table carries no markup text of its own. Derive a plain
+	// (tag-free) text from its cells so consumers that read Text — TokenChunker
+	// and the embed path — still receive a searchable body when the producer
+	// emitted only the TableData contract (decision 1-B: no HTML in Text).
+	for i := range out.JSONResult {
+		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
+			out.JSONResult[i].Text = tableutil.RenderTableText(out.JSONResult[i].TableData)
+		}
+	}
+	for i := range out.Chunks {
+		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
+			out.Chunks[i].Text = tableutil.RenderTableText(out.Chunks[i].TableData)
+		}
 	}
 	return out, nil
 }
@@ -724,32 +739,7 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	if !delimPattern.MatchString(txt) {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
-	// Fold whitespace-only pieces into an adjacent real piece instead of
-	// dropping them, so a bare retained delimiter that produces a blank run
-	// (the blank line between two "\n", or a leading "\n") survives in the
-	// emitted text. This mirrors the text/children paths and keeps the chunk
-	// reconstruction lossless for the common case.
-	var kept []string
-	var leading string
-	for _, p := range parts {
-		if strings.TrimSpace(p) == "" {
-			leading += p
-			continue
-		}
-		if leading != "" {
-			p = leading + p
-			leading = ""
-		}
-		kept = append(kept, p)
-	}
-	// A pending blank run belongs to the source and must be preserved. A run
-	// that preceded the first real piece is already prepended during the loop;
-	// any run left over after the last real piece (a trailing delimiter) is
-	// appended to the last kept piece so the emitted text reconstructs the
-	// source exactly instead of being shifted to the front.
-	if leading != "" && len(kept) > 0 {
-		kept[len(kept)-1] += leading
-	}
+	kept := foldWhitespaceSegments(parts)
 	if len(kept) == 0 {
 		return []schema.ChunkDoc{buildChunkDoc(it, "text", txt, "", "")}
 	}
@@ -765,35 +755,20 @@ func chunkFromItem(it schema.ChunkDoc, delimPattern *regexp.Regexp, keepDelim bo
 	}
 	// Visible-text ratio: parser tags (@@...##) carry no visual height
 	// and must not shift crop boundaries. Mirrors the overlap logic
-	// which already counts on removeTag'd text.
-	runCount := 0
-	for _, p := range kept {
-		runCount += utf8.RuneCountInString(removeTag(p))
+	// which already counts on removeTag'd text. Positions are sliced via
+	// the shared slicePositionsByCounts helper (mirrored by the General
+	// path) so each delimiter-split piece crops only its own region.
+	counts := make([]int, len(kept))
+	for i, p := range kept {
+		counts[i] = utf8.RuneCountInString(removeTag(p))
 	}
-	if runCount == 0 {
-		out := make([]schema.ChunkDoc, 0, len(kept))
-		for _, p := range kept {
-			out = append(out, buildChunkDoc(it, "text", p, "", ""))
-		}
-		return out
-	}
+	pdfSliced, posSliced := slicePositionsByCounts(it.PDFPositions, it.Positions, counts)
 	out := make([]schema.ChunkDoc, 0, len(kept))
-	cumRunes := 0
-	for _, p := range kept {
-		pcRunes := utf8.RuneCountInString(removeTag(p))
-		startRatio := float64(cumRunes) / float64(runCount)
-		endRatio := float64(cumRunes+pcRunes) / float64(runCount)
+	for i, p := range kept {
 		ck := buildChunkDoc(it, "text", p, "", "")
-		ck.PDFPositions = slicePositionsByTextRatio(it.PDFPositions, startRatio, endRatio)
-		ck.Positions = slicePositionsByTextRatio(it.Positions, startRatio, endRatio)
-		if len(ck.PDFPositions) == 0 && len(it.PDFPositions) > 0 {
-			ck.PDFPositions = it.PDFPositions
-		}
-		if len(ck.Positions) == 0 && len(it.Positions) > 0 {
-			ck.Positions = it.Positions
-		}
+		ck.PDFPositions = pdfSliced[i]
+		ck.Positions = posSliced[i]
 		out = append(out, ck)
-		cumRunes += pcRunes
 	}
 	return out
 }
@@ -830,6 +805,8 @@ func buildChunkDoc(it schema.ChunkDoc, ckType, text, ctxAbove, ctxBelow string) 
 		Positions:    it.Positions,
 		Image:        it.Image,
 		PageNumber:   it.PageNumber,
+		Sheet:        it.Sheet,
+		SheetIndex:   it.SheetIndex,
 		Extra:        cloneExtra(it.Extra),
 	}
 	if ctxAbove != "" {
@@ -912,7 +889,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append([]string{takeContextSentences(txt, remain, true)}, parts...)
+					parts = append([]string{takeContextSentences(txt, remain, true, contextSentencePattern)}, parts...)
 					remain = 0
 					break
 				}
@@ -928,7 +905,7 @@ func collectContext(chunks []schema.ChunkDoc, i, ctxTokens int, above bool) stri
 				tk := intValue(chunks[pos].TKNums)
 				txt := chunks[pos].Text
 				if tk >= remain {
-					parts = append(parts, takeContextSentences(txt, remain, false))
+					parts = append(parts, takeContextSentences(txt, remain, false, contextSentencePattern))
 					remain = 0
 					break
 				}
@@ -1239,6 +1216,21 @@ func expandOversizedUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc
 	return out
 }
 
+// pieceVisibleCount returns the visible-text weight of a split piece: the
+// rune count after stripping parser tags (@@...##), excluding the synthetic
+// leading "\n" glue on the first piece (text-path units are built as
+// "\n"+paragraph, which carries no visual height).
+func pieceVisibleCount(text string, isFirst bool, lead string) int {
+	n := utf8.RuneCountInString(removeTag(text))
+	if isFirst && lead != "" {
+		n -= utf8.RuneCountInString(lead)
+		if n < 0 {
+			n = 0
+		}
+	}
+	return n
+}
+
 // splitOversizedText splits one oversized text unit into <= target pieces.
 // Sentence boundaries are preferred; a boundary-less run that still exceeds
 // target is hard token-split. Delimiters are preserved so the concatenated
@@ -1312,67 +1304,23 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	// Every sub-piece inherits the source unit's metadata (coarse positions +
 	// item attributes); each is built from a clone so every ChunkDoc field
-	// survives the split. PDF positions are proportionally sliced vertically so
-	// each piece's screenshot crops only its own region instead of the whole
-	// paragraph (fix for chunk-screenshot mismatch).
-	if len(ck.PDFPositions) == 0 && len(ck.Positions) == 0 {
-		for i := range pieces {
-			inherited := cloneChunkDoc(ck)
-			inherited.Text = pieces[i].Text
-			inherited.TKNums = pieces[i].TKNums
-			inherited.CKType = "text"
-			pieces[i] = inherited
-		}
-		return pieces
-	}
-	// Ratio basis: rune counts of the real source content. The synthetic
-	// leading "\n" glue (text-path units are built as "\n"+paragraph) carries
-	// no visual height, so it is excluded from the first piece's count to keep
-	// the slice proportions aligned with the original text. Parser tags
-	// (@@...##) also carry no visual height and are stripped before counting.
+	// survives the split. PDF positions are sliced via the shared
+	// slicePositionsByCounts helper so each piece's screenshot crops only
+	// its own region instead of the whole paragraph (fix for
+	// chunk-screenshot mismatch).
 	counts := make([]int, len(pieces))
-	runCount := 0
 	for i, p := range pieces {
-		n := utf8.RuneCountInString(removeTag(p.Text))
-		if i == 0 && lead != "" {
-			n -= utf8.RuneCountInString(lead)
-			if n < 0 {
-				n = 0
-			}
-		}
-		counts[i] = n
-		runCount += n
+		counts[i] = pieceVisibleCount(p.Text, i == 0, lead)
 	}
-	if runCount == 0 {
-		for i := range pieces {
-			inherited := cloneChunkDoc(ck)
-			inherited.Text = pieces[i].Text
-			inherited.TKNums = pieces[i].TKNums
-			inherited.CKType = "text"
-			pieces[i] = inherited
-		}
-		return pieces
-	}
-	cumRunes := 0
+	pdfSliced, posSliced := slicePositionsByCounts(ck.PDFPositions, ck.Positions, counts)
 	for i, p := range pieces {
-		startRatio := float64(cumRunes) / float64(runCount)
-		endRatio := float64(cumRunes+counts[i]) / float64(runCount)
 		inherited := cloneChunkDoc(ck)
 		inherited.Text = p.Text
 		inherited.TKNums = p.TKNums
 		inherited.CKType = "text"
-		inherited.PDFPositions = slicePositionsByTextRatio(ck.PDFPositions, startRatio, endRatio)
-		inherited.Positions = slicePositionsByTextRatio(ck.Positions, startRatio, endRatio)
-		// Fall back to original positions if slicing produced nothing (e.g.
-		// malformed matrix) so the piece still gets a preview rather than none.
-		if len(inherited.PDFPositions) == 0 && len(ck.PDFPositions) > 0 {
-			inherited.PDFPositions = ck.PDFPositions
-		}
-		if len(inherited.Positions) == 0 && len(ck.Positions) > 0 {
-			inherited.Positions = ck.Positions
-		}
+		inherited.PDFPositions = pdfSliced[i]
+		inherited.Positions = posSliced[i]
 		pieces[i] = inherited
-		cumRunes += counts[i]
 	}
 	return pieces
 }

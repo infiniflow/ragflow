@@ -20,10 +20,14 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -45,6 +49,7 @@ type fakeCanvasLoader struct {
 	runErr              error
 	events              []canvas.RunEvent
 	waitForCancellation bool
+	runCalls            atomic.Int32
 }
 
 func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*entity.UserCanvas, error) {
@@ -55,6 +60,7 @@ func (f *fakeCanvasLoader) LoadCanvasByID(_ context.Context, _, _ string) (*enti
 }
 
 func (f *fakeCanvasLoader) RunAgentWithWebhook(ctx context.Context, _, _ string, _ map[string]any) (<-chan canvas.RunEvent, error) {
+	f.runCalls.Add(1)
 	if f.runErr != nil {
 		return nil, f.runErr
 	}
@@ -844,31 +850,140 @@ func TestWebhook_FindWebhookBegin_NoComponents(t *testing.T) {
 
 // ---------- Regression tests for issues raised in code review ----------
 
-// TestWebhook_BodySizeStreamBounded pins the security MEDIUM-1
-// hardening: when max_body_size is configured, an oversized body is
-// rejected. The 102 envelope carries code=CodeDataError; HTTP itself
-// stays at 200 (matches the existing /api/v1 error envelope shape).
-func TestWebhook_BodySizeStreamBounded(t *testing.T) {
+type webhookReadErrorCase struct {
+	contentType string
+	failure     string
+}
+
+// TestWebhookRejectsBodyReadErrors checks that neither execution mode starts an Agent after a failed read.
+func TestWebhookRejectsBodyReadErrors(t *testing.T) {
+	requests := []webhookReadErrorCase{
+		{"application/json", "oversized"},
+		{"application/json", "interrupted"},
+		{"text/plain", "oversized"},
+		{"text/plain", "interrupted"},
+		{"application/x-www-form-urlencoded", "oversized"},
+		{"application/x-www-form-urlencoded", "interrupted"},
+	}
+	targets := []struct {
+		mode string
+		path string
+	}{
+		{"Immediately", "/api/v1/agents/c1/webhook"},
+		{"Immediately", "/api/v1/agents/c1/webhook/test"},
+		{"Streaming", "/api/v1/agents/c1/webhook"},
+		{"Streaming", "/api/v1/agents/c1/webhook/test"},
+	}
+	for _, request := range requests {
+		for _, target := range targets {
+			name := request.contentType + "/" + target.mode + "/" + target.path + "/" + request.failure
+			t.Run(name, func(t *testing.T) {
+				assertWebhookRejectsBodyReadError(t, request, target.mode, target.path)
+			})
+		}
+	}
+}
+
+// assertWebhookRejectsBodyReadError checks the response and absence of Agent dispatch.
+func assertWebhookRejectsBodyReadError(t *testing.T, request webhookReadErrorCase, mode, path string) {
+	t.Helper()
 	cv := makeWebhookCanvas("c1", "u-1", "Webhook", map[string]any{
+		"execution_mode": mode,
 		"security": map[string]any{
-			"max_body_size": "1kb",
+			"auth_type": "none", "allow_anonymous": true, "max_body_size": "1kb",
 		},
 	})
-	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
-	c, w := webhookCtx("POST", "/api/v1/agents/c1/webhook",
-		strings.Repeat("a", 2048), "text/plain")
+	loader := &fakeCanvasLoader{canvas: cv}
+	h := &AgentHandler{loader: loader}
+	c, w := webhookCtx("POST", path, "", request.contentType)
+	// Exercise the stream limit, not the Content-Length pre-check.
+	c.Request.ContentLength = -1
+	c.Request.TransferEncoding = []string{"chunked"}
+	body := `{"value":"ok"}`
+	if request.contentType == "application/x-www-form-urlencoded" {
+		body = "value=ok"
+	}
+	var reader io.Reader
+	wantMessage := "body too large"
+	if request.failure == "oversized" {
+		reader = strings.NewReader(body + strings.Repeat(" ", 1001))
+	} else {
+		// Even a valid prefix must be rejected if the stream fails afterward.
+		reader = io.MultiReader(strings.NewReader(body), iotest.ErrReader(io.ErrUnexpectedEOF))
+		wantMessage = "unexpected EOF"
+	}
+	c.Request.Body = io.NopCloser(reader)
 
 	h.Webhook(c)
 
-	code, msg := errBody(t, w.Body.Bytes())
-	if code != int(common.CodeDataError) {
-		t.Errorf("envelope code = %d, want %d (CodeDataError)", code, common.CodeDataError)
+	if w.Code != http.StatusOK {
+		t.Errorf("HTTP status = %d, want existing 200 error envelope", w.Code)
 	}
-	// Either message is acceptable — the Content-Length pre-check
-	// ("request body too large") OR the MaxBytesReader runtime check
-	// ("http: request body too large").
-	if !strings.Contains(msg, "body too large") {
-		t.Errorf("message = %q, want contains 'body too large'", msg)
+	code, msg := errBody(t, w.Body.Bytes())
+	if code != int(common.CodeDataError) || !strings.Contains(msg, wantMessage) {
+		t.Errorf("response = %s, want data error containing %q", w.Body.String(), wantMessage)
+	}
+	if calls := loader.runCalls.Load(); calls != 0 {
+		t.Errorf("Agent started %d times after body read failure", calls)
+	}
+}
+
+// TestParseWebhookRequestReadErrors verifies that partial payloads are discarded and error causes survive wrapping.
+func TestParseWebhookRequestReadErrors(t *testing.T) {
+	for _, contentType := range []string{"application/json", "text/plain", "application/x-www-form-urlencoded"} {
+		for _, oversized := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/oversized=%t", contentType, oversized), func(t *testing.T) {
+				c, w := webhookCtx("POST", "/", "", contentType)
+				body := `{"value":"ok"}`
+				if contentType == "application/x-www-form-urlencoded" {
+					body = "value=ok"
+				}
+				c.Request.Body = io.NopCloser(io.MultiReader(strings.NewReader(body), iotest.ErrReader(io.ErrUnexpectedEOF)))
+				if oversized {
+					c.Request.Body = http.MaxBytesReader(w, io.NopCloser(strings.NewReader(body+strings.Repeat(" ", 1001))), 1000)
+				}
+				parsed, err := parseWebhookRequest("", c)
+				if err == nil || parsed != nil {
+					t.Fatalf("parsed = %v, err = %v; want no payload and a read error", parsed, err)
+				}
+				if oversized {
+					var sizeErr *http.MaxBytesError
+					if !errors.As(err, &sizeErr) {
+						t.Fatalf("error = %v, want MaxBytesError", err)
+					}
+				} else if !errors.Is(err, io.ErrUnexpectedEOF) {
+					t.Fatalf("error = %v, want unexpected EOF", err)
+				}
+			})
+		}
+	}
+}
+
+// TestParseWebhookRequestAtBodyLimit keeps the configured size limit inclusive for all body formats.
+func TestParseWebhookRequestAtBodyLimit(t *testing.T) {
+	for _, contentType := range []string{"application/json", "text/plain", "application/x-www-form-urlencoded"} {
+		t.Run(contentType, func(t *testing.T) {
+			want := strings.Repeat("a", 988)
+			body := `{"value":"` + want + `"}`
+			if contentType == "application/x-www-form-urlencoded" {
+				want = strings.Repeat("a", 994)
+				body = "value=" + want
+			}
+			if len(body) != 1000 {
+				t.Fatalf("body length = %d, want 1000", len(body))
+			}
+			c, w := webhookCtx("POST", "/", body, contentType)
+			c.Request.ContentLength = -1
+			c.Request.Body = http.MaxBytesReader(w, c.Request.Body, 1000)
+			parsed, err := parseWebhookRequest("", c)
+			if err != nil {
+				t.Fatalf("parse body at limit: %v", err)
+			}
+			value, ok := parsed["body"].(map[string]any)["value"].(string)
+			if !ok || value != want {
+				t.Fatalf("parsed body value = %q", value)
+			}
+		})
 	}
 }
 

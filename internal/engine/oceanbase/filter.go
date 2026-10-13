@@ -76,6 +76,29 @@ func buildFilter(condition map[string]interface{}, kind string) (string, []inter
 				parts = append(parts, part)
 				args = append(args, partArgs...)
 			}
+		case "knowledge_graph_kwd":
+			if kind != "chunk" {
+				continue
+			}
+			values, isSlice := interfaceSlice(value)
+			if !isSlice {
+				values = []interface{}{value}
+			}
+			if len(values) == 0 {
+				continue
+			}
+			placeholders := make([]string, len(values))
+			for i := range values {
+				placeholders[i] = "?"
+			}
+			predicate := "= ?"
+			if len(values) > 1 {
+				predicate = "IN (" + strings.Join(placeholders, ", ") + ")"
+			}
+			parts = append(parts, fmt.Sprintf("(%s %s OR %s %s)",
+				quoteIdentifier("type_kwd"), predicate, quoteIdentifier("knowledge_graph_kwd"), predicate))
+			args = append(args, values...)
+			args = append(args, values...)
 		default:
 			if !valid[key] {
 				continue

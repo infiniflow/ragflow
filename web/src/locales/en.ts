@@ -51,6 +51,7 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      readOnly: 'Read-only',
       viewMore: 'View more',
       viewLess: 'View less',
       comingSoon: 'Coming soon',
@@ -410,7 +411,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): not supported by the current parser configuration',
       reselectParserAfterUploadHint:
-        'Continue uploading, then reselect a parse method for these files in the file list.',
+        'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
       addModelAfterUploadHint:
@@ -509,6 +510,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       source: 'Source',
       fileName: 'File name',
       datasetLogs: 'Dataset',
+      datasourceLogs: 'Data source',
       fileLogs: 'File',
       overview: 'Logs',
       success: 'Success',
@@ -563,9 +565,6 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       similarityThreshold: 'Similarity threshold',
       similarityThresholdTip:
         'RAGFlow employs either a combination of weighted keyword similarity and weighted vector cosine similarity, or a combination of weighted keyword similarity and weighted reranking score during retrieval when a reranker model is selected. This parameter sets the threshold for similarities between the user query and chunks. Any chunk with a similarity score below this threshold will be excluded from the results. By default, the threshold is set to 20. This means that only chunks with hybrid similarity score of 20 or higher will be retrieved. If the vector similarity weight is set to 0, this threshold does not apply.',
-      vectorSimilarityWeight: 'Vector similarity weight',
-      vectorSimilarityWeightTip:
-        'This sets the weight of vector similarity in the combined similarity score, either used with vector cosine similarity or with reranking score. The total of the two weights must equal 1.0.',
       keywordSimilarityWeight: 'Keyword similarity weight',
       keywordSimilarityWeightTip:
         'This sets the weight of keyword similarity in the combined similarity score. The total of the vector and keyword weights must equal 1.0.',
@@ -668,6 +667,11 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       reRankModelWaring: 'Re-rank model is very time consuming.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: 'Built in',
+      builtInBadge: 'Built in',
+      builtInPipelines: 'Built-in pipelines',
+      parserSelectPlaceholder: 'Select a parser',
+      parserOptionUnavailable: 'unavailable',
       randomSeedTip:
         'Seed is the starting point for a pseudo-random algorithm that ensures reproducibility of the same output across different runs.',
       datasetDescription: 'Describe your dataset',
@@ -1168,6 +1172,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingLevelHighDescription: 'Deep reasoning',
       thinkingLevelUltra: 'Ultra',
       thinkingLevelUltraDescription: 'Maximum cognitive effort',
+      thinkingLevelAgentic: 'Agentic',
+      thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
       thinkingTip:
         'Only controls thinking mode for official Qwen, Kimi, and GLM model providers. System default disables Qwen thinking to avoid long-running tasks.',
       quote: 'Show citations',
@@ -1273,6 +1279,9 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       queritApiKeyTip:
         'When Querit is selected, its web search results supplement dataset retrieval.',
       queritApiKeyMessage: 'Please enter your Querit API Key',
+      search1apiApiKeyTip:
+        'When Search1API is selected, its web search results supplement dataset retrieval.',
+      search1apiApiKeyMessage: 'Please enter your Search1API API Key',
       serplyApiKeyTip:
         'When Serply is selected, its web search results supplement dataset retrieval.',
       serplyApiKeyMessage: 'Please enter your Serply API Key',
@@ -1680,7 +1689,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional. Comma-separated emails whose entire "My Drive" is indexed, in addition to the shared folders below. Leave empty to sync only those folders.',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
@@ -2764,9 +2773,16 @@ Best for: Documents with flowing, contextually connected content — such as boo
       oneChunkTitle: 'Note',
       oneChunkDescription:
         'All parsed sections will be merged in order into a single chunk.',
-      flattenMediaToText: 'Disable vision model',
-      flattenMediaToTextTip:
-        'Treat image and table sections as plain text and skip vision enhancement.',
+      enableVisionEnhancement: 'Enable vision enhancement',
+      enableVisionEnhancementTip:
+        'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
+      visionEnhancementPromptTip:
+        'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -2834,7 +2850,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       dataManipulation: 'Data manipulation',
       flow: 'Flow',
       dialog: 'Dialogue',
-      cite: 'Cite',
+      cite: 'Show citations',
       citeTip: 'citeTip',
       name: 'Name',
       nameMessage: 'Please input name',
@@ -2935,6 +2951,23 @@ Best for: Documents with flowing, contextually connected content — such as boo
       sofyaSearchDepthBasic: 'Page content',
       sofyaSearchDepthSnippets: 'Snippets only',
       sofyaApiKeyTip: 'Required. Create an API Key at sofya.co.',
+      search1APISearch: 'Search1API',
+      search1APISearchDescription:
+        'A web and news search component powered by Search1API. It covers search services such as Google, Bing, Baidu, GitHub, arXiv, Reddit, YouTube, Hacker News and Reuters. As an agent tool, the agent can pick the channel and search service for each call. An API Key is required.',
+      search1APIChannelTip:
+        'Web searches the general web; News searches news sources. As an agent tool, the agent can switch the channel for each call.',
+      search1APIChannelGeneral: 'Web',
+      search1APIChannelNews: 'News',
+      search1APIService: 'Search service',
+      search1APIServiceTip:
+        'The default search service for the selected channel. As an agent tool, the agent can pick another service the channel supports for each call.',
+      search1APIApiKeyTip: 'Required. Create an API Key at app.s1.dev.',
+      search1APICrawl: 'Search1API crawl',
+      search1APICrawlDescription:
+        'Read a web page with Search1API and return its title and full content. An API Key is required.',
+      search1APICrawlUrl: 'URL',
+      search1APICrawlUrlTip:
+        'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -2959,7 +2992,6 @@ Best for: Documents with flowing, contextually connected content — such as boo
       watermarkText: 'Watermark Text',
       headerText: 'Header Text',
       footerText: 'Footer Text',
-      includeDownloadInfoInContent: 'Append download info to content',
       contentPlaceholder: 'Enter markdown content...',
       filenamePlaceholder: 'document.ext (auto-generated if empty)',
       contentRequired: 'Content is required',
@@ -3535,6 +3567,14 @@ This process aggregates variables from multiple branches into a single variable 
       nodeFormInvalid: 'Invalid settings, please fix them first',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
+      extractorKeywordsTopNMissing:
+        'Auto keywords is enabled, please set the number of keywords to extract (at least 1)',
+      extractorQuestionsTopNMissing:
+        'Auto-question is enabled, please set the number of questions to generate (at least 1)',
+      extractorTagsTopNMissing:
+        'Auto tags is enabled, please set the number of tags (at least 1)',
+      extractorTagFileMissing:
+        'Auto tags is enabled, please select a tag file first',
       retrievalDatasetMissing: 'No dataset selected, please choose one first',
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',

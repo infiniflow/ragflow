@@ -245,7 +245,7 @@ func queryRewrite(ctx context.Context, chatModel *modelModule.ChatModel, questio
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
-		response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
+		response, err := chatModel.ChatWithMessages(ctx, messages, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
 			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {

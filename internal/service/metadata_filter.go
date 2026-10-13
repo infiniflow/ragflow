@@ -24,6 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
+	"ragflow/internal/entity"
 	"regexp"
 
 	"strconv"
@@ -205,7 +206,7 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 	}
 
 	// Call LLM using ChatModel
-	response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
+	response, err := chatModel.ChatWithMessages(ctx, messages, nil, nil)
 	if err != nil {
 		common.Warn("ChatWithMessages failed for GenMetaFilter",
 			zap.String("model",
@@ -766,6 +767,31 @@ func ApplyMetaDataFilter(
 	}
 
 	return baseDocIDs, false
+}
+
+// chatMetadataDocIDs is shared by standard retrieval and the agent's corpus tools.
+func (s *ChatPipelineService) chatMetadataDocIDs(ctx context.Context, chat *entity.Chat, question string, model *modelModule.ChatModel, docIDs, kbIDs []string) []string {
+	if chat.MetaDataFilter == nil || len(*chat.MetaDataFilter) == 0 || len(kbIDs) == 0 || question == "" {
+		return docIDs
+	}
+	var meta common.MetaData
+	var err error
+	if s.MetadataSvc != nil {
+		meta, err = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
+	}
+	if err != nil {
+		common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(err))
+		return docIDs
+	}
+	filtered, empty := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs)
+	if empty {
+		return []string{NoMatchDocIDSentinel}
+	}
+	if filtered != nil {
+		common.Debug("meta_data_filter applied", zap.Int("filtered_count", len(filtered)), zap.Int("pre_filter_count", len(docIDs)))
+		return filtered
+	}
+	return docIDs
 }
 
 func constrainDocIDs(baseDocIDs, filteredDocIDs []string) []string {

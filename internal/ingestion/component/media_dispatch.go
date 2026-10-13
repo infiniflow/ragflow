@@ -14,21 +14,25 @@
 // limitations under the License.
 //
 
-// Media dispatch: image, audio, and video branches that require model access
-// (IMAGE2TEXT, SPEECH2TEXT) at the component layer.
+// Media dispatch runs image OCR and optional vision enhancement, audio
+// transcription, and video dispatch at the component layer.
 
 package component
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"image"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
@@ -71,7 +75,7 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: IMAGE2TEXT vision describe ---
+// Image dispatch: OCR followed by optional IMAGE2TEXT enhancement.
 
 func maybeDispatchImage(
 	ctx context.Context,
@@ -82,6 +86,7 @@ func maybeDispatchImage(
 	inputs map[string]any,
 	setups map[string]schema.ParserSetup,
 	enableVisionEnhancement bool,
+	vision visionSettings,
 ) (parser.ParseResult, bool, error) {
 	if fileType != utility.FileTypeVISUAL {
 		return parser.ParseResult{}, false, nil
@@ -90,54 +95,152 @@ func maybeDispatchImage(
 	if !ok {
 		return parser.ParseResult{}, false, nil
 	}
-	tenantID := getStringOr(inputs, "tenant_id", "")
-	if !enableVisionEnhancement {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image has no searchable text because vision enhancement is disabled")
+	method := getStringOr(setup, "parse_method", "")
+	_, hasOCRFlag := setup["ocr_enabled"].(bool)
+	// ocr_enabled is the OCR switch. Legacy setups omit it and encode the same
+	// choice in parse_method: "ocr"/empty selects local OCR, any other value is
+	// a VLM model reference that also implies OCR is off. The selection itself
+	// lives in imageSetupRunsOCR (parser.go), shared with Check().
+	useOCR := imageSetupRunsOCR(setup)
+	release, err := parser.AcquireImageMedia(ctx)
+	if err != nil {
+		return parser.ParseResult{}, true, err
 	}
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups)
+	defer release()
+	img, err := decodeDispatchImage(binary, useOCR)
+	if err != nil {
+		return parser.ParseResult{}, true, err
+	}
+	var text string
+	if useOCR {
+		text, err = extractImageText(ctx, img)
+	}
+	release()
+	parsed := dispatchParse(ctx, fileType, filename, binary, setups, fractionWindow{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}
 	if len(parsed.JSON) == 0 {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image item")
+		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
 	}
+	parsed.OutputFormat = "json"
 	imageData, _ := parsed.JSON[0]["image"].(string)
-	if imageData == "" {
-		return parser.ParseResult{}, true, fmt.Errorf("parser: image parser returned no image payload")
+	parsed.JSON[0]["text"] = text
+	if err != nil {
+		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", err))
+	} else if useOCR && strings.TrimSpace(text) == "" {
+		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
-	result, handled, err := maybeDispatchImageVLM(ctx, db, imageData, tenantID, setup, inputs)
-	result.Warnings = append(result.Warnings, parsed.Warnings...)
-	result.File = parsed.File
-	if err == nil && len(result.JSON) > 0 {
-		text, _ := result.JSON[0]["text"].(string)
-		if strings.TrimSpace(text) == "" {
-			if len(result.Warnings) > 0 {
-				return result, true, fmt.Errorf("parser: image has no searchable text: %s", result.Warnings[0])
-			}
-			return result, true, fmt.Errorf("parser: vision enhancement returned no searchable text")
+	if !useOCR && !enableVisionEnhancement {
+		// Neither text source is enabled: local OCR is off and the vision
+		// description is not permitted. The item still carries the image, but the
+		// Tokenizer's retrievability filter drops chunks that have no text and no
+		// surrounding context, so this document indexes nothing. Say so instead of
+		// silently returning an empty result.
+		parsed.Warnings = append(parsed.Warnings,
+			"image has no text source: OCR is off and vision enhancement is disabled, so the Tokenizer will discard this item")
+	}
+	if err := ctx.Err(); err != nil {
+		return parsed, true, err
+	}
+	if enableVisionEnhancement {
+		// A setup with an explicit ocr_enabled switch always uses the global
+		// vision settings. Only legacy setups (no switch) carry the VLM model
+		// reference in parse_method, which also disabled OCR by construction.
+		imageVision := vision
+		if !hasOCRFlag && !useOCR {
+			imageVision.modelID = method
+		}
+		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, imageVision)
+		parsed.Warnings = append(parsed.Warnings, warnings...)
+		if description != "" {
+			appendItemText(parsed.JSON[0], description)
+		} else if strings.TrimSpace(text) == "" {
+			// Enhancement was permitted and the model produced nothing usable,
+			// so the item still has no text at all. Without this the chunk is
+			// dropped downstream with no trace, which is what the two other
+			// empty-text warnings above exist to prevent.
+			parsed.Warnings = append(parsed.Warnings,
+				"image has no searchable text: the vision model returned no description, so the Tokenizer will discard this item")
 		}
 	}
-	return result, handled, err
+	return parsed, true, nil
 }
 
-func maybeDispatchImageVLM(
+func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
+	if len(data) == 0 || len(data) > parser.MaxImagePayloadBytes {
+		return nil, fmt.Errorf("parser: image payload exceeds size limits")
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parser: decode image: %w", err)
+	}
+	if config.Width <= 0 || config.Height <= 0 {
+		return nil, fmt.Errorf("parser: image has invalid dimensions %dx%d", config.Width, config.Height)
+	}
+	// Length/width are unbounded (mirrors Python's picture.py); the decoded
+	// raster byte ceiling is opt-in via RAGFLOW_IMAGE_RASTER_MAX_BYTES (0 =
+	// unlimited).
+	if err := parser.CheckImageRasterLimit(config.Width, config.Height); err != nil {
+		return nil, fmt.Errorf("parser: %w", err)
+	}
+	// VLM consumes the original bytes; only local OCR needs a decoded raster.
+	if !decodeRaster {
+		return nil, nil
+	}
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, fmt.Errorf("parser: decode image: %w", err)
+	}
+	return img, nil
+}
+
+func extractImageText(ctx context.Context, img image.Image) (string, error) {
+	analyzer, err := parser.GetDocAnalyzer()
+	if err != nil {
+		return "", err
+	}
+	if analyzer == nil || !analyzer.Health() {
+		return "", fmt.Errorf("local OCR analyzer is unavailable")
+	}
+	boxes := deepdocpdf.OCRImage(ctx, img, analyzer, 1.0)
+	sort.SliceStable(boxes, func(i, j int) bool {
+		if boxes[i].Top == boxes[j].Top {
+			return boxes[i].X0 < boxes[j].X0
+		}
+		return boxes[i].Top < boxes[j].Top
+	})
+	texts := make([]string, 0, len(boxes))
+	for _, box := range boxes {
+		if text := strings.TrimSpace(box.Text); text != "" {
+			texts = append(texts, text)
+		}
+	}
+	return strings.Join(texts, "\n"), nil
+}
+
+func describeImage(
 	ctx context.Context,
 	db *gorm.DB,
 	dataURI string,
 	tenantID string,
 	setup schema.ParserSetup,
 	inputs map[string]any,
-) (parser.ParseResult, bool, error) {
+	vision visionSettings,
+) (string, []string) {
 	// --- Optional VLM description ---
-	lang := resolveVisionLanguage(inputs, getStringOr(setup, "lang", ""))
+	// Captions follow the knowledge base language, which also drives
+	// tokenization, so indexed text and analysis can never disagree. The family
+	// setup's lang is not consulted here: it is an OCR engine input (see
+	// pdf_vision_dispatch.go) and its old implicit default was the subject of
+	// issue #20727.
+	lang := resolveVisionLanguage(inputs)
 	if tenantID == "" {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, "image VLM enhancement skipped: tenant ID is missing")
-		return result, true, nil
+		return "", []string{"image VLM enhancement skipped: tenant ID is missing"}
 	}
 
-	// Use the configured image VLM or the tenant default.
-	modelRef := configuredMediaModelID(setup, "image")
+	// Use the selected description model or the tenant default.
+	modelRef := vision.modelID
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
@@ -156,16 +259,15 @@ func maybeDispatchImageVLM(
 		err = fmt.Errorf("no usable vision model")
 	}
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err))
-		return result, true, nil
+		return "", []string{fmt.Sprintf("image VLM enhancement skipped: model unavailable: %v", err)}
 	}
 
 	prompt := defaultImageVisionPrompt(lang)
-	// image family's contract key is system_prompt (parser.go:295),
-	// mirroring Python parser.py:1119. Do NOT read setup["prompt"]
-	// here — that key is for the video family, not image.
-	if v, ok := setup["system_prompt"].(string); ok && v != "" {
+	// The global enhancement prompt wins; the image family's legacy system_prompt
+	// (the key the Python parser's image branch used) stays readable for canvases
+	// saved before the move. Do NOT read setup["prompt"] here — that key is for
+	// the video family, not image.
+	if v := firstNonEmpty(vision.systemPrompt, getStringOr(setup, "system_prompt", "")); v != "" {
 		prompt = v
 	}
 	messages := []modelModule.Message{{
@@ -175,34 +277,18 @@ func maybeDispatchImageVLM(
 			map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURI}},
 		},
 	}}
-	vision := true
-	resp, err := driver.ChatWithMessages(ctx, modelName, messages, apiConfig, &modelModule.ChatConfig{Vision: &vision}, nil)
+	visionFlag := true
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	resp, err := chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &visionFlag}, nil)
 	if err != nil {
-		result := imageDispatchResult("", dataURI)
-		result.Warnings = append(result.Warnings, fmt.Sprintf("image VLM enhancement failed: %v", err))
-		return result, true, nil
+		return "", []string{fmt.Sprintf("image VLM enhancement failed: %v", err)}
 	}
 	vlmText := ""
 	if resp != nil && resp.Answer != nil {
 		vlmText = strings.TrimSpace(*resp.Answer)
 	}
 
-	return imageDispatchResult(vlmText, dataURI), true, nil
-}
-
-// imageDispatchResult builds the structured JSON payload for the image
-// family: a single item carrying the VLM description, the image attachment
-// (data URI), and doc_type_kwd "image". Mirrors Python
-// rag/app/picture.py:71-72.
-func imageDispatchResult(text, dataURI string) parser.ParseResult {
-	return parser.ParseResult{
-		OutputFormat: "json",
-		JSON: []map[string]any{{
-			"text":         text,
-			"image":        dataURI,
-			"doc_type_kwd": "image",
-		}},
-	}
+	return vlmText, nil
 }
 
 // Audio dispatch: SPEECH2TEXT transcription ---
@@ -233,7 +319,7 @@ func maybeDispatchAudio(
 			fmt.Errorf("parser: audio requires tenant_id")
 	}
 
-	modelRef := configuredMediaModelID(setup, "audio")
+	modelRef := configuredAudioModelID(setup)
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig

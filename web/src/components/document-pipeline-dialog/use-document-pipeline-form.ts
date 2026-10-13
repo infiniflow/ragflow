@@ -51,20 +51,20 @@ export function useDocumentPipelineForm({
     () =>
       z
         .object({
-          parseType: z.nativeEnum(ParseType),
+          parse_type: z.nativeEnum(ParseType),
           parser_id: z.string(),
           pipeline_id: z.string().optional(),
           parser_config: z.record(z.string(), z.any()).optional(),
         })
         .superRefine((data, ctx) => {
-          if (data.parseType === ParseType.BuiltIn && !data.parser_id.trim()) {
+          if (data.parse_type === ParseType.BuiltIn && !data.parser_id.trim()) {
             ctx.addIssue({
               path: ['parser_id'],
               message: t('common.pleaseSelect'),
               code: 'custom',
             });
           }
-          if (data.parseType === ParseType.Pipeline && !data.pipeline_id) {
+          if (data.parse_type === ParseType.Pipeline && !data.pipeline_id) {
             ctx.addIssue({
               path: ['pipeline_id'],
               message: t('common.pleaseSelect'),
@@ -79,7 +79,7 @@ export function useDocumentPipelineForm({
   const form = useForm<z.infer<typeof FormSchema>>({
     resolver: zodResolver(FormSchema),
     defaultValues: {
-      parseType: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
+      parse_type: pipelineId ? ParseType.Pipeline : ParseType.BuiltIn,
       parser_id: parserId || '',
       pipeline_id: pipelineId || '',
       parser_config: transformSavedParserConfigToForm(parserConfig),
@@ -88,7 +88,7 @@ export function useDocumentPipelineForm({
 
   const parseType = useWatch({
     control: form.control,
-    name: 'parseType',
+    name: 'parse_type',
   });
   const selectedDataFlowId = useWatch({
     control: form.control,
@@ -177,12 +177,12 @@ export function useDocumentPipelineForm({
         );
       }
 
-      const isPipeline = data.parseType === ParseType.Pipeline;
+      const isPipeline = data.parse_type === ParseType.Pipeline;
       return {
         parser_id: isPipeline ? '' : data.parser_id,
         pipeline_id: isPipeline ? data.pipeline_id : '',
         parser_config: transformedConfig,
-        parseType: data.parseType,
+        parse_type: data.parse_type,
       };
     },
     [],

@@ -131,7 +131,7 @@ func TestSearchSimilarFiltersByVariant(t *testing.T) {
 	if eng.lastSearchReq.Filter["available_int"] != 1 {
 		t.Fatalf("expected available_int=1 filter, got %v", eng.lastSearchReq.Filter["available_int"])
 	}
-	if eng.lastSearchReq.Filter["compile_kwd"] != string(compileKwdWikiPage) {
+	if eng.lastSearchReq.Filter["compile_kwd"] != "wiki" || eng.lastSearchReq.Filter["type_kwd"] != compileKwdWikiPage {
 		t.Fatalf("expected compile_kwd=%q filter, got %v", compileKwdWikiPage, eng.lastSearchReq.Filter["compile_kwd"])
 	}
 	// SelectFields must include the round-trip columns added in the 8th review.

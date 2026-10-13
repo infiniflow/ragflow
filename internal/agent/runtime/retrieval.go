@@ -99,6 +99,18 @@ type RetrievalRequest struct {
 	// text chunks (available_int=1 and no compile_kwd), excluding
 	// knowledge-compiled products.
 	OnlyOriginalText bool
+	// VectorOnly, when true, issues ONLY the dense (vector) leg: no text match
+	// expression is built or sent, no fusion expression is attached, and the
+	// kNN candidate set is filtered by SCOPE alone (kb_id, doc_id,
+	// available_int, ...) instead of by the query's own words.
+	//
+	// It exists because a hybrid request with KeywordsSimilarityWeight = 0 is
+	// NOT a pure vector search: the engine still builds the BM25 clause and
+	// passes it as the kNN `filter`, so only chunks matching the query text can
+	// come back — the exact restriction a wording-gap search must not have. A
+	// vector-only request also skips the 4x candidate over-fetch, the fusion
+	// step and the engine's second-pass KNN scoring round trip.
+	VectorOnly bool
 	// SelectFields limits the ES _source fields returned per hit.
 	SelectFields []string
 }
@@ -132,14 +144,36 @@ type GrepRequest struct {
 	Pattern    string   // The regex to match against chunk content (case-insensitive).
 	DatasetIDs []string // Knowledge base IDs to restrict to.
 	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
-	Limit      int      // Max number of chunks to return.
-	Offset     int      // Number of chunks to skip (0-based), for pagination.
+	// ChunkScope restricts to specific chunk ids (term filter) when non-empty;
+	// used by meta lookups like ResolveChunkOrder, not by grep itself.
+	ChunkScope []string
+	Limit      int // Max number of chunks to return.
+	Offset     int // Number of chunks to skip (0-based), for pagination.
 	// Sort is an ordered list of field names to order results by ascending
 	// (e.g. a document's reading order: chunk_order_int, page_num_int, top_int).
 	Sort []string // Ordered ascending sort fields.
 	// SelectFields limits the ES _source fields returned per hit.
 	SelectFields []string
 	TenantID     string // Calling tenant (== user_id in RAGFlow's data model).
+}
+
+// Bm25Service is the lexical full-text (BM25) search surface used by
+// search_bm25_chunks. Like GrepService it is separate from RetrievalService
+// because BM25 ranking over tokenized chunk fields is a distinct retrieval mode
+// with no vector component.
+type Bm25Service interface {
+	SearchBm25(ctx context.Context, req Bm25Request) ([]RetrievalChunk, error)
+}
+
+// Bm25Request is the input to Bm25Service.SearchBm25.
+type Bm25Request struct {
+	// Queries are 1-5 keyword/phrase queries; each is scored independently and
+	// results are merged and deduplicated by chunk id.
+	Queries    []string
+	DatasetIDs []string // Knowledge base IDs to restrict to.
+	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
+	TopN       int      // Max chunks per query before merging.
+	TenantID   string   // Calling tenant (== user_id in RAGFlow's data model).
 }
 
 // ErrRetrievalServiceMissing is returned when no RetrievalService is registered.
@@ -161,11 +195,24 @@ var ErrGrepServiceMissing = errors.New(
 	"grep service not registered — call runtime.SetGrepService(...) at boot",
 )
 
+// ErrBm25ServiceMissing is returned when no Bm25Service has been registered.
+var ErrBm25ServiceMissing = errors.New(
+	"bm25 service not registered — call runtime.SetBm25Service(...) at boot",
+)
+
 // ErrRegexpNotSupported is returned when the underlying doc engine does not
 // implement regex matching on chunk content (e.g. Infinity).
 var ErrRegexpNotSupported = errors.New(
 	"grep_chunks: regex matching is not supported by this document engine",
 )
+
+// ErrRegexpPushdown is wrapped around a native regex search the engine refused
+// to run — an unsupported construct (Lucene regexp has no \b, no lookaround) or
+// an automaton that blew the engine's state budget (long alternations of `.*`).
+// It is a sentinel so the caller can tell "this pattern is beyond the engine"
+// apart from a transport or scope failure and degrade deliberately instead of
+// surfacing an opaque backend error.
+var ErrRegexpPushdown = errors.New("grep_chunks: regexp pushdown failed")
 
 var (
 	retrievalServiceMu   sync.RWMutex
@@ -251,6 +298,27 @@ func GetGrepService() GrepService {
 	return grepServiceImpl
 }
 
+var (
+	bm25ServiceMu   sync.RWMutex
+	bm25ServiceImpl Bm25Service = stubBm25Service{}
+)
+
+func SetBm25Service(svc Bm25Service) {
+	bm25ServiceMu.Lock()
+	defer bm25ServiceMu.Unlock()
+	if svc == nil {
+		bm25ServiceImpl = stubBm25Service{}
+		return
+	}
+	bm25ServiceImpl = svc
+}
+
+func GetBm25Service() Bm25Service {
+	bm25ServiceMu.RLock()
+	defer bm25ServiceMu.RUnlock()
+	return bm25ServiceImpl
+}
+
 type stubRetrievalService struct{}
 
 func (stubRetrievalService) Search(_ context.Context, _ *gorm.DB, _ RetrievalRequest) ([]RetrievalChunk, error) {
@@ -273,6 +341,12 @@ type stubGrepService struct{}
 
 func (stubGrepService) Grep(_ context.Context, _ GrepRequest) ([]RetrievalChunk, error) {
 	return nil, ErrGrepServiceMissing
+}
+
+type stubBm25Service struct{}
+
+func (stubBm25Service) SearchBm25(_ context.Context, _ Bm25Request) ([]RetrievalChunk, error) {
+	return nil, ErrBm25ServiceMissing
 }
 
 // simpleRetrievalService is a deterministic test implementation that returns

@@ -64,7 +64,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -324,11 +323,10 @@ func (s *MemoryMessageService) embedAndSaveMessages(ctx context.Context, mem *Cr
 	for i, message := range messages {
 		contents[i], _ = message["content"].(string)
 	}
-	target, err := NewModelSolver().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeEmbedding, mem.EmbdID)
+	embeddingModel, err := NewModelFactory().NewEmbeddingModel(ctx, ModelAccess{TenantID: mem.TenantID}, mem.EmbdID)
 	if err != nil {
 		return err
 	}
-	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	// Embed inside the model's window: memory contents are caller-supplied and
 	// unbounded, and the provider answers 400/20015 instead of truncating them.
 	embeddings, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: contents}, &models.EmbeddingConfig{Dimension: 0}, nil)
@@ -389,7 +387,7 @@ func (s *MemoryMessageService) insertMemoryTask(ctx context.Context, task *entit
 // generator later without changing call sites. Avoids an
 // import-cycle with internal/uuid at the package boundary.
 func newUUIDString() string {
-	return utility.GenerateUUID()
+	return common.GenerateUUID()
 }
 
 // publishMemoryTaskWakeup publishes only the durable task identity. Workers

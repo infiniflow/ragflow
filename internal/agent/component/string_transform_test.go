@@ -17,6 +17,7 @@
 package component
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -156,6 +157,84 @@ func TestStringTransform_ParamCheck(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("expected error for bad method, got nil")
+	}
+}
+
+// TestStringTransform_MergeStringDelimiter: the agent UI saves merge-mode
+// delimiters as a single string (","), which must build and merge.
+func TestStringTransform_MergeStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": ",",
+		"script":     "{{x}} and {{y}}",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-6", "task-6")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"x": "foo", "y": "bar"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["result"], "foo and bar"; got != want {
+		t.Errorf("merge: got %v, want %v", got, want)
+	}
+}
+
+// TestStringTransform_WhitespaceStringDelimiter: a whitespace string
+// delimiter ("\n") is kept as is, not trimmed away.
+func TestStringTransform_WhitespaceStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": "\n",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	got := c.(*StringTransformComponent).param.Delimiters
+	want := []string{"\n"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("delimiters: got %q, want %q", got, want)
+	}
+}
+
+// TestStringTransform_SplitStringDelimiter: "a;b" with delimiters=";" → ["a", "b"].
+func TestStringTransform_SplitStringDelimiter(t *testing.T) {
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "split",
+		"delimiters": ";",
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	state := canvas.NewCanvasState("run-7", "task-7")
+	ctx := canvas.WithState(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"line": "a;b"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got, _ := out["result"].([]string)
+	want := []string{"a", "b"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("split: got %v, want %v", got, want)
+	}
+}
+
+// TestStringTransform_EmptyStringDelimiter: delimiters="" is rejected.
+func TestStringTransform_EmptyStringDelimiter(t *testing.T) {
+	_, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": "",
+	})
+	var pe *ParamError
+	if !errors.As(err, &pe) {
+		t.Fatalf("err=%v, want *ParamError", err)
+	}
+	if pe.Field != "delimiters" {
+		t.Errorf("ParamError.Field=%q, want delimiters", pe.Field)
 	}
 }
 

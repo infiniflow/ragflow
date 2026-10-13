@@ -42,6 +42,25 @@ describe('getWebSearchApiKey', () => {
     expect(getWebSearchApiKey(promptConfig)).toBe('querit-test');
   });
 
+  it('uses only the selected Search1API key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Search1API,
+      search1api_api_key: 'search1api-test',
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBe('search1api-test');
+  });
+
+  it('does not fall back to Tavily when Search1API is selected without a key', () => {
+    const promptConfig = {
+      web_search_provider: WebSearchProvider.Search1API,
+      tavily_api_key: 'tvly-test',
+    } as PromptConfig;
+
+    expect(getWebSearchApiKey(promptConfig)).toBeUndefined();
+  });
+
   it('uses only the selected Serply key', () => {
     const promptConfig = {
       web_search_provider: WebSearchProvider.Serply,
@@ -226,6 +245,9 @@ describe('provider key field mapping', () => {
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Querit)).toBe(
       'querit_api_key',
+    );
+    expect(getWebSearchApiKeyField(WebSearchProvider.Search1API)).toBe(
+      'search1api_api_key',
     );
     expect(getWebSearchApiKeyField(WebSearchProvider.Serply)).toBe(
       'serply_api_key',

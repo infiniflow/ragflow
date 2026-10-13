@@ -392,7 +392,7 @@ func TestRecordPipelineLog_TerminalWithoutDSLResolvesCanvasTitle(t *testing.T) {
 		Title:  strPtr("My Pipeline"),
 		Avatar: strPtr("a.png"),
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	if err := dao.DB.AutoMigrate(&entity.Knowledgebase{}); err != nil {
 		t.Fatalf("migrate knowledgebase: %v", err)
@@ -991,8 +991,7 @@ func TestPipelineExecutor_Execute_DoesNotLogCanceledRun(t *testing.T) {
 // Execute is the ctx received by runPipelineFunc - the task context must flow
 // through to the pipeline run.
 func TestPipelineExecutor_Execute_PropagatesContext(t *testing.T) {
-	type ctxKey string
-	const key ctxKey = "trace"
+	const key string = "trace"
 	taskCtx := makeTaskCtx()
 	ctx := t.Context()
 	taskCtx.Ctx = context.WithValue(ctx, key, "task-ctx")

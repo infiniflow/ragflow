@@ -86,6 +86,8 @@ export default {
       noMoreData: 'Isso é tudo. Nada mais.',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continue o envio e o sistema mudará automaticamente esses arquivos para uma configuração de análise integrada compatível.',
       dataset: 'Conjunto de dados',
       testing: 'Teste de recuperação',
       files: 'Arquivos',
@@ -208,6 +210,7 @@ export default {
       metaData: 'Metadados',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Janela de contexto de imagem e tabela',
       imageTableContextWindowTip:
         'Captura N tokens de texto acima e abaixo da imagem e da tabela para fornecer um contexto de fundo mais rico.',
@@ -718,7 +721,7 @@ export default {
       destinationFolder: 'Pasta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citações',
       citeTip: 'dicaDeCitação',
       name: 'Nome',
       nameMessage: 'Por favor, insira o nome',

@@ -850,7 +850,7 @@ func readTokenizerAsset(names []string, pinKey string, pins map[string]string) (
 		}
 		return candidate, raw, nil
 	}
-	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run ragflow_deps/download_go_deps.py` or set %s to a directory holding them; tried: %s",
+	return "", nil, fmt.Errorf("no tokenizer asset found; run `uv run ragflow_deps/download_deps.py` or set %s to a directory holding them; tried: %s",
 		common.EnvModelAssetsDir, strings.Join(tried, ", "))
 }
 

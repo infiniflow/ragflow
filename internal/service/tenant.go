@@ -23,37 +23,32 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 )
 
 // TenantService tenant service
 type TenantService struct {
-	tenantDAO            *dao.TenantDAO
-	userTenantDAO        *dao.UserTenantDAO
-	userDAO              *dao.UserDAO
-	modelProviderDAO     *dao.TenantModelProviderDAO
-	modelInstanceDAO     *dao.TenantModelInstanceDAO
-	modelDAO             *dao.TenantModelDAO
-	modelGroupDAO        *dao.TenantModelGroupDAO
-	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
-	kbDAO                *dao.KnowledgebaseDAO
-	docEngine            engine.DocEngine
+	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
+	userDAO          *dao.UserDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	docEngine        engine.DocEngine
 }
 
 // NewTenantService create tenant service
 func NewTenantService() *TenantService {
 	return &TenantService{
-		tenantDAO:            dao.NewTenantDAO(),
-		userTenantDAO:        dao.NewUserTenantDAO(),
-		userDAO:              dao.NewUserDAO(),
-		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
-		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
-		modelDAO:             dao.NewTenantModelDAO(),
-		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
-		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
-		kbDAO:                dao.NewKnowledgebaseDAO(),
-		docEngine:            engine.Get(),
+		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		userDAO:          dao.NewUserDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
 	}
 }
 
@@ -810,7 +805,7 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 
 	status := string(entity.StatusValid)
 	ut := &entity.UserTenant{
-		ID:        utility.GenerateUUID(),
+		ID:        common.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,

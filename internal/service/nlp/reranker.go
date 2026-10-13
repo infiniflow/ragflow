@@ -165,7 +165,7 @@ func RerankByModel(
 	tsim = TokenSimilarity(keywords, insTw, qb)
 
 	// Get similarity scores from reranker model
-	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, rerankModel.APIConfig, &models.RerankConfig{}, nil)
+	rerankResponse, err := rerankModel.Rerank(ctx, models.RerankRequest{Query: query, Documents: docs}, &models.RerankConfig{}, nil)
 	if err != nil {
 		return nil, nil, nil, err
 	}

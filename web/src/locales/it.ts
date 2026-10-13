@@ -383,6 +383,8 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       dataFlowRequired: 'Il flusso dati è richiesto',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Continua il caricamento: il sistema passerà automaticamente questi file a una configurazione di analisi integrata supportata.',
       metadata: {
         fields: 'campi',
         selectFiles: 'Selezionati {{count}} file',
@@ -617,6 +619,7 @@ Esempio: un messaggio di 1 KB con embedding a 1024 dimensioni usa ~9 KB. Il limi
       reRankModelWaring: 'Il modello re-rank richiede molto tempo.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Il seme è il punto di partenza per un algoritmo pseudo-casuale che garantisce la riproducibilità dello stesso output in esecuzioni diverse.',
       datasetDescription: 'Descrivi il tuo dataset',
@@ -1989,7 +1992,7 @@ Ideale per: documenti con contenuto fluente e contestualmente connesso — come 
       dataManipulation: 'Manipolazione dati',
       flow: 'Flusso',
       dialog: 'Dialogo',
-      cite: 'Cita',
+      cite: 'Mostra citazioni',
       citeTip: 'citeTip',
       name: 'Nome',
       nameMessage: 'Inserisci nome',

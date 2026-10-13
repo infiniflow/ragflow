@@ -243,24 +243,24 @@ type fakeChatModelConfigResolver struct {
 	err      error
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*ModelTarget, error) {
-	f.tenantID = tenantID
+func (f *fakeChatModelConfigResolver) ResolveInfo(_ context.Context, access ModelAccess, _ entity.ModelType, modelRef string) (*modelModule.ModelInfo, error) {
+	f.tenantID = access.TenantID
 	f.llmID = modelRef
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveDefaultModelConfig(ctx context.Context, tenantID string, modelType entity.ModelType) (*ModelTarget, error) {
-	f.tenantID = tenantID
+func (f *fakeChatModelConfigResolver) ResolveDefaultInfo(_ context.Context, access ModelAccess, _ entity.ModelType) (*modelModule.ModelInfo, error) {
+	f.tenantID = access.TenantID
 	if f.err != nil {
 		return nil, f.err
 	}
-	return &ModelTarget{ModelName: "resolved-model", APIConfig: &modelModule.APIConfig{}, MaxTokens: 8192}, nil
+	return &modelModule.ModelInfo{ID: "resolved-model-id", Name: "resolved-model"}, nil
 }
 
-func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, tenantID, modelRef string) ([]entity.ModelType, error) {
+func (f *fakeChatModelConfigResolver) ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error) {
 	return []entity.ModelType{entity.ModelTypeChat}, nil
 }
 
@@ -1227,10 +1227,10 @@ func TestChatCompletionsModelIDOverrideUsesModelResolver(t *testing.T) {
 	modelID := "3d2d824e7e5d11f1a845455b140cef90"
 
 	svc := &ChatSessionService{
-		chatSessionDAO:   store,
-		userTenantDAO:    &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
-		pipeline:         pipeline,
-		modelProviderSvc: resolver,
+		chatSessionDAO: store,
+		userTenantDAO:  &fakeTenantStore{tenantIDs: []string{"tenant-owner"}},
+		pipeline:       pipeline,
+		modelFactory:   resolver,
 	}
 
 	_, err := svc.ChatCompletions(

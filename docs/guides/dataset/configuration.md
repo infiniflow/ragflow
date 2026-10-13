@@ -321,7 +321,7 @@ Usage:
 
 If no pipeline is currently available, you can use the entry provided in the pipeline area to go to **Agent** and create one.
 
-> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../../guides/agent/agent_overview.md).
+> Note: For pipeline creation, node configuration, and flow orchestration, see [**Ingestion Pipeline**](../agent/ingestion_pipeline/create_ingestion_pipeline.md).
 
 ### Auto Metadata: Automatic Metadata Configuration
 
@@ -369,10 +369,10 @@ Users can assign one of the following roles to each column through the drop-down
 
 For example, if a table contains four columns, **Title**, **Content**, **Category**, and **Year**, you can set them according to actual use:
 
-- **Title -> Both**: The title participates in retrieval and can also be used as metadata.
-- **Content -> Indexing**: The body text is mainly used for content retrieval.
-- **Category -> Metadata**: Used to filter retrieval results by category.
-- **Year -> Metadata**: Used to filter retrieval results by year.
+- **Title → Both**: The title participates in retrieval and can also be used as metadata.
+- **Content → Indexing**: The body text is mainly used for content retrieval.
+- **Category → Metadata**: Used to filter retrieval results by category.
+- **Year → Metadata**: Used to filter retrieval results by year.
 
 In this way, fields that do not need to participate in content retrieval can be prevented from entering chunk text, while these fields are still preserved as retrieval filter conditions.
 
