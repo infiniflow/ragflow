@@ -229,6 +229,49 @@ func TestConnectorHandlerGetConnector(t *testing.T) {
 	}
 }
 
+func TestConnectorHandlerCreateConnectorMapsInvalidFreq(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	tests := []struct {
+		name     string
+		err      error
+		wantCode common.ErrorCode
+	}{
+		{
+			name:     "invalid frequency is a client error",
+			err:      fmt.Errorf("%w: refresh_freq got 0", service.ErrConnectorInvalidFreq),
+			wantCode: common.CodeDataError,
+		},
+		{
+			name:     "internal failure stays a server error",
+			err:      fmt.Errorf("boom"),
+			wantCode: common.CodeServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := &ConnectorHandler{connectorService: fakeConnectorService{err: tt.err}}
+			resp := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(resp)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/connectors",
+				strings.NewReader(`{"name":"c","source":"rss","config":{}}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("user", &entity.User{ID: "user-1"})
+
+			h.CreateConnector(c)
+
+			var body map[string]interface{}
+			if err := json.Unmarshal(resp.Body.Bytes(), &body); err != nil {
+				t.Fatalf("unmarshal response: %v", err)
+			}
+			if body["code"] != float64(tt.wantCode) {
+				t.Fatalf("code=%v want=%v body=%v", body["code"], tt.wantCode, body)
+			}
+		})
+	}
+}
+
 func TestConnectorHandlerStartBoxWebOAuth(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

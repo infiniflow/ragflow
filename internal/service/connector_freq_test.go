@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"testing"
 
 	"ragflow/internal/common"
@@ -42,6 +43,8 @@ func TestCreateConnectorRejectsNonPositiveFreq(t *testing.T) {
 	} {
 		if _, err := svc.CreateConnector(t.Context(), "user-1", req); err == nil {
 			t.Fatalf("%s: CreateConnector succeeded, want frequency error", name)
+		} else if !errors.Is(err, ErrConnectorInvalidFreq) {
+			t.Fatalf("%s: error = %v, want ErrConnectorInvalidFreq", name, err)
 		}
 	}
 }

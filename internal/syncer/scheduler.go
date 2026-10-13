@@ -272,6 +272,11 @@ func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.D
 		return 0, true
 	}
 	if freq <= 0 {
+		common.Warn("syncer task not scheduled: non-positive frequency",
+			zap.String("task_id", task.ID),
+			zap.String("connector_id", task.ConnectorID),
+			zap.String("task_type", task.TaskType),
+			zap.Int64("frequency_minutes", freq))
 		return 0, false
 	}
 	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true

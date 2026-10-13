@@ -88,6 +88,9 @@ var (
 	ErrConnectorSourceNotImplemented = errors.New("connector source is not implemented")
 	// ErrConnectorInternal is a generic, safe-to-expose internal failure.
 	ErrConnectorInternal = errors.New("Internal server error")
+	// ErrConnectorInvalidFreq is returned when a connector frequency is not
+	// positive. Handlers map it to a client error; callers match with errors.Is.
+	ErrConnectorInvalidFreq = errors.New("connector frequency must be positive")
 )
 
 // ConnectorService connector service
@@ -296,13 +299,11 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 
 // CreateConnector creates a connector owned by the current user.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
-	if req != nil {
-		if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
-			return nil, fmt.Errorf("refresh_freq must be positive")
-		}
-		if req.PruneFreq != nil && *req.PruneFreq <= 0 {
-			return nil, fmt.Errorf("prune_freq must be positive")
-		}
+	if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
+		return nil, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
+	}
+	if req.PruneFreq != nil && *req.PruneFreq <= 0 {
+		return nil, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
 	}
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
@@ -1008,13 +1009,13 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	if req != nil {
 		if req.PruneFreq != nil {
 			if *req.PruneFreq <= 0 {
-				return nil, common.CodeDataError, fmt.Errorf("prune_freq must be positive")
+				return nil, common.CodeDataError, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
 			}
 			updates["prune_freq"] = *req.PruneFreq
 		}
 		if req.RefreshFreq != nil {
 			if *req.RefreshFreq <= 0 {
-				return nil, common.CodeDataError, fmt.Errorf("refresh_freq must be positive")
+				return nil, common.CodeDataError, fmt.Errorf("%w: refresh_freq got %d", ErrConnectorInvalidFreq, *req.RefreshFreq)
 			}
 			updates["refresh_freq"] = *req.RefreshFreq
 		}
