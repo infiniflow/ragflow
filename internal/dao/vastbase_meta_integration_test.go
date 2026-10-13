@@ -22,11 +22,13 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
 	"testing"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/server/config"
 
+	"github.com/lib/pq"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -46,9 +48,13 @@ func vastbaseIntegrationConfig(t *testing.T) config.VastbaseMetaConfig {
 		}
 		return fallback
 	}
+	port, err := strconv.Atoi(get("VASTBASE_META_PORT", "5432"))
+	if err != nil {
+		t.Fatalf("invalid VASTBASE_META_PORT: %v", err)
+	}
 	cfg := config.VastbaseMetaConfig{
 		Host:         get("VASTBASE_META_HOST", "127.0.0.1"),
-		Port:         5432,
+		Port:         port,
 		User:         get("VASTBASE_META_USER", "ragflow"),
 		Password:     get("VASTBASE_META_PASSWORD", "Infini_Rag@123"),
 		DatabaseName: get("VASTBASE_META_NAME", "rag_flow"),
@@ -180,6 +186,43 @@ func TestVastbaseMetaDuplicateKeyTranslation(t *testing.T) {
 	}
 	if !IsDuplicateKeyErr(err) {
 		t.Fatalf("IsDuplicateKeyErr(%v) = false", err)
+	}
+}
+
+// TestVastbaseMetaDuplicateObjectSQLSTATE pins the wire form the
+// convergence skip in autoMigrateSafely matches: re-issuing DDL for an
+// existing table, column and index must surface as *pq.Error with the
+// duplicate-object SQLSTATEs (42P07/42701), not merely as text containing
+// "already exists". A Vastbase that wraps or recodes these errors would
+// break the typed classification and fail here.
+func TestVastbaseMetaDuplicateObjectSQLSTATE(t *testing.T) {
+	db := openVastbaseIntegrationDB(t)
+	const marker = "integration_duplicate_marker"
+	db.Exec("DROP TABLE IF EXISTS " + marker)
+	defer db.Exec("DROP TABLE IF EXISTS " + marker)
+
+	for _, ddl := range []string{
+		`CREATE TABLE ` + marker + ` (id varchar(32))`,
+		`ALTER TABLE ` + marker + ` ADD COLUMN value varchar(64)`,
+		`CREATE INDEX idx_integration_dup_marker ON ` + marker + ` (id)`,
+	} {
+		if err := db.Exec(ddl).Error; err != nil {
+			t.Fatalf("seed DDL: %s: %v", ddl, err)
+		}
+		err := db.Exec(ddl).Error
+		if err == nil {
+			t.Fatalf("duplicate DDL accepted: %s", ddl)
+		}
+		var pqErr *pq.Error
+		if !errors.As(err, &pqErr) {
+			t.Fatalf("duplicate DDL error is not *pq.Error: %T: %v", err, err)
+		}
+		if pqErr.Code != "42P07" && pqErr.Code != "42701" {
+			t.Fatalf("duplicate DDL SQLSTATE = %s, want 42P07 or 42701: %v", pqErr.Code, err)
+		}
+		if !isPostgresDuplicateObjectErr(err) {
+			t.Fatalf("duplicate DDL error not classified as convergence: %v", err)
+		}
 	}
 }
 

@@ -879,7 +879,11 @@ func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, por
 		return newServiceStatus(serviceType, name, host, port, "not connected", startTime, err.Error())
 	}
 
-	if err = sqlDB.PingContext(ctx); err != nil {
+	// The DSN allows a 30s connect_timeout, so an unreachable host would
+	// otherwise hold ListServices for the full dial timeout.
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err = sqlDB.PingContext(pingCtx); err != nil {
 		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
 	}
 
