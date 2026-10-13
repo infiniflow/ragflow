@@ -445,10 +445,12 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 	return strings.TrimSpace(resp.Content), nil
 }
 
-// citationGroundingMarkerRe matches canonical [ID:n] / [ID: n] markers that
-// the grounding call is asked to insert. Used only to decide whether a
-// grounding response still has answer text after the markers are removed.
-var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[0-9]+\]`)
+// citationGroundingMarkerRe matches canonical [ID:…] / [ID: …] markers that
+// the grounding call is asked to insert. IDs may be numeric or non-numeric
+// (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
+// response still has answer text after the markers are removed. The ID:
+// prefix is required so bare brackets like [2026] are not treated as markers.
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\]]+\]`)
 
 // citationGroundingHasSubstantiveText reports whether s contains any
 // non-whitespace text once citation markers are stripped. Marker-only

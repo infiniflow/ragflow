@@ -257,11 +257,17 @@ func TestCitationGroundingHasSubstantiveText(t *testing.T) {
 		{"[ID:0]", false},
 		{"[ID:0] [ID:1]", false},
 		{"[ID: 0]\n[ID:1]", false},
+		{"[ID:simple-0]", false},
+		{"[ID:ck-1]", false},
+		{"[ID:simple-0] [ID:ck-1]", false},
+		{"[ID: simple-0]", false},
 		{"[2026]", true},
 		{"  [2026]  ", true},
 		{"The reimbursement request requires manager approval.", true},
 		{"The reimbursement request requires manager approval. [ID:0]", true},
+		{"The reimbursement request requires manager approval. [ID:simple-0]", true},
 		{"答案[ID:0]", true},
+		{"答案[ID:ck-1]", true},
 	}
 	for _, tc := range cases {
 		if got := citationGroundingHasSubstantiveText(tc.in); got != tc.want {
@@ -328,6 +334,79 @@ func TestGrounding_MarkerOnlyStreamErrors(t *testing.T) {
 	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
 	if err == nil {
 		t.Fatal("Invoke: want error after marker-only grounding stream, got nil")
+	}
+	if !strings.Contains(err.Error(), "markers without answer text") {
+		t.Errorf("error=%v, want markers-without-answer-text", err)
+	}
+	if streamed == "" {
+		t.Error("expected marker deltas to have been emitted before the error")
+	}
+	if inv.streamCalls != 1 {
+		t.Errorf("expected 1 stream call, got %d", inv.streamCalls)
+	}
+}
+
+// TestGrounding_NonNumericMarkerOnlyFallsBack: retrieval chunk IDs may be
+// non-numeric (e.g. simple-0). Marker-only grounding with those IDs must still
+// keep the first-pass answer (#20685 review).
+func TestGrounding_NonNumericMarkerOnlyFallsBack(t *testing.T) {
+	inv := &groundingTestInvoker{responses: []string{"[ID:simple-0]"}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "The reimbursement request requires manager approval."}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "simple-0", "content": "policy text"}})
+	ctx := runtime.WithState(t.Context(), state)
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	want := "The reimbursement request requires manager approval."
+	if got, _ := out["content"].(string); got != want {
+		t.Errorf("content=%q, want %q (non-numeric marker-only grounding must not replace original)", got, want)
+	}
+	if got := out["grounding_status"]; got == "applied" {
+		t.Errorf("grounding_status=%v, want not applied for marker-only response", got)
+	}
+	if inv.calls != 1 {
+		t.Errorf("expected 1 grounding call, got %d", inv.calls)
+	}
+}
+
+// TestGrounding_NonNumericMarkerOnlyStreamErrors: streamed marker-only
+// responses with non-numeric IDs must error the same way as numeric ones.
+func TestGrounding_NonNumericMarkerOnlyStreamErrors(t *testing.T) {
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"[ID:simple-0] [ID:ck-1]"}}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "The reimbursement request requires manager approval."}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{
+		{"id": "simple-0", "content": "policy text"},
+		{"id": "ck-1", "content": "more policy"},
+	})
+	ctx := runtime.WithState(t.Context(), state)
+	var streamed string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		streamed += content
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	_, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err == nil {
+		t.Fatal("Invoke: want error after non-numeric marker-only grounding stream, got nil")
 	}
 	if !strings.Contains(err.Error(), "markers without answer text") {
 		t.Errorf("error=%v, want markers-without-answer-text", err)
