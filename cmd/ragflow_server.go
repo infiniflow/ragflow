@@ -429,7 +429,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
-		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tDeepDoc server name (default: \"deepdoc_server\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")

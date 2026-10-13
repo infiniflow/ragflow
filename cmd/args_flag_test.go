@@ -591,3 +591,41 @@ func TestParseArgsDoesNotMutateOsArgs(t *testing.T) {
 		t.Errorf("parseArgs mutated os.Args: got %v, want %v", os.Args, snapshot)
 	}
 }
+
+// TestParseArgsModeBoolSynonyms locks in the fact that mode flags route
+// through strconv.ParseBool (via modeFlag.IsBoolFlag): the standard boolean
+// truthy spellings 1/t/T select the mode, and the falsy spellings 0/f/F do
+// not. This is stdlib flag behavior, not something the parser special-cases.
+func TestParseArgsModeBoolSynonyms(t *testing.T) {
+	truthy := []struct {
+		argv []string
+		want string
+	}{
+		{[]string{"--api=1"}, "api"},
+		{[]string{"-api=1"}, "api"},
+		{[]string{"--api=t"}, "api"},
+		{[]string{"--api=T"}, "api"},
+		{[]string{"--api=true"}, "api"},
+		{[]string{"--migrate=1"}, "migrate"},
+	}
+	for _, c := range truthy {
+		args, err := parseArgsFrom(append([]string{"ragflow_server"}, c.argv...))
+		if err != nil {
+			t.Fatalf("parseArgsFrom(%v) error = %v", c.argv, err)
+		}
+		if args.mode == nil || *args.mode != c.want {
+			t.Errorf("parseArgsFrom(%v) mode = %v, want %s", c.argv, args.mode, c.want)
+		}
+	}
+
+	falsy := []string{"--api=0", "-api=0", "--api=f", "--api=F", "--api=false"}
+	for _, argv := range falsy {
+		args, err := parseArgsFrom([]string{"ragflow_server", argv})
+		if err != nil {
+			t.Fatalf("parseArgsFrom(%q) error = %v", argv, err)
+		}
+		if args.mode != nil {
+			t.Errorf("parseArgsFrom(%q) mode = %v, want nil (falsy boolean selects no mode)", argv, args.mode)
+		}
+	}
+}
