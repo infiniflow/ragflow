@@ -54,10 +54,7 @@ function InnerRetrievalNode({
   // Mirror the form's stale-dataset validation: a persisted id referencing a
   // dataset that has since been deleted or emptied of chunks is flagged on
   // the node as well. Stays empty while the lookup is in flight.
-  const { staleDatasetIds } = useStaleDatasetIds(
-    persistedDatasetIds,
-    canvasID,
-  );
+  const { staleDatasetIds } = useStaleDatasetIds(persistedDatasetIds, canvasID);
 
   const memoryList = useFetchAllMemoryList(canvasID);
 

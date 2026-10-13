@@ -56,12 +56,7 @@ export function useDisableDifferenceEmbeddingDataset(
     loading,
     handleScroll,
     hasNextPage,
-  } = useFetchKnowledgeList(
-    false,
-    debouncedSearchString,
-    undefined,
-    canvasID,
-  );
+  } = useFetchKnowledgeList(false, debouncedSearchString, undefined, canvasID);
   const selectedDatasetIds = useMemo(
     () => (Array.isArray(datasetId) ? datasetId : []),
     [datasetId],

@@ -30,28 +30,25 @@ export function useTagFileTree(value?: string, ownerTenantId?: string) {
   const [treeData, setTreeData] = useState<TreeNodeType[]>([]);
   const ownerTenantIdRef = useRef(ownerTenantId);
   ownerTenantIdRef.current = ownerTenantId;
-  const appendFiles = useCallback(
-    (files: IFile[], tenantId?: string) => {
-      if (ownerTenantIdRef.current !== tenantId) {
-        return;
-      }
-      setTreeData((tree) =>
-        uniqBy(
-          tree.concat(
-            files
-              .filter(
-                (x) =>
-                  isFolderType(x.type) ||
-                  AllowedExtensions.includes(getExtension(x.name)),
-              )
-              .map(toTreeNode),
-          ),
-          'id',
+  const appendFiles = useCallback((files: IFile[], tenantId?: string) => {
+    if (ownerTenantIdRef.current !== tenantId) {
+      return;
+    }
+    setTreeData((tree) =>
+      uniqBy(
+        tree.concat(
+          files
+            .filter(
+              (x) =>
+                isFolderType(x.type) ||
+                AllowedExtensions.includes(getExtension(x.name)),
+            )
+            .map(toTreeNode),
         ),
-      );
-    },
-    [],
-  );
+        'id',
+      ),
+    );
+  }, []);
 
   const loadData = useCallback(
     async ({ id }: TreeNodeType) => {

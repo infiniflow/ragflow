@@ -981,12 +981,7 @@ export const KnowledgeListKeys = {
       canvasID,
     ] as const,
   byIds: (ids: string[], canvasID?: string) =>
-    [
-      KnowledgeApiAction.FetchKnowledgeList,
-      'byIds',
-      ids,
-      canvasID,
-    ] as const,
+    [KnowledgeApiAction.FetchKnowledgeList, 'byIds', ids, canvasID] as const,
 };
 
 export const useFetchKnowledgeList = (
@@ -1075,10 +1070,7 @@ export const useFetchKnowledgeList = (
  * users pick variables alongside datasets); those are not resolvable ids and
  * are dropped before the request is built.
  */
-export const useFetchDatasetsByIds = (
-  ids: string[],
-  canvasID?: string,
-) => {
+export const useFetchDatasetsByIds = (ids: string[], canvasID?: string) => {
   const sortedIds = useMemo(
     () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
     [ids],

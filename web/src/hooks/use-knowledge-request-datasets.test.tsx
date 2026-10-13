@@ -88,7 +88,11 @@ describe('useFetchKnowledgeList', () => {
 
     await waitFor(() => expect(mockListDataset).toHaveBeenCalled());
     expect(mockListDataset).toHaveBeenCalledWith(
-      expect.objectContaining({ page: 1, page_size: 30, canvas_id: 'canvas-1' }),
+      expect.objectContaining({
+        page: 1,
+        page_size: 30,
+        canvas_id: 'canvas-1',
+      }),
     );
   });
 
