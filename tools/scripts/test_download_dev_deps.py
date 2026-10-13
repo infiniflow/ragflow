@@ -1,5 +1,7 @@
-# Tests for the native static-library downloader (tools/scripts/download_native_deps.py):
-# the pdfium / pdf_oxide / office_oxide / onnxruntime archives the Go build links.
+# Tests for the local-dev dependency downloader (tools/scripts/download_dev_deps.py):
+# the native static libraries (pdfium / pdf_oxide / office_oxide / onnxruntime)
+# the Go build links, PLUS the runtime resources (cl100k / DeepDoc .ort / embedding
+# tokenizer assets) the local Go server needs to run, parse and count tokens.
 #
 # build.sh's build_go() fails fast when libonnxruntime.a is not linked, so these
 # tests must guarantee the archives are really landed on disk — above all after
@@ -21,7 +23,7 @@ import zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest import mock
 
-import download_native_deps as native
+import download_dev_deps as native
 import pytest
 import requests
 
@@ -183,7 +185,7 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
     assert sorted(path.name for path in tmp_path.iterdir()) == ["native", "outside", "unsafe.tar.gz"]
 
 
-# ── Local-dev one-stop: the native downloader must also fetch the runtime
+# ── Local-dev one-stop: the dev downloader must also fetch the runtime
 # resources (cl100k / DeepDoc .ort / tokenizer assets) so a developer runs THIS
 # script ONCE and the Go server is ready to build, run, parse and count — but it
 # must NOT fetch stagehand (that is the image script's job). ──────────────────
@@ -191,7 +193,7 @@ def test_native_archive_rejects_unsafe_members(tmp_path, kind):
 
 @pytest.fixture
 def native_dirs(tmp_path, monkeypatch):
-    """Point the native script's repo-anchored paths at a temp tree so the
+    """Point the dev script's repo-anchored paths at a temp tree so the
     runtime-resource downloads written by tests never touch the real repo."""
     deps = tmp_path / "ragflow_deps"
     deps.mkdir()
@@ -262,13 +264,19 @@ def test_download_go_models_fails_loud(native_dirs, monkeypatch):
     assert exc.value.code == 1
 
 
+def _seed_tokenizer_targets(deps, present):
+    """Create (present=True) or leave absent the on-disk targets the inlined
+    TOKENIZER_ASSETS list resolves to under ragflow_deps/huggingface.co/<repo>/<file>."""
+    for repo, filename, _kind in native.TOKENIZER_ASSETS:
+        target = deps / "huggingface.co" / repo / filename
+        if present:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"already here")
+
+
 def test_download_tokenizer_assets_skips_when_present(native_dirs, monkeypatch):
     deps, _ = native_dirs
-    manifest = deps / "tokenizer_assets.txt"
-    manifest.write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
-    target = deps / "huggingface.co" / "InfiniFlow/deepdoc" / "cl100k_base.tiktoken"
-    target.parent.mkdir(parents=True)
-    target.write_bytes(b"already here")
+    _seed_tokenizer_targets(deps, present=True)
     fake = mock.MagicMock(side_effect=_fake_hf)
     monkeypatch.setattr(native, "_hf_download", fake)
     native.download_tokenizer_assets()
@@ -277,16 +285,13 @@ def test_download_tokenizer_assets_skips_when_present(native_dirs, monkeypatch):
 
 def test_download_tokenizer_assets_downloads_when_missing(native_dirs, monkeypatch):
     deps, _ = native_dirs
-    manifest = deps / "tokenizer_assets.txt"
-    manifest.write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
     monkeypatch.setattr(native, "_hf_download", _fake_hf)
     native.download_tokenizer_assets()
-    assert (deps / "huggingface.co" / "InfiniFlow/deepdoc" / "cl100k_base.tiktoken").is_file()
+    for repo, filename, _kind in native.TOKENIZER_ASSETS:
+        assert (deps / "huggingface.co" / repo / filename).is_file(), f"missing {repo}/{filename}"
 
 
 def test_download_tokenizer_assets_fails_loud(native_dirs, monkeypatch):
-    deps, _ = native_dirs
-    (deps / "tokenizer_assets.txt").write_text("InfiniFlow/deepdoc cl100k_base.tiktoken runtime\n")
     monkeypatch.setattr(
         native,
         "_hf_download",
@@ -297,32 +302,46 @@ def test_download_tokenizer_assets_fails_loud(native_dirs, monkeypatch):
     assert exc.value.code == 1
 
 
-def test_download_tokenizer_assets_manifest_missing_fails_loud(native_dirs):
-    # No tokenizer_assets.txt is written. load_tokenizer_assets raises while the
-    # for-loop is being built (outside the per-asset try), so the function must
-    # still fail loud (SystemExit) rather than leaking a raw traceback.
+def test_download_tokenizer_assets_fails_loud_on_bad_list(native_dirs, monkeypatch):
+    # load_tokenizer_assets raises on a malformed inlined entry (bad kind);
+    # download_tokenizer_assets must surface it as SystemExit 1 rather than
+    # leaking a raw traceback or handing a broken tree to the image build.
+    monkeypatch.setattr(
+        native,
+        "load_tokenizer_assets",
+        lambda: (_ for _ in ()).throw(RuntimeError("unknown tokenizer asset kind 'bogus'")),
+    )
     with pytest.raises(SystemExit) as exc:
         native.download_tokenizer_assets()
     assert exc.value.code == 1
 
 
-def test_load_tokenizer_assets_parses_manifest(native_dirs):
-    deps, _ = native_dirs
-    manifest = deps / "tokenizer_assets.txt"
-    manifest.write_text("# comment\n\nInfiniFlow/deepdoc cl100k_base.tiktoken runtime\nX/y.bin somefile.bin oracle\n")
-    assets = native.load_tokenizer_assets()
-    assert assets == [
-        ("InfiniFlow/deepdoc", "cl100k_base.tiktoken", "runtime"),
-        ("X/y.bin", "somefile.bin", "oracle"),
+def test_load_tokenizer_assets_returns_inlined_list():
+    # The asset list is inlined (no separate manifest file); it must match the
+    # six entries the runtime images ship and the Go loader pins.
+    assert native.load_tokenizer_assets() == [
+        ("BAAI/bge-m3", "sentencepiece.bpe.model", "runtime"),
+        ("BAAI/bge-large-en-v1.5", "vocab.txt", "runtime"),
+        ("Qwen/Qwen3-Embedding-0.6B", "tokenizer.json", "runtime"),
+        ("intfloat/e5-mistral-7b-instruct", "tokenizer.json", "runtime"),
+        ("BAAI/bge-m3", "tokenizer.json", "oracle"),
+        ("BAAI/bge-large-en-v1.5", "tokenizer.json", "oracle"),
     ]
 
 
-def test_load_tokenizer_assets_rejects_malformed(native_dirs):
-    deps, _ = native_dirs
-    manifest = deps / "tokenizer_assets.txt"
-    manifest.write_text("InfiniFlow/deepdoc only-two-fields\n")
+def test_load_tokenizer_assets_rejects_bad_kind():
+    with pytest.raises(RuntimeError, match="kind"):
+        native.load_tokenizer_assets([("X/y.bin", "f.bin", "bogus")])
+
+
+def test_load_tokenizer_assets_rejects_empty():
+    with pytest.raises(RuntimeError, match="no tokenizer assets"):
+        native.load_tokenizer_assets([])
+
+
+def test_load_tokenizer_assets_rejects_malformed_repo():
     with pytest.raises(RuntimeError, match="malformed"):
-        native.load_tokenizer_assets()
+        native.load_tokenizer_assets([("nobadrepo", "f.bin", "runtime")])
 
 
 def test_native_script_does_not_fetch_stagehand():

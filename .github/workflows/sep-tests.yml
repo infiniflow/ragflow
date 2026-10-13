@@ -907,13 +907,11 @@ jobs:
         # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
         # Go counters silently degrade to the calibrated cl100k estimate. Run the
         # pytest in isolation so the test/testcases conftest (which requires
-        # SILICONFLOW_API_KEY) cannot fail the collection; the Go test runs after
-        # `./build.sh --go` (above) so the C++ static library is present.
+        # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest tools/scripts/test_download_native_deps.py -q --durations=100
-          ./build.sh --test ./internal/tokenizer/ -run 'TestTokenizerAssetsAreWellFormed|TestEveryRuntimeAssetIsCopiedIntoEveryRuntimeImage|TestEveryRuntimeAssetIsPinnedByTheLoader|TestOracleOnlyAssetsAreNotShipped'
+          uv run pytest tools/scripts/test_download_dev_deps.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |

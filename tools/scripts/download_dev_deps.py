@@ -31,7 +31,7 @@
 #
 # Typical workflow:
 #
-#   uv run tools/scripts/download_native_deps.py
+#   uv run tools/scripts/download_dev_deps.py
 #
 # Behind the GFW, route GitHub release downloads through a mirror with
 # --china-mirrors (or export GH_PROXY=https://gh-proxy.com/).
@@ -404,6 +404,24 @@ HF_DEEPDOC_REPO = "InfiniFlow/deepdoc"
 HF_DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
 
 
+# Embedding tokenizer assets the Go counters load. Inlined here (no separate
+# manifest file) as the single source of truth this script reads directly; the
+# image script ragflow_deps/download_deps.py carries its own copy (no shared
+# module, by design). One entry per tuple: (repo, file, kind).
+#   runtime - the Go counters load it in production; the runtime images must ship
+#             it and the loader must pin its SHA-1.
+#   oracle  - only scripts/gen_tokenizer_oracle.py needs it to regenerate the
+#             test fixtures, so it is deliberately NOT shipped to the image.
+TOKENIZER_ASSETS = [
+    ("BAAI/bge-m3", "sentencepiece.bpe.model", "runtime"),
+    ("BAAI/bge-large-en-v1.5", "vocab.txt", "runtime"),
+    ("Qwen/Qwen3-Embedding-0.6B", "tokenizer.json", "runtime"),
+    ("intfloat/e5-mistral-7b-instruct", "tokenizer.json", "runtime"),
+    ("BAAI/bge-m3", "tokenizer.json", "oracle"),
+    ("BAAI/bge-large-en-v1.5", "tokenizer.json", "oracle"),
+]
+
+
 # Single huggingface_hub import seam, so the module stays importable (and its
 # unit tests stay huggingface-free) without the dep installed.
 def _hf_download(repo_id, filename, local_dir):
@@ -423,35 +441,25 @@ def download_cl100k():
     download_with_progress(cl100k_url(), target)
 
 
-def load_tokenizer_assets(manifest=None):
-    """Read ragflow_deps/tokenizer_assets.txt (the single manifest, also
-    cross-checked by internal/tokenizer/tokenizer_assets_consistency_test.go)
-    and return its entries as (repo, file, kind) tuples.
+def load_tokenizer_assets(assets=None):
+    """Validate and return the inlined tokenizer asset list as (repo, file, kind)
+    tuples. When ASSETS is None, uses the module-level TOKENIZER_ASSETS.
 
     Fetched per file, not by snapshot: these repos also carry multi-GB weights
-    we do not want. Missing assets fail dependency preparation."""
-    if manifest is None:
-        manifest = os.path.join(RAGFLOW_DEPS_DIR, "tokenizer_assets.txt")
-    if not os.path.isfile(manifest):
-        raise RuntimeError(f"tokenizer asset manifest not found: {manifest}")
-    assets = []
-    with open(manifest, encoding="utf-8") as file:
-        for line_no, raw in enumerate(file, start=1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            fields = line.split()
-            if len(fields) != 3:
-                raise RuntimeError(f"{manifest}:{line_no}: malformed entry {line!r} (want 'repo file kind')")
-            repo, filename, kind = fields
-            if kind not in ("runtime", "oracle"):
-                raise RuntimeError(f"{manifest}:{line_no}: unknown kind {kind!r} for {repo}/{filename}")
-            if "/" not in repo or not filename:
-                raise RuntimeError(f"{manifest}:{line_no}: malformed repo/file {repo}/{filename}")
-            assets.append((repo, filename, kind))
-    if not assets:
-        raise RuntimeError(f"{manifest} lists no tokenizer assets")
-    return assets
+    we do not want. A malformed entry (bad kind, malformed repo, or an empty
+    list) fails dependency preparation loudly instead of handing a broken tree
+    to the image build."""
+    items = TOKENIZER_ASSETS if assets is None else assets
+    result = []
+    for repo, filename, kind in items:
+        if kind not in ("runtime", "oracle"):
+            raise RuntimeError(f"unknown tokenizer asset kind {kind!r} for {repo}/{filename}")
+        if "/" not in repo or not filename:
+            raise RuntimeError(f"malformed tokenizer asset repo/file {repo}/{filename}")
+        result.append((repo, filename, kind))
+    if not result:
+        raise RuntimeError("no tokenizer assets listed")
+    return result
 
 
 def download_go_models(use_china_mirrors=False):

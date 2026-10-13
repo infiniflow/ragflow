@@ -17,9 +17,9 @@
 #
 # This is the CI / image-build one-stop. It fetches the runtime resources PLUS
 # the stagehand server binary, and deliberately does NOT fetch the native static
-# libraries the Go build links — those come from tools/scripts/download_native_deps.py
+# libraries the Go build links — those come from tools/scripts/download_dev_deps.py
 # and are baked into the server binary by the build stage. Run this once to ready
-# a dependency image; for local development, run the native downloader instead.
+# a dependency image; for local development, run the dev downloader instead.
 # All version numbers and URLs are defined in the block below; bump a version
 # there, not at the call sites.
 #
@@ -41,7 +41,7 @@
 # tokenizer file per family (XLM-R SentencePiece, BERT WordPiece, two byte-level BPE
 # families) from `huggingface.co/<repo>/<file>` at the top of ragflow_deps/ - the path
 # the loaders search and the one ragflow_deps/Dockerfile ships. This script fetches
-# them too, per ragflow_deps/tokenizer_assets.txt. Models that declare a missing
+# them too, per the inlined TOKENIZER_ASSETS list. Models that declare a missing
 # tokenizer cannot be ingested (see internal/tokenizer/embedding_token_limits.md).
 
 import argparse
@@ -61,7 +61,7 @@ REPO_ROOT = os.path.dirname(SCRIPT_DIR)
 # Single source of truth for the runtime / image-resource versions and URLs
 # this script fetches. build.sh greps none of these (they are image-facing);
 # keep the `NAME = "value"` form greppable for consistency with
-# tools/scripts/download_native_deps.py.
+# tools/scripts/download_dev_deps.py.
 
 # stagehand-server release binaries (used by the Browser component in local
 # mode). They are LOOSELY matched to the stagehand-go Go module: both stay on
@@ -110,12 +110,30 @@ DEEPDOC_REPO = "InfiniFlow/deepdoc"
 DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
 
 
+# Embedding tokenizer assets the Go counters load. Inlined here (no separate
+# manifest file) as the single source of truth this script reads directly; the
+# dev script tools/scripts/download_dev_deps.py carries its own copy (no shared
+# module, by design). One entry per tuple: (repo, file, kind).
+#   runtime - the Go counters load it in production; the runtime images must ship
+#             it and the loader must pin its SHA-1.
+#   oracle  - only scripts/gen_tokenizer_oracle.py needs it to regenerate the
+#             test fixtures, so it is deliberately NOT shipped to the image.
+TOKENIZER_ASSETS = [
+    ("BAAI/bge-m3", "sentencepiece.bpe.model", "runtime"),
+    ("BAAI/bge-large-en-v1.5", "vocab.txt", "runtime"),
+    ("Qwen/Qwen3-Embedding-0.6B", "tokenizer.json", "runtime"),
+    ("intfloat/e5-mistral-7b-instruct", "tokenizer.json", "runtime"),
+    ("BAAI/bge-m3", "tokenizer.json", "oracle"),
+    ("BAAI/bge-large-en-v1.5", "tokenizer.json", "oracle"),
+]
+
+
 def download_with_progress(url, filename):
     """Download URL to FILENAME atomically (temp file, then move on success).
 
     A failed or empty download leaves any previous valid file untouched, so an
     interrupted run never destroys a working dependency tree. Mirrors
-    download_native_deps.download_with_progress."""
+    download_dev_deps.download_with_progress."""
     filename = os.fspath(filename)
     temporary = None
     try:
@@ -149,35 +167,25 @@ def _valid_stagehand_binary(path):
         return file.read(4) == b"\x7fELF"
 
 
-def load_tokenizer_assets(manifest=None):
-    """Read ragflow_deps/tokenizer_assets.txt (the single manifest, also
-    cross-checked by internal/tokenizer/tokenizer_assets_consistency_test.go)
-    and return its entries as (repo, file, kind) tuples.
+def load_tokenizer_assets(assets=None):
+    """Validate and return the inlined tokenizer asset list as (repo, file, kind)
+    tuples. When ASSETS is None, uses the module-level TOKENIZER_ASSETS.
 
     Fetched per file, not by snapshot: these repos also carry multi-GB weights
-    we do not want. Missing assets fail dependency preparation."""
-    if manifest is None:
-        manifest = os.path.join(SCRIPT_DIR, "tokenizer_assets.txt")
-    if not os.path.isfile(manifest):
-        raise RuntimeError(f"tokenizer asset manifest not found: {manifest}")
-    assets = []
-    with open(manifest, encoding="utf-8") as file:
-        for line_no, raw in enumerate(file, start=1):
-            line = raw.strip()
-            if not line or line.startswith("#"):
-                continue
-            fields = line.split()
-            if len(fields) != 3:
-                raise RuntimeError(f"{manifest}:{line_no}: malformed entry {line!r} (want 'repo file kind')")
-            repo, filename, kind = fields
-            if kind not in ("runtime", "oracle"):
-                raise RuntimeError(f"{manifest}:{line_no}: unknown kind {kind!r} for {repo}/{filename}")
-            if "/" not in repo or not filename:
-                raise RuntimeError(f"{manifest}:{line_no}: malformed repo/file {repo}/{filename}")
-            assets.append((repo, filename, kind))
-    if not assets:
-        raise RuntimeError(f"{manifest} lists no tokenizer assets")
-    return assets
+    we do not want. A malformed entry (bad kind, malformed repo, or an empty
+    list) fails dependency preparation loudly instead of handing a broken tree
+    to the image build."""
+    items = TOKENIZER_ASSETS if assets is None else assets
+    result = []
+    for repo, filename, kind in items:
+        if kind not in ("runtime", "oracle"):
+            raise RuntimeError(f"unknown tokenizer asset kind {kind!r} for {repo}/{filename}")
+        if "/" not in repo or not filename:
+            raise RuntimeError(f"malformed tokenizer asset repo/file {repo}/{filename}")
+        result.append((repo, filename, kind))
+    if not result:
+        raise RuntimeError("no tokenizer assets listed")
+    return result
 
 
 def _install_stagehand():

@@ -27,7 +27,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
-- Python 3.10 or later for `tools/scripts/download_native_deps.py` and `ragflow_deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
+- Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `ragflow_deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
@@ -57,10 +57,10 @@ Make `clang++` resolve to Clang 20 and `ld.lld` to LLD 20 before building. Insta
 Download the native static libraries and the runtime model / tokenizer resources with the two dependency downloaders (`uv run` installs each script's declared Python dependencies):
 
 ```bash
-uv run tools/scripts/download_native_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
+uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
-`download_native_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `ragflow_deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `ragflow_deps/download_deps.py` fetches the same runtime resources PLUS the stagehand server (installed into `${XDG_CACHE_HOME:-$HOME/.cache}/stagehand/lib/go_<SDK version>/`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
+`download_dev_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `ragflow_deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `ragflow_deps/download_deps.py` fetches the same runtime resources PLUS the stagehand server (installed into `${XDG_CACHE_HOME:-$HOME/.cache}/stagehand/lib/go_<SDK version>/`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
 
 Skip either script if you have prepared the same resources by other means.
 
