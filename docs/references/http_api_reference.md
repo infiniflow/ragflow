@@ -114,7 +114,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 - Method: POST
 - URL: `/api/v1/openai/{chat_id}/chat/completions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"model"`: `string` (optional)
@@ -153,7 +153,7 @@ curl --request POST \
       }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `chat_id` (*Path parameter*) `string`, *Required*
   Existing chat assistant ID. The request will use that chat assistant's knowledge and settings.
@@ -272,7 +272,7 @@ This API follows the same request and response format as OpenAI's API. It allows
 - Method: POST
 - URL: `/api/v1/agents/chat/completions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"agent_id"`: `string`
@@ -296,7 +296,7 @@ curl --request POST \
       }'
 ```
 
-##### Request Parameters
+##### Body parameters
 
 - `agent_id` (*Body parameter*) `string`, *Required*
   The ID of the agent to run.
@@ -531,7 +531,7 @@ Creates a dataset.
 - Method: POST
 - URL: `/api/v1/datasets`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -576,37 +576,37 @@ curl --request POST \
   }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*
+- `"name"`: `string`, *Required*
   The unique name of the dataset to create. It must adhere to the following requirements:
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
   - Case-insensitive
   If the name is already taken, the dataset is created with a numbered suffix such as `test_1(1)`, `test_1(2)`, and so on.
 
-- `"avatar"`: (*Body parameter*), `string`
+- `"avatar"`: `string`
   Base64 encoding of the avatar.
   - Maximum 65535 characters
 
-- `"description"`: (*Body parameter*), `string`
+- `"description"`: `string`
   A brief description of the dataset to create.
   - Maximum 65535 characters
 
-- `"language"`: (*Body parameter*), `string`
+- `"language"`: `string`
   Optional document/dataset language, for example: `"English"` or `"Chinese"`. Leading and trailing whitespace are stripped. After trimming, it must contain at least 1 character and at most 32 characters. The limit counts characters, not UTF-8 bytes. No restricted list of language values is enforced. If omitted, the server/database default is used.
 
-- `"embedding_model"`: (*Body parameter*), `string`
+- `"embedding_model"`: `string`
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`.
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
-- `"permission"`: (*Body parameter*), `string`
+- `"permission"`: `string`
   Specifies who can access the dataset to create. Available options:
   - `"me"`: (Default) Only you can manage the dataset.
   - `"team"`: All team members can manage the dataset.
 
-- `"chunk_method"`: (*Body parameter*), `enum<string>`
+- `"chunk_method"`: `enum<string>`
   The default chunk method of the dataset to create. Mutually exclusive with `"parse_type"` and `"pipeline_id"`. If you set `"chunk_method"`, do not include `"parse_type"` or `"pipeline_id"`.
   Available options:
   - `"naive"`: General (default)
@@ -622,7 +622,7 @@ curl --request POST \
   - `"table"`: Table
   - `"tag"`: Tag
 
-- `"parser_config"`: (*Body parameter*), `object`
+- `"parser_config"`: `object`
   The configuration settings for the dataset parser. The attributes in this JSON object vary with the selected `"chunk_method"`:
   - If `"chunk_method"` is `"naive"`, the `"parser_config"` object contains the following attributes:
     - `"auto_keywords"`: `int`
@@ -655,12 +655,12 @@ curl --request POST \
       - `"use_parent_child"`: `bool` Whether to enable parent-child chunking. Defaults to `false`.
       - `"children_delimiter"`: `string` The delimiter used to split a parent chunk into child chunks. Only takes effect when `"use_parent_child"` is `true`. Defaults to `"\n"`.
 
-- `"parse_type"`: (*Body parameter*), `int`
+- `"parse_type"`: `int`
   The ingestion pipeline parse type identifier, i.e., the number of parsers in your **Parser** component.
   - Required (along with `"pipeline_id"`) if specifying an ingestion pipeline.
   - Must not be included when `"chunk_method"` is specified.
 
-- `"pipeline_id"`: (*Body parameter*), `string`
+- `"pipeline_id"`: `string`
   The ingestion pipeline ID. Can be found in the corresponding URL in the RAGFlow UI.
   - Required (along with `"parse_type"`) if specifying an ingestion pipeline.
   - Must be a 32-character lowercase hexadecimal string, e.g., `"d0bebe30ae2211f0970942010a8e0005"`.
@@ -736,7 +736,7 @@ Deletes datasets by ID.
 - Method: DELETE
 - URL: `/api/v1/datasets`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]` or `null`
@@ -764,13 +764,13 @@ curl --request DELETE \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"ids"`: (*Body parameter*), `list[string]` or `null`
+- `"ids"`: `list[string]` or `null`
   Specifies the datasets to delete:
   - If omitted, or set to `null` or an empty array, no datasets are deleted.
   - If an array of IDs is provided, only the datasets matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
+- `"delete_all"`: `boolean`
   Whether to delete all datasets owned by the current user when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -806,7 +806,7 @@ Updates configurations for a specified dataset.
 - Method: PUT
 - URL: `/api/v1/datasets/{dataset_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -954,25 +954,25 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `page`: (*Filter parameter*)
+- `page`
   Specifies the page on which the datasets will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*)
+- `page_size`
   The number of datasets on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*)
+- `orderby`
   The field by which datasets should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*)
+- `desc`
   Indicates whether the retrieved datasets should be sorted in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*)
+- `sort`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
-- `name`: (*Filter parameter*)
+- `name`
   The name of the dataset to retrieve.
-- `id`: (*Filter parameter*)
+- `id`
   The ID of the dataset to retrieve.
-- `include_parsing_status`: (*Filter parameter*)
+- `include_parsing_status`
   Whether to include document parsing status counts in the response. Defaults to `false`. When set to `true`, each dataset object in the response will include the following additional fields:
   - `unstart_count`: Number of documents not yet started parsing.
   - `running_count`: Number of documents currently being parsed.
@@ -1205,7 +1205,7 @@ Updates configurations for a specified document.
 - Method: PATCH
 - URL: `/api/v1/datasets/{dataset_id}/documents/{document_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`:`string`
@@ -1361,11 +1361,11 @@ curl --request GET \
      --output ./ragflow.txt
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `dataset_id`: (*Path parameter*)
+- `dataset_id`
   The associated dataset ID.
-- `documents_id`: (*Path parameter*)
+- `document_id`
   The ID of the document to download.
 
 #### Response
@@ -1400,7 +1400,7 @@ To retrieve a specific document's settings and metadata, pass its document ID in
 - Method: GET
 - URL: `/api/v1/datasets/{dataset_id}/documents?page={page}&page_size={page_size}&orderby={orderby}&desc={desc}&keywords={keywords}&id={document_id}&name={document_name}&create_time_from={timestamp}&create_time_to={timestamp}&suffix={file_suffix}&run={run_status}&metadata_condition={json}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
 ##### Request examples
@@ -1417,27 +1417,27 @@ curl --request GET \
 
 - `dataset_id`: (*Path parameter*)
   The associated dataset ID.
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: (*Query parameter*), `string`
   The keywords used to match document titles.
-- `page`: (*Filter parameter*), `integer`
+- `page`: (*Query parameter*), `integer`
   Specifies the page on which the documents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: (*Query parameter*), `integer`
   The maximum number of documents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: (*Query parameter*), `string`
   The field by which documents should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: (*Query parameter*), `boolean`
   Indicates whether the retrieved documents should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`
+- `id`: (*Query parameter*), `string`
   The ID of the document to retrieve.
-- `create_time_from`: (*Filter parameter*), `integer`
+- `create_time_from`: (*Query parameter*), `integer`
   Unix timestamp for filtering documents created after this time. 0 means no filter. Defaults to `0`.
-- `create_time_to`: (*Filter parameter*), `integer`
+- `create_time_to`: (*Query parameter*), `integer`
   Unix timestamp for filtering documents created before this time. 0 means no filter. Defaults to `0`.
-- `suffix`: (*Filter parameter*), `array[string]`
+- `suffix`: (*Query parameter*), `array[string]`
   Filter by file suffix. Supports multiple values, e.g., `pdf`, `txt`, and `docx`. Defaults to all suffixes.
-- `run`: (*Filter parameter*), `array[string]`
+- `run`: (*Query parameter*), `array[string]`
   Filter by document processing status. Supports numeric, text, and mixed formats:
   - Numeric format: `["0", "1", "2", "3", "4", "5"]`
   - Text format: `[UNSTART, RUNNING, CANCEL, DONE, FAIL, SCHEDULE]`
@@ -1450,7 +1450,7 @@ curl --request GET \
     - `4` / `FAIL`: Document processing failed
     - `5` / `SCHEDULE`: Document is scheduled and waiting to be processed
   Defaults to all statuses.
-- `metadata_condition`: (*Filter parameter*), `object` (JSON in query)
+- `metadata_condition`: (*Query parameter*), `object` (JSON in query)
   Optional metadata filter applied to documents when `document_ids` is not provided. Uses the same structure as retrieval:
   - `logic`: `"and"` (default) or `"or"`
   - `conditions`: array of `{ "name": string, "comparison_operator": string, "value": string }`
@@ -1618,7 +1618,7 @@ This endpoint only supports datasets that use the built-in chunking pipeline. Fo
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"document_ids"`: `list[string]`
@@ -1703,15 +1703,15 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"doc_ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"doc_ids"`: `list[string]`, *Required*
   The IDs of the documents to ingest.
-- `"run"`: (*Body parameter*), `string`, *Required*
+- `"run"`: `string`, *Required*
   The ingestion action. Use `"1"` to start ingestion and `"2"` to cancel ingestion.
-- `"delete"`: (*Body parameter*), `boolean`
+- `"delete"`: `boolean`
   Whether to delete existing tasks and chunks before rerunning. Defaults to `false`.
-- `"user_id"`: (*Body parameter*), `string`, *Optional*
+- `"user_id"`: `string`, *Optional*
   End-user identifier forwarded as the OpenAI `user` field on embedding requests when `run` starts ingestion. Omitted when unset.
 
 #### Response
@@ -1747,7 +1747,7 @@ Stops parsing specified documents.
 - Method: DELETE
 - URL: `/api/v1/datasets/{dataset_id}/chunks`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"document_ids"`: `list[string]`
@@ -1913,13 +1913,13 @@ curl --request GET \
   The associated dataset ID.
 - `document_id`: (*Path parameter*)
   The associated document ID.
-- `keywords`(*Filter parameter*), `string`
+- `keywords`(*Query parameter*), `string`
   The keywords used to match chunk content.
-- `page`(*Filter parameter*), `integer`
+- `page`(*Query parameter*), `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `page_size`(*Filter parameter*), `integer`
+- `page_size`(*Query parameter*), `integer`
   The maximum number of chunks on each page. Defaults to `30`.
-- `id`(*Filter parameter*), `string`
+- `id`(*Query parameter*), `string`
   The ID of the chunk to retrieve. You can also use `GET /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}` to retrieve one chunk.
 
 #### Response
@@ -2010,13 +2010,13 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `dataset_id`: (*Path parameter*)
+- `dataset_id`
   The associated dataset ID.
-- `document_id`: (*Path parameter*)
+- `document_id`
   The associated document ID.
-- `chunk_id`: (*Path parameter*)
+- `chunk_id`
   The ID of the chunk to retrieve.
 
 #### Response
@@ -2361,7 +2361,7 @@ Batch update or delete document-level metadata within a specified dataset. If bo
 - Method: POST
 - URL: `/api/v1/datasets/{dataset_id}/metadata/update`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `selector`: `object`
@@ -2464,7 +2464,7 @@ Retrieves chunks from specified datasets.
 - Method: POST
 - URL: `/api/v1/retrieval`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"question"`: `string`
@@ -2521,54 +2521,54 @@ curl --request POST \
      }'
 ```
 
-##### Request parameter
+##### Body parameters
 
-- `"question"`: (*Body parameter*), `string`, *Required*
+- `"question"`: `string`, *Required*
   The user query or query keywords.
-- `"dataset_ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"dataset_ids"`: `list[string]`, *Required*
   The IDs of the datasets to search. At least one dataset ID must be provided.
-- `"document_ids"`: (*Body parameter*), `list[string]`
+- `"document_ids"`: `list[string]`
   Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
-- `"page"`: (*Body parameter*), `integer`
+- `"page"`: `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
-- `"page_size"`: (*Body parameter*)
+- `"page_size"`
   The maximum number of chunks on each page. Defaults to `30`.
-- `"similarity_threshold"`: (*Body parameter*)
+- `"similarity_threshold"`
   The minimum similarity score. Defaults to `0.2`.
-- `"keywords_similarity_weight"`: (*Body parameter*), `float`
+- `"keywords_similarity_weight"`: `float`
   The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
-- `"vector_similarity_weight"`: (*Body parameter*), `float`
+- `"vector_similarity_weight"`: `float`
   Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
-- `"top_k"`: (*Body parameter*), `integer`
+- `"top_k"`: `integer`
   **Deprecated.** An alias for `"knn_top_k"`. If both parameters are provided, `"knn_top_k"` takes precedence.
-- `"knn_top_k"`: (*Body parameter*), `integer`
+- `"knn_top_k"`: `integer`
   The number of chunks engaged in vector cosine computation. Defaults to `1024`.
-- `"knn_num_candidates"`: (*Body parameter*), `integer`
+- `"knn_num_candidates"`: `integer`
   The number of approximate nearest-neighbor candidates considered for vector search. It must be greater than or equal to `"knn_top_k"`. Defaults to the greater of `2048` and `"knn_top_k"`. This parameter currently applies only to Elasticsearch.
-- `"rerank_candidates_count"`: (*Body parameter*), `integer`
+- `"rerank_candidates_count"`: `integer`
   The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
-- `"include_knowledge_compilation"`: (*Body parameter*), `boolean`
+- `"include_knowledge_compilation"`: `boolean`
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
-- `"use_kg"`: (*Body parameter*), `boolean`
+- `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
-- `"rerank_id"`: (*Body parameter*), `string`
+- `"rerank_id"`: `string`
   The ID of the rerank model.
-- `"keyword"`: (*Body parameter*), `boolean`
+- `"keyword"`: `boolean`
   Indicates whether to enable keyword-based matching:
   - `true`: Enable keyword-based matching.
   - `false`: Disable keyword-based matching (default).
-- `"highlight"`: (*Body parameter*), `boolean`
+- `"highlight"`: `boolean`
   Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
   - `false`: Disable highlighting of matched terms (default).
 - `"cross_languages"`: (*Body parameter*) `list[string]`
   The languages that should be translated into, in order to achieve keywords retrievals in different languages.
-- `"metadata_condition"`: (*Body parameter*), `object`
+- `"metadata_condition"`: `object`
   The metadata condition used for filtering chunks:
-  - `"logic"`: (*Body parameter*), `string`
+  - `"logic"`: `string`
     - `"and"`: Return only results that satisfy *every* condition (default).
     - `"or"`: Return results that satisfy *any* condition.
-  - `"conditions"`: (*Body parameter*), `array`
+  - `"conditions"`: `array`
     A list of metadata filter conditions.
     - `"name"`: `string` - The metadata field name to filter by, e.g., `"author"`, `"company"`, `"url"`. Ensure this parameter before use. See [Set metadata](../guides/dataset/metadata_management.md) for details.
     - `comparison_operator`: `string` - The comparison operator. Can be one of:
@@ -2653,7 +2653,7 @@ Creates a chat assistant.
 - Method: POST
 - URL: `/api/v1/chats`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -2676,18 +2676,18 @@ curl --request POST \
 }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*
+- `"name"`: `string`, *Required*
   The name of the chat assistant.
   If a chat assistant with the same name already exists, the new one gets a numbered suffix such as `new_chat_1(1)`.
-- `"icon"`: (*Body parameter*), `string`
+- `"icon"`: `string`
   Base64 encoding of the avatar.
-- `"dataset_ids"`: (*Body parameter*), `list[string]`
+- `"dataset_ids"`: `list[string]`
   The unique identifiers for the associated datasets. If omitted or set to `[]`, an empty chat assistant is created; datasets can be attached at a later time.
-- `"llm_id"`: (*Body parameter*), `string`
+- `"llm_id"`: `string`
   The identifier of the chat model. If not specified, the system defaults to the user's pre-configured chat model.
-- `"llm_setting"`: (*Body parameter*), `object`
+- `"llm_setting"`: `object`
   A configuration object defining the LLM parameters for the assistant. The `llm_setting` object may contain the following attributes:
   - `"model_type"`: `string`
     A model type specifier. Only `"chat"` and `"image2text"` are recognized; any other inputs, or when omitted, are treated as `"chat"`.
@@ -2699,7 +2699,7 @@ curl --request POST \
     This discourages the model from repeating the same information by penalizing words that have already appeared in the conversation. Defaults to `0.4`.
   - `"frequency penalty"`: `float`
     Similar to the presence penalty, this reduces the model's tendency to repeat the same words frequently. Defaults to `0.7`.
-- `"prompt_config"`: (*Body parameter*), `object`
+- `"prompt_config"`: `object`
   Instructions for the LLM to follow. A `prompt_config` object may contain the following attributes:
   - `"system"`: `string` The prompt content.
   - `"prologue"`: `string` The opening greeting for the user.
@@ -2723,12 +2723,12 @@ curl --request POST \
   - `"search1api_api_key"`: `string` The [Search1API](https://s1.dev) API key. Set `web_search_provider` to `"search1api"` when using this field. See the [Search1API documentation](https://s1.dev/docs/basic/search) for details.
   - `"serply_api_key"`: `string` The [Serply](https://serply.io) API key. Set `web_search_provider` to `"serply"` when using this field. See the [Serply documentation](https://serply.io/docs) for details.
   - `"youcom_api_key"`: `string` The You.com API key. Set `web_search_provider` to `"youcom"` when using this field. Optional: You.com serves a rate-limited keyless endpoint, so `"youcom"` works with this field omitted, and a key lifts those limits.
-- `"similarity_threshold"`: (*Body parameter*), `float`
-- `"keywords_similarity_weight"`: (*Body parameter*), `float`
-- `"vector_similarity_weight"`: (*Body parameter*), `float`, legacy fallback. If both weights are provided, they must sum to `1`.
-- `"top_n"`: (*Body parameter*), `int`
-- `"top_k"`: (*Body parameter*), `int`
-- `"rerank_id"`: (*Body parameter*), `string`
+- `"similarity_threshold"`: `float`
+- `"keywords_similarity_weight"`: `float`
+- `"vector_similarity_weight"`: `float`, legacy fallback. If both weights are provided, they must sum to `1`.
+- `"top_n"`: `int`
+- `"top_k"`: `int`
+- `"rerank_id"`: `string`
 
 #### Response
 
@@ -2808,7 +2808,7 @@ Use this endpoint only when providing a complete configuration. Any fields omitt
 - Method: PUT
 - URL: `/api/v1/chats/{chat_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -2954,9 +2954,9 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `chat_id`: (*Path parameter*)
+- `chat_id`
   The ID of the chat assistant to retrieve.
 
 #### Response
@@ -3024,7 +3024,7 @@ Unspecified fields are preserved, while nested objects, such as `llm_setting` an
 - Method: PATCH
 - URL: `/api/v1/chats/{chat_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body: any subset of the fields accepted by `PUT /api/v1/chats/{chat_id}`
 
@@ -3089,9 +3089,9 @@ curl --request DELETE \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `chat_id`: (*Path parameter*)
+- `chat_id`
   The ID of the chat assistant to delete.
 
 #### Response
@@ -3127,7 +3127,7 @@ Deletes chat assistants by ID.
 - Method: DELETE
 - URL: `/api/v1/chats`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
@@ -3156,13 +3156,13 @@ curl --request DELETE \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`
+- `"ids"`: `list[string]`
   The IDs of the chat assistants to delete.
   - If omitted, or set to `null` or an empty array, no chat assistants are deleted.
   - If an array of IDs is provided, only the chat assistants matching those IDs are deleted.
-- `"delete_all"`: (*Body parameter*), `boolean`
+- `"delete_all"`: `boolean`
   Whether to delete all chat assistants owned by the current user when `"ids"` is omitted, or set to`null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -3207,27 +3207,27 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `page`: (*Filter parameter*), `integer`
+- `page`: `integer`
   Specifies the page on which the chat assistants will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: `integer`
   The number of chat assistants on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: `string`
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: `boolean`
   Indicates whether the retrieved chat assistants should be sorted in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*), `string`
+- `sort`: `string`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: `string`
   Case-insensitive fuzzy match against chat assistant names.
-- `owner_ids`: (*Filter parameter*), `string` (repeatable)
+- `owner_ids`: `string` (repeatable)
   Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
-- `id`: (*Filter parameter*), `string`
+- `id`: `string`
   The ID of the chat assistant to retrieve with exact match.
-- `name`: (*Filter parameter*), `string`
+- `name`: `string`
   The name of the chat assistant to retrieve with exact match.
 
 When `id` or `name` is provided, exact filtering takes precedence over `keywords`.
@@ -3312,7 +3312,7 @@ Creates a session with a chat assistant.
 - Method: POST
 - URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -3391,7 +3391,7 @@ Updates a session of a specified chat assistant.
 - Method: PATCH
 - URL: `/api/v1/chats/{chat_id}/sessions/{session_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"name"`: `string`
@@ -3409,13 +3409,13 @@ curl --request PATCH \
      }'
 ```
 
-##### Request Parameter
+##### Request parameters
 
 - `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
 - `session_id`: (*Path parameter*)
   The ID of the session to update.
-- `"name"`: (*Body Parameter*), `string`
+- `"name"`: (*Body parameter*), `string`
   The revised name of the session.
 
 #### Response
@@ -3476,27 +3476,27 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `page`: (*Filter parameter*), `integer`
+- `page`: (*Query parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: (*Query parameter*), `integer`
   The number of sessions on each page. Defaults to `30`. If set to `0`, an empty list is returned.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: (*Query parameter*), `string`
   The field by which sessions should be sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: (*Query parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*), `string`
+- `sort`: (*Query parameter*), `string`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
-- `name`: (*Filter parameter*) `string`
+- `name`: (*Query parameter*) `string`
   The name of the chat session to retrieve.
-- `id`: (*Filter parameter*), `string`
+- `id`: (*Query parameter*), `string`
   The ID of the chat session to retrieve.
-- `user_id`: (*Filter parameter*), `string`
+- `user_id`: (*Query parameter*), `string`
   The optional user-defined ID passed in when creating session.
 
 #### Response
@@ -3560,11 +3560,11 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request Parameters
+##### Path parameters
 
-- `chat_id`: (*Path parameter*)
+- `chat_id`
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)
+- `session_id`
   The ID of the session to retrieve.
 
 #### Response
@@ -3622,13 +3622,13 @@ curl --request DELETE \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request Parameters
+##### Path parameters
 
-- `chat_id`: (*Path parameter*)
+- `chat_id`
   The ID of the associated chat assistant.
-- `session_id`: (*Path parameter*)
+- `session_id`
   The ID of the session that owns the message.
-- `msg_id`: (*Path parameter*)
+- `msg_id`
   The ID of the message to delete.
 
 #### Response
@@ -3688,7 +3688,7 @@ curl --request PUT \
      }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
@@ -3746,7 +3746,7 @@ Deletes sessions of a chat assistant by ID.
 - Method: DELETE
 - URL: `/api/v1/chats/{chat_id}/sessions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
@@ -3775,15 +3775,15 @@ curl --request DELETE \
      }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `chat_id`: (*Path parameter*)
   The ID of the associated chat assistant.
-- `"ids"`: (*Body Parameter*), `list[string]`
+- `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`
+- `"delete_all"`: (*Body parameter*), `boolean`
   Whether to delete all sessions of the specified chat assistant when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -3841,11 +3841,13 @@ Starts a chat completion request. The same endpoint supports three modes:
 - Method: POST
 - URL: `/api/v1/chat/completions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
 
   - `"question"`: `string`
+  - `"messages"`: `list[object]`
+  - `"store_history_messages"`: `boolean` (optional)
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
@@ -3889,21 +3891,25 @@ curl --request POST \
      }'
 ```
 
-##### Request Parameters
+##### Body parameters
 
-- `"question"`: (*Body Parameter*), `string`
-  The user question.
-- `"stream"`: (*Body Parameter*), `boolean`
+- `"question"`: `string`
+  The user question. Provide either `"question"` or `"messages"`. When both are provided, `"question"` takes precedence unless `"store_history_messages"` is `false`.
+- `"messages"`: `list[object]`
+  The conversation messages. The last message must have the `user` role. When `"store_history_messages"` is `false`, this field is required and the full message list is used instead of `"question"`.
+- `"store_history_messages"`: `boolean`
+  Controls whether conversation history is stored. It defaults to `true`; the only supported explicit value is `false`. When set to `false`, `"messages"` is required and the supplied message list is processed without storing it as conversation history.
+- `"stream"`: `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"chat_id"`: (*Body Parameter*)
+- `"chat_id"`
   Optional chat assistant ID. If omitted, the tenant's default chat model is used directly.
-- `"session_id"`: (*Body Parameter*)
+- `"session_id"`
   Optional session ID. If `chat_id` is provided but `session_id` is omitted, a new session will be generated automatically.
-- `"llm_id"`: (*Body Parameter*), `string`
+- `"llm_id"`: `string`
   Optional model override when a specific chat model should be used for this request.
-- `"legacy"`: (*Body Parameter*), `boolean`
+- `"legacy"`: `boolean`
   Defaults to `false`. Enables backward compatibility with RAGFlow v0.23.0 for streaming responses. When set to `true`:
   - Cumulative output: The `"answer"` field in each chunk returns the entire text generated so far, rather than just the new tokens (deltas).
   - No reasoning markers: The `start_to_think` and `end_to_think` signals are stripped from the stream.
@@ -4114,7 +4120,7 @@ Creates a session with an agent.
 - Method: POST
 - URL: `/api/v1/agents/{agent_id}/sessions?user_id={user_id}`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"user_id"`: `string` (optional)
@@ -4365,7 +4371,7 @@ Uses a single completion endpoint for all agent conversations.
 - Method: POST
 - URL: `/api/v1/agents/chat/completions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 
 #### Standard mode
@@ -4375,7 +4381,7 @@ Use this mode for the native agent API.
 ##### Body
 
 - `"agent_id"`: `string`
-- `"query"`: `string`
+- `"question"`: `string`
 - `"stream"`: `boolean`
 - `"session_id"`: `string` (optional)
 - `"inputs"`: `object` (optional)
@@ -4410,7 +4416,7 @@ curl --request POST \
      --data-binary '
      {
         "agent_id": "AGENT_ID",
-        "query": "Hello",
+        "question": "Hello",
         "stream": false
      }'
 ```
@@ -4425,7 +4431,7 @@ curl --request POST \
      --data-binary '
      {
         "agent_id": "AGENT_ID",
-        "query": "",
+        "question": "",
         "stream": false,
         "inputs": {
             "line_var": {
@@ -4462,31 +4468,31 @@ curl --request POST \
      --data-binary '
      {
         "agent_id": "AGENT_ID",
-        "query": "Hello again",
+        "question": "Hello again",
         "stream": true,
         "session_id": "cb2f385cb86211efa36e0242ac120005"
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"agent_id"`: (*Body parameter*), `string`, *Required*
+- `"agent_id"`: `string`, *Required*
   The ID of the associated agent.
-- `"query"`: (*Body parameter*), `string`
+- `"question"`: `string`
   The question to start an AI-powered conversation.
-- `"stream"`: (*Body Parameter*), `boolean`
+- `"stream"`: `boolean`
   Indicates whether to output responses in a streaming way:
   - `true`: Enable streaming (default).
   - `false`: Disable streaming.
-- `"session_id"`: (*Body Parameter*)
+- `"session_id"`
   The ID of the session. If it is not provided, a new session will be generated.
-- `"inputs"`: (*Body parameter*), `object`
+- `"inputs"`: `object`
   Values for variables defined in the **Begin** component. Each variable value must be an object containing a `"value"` field and may include a `"type"` field.
-- `"files"`: (*Body parameter*), `array`
+- `"files"`: `array`
   File descriptors returned by the Agent file upload endpoint. RAGFlow makes the uploaded files available to the Agent through `sys.files`.
-- `"user_id"`: (*Body parameter*), `string`
+- `"user_id"`: `string`
   The optional user-defined ID. Valid *only* when no `session_id` is provided.
-- `"chat_template_kwargs"`: (*Body parameter*), `object`
+- `"chat_template_kwargs"`: `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 :::tip NOTE
@@ -4607,21 +4613,21 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"agent_id"`: (*Body parameter*), `string`, *Required*
+- `"agent_id"`: `string`, *Required*
   The ID of the associated agent.
-- `"messages"`: (*Body parameter*), `list[object]`, *Required*
+- `"messages"`: `list[object]`, *Required*
   OpenAI-style chat messages.
-- `"openai-compatible"`: (*Body parameter*), `boolean`, *Required*
+- `"openai-compatible"`: `boolean`, *Required*
   Must be `true` to enable OpenAI-compatible responses.
-- `"stream"`: (*Body parameter*), `boolean`
+- `"stream"`: `boolean`
   Whether to return streaming chunks.
-- `"session_id"`: (*Body parameter*), `string`
+- `"session_id"`: `string`
   Optional existing session ID.
-- `"model"`: (*Body parameter*), `string`
+- `"model"`: `string`
   Optional compatibility field. The server still routes by `agent_id`.
-- `"chat_template_kwargs"`: (*Body parameter*), `object`
+- `"chat_template_kwargs"`: `object`
   Optional passthrough parameters for the underlying LLM's chat template. Commonly used to toggle thinking/reasoning modes on supported models (e.g., `{"enable_thinking": false}`).
 
 ##### Response
@@ -4705,33 +4711,33 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `page`: (*Filter parameter*), `integer`
+- `page`: (*Query parameter*), `integer`
   Specifies the page on which the sessions will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: (*Query parameter*), `integer`
   The number of sessions on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: (*Query parameter*), `string`
   The field by which sessions should be sorted. Available options:
   - `create_time`
   - `update_time` (default)
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: (*Query parameter*), `boolean`
   Indicates whether the retrieved sessions should be sorted in descending order. Defaults to `true`.
-- `id`: (*Filter parameter*), `string`
+- `id`: (*Query parameter*), `string`
   The ID of the agent session to retrieve.
-- `user_id`: (*Filter parameter*), `string`
+- `user_id`: (*Query parameter*), `string`
   The optional user-defined ID passed in when creating session.
-- `dsl`: (*Filter parameter*), `boolean`
+- `dsl`: (*Query parameter*), `boolean`
   Indicates whether to include the dsl field of the sessions in the response. Defaults to `true`.
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: (*Query parameter*), `string`
   Fuzzy-searches the session ID, session name, and session messages.
-- `from_date`: (*Filter parameter*), `string`
+- `from_date`: (*Query parameter*), `string`
   Filters sessions whose applicable date is on or after this date.
-- `to_date`: (*Filter parameter*), `string`
+- `to_date`: (*Query parameter*), `string`
   Filters sessions whose applicable date is on or before this date.
-- `exp_user_id`: (*Filter parameter*), `string`
+- `exp_user_id`: (*Query parameter*), `string`
   Returns only the IDs and names of sessions associated with the specified external user ID. When provided, the endpoint uses this special listing mode and does not apply the other pagination and filtering parameters.
 
 #### Response
@@ -4897,7 +4903,7 @@ Deletes sessions of an agent by ID.
 - Method: DELETE
 - URL: `/api/v1/agents/{agent_id}/sessions`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_API_KEY>'`
 - Body:
   - `"ids"`: `list[string]`
@@ -4926,15 +4932,15 @@ curl --request DELETE \
      }'
 ```
 
-##### Request Parameters
+##### Request parameters
 
 - `agent_id`: (*Path parameter*)
   The ID of the associated agent.
-- `"ids"`: (*Body Parameter*), `list[string]`
+- `"ids"`: (*Body parameter*), `list[string]`
   The IDs of the sessions to delete.
   - If omitted, or set to `null` or an empty array, no sessions are deleted.
   - If an array of IDs is provided, only the sessions matching those IDs are deleted.
-- `"delete_all"`: (*Body Parameter*), `boolean`
+- `"delete_all"`: (*Body parameter*), `boolean`
   Whether to delete all sessions of the specified agent when `"ids"` is omitted, or set to `null` or an empty array. Defaults to `false`.
 
 #### Response
@@ -5131,7 +5137,7 @@ The chat model autonomously determines the number of questions to generate based
 - Method: POST
 - URL: `/api/v1/chat/recommendation`
 - Headers:
-  - `'content-Type: application/json'`
+  - `'Content-Type: application/json'`
   - `'Authorization: Bearer <YOUR_LOGIN_TOKEN>'`
 - Body:
   - `"question"`: `string` *(Required)* The original user question.
@@ -5149,11 +5155,11 @@ curl --request POST \
      }'
 ```
 
-##### Request Parameters
+##### Body parameters
 
-- `"question"`: (*Body Parameter*), `string`
+- `"question"`: `string`
   The original user question.
-- `"search_id"`: (*Body Parameter*), `string`
+- `"search_id"`: `string`
   ID of a saved search configuration to use custom LLM settings. If provided, the LLM model and generation settings from the search configuration will be used.
 
 #### Response
@@ -5215,29 +5221,29 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `page`: (*Filter parameter*), `integer`
+- `page`: `integer`
   Specifies the page on which the agents will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: `integer`
   The number of agents on each page. Defaults to `30`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: `string`
   The attribute by which the results are sorted. Available options:
   - `create_time` (default)
   - `update_time`
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: `boolean`
   Indicates whether the retrieved agents should be sorted in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*), `string`
+- `sort`: `string`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: `string`
   Fuzzy-searches agents by title.
-- `canvas_category`: (*Filter parameter*), `string`
+- `canvas_category`: `string`
   Filters agents by one or more comma-separated canvas categories.
-- `canvas_type`: (*Filter parameter*), `string`
+- `canvas_type`: `string`
   Filters agents by canvas type.
-- `owner_ids`: (*Filter parameter*), `string`
+- `owner_ids`: `string`
   Filters agents by comma-separated authorized owner IDs.
-- `tags`: (*Filter parameter*), `string`
+- `tags`: `string`
   Filters agents by comma-separated tags.
 
 #### Response
@@ -5324,14 +5330,14 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `title`: (*Body parameter*), `string`, *Required*
+- `title`: `string`, *Required*
   The title of the agent.
   If an agent with the same title already exists, the new one gets a numbered suffix such as `Test Agent(1)`.
-- `description`: (*Body parameter*), `string`
+- `description`: `string`
   The description of the agent. Defaults to `None`.
-- `dsl`: (*Body parameter*), `object`, *Required*
+- `dsl`: `object`, *Required*
   The canvas DSL object of the agent.
 
 #### Response
@@ -5460,9 +5466,9 @@ curl --request DELETE \
      --data '{}'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `agent_id`: (*Path parameter*), `string`
+- `agent_id`: `string`
   The id of the agent to be deleted.
 
 #### Response
@@ -5525,16 +5531,16 @@ curl --location 'http://{address}/api/v1/memories' \
 }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `name` : (*Body parameter*), `string`, *Required*
+- `name` : `string`, *Required*
 
   The unique name of the memory to create. It must adhere to the following requirements:
 
   - Basic Multilingual Plane (BMP) only
   - Maximum 128 characters
 
-- `memory_type`: (*Body parameter*), `list[enum<string>]`,  *Required*
+- `memory_type`: `list[enum<string>]`,  *Required*
 
   Specifies the types of memory to extract. Available options:
 
@@ -5543,14 +5549,14 @@ curl --location 'http://{address}/api/v1/memories' \
   - `episodic`:  Time-stamped records of specific events and experiences.
   - `procedural`: Learned skills, habits, and automated procedures.
 
-- `embd_id`: (*Body parameter*), `string`, *Required*
+- `embd_id`: `string`, *Required*
 
   The name of the embedding model to use. For example: `"BAAI/bge-large-zh-v1.5@BAAI"`
 
   - Maximum 255 characters
   - Must follow `model_name@model_factory` format
 
-- `llm_id`: (*Body parameter*), `string`, *Required*
+- `llm_id`: `string`, *Required*
 
   The name of the chat model to use. For example: `"glm-4-flash@ZHIPU-AI"`
 
@@ -5729,13 +5735,13 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `tenant_id`: (*Filter parameter*), `string` or `list[string]`, *Optional*
+- `tenant_id`: `string` or `list[string]`, *Optional*
 
   The owner's ID, supports search multiple IDs.
 
-- `memory_type`: (*Filter parameter*), `enum<string>` or `list[enum<string>]`, *Optional*
+- `memory_type`: `enum<string>` or `list[enum<string>]`, *Optional*
 
   The type of memory (as set during creation). A memory matches if its type is **included in** the provided value(s). Available options:
 
@@ -5744,21 +5750,21 @@ curl --location 'http://{address}/api/v1/memories?keywords=&page_size=50&page=1&
   - `episodic`
   - `procedural`
 
-- `storage_type`: (*Filter parameter*), `enum<string>`, *Optional*
+- `storage_type`: `enum<string>`, *Optional*
 
   The storage format of messages. Available options:
 
   - `table`: (Default)
 
-- `keywords`: (*Filter parameter*), `string`, *Optional*
+- `keywords`: `string`, *Optional*
 
   The name of memory to retrieve, supports fuzzy search.
 
-- `page`: (*Filter parameter*), `int`, *Optional*
+- `page`: `int`, *Optional*
 
   Specifies the page on which the memories will be displayed. Defaults to `1`.
 
-- `page_size`: (*Filter parameter*), `int`, *Optional*
+- `page_size`: `int`, *Optional*
 
   The number of memories on each page. Defaults to `50`.
 
@@ -5827,9 +5833,9 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `memory_id`: (*Path parameter*), `string`, *Required*
+- `memory_id`: `string`, *Required*
 
   The ID of the memory.
 
@@ -5905,9 +5911,9 @@ curl --location --request DELETE 'http://{address}/api/v1/memories/d6775d4eeada1
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `memory_id`: (*Path parameter*), `string`, *Required*
+- `memory_id`: `string`, *Required*
 
   The ID of the memory to delete.
 
@@ -5962,19 +5968,19 @@ curl --location 'http://{address}/api/v1/memories/6c8983badede11f083f184ba59bc53
 
   The ID of the memory to show messages.
 
-- `agent_id`: (*Filter parameter*), `string` or `list[string]`, *Optional*
+- `agent_id`: (*Query parameter*), `string` or `list[string]`, *Optional*
 
   Filters messages by the ID of their source agent. Supports multiple values.
 
-- `keywords`: (*Filter parameter*), `string`, *Optional*
+- `keywords`: (*Query parameter*), `string`, *Optional*
 
   Filters messages by session ID. Despite the parameter name, its value is applied to the `session_id` field.
 
-- `page`: (*Filter parameter*), `int`, *Optional*
+- `page`: (*Query parameter*), `int`, *Optional*
 
   Specifies the page on which the messages will be displayed. Defaults to `1`.
 
-- `page_size`: (*Filter parameter*), `int`, *Optional*
+- `page_size`: (*Query parameter*), `int`, *Optional*
 
   The number of messages on each page. Defaults to `50`.
 
@@ -6102,29 +6108,29 @@ curl --location 'http://{address}/api/v1/messages' \
 }'
 ```
 
-##### Request parameter
+##### Body parameters
 
-- `memory_id`: (*Body parameter*), `list[string]`, *Required*
+- `memory_id`: `list[string]`, *Required*
 
   The IDs of the memories to save messages.
 
-- `agent_id`: (*Body parameter*), `string`, *Required*
+- `agent_id`: `string`, *Required*
 
   The ID of the message's source agent.
 
-- `session_id`: (*Body parameter*), `string`, *Required*
+- `session_id`: `string`, *Required*
 
   The ID of the message's session.
 
-- `user_id`: (*Body parameter*), `string`, *Optional*
+- `user_id`: `string`, *Optional*
 
-  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
 
-- `user_input`: (*Body parameter*), `string`, *Required*
+- `user_input`: `string`, *Required*
 
   The text input provided by the user.
 
-- `agent_response`: (*Body parameter*), `string`, *Required*
+- `agent_response`: `string`, *Required*
 
   The text response generated by the AI agent.
 
@@ -6173,13 +6179,13 @@ curl --location --request DELETE 'http://{address}/api/v1/messages/6c8983badede1
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `memory_id`: (*Path parameter*), `string`, *Required*
+- `memory_id`: `string`, *Required*
 
   The ID of the memory to which the specified message belongs.
 
-- `message_id`: (*Path parameter*), `string`, *Required*
+- `message_id`: `string`, *Required*
 
   The ID of the message to forget.
 
@@ -6291,41 +6297,41 @@ curl --location 'http://{address}/api/v1/messages/search?query=%22who%20are%20yo
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `query`: (*Filter parameter*), `string`, *Required*
+- `query`: `string`, *Required*
 
   The search term or natural language question used to find relevant messages.
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
+- `memory_id`: `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
-- `agent_id`: (*Filter parameter*), `string`, *Optional*
+- `agent_id`: `string`, *Optional*
 
   The ID of the message's source agent. Defaults to `None`.
 
-- `session_id`: (*Filter parameter*), `string`, *Optional*
+- `session_id`: `string`, *Optional*
 
   The ID of the message's session. Defaults to `None`.
 
-- `user_id`: (*Filter parameter*), `string`, *Optional*
+- `user_id`: `string`, *Optional*
 
   The user participating in the conversation with the agent. Defaults to `None`.
 
-- `similarity_threshold`: (*Filter parameter*), `float`, *Optional*
+- `similarity_threshold`: `float`, *Optional*
 
   The minimum cosine similarity score required for a message to be considered a match. A higher value  yields more precise but fewer results. Defaults to `0.2`.
 
   - Range [0.0, 1.0]
 
-- `keywords_similarity_weight` : (*Filter parameter*), `float`, *Optional*
+- `keywords_similarity_weight`: `float`, *Optional*
 
   Controls the influence of keyword matching versus semantic (embedding-based) matching in the final relevance score. A value of 0.5 gives them equal weight. Defaults to `0.7`.
 
   - Range [0.0, 1.0]
 
-- `top_n`: (*Filter parameter*), `int`, *Optional*
+- `top_n`: `int`, *Optional*
 
   The maximum number of most relevant messages to return. This limits the result set size for efficiency. Defaults to `5`.
 
@@ -6389,21 +6395,21 @@ curl --location 'http://{address}/api/v1/messages?memory_id=6c8983badede11f083f1
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `memory_id`: (*Filter parameter*), `string` or `list[string]`, *Required*
+- `memory_id`: `string` or `list[string]`, *Required*
 
   The IDs of the memories to search.  Supports multiple values.
 
-- `agent_id`: (*Filter parameter*), `string`, *Optional*
+- `agent_id`: `string`, *Optional*
 
   The ID of the message's source agent. Defaults to `None`.
 
-- `session_id`: (*Filter parameter*), `string`, *Optional*
+- `session_id`: `string`, *Optional*
 
   The ID of the message's session. Defaults to `None`.
 
-- `limit`: (*Filter parameter*), `int`, *Optional*
+- `limit`: `int`, *Optional*
 
   Control the number of messages returned. Defaults to `10`.
 
@@ -6467,13 +6473,13 @@ curl --location 'http://{address}/api/v1/messages/6c8983badede11f083f184ba59bc53
 --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `memory_id`: (*Path parameter*), `string`, *Required*
+- `memory_id`: `string`, *Required*
 
   The ID of the memory to which the specified message belongs.
 
-- `message_id`: (*Path parameter*), `string`, *Required*
+- `message_id`: `string`, *Required*
 
   The ID of the message.
 
@@ -6551,11 +6557,6 @@ curl --request GET \
      --url http://{address}/api/v1/system/healthz \
      --header 'Content-Type: application/json'
 ```
-
-##### Request parameters
-
-- `address`: (*Path parameter*), string
-  The host and port of the backend service (e.g., `localhost:9380`).
 
 ---
 
@@ -6859,13 +6860,13 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*
+- `"name"`: `string`, *Required*
   The name of the file or folder to create. If the name is already taken in the parent folder, the new entry gets a numbered suffix such as `New Folder(1)`.
-- `"parent_id"`: (*Body parameter*), `string`
+- `"parent_id"`: `string`
   The parent folder ID. If not specified, the file/folder will be created in the root folder.
-- `"type"`: (*Body parameter*), `string`
+- `"type"`: `string`
   The type of the file to create. Available options:
   - `"folder"`: Create a folder
   - `"virtual"`: Create a virtual file
@@ -6924,22 +6925,22 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `parent_id`: (*Filter parameter*), `string`
+- `parent_id`: `string`
   The folder ID to list files from. If not specified, the root folder is used by default.
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: `string`
   Search keyword to filter files by name.
-- `page`: (*Filter parameter*), `integer`
+- `page`: `integer`
   Specifies the page on which the files will be displayed. Defaults to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: `integer`
   The number of files on each page. Defaults to `15`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: `string`
   The field by which files should be sorted. Available options:
   - `create_time` (default)
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: `boolean`
   Indicates whether the retrieved files should be sorted in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*), `string`
+- `sort`: `string`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
 
 #### Response
@@ -7005,9 +7006,9 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*
+- `file_id`: `string`, *Required*
   The ID of the file whose immediate parent folder to retrieve.
 
 #### Response
@@ -7062,9 +7063,9 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*
+- `file_id`: `string`, *Required*
   The ID of the file whose parent folders to retrieve.
 
 #### Response
@@ -7132,9 +7133,9 @@ curl --request DELETE \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"ids"`: `list[string]`, *Required*
   The IDs of the files or folders to delete.
 
 #### Response
@@ -7193,9 +7194,9 @@ curl --request GET \
      --output ./downloaded_file.txt
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `file_id`: (*Path parameter*), `string`, *Required*
+- `file_id`: `string`, *Required*
   The ID of the file to download.
 
 #### Response
@@ -7269,13 +7270,13 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"src_file_ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"src_file_ids"`: `list[string]`, *Required*
   The IDs of the files or folders to move or rename.
-- `"dest_file_id"`: (*Body parameter*), `string`, *Optional*
+- `"dest_file_id"`: `string`, *Optional*
   The ID of the destination folder. Omit to rename in place.
-- `"new_name"`: (*Body parameter*), `string`, *Optional*
+- `"new_name"`: `string`, *Optional*
   New name for the file or folder. Only valid when `src_file_ids` contains a single entry. Note: Changing file extensions is *not* supported.
 
 #### Response
@@ -7361,11 +7362,11 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"file_ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"file_ids"`: `list[string]`, *Required*
   The IDs of the files to convert. If a folder ID is provided, all files within that folder will be converted.
-- `"kb_ids"`: (*Body parameter*), `list[string]`, *Required*
+- `"kb_ids"`: `list[string]`, *Required*
   The IDs of the target datasets.
 
 #### Response
@@ -7440,11 +7441,11 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"message"`: (*Body parameter*), `string`, *Required*
+- `"message"`: `string`, *Required*
   The commit message describing the changes.
-- `"files"`: (*Body parameter*), `list[object]`, *Required*
+- `"files"`: `list[object]`, *Required*
   Each file change object supports the following fields:
 
   | Field | Type | Required | Description |
@@ -7518,15 +7519,15 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `"page"`: (*Query parameter*), `int`, *Optional*
+- `"page"`: `int`, *Optional*
   Page number. Defaults to 1.
-- `"page_size"`: (*Query parameter*), `int`, *Optional*
+- `"page_size"`: `int`, *Optional*
   Number of items per page. Defaults to 15.
-- `"order_by"`: (*Query parameter*), `string`, *Optional*
+- `"order_by"`: `string`, *Optional*
   Sort field. Defaults to `"create_time"`.
-- `"desc"`: (*Query parameter*), `bool`, *Optional*
+- `"desc"`: `bool`, *Optional*
   Sort descending. Defaults to `true`.
 
 #### Response
@@ -7579,11 +7580,11 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `"folder_id"`: (*Path parameter*), `string`, *Required*
-  The folder ID.
-- `"commit_id"`: (*Path parameter*), `string`, *Required*
+- `"workspace_id"`: `string`, *Required*
+  The workspace ID.
+- `"commit_id"`: `string`, *Required*
   The commit ID.
 
 #### Response
@@ -7700,11 +7701,11 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `"from"`: (*Query parameter*), `string`, *Required*
+- `"from"`: `string`, *Required*
   The source commit ID.
-- `"to"`: (*Query parameter*), `string`, *Required*
+- `"to"`: `string`, *Required*
   The target commit ID.
 
 #### Response
@@ -7988,11 +7989,11 @@ curl --request POST \
      }'
 ```
 
-##### Request parameters
+##### Body parameters
 
-- `"name"`: (*Body parameter*), `string`, *Required*
+- `"name"`: `string`, *Required*
   The name of the search app. Must be unique and no longer than 255 characters.
-- `"description"`: (*Body parameter*), `string`
+- `"description"`: `string`
   A brief description of the search app.
 
 #### Response
@@ -8040,21 +8041,21 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Query parameters
 
-- `keywords`: (*Filter parameter*), `string`
+- `keywords`: `string`
   Search keyword to filter search apps by name.
-- `page`: (*Filter parameter*), `integer`
+- `page`: `integer`
   Specifies the page number. Defaults to `1`. Values less than `1` fall back to `1`.
-- `page_size`: (*Filter parameter*), `integer`
+- `page_size`: `integer`
   The number of items per page. Defaults to `30`. Values less than `1` fall back to `30`. The maximum value is `100`.
-- `orderby`: (*Filter parameter*), `string`
+- `orderby`: `string`
   The field to sort by. Defaults to `create_time`.
-- `desc`: (*Filter parameter*), `boolean`
+- `desc`: `boolean`
   Whether to sort in descending order. Defaults to `true`.
-- `sort`: (*Filter parameter*), `string`
+- `sort`: `string`
   Orders by several fields at once, written as `column:direction` terms separated by commas, such as `name:asc,create_time:desc`. A term with no direction is ascending. `sort` takes precedence over `orderby` and `desc`, which keep working on their own. A term naming a field this list does not sort by is skipped. When `sort` yields no terms at all, `orderby` and `desc` decide the order. When it yields terms whose fields are all skipped, the result is ordered by `create_time` in the direction of the first term, and the older pair is not read.
-- `owner_ids`: (*Filter parameter*), `string` (repeatable)
+- `owner_ids`: `string` (repeatable)
   Filter by owner tenant IDs. Can be specified multiple times: `?owner_ids=id1&owner_ids=id2`.
 
 #### Response
@@ -8102,9 +8103,9 @@ curl --request GET \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `search_id`: (*Path parameter*), `string`, *Required*
+- `search_id`: `string`, *Required*
   The ID of the search app to retrieve.
 
 #### Response
@@ -8228,9 +8229,9 @@ curl --request DELETE \
      --header 'Authorization: Bearer <YOUR_API_KEY>'
 ```
 
-##### Request parameters
+##### Path parameters
 
-- `search_id`: (*Path parameter*), `string`, *Required*
+- `search_id`: `string`, *Required*
   The ID of the search app to delete.
 
 #### Response

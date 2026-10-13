@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/tokenizer"
 
 	"github.com/gin-gonic/gin"
@@ -237,6 +238,11 @@ func (s *OpenAIChatService) OpenAIChatCompletions(c *gin.Context, userID, chatID
 	ctx := c.Request.Context()
 	dialogResp, err := s.chatSvc.GetChat(ctx, userID, chatID)
 	if err != nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			common.ResponseWithCodeData(c, code, nil, permissionErr.Error())
+			return
+		}
 		s.writeDataError(c, err.Error())
 		return
 	}
