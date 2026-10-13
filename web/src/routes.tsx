@@ -37,6 +37,7 @@ export enum Routes {
   Agent = '/agent',
   AgentTemplates = '/agent-templates',
   Agents = '/agents',
+  Pipeline = '/pipeline',
   Explore = '/explore',
   AgentExplore = `${Routes.Agent}/:id/explore`,
   Memories = '/memories',
@@ -358,6 +359,10 @@ const routeConfigOptions = [
         errorElement: <FallbackComponent />,
       },
     ],
+  },
+  {
+    path: `${Routes.Pipeline}/:id`,
+    Component: () => import('@/pages/builtin-pipeline'),
   },
   {
     path: `${Routes.AgentLogPage}/:id`,

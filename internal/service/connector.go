@@ -30,7 +30,6 @@ import (
 	"net/url"
 	"ragflow/internal/engine/kvrocks"
 	syncerconnector "ragflow/internal/syncer/connector"
-	"ragflow/internal/utility"
 	"strings"
 	"time"
 
@@ -41,6 +40,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 const (
@@ -311,7 +312,7 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 	}
 
 	connector := &entity.Connector{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		TenantID:    userID,
 		Name:        req.Name,
 		Source:      req.Source,
@@ -538,7 +539,7 @@ func (s *ConnectorService) StartGoogleWebOAuth(ctx context.Context, userID, sour
 		return nil, common.CodeServerError, err
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildGoogleAuthorizationURL(authURI, clientID, redirectURI, flowID, googleOAuthScopesForSource(source), codeChallenge)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to initialize Google OAuth flow. Please verify the uploaded client configuration")
@@ -1088,10 +1089,11 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 
 	// The caller-supplied kb is targeted by delete + re-sync below, so it must
 	// be accessible to the caller and the connector must be bound to it.
-	if !s.knowledgebaseDAO.Accessible(ctx, dao.DB, kbID, userID) {
+	if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kbID, permission.OperationRun); err != nil {
 		common.Warn("rebuild denied: kb not accessible",
 			zap.String("connector_id", connectorID), zap.String("kb_id", kbID), zap.String("user_id", userID))
-		return false, common.CodeAuthenticationError, ErrConnectorNoAuth
+		code, permissionErr := permissionresponse.Normalize(err)
+		return false, code, permissionErr
 	}
 	bound, err := s.connectorDAO.Connector2KBExists(ctx, dao.DB, connectorID, kbID)
 	if err != nil {
@@ -1341,7 +1343,7 @@ func (s *ConnectorService) StartBoxWebOAuth(ctx context.Context, userID string, 
 		redirectURI = defaultBoxWebOAuthRedirectURI()
 	}
 
-	flowID := utility.GenerateUUID()
+	flowID := common.GenerateUUID()
 	authorizationURL, err := buildBoxAuthorizationURL(clientID, redirectURI, flowID)
 	if err != nil {
 		return nil, common.CodeServerError, err

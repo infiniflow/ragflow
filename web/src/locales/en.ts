@@ -51,6 +51,7 @@ export default {
       languagePlaceholder: 'select your language',
       copy: 'Copy',
       copied: 'Copied',
+      readOnly: 'Read-only',
       viewMore: 'View more',
       viewLess: 'View less',
       comingSoon: 'Coming soon',
@@ -509,6 +510,7 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       source: 'Source',
       fileName: 'File name',
       datasetLogs: 'Dataset',
+      datasourceLogs: 'Data source',
       fileLogs: 'File',
       overview: 'Logs',
       success: 'Success',
@@ -666,6 +668,8 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
     },
     knowledgeConfiguration: {
       builtInSuffix: 'Built in',
+      builtInBadge: 'Built in',
+      builtInPipelines: 'Built-in pipelines',
       parserSelectPlaceholder: 'Select a parser',
       parserOptionUnavailable: 'unavailable',
       randomSeedTip:
@@ -1688,7 +1692,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional. Comma-separated emails whose entire "My Drive" is indexed, in addition to the shared folders below. Leave empty to sync only those folders.',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
@@ -2775,6 +2779,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableVisionEnhancement: 'Enable vision enhancement',
       enableVisionEnhancementTip:
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
+      visionEnhancementPromptTip:
+        'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -3559,6 +3570,14 @@ This process aggregates variables from multiple branches into a single variable 
       nodeFormInvalid: 'Invalid settings, please fix them first',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
+      extractorKeywordsTopNMissing:
+        'Auto keywords is enabled, please set the number of keywords to extract (at least 1)',
+      extractorQuestionsTopNMissing:
+        'Auto-question is enabled, please set the number of questions to generate (at least 1)',
+      extractorTagsTopNMissing:
+        'Auto tags is enabled, please set the number of tags (at least 1)',
+      extractorTagFileMissing:
+        'Auto tags is enabled, please select a tag file first',
       retrievalDatasetMissing: 'No dataset selected, please choose one first',
       retrievalMemoryMissing: 'No memories selected, please choose them first',
       checklist: 'Checklist',

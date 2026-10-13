@@ -22,7 +22,10 @@ describe('transformParserParams vision settings', () => {
     } as any);
 
     expect(result.enable_vision_enhancement).toBe(true);
-    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+    expect(result.vlm).toEqual({
+      llm_id: 'model-B',
+      system_prompt: '',
+    });
     expect(result).not.toHaveProperty(`${FileType.PDF}.vlm`);
     expect(result).toHaveProperty(`${FileType.Audio}.vlm`, {
       llm_id: 'asr-model',
@@ -37,7 +40,34 @@ describe('transformParserParams vision settings', () => {
     } as any);
 
     expect(result.enable_vision_enhancement).toBe(enabled);
-    expect(result.vlm).toEqual({ llm_id: 'model-B' });
+    expect(result.vlm).toEqual({
+      llm_id: 'model-B',
+      system_prompt: '',
+    });
+  });
+
+  it('writes the image family as a switch and nothing else', () => {
+    // The saved shape is the contract the Go parser reads, so pin it: the
+    // switch out, and the retired per-family keys never written back.
+    const result = transformParserParams({
+      enable_vision_enhancement: false,
+      vlm: { llm_id: '', system_prompt: '' },
+      setups: [
+        {
+          fileFormat: FileType.Image,
+          ocr_enabled: false,
+          parse_method: 'stale-model@provider',
+          lang: 'French',
+          system_prompt: 'stale',
+          output_format: 'json',
+        },
+      ],
+    } as any);
+
+    expect(result.image).toMatchObject({ ocr_enabled: false });
+    expect(result.image).not.toHaveProperty('parse_method');
+    expect(result.image).not.toHaveProperty('lang');
+    expect(result.image).not.toHaveProperty('system_prompt');
   });
 });
 

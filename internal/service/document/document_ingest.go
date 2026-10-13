@@ -9,6 +9,8 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 func (s *DocumentService) ListIngestionTasks(ctx context.Context, userID string, datasetID *string, page, pageSize int) ([]*entity.IngestionTask, error) {
@@ -64,8 +66,9 @@ func (s *DocumentService) Ingest(ctx context.Context, userID string, req *Ingest
 		if err != nil {
 			return common.CodeDataError, fmt.Errorf("dataset not found")
 		}
-		if !s.kbDAO.Accessible(ctx, dao.DB, kb.ID, userID) {
-			return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+		if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, kb.ID, permission.OperationRun); err != nil {
+			code, permissionErr := permissionresponse.Normalize(err)
+			return code, permissionErr
 		}
 		validated = append(validated, validatedDoc{doc, kb})
 		validatedIDs = append(validatedIDs, docID)

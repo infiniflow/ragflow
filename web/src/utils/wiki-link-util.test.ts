@@ -21,6 +21,17 @@ describe('parseWikiLinkHref', () => {
     ['/artifact/dataset/entity/person/张角', 'entity', 'person/张角'],
     ['topic/智能体', 'topic', '智能体'],
     ['/entity/location/长社', 'entity', 'location/长社'],
+    [
+      // Lexical prepends https:// to scheme-less hrefs when rendering DOM.
+      'https://artifact/dataset/entity/person/张角',
+      'entity',
+      'person/张角',
+    ],
+    [
+      'http://artifact/fb9bfae2a00b43e59ecaea5e86d90c91/entity/org/荣国府',
+      'entity',
+      'org/荣国府',
+    ],
   ])('preserves internal link %s', (href, pageType, slug) => {
     expect(parseWikiLinkHref(href)).toEqual({ pageType, slug });
   });

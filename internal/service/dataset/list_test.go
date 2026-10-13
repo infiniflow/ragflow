@@ -1,6 +1,7 @@
 package dataset
 
 import (
+	"encoding/json"
 	"math"
 	"testing"
 
@@ -77,6 +78,75 @@ func TestDatasetServiceListDatasetsIDsAccessibleViaTeamTenant(t *testing.T) {
 	}
 	if total != 1 || len(data) != 1 || data[0]["id"] != "kb-team" {
 		t.Fatalf("expected the shared dataset, got total=%d data=%#v", total, data)
+	}
+}
+
+func TestDatasetServiceListDatasetsAndFiltersUseAuthorizedScope(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+	insertDatasetUpdateKB(t, "kb-own", "user-1", "Own")
+	insertDatasetUpdateKB(t, "kb-team", "owner-1", "Team")
+	insertDatasetUpdateKB(t, "kb-private", "owner-1", "Private")
+	insertDatasetUpdateTeamMember(t, "user-1", "owner-1")
+	if err := dao.DB.Model(&entity.Knowledgebase{}).
+		Where("id = ?", "kb-team").
+		Update("permission", string(entity.TenantPermissionTeam)).Error; err != nil {
+		t.Fatalf("share team dataset: %v", err)
+	}
+
+	ctx := t.Context()
+	data, total, code, err := testDatasetListService(t).ListDatasets(ctx,
+		"", "", 1, 30, []dao.OrderTerm{{Column: "create_time", Desc: true}},
+		"", []string{"owner-1"}, "", "user-1", nil,
+	)
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListDatasets = (%#v, %d, %v), want success", data, code, err)
+	}
+	if total != 1 || len(data) != 1 || data[0]["id"] != "kb-team" {
+		t.Fatalf("ListDatasets returned %#v (total=%d), want only the shared dataset", data, total)
+	}
+
+	filters, code, err := testDatasetListService(t).ListDatasetFilters(ctx, "user-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListDatasetFilters = (%#v, %v, %v), want success", filters, code, err)
+	}
+	if filters["total"] != int64(2) {
+		t.Fatalf("ListDatasetFilters total = %#v, want 2 visible datasets", filters["total"])
+	}
+	owners, ok := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
+	if !ok || len(owners) != 2 {
+		t.Fatalf("ListDatasetFilters owners = %#v, want own and shared tenant groups", filters["filter"])
+	}
+}
+
+func TestDatasetServiceListDatasetFiltersReturnsEmptyOwnerList(t *testing.T) {
+	db := setupDatasetUpdateTestDB(t)
+	pushServiceDB(t, db)
+
+	filters, code, err := testDatasetListService(t).ListDatasetFilters(t.Context(), "user-without-datasets")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListDatasetFilters = (%#v, %v, %v), want success", filters, code, err)
+	}
+
+	owners, ok := filters["filter"].(map[string]interface{})["owner"].([]*entity.DatasetOwnerFilter)
+	if !ok || owners == nil || len(owners) != 0 {
+		t.Fatalf("ListDatasetFilters owners = %#v, want a non-nil empty slice", filters["filter"])
+	}
+
+	encoded, err := json.Marshal(filters)
+	if err != nil {
+		t.Fatalf("marshal filters: %v", err)
+	}
+	var response map[string]interface{}
+	if err := json.Unmarshal(encoded, &response); err != nil {
+		t.Fatalf("unmarshal filters: %v", err)
+	}
+	ownerJSON := response["filter"].(map[string]interface{})["owner"]
+	if ownerJSON == nil {
+		t.Fatal(`serialized owner is null; want []`)
+	}
+	if ownerList, ok := ownerJSON.([]interface{}); !ok || len(ownerList) != 0 {
+		t.Fatalf("serialized owner = %#v, want []", ownerJSON)
 	}
 }
 

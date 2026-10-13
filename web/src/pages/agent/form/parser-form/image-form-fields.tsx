@@ -1,50 +1,64 @@
 import { RAGFlowFormItem } from '@/components/ragflow-form';
-import { Textarea } from '@/components/ui/textarea';
-import { buildOptions } from '@/utils/form';
-import { isEmpty } from 'lodash';
-import { useMemo } from 'react';
-import { useWatch } from 'react-hook-form';
+import message from '@/components/ui/message';
+import { Switch } from '@/components/ui/switch';
+import { useCallback } from 'react';
+import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
-import { ImageParseMethod } from '../../constant/pipeline';
-import { LanguageFormField, ParserMethodFormField } from './common-form-fields';
 import { CommonProps } from './interface';
-import { useSetInitialLanguage } from './use-set-initial-language';
+import { ParserFormSchemaType } from './schema';
 import { buildFieldNameWithPrefix } from './utils';
 
-export function ImageFormFields({ prefix }: CommonProps) {
-  const { t } = useTranslation();
-  const options = buildOptions(
-    ImageParseMethod,
-    t,
-    'flow.imageParseMethodOptions',
-  );
-  const parseMethodName = buildFieldNameWithPrefix('parse_method', prefix);
+type ImageOcrSwitchProps = {
+  checked: boolean;
+  onCheckedChange: (checked: boolean) => void;
+};
 
-  const parseMethod = useWatch({
-    name: parseMethodName,
+// OCR can only be turned off while the global vision enhancement is on: with
+// neither, the image carries no text and the backend rejects the canvas.
+function ImageOcrSwitch({ checked, onCheckedChange }: ImageOcrSwitchProps) {
+  const { t } = useTranslation();
+  const { control } = useFormContext<ParserFormSchemaType>();
+  const visionEnabled = useWatch({
+    control,
+    name: 'enable_vision_enhancement',
   });
 
-  const languageShown = useMemo(() => {
-    return !isEmpty(parseMethod) && parseMethod !== ImageParseMethod.OCR;
-  }, [parseMethod]);
+  const handleCheckedChange = useCallback(
+    (next: boolean) => {
+      if (!next && !visionEnabled) {
+        message.warning(t('flow.imageTextSourceRequired'));
+        return;
+      }
+      onCheckedChange(next);
+    },
+    [onCheckedChange, visionEnabled, t],
+  );
 
-  useSetInitialLanguage({ prefix, languageShown });
+  return <Switch checked={checked} onCheckedChange={handleCheckedChange} />;
+}
+
+// The image setup carries a single switch: run local OCR or not. The vision
+// model and its description prompt belong to the global enhancement block (see
+// VisionEnhancementFormFields); response language is not a setting anywhere and
+// follows the knowledge base, which also drives tokenization.
+export function ImageFormFields({ prefix }: CommonProps) {
+  const { t } = useTranslation();
 
   return (
-    <>
-      <ParserMethodFormField
-        prefix={prefix}
-        optionsWithoutLLM={options}
-      ></ParserMethodFormField>
-      {languageShown && <LanguageFormField prefix={prefix}></LanguageFormField>}
-      {languageShown && (
-        <RAGFlowFormItem
-          name={buildFieldNameWithPrefix('system_prompt', prefix)}
-          label={t('flow.systemPrompt')}
-        >
-          <Textarea placeholder={t('flow.systemPromptPlaceholder')} />
-        </RAGFlowFormItem>
+    <RAGFlowFormItem
+      name={buildFieldNameWithPrefix('ocr_enabled', prefix)}
+      label={t('flow.imageOcr')}
+      tooltip={t('flow.imageOcrTip')}
+      horizontal={true}
+      labelClassName="w-full"
+      valueClassName="w-8"
+    >
+      {(field) => (
+        <ImageOcrSwitch
+          checked={!!field.value}
+          onCheckedChange={field.onChange}
+        />
       )}
-    </>
+    </RAGFlowFormItem>
   );
 }

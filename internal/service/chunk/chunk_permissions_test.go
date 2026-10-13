@@ -5,6 +5,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -79,7 +80,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 						if err != nil {
 							t.Fatalf("authorized operation failed: %v", err)
 						}
-					} else if err == nil || err.Error() != "user does not have access to this dataset" {
+					} else if !permissionresponse.IsPermissionError(err) {
 						t.Fatalf("unauthorized operation error = %v, want access denied", err)
 					}
 				})

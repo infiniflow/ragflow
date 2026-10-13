@@ -722,7 +722,7 @@ Released on October 23, 2025.
 
 ### New features
 
-- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-to-use-mineru-to-parse-pdf-documents).
+- Experimental: Adds support for PDF document parsing using MinerU. See [here](./faq.mdx#how-do-i-use-mineru-to-parse-pdf-documents).
 
 ### Improvements
 
@@ -769,7 +769,7 @@ Released on September 10, 2025.
 
 - Agent:
   - Agent Performance Optimized: Improves planning and reflection speed for simple tasks; optimizes concurrent tool calls for parallelizable scenarios, significantly reducing overall response time.
-  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control. See [here](./guides/agent/agent_workflow/basic_component.md#prompt-configuration).
+  - Four framework-level prompt blocks are available in the **System prompt** section, enabling customization and overriding of prompts at the framework level, thereby enhancing flexibility and control.
   - **Execute SQL** component enhanced: Replaces the original variable reference component with a text input field, allowing users to write free-form SQL queries and reference variables. See [here](./guides/agent/agent_workflow/tool_components.md#execute-sql).
 - Chat: Re-enables **Reasoning** and **Cross-language search**.
 
@@ -862,7 +862,7 @@ Released on August 20, 2025.
 
 #### Deprecated
 
-[Create session with agent](./references/http_api_reference.md#create-session-with-agent)
+Create session with agent
 
 ## v0.20.1
 
@@ -948,7 +948,7 @@ Released on May 26, 2025.
 
 ### New features
 
-- [Cross-language search](./references/glossary.mdx#cross-language-search) is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
+- Cross-language search is supported in the Knowledge and Chat modules, enhancing search accuracy and user experience in multilingual environments, such as in Chinese-English datasets.
 - Agent component: A new Code component supports Python and JavaScript scripts, enabling developers to handle more complex tasks like dynamic data processing.
 - Enhanced image display: Images in Chat and Search now render directly within responses, rather than as external references. Knowledge retrieval testing can retrieve images directly, instead of texts extracted from images.
 - Claude 4 and ChatGPT o3: Developers can now use the newly released, most advanced Claude model and OpenAI’s latest ChatGPT o3 inference model.
@@ -963,7 +963,7 @@ Released on May 26, 2025.
 
 #### Added documents
 
-- [Select PDF parser](./guides/dataset/configuration.md#document-parsing-configuration)
+- [Select PDF parser](./guides/dataset/configuration.md#pdf-parsing)
 - [Enable Excel2HTML]
 - [Code component](./guides/agent/agent_workflow/data_manipulation_components.md#code-component)
 
@@ -1028,11 +1028,11 @@ From this release onwards, if you still see RAGFlow's responses being cut short 
 
 #### HTTP APIs
 
-- [Create chat completion](./references/http_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/http_api_reference.md#create-chat-completion)
 
 #### Python APIs
 
-- [Create chat completion](./references/python_api_reference.md#openai-compatible-api)
+- [Create chat completion](./references/python_api_reference.md#create-chat-completion)
 
 ## v0.17.1
 
@@ -1071,7 +1071,7 @@ Released on March 3, 2025.
 - AI chat: Leverages Tavily-based web search to enhance contexts in agentic reasoning. To activate this, enter the correct Tavily API key under the **Assistant settings** tab of your chat assistant dialogue.
 - AI chat: Supports starting a chat without specifying datasets.
 - AI chat: HTML files can also be previewed and referenced, in addition to PDF files.
-- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/configuration.md#document-parsing-configuration).
+- Dataset: Adds a **PDF parser**, aka **Document parser**, dropdown menu to dataset configurations. This includes a DeepDoc model option, which is time-consuming, a much faster **naive** option (plain text), which skips DLA (Document Layout Analysis), OCR (Optical Character Recognition), and TSR (Table Structure Recognition) tasks, and several currently *experimental* large model options. See [here](./guides/dataset/configuration.md#pdf-parsing).
 - Agent component: **(x)** or a forward slash `/` can be used to insert available keys (variables) in the system prompt field of the **Generate** or **Template** component.
 - Object storage: Supports using Aliyun OSS (Object Storage Service) as a file storage option.
 - Models: Updates the supported model list for Tongyi-Qianwen (Qwen), adding DeepSeek-specific models; adds ModelScope as a model provider.
@@ -1108,7 +1108,7 @@ Released on February 6, 2025.
 ### New features
 
 - Supports DeepSeek R1 and DeepSeek V3.
-- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing. See [here](./guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph).
+- GraphRAG refactor: Knowledge graph is dynamically built on an entire dataset rather than on an individual file, and automatically updated when a newly uploaded file starts parsing.
 - Adds an **Iteration** agent component and a **Research report generator** agent template. See [here](./guides/agent/agent_workflow/flow_components.md#iteration).
 - New UI language: Portuguese.
 - Allows setting metadata for a specific file in a dataset to enhance AI-powered chats. See [here](./guides/dataset/metadata_management.md).
@@ -1263,7 +1263,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 #### Python APIs
 
 - [Create session with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
-- [Converse with agent](https://ragflow.io/docs/dev/python_api_reference#create-session-with-agent)
+- [Converse with agent](https://ragflow.io/docs/dev/python_api_reference#converse-with-agent)
 
 ### Documentation
 
@@ -1271,7 +1271,7 @@ Ensure that you [upgrade **both** your code **and** Docker image to this release
 
 - [Configurations](https://ragflow.io/docs/dev/configurations)
 - [Manage team members](./guides/team/team_management/index.md)
-- [Run health check on RAGFlow's dependencies](https://ragflow.io/docs/dev/run_health_check)
+- Run health check on RAGFlow's dependencies
 
 ## v0.13.0
 

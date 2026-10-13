@@ -37,15 +37,9 @@ import (
 // payload the frontend already resolves ([ID:N] -> reference.chunks[N],
 // N 0-based — the same contract naive answers ship).
 
-// citedChunkIDRe matches the `chunk_id: <id>` provenance field of the FOS
-// format (Tested / Eliminated / Retained / Clue lines). Web-sourced lines
-// carry no chunk_id by design and are naturally excluded.
+// citedChunkIDRe matches an explicit `chunk_id: <id>` provenance field for a
+// corpus chunk or web passage.
 var citedChunkIDRe = regexp.MustCompile(`chunk_id:\s*([A-Za-z0-9_-]+)`)
-
-// citationMarkerFollows is what a chunk_id occurrence already carrying a
-// citation marker starts with — insertion skips these so repeated calls are
-// idempotent.
-const citationMarkerFollows = "[ID:"
 
 // ExtractCitedChunkIDs returns the chunk ids the deliverable cites, in
 // first-appearance order, deduplicated. Ids that appear on several lines
@@ -85,8 +79,8 @@ func ExtractCitedChunkIDs(final string) []string {
 // (observed on the 关羽 run: markers present in the SSE payload, invisible in
 // the UI). Lines without backticks take the marker right after the last id.
 // Ids absent from chunkIDs (e.g. a cited chunk that failed to load) stay
-// unmarked rather than pointing at a wrong index, and a line that already
-// carries a marker is left untouched, making the rewrite idempotent.
+// unmarked rather than pointing at a wrong index, and markers already present
+// for a chunk are not duplicated, making the rewrite idempotent.
 func InsertCitationMarkers(final string, chunkIDs []string) string {
 	if final == "" || len(chunkIDs) == 0 {
 		return final
@@ -100,8 +94,8 @@ func InsertCitationMarkers(final string, chunkIDs []string) string {
 	}
 	lines := strings.Split(final, "\n")
 	for li, line := range lines {
-		if !strings.Contains(line, "chunk_id:") || strings.Contains(line, citationMarkerFollows) {
-			continue // nothing to mark / already marked: idempotent
+		if !strings.Contains(line, "chunk_id:") {
+			continue
 		}
 		matches := citedChunkIDRe.FindAllStringSubmatchIndex(line, -1)
 		if len(matches) == 0 {
@@ -113,7 +107,7 @@ func InsertCitationMarkers(final string, chunkIDs []string) string {
 		for _, m := range matches {
 			lastEnd = m[1]
 			n, ok := idx[line[m[2]:m[3]]]
-			if !ok || seen[n] {
+			if !ok || seen[n] || strings.Contains(line, fmt.Sprintf("[ID:%d]", n)) {
 				continue // unresolvable id: keep the text, no marker
 			}
 			seen[n] = true

@@ -38,6 +38,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"slices"
 	"strings"
 
@@ -717,7 +718,7 @@ func evalBoolOp(b bool, op string, value any) (bool, error) {
 }
 
 func evalNumberOp(n float64, op string, value any) (bool, error) {
-	cmp, ok := toFloat(value)
+	cmp, ok := common.ToFloat(value)
 	if !ok && !isNilOp(op) {
 		return false, fmt.Errorf("invalid operator: %s (number variable, non-numeric value)", op)
 	}
@@ -784,22 +785,6 @@ func listEqual(lst []any, value any) bool {
 		}
 	}
 	return true
-}
-
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int32:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	}
-	return 0, false
 }
 
 func isNilOp(op string) bool {

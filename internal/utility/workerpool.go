@@ -9,7 +9,6 @@ import (
 )
 
 const (
-	workerPoolStateRunning uint32 = 0
 	workerPoolStateStopped uint32 = 1
 )
 

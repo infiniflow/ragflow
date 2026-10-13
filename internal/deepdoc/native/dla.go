@@ -250,18 +250,31 @@ func dlaPostprocess(out []float32, sf [4]float32) DLAResult {
 	return res
 }
 
+// ClampBoxes returns a copy of the boxes with every coordinate clamped into
+// the source image bounds [0, W] x [0, H] (mirrors dla_adapter.py). The
+// in-process DocAnalyzer backend consumes these boxes directly instead of
+// serialising through Wire(), so the clamp must live on the result itself.
+// The receiver's boxes are never mutated: Wire() and the analyzer share one
+// result and both need the raw postprocess values intact.
+func (r DLAResult) ClampBoxes() []DLABox {
+	w, h := float32(r.W), float32(r.H)
+	out := make([]DLABox, len(r.Boxes))
+	for i, b := range r.Boxes {
+		b.X0 = minf(maxf(b.X0, 0), w)
+		b.Y0 = minf(maxf(b.Y0, 0), h)
+		b.X1 = minf(maxf(b.X1, 0), w)
+		b.Y1 = minf(maxf(b.Y1, 0), h)
+		out[i] = b
+	}
+	return out
+}
+
 // Wire encodes the result in the exact format the Go DocAnalyzer consumes:
 // {"bboxes": [[x0,y0,x1,y1,score,class_id], ...]}.
 func (r DLAResult) Wire() string {
 	rows := make([][]float32, 0, len(r.Boxes))
-	w, h := float32(r.W), float32(r.H)
-	for _, b := range r.Boxes {
-		// Clamp into image bounds (mirrors dla_adapter.py).
-		x0 := minf(maxf(b.X0, 0), w)
-		y0 := minf(maxf(b.Y0, 0), h)
-		x1 := minf(maxf(b.X1, 0), w)
-		y1 := minf(maxf(b.Y1, 0), h)
-		rows = append(rows, []float32{x0, y0, x1, y1, b.Score, float32(b.Class)})
+	for _, b := range r.ClampBoxes() {
+		rows = append(rows, []float32{b.X0, b.Y0, b.X1, b.Y1, b.Score, float32(b.Class)})
 	}
 	b, _ := json.Marshal(map[string]any{"bboxes": rows})
 	return string(b)
