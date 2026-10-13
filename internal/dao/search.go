@@ -48,10 +48,14 @@ type SearchDetailRow struct {
 	TenantAvatar *string        `gorm:"column:tenant_avatar"`
 }
 
-// ListByTenantIDs list searches by tenant IDs with pagination and filtering
-func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
+// ListByResourceIDs lists only the authorized Search Apps, with optional
+// tenant-owner filtering and pagination.
+func (dao *SearchDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs, ownerIDs []string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
 	var searches []*entity.SearchListItem
 	var total int64
+	if len(resourceIDs) == 0 {
+		return []*entity.SearchListItem{}, 0, nil
+	}
 
 	// Build query with join to user table for nickname and avatar
 	query := db.WithContext(ctx).Model(&entity.Search{}).
@@ -62,66 +66,15 @@ func (dao *SearchDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantID
 		`).
 		Joins("LEFT JOIN user ON search.tenant_id = user.id")
 
-	if len(tenantIDs) > 0 {
-		query = query.Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", tenantIDs, userID, "1")
-	} else {
-		query = query.Where("search.tenant_id = ? AND search.status = ?", userID, "1")
+	query = query.Where("search.id IN ? AND search.status = ?", resourceIDs, "1")
+	if len(ownerIDs) > 0 {
+		query = query.Where("search.tenant_id IN ?", ownerIDs)
 	}
 
 	// Apply keyword filter
 	if keywords != "" {
 		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
 	}
-
-	// Apply ordering. Route the requested terms through searchOrderClause so a
-	// user-supplied query param can never reach Order() verbatim: the helper
-	// validates against searchOrderableColumns (a closed allowlist) and falls
-	// back to "create_time" on a miss.
-	// codeql[go/sql-injection] False positive: searchOrderClause
-	query = query.Order(searchOrderClause(terms))
-
-	// Count total
-	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
-	}
-
-	// Apply pagination
-	if page > 0 && pageSize > 0 {
-		offset := (page - 1) * pageSize
-		if err := query.Offset(offset).Limit(pageSize).Scan(&searches).Error; err != nil {
-			return nil, 0, err
-		}
-	} else {
-		if err := query.Scan(&searches).Error; err != nil {
-			return nil, 0, err
-		}
-	}
-
-	return searches, total, nil
-}
-
-// ListByOwnerIDs list searches by owner IDs with pagination and filtering
-func (dao *SearchDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.SearchListItem, int64, error) {
-	var searches []*entity.SearchListItem
-	var total int64
-
-	// Build query with join to user table for nickname and avatar
-	query := db.WithContext(ctx).Model(&entity.Search{}).
-		Select(`
-			search.*,
-			user.nickname,
-			user.avatar as tenant_avatar
-		`).
-		Joins("LEFT JOIN user ON search.tenant_id = user.id").
-		Where("(search.tenant_id IN ? OR search.tenant_id = ?) AND search.status = ?", ownerIDs, userID, "1")
-
-	// Apply keyword filter
-	if keywords != "" {
-		query = query.Where("LOWER(search.name) LIKE ?", "%"+strings.ToLower(keywords)+"%")
-	}
-
-	// Filter by owner IDs (additional filter to ensure tenant_id is in ownerIDs)
-	query = query.Where("search.tenant_id IN ?", ownerIDs)
 
 	// Apply ordering. Route the requested terms through searchOrderClause so a
 	// user-supplied query param can never reach Order() verbatim: the helper
@@ -201,46 +154,9 @@ func (dao *SearchDAO) Create(ctx context.Context, db *gorm.DB, search *entity.Se
 	return db.WithContext(ctx).Create(search).Error
 }
 
-// QueryByTenantIDAndID checks if a search exists with given tenant_id and id
-// Reference: Python SearchService.query(tenant_id=tenant.tenant_id, id=search_id)
-// Used for permission verification in detail API
-func (dao *SearchDAO) QueryByTenantIDAndID(ctx context.Context, db *gorm.DB, tenantID string, searchID string) ([]*entity.Search, error) {
-	var searches []*entity.Search
-	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").Find(&searches).Error
-	return searches, err
-}
-
 // DeleteByID deletes a search by ID (soft delete by setting status to "0")
-// Reference: Python common_service.py::delete_by_id
-func (dao *SearchDAO) DeleteByID(ctx context.Context, db *gorm.DB, tenantID, id string) error {
-	return db.WithContext(ctx).Model(&entity.Search{}).Where("tenant_id = ? AND id = ?", tenantID, id).Update("status", "0").Error
-}
-
-// Accessible4Deletion checks if a search can be deleted by a specific user
-// Reference: Python search_service.py::accessible4deletion
-// Returns true if the search exists, is valid, and was created by the user.
-// A missing or non-owned search returns (false, nil) so callers can distinguish
-// "not authorized" from a genuine database error (which is returned as the error).
-func (dao *SearchDAO) Accessible4Deletion(ctx context.Context, db *gorm.DB, searchID string, userID string) (bool, error) {
-	var count int64
-	err := db.WithContext(ctx).Model(&entity.Search{}).
-		Where("id = ? AND created_by = ? AND status = ?", searchID, userID, "1").
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-// GetByTenantIDAndID gets search by tenant ID and search ID
-// Reference: Python SearchService.query(tenant_id=tenant_id, id=search_id)
-func (dao *SearchDAO) GetByTenantIDAndID(ctx context.Context, db *gorm.DB, tenantID string, searchID string) (*entity.Search, error) {
-	var search entity.Search
-	err := db.WithContext(ctx).Where("tenant_id = ? AND id = ? AND status = ?", tenantID, searchID, "1").First(&search).Error
-	if err != nil {
-		return nil, err
-	}
-	return &search, nil
+func (dao *SearchDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
+	return db.WithContext(ctx).Model(&entity.Search{}).Where("id = ? AND status = ?", id, "1").Update("status", "0").Error
 }
 
 // UpdateByID updates search by ID

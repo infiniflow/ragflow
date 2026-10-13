@@ -1164,14 +1164,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Fast responses',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: 'Balanced speed & depth',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: 'Deep reasoning',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
       thinkingTip:
@@ -3017,7 +3009,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
-        'E-mail is a required field. You must input an E-mail address here.',
+        'E-mail is optional. If left empty, a default E-mail address is used for PubMed requests.',
       arXiv: 'ArXiv',
       arXivDescription:
         'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',

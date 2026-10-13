@@ -537,18 +537,12 @@ func main() {
 			port = *arguments.port
 			apiServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("api_server_%d", port)
-		}
 	case "admin":
 		adminServerConfig := globalConfig.GetAdminServerConfig()
 		port := adminServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
 			adminServerConfig.HTTPPort = port
-		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
 		if serverName == "" {
@@ -1117,7 +1111,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
+	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
@@ -1162,7 +1156,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		retrievalEnhancer,
 	)
 	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
 	common.Info("agent: retrieval service adapter installed")
 
 	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex

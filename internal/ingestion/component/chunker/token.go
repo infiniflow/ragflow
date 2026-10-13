@@ -75,6 +75,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -601,6 +602,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 			"_ERROR":        fmt.Sprintf("TokenChunker: %v", err),
 		}
 	}
+	if !customDelim {
+		separateItemBoundaries(perItem)
+	}
 
 	// Surrounding media context is attached on the flattened chunk list,
 	// mirroring Python's _attach_context_to_media_chunks (token_chunker.py:537,
@@ -625,12 +629,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 		// Python _merge_text_chunks_by_token_size merges adjacent text
 		// chunks across JSON items into one global token budget. The join
-		// separator is "" because each unit already carries its own retained
-		// delimiter (splitByDelim keeps it), so concatenating reproduces the
-		// source exactly. A "\n" separator would have been needed when the
-		// delimiter was dropped, but would now double-insert it; the upstream
-		// JSON items themselves carry no inter-item separator, so "" is the
-		// faithful lossless join.
+		// separator stays empty because delimiters within each item are
+		// retained. separateItemBoundaries adds separators only between
+		// adjacent text items that have none at their edges.
 		flat = flatten(mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flat}, c.param.ChunkTokenSize, c.param.OverlappedPercent))
 	}
 
@@ -721,6 +722,34 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // ---------------------------------------------------------------------------
 // JSON-payload internals
 // ---------------------------------------------------------------------------
+
+func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
+	var previous *schema.ChunkDoc
+	for i := range perItem {
+		units := perItem[i]
+		if len(units) == 0 {
+			continue
+		}
+		firstIndex, lastIndex := 0, len(units)-1
+		for firstIndex <= lastIndex && units[firstIndex].CKType == "text" && units[firstIndex].Text == "" {
+			firstIndex++
+		}
+		for lastIndex >= firstIndex && units[lastIndex].CKType == "text" && units[lastIndex].Text == "" {
+			lastIndex--
+		}
+		if firstIndex > lastIndex {
+			continue
+		}
+		first := &units[firstIndex]
+		if previous != nil && previous.CKType == "text" && first.CKType == "text" &&
+			strings.TrimRightFunc(previous.Text, unicode.IsSpace) == previous.Text &&
+			strings.TrimLeftFunc(first.Text, unicode.IsSpace) == first.Text {
+			first.Text = "\n" + first.Text
+			first.TKNums = intPtr(tokenizeStr(first.Text))
+		}
+		previous = &units[lastIndex]
+	}
+}
 
 // chunkFromItem mirrors _build_json_chunks for a single item. keepDelim
 // follows the same policy as the text path: a bare delimiter is retained so

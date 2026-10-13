@@ -316,10 +316,9 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 
 	ctx := t.Context()
@@ -376,10 +375,9 @@ func TestListScopesSearchToDocumentDataset(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 
 	ctx := t.Context()
@@ -428,9 +426,8 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 		"content_ltks":        []string{"invoice", "body"},
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -485,9 +482,8 @@ func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
 		"content_with_weight": "other document body",
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -521,9 +517,8 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 		"content_with_weight": "other dataset document body",
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -603,10 +598,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 	ctx := t.Context()
 
@@ -690,9 +684,8 @@ func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
 		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -726,9 +719,8 @@ func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
 		},
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -781,9 +773,8 @@ func TestUpdateChunkStoresTagKwdOnlyWhenSent(t *testing.T) {
 				},
 			}
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 			}
 
 			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -835,9 +826,8 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 			var storedBucket, storedChunkID, storedMode string
 			var storedBinary []byte
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
 					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
 					return nil
@@ -895,9 +885,8 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 		order: order,
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		storeChunkImageFunc: func(string, string, []byte, string) error {
 			t.Fatal("remove mode must not store an image")
 			return nil
@@ -955,9 +944,8 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 	}
 	wikiCalls := 0
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		removeChunkImageFunc: func(string, string) error {
 			return errors.New("storage unavailable")
 		},
@@ -1015,9 +1003,8 @@ func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
 				},
 			}
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 				storeChunkImageFunc: func(string, string, []byte, string) error {
 					t.Fatal("invalid input must not reach storage")
 					return nil
@@ -1624,9 +1611,8 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 
 	engine := &parseTestDocEngine{deleteChunksCount: 3}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
@@ -1685,9 +1671,8 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 
 	var decrementCalls int
 	svc := &ChunkService{
-		docEngine:     &parseTestDocEngine{deleteChunksCount: 0},
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: &parseTestDocEngine{deleteChunksCount: 0},
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
 			decrementCalls++
 			return nil
@@ -1717,9 +1702,8 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 	insertChunkTestDoc(t, "doc-1", "kb-1")
 
 	svc := &ChunkService{
-		docEngine:     &parseTestDocEngine{deleteChunksCount: 2},
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: &parseTestDocEngine{deleteChunksCount: 2},
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		decrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
 			if docID != "doc-1" || kbID != "kb-1" || tokenNum != 0 || chunkNum != 2 || duration != 0 {
 				t.Fatalf("unexpected decrement args doc=%s kb=%s token=%d chunk=%d duration=%v", docID, kbID, tokenNum, chunkNum, duration)
@@ -2336,9 +2320,8 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 
 	engine := &switchChunksEngineMock{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	ctx := t.Context()

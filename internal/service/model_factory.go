@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 // modelTarget is the private result of resolving a model reference. Callers
@@ -62,7 +63,6 @@ type ModelFactory struct {
 	modelProviderDAO *dao.TenantModelProviderDAO
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
-	userTenantDAO    *dao.UserTenantDAO
 }
 
 // NewModelFactory creates a factory backed by the standard model DAOs.
@@ -72,7 +72,6 @@ func NewModelFactory() *ModelFactory {
 		modelProviderDAO: dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
 	}
 }
 
@@ -436,28 +435,6 @@ func maxOutputFromModelInfo(modelInfo *modelModule.Model) int {
 	return *modelInfo.MaxOutput
 }
 
-// tenantCanReachProviderTenant reports whether userID owns the provider's tenant
-// or is a joined member of it. Mirrors Python's tenant_model_service
-// get_model_config_by_id tenant check (:342-347).
-func (s *ModelFactory) tenantCanReachProviderTenant(ctx context.Context, userID, ownerTenantID string) (bool, error) {
-	if userID == ownerTenantID {
-		return true, nil
-	}
-	if s == nil || s.userTenantDAO == nil {
-		return false, fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
-	}
-	userTenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return false, err
-	}
-	for _, rel := range userTenants {
-		if rel != nil && rel.TenantID == ownerTenantID {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
 func (f *ModelFactory) resolveConfig(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	access = normalizeModelAccess(access)
 	if err := f.authorize(ctx, access); err != nil {
@@ -497,14 +474,8 @@ func (f *ModelFactory) authorize(ctx context.Context, access ModelAccess) error 
 	if access.UserID == "" || access.UserID == access.TenantID {
 		return nil
 	}
-	if f.userTenantDAO == nil {
-		return fmt.Errorf("%w: user tenant DAO is not initialized", errModelConfigUnavailable)
-	}
-	if _, err := f.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, access.UserID, access.TenantID); err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("%w: user %s has no access to tenant %s", errModelConfigUnavailable, access.UserID, access.TenantID)
-		}
-		return fmt.Errorf("check model access: %w", err)
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: access.UserID}, access.TenantID, permission.TenantMember); err != nil {
+		return fmt.Errorf("%w: user %s has no access to tenant %s: %w", errModelConfigUnavailable, access.UserID, access.TenantID, err)
 	}
 	return nil
 }
@@ -586,7 +557,7 @@ func (s *ModelFactory) ResolveModelType(ctx context.Context, access ModelAccess,
 		return nil, err
 	}
 
-	modelType, err := s.resolveCompositeModelType(ctx, access.TenantID, modelRef)
+	modelType, err := s.resolveCompositeModelType(ctx, access, modelRef)
 	if err != nil {
 		return nil, err
 	}
@@ -687,15 +658,14 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	if providerEntity == nil {
 		return nil, fmt.Errorf("%w: provider id=%s not found for model %q", errModelConfigUnavailable, modelEntity.ProviderID, modelRef)
 	}
-	allowed := providerEntity.TenantID == tenantID
-	if !allowed && userID != "" {
-		var err error
-		allowed, err = s.tenantCanReachProviderTenant(ctx, userID, providerEntity.TenantID)
-		if err != nil {
-			return nil, err
+	if userID != "" {
+		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelProvider, providerEntity.ID, permission.OperationRead); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, userID, providerEntity.ProviderName, err)
 		}
-	}
-	if !allowed {
+		if err := checkModelPermission(ctx, userID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, userID, modelRef, err)
+		}
+	} else if providerEntity.TenantID != tenantID {
 		return nil, fmt.Errorf(
 			"%w: tenant %s has no access to provider owned by tenant %s",
 			errModelConfigUnavailable,
@@ -712,6 +682,11 @@ func (s *ModelFactory) modelIdentity(ctx context.Context, tenantID, userID strin
 	}
 	if instanceEntity == nil || instanceEntity.ProviderID != providerEntity.ID {
 		return nil, fmt.Errorf("%w: instance id=%s does not belong to provider id=%s", errModelConfigUnavailable, modelEntity.InstanceID, providerEntity.ID)
+	}
+	if userID != "" {
+		if err := checkModelPermission(ctx, userID, permission.ResourceKindModelInstance, instanceEntity.ID, permission.OperationUse); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, userID, instanceEntity.InstanceName, err)
+		}
 	}
 	if !strings.EqualFold(instanceEntity.Status, "active") {
 		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceEntity.InstanceName)
@@ -735,7 +710,7 @@ func (s *ModelFactory) resolveModel(ctx context.Context, access ModelAccess, mod
 			// explicitly: the underlying "provider name missing in model name:
 			// <uuid>" reads like a naming-format mistake and sends the operator to
 			// look at the model's name instead of at the row that no longer exists.
-			composite, compositeErr := s.resolveProviderInstanceModel(ctx, access.TenantID, modelType, modelRef)
+			composite, compositeErr := s.resolveProviderInstanceModel(ctx, access, modelType, modelRef)
 			if compositeErr != nil && !strings.Contains(modelRef, "@") {
 				return nil, fmt.Errorf("model %q is neither a tenant model id (no tenant_model row) nor a valid composite name — the reference is dangling: %w", modelRef, compositeErr)
 			}
@@ -797,7 +772,7 @@ func (s *ModelFactory) resolveTenantModel(ctx context.Context, modelType entity.
 	}, nil
 }
 
-func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
+func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelTarget, error) {
 	// TEI builtin embedding short-circuit.
 	if modelType == entity.ModelTypeEmbedding && strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
 		teiModel := common.GetEnv(common.EnvTEIModel)
@@ -847,7 +822,7 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 		}
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
@@ -856,6 +831,11 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 	}
 	if provider == nil {
 		return nil, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
+	}
+	if access.UserID != "" {
+		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
+		}
 	}
 	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
@@ -869,6 +849,11 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 	}
 	if !strings.EqualFold(instance.Status, "active") {
 		return nil, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
+	}
+	if access.UserID != "" {
+		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+			return nil, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
+		}
 	}
 	extra, err := decodeModelInstanceExtra(instance.Extra)
 	if err != nil {
@@ -905,6 +890,11 @@ func (s *ModelFactory) resolveProviderInstanceModel(ctx context.Context, tenantI
 
 	providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
 	if availableTypes != 0 {
+		if access.UserID != "" {
+			if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModel, modelEntity.ID, permission.OperationUse); err != nil {
+				return nil, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
+			}
+		}
 		if providerInfo == nil {
 			return nil, fmt.Errorf("%w: provider %q driver not found", errModelConfigUnavailable, providerName)
 		}
@@ -991,7 +981,7 @@ func builtinModelTarget(modelType entity.ModelType, modelName string, driver mod
 	}
 }
 
-func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, modelRef string) (entity.ModelType, error) {
+func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, access ModelAccess, modelRef string) (entity.ModelType, error) {
 	if strings.Contains(common.GetEnv(common.EnvComposeProfiles), "tei-") {
 		teiModel := common.GetEnv(common.EnvTEIModel)
 		if modelRef == teiModel {
@@ -1016,12 +1006,17 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, 
 		return 0, fmt.Errorf("%w: model factory is not initialized", errModelConfigUnavailable)
 	}
 
-	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, tenantID, providerName)
+	provider, err := s.modelProviderDAO.GetByTenantIDAndProviderName(ctx, dao.DB, access.TenantID, providerName)
 	if err != nil {
 		return 0, fmt.Errorf("%w: provider %q lookup failed: %w", errModelConfigUnavailable, providerName, err)
 	}
 	if provider == nil {
 		return 0, fmt.Errorf("%w: provider %q not found for model %q", errModelConfigUnavailable, providerName, modelRef)
+	}
+	if access.UserID != "" {
+		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelProvider, provider.ID, permission.OperationRead); err != nil {
+			return 0, fmt.Errorf("%w: user %s cannot read model provider %q: %w", errModelConfigUnavailable, access.UserID, providerName, err)
+		}
 	}
 	instance, err := s.modelInstanceDAO.GetByProviderIDAndInstanceName(ctx, dao.DB, provider.ID, instanceName)
 	if err != nil {
@@ -1032,6 +1027,11 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, 
 	}
 	if !strings.EqualFold(instance.Status, "active") {
 		return 0, fmt.Errorf("%w: model instance %q is disabled", errModelConfigUnavailable, instanceName)
+	}
+	if access.UserID != "" {
+		if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModelInstance, instance.ID, permission.OperationUse); err != nil {
+			return 0, fmt.Errorf("%w: user %s cannot use model instance %q: %w", errModelConfigUnavailable, access.UserID, instanceName, err)
+		}
 	}
 
 	models, err := s.modelDAO.GetModelsByProviderIDAndInstanceIDAndModelName(ctx, dao.DB, provider.ID, instance.ID, pureModelName)
@@ -1044,6 +1044,11 @@ func (s *ModelFactory) resolveCompositeModelType(ctx context.Context, tenantID, 
 			continue
 		}
 		if strings.EqualFold(model.Status, "active") {
+			if access.UserID != "" {
+				if err = checkModelPermission(ctx, access.UserID, permission.ResourceKindModel, model.ID, permission.OperationUse); err != nil {
+					return 0, fmt.Errorf("%w: user %s cannot use model %q: %w", errModelConfigUnavailable, access.UserID, modelRef, err)
+				}
+			}
 			activeTypes |= entity.ModelType(model.ModelType)
 		} else {
 			inactiveTypes |= entity.ModelType(model.ModelType)

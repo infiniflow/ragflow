@@ -142,6 +142,19 @@ func TestBuildDocumentGraphTemplateShells_PreservesTemplateMetadata(t *testing.T
 	}
 }
 
+// TestTemplateDisplayKind_PrefersTemplateRow locks the shells-path kind rule:
+// the template row's kind wins over the canonical stored keyword ("graph"),
+// so keyword no-match shells answer in the same dialect as the normal-mode
+// bucket ("knowledge_graph") and the frontend keeps recognizing the template.
+func TestTemplateDisplayKind_PrefersTemplateRow(t *testing.T) {
+	if got := templateDisplayKind("graph", "knowledge_graph"); got != "knowledge_graph" {
+		t.Errorf("templateDisplayKind(graph, knowledge_graph) = %q, want knowledge_graph", got)
+	}
+	if got := templateDisplayKind("graph", ""); got != "graph" {
+		t.Errorf("templateDisplayKind(graph, \"\") = %q, want row-kind fallback graph", got)
+	}
+}
+
 // TestStructureRowSourceOrder_MinChunkOrder verifies a row's source position is
 // the smallest chunk_order_int among its source_chunk_ids, and that a row with
 // no resolvable chunks reports ok=false (so it sorts to the end).

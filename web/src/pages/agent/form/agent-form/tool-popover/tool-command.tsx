@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/command';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
 import { Operator } from '@/pages/agent/constant';
+import { useOwnerTenantId } from '@/pages/agent/context';
 import OperatorIcon from '@/components/operator-icon';
 import { t } from 'i18next';
 import { lowerFirst } from 'lodash';
@@ -140,7 +141,8 @@ export function ToolCommand({ value, onChange }: ToolCommandProps) {
 }
 
 export function MCPCommand({ onChange, value }: ToolCommandProps) {
-  const { data } = useListMcpServer();
+  const ownerTenantId = useOwnerTenantId();
+  const { data } = useListMcpServer(ownerTenantId, Boolean(ownerTenantId));
   const { toggleOption, currentValue } = useHandleSelectChange({
     onChange,
     value,
