@@ -191,10 +191,9 @@ func KBPrompt(chunks []map[string]any, maxTokens int) []string {
 // 0-based because the client resolves a citation marker by using its number as an
 // index into reference.chunks, and it renders the answer as the model streams it, so
 // the model has to write that index itself. The agentic compose renders with this
-// and publishes the same order on harness.Kbinfos.CiteChunkIDs, which
-// decorateHarnessAnswer puts in front of the reference. A 1-based render made every
-// marker point one chunk off — or past the end when the pool was shorter than the
-// render cap.
+// and publishes the same order on its evidence list, which the reference is built
+// from. A 1-based render made every marker point one chunk off — or past the end
+// when the pool was shorter than the render cap.
 //
 // The source indices are what the published id list must be gathered through:
 // kbpBlock renders no block for a chunk with no content, so walking the chunk list
