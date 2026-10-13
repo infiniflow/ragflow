@@ -30,41 +30,49 @@ func newTypedStateModelWrapper[M MessageType](inner Model[M], cc *cancelContext)
 // copyMessage performs a deep copy of a Message or AgenticMessage to prevent
 // pointer-sharing bugs when the same message flows through multiple wrappers.
 //
-// The Extra map uses JSON marshal/unmarshal for deep copy (same approach as
-// checkpoint.deepCopy) so that nested maps/slices are fully independent.
-// If JSON round-trip fails for a value, the original reference is kept as
-// a fallback to avoid data loss.
+// Extra values use a JSON round-trip to isolate nested maps and slices.
+// Values that cannot be serialized retain their original references.
 func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:
-		cp := &schema.Message{
-			Role:    v.Role,
-			Content: v.Content,
-			Name:    v.Name,
-		}
-		if len(v.ToolCalls) > 0 {
+		cp := *v
+		if v.ToolCalls != nil {
 			cp.ToolCalls = make([]schema.ToolCall, len(v.ToolCalls))
 			copy(cp.ToolCalls, v.ToolCalls)
 		}
-		if v.Extra != nil {
-			cp.Extra = make(map[string]any, len(v.Extra))
-			for k, val := range v.Extra {
-				cp.Extra[k] = deepCopyAny(val)
+		cp.Extra = copyExtra(v.Extra)
+		return any(&cp).(M)
+	case *schema.AgenticMessage:
+		cp := *v
+		if v.ContentBlocks != nil {
+			cp.ContentBlocks = make([]schema.ContentBlock, len(v.ContentBlocks))
+			for i, block := range v.ContentBlocks {
+				cp.ContentBlocks[i] = block
+				if block.ToolCall != nil {
+					call := *block.ToolCall
+					cp.ContentBlocks[i].ToolCall = &call
+				}
+				if block.ToolResult != nil {
+					result := *block.ToolResult
+					result.Extra = copyExtra(block.ToolResult.Extra)
+					cp.ContentBlocks[i].ToolResult = &result
+				}
 			}
 		}
-		return any(cp).(M)
-	case *schema.AgenticMessage:
-		cp := &schema.AgenticMessage{
-			Role:    v.Role,
-			Content: v.Content,
-		}
-		if len(v.ContentBlocks) > 0 {
-			cp.ContentBlocks = make([]schema.ContentBlock, len(v.ContentBlocks))
-			copy(cp.ContentBlocks, v.ContentBlocks)
-		}
-		return any(cp).(M)
+		return any(&cp).(M)
 	}
 	return msg
+}
+
+func copyExtra(extra map[string]any) map[string]any {
+	if extra == nil {
+		return nil
+	}
+	copied := make(map[string]any, len(extra))
+	for k, val := range extra {
+		copied[k] = deepCopyAny(val)
+	}
+	return copied
 }
 
 // deepCopyAny performs a deep copy of an arbitrary value via JSON round-trip.
