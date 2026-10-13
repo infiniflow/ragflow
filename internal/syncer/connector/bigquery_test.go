@@ -534,3 +534,16 @@ func TestBigQueryCursorSerialization(t *testing.T) {
 		t.Fatalf("restored time cursor = %#v", restoredTime)
 	}
 }
+
+// TestBigQueryConnectorSemanticIDTruncatesByCharacter verifies a long
+// non-ASCII title is cut to 100 characters without splitting a multi-byte
+// character.
+func TestBigQueryConnectorSemanticIDTruncatesByCharacter(t *testing.T) {
+	doc, ok := (&BigQueryConnector{}).rowToSourceDocument(map[string]any{"title": strings.Repeat("数", 150)}, []bigQueryField{{Name: "title"}})
+	if !ok {
+		t.Fatal("rowToSourceDocument returned ok=false")
+	}
+	if want := strings.Repeat("数", 100); doc.SemanticIdentifier != want {
+		t.Fatalf("semantic id = %q, want %q", doc.SemanticIdentifier, want)
+	}
+}

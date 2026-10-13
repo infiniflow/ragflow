@@ -33,6 +33,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"ragflow/internal/utility"
 )
 
 // RestAPIConnector is a configuration-driven REST API data source connector.
@@ -1489,9 +1491,7 @@ func (c *RestAPIConnector) itemToDocument(item map[string]any) (SourceDocument, 
 	sem = strings.ReplaceAll(sem, "\n", " ")
 	sem = strings.ReplaceAll(sem, "\r", " ")
 	sem = strings.TrimSpace(sem)
-	if len(sem) > 100 {
-		sem = sem[:100]
-	}
+	sem = utility.TruncateRunes(sem, 100)
 	if sem == "" {
 		sem = docID
 	}

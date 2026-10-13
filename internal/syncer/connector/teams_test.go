@@ -609,3 +609,13 @@ func teamsFixtureDoJSON(t *testing.T) func(ctx context.Context, apiURL string, o
 		return nil
 	}
 }
+
+// TestTeamsMessageSnippetTruncatesByCharacter verifies the semantic identifier
+// snippet is cut to 50 characters without splitting a multi-byte character.
+func TestTeamsMessageSnippetTruncatesByCharacter(t *testing.T) {
+	message := teamsMessage{ID: "m1", Body: teamsMessageBody{Content: strings.Repeat("数", 80), ContentType: "text"}}
+	doc := message.toSourceDocument(teamsTeam{ID: "t1"}, teamsChannel{ID: "c1", DisplayName: "General"}, nil)
+	if want := "General: " + strings.Repeat("数", 50) + "..."; doc.SemanticIdentifier != want {
+		t.Fatalf("semantic identifier = %q, want %q", doc.SemanticIdentifier, want)
+	}
+}
