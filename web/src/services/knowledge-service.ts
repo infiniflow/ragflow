@@ -206,6 +206,7 @@ const chunkService = {
       use_kg: rest.use_kg,
       toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
+      knowledge_compilation_scope: rest.knowledge_compilation_scope,
       reference_metadata: rest.reference_metadata,
     };
     const response = await request.post(api.retrievalTest, {

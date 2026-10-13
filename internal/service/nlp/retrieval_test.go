@@ -12,8 +12,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -115,6 +117,76 @@ func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	if _, ok := result.Chunks[1]["highlight"]; ok {
 		t.Fatalf("unmatched chunk received fallback highlight: %#v", result.Chunks[1])
 	}
+}
+
+func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB, oldQueryBuilder := dao.DB, globalQueryBuilder
+	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
+	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
+
+	artifact := map[string]interface{}{"id": "artifact", "doc_id": "kb-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9}
+	for _, tt := range []struct {
+		name string
+		rows []map[string]interface{}
+		want []string
+	}{
+		{name: "dataset only", rows: []map[string]interface{}{artifact}, want: []string{"artifact"}},
+		{name: "mixed with deleted documents", rows: []map[string]interface{}{
+			artifact,
+			{"id": "document", "doc_id": "doc-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.8},
+			{"id": "deleted", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.7},
+			{"id": "wrong identity", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "content_ltks": "alpha", "_score": 0.6},
+		}, want: []string{"artifact", "document"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: tt.rows}}
+			result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+				Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+				VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(false),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, chunk := range result.Chunks {
+				got = append(got, chunk["chunk_id"].(string))
+			}
+			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
+				t.Fatalf("chunks=%v total=%d want %v", got, result.Total, tt.want)
+			}
+		})
+	}
+}
+
+type projectedRetrievalEngine struct{ retrievalCountEngine }
+
+func (e *projectedRetrievalEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{}, len(chunks))
+	for _, chunk := range chunks {
+		projected := make(map[string]interface{}, len(fields))
+		for _, field := range fields {
+			if value, ok := chunk[field]; ok {
+				projected[field] = value
+			}
+		}
+		result[chunk["id"].(string)] = projected
+	}
+	return result
 }
 
 type retrievalCountEngine struct {

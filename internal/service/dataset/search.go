@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/dao"
+	"slices"
 
 	"go.uber.org/zap"
 
@@ -29,6 +30,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 	if len(req.DatasetIDs) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
+	}
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return nil, err
 	}
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
@@ -306,8 +310,10 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
 	}
-	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
-		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope, docIDs)
+	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {
+		// Dataset artifacts use dataset IDs; the filter restricts their source documents.
+		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
@@ -352,6 +358,40 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+func knowledgeCompilationFilter(include *bool, scope string, docIDs []string) map[string]interface{} {
+	if include != nil && !*include {
+		return map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	}
+	if scope == "" {
+		scope = "dataset"
+	}
+	scopes := []string{scope}
+	if scope == "all" {
+		scopes = []string{"dataset", "document"}
+	}
+	ordinary := map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	if len(docIDs) > 0 {
+		ordinary["doc_id"] = docIDs
+	}
+	branches := []map[string]interface{}{ordinary}
+	for _, scope := range scopes {
+		compiled := map[string]interface{}{"exists": "compile_kwd"}
+		if scope == "document" {
+			compiled["scope_kwd"] = "doc"
+			if len(docIDs) > 0 {
+				compiled["doc_id"] = docIDs
+			}
+		} else {
+			compiled["scope_kwd"] = "dataset"
+			if len(docIDs) > 0 {
+				compiled["source_doc_ids"] = docIDs
+			}
+		}
+		branches = append(branches, compiled)
+	}
+	return map[string]interface{}{"or": branches}
 }
 
 func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {

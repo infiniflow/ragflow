@@ -2486,6 +2486,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
+  - `"knowledge_compilation_scope"`: `string`
 
 ##### Request example
 
@@ -2503,6 +2504,7 @@ curl --request POST \
           "knn_num_candidates": 2048,
           "rerank_candidates_count": 64,
           "include_knowledge_compilation": true,
+          "knowledge_compilation_scope": "all",
           "metadata_condition": {
             "logic": "and",
             "conditions": [
@@ -2549,6 +2551,9 @@ curl --request POST \
   The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
 - `"include_knowledge_compilation"`: `boolean`
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
+- `"knowledge_compilation_scope"`: `string`
+  Selects which searchable knowledge-compilation chunks to include: `"dataset"` for dataset artifacts, `"document"` for document artifacts, or `"all"` for both. Defaults to `"dataset"` when omitted, `null`, or an empty string. Ordinary source chunks remain eligible. When `"include_knowledge_compilation"` is `false`, all compiled chunks are excluded regardless of scope. Unsupported scope values and non-string values return an argument error. Intermediate wiki rows and disabled chunks remain excluded.
+  With `"document_ids"` or metadata filtering, document artifacts and source chunks are limited to the selected documents; dataset artifacts must reference a selected document in their `source_doc_ids`. This parameter is also supported by `POST /api/v1/datasets/search` and `POST /api/v1/datasets/{dataset_id}/search`.
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`
