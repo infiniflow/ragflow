@@ -87,7 +87,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		products = append(products, claimProds...)
 	}
 
-	deps.Progress.Sub(4, 5).Report(ctx, 1)
 	out := common.Outputs{
 		Products: products,
 	}

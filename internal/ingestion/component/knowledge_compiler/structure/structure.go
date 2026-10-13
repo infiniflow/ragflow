@@ -275,7 +275,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		Products:          products,
 		DuplicatesDropped: stats.DuplicatesDropped,
 	}
-	deps.Progress.Sub(4, 5).Report(ctx, 1)
 	return out, nil
 }
 

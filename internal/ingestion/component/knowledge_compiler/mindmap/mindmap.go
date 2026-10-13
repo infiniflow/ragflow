@@ -137,7 +137,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		}
 	}
 
-	deps.Progress.Sub(2, 3).Report(ctx, 1)
 	// Buffer every tree node in one slice; the component merges them into the
 	// upstream chunk stream (matching Python, which appends compiled units onto
 	// the chunk list).

@@ -40,14 +40,14 @@ func (w Window) Counter(ctx context.Context, total int) func() {
 	}
 }
 
-// Split hands out one equal window per enabled sequential phase.
-type Split struct {
+// split hands out one equal window per enabled sequential phase.
+type split struct {
 	phases int
 	next   int
 }
 
-func NewSplit(enabled ...bool) *Split {
-	s := &Split{}
+func NewSplit(enabled ...bool) *split {
+	s := &split{}
 	for _, on := range enabled {
 		if on {
 			s.phases++
@@ -56,7 +56,7 @@ func NewSplit(enabled ...bool) *Split {
 	return s
 }
 
-func (s *Split) Take(enabled bool) Window {
+func (s *split) Take(enabled bool) Window {
 	if !enabled {
 		return Window{}
 	}

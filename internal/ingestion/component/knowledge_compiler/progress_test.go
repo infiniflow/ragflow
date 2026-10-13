@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"gorm.io/gorm"
+
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
@@ -65,7 +66,9 @@ func TestCompilerProgressAdvancesWithinTemplates(t *testing.T) {
 			values := r.snapshot()
 			intermediate := false
 			for _, f := range values {
-				if f > 0 && f < 1 {
+				// One template owns [0, 0.5]; its completion boundary alone
+				// must not satisfy the assertion for internal phase progress.
+				if f > 0 && f < 0.5 {
 					intermediate = true
 				}
 			}
@@ -154,7 +157,7 @@ func TestCompilerProgressDoesNotFinishOnFailureOrCancellation(t *testing.T) {
 				t.Fatal("completed generation did not advance progress")
 			}
 			for _, f := range values {
-				if f >= 1 {
+				if f >= 0.5 {
 					t.Fatalf("unfinished compiler reported full progress: %v", values)
 				}
 			}

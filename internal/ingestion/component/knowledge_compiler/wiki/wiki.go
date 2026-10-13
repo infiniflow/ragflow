@@ -330,7 +330,6 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 	if p.pendingActiveState != nil {
 		out.WikiActiveStates = append(out.WikiActiveStates, *p.pendingActiveState)
 	}
-	deps.Progress.Sub(5, 6).Report(ctx, 1)
 	return out, nil
 }
 
