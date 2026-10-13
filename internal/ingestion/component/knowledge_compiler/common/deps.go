@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/ingestion/component/progress"
 )
 
 // DefaultLLMContextLength is the fallback chat-model context window (tokens)
@@ -165,6 +167,8 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
+	// Progress is the fraction budget allocated to this compilation template.
+	Progress      progress.Window
 	Chat          ChatInvoker
 	Embed         Embedder
 	Tokenizer     Tokenizer

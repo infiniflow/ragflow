@@ -54,6 +54,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -677,17 +678,17 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	keywordsOn := c.Param.Keywords.Enabled
 	tagsOn := c.Param.Tags.Enabled
 	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
-	phaseWindows := newFractionSplit(keywordsOn, tagsOn, remainingOn)
+	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
 		// Phase 1: Keywords extraction (if enabled), running across chunks via extractorPool.
-		if err := c.runAutoKeywordsPool(timeoutCtx, db, in, phaseWindows.take(keywordsOn)); err != nil {
+		if err := c.runAutoKeywordsPool(timeoutCtx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
 			return err
 		}
 
 		// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
 		if tagsOn {
-			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in, phaseWindows.take(tagsOn))
+			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in, phaseWindows.Take(tagsOn))
 			if tagErr != nil {
 				return tagErr
 			}
@@ -695,7 +696,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
-		return c.runRemainingExtractions(timeoutCtx, db, in, phaseWindows.take(remainingOn))
+		return c.runRemainingExtractions(timeoutCtx, db, in, phaseWindows.Take(remainingOn))
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
@@ -901,7 +902,7 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 
 // runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
 // using extractorPool before the tagging stage.
-func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
+func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
 	if !c.Param.Keywords.Enabled || len(in.chunks) == 0 {
 		return nil
 	}
@@ -929,7 +930,7 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 
 // runRemainingExtractions dispatches auto questions / summary / metadata
 // extractions across all chunks concurrently using extractorPool.
-func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
+func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
 	if !c.Param.Questions.Enabled && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
 		return nil
 	}
@@ -975,7 +976,7 @@ func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gor
 // Each settled future advances the phase's fraction window, so a chunk-heavy
 // LLM extraction reports in-flight progress instead of going quiet until the
 // whole phase is done.
-func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}], w fractionWindow) error {
+func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}], w progress.Window) error {
 	if len(futs) == 0 {
 		return nil
 	}
@@ -988,7 +989,7 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 		wg.Add(1)
 		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
 			defer wg.Done()
-			defer func() { w.report(ctx, float64(done.Add(1))/float64(total)) }()
+			defer func() { w.Report(ctx, float64(done.Add(1))/float64(total)) }()
 			res, werr := f.Wait(ctx)
 			if werr != nil {
 				emu.Lock()
