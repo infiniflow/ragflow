@@ -52,6 +52,7 @@ import (
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/utility"
 )
 
@@ -140,7 +141,7 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// query parameters (appended to any query already on the URL);
 	// POST/PUT requests carry them in the request body unless an
 	// explicit raw body was configured.
-	vars := resolveInvokeVariables(i.params, inputs)
+	vars := resolveInvokeVariables(ctx, i.params, inputs)
 	if len(vars) > 0 && (method == http.MethodGet || method == http.MethodDelete) {
 		parsed, err := url.Parse(rawURL)
 		if err != nil {
@@ -396,13 +397,17 @@ type invokeVariable struct {
 }
 
 // resolveInvokeVariables resolves the node's configured variables
-// against the merged run-time inputs. A variable whose ref names a
-// present input takes that input's value (the canvas engine supplies
-// upstream outputs under their refs); otherwise the variable falls
-// back to its configured static value. Order follows the configured
-// variables list. Variables with a blank key are skipped.
-func resolveInvokeVariables(params map[string]any, inputs map[string]any) []invokeVariable {
+// against the run-time inputs and the canvas state. A variable whose
+// ref names a present run-time input takes that input's value
+// (explicit debug inputs are overrides); otherwise the ref is resolved
+// from the canvas state, because normal canvas runs pass upstream
+// values through state rather than through inputs; otherwise the
+// variable falls back to its configured static value. Only absence
+// falls back — an explicitly set null stays null. Order follows the
+// configured variables list. Variables with a blank key are skipped.
+func resolveInvokeVariables(ctx context.Context, params map[string]any, inputs map[string]any) []invokeVariable {
 	raw, _ := params["variables"].([]any)
+	state, _ := runtime.GetStateFromContext(ctx)
 	vars := make([]invokeVariable, 0, len(raw))
 	for _, item := range raw {
 		variable, ok := item.(map[string]any)
@@ -413,18 +418,79 @@ func resolveInvokeVariables(params map[string]any, inputs map[string]any) []invo
 		if name == "" {
 			continue
 		}
-		var value any
-		if ref := strings.TrimSpace(stringParam(variable["ref"])); ref != "" {
-			if v, ok := inputs[ref]; ok {
-				value = v
-			}
-		}
-		if value == nil {
+		ref := strings.TrimSpace(stringParam(variable["ref"]))
+		value, resolved := resolveInvokeVariableValue(state, inputs, ref)
+		if !resolved {
 			value = variable["value"]
 		}
 		vars = append(vars, invokeVariable{name: name, value: value})
 	}
 	return vars
+}
+
+// resolveInvokeVariableValue resolves one variable ref with presence
+// semantics: an explicit run-time input wins (debug override), then the
+// canvas state, and only when both are absent does the caller fall back
+// to the static value. A present-but-null value is returned as-is so an
+// explicit null is preserved instead of being replaced by the fallback.
+func resolveInvokeVariableValue(state *runtime.CanvasState, inputs map[string]any, ref string) (any, bool) {
+	if ref == "" {
+		return nil, false
+	}
+	if v, ok := inputs[ref]; ok {
+		return v, true
+	}
+	if state == nil {
+		return nil, false
+	}
+	return invokeStateLookup(state, ref)
+}
+
+// invokeStateLookup resolves a ref against the canvas state, reporting
+// whether the ref was present. Supported forms mirror
+// runtime.CanvasState.GetVar: "cpn_id@param" (plus dot-path tails),
+// "sys.x", "env.x", "item", "index". Anything else is not a state ref
+// and resolves to absent so the caller can fall back.
+func invokeStateLookup(state *runtime.CanvasState, ref string) (any, bool) {
+	switch ref {
+	case "item", "index":
+		_, _, globals := state.SnapshotNamespaces()
+		v, ok := globals["__"+ref+"__"]
+		return v, ok
+	}
+	if rest, ok := strings.CutPrefix(ref, "sys."); ok {
+		sys, _, _ := state.SnapshotNamespaces()
+		return invokeDotLookup(sys, rest)
+	}
+	if rest, ok := strings.CutPrefix(ref, "env."); ok {
+		_, env, _ := state.SnapshotNamespaces()
+		return invokeDotLookup(env, rest)
+	}
+	if idx := strings.Index(ref, "@"); idx >= 0 {
+		params, ok := state.Snapshot()[ref[:idx]]
+		if !ok {
+			return nil, false
+		}
+		return invokeDotLookup(params, ref[idx+1:])
+	}
+	return nil, false
+}
+
+// invokeDotLookup walks a dot-separated path through nested maps and
+// reports whether the full path was present (a present null counts).
+func invokeDotLookup(m map[string]any, path string) (any, bool) {
+	cur := any(m)
+	for _, part := range strings.Split(path, ".") {
+		mm, ok := cur.(map[string]any)
+		if !ok {
+			return nil, false
+		}
+		cur, ok = mm[part]
+		if !ok {
+			return nil, false
+		}
+	}
+	return cur, true
 }
 
 // invokeJSONValue converts a resolved variable value for the JSON
@@ -464,6 +530,11 @@ func invokeScalarStrings(value any) []string {
 		return []string{""}
 	case string:
 		return []string{v}
+	case []string:
+		// Typed slices expand to repeated parameters instead of one
+		// JSON-encoded string.
+		out := make([]string, 0, len(v))
+		return append(out, v...)
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {

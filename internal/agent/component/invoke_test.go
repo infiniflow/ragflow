@@ -33,6 +33,8 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/agent/runtime"
 )
 
 // Test setup: enable the test-only SSRF bypass for tests in this
@@ -636,6 +638,71 @@ func TestInvoke_POSTVariablesAsFormBody(t *testing.T) {
 	}
 }
 
+// TestInvoke_GETVariablesStringSliceAsRepeatedParams pins review
+// feedback on PR #20620: a []string variable must expand to repeated
+// query parameters, not a single JSON-encoded string.
+func TestInvoke_GETVariablesStringSliceAsRepeatedParams(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenQuery url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seenQuery = r.URL.Query()
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"variables": []any{
+			map[string]any{"key": "tag", "ref": "", "value": []string{"a", "b"}},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "GET",
+		"url":    srv.URL + "/search",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	got := seenQuery["tag"]
+	if !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Errorf("tag query params = %#v, want repeated [a b] (not one JSON string)", got)
+	}
+}
+
+// TestInvoke_POSTVariablesStringSliceAsRepeatedFormFields pins review
+// feedback on PR #20620: a []string variable must expand to repeated
+// form fields, not a single JSON-encoded string.
+func TestInvoke_POSTVariablesStringSliceAsRepeatedFormFields(t *testing.T) {
+	setupAllowAnyHost(t, true)
+
+	var seenForm url.Values
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		seenForm, _ = url.ParseQuery(string(b))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok"))
+	}))
+	defer srv.Close()
+
+	c, _ := NewInvokeComponent(map[string]any{
+		"datatype": "form",
+		"variables": []any{
+			map[string]any{"key": "tag", "ref": "", "value": []string{"a", "b"}},
+		},
+	})
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"method": "POST",
+		"url":    srv.URL,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := seenForm["tag"]; !reflect.DeepEqual(got, []string{"a", "b"}) {
+		t.Errorf("tag form fields = %#v, want repeated [a b] (not one JSON string)", got)
+	}
+}
+
 // TestInvoke_RawBodyTakesPrecedenceOverVariables pins issue #20612's
 // compatibility note: an explicit raw body keeps working exactly as
 // before, even when variables are configured.
@@ -671,7 +738,8 @@ func TestInvoke_RawBodyTakesPrecedenceOverVariables(t *testing.T) {
 
 // TestResolveInvokeVariables checks the resolution rules: run-time
 // inputs win over configured defaults, blank keys are skipped, and
-// a missing input falls back to the static value.
+// a missing input falls back to the static value. An explicit null
+// never becomes the fallback.
 func TestResolveInvokeVariables(t *testing.T) {
 	params := map[string]any{
 		"variables": []any{
@@ -681,7 +749,7 @@ func TestResolveInvokeVariables(t *testing.T) {
 			"not-a-map",
 		},
 	}
-	vars := resolveInvokeVariables(params, map[string]any{"sys.query": "runtime-q"})
+	vars := resolveInvokeVariables(t.Context(), params, map[string]any{"sys.query": "runtime-q"})
 	if len(vars) != 2 {
 		t.Fatalf("resolveInvokeVariables = %#v, want 2 entries", vars)
 	}
@@ -690,6 +758,99 @@ func TestResolveInvokeVariables(t *testing.T) {
 	}
 	if vars[1].name != "k" || vars[1].value != "default-k" {
 		t.Errorf("vars[1] = %#v, want k=default-k", vars[1])
+	}
+}
+
+// TestResolveInvokeVariables_StateResolution pins review feedback on
+// PR #20620: during normal canvas runs the ref values live in the
+// canvas state, not in the component inputs, so the resolver must
+// read them from state. Explicit debug inputs still override state,
+// and refs absent from both fall back to the static value.
+func TestResolveInvokeVariables_StateResolution(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetVar("Upstream", "result", "from-state")
+	state.SetVar("Upstream", "nested", map[string]any{"path": "deep-value"})
+	state.Sys["query"] = "state-query"
+	ctx := runtime.WithState(t.Context(), state)
+
+	params := map[string]any{
+		"variables": []any{
+			map[string]any{"key": "a", "ref": "Upstream@result", "value": "static-a"},
+			map[string]any{"key": "b", "ref": "sys.query", "value": "static-b"},
+			map[string]any{"key": "c", "ref": "Upstream@nested.path", "value": "static-c"},
+			map[string]any{"key": "d", "ref": "Upstream@missing", "value": "static-d"},
+		},
+	}
+
+	// No explicit inputs: everything resolves from state or the
+	// static fallback.
+	vars := resolveInvokeVariables(ctx, params, nil)
+	want := map[string]any{"a": "from-state", "b": "state-query", "c": "deep-value", "d": "static-d"}
+	if len(vars) != len(want) {
+		t.Fatalf("resolveInvokeVariables = %#v, want %d entries", vars, len(want))
+	}
+	for _, v := range vars {
+		if w, ok := want[v.name]; !ok || !reflect.DeepEqual(v.value, w) {
+			t.Errorf("var %q = %#v, want %#v", v.name, v.value, w)
+		}
+	}
+
+	// Explicit debug inputs override state.
+	vars = resolveInvokeVariables(ctx, params, map[string]any{"Upstream@result": "debug-override"})
+	for _, v := range vars {
+		if v.name == "a" && v.value != "debug-override" {
+			t.Errorf("debug override: var a = %#v, want %q", v.value, "debug-override")
+		}
+	}
+
+	// Without state in the context the input-only behavior holds.
+	vars = resolveInvokeVariables(t.Context(), params, map[string]any{"Upstream@result": "input-only"})
+	if vars[0].value != "input-only" {
+		t.Errorf("no-state input resolution: var a = %#v, want %q", vars[0].value, "input-only")
+	}
+}
+
+// TestResolveInvokeVariables_PreservesExplicitNull pins review
+// feedback on PR #20620: an explicitly set null must be preserved,
+// not replaced by the static fallback — whether the null arrives as
+// a debug input or from the canvas state.
+func TestResolveInvokeVariables_PreservesExplicitNull(t *testing.T) {
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.SetVar("Upstream", "result", nil)
+	state.SetVar("Upstream", "nullable", nil)
+	state.SetVar("Upstream", "other", "state-value")
+	ctx := runtime.WithState(t.Context(), state)
+
+	params := map[string]any{
+		"variables": []any{
+			map[string]any{"key": "input-null", "ref": "Upstream@result", "value": "static"},
+			map[string]any{"key": "state-null", "ref": "Upstream@nullable", "value": "static"},
+			map[string]any{"key": "state-present", "ref": "Upstream@other", "value": "static"},
+		},
+	}
+
+	// Explicit null debug input wins over both state and fallback.
+	vars := resolveInvokeVariables(ctx, params, map[string]any{"Upstream@result": nil})
+	for _, v := range vars {
+		if v.name == "input-null" && v.value != nil {
+			t.Errorf("explicit null input: var = %#v, want nil", v.value)
+		}
+	}
+
+	// Explicit null in state is preserved, not replaced by the
+	// static fallback; present state values and fallbacks unchanged.
+	vars = resolveInvokeVariables(ctx, params, nil)
+	for _, v := range vars {
+		switch v.name {
+		case "state-null":
+			if v.value != nil {
+				t.Errorf("explicit null in state: var = %#v, want nil", v.value)
+			}
+		case "state-present":
+			if v.value != "state-value" {
+				t.Errorf("state value: var = %#v, want %q", v.value, "state-value")
+			}
+		}
 	}
 }
 
