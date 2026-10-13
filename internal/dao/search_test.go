@@ -69,10 +69,10 @@ func assertSearchOrder(t *testing.T, rows []*entity.SearchListItem, want []strin
 	}
 }
 
-// TestSearchDAOListByTenantIDsOrderByExpressionFallsBack checks that an
+// TestSearchDAOListByResourceIDsOrderByExpressionFallsBack checks that an
 // `orderby` value that is an expression rather than an allowed column name
 // leaves the rows in the default create_time order.
-func TestSearchDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
+func TestSearchDAOListByResourceIDsOrderByExpressionFallsBack(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	seedOrderableSearches(t, db)
@@ -81,18 +81,18 @@ func TestSearchDAOListByTenantIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range searchOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
+			rows, _, err := d.ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3"}, nil, 1, 10, []OrderTerm{{Column: orderby}}, "")
 			if err != nil {
-				t.Fatalf("ListByTenantIDs with orderby %q: %v", orderby, err)
+				t.Fatalf("ListByResourceIDs with orderby %q: %v", orderby, err)
 			}
 			assertSearchOrder(t, rows, []string{"s-1", "s-2", "s-3"}, orderby)
 		})
 	}
 }
 
-// TestSearchDAOListByOwnerIDsOrderByExpressionFallsBack is the ListByOwnerIDs
-// counterpart, the branch the endpoint takes when owner_ids is supplied.
-func TestSearchDAOListByOwnerIDsOrderByExpressionFallsBack(t *testing.T) {
+// TestSearchDAOListByResourceIDsWithOwnerFilterOrderByExpressionFallsBack
+// covers the same query with an owner_ids filter.
+func TestSearchDAOListByResourceIDsWithOwnerFilterOrderByExpressionFallsBack(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	seedOrderableSearches(t, db)
@@ -101,9 +101,9 @@ func TestSearchDAOListByOwnerIDsOrderByExpressionFallsBack(t *testing.T) {
 
 	for _, orderby := range searchOrderExpressions {
 		t.Run(orderby, func(t *testing.T) {
-			rows, _, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: orderby}}, "")
+			rows, _, err := d.ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3"}, []string{"t1"}, 1, 10, []OrderTerm{{Column: orderby}}, "")
 			if err != nil {
-				t.Fatalf("ListByOwnerIDs with orderby %q: %v", orderby, err)
+				t.Fatalf("ListByResourceIDs with orderby %q: %v", orderby, err)
 			}
 			assertSearchOrder(t, rows, []string{"s-1", "s-2", "s-3"}, orderby)
 		})
@@ -119,15 +119,15 @@ func TestSearchDAOListOrderByAllowedColumn(t *testing.T) {
 	ctx := t.Context()
 	d := NewSearchDAO()
 
-	rows, _, err := d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name"}}, "")
+	rows, _, err := d.ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3"}, nil, 1, 10, []OrderTerm{{Column: "name"}}, "")
 	if err != nil {
-		t.Fatalf("ListByTenantIDs ascending by name: %v", err)
+		t.Fatalf("ListByResourceIDs ascending by name: %v", err)
 	}
 	assertSearchOrder(t, rows, []string{"s-3", "s-2", "s-1"}, "name")
 
-	rows, _, err = d.ListByTenantIDs(ctx, db, []string{"t1"}, "t1", 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "")
+	rows, _, err = d.ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3"}, nil, 1, 10, []OrderTerm{{Column: "name", Desc: true}}, "")
 	if err != nil {
-		t.Fatalf("ListByTenantIDs descending by name: %v", err)
+		t.Fatalf("ListByResourceIDs descending by name: %v", err)
 	}
 	assertSearchOrder(t, rows, []string{"s-1", "s-2", "s-3"}, "name")
 }
@@ -173,11 +173,11 @@ func seedSearchRowsWithCreateTime(t *testing.T, db *gorm.DB, tenantID string, co
 	}
 }
 
-// TestSearchDAOListByOwnerIDsPaginatesInSQL checks that page/pageSize reach the
+// TestSearchDAOListByResourceIDsPaginatesInSQL checks that page/pageSize reach the
 // query as LIMIT/OFFSET while total keeps reporting the full COUNT(*).
 // SearchService.ListSearches returns that total as the response's total field
 // and no longer slices the returned rows itself.
-func TestSearchDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
+func TestSearchDAOListByResourceIDsPaginatesInSQL(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	seedSearchRowsWithCreateTime(t, db, "t1", 5)
@@ -199,9 +199,9 @@ func TestSearchDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			rows, total, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", tt.page, tt.pageSize, terms, "")
+			rows, total, err := d.ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3", "s-4", "s-5"}, nil, tt.page, tt.pageSize, terms, "")
 			if err != nil {
-				t.Fatalf("ListByOwnerIDs(page=%d, pageSize=%d): %v", tt.page, tt.pageSize, err)
+				t.Fatalf("ListByResourceIDs(page=%d, pageSize=%d): %v", tt.page, tt.pageSize, err)
 			}
 			if total != 5 {
 				t.Fatalf("total = %d, want 5: total must count every matching row, not just the page", total)
@@ -211,10 +211,10 @@ func TestSearchDAOListByOwnerIDsPaginatesInSQL(t *testing.T) {
 	}
 }
 
-// TestSearchDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated guards the
+// TestSearchDAOListByResourceIDsKeepsJoinedOwnerColumnsWhenPaginated guards the
 // COUNT followed by the paged Scan: the second statement must still select the
 // joined user columns instead of inheriting count(*) from the first one.
-func TestSearchDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.T) {
+func TestSearchDAOListByResourceIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	seedSearchRowsWithCreateTime(t, db, "t1", 3)
@@ -224,9 +224,9 @@ func TestSearchDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.
 		t.Fatalf("failed to create user: %v", err)
 	}
 
-	rows, total, err := NewSearchDAO().ListByOwnerIDs(ctx, db, []string{"t1"}, "t1", 1, 2, []OrderTerm{{Column: "create_time", Desc: true}}, "")
+	rows, total, err := NewSearchDAO().ListByResourceIDs(ctx, db, []string{"s-1", "s-2", "s-3"}, nil, 1, 2, []OrderTerm{{Column: "create_time", Desc: true}}, "")
 	if err != nil {
-		t.Fatalf("ListByOwnerIDs: %v", err)
+		t.Fatalf("ListByResourceIDs: %v", err)
 	}
 	if total != 3 {
 		t.Fatalf("total = %d, want 3", total)
@@ -244,11 +244,10 @@ func TestSearchDAOListByOwnerIDsKeepsJoinedOwnerColumnsWhenPaginated(t *testing.
 	}
 }
 
-// TestSearchDAOListByOwnerIDsKeepsOwnerFilter pins the owner_ids filter: a
+// TestSearchDAOListByResourceIDsKeepsOwnerFilter pins the owner_ids filter: a
 // search owned by the requesting user is still excluded when its tenant_id is
-// not among ownerIDs, which the endpoint relies on after
-// SearchService.filterAccessibleSearchOwnerIDs has narrowed the list.
-func TestSearchDAOListByOwnerIDsKeepsOwnerFilter(t *testing.T) {
+// not among ownerIDs, even when it is included in the authorized resource IDs.
+func TestSearchDAOListByResourceIDsKeepsOwnerFilter(t *testing.T) {
 	db := setupSearchDetailDAOTestDB(t)
 	pushDB(t, db)
 	ctx := t.Context()
@@ -270,9 +269,9 @@ func TestSearchDAOListByOwnerIDsKeepsOwnerFilter(t *testing.T) {
 		}
 	}
 
-	rows, total, err := d.ListByOwnerIDs(ctx, db, []string{"t1"}, "u-self", 0, 0, nil, "")
+	rows, total, err := d.ListByResourceIDs(ctx, db, []string{"search-t1", "search-u-self"}, []string{"t1"}, 0, 0, nil, "")
 	if err != nil {
-		t.Fatalf("ListByOwnerIDs: %v", err)
+		t.Fatalf("ListByResourceIDs: %v", err)
 	}
 	if total != 1 {
 		t.Fatalf("total = %d, want 1: only the t1 search has a tenant_id in ownerIDs", total)

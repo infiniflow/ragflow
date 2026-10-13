@@ -79,7 +79,6 @@ type ChunkService struct {
 	docEngine        engine.DocEngine
 	embeddingCache   *utility.EmbeddingLRU
 	kbDAO            *dao.KnowledgebaseDAO
-	userTenantDAO    *dao.UserTenantDAO
 	documentDAO      *dao.DocumentDAO
 	taskDAO          *dao.TaskDAO
 	ingestionTaskDAO *dao.IngestionTaskDAO
@@ -113,7 +112,6 @@ func NewChunkService() *ChunkService {
 		docEngine:        engine.Get(),
 		embeddingCache:   utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:            dao.NewKnowledgebaseDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
 		documentDAO:      dao.NewDocumentDAO(),
 		taskDAO:          dao.NewTaskDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
@@ -168,39 +166,27 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}
 	modelFactory := service.NewModelFactory()
 
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-	if len(tenants) == 0 {
-		return nil, fmt.Errorf("user has no accessible tenants")
-	}
-	common.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
-
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
 	for _, datasetID := range req.Datasets {
-		found := false
-		for _, tenant := range tenants {
-			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
-			if err == nil && kb != nil {
-				if kb.TenantID != userID && kb.Permission != string(entity.TenantPermissionTeam) {
-					continue
-				}
-				common.Debug("Found knowledge base in database",
-					zap.String("datasetID", datasetID),
-					zap.String("tenantID", tenant.TenantID),
-					zap.String("kbName", kb.Name),
-					zap.String("embdID", kb.EmbdID))
-				tenantIDs = append(tenantIDs, tenant.TenantID)
-				kbRecords = append(kbRecords, kb)
-				found = true
-				break
-			}
+		if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, permissionErr
 		}
-		if !found {
-			return nil, fmt.Errorf("only owner of dataset is authorized for this operation")
+		kb, err := s.getKnowledgebaseByID(ctx, datasetID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load dataset %s: %w", datasetID, err)
 		}
+		if kb == nil {
+			return nil, fmt.Errorf("dataset %s not found", datasetID)
+		}
+		common.Debug("Found knowledge base in database",
+			zap.String("datasetID", datasetID),
+			zap.String("tenantID", kb.TenantID),
+			zap.String("kbName", kb.Name),
+			zap.String("embdID", kb.EmbdID))
+		tenantIDs = append(tenantIDs, kb.TenantID)
+		kbRecords = append(kbRecords, kb)
 	}
 
 	// Check if all kbs resolve to the same base embedding model
@@ -227,10 +213,14 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	if req.SearchID != nil && *req.SearchID != "" {
 		// If search_id is set, get meta_data_filter and chat_id from search_config
-		searchDetail, err := s.searchService.GetDetail(ctx, *req.SearchID)
+		if s.searchService == nil {
+			return nil, fmt.Errorf("search service not configured")
+		}
+		searchDetail, err := s.searchService.GetDetail(ctx, userID, *req.SearchID)
 		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+			return nil, fmt.Errorf("failed to get search app %s: %w", *req.SearchID, err)
+		}
+		if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
 			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
 				rerankCandidatesCount = 100
 				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
