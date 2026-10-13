@@ -993,10 +993,6 @@ export default {
       thinkingDefault: 'システムデフォルト',
       thinkingEnabled: '有効',
       thinkingDisabled: '無効',
-      thinkingLevelLow: '低',
-      thinkingLevelMedium: '中',
-      thinkingLevelHigh: '高',
-      thinkingLevelUltra: '最高',
       thinkingTip:
         'Qwen、Kimi、GLMの公式モデルプロバイダーの思考モードのみを制御します。システムデフォルトでは、処理の長時間化を防ぐためQwenの思考を無効にします。',
       published: '公開済み',
