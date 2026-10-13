@@ -87,14 +87,16 @@ describe('useFetchFileList missing folder', () => {
 
   it('does not flag folderNotFound on a successful listing', async () => {
     mockListFile.mockResolvedValue({
-      data: { code: 0, data: { files: [], total: 0 } },
+      data: { code: 0, data: { files: [], total: 7 } },
     } as never);
 
     const { result } = renderHook(() => useFetchFileList(), {
       wrapper: makeWrapper(),
     });
 
-    await waitFor(() => expect(mockListFile).toHaveBeenCalled());
+    // initialData.total is 0, so a distinct total proves the successful
+    // response was applied before the flag assertion runs.
+    await waitFor(() => expect(result.current.total).toBe(7));
     expect(result.current.folderNotFound).toBe(false);
   });
 });
