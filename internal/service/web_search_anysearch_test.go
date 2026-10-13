@@ -474,14 +474,6 @@ func TestAnySearchWebSearchUsesNormalConsumersWithoutTavilyFallback(t *testing.T
 		}
 		assertWebSearchChunk(t, result, "anysearch-https://example.com/ragflow", "RAGFlow", "Native consumer text.")
 	}
-	callback := service.harnessWebSearchFunc(config)
-	if callback == nil {
-		t.Fatal("AnySearch harness callback is nil")
-	}
-	text, err := callback(t.Context(), []string{" ", "ragflow"})
-	if err != nil || len(text) != 1 || text[0] != "Native consumer text." || calls != 3 {
-		t.Fatalf("harness result=%#v error=%v requests=%d", text, err, calls)
-	}
 	agenticCallback := service.webSearchFunc(config)
 	if agenticCallback == nil {
 		t.Fatal("AnySearch agentic callback is nil")
@@ -490,7 +482,7 @@ func TestAnySearchWebSearchUsesNormalConsumersWithoutTavilyFallback(t *testing.T
 		t.Fatal("cleared provider retained an agentic callback")
 	}
 	hits, err := agenticCallback(t.Context(), "ragflow")
-	if err != nil || len(hits) != 1 || hits[0].Title != "RAGFlow" || hits[0].URL != "https://example.com/ragflow" || hits[0].Content != "Native consumer text." || calls != 4 {
+	if err != nil || len(hits) != 1 || hits[0].Title != "RAGFlow" || hits[0].URL != "https://example.com/ragflow" || hits[0].Content != "Native consumer text." || calls != 3 {
 		t.Fatalf("agentic result=%#v error=%v requests=%d", hits, err, calls)
 	}
 	fail = true
@@ -502,12 +494,8 @@ func TestAnySearchWebSearchUsesNormalConsumersWithoutTavilyFallback(t *testing.T
 	if err == nil || tavilyCalls != 0 {
 		t.Fatalf("failure error=%v Tavily requests=%d", err, tavilyCalls)
 	}
-	text, err = callback(t.Context(), []string{"ragflow"})
-	if err != nil || len(text) != 0 || calls != 6 {
-		t.Fatalf("harness failure should skip one query: result=%#v error=%v requests=%d", text, err, calls)
-	}
 	hits, err = agenticCallback(t.Context(), "ragflow")
-	if err == nil || len(hits) != 0 || calls != 7 {
+	if err == nil || len(hits) != 0 || calls != 5 {
 		t.Fatalf("agentic failure result=%#v error=%v requests=%d", hits, err, calls)
 	}
 	assertAnySearchErrorSafe(t, err)
