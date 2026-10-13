@@ -161,8 +161,8 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		}
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
-		// Reserve the final window for converting and merging all products.
-		deps.Progress = (progress.Window{Span: 1}).Sub(specIndex, len(specs)+1)
+		// Reserve 1% for converting and merging all products.
+		deps.Progress = (progress.Window{Span: 0.99}).Sub(specIndex, len(specs))
 
 		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
 		// otherwise specIn.VariantSpecific below would mutate the shared map and

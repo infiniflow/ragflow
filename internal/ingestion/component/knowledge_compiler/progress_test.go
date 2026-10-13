@@ -3,6 +3,7 @@ package knowledge_compiler
 import (
 	"context"
 	"errors"
+	"math"
 	"sync"
 	"testing"
 
@@ -66,9 +67,9 @@ func TestCompilerProgressAdvancesWithinTemplates(t *testing.T) {
 			values := r.snapshot()
 			intermediate := false
 			for _, f := range values {
-				// One template owns [0, 0.5]; its completion boundary alone
+				// One template owns [0, 0.99]; its completion boundary alone
 				// must not satisfy the assertion for internal phase progress.
-				if f > 0 && f < 0.5 {
+				if f > 0 && f < 0.99 {
 					intermediate = true
 				}
 			}
@@ -91,6 +92,8 @@ func TestCompilerProgressReservesBudgetForLaterTemplates(t *testing.T) {
 			values := r.snapshot()
 			if len(values) == 0 {
 				t.Error("first template did not advance progress")
+			} else if math.Abs(values[len(values)-1]-0.495) > 1e-9 {
+				t.Errorf("first template ended at %v, want 0.495 with budget reserved for the second template and merging", values[len(values)-1])
 			}
 			for _, f := range values {
 				if f <= 0 || f >= 0.5 {
@@ -157,10 +160,41 @@ func TestCompilerProgressDoesNotFinishOnFailureOrCancellation(t *testing.T) {
 				t.Fatal("completed generation did not advance progress")
 			}
 			for _, f := range values {
-				if f >= 0.5 {
+				if f >= 0.99 {
 					t.Fatalf("unfinished compiler reported full progress: %v", values)
 				}
 			}
 		})
+	}
+}
+
+func TestCompilerProgressStructureExtractionUsesMainBudget(t *testing.T) {
+	t.Setenv("STRUCT_MAX_CHUNKS_PER_BATCH", "1")
+	installMockDeps(t)
+	installVariantTemplateResolver(t, "structure")
+	c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{"compilation_template_id": "tpl-structure"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := compilerProgressInputs()
+	inputs["chunks"] = append(inputs["chunks"].([]any), map[string]any{"id": "c3", "text": "Alpha is linked to Gamma"})
+	r := &compilerFractions{}
+	if _, err := c.Invoke(r.context(t.Context(), t), nil, inputs); err != nil {
+		t.Fatal(err)
+	}
+	values := r.snapshot()
+	// Three extraction batches should advance a five-node run from 60%
+	// through 65.28%, 70.56%, and 75.84%, before the faster follow-up stages.
+	for _, want := range []float64{0.264, 0.528, 0.792} {
+		found := false
+		for _, f := range values {
+			if math.Abs(f-want) < 1e-9 {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("missing extraction progress %v: %v", want, values)
+		}
 	}
 }
