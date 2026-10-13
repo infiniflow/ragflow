@@ -296,6 +296,14 @@ func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID
 
 // CreateConnector creates a connector owned by the current user.
 func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, req *CreateConnectorRequest) (*entity.Connector, error) {
+	if req != nil {
+		if req.RefreshFreq != nil && *req.RefreshFreq <= 0 {
+			return nil, fmt.Errorf("refresh_freq must be positive")
+		}
+		if req.PruneFreq != nil && *req.PruneFreq <= 0 {
+			return nil, fmt.Errorf("prune_freq must be positive")
+		}
+	}
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
@@ -999,9 +1007,15 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	updates := map[string]interface{}{}
 	if req != nil {
 		if req.PruneFreq != nil {
+			if *req.PruneFreq <= 0 {
+				return nil, common.CodeDataError, fmt.Errorf("prune_freq must be positive")
+			}
 			updates["prune_freq"] = *req.PruneFreq
 		}
 		if req.RefreshFreq != nil {
+			if *req.RefreshFreq <= 0 {
+				return nil, common.CodeDataError, fmt.Errorf("refresh_freq must be positive")
+			}
 			updates["refresh_freq"] = *req.RefreshFreq
 		}
 		if req.Config != nil {

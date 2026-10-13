@@ -253,6 +253,10 @@ func (s *Scheduler) stopTimers() {
 }
 
 // taskDelay reports the delay before publication and whether the task must be scheduled at all.
+// A non-positive frequency disables periodic rescheduling (fail-closed):
+// the task runs at most once (when never run before) instead of being
+// republished with no interval, which would hot-loop sync workers, NATS,
+// and the upstream source.
 func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.Duration, bool) {
 	freq := int64(0)
 	switch task.TaskType {
@@ -264,8 +268,11 @@ func (s *Scheduler) taskDelay(task dao.ScheduledSyncTask, now time.Time) (time.D
 		}
 		freq = task.ConnectorPruneFreq
 	}
-	if freq <= 0 || task.UpdateDate == nil {
+	if task.UpdateDate == nil {
 		return 0, true
+	}
+	if freq <= 0 {
+		return 0, false
 	}
 	return task.UpdateDate.Add(time.Duration(freq) * time.Minute).Sub(now), true
 }
