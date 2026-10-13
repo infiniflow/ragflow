@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/storage"
@@ -246,5 +247,30 @@ func TestResolveDocsGeneratorContent_ThinkAndTrim(t *testing.T) {
 	}
 	if got != "plain" {
 		t.Errorf("content = %q, want %q", got, "plain")
+	}
+}
+
+// TestSanitizeFilename_CapsBaseInCharacters pins the 180-character cap on the
+// base name. Cutting bytes instead split the last rune of a mixed ASCII/CJK
+// name, leaving invalid UTF-8 in the filename and download URL.
+func TestSanitizeFilename_CapsBaseInCharacters(t *testing.T) {
+	cases := []struct {
+		name string
+		raw  string
+		want string
+	}{
+		{"ascii", strings.Repeat("x", 200), strings.Repeat("x", 180) + ".pdf"},
+		{"cjk", strings.Repeat("报", 200), strings.Repeat("报", 180) + ".pdf"},
+		{"mixed", "a" + strings.Repeat("报", 200), "a" + strings.Repeat("报", 179) + ".pdf"},
+		{"at cap", "a" + strings.Repeat("报", 179), "a" + strings.Repeat("报", 179) + ".pdf"},
+	}
+	for _, c := range cases {
+		got := sanitizeFilename(c.raw, ".pdf")
+		if !utf8.ValidString(got) {
+			t.Errorf("%s: sanitizeFilename returned invalid UTF-8 %q", c.name, got)
+		}
+		if got != c.want {
+			t.Errorf("%s: sanitizeFilename = %q (%d runes), want %q (%d runes)", c.name, got, utf8.RuneCountInString(got), c.want, utf8.RuneCountInString(c.want))
+		}
 	}
 }

@@ -488,8 +488,8 @@ func sanitizeFilename(raw, ext string) string {
 		b.WriteRune(r)
 	}
 	base := strings.Join(strings.Fields(b.String()), "_")
-	if len(base) > maxBase {
-		base = base[:maxBase]
+	if runes := []rune(base); len(runes) > maxBase {
+		base = string(runes[:maxBase])
 	}
 	if base == "" {
 		return "file" + ext
