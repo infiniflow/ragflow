@@ -107,6 +107,20 @@ class TestIamRoleGuards:
             assert re.search(rf"creds\[['\"]{key}['\"]\]", self.body), f"creds['{key}'] index access must remain after the validation guard"
 
 
+    def test_runtime_client_uses_the_configured_region(self):
+        # The sibling iam_role code (rerank, chat, cv) passes the key's region to
+        # the bedrock-runtime client. Without it boto3 falls back to the host's
+        # default region, or raises NoRegionError when the host has none.
+        idx = self.body.find("elif mode == \"iam_role\"")
+        end = self.body.find("elif mode == \"assume_role\"", idx)
+        branch = self.body[idx:end]
+        match = re.search(
+            r"boto3\.client\(\s*service_name=\"bedrock-runtime\",\s*region_name=self\.bedrock_region,\s*aws_access_key_id=creds",
+            branch,
+        )
+        assert match, "iam_role runtime client must be built with region_name=self.bedrock_region"
+
+
 class TestGuardOrdering:
     """Pin the relative order of the new guards so they cannot be reordered."""
 

@@ -752,6 +752,7 @@ class BedrockEmbed(Base):
 
             self.client = boto3.client(
                 service_name="bedrock-runtime",
+                region_name=self.bedrock_region,
                 aws_access_key_id=creds["AccessKeyId"],
                 aws_secret_access_key=creds["SecretAccessKey"],
                 aws_session_token=creds["SessionToken"],
