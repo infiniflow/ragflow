@@ -42,7 +42,6 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -1147,15 +1146,11 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// entity rows, the documented fallback on a deployment without an embedder.
 	smartagentic.SetKgService(smartagentic.NewKgAdapter(docEngine))
 	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
-	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
-	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
-	// model resolved from the caller's ModelID and searches through the adapter
-	// above. Activating the agentic loop here enables the full planner/SCA path for
-	// reasoning chats.
+	// The smart-reasoning agent's corpus tools resolve the shared retrieval
+	// service per call, so the production adapter must be registered before the
+	// server starts serving.
 	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
-	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
-	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelFactory, metadataService, docEngine))
-	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
+	common.Info("agent: runtime retrieval service wired")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()
