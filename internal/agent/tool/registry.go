@@ -113,22 +113,35 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 		return nil, fmt.Errorf("agent tool: empty tool name")
 	}
 	factory, ok := registry[key]
+
+	var componentKey string
+	if params != nil {
+		if componentName, _ := params["component_name"].(string); componentName != "" {
+			componentKey = normalizeToolName(componentName)
+		}
+	}
+
 	if !ok {
 		// Canvas DSLs often give each retrieval instance a unique
 		// function_name while keeping the component_name as "Retrieval".
 		// Fall back to the component_name when the agent-visible name is
 		// not itself a registered tool.
-		if params != nil {
-			if componentName, _ := params["component_name"].(string); componentName != "" {
-				canonical := normalizeToolName(componentName)
-				if canonical != "" {
-					factory, ok = registry[canonical]
-					key = canonical
-				}
-			}
+		if componentKey != "" {
+			factory, ok = registry[componentKey]
+			key = componentKey
 		}
 		if !ok {
 			return nil, fmt.Errorf("agent tool: unsupported tool %q", name)
+		}
+	} else if componentKey != "" && componentKey != key {
+		// The agent-visible name matches a registered tool, but the DSL
+		// says this node is a different component (e.g., a Retrieval
+		// instance whose function_name collides with "wikipedia"). Trust
+		// the component_name so we build the intended tool, not the
+		// registered one the function_name happens to match.
+		if altFactory, altOk := registry[componentKey]; altOk {
+			factory = altFactory
+			key = componentKey
 		}
 	}
 	if factory == nil {

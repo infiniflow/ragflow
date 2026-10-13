@@ -1852,7 +1852,7 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 			dsl = dslpkg.NormalizeForRun(existingSession.DSL)
 		}
 	}
-	if err := validateAgentChatModels(ctx, userID, agentTenantID, dsl); err != nil {
+	if err := validateAgentChatModels(ctx, canvasTenantID, dsl); err != nil {
 		return nil, err
 	}
 	if err := component.ValidateDynamicEntries(dsl); err != nil {
@@ -1921,8 +1921,9 @@ func (s *AgentService) RunAgent(ctx context.Context, userID, canvasID, sessionID
 	// authenticated runner for caller-scoped permission checks and conversation data.
 	root["tenant_id"] = agentTenantID
 
-	// Preserve the historical RunTracker tenant dimension separately from
-	// the canvas tenant used by runtime components.
+	// Preserve the historical RunTracker tenant dimension separately.
+	// Existing tests and log filters expect the caller's joined tenant id
+	// in the run hash.
 	if tenantIDs, terr := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID); terr == nil && len(tenantIDs) > 0 {
 		root["run_tenant_id"] = tenantIDs[0]
 	} else if terr != nil {
