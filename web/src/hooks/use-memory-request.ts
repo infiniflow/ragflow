@@ -22,15 +22,21 @@ export const enum MemoryApiAction {
   FetchMemoryList = 'fetchMemoryList',
 }
 
-export const useFetchAllMemoryList = (ownerTenantId?: string) => {
+export const MemoryKeys = {
+  list: (canvasID?: string) =>
+    [MemoryApiAction.FetchMemoryList, canvasID] as const,
+};
+
+export const useFetchAllMemoryList = (canvasID?: string) => {
   const { data, isLoading, isError, refetch } = useQuery<IMemory[], Error>({
-    queryKey: [MemoryApiAction.FetchMemoryList, ownerTenantId],
+    queryKey: MemoryKeys.list(canvasID),
     queryFn: async () => {
-      // Viewing a shared canvas: fetch the canvas owner's memories instead.
       const { data: response } = await memoryService.getMemoryList(
         {
-          params: ownerTenantId
-            ? { page_size: 100, page: 1, tenant_id: ownerTenantId }
+          // The backend filters this list to resources both canvas owner and
+          // current user can use.
+          params: canvasID
+            ? { page_size: 100, page: 1, canvas_id: canvasID }
             : { page_size: 100, page: 1 },
           data: {},
         },

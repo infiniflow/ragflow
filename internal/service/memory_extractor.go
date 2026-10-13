@@ -22,7 +22,7 @@
 //	api/db/joint_services/memory_message_service.py:
 //	    handle_save_to_memory_task / save_extracted_to_memory_only / extract_by_llm
 //
-// QueueSaveToMemoryTask persists the raw message and publishes a
+// queueSaveToMemoryTask persists the raw message and publishes a
 // task_type="memory" TaskMessage on the NATS tasks.RAGFLOW subject. The
 // Ingestor's shared consumer + worker pool dispatches it by TaskType to
 // HandleSaveToMemoryTask (see internal/ingestion/service/handleAndExecute and

@@ -1731,7 +1731,7 @@ func TestUpdateAgentAllowsExistingTitleForSameCanvas(t *testing.T) {
 	}
 }
 
-func TestUpdateAgentTeamMemberCanUpdateAndShareCanvas(t *testing.T) {
+func TestUpdateAgentTeamMemberCanUpdateButCannotChangePermission(t *testing.T) {
 	setupAgentSessionServiceTest(t)
 	ctx := t.Context()
 
@@ -1786,15 +1786,20 @@ func TestUpdateAgentTeamMemberCanUpdateAndShareCanvas(t *testing.T) {
 	nextPermission := "me"
 	if err := NewAgentService().UpdateAgent(ctx, "member-1", "canvas-team-edit", map[string]interface{}{
 		"permission": nextPermission,
-	}); err != nil {
-		t.Fatalf("UpdateAgent permission change failed: %v", err)
+	}); err == nil {
+		t.Fatal("UpdateAgent allowed shared member to change canvas permission")
 	}
 	var canvas entity.UserCanvas
 	if err := dao.DB.WithContext(ctx).Where("id = ?", "canvas-team-edit").Take(&canvas).Error; err != nil {
 		t.Fatalf("reload canvas: %v", err)
 	}
-	if canvas.Permission != nextPermission {
-		t.Fatalf("canvas permission = %q, want %q", canvas.Permission, nextPermission)
+	if canvas.Permission != string(entity.TenantPermissionTeam) {
+		t.Fatalf("canvas permission = %q, want unchanged %q", canvas.Permission, entity.TenantPermissionTeam)
+	}
+	if err := NewAgentService().UpdateAgent(ctx, "owner-1", "canvas-team-edit", map[string]interface{}{
+		"permission": nextPermission,
+	}); err != nil {
+		t.Fatalf("canvas owner could not change permission: %v", err)
 	}
 }
 
@@ -1904,10 +1909,9 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 		t.Fatalf("failed to seed agent: %v", err)
 	}
 
-	row, code, err := NewAgentService().CreateAgent(ctx, &CreateAgentRequest{
-		UserID: "user-1",
-		Title:  sptr("Dup Title"),
-		DSL:    entity.JSONMap{},
+	row, code, err := NewAgentService().CreateAgent(ctx, "user-1", &CreateAgentRequest{
+		Title: sptr("Dup Title"),
+		DSL:   entity.JSONMap{},
 	})
 	if err != nil {
 		t.Fatalf("expected deduped create to succeed, got %v", err)
@@ -1922,6 +1926,16 @@ func TestCreateAgentDedupesDuplicateTitle(t *testing.T) {
 	var created entity.UserCanvas
 	if err := dao.DB.WithContext(ctx).Where("user_id = ? AND title = ?", "user-1", "Dup Title(1)").First(&created).Error; err != nil {
 		t.Fatalf("expected a persisted agent named %q: %v", "Dup Title(1)", err)
+	}
+}
+
+func TestCreateAgentRequiresAuthenticatedUserID(t *testing.T) {
+	row, code, err := NewAgentService().CreateAgent(t.Context(), " ", &CreateAgentRequest{
+		Title: sptr("Agent"),
+		DSL:   entity.JSONMap{},
+	})
+	if row != nil || code != common.CodeUnauthorized || err == nil {
+		t.Fatalf("CreateAgent without user ID = (%+v, %d, %v), want unauthorized", row, code, err)
 	}
 }
 
@@ -2706,6 +2720,23 @@ func createTeamSharedAgentTestFixtures(t *testing.T, canvasOwner, teammate, sess
 		t.Fatalf("failed to create user tenant: %v", err)
 	}
 	createAgentSessionTestConversation(t, sessionID, "canvas-1", sessionOwner, 1000)
+}
+
+func TestDeleteAgent_SharedCanvasMemberCannotDeleteAgent(t *testing.T) {
+	setupAgentSessionServiceTest(t)
+	createTeamSharedAgentTestFixtures(t, "owner-1", "user-1", "session-1", "owner-1")
+
+	err := NewAgentService().DeleteAgent(t.Context(), "user-1", "canvas-1")
+	if !errors.Is(err, ErrAgentNotOwner) {
+		t.Fatalf("DeleteAgent error = %v, want ErrAgentNotOwner", err)
+	}
+	var count int64
+	if err = dao.DB.Model(&entity.UserCanvas{}).Where("id = ?", "canvas-1").Count(&count).Error; err != nil {
+		t.Fatalf("failed to count agent: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("shared agent should remain, count=%d", count)
+	}
 }
 
 func TestDeleteAgentSessionItem_SharedCanvasGrantsDeleteAccess(t *testing.T) {

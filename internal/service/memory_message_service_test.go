@@ -34,7 +34,7 @@ import (
 // a clear error rather than panicking.
 func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 	var s *MemoryMessageService
-	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
+	_, err := s.queueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{AgentID: "a1"})
 	if err == nil {
 		t.Fatal("expected error from nil service")
 	}
@@ -47,7 +47,7 @@ func TestQueueSaveToMemoryTask_NilService(t *testing.T) {
 // short-circuits to an empty result with no error.
 func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 	s := &MemoryMessageService{memories: nil} // no lookups happen
-	res, err := s.QueueSaveToMemoryTask(t.Context(), nil, MemoryMessage{AgentID: "a1"})
+	res, err := s.queueSaveToMemoryTask(t.Context(), nil, MemoryMessage{AgentID: "a1"})
 	if err != nil {
 		t.Fatalf("QueueSaveToMemoryTask: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestQueueSaveToMemoryTask_EmptyMemoryList(t *testing.T) {
 // up front.
 func TestQueueSaveToMemoryTask_MissingAgentID(t *testing.T) {
 	s := &MemoryMessageService{}
-	_, err := s.QueueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{})
+	_, err := s.queueSaveToMemoryTask(t.Context(), []string{"m1"}, MemoryMessage{})
 	if err == nil {
 		t.Fatal("expected error for missing AgentID")
 	}
@@ -78,7 +78,7 @@ func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
 		cleanup := testutil.ReplaceDBForTest(t, db)
 		defer cleanup()
 
-		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+		res, err := NewMemoryMessageService(NewMemoryService()).queueSaveToMemoryTask(
 			t.Context(), []string{"missing-memory"}, MemoryMessage{AgentID: "agent-1"},
 		)
 		if err != nil {
@@ -94,7 +94,7 @@ func TestQueueSaveToMemoryTaskClassifiesMemoryLookupErrors(t *testing.T) {
 		cleanup := testutil.ReplaceDBForTest(t, db)
 		defer cleanup()
 
-		res, err := NewMemoryMessageService(NewMemoryService()).QueueSaveToMemoryTask(
+		res, err := NewMemoryMessageService(NewMemoryService()).queueSaveToMemoryTask(
 			t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"},
 		)
 		if err != nil {
@@ -131,7 +131,7 @@ func TestQueueSaveToMemoryTaskMarksDurableTaskFailedWhenRawStorageFails(t *testi
 	publisher := &recordingTaskPublisher{}
 	svc.taskPublisher = publisher
 
-	res, err := svc.QueueSaveToMemoryTask(t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"})
+	res, err := svc.queueSaveToMemoryTask(t.Context(), []string{"memory-1"}, MemoryMessage{AgentID: "agent-1"})
 	if err != nil {
 		t.Fatalf("QueueSaveToMemoryTask: %v", err)
 	}

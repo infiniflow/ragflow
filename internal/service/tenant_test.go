@@ -32,39 +32,70 @@ import (
 //go:linkname daoModelProviderManager ragflow/internal/dao.modelProviderManager
 var daoModelProviderManager *models.ProviderManager
 
-// TestListMembersAuthCheck verifies that a non-owner (userID != tenantID) gets
-// CodeAuthenticationError without hitting the database.
+func setupTenantPermissionTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate tenant permission table: %v", err)
+	}
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+	return db
+}
+
+func seedTenantMembership(t *testing.T, db *gorm.DB, id, userID, tenantID, role string) {
+	t.Helper()
+	status := "1"
+	if err := db.Create(&entity.UserTenant{
+		ID: id, UserID: userID, TenantID: tenantID, Role: role, Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("seed membership: %v", err)
+	}
+}
+
+// TestListMembersAuthCheck verifies a tenant member without the owner role is denied.
 func TestListMembersAuthCheck(t *testing.T) {
-	s := &TenantService{}
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 	ctx := t.Context()
 	_, code, err := s.ListMembers(ctx, "user-abc", "tenant-xyz")
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
 	}
-	if code != common.CodeAuthenticationError {
-		t.Errorf("expected CodeAuthenticationError, got %v", code)
+	if code != common.CodeForbidden {
+		t.Errorf("expected CodeForbidden, got %v", code)
 	}
 }
 
-// TestAddMemberAuthCheck verifies that a non-owner gets CodeAuthenticationError.
+// TestAddMemberAuthCheck verifies that a non-owner is denied by tenant policy.
 func TestAddMemberAuthCheck(t *testing.T) {
-	s := &TenantService{}
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 	ctx := t.Context()
 	_, code, err := s.AddMember(ctx, "user-abc", "tenant-xyz", &AddMemberRequest{Email: "a@b.com"})
 	if err == nil {
 		t.Fatal("expected error for non-owner, got nil")
 	}
-	if code != common.CodeAuthenticationError {
-		t.Errorf("expected CodeAuthenticationError, got %v", code)
+	if code != common.CodeForbidden {
+		t.Errorf("expected CodeForbidden, got %v", code)
 	}
 }
 
-// TestAddMemberEmailRequired verifies the email validation runs after the auth check.
+// TestAddMemberEmailRequired verifies owner authorization runs before payload validation.
 func TestAddMemberEmailRequired(t *testing.T) {
-	// When userID == tenantID (owner) but no email, expect CodeArgumentError.
-	s := &TenantService{}
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 	ctx := t.Context()
-	_, code, err := s.AddMember(ctx, "owner-id", "owner-id", &AddMemberRequest{Email: ""})
+	_, code, err := s.AddMember(ctx, "owner-user", "tenant-xyz", &AddMemberRequest{Email: ""})
 	if err == nil {
 		t.Fatal("expected error for empty email, got nil")
 	}
@@ -73,34 +104,47 @@ func TestAddMemberEmailRequired(t *testing.T) {
 	}
 }
 
-// TestRemoveMemberAuthCheck verifies that an unrelated user gets CodeAuthenticationError.
+// TestRemoveMemberAuthCheck verifies that a user outside the tenant is denied.
 func TestRemoveMemberAuthCheck(t *testing.T) {
-	s := &TenantService{}
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 	ctx := t.Context()
 	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-def")
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if code != common.CodeAuthenticationError {
-		t.Errorf("expected CodeAuthenticationError, got %v", code)
+	if code != common.CodeForbidden {
+		t.Errorf("expected CodeForbidden, got %v", code)
 	}
 }
 
-// TestRemoveMemberSelfAllowed verifies that a user removing themselves passes the auth check.
-// The DAO is nil so the operation fails at the data layer, but the auth check must pass first.
+// TestRemoveMemberSelfAllowed verifies a tenant member can remove their own membership.
 func TestRemoveMemberSelfAllowed(t *testing.T) {
-	s := &TenantService{}
-	// userID == targetUserID: auth check should pass.
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "member", "user-abc", "tenant-xyz", "normal")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
 	ctx := t.Context()
 	code, err := s.RemoveMember(ctx, "user-abc", "tenant-xyz", "user-abc")
-	if code == common.CodeAuthenticationError {
-		t.Errorf("self-removal should pass auth check, got CodeAuthenticationError: %v", err)
+	if code != common.CodeSuccess {
+		t.Errorf("expected CodeSuccess, got %v: %v", code, err)
 	}
-	if code != common.CodeServerError {
-		t.Errorf("expected CodeServerError (DAO not initialized), got %v", code)
+	if err != nil {
+		t.Fatalf("self-removal failed: %v", err)
 	}
-	if err == nil {
-		t.Error("expected non-nil error when userTenantDAO is nil")
+	if _, err := dao.NewUserTenantDAO().FilterByUserIDAndTenantID(ctx, db, "user-abc", "tenant-xyz"); !dao.IsNotFoundErr(err) {
+		t.Fatalf("self-membership remains after removal: %v", err)
+	}
+}
+
+func TestRemoveMemberCannotRemoveTenantOwner(t *testing.T) {
+	db := setupTenantPermissionTestDB(t)
+	seedTenantMembership(t, db, "owner", "owner-user", "tenant-xyz", "owner")
+	s := &TenantService{userTenantDAO: dao.NewUserTenantDAO()}
+
+	code, err := s.RemoveMember(t.Context(), "owner-user", "tenant-xyz", "owner-user")
+	if err == nil || code != common.CodeArgumentError {
+		t.Fatalf("RemoveMember(owner) = (%v, %v), want argument error", code, err)
 	}
 }
 
