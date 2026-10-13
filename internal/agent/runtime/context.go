@@ -37,6 +37,7 @@ import (
 // stable across calls (a fresh struct{}{} per call would key
 // distinctly and break ctx.Value lookups).
 type stateCtxKey struct{}
+type callerUserIDCtxKey struct{}
 type agentMessageEmitterCtxKey struct{}
 type canvasMessageEmitterCtxKey struct{}
 
@@ -174,6 +175,17 @@ func agentDeltaSinkFromContext(ctx context.Context) *agentDeltaSinkState {
 // before invoking a component.
 func WithState(ctx context.Context, s *CanvasState) context.Context {
 	return context.WithValue(ctx, stateCtxKey{}, s)
+}
+
+// WithCallerUserID attaches the authenticated caller identity for non-canvas runs.
+func WithCallerUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, callerUserIDCtxKey{}, strings.TrimSpace(userID))
+}
+
+// CallerUserIDFromContext returns the caller identity attached by WithCallerUserID.
+func CallerUserIDFromContext(ctx context.Context) string {
+	userID, _ := ctx.Value(callerUserIDCtxKey{}).(string)
+	return strings.TrimSpace(userID)
 }
 
 // WithAgentMessageEmitter attaches the Agent message stream callback used by
