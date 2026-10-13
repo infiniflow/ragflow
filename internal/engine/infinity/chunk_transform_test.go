@@ -279,6 +279,58 @@ func TestTransformedCompiledRowNamesOnlyMappingColumns(t *testing.T) {
 	}
 }
 
+// pptxRowsForTransform builds the post-indexdoc rows a Presentation-template
+// upload produces on Infinity. The PPTX parser emits slide_number on every
+// slide item and media_order on every image item (as the docx and html
+// parsers do for their media); ck_type/image are stripped as pipeline-only
+// bookkeeping, but the ordinals ride ChunkDoc.Extra to the write boundary and
+// transformChunkFields passes them through as top-level columns.
+func pptxRowsForTransform() map[string]map[string]interface{} {
+	base := func() map[string]interface{} {
+		return map[string]interface{}{
+			"id":                  "c1",
+			"doc_id":              "d1",
+			"kb_id":               "kb1",
+			"content_with_weight": "slide body",
+			"create_time":         "2026-10-13 00:00:00",
+			"q_3_vec":             []float64{0.1, 0.2, 0.3},
+		}
+	}
+	slideRow := base()
+	slideRow["doc_type_kwd"] = "text"
+	slideRow["slide_number"] = 3
+	imageRow := base()
+	imageRow["doc_type_kwd"] = "image"
+	imageRow["slide_number"] = 3
+	imageRow["media_order"] = 2
+	return map[string]map[string]interface{}{
+		"slide": slideRow,
+		"image": imageRow,
+	}
+}
+
+// TestTransformedParserMediaRowNamesOnlyMappingColumns is the regression test
+// for the reported PPTX-on-Infinity failure:
+//
+//	InfinityException(3013, Failed to insert data: INSERT: Column slide_number
+//	not found in table ragflow_<tenant>_<dataset>)
+//
+// Every field the parser-media rows persist this way must be a column of
+// conf/infinity_mapping.json, or Infinity rejects the whole insert batch
+// while Elasticsearch's dynamic mapping silently accepts the same rows.
+func TestTransformedParserMediaRowNamesOnlyMappingColumns(t *testing.T) {
+	columns := chunkMappingColumns(t)
+	vectorColumn := regexp.MustCompile(`^q_\d+_vec$`)
+	for name, row := range pptxRowsForTransform() {
+		for k := range transformChunkFields(row, nil) {
+			if columns[k] || vectorColumn.MatchString(k) {
+				continue
+			}
+			t.Errorf("%s row: transformed key %q is not a column of conf/infinity_mapping.json", name, k)
+		}
+	}
+}
+
 // TestFieldJSONMatchesJSONMappingColumns keeps the write side's encoding set in
 // step with the schema: a column conf/infinity_mapping.json declares as json must
 // be encoded by fieldJSON before the insert (Infinity answers 3058 for a raw Go
