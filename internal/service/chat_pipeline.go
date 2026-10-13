@@ -460,10 +460,6 @@ func (s *ChatPipelineService) AsyncChat(
 		// once before any retrieval path can return early. The agentic dispatch
 		// above resolves the same value through quoteEnabled.
 		quote := quoteEnabled(kwargs, promptConfig)
-		// The dialog's configured no-answer line ("空回复"). An answer that only
-		// reports it is decorated as if quoting were off, so it carries neither
-		// citation markers nor a document reference (decorateQuote).
-		emptyResponse, _ := promptConfig["empty_response"].(string)
 		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
@@ -880,7 +876,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, decorateQuote(quote, harnessAnswer, emptyResponse))
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, quote)
 						final.Final = true
 						out <- final
 						return
@@ -1507,7 +1503,7 @@ func (s *ChatPipelineService) AsyncChat(
 			visibleAnswer := s.extractVisibleAnswer(thinkState.fullText)
 
 			// Pass nil for ttsModel — audio was already produced per-delta.
-			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, decorateQuote(quote, visibleAnswer, emptyResponse), nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
+			final := s.decorateAnswer(ctx, visibleAnswer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, nil, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
 			final.AudioBinary = nil
 			timer.Exit(common.PhaseGenerateAnswer)
@@ -1546,7 +1542,7 @@ func (s *ChatPipelineService) AsyncChat(
 			common.Debug("User: " + userContent + "|Assistant: " + answer)
 
 			// Synthesize TTS for the full answer (non-stream, one-shot).
-			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, decorateQuote(quote, answer, emptyResponse), ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
+			final := s.decorateAnswer(ctx, answer, kbinfos, prompt, questions, usedTokenCount, timer, embModel, chat.VectorSimilarityWeight, quote, ttsModel, langfuseTraceID, llmModelConfig, chat.TenantID, kbTenantIDStrings(kbs), len(knowledges) > 0)
 			final.Final = true
 			timer.Exit(common.PhaseGenerateAnswer)
 			out <- final
