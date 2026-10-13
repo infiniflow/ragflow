@@ -3009,7 +3009,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
-        'E-mail is a required field. You must input an E-mail address here.',
+        'E-mail is optional. If left empty, a default E-mail address is used for PubMed requests.',
       arXiv: 'ArXiv',
       arXivDescription:
         'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
