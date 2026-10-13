@@ -270,7 +270,7 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 		"similarity":          0.8,
 	}
 
-	got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1"}, engine, t.Context())
+	got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1", "tenant-2"}, engine, t.Context())
 
 	if len(got) != 1 || got[0]["chunk_id"] != "child-a" {
 		t.Fatalf("retrieval result = %#v, want fallback child", got)
@@ -280,6 +280,12 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 	}
 	if engine.parentSearch.Filter["doc_id"] != "doc-a" {
 		t.Fatalf("parent lookup filter = %#v, want doc_id doc-a", engine.parentSearch.Filter)
+	}
+	if !slices.Equal(engine.parentSearch.IndexNames, buildIndexNames([]string{"tenant-1", "tenant-2"})) {
+		t.Fatalf("parent lookup indices = %v, want both tenant indices", engine.parentSearch.IndexNames)
+	}
+	if !slices.Equal(engine.parentSearch.KbIDs, []string{"kb-1"}) {
+		t.Fatalf("parent lookup KBs = %v, want the child's dataset", engine.parentSearch.KbIDs)
 	}
 	if !engine.parentSearch.IncludeUnavailable {
 		t.Fatal("parent lookup must include hidden parent chunks")
@@ -633,5 +639,63 @@ func TestSearchKeepsPythonFusionWeightForElasticsearch(t *testing.T) {
 	}
 	if got := fusionExpr.FusionParams["weights"]; got != esFusionWeights {
 		t.Fatalf("expected Elasticsearch weights=%s, got %v", esFusionWeights, got)
+	}
+}
+
+// perIndexEngine searches each listed index separately, like Elasticsearch and Infinity.
+type perIndexEngine struct {
+	retrievalCountEngine
+	indexNames []string
+}
+
+func (e *perIndexEngine) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.indexNames = req.IndexNames
+	merged := &types.SearchResult{}
+	for range req.IndexNames {
+		result, err := e.retrievalCountEngine.Search(ctx, req)
+		if err != nil {
+			return nil, err
+		}
+		merged.Chunks = append(merged.Chunks, result.Chunks...)
+		merged.Total += result.Total
+	}
+	return merged, nil
+}
+
+func TestRetrievalSearchesEachTenantIndexOnce(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &perIndexEngine{retrievalCountEngine: retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "chunk-a", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9},
+		{"id": "chunk-b", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+	}}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	aggs := false
+
+	// Two datasets owned by the same tenant.
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:            "alpha",
+		TenantIDs:           []string{"tenant-1", "tenant-1"},
+		KbIDs:               []string{"kb-1", "kb-2"},
+		Page:                1,
+		PageSize:            10,
+		SimilarityThreshold: &threshold,
+		Aggs:                &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	var ids []string
+	for _, chunk := range result.Chunks {
+		ids = append(ids, chunk["chunk_id"].(string))
+	}
+	if !slices.Equal(ids, []string{"chunk-a", "chunk-b"}) || result.Total != 2 {
+		t.Fatalf("chunks = %v (total %d), want [chunk-a chunk-b] (total 2)", ids, result.Total)
+	}
+	if !slices.Equal(docEngine.indexNames, []string{"ragflow_tenant-1"}) {
+		t.Fatalf("index names = %v, want [ragflow_tenant-1]", docEngine.indexNames)
 	}
 }

@@ -19,11 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"strings"
 	"time"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -218,7 +218,7 @@ func (dao *PipelineOperationLogDAO) CreateOpenLog(ctx context.Context, db *gorm.
 	now := time.Now().Local()
 	runCount := input.RunCount
 	log := &entity.PipelineOperationLog{
-		ID:              utility.GenerateUUID(),
+		ID:              common.GenerateUUID(),
 		DocumentID:      input.DocumentID,
 		RunCount:        &runCount,
 		TenantID:        input.TenantID,
@@ -298,7 +298,7 @@ func (dao *PipelineOperationLogDAO) GetByIDAndKBID(ctx context.Context, db *gorm
 // GetByIDAndKBID instead.
 func (dao *PipelineOperationLogDAO) GetByID(ctx context.Context, db *gorm.DB, logID string) (*entity.PipelineOperationLog, error) {
 	var log entity.PipelineOperationLog
-	if err := db.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&log, "id = ?", logID).Error; err != nil {
 		return nil, err
 	}
 	return &log, nil

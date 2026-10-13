@@ -23,8 +23,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"ragflow/internal/utility"
-
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
@@ -83,7 +81,7 @@ func (s *ChatChannelService) Insert(ctx context.Context, channel *entity.ChatCha
 		return errors.New("channel is nil")
 	}
 	if channel.ID == "" {
-		channel.ID = utility.GenerateUUID()
+		channel.ID = common.GenerateUUID()
 	}
 	if channel.Status == 0 {
 		channel.Status = 1
@@ -95,7 +93,7 @@ func (s *ChatChannelService) GetByID(ctx context.Context, id string) (*entity.Ch
 	if id == "" {
 		return nil, errors.New("id is empty")
 	}
-	return s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, id)
+	return s.chatChannelDAO.GetByID(ctx, dao.DB, id)
 }
 
 func (s *ChatChannelService) List(ctx context.Context, tenantID string) ([]*entity.ChatChannelListResponse, error) {
@@ -116,7 +114,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 		}
 	}
 	row := &entity.ChatChannel{
-		ID:       utility.GenerateUUID(),
+		ID:       common.GenerateUUID(),
 		TenantID: tenantID,
 		Name:     name,
 		Channel:  channelType,
@@ -137,7 +135,7 @@ func (s *ChatChannelService) CreateChatChannel(ctx context.Context, tenantID, na
 }
 
 func (s *ChatChannelService) accessible(ctx context.Context, userID, channelID string) (*entity.ChatChannel, bool, error) {
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, false, nil
@@ -171,7 +169,7 @@ func (s *ChatChannelService) GetChatChannel(ctx context.Context, userID, channel
 		return nil, common.CodeAuthenticationError, errors.New("no authorization")
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("can't find this chat channel")
@@ -245,7 +243,7 @@ func (s *ChatChannelService) UpdateChatChannel(ctx context.Context, userID, chan
 		}
 	}
 
-	updated, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, channelID)
+	updated, err := s.chatChannelDAO.GetByID(ctx, dao.DB, channelID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return nil, common.CodeDataError, errors.New("can't find this chat channel")
@@ -286,7 +284,7 @@ func (s *ChatChannelService) HandleIncomingMessage(ctx context.Context, msg Chat
 		return "", nil
 	}
 
-	channel, err := s.chatChannelDAO.GetByIDOnly(ctx, dao.DB, msg.AccountID)
+	channel, err := s.chatChannelDAO.GetByID(ctx, dao.DB, msg.AccountID)
 	if err != nil {
 		if dao.IsNotFoundErr(err) {
 			return "", nil

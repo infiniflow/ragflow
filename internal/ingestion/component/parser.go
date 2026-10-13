@@ -64,9 +64,8 @@
 //     the upload step is the responsibility of a separate
 //     side-effect component (out of scope for Phase 2.2).
 //
-//   - The Python _param.check() business validation
-//     (parse_method whitelist, conditional lang checks) is mirrored
-//     by (*ParserComponent).Check() below, which NewParserComponent
+//   - The Python _param.check() business validation (parse_method whitelist)
+//     is mirrored by (*ParserComponent).Check() below, which NewParserComponent
 //     runs at construction time. Neither backend validates
 //     audio/video vlm.llm_id: Python's check() has no such branch,
 //     and the audio model is resolved at dispatch time with a
@@ -110,7 +109,19 @@ const pageFormFeed = '\f'
 // the goroutine that returned from Invoke. The static Param is
 // read-only after construction.
 type ParserComponent struct {
-	setups map[string]schema.ParserSetup
+	setups                  map[string]schema.ParserSetup
+	enableVisionEnhancement bool
+	vision                  visionSettings
+}
+
+// visionSettings carries the global vision-enhancement choices. They sit at the
+// Parser params top level (vlm) instead of a per-family setup, so one model and
+// prompt serve the enhanced file types rather than each family repeating them.
+// Response language is deliberately absent: it belongs to the knowledge base,
+// which also drives tokenization, so the two can never disagree.
+type visionSettings struct {
+	modelID      string
+	systemPrompt string
 }
 
 // NewParserComponent constructs a Parser from a DSL param map.
@@ -123,6 +134,8 @@ type ParserComponent struct {
 // Param map shape (all keys optional):
 //
 //	{
+//	  "enable_vision_enhancement": bool,
+//	  "vlm":                  {"llm_id": string, "system_prompt": string},
 //	  "pdf":                  map[string]any,
 //	  "docx":                 map[string]any,
 //	  ...
@@ -139,8 +152,35 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 	// Canvases saved by the Python-era frontend nest the per-family setups
 	// under a "setups" key; lift them so every family lands at the top level.
 	params = schema.FlattenLegacyParserSetups(params)
+	var enableVisionEnhancement bool
+	if raw, exists := params["enable_vision_enhancement"]; exists {
+		var ok bool
+		enableVisionEnhancement, ok = raw.(bool)
+		if !ok {
+			return nil, errors.New("parser: enable_vision_enhancement must be a boolean")
+		}
+	}
+	var vision visionSettings
+	if raw, exists := params["vlm"]; exists {
+		vlm, ok := raw.(map[string]any)
+		if !ok {
+			return nil, errors.New("parser: vlm must be an object")
+		}
+		if rawID, exists := vlm["llm_id"]; exists {
+			vision.modelID, ok = rawID.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.llm_id must be a string")
+			}
+		}
+		if rawPrompt, exists := vlm["system_prompt"]; exists {
+			vision.systemPrompt, ok = rawPrompt.(string)
+			if !ok {
+				return nil, errors.New("parser: vlm.system_prompt must be a string")
+			}
+		}
+	}
 	for k, raw := range params {
-		if k == "outputs" || k == "allowed_output_format" {
+		if k == "outputs" || k == "allowed_output_format" || k == "enable_vision_enhancement" || k == "vlm" {
 			continue
 		}
 		ftCfg, ok := raw.(map[string]any)
@@ -155,7 +195,7 @@ func NewParserComponent(params map[string]any) (runtime.Component, error) {
 		}
 	}
 	normalizeParserOutputFormats(s)
-	pc := &ParserComponent{setups: s}
+	pc := &ParserComponent{setups: s, enableVisionEnhancement: enableVisionEnhancement, vision: vision}
 	if err := pc.Check(); err != nil {
 		return nil, fmt.Errorf("parser: %w", err)
 	}
@@ -206,51 +246,61 @@ func cloneParserSetupValue(value any) any {
 	}
 }
 
-// Check mirrors the applicable subset of Python ParserParam.check()
-// (rag/flow/parser/parser.py:251-321). Runs at construction time so
-// a malformed DSL surfaces as a canvas compile failure rather than a
-// mid-run error. Returns the first validation error encountered
-// (Python raises ValueError on the first failure).
+// Check validates parser methods at construction time so a malformed DSL
+// surfaces as a canvas compile failure rather than a mid-run error.
 //
 // NOT covered here (intentional):
 //   - audio/video vlm.llm_id: Python's check() does not validate it
 //     either, and audio dispatch resolves a missing/empty model to
 //     the tenant default, so validating it here would only block
 //     otherwise valid pipelines (see ingestion_pipeline_audio.json).
+//   - any language: a missing language is no longer fatal downstream —
+//     captions fall back to the knowledge base language and MinerU to its own
+//     default — and Check runs before run inputs exist, so the knowledge base
+//     value cannot be consulted here. Rejecting stored canvases for it would
+//     only break pipelines that resolve fine at run time.
 func (c *ParserComponent) Check() error {
-	// PDF family (parser.py:252-261).
 	if pdf, ok := c.setups["pdf"]; ok {
-		pm, _ := pdf["parse_method"].(string)
-		if pm == "" {
+		if pm, _ := pdf["parse_method"].(string); pm == "" {
 			return errors.New("parse method abnormal. does not support empty value")
 		}
-		if !parser.IsPDFParseMethod(pm) {
-			// A parse_method outside the known vocabulary is treated as a
-			// VLM model reference, which requires lang (Python
-			// parser.py:257-258).
-			if lang, _ := pdf["lang"].(string); lang == "" {
-				return errors.New("PDF VLM language does not support empty value")
+	}
+	// The whole image contract keys off whether ocr_enabled is present, so a
+	// value of the wrong type must not quietly read as "absent" and fall back to
+	// the legacy parse_method inference.
+	if img, ok := c.setups["image"]; ok {
+		if raw, exists := img["ocr_enabled"]; exists {
+			if _, isBool := raw.(bool); !isBool {
+				return errors.New("parser: image ocr_enabled must be a boolean")
 			}
 		}
-	}
-	// image family (parser.py:283-287).
-	if img, ok := c.setups["image"]; ok {
-		pm, _ := img["parse_method"].(string)
-		// OCR mode does not need a VLM language; any other value does.
-		if pm != "ocr" {
-			if lang, _ := img["lang"].(string); lang == "" {
-				return errors.New("image VLM language does not support empty value")
-			}
+		// An image needs at least one text source: local OCR or the global
+		// vision enhancement. With neither, the item carries no text and the
+		// Tokenizer drops it, so reject the configuration at build time
+		// instead of indexing nothing silently.
+		if !c.enableVisionEnhancement && !imageSetupRunsOCR(img) {
+			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
 		}
 	}
 	return nil
+}
+
+// imageSetupRunsOCR mirrors the OCR selection in maybeDispatchImage
+// (media_dispatch.go): the ocr_enabled switch wins when present, otherwise
+// the legacy parse_method reading applies ("ocr"/empty runs local OCR).
+
+func imageSetupRunsOCR(setup schema.ParserSetup) bool {
+	if ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool); hasOCRFlag {
+		return ocrEnabled
+	}
+	method := getStringOr(setup, "parse_method", "")
+	return method == "" || strings.EqualFold(method, "ocr")
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
 	return map[string]schema.ParserSetup{
 		"pdf": {
 			"parse_method":          "deepdoc",
-			"lang":                  "Chinese",
 			"flatten_media_to_text": false,
 			"remove_toc":            false,
 			"remove_header_footer":  false,
@@ -302,11 +352,15 @@ func defaultSetups() map[string]schema.ParserSetup {
 			"output_format": "json",
 		},
 		"image": {
+			// Default stays on the legacy parse_method shape. ocr_enabled is
+			// deliberately NOT set here: NewParserComponent overlays params on
+			// top of these defaults, so the mere presence of ocr_enabled in the
+			// merged setup proves the caller chose the switch shape. A default
+			// value would leak the flag onto legacy (parse_method-only) canvases.
 			"parse_method":  "ocr",
 			"llm_id":        "",
-			"lang":          "Chinese",
 			"system_prompt": "",
-			"suffix":        []string{"jpg", "jpeg", "png", "gif"},
+			"suffix":        []string{"jpg", "jpeg", "png", "gif", "bmp", "tif", "tiff", "webp"},
 			"output_format": "json",
 		},
 		"email": {
@@ -472,9 +526,8 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	var handledImage bool
 	if !handledVision && !handledMedia {
-		// Image/Picture dispatch: OCR + IMAGE2TEXT vision describe.
-		// Mirrors Python's rag/app/picture.py:chunk() image branch.
-		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups)
+		// Image dispatch: OCR with independently controlled VLM enhancement.
+		dispatched, handledImage, visionErr = maybeDispatchImage(ctx, db, fileTypeExt, filename, binary, inputs, setups, c.enableVisionEnhancement, c.vision)
 		if visionErr != nil {
 			return nil, visionErr
 		}
@@ -489,16 +542,22 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
+		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+		enhanceOn := c.enableVisionEnhancement
+		split := newFractionSplit(parsePagesOn, enhanceOn)
+		pageWin := split.take(parsePagesOn)
+		visionWin := split.take(enhanceOn)
 
-		// Vision figure enhancement: on the JSON output path,
-		// append vision-model descriptions to embedded image and
-		// table items. Mirrors Python's enhance_media_sections_with_vision
-		// (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
-		// Errors (including context cancellation) are intentionally
-		// discarded — enhancement is best-effort, matching Python's
-		// try/except pass pattern.
-		dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, setups)
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if dispatched.Err == nil && ctx.Err() == nil {
+			pageWin.report(ctx, 1.0)
+		}
+
+		if c.enableVisionEnhancement {
+			// Enhancement is optional; parser-provided text and image metadata
+			// remain available if a vision model cannot describe an image.
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
+		}
 	}
 	// Known/supported families must fail loudly when dispatch or
 	// parsing breaks. Only unknown families keep the raw-text fallback.

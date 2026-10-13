@@ -34,9 +34,49 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/parser/tableutil"
 )
+
+// spreadsheetSegmentItem builds one wire-format spreadsheet table segment:
+// the markup the parser renders (captioned <table>, <th> header, <td> rows)
+// plus the row-aligned positions matrix (one tuple per <tr>, header first).
+// firstRow is the sheet row of the first DATA row; the header tuple covers
+// firstRow-1. It emits the structured TableData contract a post-migration
+// producer writes (caption = sheet name, header rows, data rows), not HTML
+// markup.
+func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, sheetIndex, firstRow int) map[string]any {
+	allRows := make([][]string, 0, len(rows)+1)
+	if len(header) > 0 {
+		allRows = append(allRows, header)
+	}
+	allRows = append(allRows, rows...)
+
+	tuple := func(row int) []float64 {
+		return []float64{float64(sheetIndex), float64(row), float64(row), 1, float64(len(header))}
+	}
+	matrix := [][]float64{tuple(firstRow - 1)}
+	for i := range rows {
+		matrix = append(matrix, tuple(firstRow+i))
+	}
+	td := &entity.TableData{Rows: allRows, HeaderRows: 1, Caption: sheet}
+	return map[string]any{
+		"table": map[string]any{
+			"rows":        allRows,
+			"header_rows": 1,
+			"caption":     sheet,
+		},
+		// Mirror what the chunker derives from TableData so text-bound
+		// assertions (e.g. TokenChunker boundary tests) stay valid.
+		"text":         tableutil.RenderTableText(td),
+		"doc_type_kwd": "table",
+		"ck_type":      "table",
+		"sheet_index":  sheetIndex,
+		"positions":    matrix,
+	}
+}
 
 func TestGeneralChunkerRegistered(t *testing.T) {
 	factory, category, metadata, ok := runtime.DefaultRegistry.Lookup(ComponentNameGeneralChunker)
@@ -543,6 +583,185 @@ func assertMaterializedMediaContext(t *testing.T, chunk map[string]any, wantText
 	}
 }
 
+func TestGeneralChunkerMarkdownAttachesMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, table, "before<table><tr><td>A</td></tr></table>after")
+}
+
+func TestGeneralChunkerMarkdownTableDoesNotDuplicateShortHeadingInContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	want := "## Section\n<table><tr><td>A</td></tr></table>"
+	assertMaterializedMediaContext(t, table, want)
+	if strings.Count(table["text"].(string), "## Section") != 1 {
+		t.Fatalf("heading repeated in table chunk: %q", table["text"])
+	}
+}
+
+func TestGeneralChunkerMarkdownTableKeepsEarlierContextWhenHeadingFolds(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 3,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "intro", "doc_type_kwd": "text"},
+			{"text": "## Section", "doc_type_kwd": "text", "ck_type": "heading"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	want := "intro## Section\n<table><tr><td>A</td></tr></table>"
+	assertMaterializedMediaContext(t, table, want)
+}
+
+func TestGeneralChunkerMarkdownImageKeepsMediaContextWhenConfigured(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"image_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.md",
+		"file_type":     "md",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "figure", "doc_type_kwd": "image", "image": "data:image/png;base64,AAAA"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var image map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "image" {
+			image = ck
+			break
+		}
+	}
+	if image == nil {
+		t.Fatalf("image chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, image, "beforefigureafter")
+}
+
+func TestGeneralChunkerHTMLAttachesMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   10,
+		"table_context_size": 2,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "page.html",
+		"file_type":     "html",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "before", "doc_type_kwd": "text"},
+			{"text": "<table><tr><td>A</td></tr></table>", "doc_type_kwd": "table"},
+			{"text": "after", "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	var table map[string]any
+	for _, ck := range chunks {
+		if ck["doc_type_kwd"] == "table" {
+			table = ck
+			break
+		}
+	}
+	if table == nil {
+		t.Fatalf("table chunk missing: %#v", chunks)
+	}
+	assertMaterializedMediaContext(t, table, "before<table><tr><td>A</td></tr></table>after")
+}
+
 func TestGeneralChunkerDOCXAttachesMediaContextBeforeTextMerge(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
 		"chunk_token_size":   10,
@@ -583,10 +802,10 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
 
-	if got, want := collectGeneralMediaContext(units, 2, 10, true), "before one\nbefore two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, true, contextSentencePattern), "before one\nbefore two"; got != want {
 		t.Fatalf("above context = %q, want %q", got, want)
 	}
-	if got, want := collectGeneralMediaContext(units, 2, 10, false), "after one\nafter two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, false, contextSentencePattern), "after one\nafter two"; got != want {
 		t.Fatalf("below context = %q, want %q", got, want)
 	}
 }
@@ -753,18 +972,12 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
 	}
+	item := spreadsheetSegmentItem("Sheet1", []string{"Name", "Amount"}, nil, 1, 1)
 	out, err := component.Invoke(t.Context(), nil, map[string]any{
 		"name":          "headers.xlsx",
 		"file_type":     "xlsx",
 		"output_format": "json",
-		"json": []map[string]any{{
-			"text":         "Name; Amount",
-			"doc_type_kwd": "table",
-			"ck_type":      "table_header",
-			"sheet_index":  1,
-			"table_id":     "sheet-1",
-			"positions":    []any{[]any{1.0, 1.0, 1.0, 1.0, 2.0}},
-		}},
+		"json":          []map[string]any{item},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
@@ -773,14 +986,15 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
 	}
-	if chunks[0]["text"] != "Name; Amount" || chunks[0]["ck_type"] != "table_header" {
+	text, _ := chunks[0]["text"].(string)
+	if chunks[0]["ck_type"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
 
 func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	component, err := NewGeneralChunker(map[string]any{
-		"chunk_token_size":   10,
+		"chunk_token_size":   100,
 		"image_context_size": 10,
 	})
 	if err != nil {
@@ -791,9 +1005,9 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 		"file_type":     "xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Revenue", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "table_id": "sheet-1", "sheet_index": 1},
-			{"text": "Growth", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
+			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Revenue"}}, 1, 2),
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Growth"}}, 1, 3),
 		},
 	})
 	if err != nil {
@@ -801,7 +1015,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 	}
 	chunks := outputChunks(t, out)
 	if len(chunks) != 3 {
-		t.Fatalf("chunks = %#v, want row, image, row", chunks)
+		t.Fatalf("chunks = %#v, want segment, image, segment", chunks)
 	}
 	if chunks[1]["ck_type"] != "image" {
 		t.Fatalf("image chunk = %#v", chunks[1])
@@ -810,7 +1024,7 @@ func TestGeneralChunkerSpreadsheetAttachesImageContext(t *testing.T) {
 }
 
 func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T) {
-	component, err := NewGeneralChunker(map[string]any{"image_context_size": 10})
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 100, "image_context_size": 10})
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
 	}
@@ -819,9 +1033,9 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 		"file_type":     "xlsx",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "Sheet one", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-1", "sheet_index": 1, "tk_nums": 1},
-			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "table_id": "sheet-1", "sheet_index": 1},
-			{"text": "Sheet two", "doc_type_kwd": "text", "ck_type": "table_row", "table_id": "sheet-2", "sheet_index": 2, "tk_nums": 1},
+			spreadsheetSegmentItem("Sheet1", []string{"Name"}, [][]string{{"Sheet one"}}, 1, 2),
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure", "sheet_index": 1},
+			spreadsheetSegmentItem("Sheet2", []string{"Name"}, [][]string{{"Sheet two"}}, 2, 2),
 		},
 	})
 	if err != nil {
@@ -829,9 +1043,112 @@ func TestGeneralChunkerSpreadsheetImageContextStopsAtSheetBoundary(t *testing.T)
 	}
 	chunks := outputChunks(t, out)
 	if len(chunks) != 3 {
-		t.Fatalf("chunks = %#v, want row, image, row", chunks)
+		t.Fatalf("chunks = %#v, want segment, image, segment", chunks)
 	}
 	assertMaterializedMediaContext(t, chunks[1], "Sheet oneB2")
+}
+
+// TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks pins the
+// chunker-side size budget: a segment over ChunkTokenSize is cut into
+// sub-tables that each replicate the header row and carry only their own
+// rows' position tuples (R11). Without the cut a wide/long row runs past the
+// embedding truncation point and its tail rows silently disappear.
+func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 20})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	var rows [][]string
+	for i := 0; i < 6; i++ {
+		rows = append(rows, []string{fmt.Sprintf("value-%d-with-some-padding", i)})
+	}
+	item := spreadsheetSegmentItem("Sheet1", []string{"Name"}, rows, 1, 2)
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "long.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json":          []map[string]any{item},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) < 2 {
+		t.Fatalf("chunks = %d, want the segment split under the token budget", len(chunks))
+	}
+	covered := 0
+	for i, chunk := range chunks {
+		// New contract: Text is the plain rendering (no markup); the
+		// replicated header lives in the structured TableData, and positions
+		// are sliced to this sub-table when the matrix is row-aligned.
+		tbl, ok := chunk["table"].(map[string]any)
+		if !ok {
+			t.Fatalf("chunk %d missing structured TableData", i)
+		}
+		tblRows, _ := tbl["rows"].([]any)
+		if len(tblRows) < 2 {
+			t.Fatalf("chunk %d has too few rows: %v", i, tblRows)
+		}
+		if !strings.Contains(chunk["text"].(string), "Name") {
+			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
+		}
+		var matrix [][]float64
+		raw, _ := json.Marshal(chunk["positions"])
+		if err := json.Unmarshal(raw, &matrix); err != nil {
+			t.Fatalf("chunk %d positions = %v, want a row-aligned matrix", i, chunk["positions"])
+		}
+		// One header tuple + this sub-table's own data tuples, never the
+		// full segment matrix.
+		if len(matrix) < 2 {
+			t.Fatalf("chunk %d matrix = %v, want header plus data rows", i, matrix)
+		}
+		if matrix[0][1] != 1 {
+			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
+		}
+		dataRows := len(tblRows) - 1
+		if dataRows != len(matrix)-1 {
+			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
+		}
+		covered += dataRows
+	}
+	if covered != len(rows) {
+		t.Errorf("sub-tables cover %d data rows, want %d", covered, len(rows))
+	}
+}
+
+// TestGeneralChunkerSpreadsheetDropsMisalignedPositionsOnSplit: when the
+// matrix cannot be aligned one tuple per row, a split drops positions
+// entirely rather than pointing every sub-table row at the full matrix (R1).
+func TestGeneralChunkerSpreadsheetDropsMisalignedPositionsOnSplit(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 20})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	var rows [][]string
+	for i := 0; i < 6; i++ {
+		rows = append(rows, []string{fmt.Sprintf("value-%d-with-some-padding", i)})
+	}
+	item := spreadsheetSegmentItem("Sheet1", []string{"Name"}, rows, 1, 2)
+	// One whole-segment tuple instead of the per-row matrix.
+	item["positions"] = [][]float64{{1, 1, 7, 1, 1}}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "long.xlsx",
+		"file_type":     "xlsx",
+		"output_format": "json",
+		"json":          []map[string]any{item},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) < 2 {
+		t.Fatalf("chunks = %d, want the segment split under the token budget", len(chunks))
+	}
+	for i, chunk := range chunks {
+		if _, exists := chunk["positions"]; exists {
+			t.Errorf("chunk %d keeps a misaligned positions payload: %v", i, chunk["positions"])
+		}
+	}
 }
 
 // TestGeneralChunkerMediaContextReachesChunkIDAndIndexContent pins the
@@ -953,5 +1270,98 @@ func TestGeneralChunkerPDFAttachesOutlineOnce(t *testing.T) {
 	entry, _ := outline[0].(map[string]any)
 	if entry["title"] != "Chapter 1" || entry["depth"] != float64(0) {
 		t.Errorf("outline entry = %#v", entry)
+	}
+}
+
+// TestGeneralChunkerNonSpreadsheetTableNotMediaContext: a table item without
+// spreadsheet identity must not become a media-context source. The DOCX and
+// PDF strategies share the collector, so reading their tables as context would
+// change those documents' image chunks (and their chunk ids) as a side effect
+// of the spreadsheet wire switch.
+func TestGeneralChunkerNonSpreadsheetTableNotMediaContext(t *testing.T) {
+	component, err := NewGeneralChunker(map[string]any{
+		"chunk_token_size":   100,
+		"image_context_size": 10,
+	})
+	if err != nil {
+		t.Fatalf("NewGeneralChunker: %v", err)
+	}
+	table := map[string]any{
+		"text":         "<table><caption>Doc</caption>\n<tr><th>Name</th></tr>\n<tr><td>Revenue</td></tr>\n</table>\n",
+		"doc_type_kwd": "table",
+		"ck_type":      "table",
+	}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{
+		"name":          "document.docx",
+		"file_type":     "docx",
+		"output_format": "json",
+		"json": []map[string]any{
+			table,
+			{"text": "B2", "doc_type_kwd": "image", "ck_type": "image", "image": "figure"},
+			table,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("chunks = %#v, want table, image, table", chunks)
+	}
+	if chunks[1]["ck_type"] != "image" {
+		t.Fatalf("image chunk = %#v", chunks[1])
+	}
+	if got, _ := chunks[1]["text"].(string); got != "B2" {
+		t.Errorf("image chunk text = %q, want B2 with no table text folded in", got)
+	}
+	for _, key := range []string{"context_above", "context_below"} {
+		if _, exists := chunks[1][key]; exists {
+			t.Errorf("image chunk must not carry %s: %v", key, chunks[1][key])
+		}
+	}
+}
+
+// TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions: sub-tables
+// only receive sliced positions when the item carries spreadsheet identity and
+// the matrix is five-field tuples aligned to the splitter's rows; a PDF-style
+// matrix or a short tuple is dropped rather than misattributed.
+func TestGeneralChunkerSpreadsheetSplitDropsNonSpreadsheetPositions(t *testing.T) {
+	rows := [][]string{{"v0", "p0"}, {"v1", "p1"}, {"v2", "p2"}, {"v3", "p3"}, {"v4", "p4"}, {"v5", "p5"}}
+	cases := []struct {
+		name   string
+		mutate func(item map[string]any)
+	}{
+		{"no spreadsheet identity", func(item map[string]any) { delete(item, "sheet_index") }},
+		{"short tuples", func(item map[string]any) {
+			item["positions"] = [][]float64{{1}, {1}, {1}, {1}, {1}, {1}, {1}}
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			component, err := NewGeneralChunker(map[string]any{"chunk_token_size": 20})
+			if err != nil {
+				t.Fatalf("NewGeneralChunker: %v", err)
+			}
+			item := spreadsheetSegmentItem("Sheet1", []string{"name", "price"}, rows, 1, 2)
+			tc.mutate(item)
+			out, err := component.Invoke(t.Context(), nil, map[string]any{
+				"name":          "long.xlsx",
+				"file_type":     "xlsx",
+				"output_format": "json",
+				"json":          []map[string]any{item},
+			})
+			if err != nil {
+				t.Fatalf("Invoke: %v", err)
+			}
+			chunks := outputChunks(t, out)
+			if len(chunks) < 2 {
+				t.Fatalf("expected the segment to be split, got %d chunks", len(chunks))
+			}
+			for i, chunk := range chunks {
+				if p, ok := chunk["positions"]; ok && p != nil && fmt.Sprintf("%v", p) != "[]" && fmt.Sprintf("%v", p) != "<nil>" {
+					t.Errorf("chunk %d kept positions without a usable spreadsheet matrix: %v", i, p)
+				}
+			}
+		})
 	}
 }

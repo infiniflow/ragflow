@@ -1,12 +1,16 @@
 package parser
 
 import (
+	"context"
 	"encoding/base64"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
@@ -27,6 +31,24 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 		t.Fatal("JSON is empty; want at least one item")
 	}
 	// Verify heading
+	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+		t.Fatalf("first item text = %q, want %q", got, "# Hello")
+	}
+	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
+		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
+	}
+}
+
+// A UTF-8 BOM in front of the first heading must not demote it to a paragraph.
+func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
+	p, err := NewMarkdownParser(GoMarkdown)
+	if err != nil {
+		t.Fatalf("NewMarkdownParser: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "bom.md", []byte("\xef\xbb\xbf# Hello\n\nBody.\n"))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
 	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
 		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
@@ -160,8 +182,7 @@ func TestMarkdownParser_TableKeepsCellsBeyondTheHeader(t *testing.T) {
 	}
 	var joined strings.Builder
 	for _, item := range res.JSON {
-		text, _ := item["text"].(string)
-		joined.WriteString(text)
+		joined.WriteString(renderedText(item))
 		joined.WriteString("\n")
 	}
 	out := joined.String()
@@ -255,8 +276,12 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Errorf("table item ck_type = %q, want \"table\"", ck)
 			}
-			if !strings.Contains(text, "<table") {
-				t.Errorf("table item text is not raw <table> HTML: %q", text)
+			td, ok := item["table"].(*entity.TableData)
+			if !ok || td == nil {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
+			}
+			if !tableRowsContain(td, "Check item") {
+				t.Errorf("table item rows missing header label: %+v", td.Rows)
 			}
 		case "text":
 			if strings.Contains(text, "<table") {
@@ -438,18 +463,18 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 
 func TestResolveImageURL_DataURI(t *testing.T) {
 	b64 := base64.StdEncoding.EncodeToString([]byte("fakeimage"))
-	result, found := resolveImageURL("data:image/png;base64," + b64)
+	result, raw, found := resolveImageURL(context.Background(), "data:image/png;base64,"+b64)
 	if !found {
 		t.Fatal("expected image found for data URI")
 	}
-	if result != b64 {
+	if result != b64 || raw != nil {
 		t.Fatalf("got %q, want %q", result, b64)
 	}
 }
 
 func TestResolveImageURL_LocalPathNotFetched(t *testing.T) {
 	// Local / relative paths are not fetched (security); resolution fails.
-	if _, found := resolveImageURL("./local/image.png"); found {
+	if _, _, found := resolveImageURL(context.Background(), "./local/image.png"); found {
 		t.Fatal("expected no image resolved for a local path")
 	}
 }
@@ -468,13 +493,52 @@ func TestResolveImageURL_HTTPImage(t *testing.T) {
 	}))
 	defer ts.Close()
 
-	result, found := resolveImageURL(ts.URL + "/image.png")
+	encoded, result, found := resolveImageURL(context.Background(), ts.URL+"/image.png")
 	if !found {
 		t.Fatal("expected image found for HTTP URL")
 	}
-	expectedB64 := base64.StdEncoding.EncodeToString([]byte("fake-png-bytes"))
-	if result != expectedB64 {
-		t.Fatalf("got %q, want %q", result, expectedB64)
+	if encoded != "" || string(result) != "fake-png-bytes" {
+		t.Fatalf("got encoded=%q raw=%q, want raw image bytes", encoded, result)
+	}
+}
+
+func TestMarkdownImageBudgetSkipsFetchAfterCountLimit(t *testing.T) {
+	previous := ssrfAllowLoopback
+	ssrfAllowLoopback = true
+	t.Cleanup(func() { ssrfAllowLoopback = previous })
+
+	var fetches atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		fetches.Add(1)
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write([]byte("abc"))
+	}))
+	defer server.Close()
+
+	markdown := "![first](" + server.URL + "/1)\n\n" +
+		"![second](" + server.URL + "/2)\n\n" +
+		"![third](" + server.URL + "/3)\n"
+	doc := markdownNew().Parse([]byte(markdown))
+	budget := &embeddedMediaBudget{maxImageBytes: 4, maxTotalBytes: 4, maxItems: 2}
+	var items []map[string]any
+	if unresolved := walkMarkdownBlocksWithImages(t.Context(), doc, &items, false, true, budget); unresolved != 0 {
+		t.Fatalf("unresolved images = %d, want 0", unresolved)
+	}
+	if got := fetches.Load(); got != 2 {
+		t.Fatalf("remote fetches = %d, want 2 before the item limit", got)
+	}
+	if len(items) != 3 || items[0]["image"] != base64.StdEncoding.EncodeToString([]byte("abc")) {
+		t.Fatalf("first image was not retained: %+v", items)
+	}
+	for _, index := range []int{1, 2} {
+		if items[index]["image"] != nil || items[index]["media_omitted"] != true {
+			t.Fatalf("image %d = %+v, want omitted payload", index, items[index])
+		}
+	}
+	warnings := strings.Join(budget.warnings(), "\n")
+	if !strings.Contains(warnings, "omitted 1 embedded image payload(s) after reaching the 4-byte document image budget") ||
+		!strings.Contains(warnings, "stopped extracting embedded images after the 2-item document limit") {
+		t.Fatalf("warnings = %q, want document byte and item limit warnings", warnings)
 	}
 }
 
@@ -517,21 +581,21 @@ func TestFindBlockImage(t *testing.T) {
 	}
 }
 
-func TestFetchImageAsBase64_RejectsCredentials(t *testing.T) {
-	_, err := fetchImageAsBase64("https://user:pass@example.com/img.png")
+func TestFetchImage_RejectsCredentials(t *testing.T) {
+	_, err := fetchImage(context.Background(), "https://user:pass@example.com/img.png")
 	if err == nil {
 		t.Fatal("expected error for URL with credentials")
 	}
 }
 
-func TestFetchImageAsBase64_InvalidURL(t *testing.T) {
+func TestFetchImage_InvalidURL(t *testing.T) {
 	withSSRFBypass(t)
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	defer ts.Close()
 
-	_, err := fetchImageAsBase64(ts.URL + "/nonexistent.png")
+	_, err := fetchImage(context.Background(), ts.URL+"/nonexistent.png")
 	if err == nil {
 		t.Fatal("expected error for 404 response")
 	}
@@ -575,8 +639,8 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
@@ -637,11 +701,11 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 				afterIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(item)
 			tableIdx = i
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("table item ck_type = %q, want \"table\"", ck)
@@ -760,8 +824,8 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 		case "table":
 			sawTableItem = true
 			tableCount++
-			if !strings.Contains(text, "<table") {
-				t.Fatalf("raw table item text is not raw <table> HTML: %q", text)
+			if _, ok := item["table"].(*entity.TableData); !ok {
+				t.Fatalf("raw table item missing *entity.TableData: %#v", item)
 			}
 			if ck, _ := item["ck_type"].(string); ck != "table" {
 				t.Fatalf("raw table item ck_type = %q, want \"table\"", ck)
@@ -823,8 +887,8 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
-	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
+	t1 := renderedText(res.JSON[tableItemIdx[0]])
+	t2 := renderedText(res.JSON[tableItemIdx[1]])
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Fatalf("first table item missing x/y cells: %q", t1)
 	}
@@ -895,4 +959,18 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 			}
 		})
 	}
+}
+
+// tableRowsContain reports whether any cell of the structured table contains
+// the substring want, so table-contract tests can assert cell content without
+// depending on the legacy HTML markup shape.
+func tableRowsContain(td *entity.TableData, want string) bool {
+	for _, row := range td.Rows {
+		for _, cell := range row {
+			if strings.Contains(cell, want) {
+				return true
+			}
+		}
+	}
+	return false
 }

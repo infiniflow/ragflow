@@ -90,17 +90,8 @@ func (s *MetadataService) GetTenantIDByKBID(ctx context.Context, kbID string) (s
 	return dao.GetTenantIDByKBID(ctx, dao.DB, kbID)
 }
 
-// GetTenantIDByKBIDs retrieves tenant ID from the first knowledge base ID in the list
-func (s *MetadataService) GetTenantIDByKBIDs(ctx context.Context, kbIDs []string) (string, error) {
-	if len(kbIDs) == 0 {
-		return "", fmt.Errorf("no kb_ids provided")
-	}
-	return dao.GetTenantIDByKBID(ctx, dao.DB, kbIDs[0])
-}
-
 // SearchMetadataResponse holds the result of a metadata search
 type SearchMetadataResponse struct {
-	IndexName       string
 	MetadataRecords []map[string]interface{}
 }
 
@@ -122,40 +113,38 @@ func (s *MetadataService) SearchMetadata(ctx context.Context, kbID, tenantID str
 	}
 
 	return &SearchMetadataResponse{
-		IndexName:       BuildMetadataIndexName(tenantID),
 		MetadataRecords: searchResult.MetadataRecords,
 	}, nil
 }
 
-// SearchMetadataByKBs searches the metadata index for multiple knowledge bases
+// SearchMetadataByKBs searches each tenant's metadata store, with size as the
+// per-tenant limit and the KB filter scoped to that tenant.
 func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []string, size int) (*SearchMetadataResponse, error) {
 	if len(kbIDs) == 0 {
 		return &SearchMetadataResponse{MetadataRecords: []map[string]interface{}{}}, nil
 	}
 
-	tenantID, err := s.GetTenantIDByKBIDs(ctx, kbIDs)
+	groups, err := dao.GroupKBIDsByTenant(ctx, dao.DB, kbIDs)
 	if err != nil {
 		return nil, err
 	}
 
-	searchReq := &types.SearchMetadataRequest{
-		TenantID: tenantID,
-		Offset:   0,
-		Limit:    size,
-		Filter: map[string]interface{}{
-			"kb_id": kbIDs,
-		},
+	response := &SearchMetadataResponse{MetadataRecords: make([]map[string]interface{}, 0)}
+	for _, group := range groups {
+		searchReq := &types.SearchMetadataRequest{
+			TenantID: group.TenantID,
+			Limit:    size,
+			Filter: map[string]interface{}{
+				"kb_id": group.KBIDs,
+			},
+		}
+		searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
+		if err != nil {
+			return nil, fmt.Errorf("metadata search for tenant %s failed: %w", group.TenantID, err)
+		}
+		response.MetadataRecords = append(response.MetadataRecords, searchResult.MetadataRecords...)
 	}
-
-	searchResult, err := s.docEngine.SearchMetadata(ctx, searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
-	}
-
-	return &SearchMetadataResponse{
-		IndexName:       BuildMetadataIndexName(tenantID),
-		MetadataRecords: searchResult.MetadataRecords,
-	}, nil
+	return response, nil
 }
 
 // MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
@@ -515,7 +504,7 @@ func ExtractMetaFields(chunk map[string]interface{}) (map[string]interface{}, er
 	return metaFields, nil
 }
 
-// mergeFieldValues merges two field values when the same key appears multiple times
+// MergeFieldValues merges two field values when the same key appears multiple times
 // If both are arrays, append all elements. If one is array and other is string, append string to array.
 // Returns []interface{} with all merged values (flattened).
 func MergeFieldValues(existing, new interface{}) []interface{} {

@@ -95,7 +95,7 @@ func (e *embedder) limiter() tokenizer.Limiter {
 		}
 		if id != "" && !tokenizer.CounterExact(id) {
 			e.limiterErr = fmt.Errorf(
-				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_go_deps.py`): refusing to count with the calibrated estimate",
+				"embedding tokenizer %q is declared for %s but its asset is unavailable (check that ragflow_deps/huggingface.co is present; run `uv run ragflow_deps/download_deps.py`): refusing to count with the calibrated estimate",
 				id, e.quotaKey())
 		}
 		e.limiterVal = tokenizer.LimiterFor(id, string(e.quotaKey()), tokenizer.DefaultCalibration())
@@ -267,7 +267,7 @@ func (e *embedder) embedWithRetry(ctx context.Context, texts []string) ([]models
 			return nil, 0, cerr
 		}
 		usage := &common.ModelUsage{}
-		embeds, err = e.model.ModelDriver.Embed(ctx, e.model.ModelName, req, e.model.APIConfig, config, usage)
+		embeds, err = e.model.Embed(ctx, req, config, usage)
 		if err == nil {
 			return embeds, usage.InputTokens, nil
 		}
@@ -686,6 +686,7 @@ func newEmbedderResolver(
 // so the concrete resolver is injected here - the task package is the
 // composition root for ingestion runs.
 func init() {
+	modelFactory := service.NewModelFactory()
 	componentpkg.DefaultEmbedderResolver = newEmbedderResolver(
 		func(ctx context.Context, kbID string) (string, error) {
 			kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, kbID)
@@ -697,6 +698,12 @@ func init() {
 			}
 			return kb.EmbdID, nil
 		},
-		service.NewModelProviderService().GetEmbeddingModel,
+		func(ctx context.Context, tenantID, embdID string) (*models.EmbeddingModel, error) {
+			embeddingModel, err := modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantID}, embdID)
+			if err != nil {
+				return nil, err
+			}
+			return embeddingModel, nil
+		},
 	)
 }

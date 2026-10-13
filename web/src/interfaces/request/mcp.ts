@@ -1,6 +1,7 @@
 import { IExportedMcpServer } from '@/interfaces/database/mcp';
 
 export interface ITestMcpRequestBody {
+  mcp_id?: string;
   server_type: string;
   url: string;
   headers?: Record<string, any>;

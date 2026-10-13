@@ -17,27 +17,28 @@
 package parser
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"strings"
+	"time"
+
+	excel "github.com/jloor/go-excel-reader"
 )
 
+var compoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}
+
 type XLSParser struct {
-	libType                        string
 	ParseMethod                    string
 	OutputFormat                   string
-	HTML4Excel                     bool
 	TCADPAPIServer                 string
 	TCADPAPIKey                    string
 	TCADPTableResultType           string
 	TCADPMarkdownImageResponseType string
 }
 
-func NewXLSParser(libType string) (*XLSParser, error) {
-	if libType == "" {
-		libType = "excelize"
-	}
+func NewXLSParser(_ string) (*XLSParser, error) {
 	return &XLSParser{
-		libType:                        libType,
 		TCADPTableResultType:           "1",
 		TCADPMarkdownImageResponseType: "1",
 	}, nil
@@ -57,9 +58,7 @@ func (p *XLSParser) ConfigureFromSetup(setup map[string]any) {
 	if v, ok := setup["output_format"].(string); ok && v != "" {
 		p.OutputFormat = v
 	}
-	if v, ok := setup["html4excel"].(bool); ok {
-		p.HTML4Excel = v
-	}
+	deprecatedHTML4Excel(setup, p.String())
 	deprecatedChunkRows(setup, p.String())
 	if v, ok := setup["tcadp_apiserver"].(string); ok && v != "" {
 		p.TCADPAPIServer = v
@@ -93,7 +92,22 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		}
 	}
 
-	items, warnings, sheetsCount, err := parseXLSXBytes(data, p.HTML4Excel)
+	var (
+		items       []map[string]any
+		warnings    []string
+		sheetsCount int
+		err         error
+	)
+	if bytes.HasPrefix(data, compoundDocumentSignature) {
+		items, sheetsCount, err = parseBIFF8Bytes(ctx, data)
+	} else {
+		mediaBudget := newEmbeddedMediaBudget()
+		items, warnings, sheetsCount, err = parseXLSXBytes(data, mediaBudget)
+		warnings = append(warnings, mediaBudget.warnings()...)
+	}
+	if err := ctx.Err(); err != nil {
+		return ParseResult{Err: err}
+	}
 	if err != nil {
 		return ParseResult{Err: fmt.Errorf("xls parse: %w", err)}
 	}
@@ -104,4 +118,83 @@ func (p *XLSParser) ParseWithResult(ctx context.Context, filename string, data [
 		JSON:         items,
 		Warnings:     warnings,
 	}
+}
+
+func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, error) {
+	reader, err := excel.OpenXLS(bytes.NewReader(data), excel.WithErrorValues(true))
+	if err != nil {
+		return nil, 0, fmt.Errorf("open BIFF workbook: %w", err)
+	}
+	defer reader.Close()
+
+	sheetCount := reader.SheetCount()
+	items := make([]map[string]any, 0, sheetCount)
+	for sheetIndex := 0; reader.NextSheet(); sheetIndex++ {
+		if err := ctx.Err(); err != nil {
+			return nil, sheetCount, err
+		}
+		records, dataRows, headerRow := readBIFF8Records(ctx, reader)
+		if err := ctx.Err(); err != nil {
+			return nil, sheetCount, err
+		}
+		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil)...)
+	}
+	if err := reader.Err(); err != nil {
+		return nil, sheetCount, fmt.Errorf("read BIFF workbook: %w", err)
+	}
+	return items, sheetCount, nil
+}
+
+func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int, int) {
+	type numberedRow struct {
+		number int
+		cells  []string
+	}
+
+	rows := make([]numberedRow, 0)
+	for reader.Read() {
+		if ctx.Err() != nil {
+			return nil, nil, 0
+		}
+		cells := make([]string, reader.FieldCount())
+		for col := range cells {
+			cells[col] = spreadsheetCellString(reader.GetValue(col))
+		}
+		if rowIsEmpty(cells) {
+			continue
+		}
+		rows = append(rows, numberedRow{number: reader.RowIndex() + 1, cells: cells})
+	}
+	if len(rows) == 0 {
+		return nil, nil, 0
+	}
+
+	records := make([][]string, 0, len(rows))
+	dataRows := make([]int, 0, len(rows)-1)
+	records = append(records, rows[0].cells)
+	for _, row := range rows[1:] {
+		records = append(records, row.cells)
+		dataRows = append(dataRows, row.number)
+	}
+	return cleanIllegalControlChars(records), dataRows, rows[0].number
+}
+
+func spreadsheetCellString(value any) string {
+	switch value := value.(type) {
+	case nil:
+		return ""
+	case time.Time:
+		return value.Format(time.RFC3339)
+	default:
+		return fmt.Sprint(value)
+	}
+}
+
+func rowIsEmpty(row []string) bool {
+	for _, cell := range row {
+		if strings.TrimSpace(cell) != "" {
+			return false
+		}
+	}
+	return true
 }

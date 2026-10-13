@@ -24,10 +24,12 @@ import (
 	"ragflow/internal/tokenizer"
 )
 
-// EmbedWithinLimit embeds req after cutting every text to what this model accepts,
+// Embed embeds req after cutting every text to what this model accepts,
 // and retries with a smaller budget if the provider still rejects an input as over
 // its window. It is the embedding counterpart of RerankModel.Rerank, which cuts its
 // documents the same way for the same reason.
+// A successful response must contain exactly one embedding per input text;
+// a count mismatch is an error, not a partial result or an over-limit rejection.
 //
 // Callers use it instead of ModelDriver.Embed because a provider does NOT truncate
 // an over-window input: it rejects the whole request (SiliconFlow answers 400 with
@@ -48,7 +50,7 @@ import (
 // that declares a tokenizer whose asset is not on disk is refused before the first
 // attempt, because counting it with the calibrated cl100k estimate is exactly what
 // lets an oversized request through.
-func (m *EmbeddingModel) EmbedWithinLimit(ctx context.Context, req EmbedRequest, embeddingConfig *EmbeddingConfig, usage *common.ModelUsage) ([]EmbeddingData, error) {
+func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingConfig *EmbeddingConfig, usage *common.ModelUsage) ([]EmbeddingData, error) {
 	if m == nil || m.ModelDriver == nil {
 		return nil, fmt.Errorf("embedding model: driver is nil")
 	}
@@ -72,6 +74,9 @@ func (m *EmbeddingModel) EmbedWithinLimit(ctx context.Context, req EmbedRequest,
 	for _, budget := range tokenizer.OverLimitLadder(window) {
 		embeds, err := m.embedCut(ctx, req, embeddingConfig, usage, counter, budget)
 		if err == nil {
+			if len(embeds) != len(req.Texts) {
+				return nil, fmt.Errorf("embedding model: unexpected embedding count: got %d, want %d", len(embeds), len(req.Texts))
+			}
 			return embeds, nil
 		}
 		if !tokenizer.IsOverLimitError(err) {

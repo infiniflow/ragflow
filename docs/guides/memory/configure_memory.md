@@ -31,7 +31,7 @@ Multiple memory types can be selected, but **Raw (`raw`)** is required and canno
 
 ### Memory Size
 
-Memory size is used to limit the capacity that the memory can occupy. The value range is `(0, 5242880]` bytes. After the capacity reaches the upper limit, the system cleans up old content according to the forgetting policy.
+Memory size is used to limit the capacity that the memory can occupy. The value must be greater than `0` and cannot exceed `5 MiB` (`5242880` bytes). After the capacity reaches the upper limit, the system cleans up old content according to the forgetting policy.
 
 ### Advanced Settings
 

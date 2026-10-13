@@ -100,27 +100,11 @@ func resolveTreeOrder(param common.Param) int {
 	if !ok {
 		return DefaultTreeOrder
 	}
-	v, ok := toInt(raw)
+	v, ok := rfcommon.ToInt(raw)
 	if !ok || v < MinTreeOrder || v > MaxTreeOrder {
 		return DefaultTreeOrder
 	}
 	return v
-}
-
-// toInt coerces the common param-extra value types to int.
-func toInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case float32:
-		return int(x), true
-	default:
-		return 0, false
-	}
 }
 
 const (
@@ -141,7 +125,7 @@ var raptorTruncationMarkerRE = regexp.MustCompile(
 // extra["max_token"] override with the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			if n < raptorDefaultMaxToken {
 				return raptorDefaultMaxToken
 			}
@@ -156,7 +140,7 @@ func resolveMaxToken(param common.Param) int {
 // that threshold (raptor.py:_summarize_texts).
 func resolveMaxErrors(param common.Param) int {
 	if v, ok := param.Extra["max_errors"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			return n
 		}
 	}
@@ -459,6 +443,16 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 // passed as the user turn so the model emits a one-line title on the first line
 // of the summary. maxToken is deliberately not sent as MaxTokens: the provider
 // controls its own output budget, while the prompt guides the target length.
+// summarizeBackoff returns the per-attempt backoff unit for summarizeTexts
+// retries. A ctx carrying common.WithRetryDelay shortens it so failure-path
+// tests need not wait out the real ~1s-per-attempt budget.
+func summarizeBackoff(ctx context.Context) time.Duration {
+	if d, ok := common.RetryDelayFromCtx(ctx); ok {
+		return d
+	}
+	return time.Second
+}
+
 func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, userText string, maxToken int) (string, error) {
 	userPrompt := fmt.Sprintf("%s Keep the summary concise and target approximately %d tokens.", userText, maxToken)
 	for attempt := 0; attempt < raptorMaxRetries; attempt++ {
@@ -466,7 +460,7 @@ func summarizeTexts(ctx context.Context, deps common.Deps, llmID, systemText, us
 			select {
 			case <-ctx.Done():
 				return "", ctx.Err()
-			case <-time.After(time.Duration(1+attempt) * time.Second):
+			case <-time.After(time.Duration(attempt+1) * summarizeBackoff(ctx)):
 			}
 		}
 		req := common.ChatRequest{
@@ -667,13 +661,7 @@ func toFloat64Matrix(vecs [][]float32) [][]float64 {
 	return out
 }
 
-// defaultRaptorPrompt is the summary task template. It mirrors the production
-// prompt from api/db/init_data/compilation_templates/tree.yaml (the tree
-// compilation template), NOT the Python fallback in compiler.py:128. The
-// {cluster_content} placeholder is filled with the joined cluster text. The
-// YAML literal block carries a base indent of 6 spaces before {cluster_content};
-// those 6 spaces are part of the prompt and MUST be preserved. A caller may
-// override it via extra["prompt"] (Python: raptor_cfg["prompt"]).
+// defaultRaptorPrompt is the summary task template.
 const defaultRaptorPrompt = "Please summarize the following paragraphs. Be careful with the numbers, do not make things up. Paragraphs as following:\n      {cluster_content}\nThe above is the content you need to summarize."
 
 // raptorSystemHelper mirrors the leading "You're a helpful assistant.\n\nHelp me

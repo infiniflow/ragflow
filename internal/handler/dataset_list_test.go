@@ -49,6 +49,15 @@ func insertListDatasetsTestKB(t *testing.T, id, tenantID, name string) {
 	t.Helper()
 
 	status := string(entity.StatusValid)
+	if err := dao.DB.Where("user_id = ? AND tenant_id = ?", tenantID, tenantID).FirstOrCreate(&entity.UserTenant{
+		ID:       "ut-" + tenantID,
+		UserID:   tenantID,
+		TenantID: tenantID,
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
+	}
 	kb := &entity.Knowledgebase{
 		ID:           id,
 		TenantID:     tenantID,

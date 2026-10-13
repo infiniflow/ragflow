@@ -49,6 +49,41 @@ func TestBuildWorkflow_3NodeLinear(t *testing.T) {
 	}
 }
 
+// TestBuildWorkflow_MessageThenNextNode keeps a status message between two
+// steps. The edge after Message is ordering-only, so the graph still compiles
+// when Message is not the terminal node.
+func TestBuildWorkflow_MessageThenNextNode(t *testing.T) {
+	c := &Canvas{
+		Components: map[string]CanvasComponent{
+			"begin_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Begin", Params: map[string]any{}},
+				Downstream: []string{"message_0"},
+			},
+			"message_0": {
+				Obj:        CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"Searching the first source"}}},
+				Downstream: []string{"llm_0"},
+				Upstream:   []string{"begin_0"},
+			},
+			"llm_0": {
+				Obj:        CanvasComponentObj{ComponentName: "LLM", Params: map[string]any{"prompt": "{sys.query}"}},
+				Downstream: []string{"message_1"},
+				Upstream:   []string{"message_0"},
+			},
+			"message_1": {
+				Obj:      CanvasComponentObj{ComponentName: "Message", Params: map[string]any{"content": []any{"{llm_0@content}"}}},
+				Upstream: []string{"llm_0"},
+			},
+		},
+	}
+
+	if _, err := BuildWorkflow(t.Context(), c); err != nil {
+		t.Fatalf("BuildWorkflow: %v", err)
+	}
+	if _, err := Compile(t.Context(), c); err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+}
+
 // TestBuildWorkflow_5NodeDiamond exercises a diamond: A → B, A → C,
 // B → D, C → D. The two parallel branches converge at D.
 func TestBuildWorkflow_5NodeDiamond(t *testing.T) {
@@ -157,7 +192,7 @@ func TestBuildWorkflow_MultiTerminalSucceeds(t *testing.T) {
 
 	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile multi-terminal canvas: %v", err)
+		t.Fatalf("Compile multi-terminal agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled multi-terminal workflow")
@@ -225,7 +260,7 @@ func TestBuildWorkflow_ParallelGroupWithOuterFollowerSucceeds(t *testing.T) {
 
 	cc, err := Compile(t.Context(), c)
 	if err != nil {
-		t.Fatalf("Compile parallel canvas: %v", err)
+		t.Fatalf("Compile parallel agent: %v", err)
 	}
 	if cc.Workflow == nil {
 		t.Fatal("nil compiled parallel workflow")

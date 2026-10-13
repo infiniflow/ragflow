@@ -18,8 +18,6 @@ import uuid
 
 import pytest
 
-from test.testcases.configs import IS_GO_PROXY
-
 
 @pytest.fixture
 def search_resource(rest_client):
@@ -107,7 +105,7 @@ def test_search_update_invalid_search_id(rest_client):
 @pytest.mark.p2
 def test_search_completion_requires_question(rest_client, search_resource):
     search_id = search_resource
-    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
+    expected_message = "question is required"
 
     completion_res = rest_client.post(f"/searches/{search_id}/completion", json={})
     assert completion_res.status_code == 200
@@ -148,5 +146,5 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
     )
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] == 102, payload
-    assert "You don't own the dataset nonexistent_dataset" in payload["message"], payload
+    assert payload["code"] == 404, payload
+    assert payload["message"] == "Resource not found", payload

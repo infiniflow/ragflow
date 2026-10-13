@@ -1,115 +1,40 @@
 import { ConfirmDeleteDialog } from '@/components/confirm-delete-dialog';
-import {
-  DynamicForm,
-  DynamicFormRef,
-  FormFieldConfig,
-  FormFieldType,
-} from '@/components/dynamic-form';
-import { Checkbox } from '@/components/ui/checkbox';
+import { DynamicForm, DynamicFormRef } from '@/components/dynamic-form';
 import { DialogProps } from '@radix-ui/react-dialog';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
-import { ControllerRenderProps } from 'react-hook-form';
+import { memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 export const ReparseDialog = memo(
   ({
     handleOperationIconClick,
-    chunk_num,
-    enable_metadata = false,
-    forceDelete = false,
     visible = true,
     hideModal,
   }: DialogProps & {
-    chunk_num: number;
     handleOperationIconClick: (options?: {
       delete: boolean;
       apply_kb: boolean;
     }) => void;
-    enable_metadata?: boolean;
-    // Go always drops existing chunks on re-ingest, so it only shows a plain
-    // confirmation with no checkboxes.
-    forceDelete?: boolean;
     visible: boolean;
     hideModal: () => void;
   }) => {
-    const [defaultValues, setDefaultValues] = useState<any>(null);
-    const [fields, setFields] = useState<FormFieldConfig[]>([]);
     const { t } = useTranslation();
 
-    useEffect(() => {
-      setDefaultValues({
-        delete: forceDelete || chunk_num > 0,
-        apply_kb: false,
-      });
-      const deleteField = {
-        name: 'delete',
-        label: '',
-        type: FormFieldType.Checkbox,
-        render: (fieldProps: ControllerRenderProps) => (
-          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
-            <Checkbox
-              {...fieldProps}
-              checked={fieldProps.value}
-              onCheckedChange={(checked: boolean) => {
-                fieldProps.onChange(checked);
-              }}
-            />
-            <span className="ml-2">
-              {chunk_num > 0
-                ? t(`knowledgeDetails.redo`, {
-                    chunkNum: chunk_num,
-                  })
-                : t('knowledgeDetails.redoAll')}
-            </span>
-          </div>
-        ),
-      };
-      const applyKBField = {
-        name: 'apply_kb',
-        label: '',
-        type: FormFieldType.Checkbox,
-        defaultValue: false,
-        render: (fieldProps: ControllerRenderProps) => (
-          <div className="flex items-center text-text-secondary p-5 border border-border-button rounded-lg">
-            <Checkbox
-              {...fieldProps}
-              checked={fieldProps.value}
-              onCheckedChange={(checked: boolean) => {
-                fieldProps.onChange(checked);
-              }}
-            />
-            <span className="ml-2">
-              {t('knowledgeDetails.applyAutoMetadataSettings')}
-            </span>
-          </div>
-        ),
-      };
-      // Go only needs a plain confirm: chunks are always dropped, so no
-      // checkboxes are rendered.
-      if (forceDelete) {
-        setFields([]);
-      } else if (chunk_num > 0 && enable_metadata) {
-        setFields([deleteField, applyKBField]);
-      } else if (chunk_num > 0 && !enable_metadata) {
-        setFields([deleteField]);
-      } else if (chunk_num <= 0 && enable_metadata) {
-        setFields([applyKBField]);
-      } else {
-        setFields([]);
-      }
-    }, [chunk_num, t, enable_metadata, forceDelete]);
+    // Existing chunks are always dropped on re-ingest, so the dialog only
+    // needs a plain confirmation with no checkboxes. Seed delete: true so the
+    // click payload keeps the drop behavior.
+    const defaultValues = {
+      delete: true,
+      apply_kb: false,
+    };
 
     const formCallbackRef = useRef<DynamicFormRef>(null);
 
     const handleCancel = useCallback(() => {
-      // handleOperationIconClick(false);
       hideModal?.();
-      // formInstance?.reset();
       formCallbackRef?.current?.reset();
     }, [formCallbackRef, hideModal]);
 
     const handleSave = useCallback(async () => {
-      // const instance = formInstance;
       const instance = formCallbackRef?.current;
       if (!instance) {
         console.error('Form instance is null');
@@ -120,7 +45,6 @@ export const ReparseDialog = memo(
       if (check) {
         instance.submit();
         const formValues = instance.getValues();
-        console.log(formValues);
         handleOperationIconClick({
           delete: formValues.delete,
           apply_kb: formValues.apply_kb,
@@ -136,11 +60,7 @@ export const ReparseDialog = memo(
         open={visible}
         okButtonText={t('common.confirm')}
         content={{
-          title: t(
-            forceDelete
-              ? `knowledgeDetails.clearChunksReparseTip`
-              : `knowledgeDetails.parseFileTip`,
-          ),
+          title: t(`knowledgeDetails.clearChunksReparseTip`),
           node: (
             <div>
               <DynamicForm.Root
@@ -148,24 +68,13 @@ export const ReparseDialog = memo(
                   console.log('submit', data);
                 }}
                 ref={formCallbackRef}
-                fields={fields}
+                fields={[]}
                 defaultValues={defaultValues}
-              >
-                {/* <DynamicForm.CancelButton
-                handleCancel={() => handleOperationIconClick(false)}
-                cancelText={t('common.cancel')}
-              />
-              <DynamicForm.SavingButton
-                buttonText={t('common.confirm')}
-                submitFunc={handleSave}
-              /> */}
-              </DynamicForm.Root>
+              ></DynamicForm.Root>
             </div>
           ),
         }}
-      >
-        {/* {children} */}
-      </ConfirmDeleteDialog>
+      ></ConfirmDeleteDialog>
     );
   },
 );

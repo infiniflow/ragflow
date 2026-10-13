@@ -201,7 +201,7 @@ func buildSearchExprs(ctx context.Context, embModel *modelModule.EmbeddingModel,
 	embeddingConfig := &modelModule.EmbeddingConfig{Dimension: 0}
 	// Query: true — matchText is the search query (Python get_vector →
 	// encode_queries), not a document.
-	embeddings, err := embModel.ModelDriver.Embed(ctx, embModel.ModelName, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}, Query: true}, embModel.APIConfig, embeddingConfig, nil)
+	embeddings, err := embModel.Embed(ctx, modelModule.EmbedRequest{Texts: []string{matchText.MatchingText}, Query: true}, embeddingConfig, nil)
 	if err != nil || len(embeddings) == 0 {
 		return []interface{}{matchText}
 	}
@@ -245,7 +245,7 @@ func queryRewrite(ctx context.Context, chatModel *modelModule.ChatModel, questio
 			{Role: "system", Content: prompt},
 			{Role: "user", Content: "Output:"},
 		}
-		response, err := chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, nil, nil)
+		response, err := chatModel.ChatWithMessages(ctx, messages, nil, nil)
 		if err == nil && response != nil && response.Answer != nil {
 			result, parseErr := common.ParseQueryRewriteResponse(*response.Answer)
 			if parseErr == nil && result != nil {

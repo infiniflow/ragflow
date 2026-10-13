@@ -34,30 +34,13 @@ const streamDoneSentinel = "[DONE]"
 // errStreamDone aborts the driver loop once the terminal sentinel arrives.
 var errStreamDone = errors.New("chat stream done")
 
-func (m *ModelProviderService) Chat(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (*modelModule.ChatResponse, error) {
-	chatModel, err := m.GetChatModel(ctx, tenantID, modelID)
-	if err != nil {
-		return nil, err
-	}
-	return chatModel.ModelDriver.ChatWithMessages(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil)
-}
-
-func (m *ModelProviderService) ChatStream(ctx context.Context, tenantID, modelID string, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	chatModel, err := m.GetChatModel(ctx, tenantID, modelID)
-	if err != nil {
-		return nil, nil, err
-	}
-	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
-	return ch, errCh, nil
-}
-
 func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error) {
 	ch := make(chan string, 256)
 	errCh := make(chan error, 1)
 	go func() {
 		defer close(ch)
 		defer close(errCh)
-		if err := chatModel.ModelDriver.ChatStreamlyWithSender(ctx, *chatModel.ModelName, messages, chatModel.APIConfig, config, nil,
+		if err := chatModel.ChatStreamlyWithSender(ctx, messages, config, nil,
 			func(delta *string, _ *string) error {
 				if delta == nil {
 					return nil
@@ -82,16 +65,22 @@ func chatStreamWithContext(ctx context.Context, chatModel *modelModule.ChatModel
 	return ch, errCh
 }
 
-// TenantStreamAdapter adapts tenant/model-aware chat streaming to AskService.
+// TenantStreamAdapter adapts a factory-created chat model to AskService's
+// channel-based streaming interface.
 type TenantStreamAdapter struct {
-	LLM      *ModelProviderService
+	Factory  *ModelFactory
 	TenantID string
 	ModelID  string
 }
 
 func (a *TenantStreamAdapter) ChatStream(ctx context.Context, messages []modelModule.Message, config *modelModule.ChatConfig) (<-chan string, <-chan error, error) {
-	if a.LLM == nil {
-		return nil, nil, fmt.Errorf("streaming LLM not configured")
+	if a.Factory == nil {
+		return nil, nil, fmt.Errorf("model factory not configured")
 	}
-	return a.LLM.ChatStream(ctx, a.TenantID, a.ModelID, messages, config)
+	chatModel, err := a.Factory.NewChatModel(ctx, ModelAccess{TenantID: a.TenantID}, a.ModelID)
+	if err != nil {
+		return nil, nil, err
+	}
+	ch, errCh := chatStreamWithContext(ctx, chatModel, messages, config)
+	return ch, errCh, nil
 }

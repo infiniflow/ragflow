@@ -926,7 +926,7 @@ func getVarLocked(s *CanvasState, ref string) (any, error) {
 		}
 		return dotTraverse(outputs, tail), nil
 	default:
-		return nil, fmt.Errorf("canvas: invalid variable reference %q", ref)
+		return nil, fmt.Errorf("agent: invalid variable reference %q", ref)
 	}
 }
 

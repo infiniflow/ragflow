@@ -89,6 +89,8 @@ export default {
       noMoreData: 'Tất cả chỉ có thế, không còn gì nữa',
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'Tiếp tục tải lên, hệ thống sẽ tự động chuyển các tệp này sang cấu hình phân tích tích hợp được hỗ trợ.',
       dataset: 'Dữ liệu',
       testing: 'Kiểm tra truy hồi',
       files: 'Các tệp',
@@ -189,6 +191,7 @@ export default {
       documentMetaTips: `<p>Dữ liệu meta ở định dạng Json (không thể tìm kiếm). Nó sẽ được thêm vào prompt cho LLM nếu bất kỳ đoạn nào của tài liệu này được đưa vào prompt.</p> <p>Ví dụ:</p> <b>Dữ liệu meta là:</b><br> <code> { "Author": "Alex Dowson", "Date": "2024-11-12" } </code><br><b>Prompt sẽ là:</b><br> <p>Tài liệu: the_name_of_document</p> <p>Tác giả: Alex Dowson</p> <p>Ngày: 2024-11-12</p> <p>Các đoạn liên quan như sau:</p> <ul> <li> Đây là nội dung của đoạn...</li> <li> Đây là nội dung của đoạn...</li> </ul>`,
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: 'Cửa sổ ngữ cảnh hình ảnh & bảng',
       imageTableContextWindowTip:
         'Trích xuất N token văn bản phía trên và phía dưới hình ảnh và bảng để cung cấp bối cảnh phong phú hơn.',
@@ -807,7 +810,7 @@ export default {
       destinationFolder: 'Thư mục đích',
     },
     flow: {
-      cite: 'Dẫn nguồn',
+      cite: 'Hiển thị trích dẫn',
       citeTip: 'Mẹo dẫn nguồn',
       name: 'Tên',
       nameMessage: 'Vui lòng nhập tên',

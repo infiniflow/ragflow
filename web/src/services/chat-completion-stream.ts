@@ -19,7 +19,8 @@ import { EventSourceParserStream } from 'eventsource-parser/stream';
 export type ChatCompletionStreamParams = {
   chatId?: string;
   sessionId: string;
-  messages: IMessage[];
+  question: string;
+  files?: IMessage['files'];
   enableThinking?: string;
   enableInternet?: boolean;
   llmSetting?: Variable;
@@ -42,7 +43,8 @@ export function requestChatCompletionStream(
   {
     chatId,
     sessionId,
-    messages,
+    question,
+    files,
     enableThinking,
     enableInternet,
     llmSetting,
@@ -68,8 +70,8 @@ export function requestChatCompletionStream(
     body: JSON.stringify({
       chat_id: chatId,
       session_id: sessionId,
-      messages,
-      pass_all_history_messages: true,
+      question,
+      files,
       reasoning: Number(enableThinking),
       internet: enableInternet,
       ...(temperature === undefined ? {} : { temperature }),

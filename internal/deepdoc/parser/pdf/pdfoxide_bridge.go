@@ -45,6 +45,11 @@ func (e *PDFOxideEngine) RenderPageImage(pageNum int, dpi float64) (image.Image,
 	return e.Inner.RenderPageImage(pageNum, dpi)
 }
 
+// PageSize returns the effective dimensions of a zero-based page in PDF points.
+func (e *PDFOxideEngine) PageSize(pageNum int) (float64, float64, error) {
+	return e.Inner.PageSize(pageNum)
+}
+
 func (e *PDFOxideEngine) ExtractChars(pageNum int) ([]pdf.TextChar, error) {
 	chars, err := e.Inner.ExtractChars(pageNum)
 	if err != nil {

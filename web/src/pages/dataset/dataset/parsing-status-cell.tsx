@@ -15,7 +15,6 @@ import {
 } from '@/components/ui/tooltip';
 import { IDocumentInfo } from '@/interfaces/database/document';
 import { cn } from '@/lib/utils';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { CircleQuestionMark, CircleX, Clock3, Loader2 } from 'lucide-react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -123,7 +122,6 @@ export function ParsingStatusCell({
 } & UseChangeDocumentParserShowType) {
   const { t } = useTranslation();
   const { progress, chunk_count, id } = record;
-  // Go reports state via ingestion_status (run is gone); Python keeps run.
   // Resolve one effective status for the icon, state attribute and labels.
   const effectiveRun = getDocumentRunningStatus(record);
   const operationIcon = IconMap[effectiveRun];
@@ -135,7 +133,6 @@ export function ParsingStatusCell({
     showModal: showReparseDialogModal,
     hideModal: hideReparseDialogModal,
   } = useHandleRunDocumentByIds(id, showChangeParserModal);
-  const isGo = useIsGoBackend();
   const isRunning = isDocumentProcessing(record);
   const isQueued = effectiveRun === RunningStatus.QUEUED;
   const isStopping = isDocumentStopping(record);
@@ -148,15 +145,10 @@ export function ParsingStatusCell({
     handleRunDocumentByIds(record, isRunning, option);
   };
 
-  // The confirmation only offers real choices when there are existing chunks to
-  // drop or auto-metadata to re-apply. Otherwise, and always when cancelling a
-  // run, the action fires straight away. Go always drops existing chunks
-  // server-side, so its dialog shows the delete notice locked on and only the
-  // auto-metadata choice is Python-only.
-  const needsParseConfirm =
-    !isRunning &&
-    (!isZeroChunk ||
-      (!isGo && Boolean(record?.parser_config?.enable_metadata)));
+  // Existing chunks are always dropped server-side on re-ingest, so the
+  // confirmation is only needed when there are existing chunks; otherwise, and
+  // always when cancelling a run, the action fires straight away.
+  const needsParseConfirm = !isRunning && !isZeroChunk;
 
   const handleParseClick = () => {
     if (needsParseConfirm) {
@@ -258,7 +250,7 @@ export function ParsingStatusCell({
                 </div>
               )}
             </div>
-          ) : isGo && isRunLoading ? (
+          ) : isRunLoading ? (
             <Button size="auto" variant="static" disabled>
               <Loader2 className="size-[1em] animate-spin" />
             </Button>
@@ -280,10 +272,8 @@ export function ParsingStatusCell({
       )}
       {reparseDialogVisible && (
         <ReparseDialog
-          enable_metadata={record?.parser_config?.enable_metadata}
-          forceDelete={isGo}
+          forceDelete
           handleOperationIconClick={handleOperationIconClick}
-          chunk_num={chunk_count}
           visible={reparseDialogVisible}
           hideModal={hideReparseDialogModal}
         ></ReparseDialog>

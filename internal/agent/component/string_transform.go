@@ -72,6 +72,13 @@ func (p *stringTransformParam) Update(conf map[string]any) error {
 	case []string:
 		// already correct shape
 		p.Delimiters = append(p.Delimiters[:0], v...)
+	case string:
+		// the agent UI saves merge-mode delimiters as a single string;
+		// not trimmed, since "\n", "\t" and " " are valid delimiters
+		p.Delimiters = nil
+		if v != "" {
+			p.Delimiters = []string{v}
+		}
 	case nil:
 		// leave unchanged
 	default:

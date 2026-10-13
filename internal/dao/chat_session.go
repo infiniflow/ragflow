@@ -57,7 +57,7 @@ func NewChatSessionDAO() *ChatSessionDAO {
 // GetByID gets chat session by ID
 func (dao *ChatSessionDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatSession, error) {
 	var conv entity.ChatSession
-	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("id = ?", id).First(&conv).Error
+	err := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Take(&conv, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

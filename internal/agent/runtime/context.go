@@ -464,11 +464,11 @@ func ResetAgentMessageEmission(ctx context.Context) {
 func GetStateFromContext(ctx context.Context) (*CanvasState, error) {
 	v := ctx.Value(stateCtxKey{})
 	if v == nil {
-		return nil, fmt.Errorf("canvas: no state in context")
+		return nil, fmt.Errorf("agent: no state in context")
 	}
 	s, ok := v.(*CanvasState)
 	if !ok {
-		return nil, fmt.Errorf("canvas: state type mismatch: have %T, want *CanvasState", v)
+		return nil, fmt.Errorf("agent: state type mismatch: have %T, want *CanvasState", v)
 	}
 	return s, nil
 }

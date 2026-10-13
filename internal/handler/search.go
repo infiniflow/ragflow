@@ -31,7 +31,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     *service.ModelProviderService
+	modelFactory  *service.ModelFactory
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -46,8 +46,8 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
-	h.streamLLM = streamLLM
+func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFactory, askService *service.AskService) {
+	h.modelFactory = modelFactory
 	h.askService = askService
 }
 
@@ -236,7 +236,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 		"created_by":    search.CreatedBy,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {
@@ -360,7 +360,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		"status":        updatedSearch.Status,
 		"create_time":   updatedSearch.CreateTime,
 		"update_time":   updatedSearch.UpdateTime,
-		"search_config": updatedSearch.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(updatedSearch.SearchConfig),
 	}
 
 	if updatedSearch.Avatar != nil {
@@ -426,12 +426,12 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		writer.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		writer.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		writer.Write(c, sseError("model factory not configured"))
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {

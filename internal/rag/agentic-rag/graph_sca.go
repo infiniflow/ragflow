@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"ragflow/internal/common"
 	"sort"
 	"strconv"
 	"strings"
@@ -500,12 +501,12 @@ func renderResearchContext(st *AgenticState) string {
 			// A research round's row carries what ITS session bound. There is no
 			// per-session "new to the pool" number to report: a round's sessions run
 			// concurrently over ONE pool (see RunSlotResearchPass).
-			if n, ok := toIntStrict(e["bound"]); ok {
+			if n, ok := common.ToInt(e["bound"]); ok {
 				outcome = fmt.Sprintf("%d passage(s) bound", n)
 			}
 		default:
 			// A prefetch/rewrite row: those DO know how many passages the fetch added.
-			if n, ok := toIntStrict(e["new"]); ok && n != 0 {
+			if n, ok := common.ToInt(e["new"]); ok && n != 0 {
 				outcome = fmt.Sprintf("%d new passage(s)", n)
 			}
 		}

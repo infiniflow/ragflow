@@ -22,7 +22,45 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agentic_rag"
 )
+
+func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
+	for _, answer := range []string{
+		"Public facts. [ID:1]",
+		"Public facts. [Public source](https://example.com/source)",
+	} {
+		t.Run(answer, func(t *testing.T) {
+			registry := agentic_rag.NewEvidenceRegistry()
+			registry.Stamp("uncited-corpus-chunk")
+			web := agentic_rag.WebResult{Title: "Public source", URL: "https://example.com/source", Content: "Public facts."}
+			registry.StampWebResult(web)
+			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
+			s := &ChatPipelineService{}
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
+				t.Errorf("citation was not compacted to its reference position: %q", marked)
+			}
+			chunks, ok := reference["chunks"].([]map[string]interface{})
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected only the cited web chunk: %v", reference)
+			}
+			chunk := chunks[0]
+			if chunk["id"] != registry.IDs()[1] || chunk["document_id"] != web.URL || chunk["document_name"] != web.Title || chunk["content"] != web.Content || chunk["url"] != web.URL {
+				t.Errorf("web reference lost its source metadata: %v", chunk)
+			}
+			aggs, ok := reference["doc_aggs"].([]interface{})
+			if !ok || len(aggs) != 1 {
+				t.Fatalf("expected one web source card: %v", reference["doc_aggs"])
+			}
+			agg, ok := aggs[0].(map[string]interface{})
+			if !ok || agg["url"] != web.URL || agg["doc_name"] != web.Title || agg["count"] != 1 {
+				t.Errorf("web source card lost its URL or snippet count: %v", agg)
+			}
+		})
+	}
+}
 
 func TestSentenceSplit_PlainText(t *testing.T) {
 	result := sentenceSplit("Hello world. This is a test.")
@@ -530,73 +568,11 @@ func TestCitationStreamFilter(t *testing.T) {
 	}
 }
 
-// TestReportsNoAnswer covers the three signals: the dialog's configured
-// empty_response, the shipped not-found line, and a grounded answer that must
-// keep its citations.
-func TestReportsNoAnswer(t *testing.T) {
-	cases := []struct {
-		name          string
-		answer        string
-		emptyResponse string
-		want          bool
-	}{
-		{
-			name:          "configured empty response",
-			answer:        "未在资料库中找到相关内容。",
-			emptyResponse: "未在资料库中找到相关内容。",
-			want:          true,
-		},
-		{
-			name:   "shipped phrase",
-			answer: "知识库中未找到您要的答案！",
-			want:   true,
-		},
-		{
-			name:   "shipped phrase with marker injected mid-sentence",
-			answer: "知识库中未找到您要的答案！因 [ID:3]此无法统计。",
-			want:   true,
-		},
-		{
-			name:   "shipped phrase split by line breaks",
-			answer: "知识库中\n未找到您要的\n答案！",
-			want:   true,
-		},
-		{
-			name:          "grounded answer keeps citations",
-			answer:        "Texas and California agreed in 1924 [ID:0].",
-			emptyResponse: "知识库中未找到您要的答案！",
-			want:          false,
-		},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			if got := reportsNoAnswer(c.answer, c.emptyResponse); got != c.want {
-				t.Fatalf("reportsNoAnswer(%q, %q) = %v, want %v", c.answer, c.emptyResponse, got, c.want)
-			}
-		})
-	}
-}
-
-// TestDecorateQuote pins that a not-found answer is decorated with quoting off
-// (no markers, no reference), while a grounded one keeps quoting on.
-func TestDecorateQuote(t *testing.T) {
-	if decorateQuote(true, "知识库中未找到您要的答案！", "") {
-		t.Fatal("not-found answer must be decorated without quoting")
-	}
-	if !decorateQuote(true, "California voted for the same nominee [ID:0].", "知识库中未找到您要的答案！") {
-		t.Fatal("grounded answer must keep quoting")
-	}
-	if decorateQuote(false, "California voted for the same nominee [ID:0].", "") {
-		t.Fatal("quote=false must stay off")
-	}
-}
-
-// TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer is the end-to-end
-// shape of the report: an answer that only says the knowledge base has no answer
-// must come back without [ID:n] markers, even though the evidence pool and a
-// resolvable marker are present. The evidence itself still ships — what the
-// cite switch removes is the doc_aggs cards the markers would have opened.
-func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
+// TestDecorateHarnessAnswerKeepsCitationsForNotFoundAnswer pins that an answer
+// reporting no result is decorated like any other answer: its resolvable [ID:n]
+// markers and the referenced doc_aggs still reach the client. The citation
+// switch (quote) is the only thing that removes them.
+func TestDecorateHarnessAnswerKeepsCitationsForNotFoundAnswer(t *testing.T) {
 	kbinfos := map[string]interface{}{
 		"chunks": []map[string]interface{}{
 			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
@@ -607,13 +583,13 @@ func TestDecorateHarnessAnswerDropsCitationsForNotFoundAnswer(t *testing.T) {
 	}
 	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, decorateQuote(true, answer, ""))
+	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, true)
 
-	if strings.Contains(res.Answer, "[ID:") {
-		t.Fatalf("not-found answer still carries citation markers: %q", res.Answer)
+	if !strings.Contains(res.Answer, "[ID:0]") {
+		t.Fatalf("answer lost its citation markers: %q", res.Answer)
 	}
-	if _, has := res.Reference["doc_aggs"]; has {
-		t.Fatalf("not-found answer still carries doc_aggs: %#v", res.Reference)
+	if _, has := res.Reference["doc_aggs"]; !has {
+		t.Fatalf("answer lost its doc_aggs: %#v", res.Reference)
 	}
 	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
 	if len(chunks) != 1 || chunks[0]["id"] != "c0" {

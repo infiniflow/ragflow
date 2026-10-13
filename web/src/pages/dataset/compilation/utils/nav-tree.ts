@@ -11,12 +11,6 @@ import {
   IStructureGraphTemplate,
 } from '@/interfaces/database/document-structure';
 import trim from 'lodash/trim';
-import { ReactNode } from 'react';
-
-export type NavTreeActionsFactory = (
-  node: DatasetNavNode,
-  parentName: string | null,
-) => ReactNode;
 
 export type NavEntityClickHandler = (
   docNode: DatasetNavNode,
@@ -34,7 +28,6 @@ type BuildNavTreeDataOptions = {
    * so branches come from the payload instead of a lazy /children request.
    */
   searchMode?: boolean;
-  getActions?: NavTreeActionsFactory;
   onNodeClick: (node: DatasetNavNode, parentName: string | null) => void;
   onNodeExpand: (node: DatasetNavNode) => void;
   onEntityClick?: NavEntityClickHandler;
@@ -215,14 +208,13 @@ function buildNavSearchTreeData(
   parentName: string | null,
   idPrefix: string,
 ): TreeDataItem[] {
-  const { getActions, onNodeClick, onNodeExpand } = options;
+  const { onNodeClick, onNodeExpand } = options;
   return nodes.map((node) => {
     const identity = navNodeIdentity(node);
     const id = idPrefix ? `${idPrefix}/${identity}` : identity;
     const item: TreeDataItem = {
       id,
       name: trim(node.name),
-      actions: getActions?.(node, parentName),
       onClick: () => onNodeClick(node, parentName),
     };
 
@@ -267,7 +259,6 @@ export function buildNavTreeData(
   const {
     childrenMap,
     childrenErrorParents,
-    getActions,
     onNodeClick,
     onNodeExpand,
     loadingPlaceholder,
@@ -279,7 +270,6 @@ export function buildNavTreeData(
     const item: TreeDataItem = {
       id,
       name: trim(node.name),
-      actions: getActions?.(node, parentName),
       onClick: () => onNodeClick(node, parentName),
       onExpand: () => onNodeExpand(node),
     };

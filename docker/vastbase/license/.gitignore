@@ -1,0 +1,5 @@
+# License files must never be committed — provide them manually (see README.md).
+*
+!README.md
+!.gitignore
+!.gitkeep

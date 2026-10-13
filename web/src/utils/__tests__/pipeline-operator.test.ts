@@ -5,11 +5,6 @@ import {
   transformFormConfigToApi,
 } from '@/utils/pipeline-operator';
 
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-}));
-
 const extractorNode = {
   id: 'Extractor:AutoExtractDefault',
   data: { form: {} },
@@ -48,6 +43,78 @@ describe('GeneralChunker operator bridge', () => {
     expect(api.table_context_size).toBe(2);
     expect(api.image_context_size).toBe(3);
     expect(api).not.toHaveProperty('delimiter_mode');
+  });
+
+  it('keeps an empty delimiter list empty (no legacy re-seed)', () => {
+    // The general chunker never had the 'token_size' tab, so an empty saved
+    // list is always a deliberate choice (pure token-size chunking).
+    const form = transformApiConfigToForm('GeneralChunker', {
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+  });
+});
+
+describe('TokenChunker delimiter seeding on load', () => {
+  it('keeps an empty list saved by the current form empty', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('keeps an empty list in one mode empty', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'one',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+    expect(form.delimiter_mode).toBe('one');
+  });
+
+  it('re-seeds the default row for legacy token_size nodes', () => {
+    // Nodes saved under the removed 'token_size' tab persisted an empty list;
+    // seed the default '\n' row so the merged 'delimiter' tab is not blank.
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'token_size',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([{ value: '\n' }]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('re-seeds the default row when the mode is absent (older DSLs)', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([{ value: '\n' }]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('derives enable_children from a non-empty children list', () => {
+    // Configs saved before the enable_children toggle existed carry children
+    // delimiters without the flag.
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      delimiters: ['\n'],
+      children_delimiters: ['|'],
+      overlapped_percent: 0,
+    });
+    expect(form.enable_children).toBe(true);
+    expect(form.children_delimiters).toEqual([{ value: '|' }]);
   });
 });
 
@@ -110,10 +177,6 @@ describe('Parser nested setups compatibility', () => {
 });
 
 describe('buildOperatorNode dataset-level metadata precedence', () => {
-  beforeEach(() => {
-    mockIsGoBackend = true;
-  });
-
   it('seeds the extractor metadata toggle from the dataset-level object', () => {
     const node = buildOperatorNode(extractorNode, {
       'Extractor:AutoExtractDefault': {
