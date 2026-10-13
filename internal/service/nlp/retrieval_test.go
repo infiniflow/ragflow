@@ -74,6 +74,45 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	}
 }
 
+func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
+		{"id": "ordinary", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	if !slices.Contains(docEngine.selectedFields, "compile_kwd") {
+		t.Fatalf("search fields = %v, want compile_kwd", docEngine.selectedFields)
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("chunks = %#v, want compiled and ordinary chunks", result.Chunks)
+	}
+	if got := result.Chunks[0]["compile_kwd"]; got != "page_index" {
+		t.Fatalf("compiled chunk compile_kwd = %v, want page_index", got)
+	}
+	if _, ok := result.Chunks[1]["compile_kwd"]; ok {
+		t.Fatalf("ordinary chunk unexpectedly has compile_kwd: %#v", result.Chunks[1])
+	}
+}
+
 func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
@@ -121,6 +160,7 @@ type retrievalCountEngine struct {
 	rows           []map[string]interface{}
 	searchLimits   []int
 	searchFilters  []map[string]interface{}
+	selectedFields []string
 	highlights     map[string]string
 	highlightCalls int
 }
@@ -128,6 +168,7 @@ type retrievalCountEngine struct {
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchLimits = append(e.searchLimits, req.Limit)
 	e.searchFilters = append(e.searchFilters, req.Filter)
+	e.selectedFields = slices.Clone(req.SelectFields)
 	offset := req.Offset
 	if offset > len(e.rows) {
 		offset = len(e.rows)
@@ -137,6 +178,38 @@ func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchReques
 		end = len(e.rows)
 	}
 	return &types.SearchResult{Chunks: e.rows[offset:end], Total: int64(len(e.rows))}, nil
+}
+
+func TestRetrievalByChildrenPreservesParentCompilationKindWhenPresent(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		kind    string
+		present bool
+	}{
+		{name: "compiled parent", kind: "page_index", present: true},
+		{name: "ordinary parent"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			parent := map[string]interface{}{
+				"id": "parent-1", "doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "parent content",
+			}
+			if tt.present {
+				parent["compile_kwd"] = tt.kind
+			}
+			child := map[string]interface{}{
+				"chunk_id": "child-1", "mom_id": "parent-1", "doc_id": "doc-1", "kb_id": "kb-1", "similarity": 0.8,
+			}
+			got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1"},
+				&retrievalCountEngine{rows: []map[string]interface{}{parent}}, t.Context())
+			if len(got) != 1 {
+				t.Fatalf("chunks = %#v, want one parent", got)
+			}
+			kind, ok := got[0]["compile_kwd"]
+			if ok != tt.present || (tt.present && kind != tt.kind) {
+				t.Fatalf("parent compile_kwd = %v, present = %v; want %q, present = %v", kind, ok, tt.kind, tt.present)
+			}
+		})
+	}
 }
 
 func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []string {

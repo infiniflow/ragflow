@@ -298,6 +298,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
+		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+			resultChunk["compile_kwd"] = kind
+		}
 		if v, ok := chunk["important_kwd"]; ok {
 			resultChunk["important_kwd"] = v
 		}
@@ -710,7 +713,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// document carries it: content_with_weight is the text the caller
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
-		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
+		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()", "compile_kwd",
 		"_score",
 	}
 
@@ -1155,6 +1158,9 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"vector":              make([]float64, vectorSize),
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
+		}
+		if kind := firstStringValue(parentMap["compile_kwd"]); kind != "" {
+			aggregated["compile_kwd"] = kind
 		}
 
 		// Get vector from first child if available
