@@ -3100,20 +3100,6 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 }
 
-// citeChunksByIdx gathers the rendered evidence list from its pool positions,
-// keeping -1 entries as nil so positions stay aligned with the numbering the model
-// was shown (a nil chunk matches no slot-citation evidence id and resolves no
-// marker, but it must not shift the blocks after it).
-func citeChunksByIdx(citeIdx []int, pool []map[string]interface{}) []map[string]interface{} {
-	out := make([]map[string]interface{}, len(citeIdx))
-	for i, pi := range citeIdx {
-		if pi >= 0 && pi < len(pool) {
-			out[i] = pool[pi]
-		}
-	}
-	return out
-}
-
 // langfuseExtractTimeElapsed extracts the time-elapsed + token-usage
 // block from the prompt and applies the \n → "  \n" substitution.
 // Mirrors dialog_service.py:853-854:
