@@ -191,3 +191,18 @@ func TestAgentRunThinkingKeepsEmptyFinalAgentThinking(t *testing.T) {
 		t.Fatalf("thinking = %q, want empty (final Agent had no thinking)", got)
 	}
 }
+
+func TestAgentRunThinkingKeepsEmptySelectedAgentThinking(t *testing.T) {
+	c := &canvas.Canvas{Components: map[string]canvas.CanvasComponent{
+		"Agent:Up":    {Obj: canvas.CanvasComponentObj{ComponentName: "Agent"}, Downstream: []string{"Agent:Final"}},
+		"Agent:Final": {Obj: canvas.CanvasComponentObj{ComponentName: "Agent"}},
+	}}
+	state := canvas.NewCanvasState("run", "session")
+	state.SetVar("Agent:Up", "thinking", "up")
+	state.SetVar("Agent:Up", "_created_time", "2026-10-10T00:00:01Z")
+	// The terminal Agent returned no reasoning; its empty value must win.
+	output := map[string]any{"content": "answer", "thinking": ""}
+	if got := agentRunThinking(c, state, "Agent:Final", output, time.Date(2026, 10, 10, 0, 0, 0, 0, time.UTC)); got != "" {
+		t.Fatalf("thinking = %q, want empty thinking from the selected Agent", got)
+	}
+}

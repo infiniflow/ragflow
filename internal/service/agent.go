@@ -2793,7 +2793,7 @@ func selectTerminalCanvasOutput(
 
 // agentRunThinking picks the reasoning saved with the run's answer. Message
 // outputs normally carry no thinking, so use the selected output's own
-// thinking when present. Otherwise use the thinking of the most recently
+// thinking when present, even if it is empty. Otherwise use the thinking of the most recently
 // started node of this run that is upstream of the selected output, so a node
 // on a parallel branch is never saved with this answer. That node's thinking
 // is kept even when empty; an earlier node's thinking is not substituted.
@@ -2806,7 +2806,9 @@ func agentRunThinking(
 	assistantOutput map[string]any,
 	runStartedAt time.Time,
 ) string {
-	if v, ok := assistantOutput["thinking"].(string); ok && v != "" {
+	// A selected Agent output carries its own thinking key; keep it even
+	// when empty instead of substituting an upstream Agent's reasoning.
+	if v, ok := assistantOutput["thinking"].(string); ok {
 		return v
 	}
 	if c == nil || state == nil || selectedID == "" {
