@@ -262,7 +262,15 @@ func emptyOutputs() map[string]any {
 func chunkOutputs(chunks []schema.ChunkDoc) map[string]any {
 	materialized := make([]schema.ChunkDoc, len(chunks))
 	for i := range chunks {
-		materialized[i] = materializeMediaContext(chunks[i])
+		c := materializeMediaContext(chunks[i])
+		// TableData is a parser/chunker-internal structure: the parsers emit it
+		// so the chunker can split a table into fragments, but it must not leak
+		// into the chunk result that downstream components (tokenizer, embedding,
+		// storage, API) consume. The single displayable body already lives in
+		// Text (rendered from the table), so drop TableData at this one canonical
+		// emit boundary — every chunker variant passes through here.
+		c.TableData = nil
+		materialized[i] = c
 	}
 	return map[string]any{
 		"output_format": "chunks",

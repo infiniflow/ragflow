@@ -1078,16 +1078,12 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 	}
 	covered := 0
 	for i, chunk := range chunks {
-		// New contract: Text is the plain rendering (no markup); the
-		// replicated header lives in the structured TableData, and positions
-		// are sliced to this sub-table when the matrix is row-aligned.
-		tbl, ok := chunk["table"].(map[string]any)
-		if !ok {
-			t.Fatalf("chunk %d missing structured TableData", i)
-		}
-		tblRows, _ := tbl["rows"].([]any)
-		if len(tblRows) < 2 {
-			t.Fatalf("chunk %d has too few rows: %v", i, tblRows)
+		// New contract: the structured TableData is dropped at the chunker's
+		// emit boundary, so the chunk result carries no "table" field. The
+		// displayable body (header replicated + data rows) lives in Text, and
+		// positions are sliced to this sub-table when the matrix is row-aligned.
+		if _, present := chunk["table"]; present {
+			t.Errorf("chunk %d must not carry the structured 'table' field", i)
 		}
 		if !strings.Contains(chunk["text"].(string), "Name") {
 			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
@@ -1105,10 +1101,7 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if matrix[0][1] != 1 {
 			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
 		}
-		dataRows := len(tblRows) - 1
-		if dataRows != len(matrix)-1 {
-			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
-		}
+		dataRows := len(matrix) - 1
 		covered += dataRows
 	}
 	if covered != len(rows) {
