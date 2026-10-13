@@ -482,11 +482,11 @@ func TestAnySearchWebSearchUsesNormalConsumersWithoutTavilyFallback(t *testing.T
 	if err != nil || len(text) != 1 || text[0] != "Native consumer text." || calls != 3 {
 		t.Fatalf("harness result=%#v error=%v requests=%d", text, err, calls)
 	}
-	agenticCallback := service.agenticWebSearch(config)
+	agenticCallback := service.webSearchFunc(config)
 	if agenticCallback == nil {
 		t.Fatal("AnySearch agentic callback is nil")
 	}
-	if service.agenticWebSearch(map[string]interface{}{"web_search_provider": "", "anysearch_api_key": "anysearch-test"}) != nil {
+	if service.webSearchFunc(map[string]interface{}{"web_search_provider": "", "anysearch_api_key": "anysearch-test"}) != nil {
 		t.Fatal("cleared provider retained an agentic callback")
 	}
 	hits, err := agenticCallback(t.Context(), "ragflow")
