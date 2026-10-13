@@ -35,6 +35,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -239,6 +240,14 @@ func extractEPUBTextItems(r *zip.Reader, opfDir string, spineHrefs []string) ([]
 // readEPUBContentFile resolves a spine href (relative to the OPF
 // directory) inside the ZIP and returns the item's raw bytes.
 func readEPUBContentFile(r *zip.Reader, opfDir, href string) ([]byte, error) {
+	// Manifest hrefs are URLs: drop the fragment and decode %-escapes to get
+	// the ZIP entry name.
+	if i := strings.IndexByte(href, '#'); i >= 0 {
+		href = href[:i]
+	}
+	if unescaped, err := url.PathUnescape(href); err == nil {
+		href = unescaped
+	}
 	// Resolve href relative to the directory containing the OPF.
 	// Use path.Join/Dir (slash separator) because ZIP entry paths are always POSIX.
 	resolved := path.Join(path.Dir(opfDir), href)

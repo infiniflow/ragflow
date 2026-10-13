@@ -13,7 +13,7 @@ sidebar_custom_props: {
 Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
 
 :::note macOS
-This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to build and run the Go `linux/amd64` image.
+This source-build procedure is for Ubuntu 24.04 x86_64. macOS is temporarily not supported by the Go backend, so use a Linux x86_64 host to build and run the Go services.
 :::
 
 The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout analysis, OCR, and table recognition.
@@ -115,7 +115,7 @@ The change made with `sysctl -w` is temporary. To preserve it after a reboot, ad
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
-docker compose --env-file docker/.env -f docker/docker-compose-base.yml ps
+docker ps
 ```
 
 The base Compose file also defines an unprofiled Redis service. Starting every service with `up -d` can make Redis and Kvrocks compete for host port 6379; the explicit service list above starts Kvrocks for the Go backend. Compose may print a warning that `REDIS_PORT` is unset because the unused Redis service is still parsed.
@@ -168,10 +168,10 @@ In another terminal:
 ```bash
 cd web
 npm install
-API_PROXY_SCHEME=go npm run dev
+npm run dev
 ```
 
-With `API_PROXY_SCHEME=go`, the frontend routes requests to two Go backend ports: regular /api and /v1 requests use port 9380, while /api/v1/admin requests use port 9381.
+The frontend routes requests to the Go backend by default: regular `/api` and `/v1` requests use port `9380`, while `/api/v1/admin` requests use port `9381`.
 Open http://127.0.0.1:9222/ unless Vite prints a different frontend port.
 
 ## 5. Verify the startup

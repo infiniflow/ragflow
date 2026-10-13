@@ -89,6 +89,21 @@ func TestGenJSONReportsLLMFailure(t *testing.T) {
 	}
 }
 
+// TestGenJSONRetryDelayOverride verifies the ctx-based retry-delay override
+// shortens the backoff so failure-path tests need not wait out the real ~60s
+// budget. Without the override GenJSON sleeps ~62s per failed call.
+func TestGenJSONRetryDelayOverride(t *testing.T) {
+	ctx := WithRetryDelay(context.Background(), time.Millisecond)
+	start := time.Now()
+	_, err := GenJSON(ctx, failingChat{err: errors.New("llm down")}, ChatRequest{})
+	if err == nil {
+		t.Fatal("expected the transient LLM error to surface")
+	}
+	if time.Since(start) > 5*time.Second {
+		t.Fatalf("override did not shorten retry backoff: %s", time.Since(start))
+	}
+}
+
 func TestCompactErrorRedactsCredentials(t *testing.T) {
 	got := CompactError(errors.New(`status=401 api_key="sk-secret-value" password=topsecret`))
 	if strings.Contains(got, "sk-secret-value") || strings.Contains(got, "topsecret") {

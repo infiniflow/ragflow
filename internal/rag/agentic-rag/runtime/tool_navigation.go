@@ -117,7 +117,7 @@ func loadStructureGraph(ctx context.Context, indexName, docID string, kinds map[
 		}
 		sr := StructureRow{
 			CompileKwd:        fmt.Sprint(row["compile_kwd"]),
-			TemplateKind:      fmt.Sprint(row["compilation_template_kind_kwd"]),
+			TemplateKind:      types.CompilationKind(row),
 			KnowledgeGraphKwd: kg,
 			Content:           fmt.Sprint(row["content_with_weight"]),
 		}
@@ -213,13 +213,12 @@ func parseFloats(v any) ([]float64, bool) {
 }
 
 func normalizeKind(row map[string]interface{}) string {
-	kind, _ := row["compilation_template_kind_kwd"].(string)
-	if kind == "" {
-		kind, _ = row["compile_kwd"].(string)
-	}
-	kind = strings.ToLower(strings.TrimSpace(strings.ReplaceAll(kind, "-", "_")))
-	if kind == "pageindex" || kind == "page_index" || kind == "knowledge_graph" {
+	kind := types.CompilationKind(row)
+	if kind == "page_index" || kind == "graph" {
 		return "timeline"
+	}
+	if kind == "mind_map" {
+		return "mindmap"
 	}
 	return kind
 }

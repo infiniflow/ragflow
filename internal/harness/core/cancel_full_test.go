@@ -561,8 +561,11 @@ func TestWithCancel_SequentialAgent(t *testing.T) {
 		t.Fatalf("NewSequential: %v", err)
 	}
 	opt, cancel := WithCancel()
-	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
+	// Cancel before Run: with the default immediate mode and instant mock
+	// sub-agents, the workflow goroutine can otherwise finish on another OS
+	// thread before cancel() is observed, leaving no CancelError in the stream.
 	cancel()
+	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	drainAndAssertCancelError(t, iter)
 }
 
@@ -581,8 +584,11 @@ func TestWithCancel_LoopAgent(t *testing.T) {
 		t.Fatalf("NewLoop: %v", err)
 	}
 	opt, cancel := WithCancel()
-	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
+	// Cancel before Run: with the default immediate mode and instant mock
+	// sub-agents, the workflow goroutine can otherwise finish on another OS
+	// thread before cancel() is observed, leaving no CancelError in the stream.
 	cancel()
+	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	drainAndAssertCancelError(t, iter)
 }
 
@@ -601,8 +607,11 @@ func TestWithCancel_ParallelAgent(t *testing.T) {
 		t.Fatalf("NewParallel: %v", err)
 	}
 	opt, cancel := WithCancel()
-	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
+	// Cancel before Run: with the default immediate mode and instant mock
+	// sub-agents, the workflow goroutine can otherwise finish on another OS
+	// thread before cancel() is observed, leaving no CancelError in the stream.
 	cancel()
+	iter := wf.Run(ctx, &AgentInput{Messages: []Message{schema.UserMessage("run")}}, opt)
 	drainAndAssertCancelError(t, iter)
 }
 

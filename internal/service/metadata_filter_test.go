@@ -18,10 +18,30 @@ package service
 
 import (
 	"sort"
+	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 )
+
+func TestRenderMetaFilterTemplate(t *testing.T) {
+	t.Chdir(t.TempDir())
+	prompt, err := renderMetaFilterTemplate("2026-10-13", `{"author":["Alice"]}`, "Find Alice's documents", "")
+	if err != nil {
+		t.Fatalf("renderMetaFilterTemplate: %v", err)
+	}
+	for _, want := range []string{"2026-10-13", `{"author":["Alice"]}`, "Find Alice's documents"} {
+		if !strings.Contains(prompt, want) {
+			t.Errorf("rendered prompt missing %q", want)
+		}
+	}
+	if strings.Contains(prompt, "{{") || strings.Contains(prompt, "{%") {
+		t.Error("rendered prompt contains unresolved template syntax")
+	}
+	if strings.Contains(prompt, "- Operator constraints:") {
+		t.Error("rendered prompt contains operator constraints when none were provided")
+	}
+}
 
 func TestApplyMetaFilter_Equals(t *testing.T) {
 	metas := common.MetaData{

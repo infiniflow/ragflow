@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// ssh.go is the Go port of `agent/sandbox/providers/ssh.py`.
+// SSH execution runs code on a configured remote host.
 //
 // SSHProvider runs the user's code on a remote host via SSH. The
 // Go equivalent of Python's `paramiko` library is
@@ -75,8 +75,7 @@ const (
 	sshDefaultWorkDir      = "/tmp"
 )
 
-// SSHProvider is the Go port of
-// `agent/sandbox/providers/ssh.py::SSHProvider`.
+// SSHProvider executes code on a remote host.
 type SSHProvider struct {
 	host             string
 	port             int

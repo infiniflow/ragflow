@@ -272,7 +272,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 		// and is skipped. Only JSON numbers match, which decode as float64 — accept those,
 		// and reject anything else so the behaviour is strict rather than silently more
 		// permissive.
-		want, ok := toIntStrict(rawID)
+		want, ok := common.ToIntNum(rawID)
 		if !ok {
 			continue
 		}
@@ -316,7 +316,7 @@ func ApplyPatch(base State, branchPatches []map[string]any) *State {
 			changed = true
 		}
 		if raw, has := pv["candidate_strength"]; has && raw != nil {
-			if f, ok := toFloat(raw); ok {
+			if f, ok := common.ToFloat(raw); ok {
 				v := math.Min(math.Max(f, 0.0), 1.0)
 				nv.CandidateStrength = &v
 				changed = true
@@ -354,65 +354,6 @@ func truncateRunes(s string, n int) string {
 		return s
 	}
 	return string([]rune(s)[:n])
-}
-
-// toInt coerces a JSON-decoded value to int. Handles float64 (the default for
-// JSON numbers), the integer types, and numeric strings.
-func toInt(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int32:
-		return int(n), true
-	case int64:
-		return int(n), true
-	case float32:
-		return int(n), true
-	case float64:
-		return int(n), true
-	case string:
-		if i, err := strconv.Atoi(strings.TrimSpace(n)); err == nil {
-			return i, true
-		}
-	}
-	return 0, false
-}
-
-// toIntStrict converts JSON NUMBER types only. Unlike toInt it does NOT parse strings: a
-// patch whose id is "1" must match nothing.
-func toIntStrict(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int32:
-		return int(n), true
-	case int64:
-		return int(n), true
-	case float32:
-		return int(n), true
-	case float64:
-		return int(n), true
-	}
-	return 0, false
-}
-
-// toFloat coerces a JSON-decoded value to float64.
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int32:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		return ParseFloat(n)
-	}
-	return 0, false
 }
 
 // ParseFloat parses a float64 from a string, tolerating surrounding

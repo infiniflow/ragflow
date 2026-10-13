@@ -10,7 +10,7 @@ import { IDocumentInfo } from '@/interfaces/database/document';
 import { getExtension, getUnSupportedFilesCount } from '@/utils/document-util';
 import { useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
-import { buildParserGapModalContent } from './parser-gap-content';
+import { buildUploadGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
 import { getFileTypeByExtension, hasUnsupportedTypeGap } from './utils';
 
@@ -116,9 +116,11 @@ export const useHandleUploadDocument = () => {
               ? 'knowledgeDetails.uploadUnsupportedTypesTitle'
               : 'knowledgeDetails.uploadMissingModelsTitle',
           ),
-          content: buildParserGapModalContent(t, gaps, {
+          content: buildUploadGapModalContent(t, gaps, {
             missingModel: 'knowledgeDetails.addModelAfterUploadHint',
-            unsupportedType: 'knowledgeDetails.reselectParserAfterUploadHint',
+            autoSwitch: 'knowledgeDetails.reselectParserAfterUploadHint',
+            manualSwitch: 'knowledgeDetails.manualSwitchAfterUploadHint',
+            mixedSwitch: 'knowledgeDetails.mixedSwitchAfterUploadHint',
           }),
           okText: t('knowledgeDetails.continueUpload'),
           cancelText: t('common.cancel'),

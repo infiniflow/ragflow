@@ -30,6 +30,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/smithy-go"
+	"github.com/aws/smithy-go/encoding/httpbinding"
 	"go.uber.org/zap"
 )
 
@@ -443,7 +444,7 @@ func (o *OSSStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, d
 	srcBucket, srcPath = o.resolveBucketAndPath(srcBucket, srcPath)
 	destBucket, destPath = o.resolveBucketAndPath(destBucket, destPath)
 
-	copySource := fmt.Sprintf("%s/%s", srcBucket, srcPath)
+	copySource := httpbinding.EscapePath(fmt.Sprintf("%s/%s", srcBucket, srcPath), false)
 
 	_, err := o.client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(destBucket),

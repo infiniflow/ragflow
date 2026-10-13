@@ -35,6 +35,7 @@ const (
 	EngineOceanBase     EngineType = "oceanbase"
 	EngineSeekDB        EngineType = "seekdb"
 	EngineSereneDB      EngineType = "serenedb"
+	EngineVastbase      EngineType = "vastbase"
 )
 
 // DocEngine document storage engine interface
@@ -106,6 +107,16 @@ func Type(docEngine DocEngine) EngineType {
 // OceanBase/SeekDB SQL implementation.
 func IsOceanBaseFamily(engineName string) bool {
 	return engineName == string(EngineOceanBase) || engineName == string(EngineSeekDB)
+}
+
+// IsVastbase reports whether a configured engine is the Vastbase G100
+// implementation. Vastbase is PostgreSQL-wire based and shares several
+// service-layer behaviors with the OceanBase family (local rerank, chunk
+// vectors in select fields, shared-table memory lifecycle) but is a separate
+// SQL implementation, so it keeps its own predicate instead of joining
+// IsOceanBaseFamily.
+func IsVastbase(engineName string) bool {
+	return engineName == string(EngineVastbase)
 }
 
 type MessageQueue interface {

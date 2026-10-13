@@ -114,6 +114,52 @@ func resolveDatasetScope(bound, requested []string) ([]string, error) {
 	return requested, nil
 }
 
+type documentScopeContextKey struct{}
+
+// withDocumentScope binds the chat's allowed documents to every agent tool call.
+// A non-nil empty scope allows no documents; nil leaves document search unrestricted.
+func withDocumentScope(ctx context.Context, ids []string) context.Context {
+	return context.WithValue(ctx, documentScopeContextKey{}, ids)
+}
+
+func resolveDocumentScope(ctx context.Context, requested []string) ([]string, error) {
+	bound, ok := ctx.Value(documentScopeContextKey{}).([]string)
+	if !ok || bound == nil {
+		return requested, nil
+	}
+	if len(requested) == 0 {
+		return bound, nil
+	}
+	allowed := make(map[string]struct{}, len(bound))
+	for _, id := range bound {
+		allowed[id] = struct{}{}
+	}
+	for _, id := range requested {
+		if _, ok := allowed[id]; !ok {
+			return nil, fmt.Errorf("doc_id %q is outside the conversation's bound scope", id)
+		}
+	}
+	return requested, nil
+}
+
+func intersectDocumentScope(ctx context.Context, ids []string) []string {
+	bound, ok := ctx.Value(documentScopeContextKey{}).([]string)
+	if !ok || bound == nil {
+		return ids
+	}
+	allowed := make(map[string]struct{}, len(bound))
+	for _, id := range bound {
+		allowed[id] = struct{}{}
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if _, ok := allowed[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 // clampFloat01 clamps a float into [0, 1], used for similarity weights the model
 // may supply out of range.
 func clampFloat01(v float64) float64 {
@@ -502,24 +548,42 @@ type snippetHit struct {
 	// keyword's neighbourhood, and the model must not read it as evidence that
 	// the query terms appear there.
 	preview bool
+	web     bool
 }
 
 // formatLocateResultsXML renders the UNIFIED payload shared by every locate
 // tool: one compact vocabulary (<search_results> root with a query echo, chunk
 // attributes incl. rank/score, one <match_snippet> per chunk). Roots differ
 // from list_chunks' <chunks> by design: these are triage views, not deep reads.
-func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snippetHit) string {
+func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snippetHit, notices ...string) string {
 	// Single serve point for every locate tool: one debug line per served chunk
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
 	logServedChunks(ctx, tool, query, hits)
+	// The passages in front of the model are stamped with their [ID:n] handle as
+	// they are served, so a citation names a number the model actually saw.
+	reg := evidenceRegistryFrom(ctx)
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<search_results count=\"%d\" query=\"%s\">\n",
 		len(hits), xmlEscape(query)))
+	for _, notice := range notices {
+		b.WriteString(notice)
+		b.WriteString("\n")
+	}
 	truncatedHits := 0
 	previewHits := 0
 	for i, h := range hits {
 		c := h.chunk
+		refAttr := ""
+		sourceAttr := ""
+		if h.web {
+			if ref := reg.StampWebResult(WebResult{Title: c.DocumentName, URL: c.URL, Content: c.Content}); ref >= 0 {
+				refAttr = fmt.Sprintf(` ref="%d"`, ref)
+			}
+			sourceAttr = fmt.Sprintf(` source="web" url="%s"`, xmlEscape(c.URL))
+		} else {
+			refAttr = refAttrOf(reg, c.ID)
+		}
 		truncatedAttr := ""
 		if h.truncated {
 			truncatedAttr = ` truncated="true"`
@@ -531,11 +595,11 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			previewHits++
 		}
 		b.WriteString(fmt.Sprintf(
-			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s>\n",
+			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s%s>\n",
 			i+1,
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
 			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), c.Score,
-			utf8.RuneCountInString(c.Content), truncatedAttr, matchAttr,
+			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr, sourceAttr,
 		))
 		if h.snippet != "" {
 			b.WriteString(fmt.Sprintf("<match_snippet>%s</match_snippet>\n", xmlEscape(h.snippet)))
@@ -550,7 +614,9 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			"shows the neighbourhood of the match, not everything the chunk says.</snippet_note>\n",
 			truncatedHits, previewHits))
 	}
-	if len(hits) == 0 {
+	if len(hits) == 0 && tool == webSearchToolName {
+		b.WriteString("<hint>0 web hits. Try different keywords or rely on the available corpus evidence.</hint>\n")
+	} else if len(hits) == 0 {
 		// Zero hits usually means a WORD-FORM mismatch (the corpus says
 		// "mineralization" while the query says "mineralizer"), not corpus
 		// absence. Surface the retry discipline here so the model sees it at
@@ -618,7 +684,10 @@ func dedupStrings(s []string) []string {
 // findings that must NOT abort the caller's turn (e.g. anchors that did not
 // resolve), so the model can see and judge them instead of losing the whole
 // ReAct turn to an error.
-func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
+func formatChunksXML(ctx context.Context, docID string, chunks []runtime.RetrievalChunk, anchorMeta, notice string) string {
+	// Deep-read passages are citable too: stamp the same [ID:n] handle the locate
+	// tools use, so a fact read from the full text can be cited.
+	reg := evidenceRegistryFrom(ctx)
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<chunks doc_id=\"%s\" fetched=\"%d\"%s>\n",
 		xmlEscape(docID), len(chunks), anchorMeta))
@@ -627,9 +696,9 @@ func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, 
 	}
 	for _, c := range chunks {
 		b.WriteString(fmt.Sprintf(
-			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\">\n",
+			"<chunk chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\"%s>\n",
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
-			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName)))
+			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), refAttrOf(reg, c.ID)))
 		if c.Content != "" {
 			b.WriteString(fmt.Sprintf("<content>%s</content>\n", xmlEscape(c.Content)))
 		}
@@ -637,4 +706,14 @@ func formatChunksXML(docID string, chunks []runtime.RetrievalChunk, anchorMeta, 
 	}
 	b.WriteString("</chunks>")
 	return b.String()
+}
+
+// refAttrOf stamps a passage with its [ID:n] handle: ` ref="n"` when the run
+// carries a registry, empty when it does not (a renderer without a registry
+// publishes no handle, and the answer falls back to naming chunk ids).
+func refAttrOf(reg *EvidenceRegistry, chunkID string) string {
+	if n := reg.Stamp(chunkID); n >= 0 {
+		return fmt.Sprintf(` ref="%d"`, n)
+	}
+	return ""
 }

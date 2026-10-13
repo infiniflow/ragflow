@@ -18,10 +18,17 @@ package component
 
 import (
 	"context"
+	"encoding/json"
+	"maps"
 	"math"
+	"net/http"
+	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/cloudwego/eino/schema"
+
+	"ragflow/internal/entity/models"
 )
 
 // TestLLM_ForwardsTopP verifies that a TopP value on LLMParam reaches
@@ -115,6 +122,161 @@ func TestLLMFactory_ParsesTopP(t *testing.T) {
 	}
 	if math.Abs(*comp.param.TopP-0.85) > 1e-9 {
 		t.Errorf("TopP parsed=%v, want 0.85", *comp.param.TopP)
+	}
+}
+
+// TestLLMFactory_DisabledSamplerParams verifies that the LLM factory drops
+// sampler values whose *Enabled flag is false, matching Python's
+// LLMParam.gen_conf, and keeps them when the flag is true.
+func TestLLMFactory_DisabledSamplerParams(t *testing.T) {
+	params := map[string]any{
+		"model_id":          "echo",
+		"temperature":       0.2,
+		"top_p":             0.75,
+		"max_tokens":        256,
+		"presence_penalty":  0.4,
+		"frequency_penalty": 0.7,
+	}
+	flags := []string{"temperatureEnabled", "topPEnabled", "maxTokensEnabled", "presencePenaltyEnabled", "frequencyPenaltyEnabled"}
+
+	build := func(enabled bool) LLMParam {
+		t.Helper()
+		conf := maps.Clone(params)
+		for _, flag := range flags {
+			conf[flag] = enabled
+		}
+		c, err := New("LLM", conf)
+		if err != nil {
+			t.Fatalf("New(LLM): %v", err)
+		}
+		return c.(*LLMComponent).param
+	}
+
+	p := build(false)
+	if p.Temperature != nil {
+		t.Errorf("disabled temperature still applied: %v", *p.Temperature)
+	}
+	if p.TopP != nil {
+		t.Errorf("disabled top_p still applied: %v", *p.TopP)
+	}
+	if p.MaxTokens != nil {
+		t.Errorf("disabled max_tokens still applied: %v", *p.MaxTokens)
+	}
+	if p.PresencePenalty != nil {
+		t.Errorf("disabled presence_penalty still applied: %v", *p.PresencePenalty)
+	}
+	if p.FrequencyPenalty != nil {
+		t.Errorf("disabled frequency_penalty still applied: %v", *p.FrequencyPenalty)
+	}
+
+	p = build(true)
+	if p.Temperature == nil || p.TopP == nil || p.MaxTokens == nil || p.PresencePenalty == nil || p.FrequencyPenalty == nil {
+		t.Errorf("enabled sampler params lost: temperature=%v top_p=%v max_tokens=%v presence_penalty=%v frequency_penalty=%v",
+			p.Temperature != nil, p.TopP != nil, p.MaxTokens != nil, p.PresencePenalty != nil, p.FrequencyPenalty != nil)
+	}
+}
+
+// TestLLM_DisabledSamplersStayOffAtRuntime verifies that runtime inputs
+// carrying a sampler value without its *Enabled flag do not bring back a value
+// the DSL switched off, checked on the request sent to the ChatInvoker.
+func TestLLM_DisabledSamplersStayOffAtRuntime(t *testing.T) {
+	stub := &stubInvoker{resp: &ChatInvokeResponse{Content: "ok", Model: "echo"}}
+	withStubInvoker(t, stub)
+
+	c, err := New("LLM", map[string]any{
+		"model_id":                "echo",
+		"temperature":             0.2,
+		"temperatureEnabled":      false,
+		"top_p":                   0.75,
+		"topPEnabled":             false,
+		"max_tokens":              256,
+		"maxTokensEnabled":        false,
+		"presence_penalty":        0.4,
+		"presencePenaltyEnabled":  false,
+		"frequency_penalty":       0.7,
+		"frequencyPenaltyEnabled": false,
+	})
+	if err != nil {
+		t.Fatalf("New(LLM): %v", err)
+	}
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{
+		"user_prompt":       "hi",
+		"temperature":       0.9,
+		"top_p":             0.5,
+		"max_tokens":        128,
+		"presence_penalty":  0.3,
+		"frequency_penalty": 0.3,
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	req := stub.captured
+	if req == nil {
+		t.Fatalf("invoker captured no request")
+	}
+	if req.Temperature != nil || req.TopP != nil || req.MaxTokens != nil || req.PresencePenalty != nil || req.FrequencyPenalty != nil {
+		t.Errorf("disabled sampler params sent: temperature=%v top_p=%v max_tokens=%v presence_penalty=%v frequency_penalty=%v",
+			req.Temperature != nil, req.TopP != nil, req.MaxTokens != nil, req.PresencePenalty != nil, req.FrequencyPenalty != nil)
+	}
+}
+
+// TestAgent_DisabledSamplersStayOffAtRuntime verifies that runtime inputs
+// carrying a sampler value without its *Enabled flag do not bring back a value
+// the DSL switched off, checked on the request body sent to the provider.
+func TestAgent_DisabledSamplersStayOffAtRuntime(t *testing.T) {
+	setupAllowAnyHost(t, true)
+	if err := models.InitProviderManager("../../../conf/models"); err != nil {
+		t.Fatalf("InitProviderManager: %v", err)
+	}
+
+	var mu sync.Mutex
+	var bodies []map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer server.Close()
+
+	c, err := New("Agent", map[string]any{
+		"llm_id":             "qwen-flash",
+		"driver":             "Tongyi-Qianwen",
+		"api_key":            "test-key",
+		"base_url":           server.URL,
+		"max_rounds":         1,
+		"temperature":        0.2,
+		"temperatureEnabled": false,
+		"top_p":              0.75,
+		"topPEnabled":        false,
+		"max_tokens":         256,
+		"maxTokensEnabled":   false,
+	})
+	if err != nil {
+		t.Fatalf("New(Agent): %v", err)
+	}
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{
+		"user_prompt": "hi",
+		"temperature": 0.9,
+		"top_p":       0.5,
+		"max_tokens":  128,
+	}); err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(bodies) == 0 {
+		t.Fatalf("provider received no request")
+	}
+	for _, body := range bodies {
+		for _, key := range []string{"temperature", "top_p", "max_tokens"} {
+			if v, ok := body[key]; ok {
+				t.Errorf("disabled %s sent to provider: %v", key, v)
+			}
+		}
 	}
 }
 

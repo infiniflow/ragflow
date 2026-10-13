@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/server"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"time"
@@ -207,8 +206,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := role == "admin"
@@ -296,7 +295,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	// 3. Create user-tenant relation
 	userTenantStatus := "1"
 	userTenant := &entity.UserTenant{
-		ID:        utility.GenerateToken(),
+		ID:        common.GenerateToken(),
 		UserID:    userID,
 		TenantID:  userID,
 		Role:      "owner",
@@ -309,7 +308,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	}
 
 	// 4. Create root file folder
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	fileLocation := ""
 	file := &entity.File{
 		ID:        fileID,
@@ -486,7 +485,7 @@ func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string,
 
 	user.IsActive = targetStatus
 	if !isActive {
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -621,8 +620,8 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	tenantID := userTenants[0].TenantID
 
 	// 3. Generate API token
-	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken()
+	key := common.GenerateAPIToken()
+	beta := common.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
@@ -1222,13 +1221,12 @@ func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interf
 }
 
 // GetSandboxConfig get sandbox config
-func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{}, error) {
+func (s *Service) GetSandboxConfig(ctx context.Context, providerType string) (map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, "sandbox.")
 	if err != nil {
 		return nil, err
 	}
 
-	providerType := "self_managed"
 	values := make(map[string]string, len(settings))
 	for _, setting := range settings {
 		if _, exists := values[setting.Name]; exists {
@@ -1236,8 +1234,11 @@ func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{},
 		}
 		values[setting.Name] = setting.Value
 	}
-	if value, exists := values["sandbox.provider_type"]; exists {
-		providerType = value
+	if providerType == "" {
+		providerType = "self_managed"
+		if value, exists := values["sandbox.provider_type"]; exists {
+			providerType = value
+		}
 	}
 	schema, err := sandbox.ConfigSchema(providerType)
 	if err != nil {
@@ -1472,8 +1473,8 @@ func (s *Service) InitDefaultAdmin() error {
 			return err
 		}
 
-		userID := utility.GenerateToken()
-		accessToken := utility.GenerateToken()
+		userID := common.GenerateToken()
+		accessToken := common.GenerateToken()
 		status := "1"
 		loginChannel := "password"
 		isSuperuser := true

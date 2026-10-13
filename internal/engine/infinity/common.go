@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/engine/types"
 	"strings"
 	"unicode"
 
@@ -376,9 +377,32 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 	Type    string
 	Default interface{}
 }) string {
+	return buildFilterFromConditionRaw(types.CompilationFilter(condition), tableColumns)
+}
+
+func buildFilterFromConditionRaw(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
 	var conditions []string
 
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			var children []string
+			for _, child := range types.FilterClauses(v) {
+				if expr := buildFilterFromConditionRaw(child, tableColumns); expr != "" {
+					children = append(children, "("+expr+")")
+				}
+			}
+			operator := " AND "
+			if k == "or" {
+				operator = " OR "
+			}
+			if len(children) > 0 {
+				conditions = append(conditions, joinBalanced(children, operator))
+			}
+			continue
+		}
 		if v == nil {
 			continue
 		}
@@ -388,14 +412,17 @@ func buildFilterFromCondition(condition map[string]interface{}, tableColumns map
 
 		// Handle must_not conditions -> NOT (...)
 		if k == "must_not" {
-			if mustNotMap, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range mustNotMap {
-					if kk == "exists" {
-						if existsField, ok := vv.(string); ok {
-							conditions = append(conditions, fmt.Sprintf("NOT (%s)", existsCondition(existsField, tableColumns)))
-						}
-					}
+			if m, ok := v.(map[string]interface{}); ok {
+				if expr := buildFilterFromConditionRaw(m, tableColumns); expr != "" {
+					conditions = append(conditions, "NOT ("+expr+")")
 				}
+			}
+			continue
+		}
+
+		if k == "exists" {
+			if field, ok := v.(string); ok {
+				conditions = append(conditions, existsCondition(field, tableColumns))
 			}
 			continue
 		}

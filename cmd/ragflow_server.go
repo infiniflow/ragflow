@@ -69,7 +69,6 @@ import (
 	infnative "ragflow/internal/deepdoc/parser/pdf/inference/native_analyzer"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/entity"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
 	"ragflow/internal/server/config"
@@ -326,7 +325,7 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 // CLI flag > environment variable > config file > default(1) and returns the
 // resolved ingestor worker count (K), validating it against the inclusive
 // range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
-// non-integer value at any layer is a fatal startup error.
+// noninteger value at any layer is a fatal startup error.
 func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int, error) {
 	val := config.MinIngestorWorkers
 	if configured > 0 {
@@ -353,7 +352,7 @@ func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int,
 // CLI flag > environment variable > config file > default(2) and returns the
 // resolved per-document page concurrency (N), validating it against the
 // inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
-// non-integer value at any layer is a fatal startup error.
+// noninteger value at any layer is a fatal startup error.
 func resolveIngestorPageConcurrency(args *serverArgs, configured int) (int, error) {
 	val := 2 // default page concurrency
 	if configured > 0 {
@@ -538,9 +537,6 @@ func main() {
 			port = *arguments.port
 			apiServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("api_server_%d", port)
-		}
 	case "admin":
 		adminServerConfig := globalConfig.GetAdminServerConfig()
 		port := adminServerConfig.HTTPPort
@@ -548,22 +544,19 @@ func main() {
 			port = *arguments.port
 			adminServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("admin_server_%d", port)
-		}
 	case "ingestor":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
 		}
 	case "syncer":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("syncer_server_%s", uuid)
 		}
 	case "deepdoc":
 		if serverName == "" {
-			uuid := utility.GenerateUUID()
+			uuid := common.GenerateUUID()
 			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
 		}
 	case "migrate":
@@ -585,7 +578,7 @@ func main() {
 	// stdout-only window.
 	switch *arguments.mode {
 	case "api", "ingestor":
-		if err := registerNativeDeepDoc(arguments); err != nil {
+		if err = registerNativeDeepDoc(arguments); err != nil {
 			common.Error("Failed to register in-process DeepDoc backend", err)
 			os.Exit(1)
 		}
@@ -623,7 +616,7 @@ func main() {
 	}
 
 	if err = checkDatabaseVersion(ctx); err != nil {
-		common.Fatal("Refusing to start: database was migrated by a newer version", zap.Error(err))
+		common.Fatal("Database has a newer version", zap.Error(err))
 	}
 
 	// Initialize doc engine
@@ -939,15 +932,14 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// unavailable, skipping dataset-nav upsert"), leaving the dataset tree empty.
 	// The embedder resolves the tenant's embedding model on demand, so both
 	// Search and UpsertDoc can embed queries/summaries automatically.
-	navModelService := service.NewModelProviderService()
-	navService := nlp.NewNavService(service.NewNavEmbedder(navModelService, ""))
+	navService := nlp.NewNavService(service.NewNavEmbedder(service.NewModelFactory(), ""))
 	// The cluster namer/merger is the counterpart of Python's
 	// _llm_create_summary / _llm_merge: a new cluster is named after the model's
 	// topic title and an existing cluster's description is fused with the joining
 	// document. Passing an empty model ref resolves each tenant's default chat
 	// model on demand; without one the nav service keeps its deterministic
-	// behaviour.
-	navService.SetNavMergeLLM(service.NewNavMergeLLM(navModelService, ""))
+	// behavior.
+	navService.SetNavMergeLLM(service.NewNavMergeLLM(service.NewModelFactory(), ""))
 	nav.SetNavService(navService)
 	// Memory extraction runs on the Ingestor's shared NATS consumer + worker
 	// pool (task_type="memory" dispatched by handleAndExecute -> executeMemoryTask),
@@ -958,7 +950,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	// goroutines and joins them via Stop); a provisioning failure here must
 	// fail the server (main's os.Exit(1) path) instead of reporting a
 	// healthy ingestor that can never consume.
-	if err := ingestor.Start(); err != nil {
+	if err = ingestor.Start(); err != nil {
 		common.Error("Failed to initialize ingestor", err)
 		return err
 	}
@@ -1119,12 +1111,12 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
+	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
-	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService)
-	modelSolver := service.NewModelSolver()
+	modelFactory := service.NewModelFactory()
+	modelCallService := service.NewModelCallServiceWithProviderService(modelProviderService, modelFactory)
 
 	// Wire the real MemorySaver so the Message component can persist
 	// conversation turns to memory stores declared in the canvas DSL.
@@ -1142,24 +1134,29 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalAdapter := agenttool.NewNLPRetrievalAdapterFromDeps(
 		docEngine,
 		documentDAO,
-		nil,
+		agenttool.RetrievalModelConstructors{
+			Embedding: func(ctx context.Context, tenantID, modelRef string) (*modelModule.EmbeddingModel, error) {
+				access := service.ModelAccess{TenantID: tenantID}
+				if strings.TrimSpace(modelRef) == "" {
+					return modelFactory.NewDefaultEmbeddingModel(ctx, access)
+				}
+				return modelFactory.NewEmbeddingModel(ctx, access, modelRef)
+			},
+			Chat: func(ctx context.Context, tenantID, modelRef string) (*modelModule.ChatModel, error) {
+				access := service.ModelAccess{TenantID: tenantID}
+				if strings.TrimSpace(modelRef) == "" {
+					return modelFactory.NewDefaultChatModel(ctx, access)
+				}
+				return modelFactory.NewChatModel(ctx, access, modelRef)
+			},
+			Rerank: func(ctx context.Context, tenantID, modelRef string) (*modelModule.RerankModel, error) {
+				return modelFactory.NewRerankModel(ctx, service.ModelAccess{TenantID: tenantID}, modelRef)
+			},
+		},
 		retrievalEnhancer,
 	)
-	retrievalAdapter.SetModelConfigResolver(func(ctx context.Context, tenantID string, modelType entity.ModelType, modelRef string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-		var target *service.ModelTarget
-		var err error
-		if strings.TrimSpace(modelRef) == "" {
-			target, err = modelSolver.ResolveDefaultModelConfig(ctx, tenantID, modelType)
-		} else {
-			target, err = modelSolver.ResolveModelConfig(ctx, tenantID, modelType, modelRef)
-		}
-		if err != nil {
-			return nil, "", nil, 0, err
-		}
-		return target.Driver, target.ModelName, target.APIConfig, target.MaxTokens, nil
-	})
 	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
 	common.Info("agent: retrieval service adapter installed")
 
 	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
@@ -1172,6 +1169,13 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	runtime.SetBm25Service(bm25Adapter)
 	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
 
+	// The compiled-knowledge graph walk (graph_explore) resolves its service per
+	// call the same way. Without this registration GetKgService() returns the
+	// failing stub, so the tool could only ever report an infrastructure error.
+	// The seed encoder is left unset: the walk then seeds by keyword match on the
+	// entity rows, the documented fallback on a deployment without an embedder.
+	smartagentic.SetKgService(smartagentic.NewKgAdapter(docEngine))
+	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
 	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
 	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
 	// model resolved from the caller's ModelID and searches through the adapter
@@ -1179,7 +1183,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// reasoning chats.
 	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
 	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
-	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelProviderService, metadataService, docEngine))
+	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelFactory, metadataService, docEngine))
 	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
 
 	// Initialize handler layer
@@ -1242,14 +1246,13 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	searchBotHandler := handler.NewSearchBotHandler(
 		searchService,
 		tenantService,
-		modelProviderService,
+		modelFactory,
 		chunkService,
 	)
-	searchBotHandler.SetStreamLLM(modelProviderService)
 	askService := service.NewAskService(chunkService, nil, 0, 0)
 	searchBotHandler.SetAskService(askService)
-	chatHandler.SetMindMapDependencies(searchService, tenantService, modelProviderService, chunkService)
-	searchHandler.SetCompletionDependencies(modelProviderService, askService)
+	chatHandler.SetMindMapDependencies(searchService, tenantService, modelFactory, chunkService)
+	searchHandler.SetCompletionDependencies(modelFactory, askService)
 	pluginHandler := handler.NewPluginHandler(service.NewPluginService())
 	modelHandler := handler.NewModelHandler(service.NewModelProviderService())
 	fileCommitHandler := handler.NewFileCommitHandler(file.NewFileCommitService())
@@ -1258,7 +1261,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	retrievalService := nlp.NewRetrievalService(docEngine, documentDAO)
 	difyRetrievalHandler := handler.NewDifyRetrievalHandler(
 		datasetsService,
-		modelSolver,
+		modelFactory,
 		metadataService,
 		retrievalService,
 		documentDAO,
@@ -1281,8 +1284,8 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// on demand so Search/UpsertDoc can embed queries/summaries automatically,
 	// and the cluster namer/merger resolves the tenant's default chat model the
 	// same way (see the ingestor's wrapping of SetNavMergeLLM).
-	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelProviderService, ""))
-	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelProviderService, ""))
+	apiNavService := nlp.NewNavService(service.NewNavEmbedder(modelFactory, ""))
+	apiNavService.SetNavMergeLLM(service.NewNavMergeLLM(modelFactory, ""))
 	nav.SetNavService(apiNavService)
 
 	// Install the compiled-wiki search service. It is backed directly by the
@@ -1446,7 +1449,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
 		common.ServerTypeAPI,
-		fmt.Sprintf("ragflow-server-%s", utility.GenerateUUID()[:8]),
+		fmt.Sprintf("ragflow-server-%s", common.GenerateUUID()[:8]),
 		apiServerConfig.HTTPPort,
 		globalConfig.GetHeartbeatInterval(),
 	); hb != nil {

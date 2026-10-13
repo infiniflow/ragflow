@@ -32,10 +32,13 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -225,7 +228,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil, nil, nil)
+	a := NewNLPRetrievalAdapter(nil, RetrievalModelConstructors{}, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
@@ -412,6 +415,45 @@ func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing
 	}
 }
 
+func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	ctx := runtime.WithState(t.Context(), state)
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
+	}
+}
+
 func TestNLPRetrievalAdapter_ResolveDatasetsFromDatasetIDs(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{
@@ -491,24 +533,22 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := &fakeModelResolver{modelName: "resolved-model"}
+			var gotRef string
 			adapter := &NLPRetrievalAdapter{
-				modelConfigResolver: func(
-					_ context.Context,
-					_ string,
-					_ entity.ModelType,
-					modelRef string,
-				) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-					resolver.call = "resolve:" + modelRef
-					return nil, resolver.modelName, &modelModule.APIConfig{}, 512, resolver.err
+				modelConstructors: RetrievalModelConstructors{
+					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						gotRef = modelRef
+						modelName := "resolved-model"
+						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
+					},
 				},
 			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
-			if resolver.call != test.wantCall {
-				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			if got := "resolve:" + gotRef; got != test.wantCall {
+				t.Fatalf("constructor model ref = %q, want %q", got, test.wantCall)
 			}
 			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
 				t.Fatalf("resolved model = %#v", model)
@@ -554,12 +594,6 @@ func TestValidateEmbeddingModelsRejectsDifferentBases(t *testing.T) {
 type fakeKnowledgebaseLookup struct {
 	kbs []*entity.Knowledgebase
 	err error
-}
-
-type fakeModelResolver struct {
-	call      string
-	modelName string
-	err       error
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {

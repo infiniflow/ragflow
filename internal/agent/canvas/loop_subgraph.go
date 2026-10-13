@@ -38,6 +38,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"ragflow/internal/common"
 	"slices"
 	"strings"
 
@@ -273,20 +274,9 @@ func buildSubWorkflow(
 	for cpnID := range members {
 		upstreams := c.Components[cpnID].Upstream
 		first := true
-		for _, up := range upstreams {
-			if up == loopID {
-				// Upstream is the parent Loop; in the sub-graph the
-				// data source is the synthetic init node.
-				if first {
-					nodes[cpnID].AddInput(loopInitKey)
-					first = false
-				} else {
-					nodes[cpnID].AddDependency(loopInitKey)
-				}
-				continue
-			}
+		wireMember := func(up string) {
 			if !members[up] {
-				continue
+				return
 			}
 			if first {
 				nodes[cpnID].AddInput(up)
@@ -295,10 +285,31 @@ func buildSubWorkflow(
 				nodes[cpnID].AddDependency(up)
 			}
 		}
+		for _, up := range upstreams {
+			if up == loopID {
+				if first {
+					nodes[cpnID].AddInput(loopInitKey)
+					first = false
+				} else {
+					nodes[cpnID].AddDependency(loopInitKey)
+				}
+				continue
+			}
+			if messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			wireMember(up)
+		}
+		for _, up := range upstreams {
+			if !members[up] || !messageEdgeIsOrderingOnly(c, up) {
+				continue
+			}
+			nodes[cpnID].AddDependency(up)
+		}
 		if first {
-			// No in-subgraph upstream: wire from init (this happens
-			// for body entries whose only upstream in the DSL is the
-			// Loop itself).
+			// No in-subgraph data upstream. The loop input stays the
+			// data source, including when the only body predecessor is
+			// a Message. That edge only orders execution.
 			nodes[cpnID].AddInput(loopInitKey)
 		}
 	}
@@ -707,7 +718,7 @@ func evalBoolOp(b bool, op string, value any) (bool, error) {
 }
 
 func evalNumberOp(n float64, op string, value any) (bool, error) {
-	cmp, ok := toFloat(value)
+	cmp, ok := common.ToFloat(value)
 	if !ok && !isNilOp(op) {
 		return false, fmt.Errorf("invalid operator: %s (number variable, non-numeric value)", op)
 	}
@@ -774,22 +785,6 @@ func listEqual(lst []any, value any) bool {
 		}
 	}
 	return true
-}
-
-func toFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case float64:
-		return x, true
-	case float32:
-		return float64(x), true
-	case int:
-		return float64(x), true
-	case int32:
-		return float64(x), true
-	case int64:
-		return float64(x), true
-	}
-	return 0, false
 }
 
 func isNilOp(op string) bool {

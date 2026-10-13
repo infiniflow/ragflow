@@ -25,10 +25,11 @@ func TestPublishMemoryTaskWakeupContainsOnlyDurableIdentity(t *testing.T) {
 	}
 }
 
-// publishMemoryTaskWakeup is the agent-canvas memory-save publish path. When the
-// message queue engine is a NatsEngine whose Init failed at boot, publishing
-// must surface a clean error (caught by the Message component's best-effort
-// memory save) rather than panicking and failing the whole canvas run.
+// TestQueueMemoryTaskUninitializedQueueReturnsError verifies that publishMemoryTaskWakeup,
+// the agent-canvas memory-save publish path, surfaces a clean error. When the
+// queue engine is a NatsEngine whose Init failed at boot (caught by the Message
+// component's best-effort memory save) rather than panicking and failing the whole
+// canvas run.
 func TestQueueMemoryTaskUninitializedQueueReturnsError(t *testing.T) {
 	previous := engine.GetMessageQueueEngine()
 	engine.SetMessageQueueEngine(natsengine.NewNatsEngine("127.0.0.1", 1))

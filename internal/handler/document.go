@@ -28,6 +28,7 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 	"reflect"
 	"strconv"
@@ -65,9 +66,6 @@ type documentServiceIface interface {
 	GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error)
 	GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error)
 	GetMetadataSummary(ctx context.Context, kbID string, docIDs []string) (map[string]interface{}, error)
-	SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error
-	DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error
-	DeleteDocumentAllMetadata(ctx context.Context, docID string) error
 	GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error)
 	GetDocumentArtifact(ctx context.Context, filename, userID string) (*document.ArtifactResponse, error)
 	GetDocumentPreview(ctx context.Context, userID, docID string) (*document.DocumentPreview, error)
@@ -120,7 +118,7 @@ func NewDocumentHandler(documentService documentServiceIface, datasetService *da
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/documents/{id} [get]
 func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
+	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
 		common.ErrorWithCode(c, errorCode, errorMessage)
 		return
@@ -140,6 +138,11 @@ func (h *DocumentHandler) GetDocumentByID(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{
 			"error": "document not found",
 		})
+		return
+	}
+
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationRead); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 
@@ -373,8 +376,8 @@ func (h *DocumentHandler) UpdateDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -428,8 +431,8 @@ func (h *DocumentHandler) DeleteDocument(c *gin.Context) {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found!")
 		return
 	}
-	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, doc.KbID, permission.OperationDeleteContent); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -506,6 +509,9 @@ func (h *DocumentHandler) DeleteDocuments(c *gin.Context) {
 	ctx := c.Request.Context()
 	deleted, err := h.documentService.DeleteDocuments(ctx, ids, req.DeleteAll, datasetID, userID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
@@ -601,8 +607,8 @@ func (h *DocumentHandler) ListDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -995,8 +1001,8 @@ func (h *DocumentHandler) UploadDocuments(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("Can't find the dataset with ID %s!", datasetID))
 		return
 	}
-	if !h.datasetService.CheckKBTeamPermission(ctx, kb, tenantID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, kb.ID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1189,22 +1195,22 @@ func (h *DocumentHandler) DownloadDocument(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	// Authorize the caller before serving file bytes. The sibling routes on
-	// this dataset (PATCH/DELETE documents, chunks, metadata) all gate on
-	// datasetService.Accessible, and the Python reference
-	// (document_api.py download) checks KnowledgebaseService.accessible and
-	// DocumentService.accessible; without this, any logged-in user could
-	// download any tenant's document by supplying its dataset and document
-	// ids. Answer exactly like the missing-document case so existence is
-	// not leaked either.
-	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "document not found")
+	// Authorize the caller before serving file bytes. Answer exactly like the
+	// missing-document case so dataset existence is not leaked.
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		respondPermissionError(c, err, true)
 		return
 	}
 	res, err := h.documentService.DownloadDocument(ctx, datasetID, docID)
 
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeDataError, err.Error())
+		if errors.Is(err, document.ErrDocumentNotFound) {
+			common.ErrorWithCode(c, common.CodeNotFound, "Resource not found")
+			return
+		}
+		common.Error("DownloadDocument failed", err,
+			zap.String("dataset_id", datasetID), zap.String("document_id", docID), zap.String("user_id", user.ID))
+		common.ErrorWithCode(c, common.CodeServerError, "Failed to download document")
 		return
 	}
 
@@ -1302,132 +1308,6 @@ func stringValue(value *string) string {
 	return *value
 }
 
-// MetadataSummary handles the metadata summary request
-func (h *DocumentHandler) MetadataSummary(c *gin.Context) {
-	_, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var requestBody struct {
-		KBID   string   `json:"kb_id" binding:"required"`
-		DocIDs []string `json:"doc_ids"`
-	}
-
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "kb_id is required")
-		return
-	}
-
-	kbID := requestBody.KBID
-	if kbID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "kb_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	summary, err := h.documentService.GetMetadataSummary(ctx, kbID, requestBody.DocIDs)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to get metadata summary: "+err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, gin.H{"summary": summary}, "success")
-}
-
-// SetMetaRequest represents the request for setting document metadata
-type SetMetaRequest struct {
-	DocID string `json:"doc_id" binding:"required"`
-	Meta  string `json:"meta" binding:"required"`
-}
-
-// SetMeta handles the set metadata request for a document
-// @Summary Set Document Metadata
-// @Description Set metadata for a specific document
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body SetMetaRequest true "metadata info"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/document/set_meta [post]
-func (h *DocumentHandler) SetMeta(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req SetMetaRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, err.Error())
-		return
-	}
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "doc_id is required")
-		return
-	}
-
-	// Parse meta JSON string
-	var meta map[string]interface{}
-	if err := json.Unmarshal([]byte(req.Meta), &meta); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "Json syntax error: "+err.Error())
-		return
-	}
-
-	if meta == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "meta is required")
-		return
-	}
-
-	// Validate meta values - must be str, int, float, or list of those
-	for k, v := range meta {
-		switch val := v.(type) {
-		case string, int, float64:
-			// Valid
-		case []interface{}:
-			for _, item := range val {
-				if _, ok := item.(string); !ok {
-					if _, ok = item.(float64); !ok {
-						common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, fmt.Sprintf("Unsupported type in list for key %s: %T", k, item))
-						return
-					}
-				}
-			}
-		default:
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, fmt.Sprintf("Unsupported type for key %s: %T", k, v))
-			return
-		}
-	}
-
-	// Authorization: user must be able to access the document's dataset.
-	ctx := c.Request.Context()
-	doc, err := h.documentService.GetDocumentByID(ctx, req.DocID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
-		return
-	}
-	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
-		return
-	}
-
-	err = h.documentService.SetDocumentMetadata(ctx, req.DocID, meta)
-	if err != nil {
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-		} else {
-			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to set metadata: "+errMsg)
-		}
-		return
-	}
-
-	common.SuccessWithData(c, true, "success")
-}
-
 // Ingest handles document ingestion
 // @Summary Ingest Document
 // @Description Ingest a document for processing
@@ -1463,93 +1343,6 @@ func (h *DocumentHandler) Ingest(c *gin.Context) {
 	common.SuccessWithData(c, true, "success")
 }
 
-// DeleteMetaRequest represents the request for deleting document metadata
-type DeleteMetaRequest struct {
-	DocID string `json:"doc_id" binding:"required"`
-	Keys  string `json:"keys"` // optional - if provided, deletes specific keys; otherwise deletes entire document metadata
-}
-
-// DeleteMeta handles the delete metadata request for a document
-// If Keys is provided, deletes specific metadata keys; otherwise deletes entire document metadata
-// @Summary Delete Document Metadata
-// @Description Delete metadata keys or entire document metadata for a specific document
-// @Tags documents
-// @Accept json
-// @Produce json
-// @Security ApiKeyAuth
-// @Param request body DeleteMetaRequest true "metadata keys to delete or empty to delete all"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/document/delete_meta [post]
-func (h *DocumentHandler) DeleteMeta(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	var req DeleteMetaRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, err.Error())
-		return
-	}
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "doc_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	doc, err := h.documentService.GetDocumentByID(ctx, req.DocID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "document not found")
-		return
-	}
-	if !h.datasetService.Accessible(ctx, doc.KbID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
-		return
-	}
-
-	// If Keys is provided, parse and delete specific keys; otherwise delete entire document metadata
-	if req.Keys != "" {
-		// Parse keys JSON string - expected to be a list of key names to delete
-		var keys []string
-		if err = json.Unmarshal([]byte(req.Keys), &keys); err != nil {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "Json syntax error: "+err.Error())
-			return
-		}
-
-		if keys == nil || len(keys) == 0 {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, "keys list is required")
-			return
-		}
-
-		err = h.documentService.DeleteDocumentMetadata(ctx, req.DocID, keys)
-		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-			} else {
-				common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to delete metadata: "+errMsg)
-			}
-			return
-		}
-	} else {
-		// Delete entire document metadata
-		err = h.documentService.DeleteDocumentAllMetadata(ctx, req.DocID)
-		if err != nil {
-			errMsg := err.Error()
-			if strings.Contains(errMsg, "no such document") || strings.Contains(errMsg, "document not found") {
-				common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 1, nil, errMsg)
-			} else {
-				common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 1, nil, "Failed to delete metadata: "+errMsg)
-			}
-			return
-		}
-	}
-
-	common.SuccessWithData(c, true, "success")
-}
-
 type ListIngestionsRequest struct {
 	DatasetID *string `json:"dataset_id"`
 }
@@ -1567,8 +1360,8 @@ func (h *DocumentHandler) ListIngestionTasks(c *gin.Context) {
 	var err error
 	ctx := c.Request.Context()
 	if req.DatasetID != nil {
-		if !h.datasetService.Accessible(ctx, *req.DatasetID, userID) {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
+		if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, *req.DatasetID, permission.OperationRead); err != nil {
+			respondPermissionError(c, err, false)
 			return
 		}
 	}
@@ -1610,8 +1403,8 @@ func (h *DocumentHandler) StartIngestionTask(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1693,8 +1486,8 @@ func (h *DocumentHandler) ParseDocuments(c *gin.Context) {
 
 	userID := c.GetString("user_id")
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "No authorization to access the dataset.")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1735,8 +1528,8 @@ func (h *DocumentHandler) StopParseDocuments(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, userID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, fmt.Sprintf("You don't own the dataset %s.", datasetID))
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -1761,8 +1554,8 @@ func (h *DocumentHandler) MetadataSummaryByDataset(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
-		common.ErrorWithCode(c, common.CodeServerError, "You don't own the dataset "+datasetID)
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		respondPermissionFailure(c, err, false)
 		return
 	}
 
@@ -1942,8 +1735,8 @@ func (h *DocumentHandler) handleBatchUpdateDocumentMetadatas(c *gin.Context) {
 		return
 	}
 	ctx := c.Request.Context()
-	if !h.datasetService.Accessible(ctx, datasetID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "You don't own the dataset "+datasetID+".")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, datasetID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -2015,7 +1808,11 @@ func parseMetadataSelector(raw interface{}) (*document.MetadataSelector, string)
 			return nil, "document_ids must be a list."
 		}
 		for _, id := range ids {
-			selector.DocumentIDs = append(selector.DocumentIDs, id.(string))
+			docID, ok := id.(string)
+			if !ok {
+				return nil, "document_ids must contain only strings."
+			}
+			selector.DocumentIDs = append(selector.DocumentIDs, docID)
 		}
 	}
 	if v, ok := m["metadata_condition"]; ok && v != nil {
