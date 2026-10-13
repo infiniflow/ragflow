@@ -11,21 +11,6 @@ NC='\033[0m' # No Color
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$SCRIPT_DIR"
 
-# Read a `NAME = "value"` constant out of tools/scripts/download_dev_deps.py —
-# the single source of truth for the native static-library versions and download
-# URLs (pdfium / pdf_oxide / office_oxide / onnxruntime). build.sh is pure shell
-# and must stay Python-free, so it greps the file instead of importing it. Keep
-# the assignments greppable.
-deps_version() {
-    local value
-    value="$(sed -n -E "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*\"([^\"]+)\".*/\1/p" "$PROJECT_ROOT/tools/scripts/download_dev_deps.py" | head -1)"
-    if [ -z "$value" ]; then
-        echo "Error: could not read $1 from tools/scripts/download_dev_deps.py" >&2
-        return 1
-    fi
-    echo "$value"
-}
-
 # Build directories
 CPP_DIR="$PROJECT_ROOT/internal/binding/cpp"
 BUILD_DIR="$CPP_DIR/cmake-build-release"
@@ -53,14 +38,14 @@ if [ -z "$OFFICE_OXIDE_VERSION" ]; then
 fi
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
+# Pinned here (not grepped from the dev downloader) so build.sh stays tied to the
+# checked-out source tree and the Docker build needs no extra COPY of the script.
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"
-PDFIUM_STATIC_VERSION="$(deps_version PDFIUM_VERSION)" || {
-    echo -e "${RED}Error: could not read PDFIUM_VERSION from tools/scripts/download_dev_deps.py${NC}" >&2; exit 1; }
+PDFIUM_STATIC_VERSION="7809"
 
 # pdf_oxide native library settings — static linking (go-ffi tarball)
 PDF_OXIDE_PREFIX="${HOME}/ragflow-native-libs/pdf_oxide"
-PDF_OXIDE_VERSION="$(deps_version PDF_OXIDE_VERSION)" || {
-    echo -e "${RED}Error: could not read PDF_OXIDE_VERSION from tools/scripts/download_dev_deps.py${NC}" >&2; exit 1; }
+PDF_OXIDE_VERSION="0.3.73"
 
 # onnxruntime native library settings — static linking for the in-process
 # (Go) DeepDoc backend. libonnxruntime*.a is linked into the server binary
@@ -247,20 +232,18 @@ check_go_deps() {
 check_ort_version_consistency() {
     print_section "Checking ONNX Runtime version consistency"
 
-    local env_go deps dockerfile
+    local env_go dockerfile
     env_go="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' "${PROJECT_ROOT}/internal/common/environments.go" | sed -E 's/.*"([^"]+)".*/\1/')"
-    deps="$(deps_version ORT_VERSION)"
     dockerfile="$(grep -m1 -E 'ARG[[:space:]]+ORT_VERSION=' "${PROJECT_ROOT}/Dockerfile" | sed -E 's/.*ORT_VERSION=([0-9][^"[:space:]]*).*/\1/')"
 
-    if [ -z "$env_go" ] || [ -z "$deps" ] || [ -z "$dockerfile" ]; then
+    if [ -z "$env_go" ] || [ -z "$dockerfile" ]; then
         echo -e "${RED}Error: could not parse the ONNX Runtime version from one of the pinned locations${NC}" >&2
         exit 1
     fi
 
-    if [ "$env_go" != "$deps" ] || [ "$env_go" != "$dockerfile" ]; then
+    if [ "$env_go" != "$dockerfile" ]; then
         echo -e "${RED}Error: ONNX Runtime version is inconsistent — fix before building:${NC}" >&2
         printf '  %-10s  %s\n' "$env_go" "internal/common/environments.go:DeepDocORTVersion"
-        printf '  %-10s  %s\n' "$deps" "tools/scripts/download_dev_deps.py:ORT_VERSION"
         printf '  %-10s  %s\n' "$dockerfile" "dockerfile:ARG ORT_VERSION"
         exit 1
     fi

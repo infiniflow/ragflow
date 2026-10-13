@@ -117,12 +117,12 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > startup, so the remedy is always to seed the static lib above, never to build
 > without it.
 
-> **Note**: The ONNX Runtime native version is pinned in several Go-side places
-> that must stay in sync. Bumping it in one spot and not the others fails the
-> build with `Error: ONNX Runtime version is inconsistent`:
+> **Note**: The ONNX Runtime native version is pinned in a few places that must
+> stay in sync. Bumping it in one spot and not the others fails the build with
+> `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
 > - `Dockerfile` — `ARG ORT_VERSION`
-> - `tools/scripts/download_dev_deps.py` — `ORT_VERSION` (read by build.sh and the native downloader)
+> - `tools/scripts/download_dev_deps.py` — `ORT_VERSION` (used by the dev downloader to fetch the matching release; build.sh does not grep it, but it must match what gets linked)
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand

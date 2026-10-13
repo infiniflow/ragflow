@@ -49,9 +49,11 @@ import zipfile
 import requests
 
 # ── Dependency versions & URLs (edit here) ────────────────────────────────
-# Single source of truth for the native static-library versions and download
-# URLs this script fetches. build.sh greps the `NAME = "value"` constants (it
-# is pure shell and must stay Python-free), so keep them greppable.
+# This script's own copy of the native static-library versions and download URLs
+# it fetches. build.sh does NOT grep these (it pins PDFIUM/PDF_OXIDE itself and
+# reads ORT from internal/common/environments.go + the Dockerfile ARG, so it
+# stays tied to the checked-out source tree and the Docker build needs no COPY
+# of this script) — keep the two in sync when bumping a version.
 
 # ONNX Runtime (statically linked into the Go in-process DeepDoc backend).
 #
