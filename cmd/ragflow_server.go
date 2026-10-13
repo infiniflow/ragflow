@@ -1117,7 +1117,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
+	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
@@ -1175,6 +1175,13 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	runtime.SetBm25Service(bm25Adapter)
 	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
 
+	// The compiled-knowledge graph walk (graph_explore) resolves its service per
+	// call the same way. Without this registration GetKgService() returns the
+	// failing stub, so the tool could only ever report an infrastructure error.
+	// The seed encoder is left unset: the walk then seeds by keyword match on the
+	// entity rows, the documented fallback on a deployment without an embedder.
+	smartagentic.SetKgService(smartagentic.NewKgAdapter(docEngine))
+	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
 	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
 	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
 	// model resolved from the caller's ModelID and searches through the adapter

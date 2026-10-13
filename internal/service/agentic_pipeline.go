@@ -170,16 +170,17 @@ func (s *ChatPipelineService) agenticRag(
 		thinking := false
 		var reasoning strings.Builder
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
-			Model:          model,
-			SynthModel:     synth,
-			Messages:       agentMessages,
-			TemplateID:     mode,
-			TenantID:       chat.TenantID,
-			DatasetIDs:     chatDatasetIDs(chat),
-			DocIDs:         docIDs,
-			Stream:         stream,
-			ToolCallCounts: toolCounts,
-			ToolCallErrors: toolErrors,
+			Model:           model,
+			SynthModel:      synth,
+			Messages:        agentMessages,
+			TemplateID:      mode,
+			TenantID:        chat.TenantID,
+			DatasetIDs:      chatDatasetIDs(chat),
+			DocIDs:          docIDs,
+			ConversationKey: chat.ID,
+			Stream:          stream,
+			ToolCallCounts:  toolCounts,
+			ToolCallErrors:  toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
 				reasoning.WriteString(thinkingDelta)
 				startToThink, endToThink := false, false

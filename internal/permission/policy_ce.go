@@ -22,6 +22,10 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"ragflow/internal/entity"
+
+	"gorm.io/gorm"
 )
 
 type communityPolicy struct {
@@ -166,6 +170,55 @@ func (p *communityPolicy) Scope(ctx context.Context, subject Subject, query Scop
 	return scope, nil
 }
 
+func (p *communityPolicy) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, bool, error) {
+	if query.Kind != ResourceKindDataset || query.Operation != OperationRead || query.Parent.ID != "" || query.Parent.Kind != "" || query.Entry != nil {
+		return QueryScope{}, false, nil
+	}
+	if err := validateSubject(subject); err != nil {
+		return QueryScope{}, true, err
+	}
+	source, ok := p.source.(*databaseSource)
+	if !ok || source.db == nil {
+		return QueryScope{}, false, nil
+	}
+	if err := source.validateDatasetTenants(ctx, subject.UserID); err != nil {
+		return QueryScope{}, true, err
+	}
+
+	return QueryScope{apply: func(query *gorm.DB) *gorm.DB {
+		db := source.db.WithContext(ctx)
+		activeOwner := db.Model(&entity.UserTenant{}).
+			Select("1").
+			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.role = ? AND user_tenant.status = ?", string(RoleOwner), string(entity.StatusValid))
+		callerIsOwner := db.Model(&entity.UserTenant{}).
+			Select("1").
+			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", subject.UserID, string(RoleOwner), string(entity.StatusValid))
+		callerIsMember := db.Model(&entity.UserTenant{}).
+			Select("1").
+			Where("user_tenant.tenant_id = knowledgebase.tenant_id AND user_tenant.user_id = ? AND user_tenant.role = ? AND user_tenant.status = ?", subject.UserID, string(RoleNormal), string(entity.StatusValid))
+		accessibleDatasets := db.Model(&entity.Knowledgebase{}).
+			Select("knowledgebase.id").
+			Where("knowledgebase.status = ?", string(entity.StatusValid)).
+			Where("EXISTS (?)", activeOwner).
+			Where("(EXISTS (?) OR (knowledgebase.permission = ? AND EXISTS (?)))", callerIsOwner, string(entity.TenantPermissionTeam), callerIsMember)
+		return query.Where("knowledgebase.id IN (?)", accessibleDatasets)
+	}}, true, nil
+}
+
+func (s *databaseSource) validateDatasetTenants(ctx context.Context, userID string) error {
+	var tenantIDs []string
+	err := s.db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Joins("JOIN user_tenant member ON member.tenant_id = knowledgebase.tenant_id").
+		Where("knowledgebase.status = ? AND member.user_id = ? AND member.status = ?", string(entity.StatusValid), userID, string(entity.StatusValid)).
+		Distinct("knowledgebase.tenant_id").
+		Pluck("knowledgebase.tenant_id", &tenantIDs).Error
+	if err != nil {
+		return err
+	}
+	_, err = s.loadTenantOwnerIDs(ctx, tenantIDs)
+	return err
+}
+
 func (p *communityPolicy) FilterResources(ctx context.Context, subject Subject, refs []ResourceRef, operation Operation) ([]ResourceRef, error) {
 	if err := validateSubject(subject); err != nil {
 		return nil, err
@@ -303,6 +356,9 @@ func (e *evaluation) resolveResource(ctx context.Context, subject Subject, resou
 	if !validOperations(resource.OwnerOperations) {
 		return Access{}, fmt.Errorf("%w: invalid owner operations", ErrInvalidPermission)
 	}
+	if !validOperations(resource.TenantOperations) || !validOperations(resource.CreatorOperations) {
+		return Access{}, fmt.Errorf("%w: invalid delegated operations", ErrInvalidPermission)
+	}
 	switch resource.Visibility {
 	case VisibilityPrivate, VisibilityTenant, VisibilityShared:
 	default:
@@ -326,7 +382,14 @@ func (e *evaluation) resolveResource(ctx context.Context, subject Subject, resou
 			}
 			return Access{}, err
 		}
-		return resourceAccess(resource, AccessSourceTenant), nil
+		if subject.UserID == resource.CreatedBy && resource.CreatorOperations != nil {
+			return resourceAccessWithOperations(resource, AccessSourceCreator, resource.CreatorOperations), nil
+		}
+		operations := resource.TenantOperations
+		if operations == nil {
+			operations = resource.OwnerOperations
+		}
+		return resourceAccessWithOperations(resource, AccessSourceTenant, operations), nil
 	case VisibilityShared:
 		if contains(resource.SharedWithUserIDs, subject.UserID) {
 			return resourceAccess(resource, AccessSourceShared), nil
@@ -440,7 +503,7 @@ func validAction(action Action) bool {
 
 func validOperation(operation Operation) bool {
 	switch operation {
-	case OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse:
+	case OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationDeleteContent, OperationShare, OperationRun, OperationUse:
 		return true
 	default:
 		return false
@@ -484,11 +547,15 @@ func validOperations(operations []Operation) bool {
 }
 
 func resourceAccess(resource Resource, source AccessSource) Access {
+	return resourceAccessWithOperations(resource, source, resource.OwnerOperations)
+}
+
+func resourceAccessWithOperations(resource Resource, source AccessSource, operations []Operation) Access {
 	return Access{
 		Resource:   resource.Ref,
 		TenantID:   resource.TenantID,
 		Source:     source,
-		Operations: append([]Operation(nil), resource.OwnerOperations...),
+		Operations: append([]Operation(nil), operations...),
 	}
 }
 

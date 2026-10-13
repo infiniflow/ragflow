@@ -61,10 +61,18 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 	for i := range rows {
 		matrix = append(matrix, tuple(firstRow+i))
 	}
-	td := &entity.TableData{Rows: allRows, HeaderRows: 1, Caption: sheet}
+	tdGrid := make([][]entity.TableCell, 0, len(allRows))
+	for _, r := range allRows {
+		cells := make([]entity.TableCell, 0, len(r))
+		for _, c := range r {
+			cells = append(cells, entity.TableCell{Text: c})
+		}
+		tdGrid = append(tdGrid, cells)
+	}
+	td := &entity.TableData{Grid: tdGrid, HeaderRows: 1, Caption: sheet}
 	return map[string]any{
 		"table": map[string]any{
-			"rows":        allRows,
+			"grid":        tdGrid,
 			"header_rows": 1,
 			"caption":     sheet,
 		},
@@ -1085,9 +1093,9 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if !ok {
 			t.Fatalf("chunk %d missing structured TableData", i)
 		}
-		tblRows, _ := tbl["rows"].([]any)
-		if len(tblRows) < 2 {
-			t.Fatalf("chunk %d has too few rows: %v", i, tblRows)
+		tblGrid, _ := tbl["grid"].([]any)
+		if len(tblGrid) < 2 {
+			t.Fatalf("chunk %d has too few rows: %v", i, tblGrid)
 		}
 		if !strings.Contains(chunk["text"].(string), "Name") {
 			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
@@ -1105,7 +1113,7 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if matrix[0][1] != 1 {
 			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
 		}
-		dataRows := len(tblRows) - 1
+		dataRows := len(tblGrid) - 1
 		if dataRows != len(matrix)-1 {
 			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
 		}

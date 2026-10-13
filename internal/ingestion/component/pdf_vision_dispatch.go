@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -25,6 +24,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -54,16 +54,10 @@ const (
 var monkeyOCRv2ImagePattern = regexp.MustCompile(`!\[([^]]*)\]\(([^)]+)\)`)
 
 var (
-	pdfVisionPromptLoader  = loadPDFVisionPrompt
+	pdfVisionPromptLoader  = (prompts.EmbeddedPromptLoader{}).Load
 	pdfVisionPageRenderer  = defaultRenderPDFVisionPages
 	pdfVisionModelResolver = defaultPDFVisionModelResolver
 	pdfVisionChatInvoker   = defaultPDFVisionChatInvoker
-)
-
-var (
-	pdfVisionPromptCache   = make(map[string]string)
-	pdfVisionPromptCacheMu sync.RWMutex
-	pdfVisionPrompts       promptDirState
 )
 
 func maybeDispatchPDFVision(
@@ -1192,34 +1186,6 @@ func defaultPDFVisionChatInvoker(
 	vision := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	return chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
-}
-
-func loadPDFVisionPrompt(name string) (string, error) {
-	pdfVisionPromptCacheMu.RLock()
-	if cached, ok := pdfVisionPromptCache[name]; ok {
-		pdfVisionPromptCacheMu.RUnlock()
-		return cached, nil
-	}
-	pdfVisionPromptCacheMu.RUnlock()
-
-	baseDir, err := pdfVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", fmt.Sprintf("%s.md", name))
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("prompt file %q not found: %w", name, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	pdfVisionPromptCacheMu.Lock()
-	pdfVisionPromptCache[name] = cached
-	pdfVisionPromptCacheMu.Unlock()
-	return cached, nil
-}
-
-func pdfVisionPromptsBaseDir() (string, error) {
-	return pdfVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision

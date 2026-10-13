@@ -20,11 +20,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/rag/prompts"
 	"regexp"
 
 	"strconv"
@@ -91,44 +91,9 @@ type ManualValueResolver func(map[string]interface{}) map[string]interface{}
 // NoMatchDocIDSentinel forces retrieval to return no documents when filters match nothing.
 const NoMatchDocIDSentinel = "-999"
 
-// metaFilterTemplateCache caches the template content
-var metaFilterTemplateCache string
-
-// getMetaFilterTemplate loads and caches the meta_filter.md template
-func getMetaFilterTemplate() (string, error) {
-	if metaFilterTemplateCache != "" {
-		return metaFilterTemplateCache, nil
-	}
-
-	// Try to find meta_filter.md relative to the rag module
-	// Look for it in rag/prompts/ directory
-	possiblePaths := []string{
-		"rag/prompts/meta_filter.md",
-		"../rag/prompts/meta_filter.md",
-		"../../rag/prompts/meta_filter.md",
-	}
-
-	var templateContent string
-	for _, path := range possiblePaths {
-		content, err := os.ReadFile(path)
-		if err == nil {
-			templateContent = string(content)
-			break
-		}
-	}
-
-	if templateContent == "" {
-		// Fallback: return error
-		return "", fmt.Errorf("could not find meta_filter.md template")
-	}
-
-	metaFilterTemplateCache = templateContent
-	return templateContent, nil
-}
-
 // renderMetaFilterTemplate renders the Jinja2-like template from meta_filter.md
 func renderMetaFilterTemplate(currentDate, metadataKeys, question, constraints string) (string, error) {
-	templateContent, err := getMetaFilterTemplate()
+	templateContent, err := (prompts.EmbeddedPromptLoader{}).Load("meta_filter")
 	if err != nil {
 		return "", err
 	}
