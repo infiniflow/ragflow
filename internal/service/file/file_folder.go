@@ -28,22 +28,49 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
 // This method includes init_dataset_docs initialization when parent_id is empty
 func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	return s.listFiles(ctx, tenantID, tenantID, pfID, page, pageSize, terms, keywords, true)
+}
+
+// ListFilesForTenant allows active tenant members to browse the tenant's files.
+func (s *FileService) ListFilesForTenant(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string) (*ListFilesResponse, error) {
+	checkFilePermissions := userID == tenantID
+	if !checkFilePermissions {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+			return nil, err
+		}
+	}
+	return s.listFiles(ctx, userID, tenantID, pfID, page, pageSize, terms, keywords, checkFilePermissions)
+}
+
+func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID string, page, pageSize int, terms []dao.OrderTerm, keywords string, checkFilePermissions bool) (*ListFilesResponse, error) {
+	if tenantID == "" {
+		return nil, permission.ErrInvalidSubject
+	}
 	// If pfID is empty, get root folder and initialize dataset docs
 	if pfID == "" {
 		rootFolder, err := s.fileDAO.GetRootFolder(ctx, dao.DB, tenantID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get root folder: %w", err)
 		}
+		if checkFilePermissions {
+			if err := checkFileAccess(ctx, userID, rootFolder, permission.OperationRead); err != nil {
+				return nil, err
+			}
+		}
 		pfID = rootFolder.ID
 
-		// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
-		if err = s.initDatasetDocs(ctx, pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
-		}
+		// Keep tenant-scoped lookups read-only. The default self-owned file
+		// listing retains its existing folder initialization.
+		if tenantID == userID {
+			// Initialize dataset docs (matching Python init_knowledgebase_docs logic)
+			if err = s.initDatasetDocs(ctx, pfID, tenantID); err != nil {
+				return nil, fmt.Errorf("failed to initialize dataset docs: %w", err)
+			}
 
-		// Initialize skills folder (matching Python init_skills_folder logic)
-		if err = s.initSkillsFolder(ctx, pfID, tenantID); err != nil {
-			return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+			// Initialize skills folder (matching Python init_skills_folder logic)
+			if err = s.initSkillsFolder(ctx, pfID, tenantID); err != nil {
+				return nil, fmt.Errorf("failed to initialize skills folder: %w", err)
+			}
 		}
 	}
 
@@ -55,8 +82,13 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 	if folder.Type != FileTypeFolder {
 		return nil, permission.ErrResourceNotFound
 	}
-	if err := checkFileAccess(ctx, tenantID, folder, permission.OperationRead); err != nil {
-		return nil, err
+	if checkFilePermissions {
+		if err := checkFileAccess(ctx, userID, folder, permission.OperationRead); err != nil {
+			return nil, err
+		}
+	}
+	if folder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
 	}
 
 	// Get files by parent folder ID
@@ -70,6 +102,9 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 	parentFolder, err := s.fileDAO.GetParentFolder(ctx, dao.DB, pfID)
 	if err != nil {
 		return nil, fmt.Errorf("folder not found")
+	}
+	if parentFolder.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
 	}
 
 	// Process files to add additional info, deduplicating by ID as a safety net
@@ -248,15 +283,39 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 
 // GetAllParentFolders gets all parent folders in path with permission check
 func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID string) ([]map[string]interface{}, error) {
+	return s.getAllParentFolders(ctx, userID, "", fileID, true)
+}
+
+// GetAllParentFoldersForTenant allows active tenant members to resolve file paths.
+// The file and every ancestor must belong to tenantID.
+func (s *FileService) GetAllParentFoldersForTenant(ctx context.Context, userID, tenantID, fileID string) ([]map[string]interface{}, error) {
+	if tenantID == "" {
+		return nil, permission.ErrInvalidSubject
+	}
+	checkFilePermissions := userID == tenantID
+	if !checkFilePermissions {
+		if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+			return nil, err
+		}
+	}
+	return s.getAllParentFolders(ctx, userID, tenantID, fileID, checkFilePermissions)
+}
+
+func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID, fileID string, checkFilePermissions bool) ([]map[string]interface{}, error) {
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
 		return nil, err
 	}
+	if tenantID != "" && file.TenantID != tenantID {
+		return nil, permission.ErrResourceNotFound
+	}
 
 	// Permission check
-	if err := checkFileAccess(ctx, userID, file, permission.OperationRead); err != nil {
-		return nil, err
+	if checkFilePermissions {
+		if err := checkFileAccess(ctx, userID, file, permission.OperationRead); err != nil {
+			return nil, err
+		}
 	}
 
 	// Get all parent folders
@@ -265,8 +324,13 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 		return nil, err
 	}
 	for _, folder := range parentFolders {
-		if err := checkFileAccess(ctx, userID, folder, permission.OperationRead); err != nil {
-			return nil, err
+		if tenantID != "" && folder.TenantID != tenantID {
+			return nil, permission.ErrResourceNotFound
+		}
+		if checkFilePermissions {
+			if err := checkFileAccess(ctx, userID, folder, permission.OperationRead); err != nil {
+				return nil, err
+			}
 		}
 	}
 

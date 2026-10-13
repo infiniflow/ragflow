@@ -46,7 +46,7 @@ import { DropdownProvider } from './canvas/context';
 import { CanvasChecklist } from './components/canvas-checklist';
 import { PublishConfirmDialog } from './components/publish-confirm-dialog';
 import { Operator } from './constant';
-import { OwnerTenantIdContext } from './context';
+import { CanvasIDContext, OwnerTenantIdContext } from './context';
 import { GlobalParamSheet } from './gobal-variable-sheet';
 import { useBuildDslData } from './hooks/use-build-dsl';
 import { useCancelCurrentDataflow } from './hooks/use-cancel-dataflow';
@@ -122,7 +122,8 @@ export default function Agent() {
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { issues, getLatestIssues } = useCanvasChecklist({
-    ownerTenantId: agentDetail?.user_id,
+    ownerTenantId: agentDetail?.tenant_id,
+    canvasID: id,
   });
   const hasBlockingIssues = useCallback(() => {
     if (getLatestIssues().length > 0) {
@@ -402,15 +403,17 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
-        <ReactFlowProvider>
-          <DropdownProvider>
-            <AgentCanvas
-              drawerVisible={chatDrawerVisible}
-              hideDrawer={hideChatDrawer}
-            ></AgentCanvas>
-          </DropdownProvider>
-        </ReactFlowProvider>
+      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
+        <CanvasIDContext.Provider value={id ?? ''}>
+          <ReactFlowProvider>
+            <DropdownProvider>
+              <AgentCanvas
+                drawerVisible={chatDrawerVisible}
+                hideDrawer={hideChatDrawer}
+              ></AgentCanvas>
+            </DropdownProvider>
+          </ReactFlowProvider>
+        </CanvasIDContext.Provider>
       </OwnerTenantIdContext.Provider>
       {embedVisible && (
         <EmbedDialog

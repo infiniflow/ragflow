@@ -971,21 +971,21 @@ export const KnowledgeListKeys = {
     shouldFilterListWithoutDocument: boolean,
     keywords: string,
     pageSize: number,
-    ownerTenantId?: string,
+    canvasID?: string,
   ) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
       shouldFilterListWithoutDocument,
       keywords,
       pageSize,
-      ownerTenantId,
+      canvasID,
     ] as const,
-  byIds: (ids: string[], ownerTenantId?: string) =>
+  byIds: (ids: string[], canvasID?: string) =>
     [
       KnowledgeApiAction.FetchKnowledgeList,
       'byIds',
       ids,
-      ownerTenantId,
+      canvasID,
     ] as const,
 };
 
@@ -993,7 +993,7 @@ export const useFetchKnowledgeList = (
   shouldFilterListWithoutDocument: boolean = false,
   keywords = '',
   pageSize: number = KNOWLEDGE_LIST_PAGE_SIZE,
-  ownerTenantId?: string,
+  canvasID?: string,
 ): {
   list: IDataset[];
   loading: boolean;
@@ -1008,7 +1008,7 @@ export const useFetchKnowledgeList = (
         shouldFilterListWithoutDocument,
         keywords,
         pageSize,
-        // ownerTenantId,
+        canvasID,
       ),
       gcTime: 0,
       initialPageParam: 1,
@@ -1018,8 +1018,7 @@ export const useFetchKnowledgeList = (
           page,
           page_size: pageSize,
           ...(keywords ? { keywords } : {}),
-          // Viewing a shared canvas: list the canvas owner's datasets.
-          // ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+          ...(canvasID ? { canvas_id: canvasID } : {}),
         });
         return {
           items: (data?.data ?? []) as IDataset[],
@@ -1078,22 +1077,23 @@ export const useFetchKnowledgeList = (
  */
 export const useFetchDatasetsByIds = (
   ids: string[],
-  ownerTenantId?: string,
+  canvasID?: string,
 ) => {
   const sortedIds = useMemo(
     () => Array.from(new Set(ids.filter(isDatasetId))).sort(),
     [ids],
   );
   const { data, isFetching: loading } = useQuery<IDataset[]>({
-    queryKey: KnowledgeListKeys.byIds(sortedIds),
+    queryKey: KnowledgeListKeys.byIds(sortedIds, canvasID),
     enabled: sortedIds.length > 0,
     gcTime: 0,
-    // Hold the previous result across id-list changes so consumers rendering
-    // from `data` don't flash an empty state while the next lookup is in
+    // Keep the previous result across id-list changes in the same canvas, but
+    // never show resources from a different canvas while its lookup is in
     // flight.
-    placeholderData: keepPreviousData,
+    placeholderData: (previousData, previousQuery) =>
+      previousQuery?.queryKey[3] === canvasID ? previousData : undefined,
     queryFn: async () => {
-      const { data } = await listDatasetByIds(sortedIds);
+      const { data } = await listDatasetByIds(sortedIds, canvasID);
       return (data?.data ?? []) as IDataset[];
     },
   });
@@ -1109,7 +1109,7 @@ export const useFetchDatasetsByIds = (
  */
 export const useStaleDatasetIds = (
   datasetIds?: string[],
-  ownerTenantId?: string,
+  canvasID?: string,
 ) => {
   // Variable references (e.g. `sys.query`) never resolve to datasets, so
   // exclude them up front instead of letting them fall out of the lookup
@@ -1120,7 +1120,7 @@ export const useStaleDatasetIds = (
   );
   const { data: datasets, loading } = useFetchDatasetsByIds(
     persistedIds,
-    ownerTenantId,
+    canvasID,
   );
 
   const staleDatasetIds = useMemo(() => {

@@ -35,7 +35,7 @@ import (
 )
 
 type connectorServiceIface interface {
-	ListConnectors(ctx context.Context, userID string) (*service.ListConnectorsResponse, error)
+	ListConnectors(ctx context.Context, userID, tenantID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
@@ -67,12 +67,13 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 	}
 }
 
-// ListConnectors list connectors
+// ListConnectors lists connectors for an owned tenant or a requested tenant the caller belongs to.
 // @Summary List Connectors
 // @Description Get list of connectors for the current user (equivalent to Python's list_connector)
 // @Tags connector
 // @Accept json
 // @Produce json
+// @Param tenant_id query string false "tenant whose connectors are listed"
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/list [get]
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
@@ -85,7 +86,7 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List connectors
-	result, err := h.connectorService.ListConnectors(ctx, userID)
+	result, err := h.connectorService.ListConnectors(ctx, userID, c.Query("tenant_id"))
 	if err != nil {
 		if connectorErrorResponse(c, err) {
 			return

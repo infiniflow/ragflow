@@ -52,7 +52,8 @@ export function useDocumentPipelineForm({
       z
         .object({
           parse_type: z.nativeEnum(ParseType),
-          parser_id: z.string(),
+          // Switching to a pipeline unregisters parser_id; it is required only in built-in mode below.
+          parser_id: z.string().default(''),
           pipeline_id: z.string().optional(),
           parser_config: z.record(z.string(), z.any()).optional(),
         })

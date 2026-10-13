@@ -30,6 +30,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -379,9 +381,14 @@ func (h *MemoryHandler) ListMemories(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// Call service layer to get memory list
-	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize)
+	result, err := h.memoryService.ListMemories(ctx, user.ID, tenantIDs, memoryTypes, storageType, keywords, page, pageSize, c.Query("canvas_id"))
 	if err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
+		code := common.CodeServerError
+		if errors.Is(err, permission.ErrUnauthenticated) || errors.Is(err, permission.ErrPermissionDenied) ||
+			errors.Is(err, permission.ErrMembershipNotFound) || errors.Is(err, permission.ErrResourceNotFound) {
+			code, err = permissionresponse.Normalize(err)
+		}
+		common.ResponseWithCodeData(c, code, nil, err.Error())
 		return
 	}
 

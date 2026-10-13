@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nav"
 )
 
@@ -152,6 +153,9 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			NotFound: true,
 			Error:    "dataset navigation requires a tenant and dataset context",
 		}), nil
+	}
+	if err := CheckCanvasDependencies(ctx, dao.DB, permission.ResourceKindDataset, datasetIDs); err != nil {
+		return "", err
 	}
 
 	// Route RELEVANT docs by querying the nav tree with the topic (semantic KNN).

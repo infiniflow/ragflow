@@ -18,6 +18,11 @@ export const OwnerTenantIdContext = createContext<string | undefined>(
 // oxlint-disable-next-line react-refresh/only-export-components
 export const useOwnerTenantId = () => useContext(OwnerTenantIdContext);
 
+export const CanvasIDContext = createContext<string | undefined>(undefined);
+
+// oxlint-disable-next-line react-refresh/only-export-components
+export const useCanvasID = () => useContext(CanvasIDContext);
+
 // CanvasReadonlyContext marks the canvas as view-only (e.g. the built-in
 // pipeline preview page). Node/toolbar/form components consume it to disable
 // every editing entry point while keeping viewing interactions (pan, zoom,

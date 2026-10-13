@@ -18,7 +18,7 @@ import { t } from 'i18next';
 import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { useOwnerTenantId } from '../../../context';
+import { useCanvasID, useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
@@ -41,10 +41,11 @@ const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
   const ownerTenantId = useOwnerTenantId();
+  const canvasID = useCanvasID();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
-    { ownerTenantId },
+    { canvasID },
   );
 
   const form = useForm({

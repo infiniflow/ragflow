@@ -259,7 +259,7 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 			Parent:    connectorRef,
 			Operation: permission.OperationRead,
 			Entry:     &connectorRef,
-			EntryOp:   permission.OperationRead,
+			EntryOp:   permission.OperationUse,
 		})
 		if scopeErr != nil {
 			code, permissionErr := permissionresponse.Normalize(scopeErr)

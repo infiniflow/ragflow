@@ -34,7 +34,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
-import { useOwnerTenantId } from '../../context';
+import { useCanvasID, useOwnerTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -100,7 +100,7 @@ export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 export function MemoryDatasetForm() {
   const { t } = useTranslation();
   const form = useFormContext();
-  const ownerTenantId = useOwnerTenantId();
+  const canvasID = useCanvasID();
   const retrievalFrom = useWatch({
     control: form.control,
     name: 'retrieval_from',
@@ -121,7 +121,7 @@ export function MemoryDatasetForm() {
           <MemoriesFormField
             label={t('header.memories')}
             required
-            ownerTenantId={ownerTenantId}
+            canvasID={canvasID}
           ></MemoriesFormField>
           <UserIdFormField></UserIdFormField>
         </>
@@ -129,7 +129,7 @@ export function MemoryDatasetForm() {
         <KnowledgeBaseFormField
           showVariable
           required
-          ownerTenantId={ownerTenantId}
+          canvasID={canvasID}
         ></KnowledgeBaseFormField>
       )}
     </>
@@ -148,6 +148,7 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
+  const canvasID = useCanvasID();
 
   const outputList = useMemo(() => {
     return [
@@ -167,7 +168,7 @@ function RetrievalForm({ node }: INextOperatorForm) {
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
-    { ownerTenantId },
+    { canvasID },
   );
 
   const form = useForm({

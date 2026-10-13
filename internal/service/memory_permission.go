@@ -18,6 +18,7 @@ package service
 
 import (
 	"context"
+	"strings"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/permission"
@@ -36,6 +37,26 @@ func accessibleMemoryIDs(ctx context.Context, userID string, operation permissio
 	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
 		Kind:      permission.ResourceKindMemory,
 		Operation: operation,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if scope.Mode != permission.ScopeIDs {
+		return []string{}, nil
+	}
+	return scope.ResourceIDs, nil
+}
+
+func accessibleMemoryIDsForCanvas(ctx context.Context, userID, canvasID string) ([]string, error) {
+	canvasID = strings.TrimSpace(canvasID)
+	if canvasID == "" {
+		return accessibleMemoryIDs(ctx, userID, permission.OperationRead)
+	}
+	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
+		Kind:      permission.ResourceKindMemory,
+		Operation: permission.OperationUse,
+		Entry:     &permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID},
+		EntryOp:   permission.OperationRun,
 	})
 	if err != nil {
 		return nil, err

@@ -19,8 +19,12 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/component"
+	"ragflow/internal/agent/runtime"
+	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 )
 
 // memorySaverAdapter bridges the component.MemorySaver interface to the
@@ -43,6 +47,37 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 	if a == nil || a.svc == nil {
 		return fmt.Errorf("memory: saver adapter not initialised")
 	}
+	authorizationUserID := req.UserID
+	if len(req.MemoryIDs) > 0 {
+		state, stateErr := runtime.GetStateFromContext(ctx)
+		if stateErr != nil || state == nil {
+			return fmt.Errorf("%w: canvas runtime state is required to use memory from an agent", permission.ErrInvalidPermission)
+		}
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.Sys["user_id"].(string)
+		canvasID = strings.TrimSpace(canvasID)
+		userID = strings.TrimSpace(userID)
+		authorizationUserID = userID
+		if canvasID == "" {
+			return fmt.Errorf("%w: canvas id is required to use memory from an agent", permission.ErrInvalidPermission)
+		}
+		if userID == "" {
+			return permission.ErrUnauthenticated
+		}
+		checker := permission.NewDatabaseChecker(dao.DB)
+		entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+		for _, memoryID := range req.MemoryIDs {
+			memoryID = strings.TrimSpace(memoryID)
+			if memoryID == "" {
+				continue
+			}
+			if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry,
+				permission.ResourceRef{Kind: permission.ResourceKindMemory, ID: memoryID},
+				permission.OperationRun, permission.OperationUse); err != nil {
+				return fmt.Errorf("memory %q: %w", memoryID, err)
+			}
+		}
+	}
 	msg := MemoryMessage{
 		UserID:        req.UserID,
 		AgentID:       req.AgentID,
@@ -50,7 +85,7 @@ func (a *memorySaverAdapter) Save(ctx context.Context, req component.MemorySaveR
 		UserInput:     req.UserInput,
 		AgentResponse: req.AgentResponse,
 	}
-	ok, detail, err := a.svc.saveAgentMessage(ctx, req.UserID, req.MemoryIDs, msg)
+	ok, detail, err := a.svc.saveAgentMessage(ctx, authorizationUserID, req.MemoryIDs, msg)
 	if err != nil {
 		return err
 	}

@@ -20,6 +20,8 @@ import (
 	"strconv"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -44,6 +46,7 @@ func NewCompilationTemplateGroupHandler(svc *service.CompilationTemplateGroupSer
 //	@Security ApiKeyAuth
 //	@Param keywords query string false "name keyword filter"
 //	@Param scope query string false "scope filter (file|dataset)"
+//	@Param tenant_id query string false "tenant whose groups are listed (defaults to the current user)"
 //	@Param page query int false "page number" default(1)
 //	@Param page_size query int false "items per page" default(30)
 //	@Param orderby query string false "order field" default(create_time)
@@ -67,11 +70,20 @@ func (h *CompilationTemplateGroupHandler) List(c *gin.Context) {
 	}
 	keywords := c.Query("keywords")
 	scope := c.Query("scope")
+	tenantID := c.Query("tenant_id")
+	if tenantID == "" {
+		tenantID = user.ID
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(
+		c.Request.Context(), permission.Subject{UserID: user.ID}, tenantID, permission.TenantMember,
+	); err != nil {
+		respondPermissionFailure(c, err, false)
+		return
+	}
 	orderby := c.DefaultQuery("orderby", "create_time")
 	desc := c.DefaultQuery("desc", "true") != "false"
 	terms := orderTermsFromQuery(c, orderby, desc)
 
-	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), user.ID, keywords, scope, terms)
+	groups, err := h.compilationTemplateGroupService.ListSaved(c.Request.Context(), tenantID, keywords, scope, terms)
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
 		return

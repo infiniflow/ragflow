@@ -572,7 +572,7 @@ func TestListMemoriesUsesTenantModelIDForDisplayName(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -609,7 +609,7 @@ func TestListMemoriesFallsBackToRawModelIDWithoutTenantModelID(t *testing.T) {
 	}
 
 	ctx := t.Context()
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10)
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"user-1"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -655,7 +655,7 @@ func TestListMemoriesRejectsUnjoinedTenantFilter(t *testing.T) {
 		t.Fatalf("seed memory: %v", err)
 	}
 
-	resp, err := NewMemoryService().ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	resp, err := NewMemoryService().ListMemories(t.Context(), "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -718,7 +718,7 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 
 	ctx := t.Context()
 
-	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10)
+	resp, err := NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
@@ -726,12 +726,59 @@ func TestListMemoriesKeepsJoinedTenantFilter(t *testing.T) {
 		t.Fatalf("joined tenant filter must return its team memory, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
 	}
 
-	resp, err = NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10)
+	resp, err = NewMemoryService().ListMemories(ctx, "user-1", []string{"tenant-2", "tenant-3"}, nil, "", "", 1, 10, "")
 	if err != nil {
 		t.Fatalf("ListMemories: %v", err)
 	}
 	if resp.TotalCount != 1 || len(resp.MemoryList) != 1 || resp.MemoryList[0]["id"] != "mem-joined-team" {
 		t.Fatalf("mixed filter must drop the unjoined tenant, got total=%d list=%v", resp.TotalCount, resp.MemoryList)
+	}
+}
+
+func TestListMemoriesForCanvasUsesCallerOwnerIntersection(t *testing.T) {
+	setupMemoryMessageTestDB(t)
+	if err := dao.DB.AutoMigrate(&entity.UserCanvas{}); err != nil {
+		t.Fatalf("migrate canvas table: %v", err)
+	}
+	if err := dao.DB.Create(&[]*entity.User{
+		{ID: "canvas-owner", Nickname: "Canvas owner"},
+		{ID: "caller", Nickname: "Caller"},
+	}).Error; err != nil {
+		t.Fatalf("seed users: %v", err)
+	}
+	status := "1"
+	for _, membership := range []*entity.UserTenant{
+		{ID: "owner-membership", UserID: "canvas-owner", TenantID: "canvas-owner", Role: string(permission.RoleOwner), InvitedBy: "canvas-owner", Status: &status},
+		{ID: "caller-membership", UserID: "caller", TenantID: "canvas-owner", Role: string(permission.RoleNormal), InvitedBy: "canvas-owner", Status: &status},
+	} {
+		if err := dao.DB.Create(membership).Error; err != nil {
+			t.Fatalf("seed membership: %v", err)
+		}
+	}
+	canvas := entity.UserCanvas{
+		ID:         "canvas-1",
+		UserID:     "canvas-owner",
+		Permission: string(TenantPermissionTeam),
+	}
+	if err := dao.DB.Create(&canvas).Error; err != nil {
+		t.Fatalf("seed canvas: %v", err)
+	}
+	for _, memory := range []*entity.Memory{
+		{ID: "memory-shared", Name: "Shared", TenantID: "canvas-owner", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionTeam)},
+		{ID: "memory-caller-only", Name: "Caller only", TenantID: "caller", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionMe)},
+		{ID: "memory-owner-only", Name: "Owner only", TenantID: "canvas-owner", EmbdID: "embd", LLMID: "llm", Permissions: string(TenantPermissionMe)},
+	} {
+		if err := dao.DB.Create(memory).Error; err != nil {
+			t.Fatalf("seed memory %s: %v", memory.ID, err)
+		}
+	}
+
+	response, err := NewMemoryService().ListMemories(t.Context(), "caller", nil, nil, "", "", 1, 30, canvas.ID)
+	if err != nil {
+		t.Fatalf("ListMemories(canvas): %v", err)
+	}
+	if response.TotalCount != 1 || len(response.MemoryList) != 1 || response.MemoryList[0]["id"] != "memory-shared" {
+		t.Fatalf("canvas memory list = %#v (total=%d), want only memory-shared", response.MemoryList, response.TotalCount)
 	}
 }
 

@@ -73,20 +73,19 @@ func (dao *MCPServerDAO) CreateMCPServer(ctx context.Context, db *gorm.DB, serve
 	return db.WithContext(ctx).Create(server).Error
 }
 
-// ListMCPServers returns the authorized MCP servers with optional filtering.
-func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+// ListMCPServers returns MCP servers for one tenant with optional ID filtering.
+func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
 	orderColumn, err := mcpServerOrderColumn(orderby)
 	if err != nil {
 		return nil, 0, err
 	}
-	if len(ids) == 0 {
-		return []*entity.MCPServer{}, 0, nil
-	}
-
 	var servers []*entity.MCPServer
 	var total int64
 
-	query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("id IN ?", ids)
+	query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
+	if len(ids) > 0 {
+		query = query.Where("id IN ?", ids)
+	}
 
 	if keywords != "" {
 		query = query.Where("LOWER(name) LIKE ?", "%"+strings.ToLower(keywords)+"%")

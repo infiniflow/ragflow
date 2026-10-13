@@ -492,16 +492,8 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: search apps cannot have a parent scope", ErrInvalidPermission)
 		}
-		var tenantIDs []string
-		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-			Distinct("tenant_id").
-			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
-			Pluck("tenant_id", &tenantIDs).Error; err != nil {
-			return nil, err
-		}
-		tenantIDs = uniqueStringValues(append(tenantIDs, subject.UserID))
 		if err := s.db.WithContext(ctx).Model(&entity.Search{}).
-			Where("status = ? AND (tenant_id IN ? OR created_by = ?)", string(entity.StatusValid), tenantIDs, subject.UserID).
+			Where("status = ? AND created_by = ?", string(entity.StatusValid), subject.UserID).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -509,18 +501,8 @@ func (s *databaseSource) ListResourceRefs(ctx context.Context, subject Subject, 
 		if parent.ID != "" || parent.Kind != "" {
 			return nil, fmt.Errorf("%w: chats cannot have a parent scope", ErrInvalidPermission)
 		}
-		tenantIDs := []string{subject.UserID}
-		var memberships []string
-		if err := s.db.WithContext(ctx).Model(&entity.UserTenant{}).
-			Distinct("tenant_id").
-			Where("user_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
-			Pluck("tenant_id", &memberships).Error; err != nil {
-			return nil, err
-		}
-		tenantIDs = append(tenantIDs, memberships...)
-		tenantIDs = uniqueStringValues(tenantIDs)
 		if err := s.db.WithContext(ctx).Model(&entity.Chat{}).
-			Where("tenant_id IN ? AND status = ?", tenantIDs, string(entity.StatusValid)).
+			Where("tenant_id = ? AND status = ?", subject.UserID, string(entity.StatusValid)).
 			Pluck("id", &ids).Error; err != nil {
 			return nil, err
 		}
@@ -971,13 +953,15 @@ func datasetResource(dataset *entity.Knowledgebase, ownerIDsByTenant map[string]
 		visibility = VisibilityTenant
 	}
 	return Resource{
-		Ref:             ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID},
-		TenantID:        dataset.TenantID,
-		CreatedBy:       dataset.CreatedBy,
-		OwnerUserID:     ownerUserID,
-		Visibility:      visibility,
-		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
-		Active:          dataset.Status != nil && *dataset.Status == string(entity.StatusValid),
+		Ref:               ResourceRef{Kind: ResourceKindDataset, ID: dataset.ID},
+		TenantID:          dataset.TenantID,
+		CreatedBy:         dataset.CreatedBy,
+		OwnerUserID:       ownerUserID,
+		Visibility:        visibility,
+		TenantRequirement: TenantNormalMember,
+		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationDeleteContent, OperationShare, OperationRun, OperationUse},
+		TenantOperations:  []Operation{OperationRead, OperationUpdate, OperationDeleteContent, OperationRun, OperationUse},
+		Active:            dataset.Status != nil && *dataset.Status == string(entity.StatusValid),
 	}
 }
 
@@ -994,6 +978,7 @@ func canvasResource(canvas *entity.UserCanvas) Resource {
 		Visibility:        visibility,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse},
+		TenantOperations:  []Operation{OperationRead, OperationUpdate, OperationRun, OperationUse},
 		Active:            true,
 	}
 }
@@ -1029,28 +1014,24 @@ func memoryResource(memory *entity.Memory) Resource {
 
 func chatResource(chat *entity.Chat) Resource {
 	return Resource{
-		Ref:               ResourceRef{Kind: ResourceKindChat, ID: chat.ID},
-		TenantID:          chat.TenantID,
-		OwnerUserID:       chat.TenantID,
-		Visibility:        VisibilityTenant,
-		TenantRequirement: TenantMember,
-		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationRun, OperationUse},
-		TenantOperations:  []Operation{OperationRead, OperationCreate, OperationRun, OperationUse},
-		Active:            chat.Status != nil && *chat.Status == string(entity.StatusValid),
+		Ref:             ResourceRef{Kind: ResourceKindChat, ID: chat.ID},
+		TenantID:        chat.TenantID,
+		OwnerUserID:     chat.TenantID,
+		Visibility:      VisibilityPrivate,
+		OwnerOperations: []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationRun, OperationUse},
+		Active:          chat.Status != nil && *chat.Status == string(entity.StatusValid),
 	}
 }
 
 func searchAppResource(searchApp *entity.Search) Resource {
 	return Resource{
-		Ref:               ResourceRef{Kind: ResourceKindSearchApp, ID: searchApp.ID},
-		TenantID:          searchApp.TenantID,
-		CreatedBy:         searchApp.CreatedBy,
-		OwnerUserID:       searchApp.CreatedBy,
-		Visibility:        VisibilityTenant,
-		TenantRequirement: TenantMember,
-		OwnerOperations:   []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
-		TenantOperations:  []Operation{OperationRead},
-		Active:            searchApp.Status != nil && *searchApp.Status == string(entity.StatusValid),
+		Ref:             ResourceRef{Kind: ResourceKindSearchApp, ID: searchApp.ID},
+		TenantID:        searchApp.TenantID,
+		CreatedBy:       searchApp.CreatedBy,
+		OwnerUserID:     searchApp.CreatedBy,
+		Visibility:      VisibilityPrivate,
+		OwnerOperations: []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse},
+		Active:          searchApp.Status != nil && *searchApp.Status == string(entity.StatusValid),
 	}
 }
 
@@ -1088,15 +1069,15 @@ func chatChannelResource(channel *entity.ChatChannel) Resource {
 }
 
 func connectorResource(connector *entity.Connector) Resource {
-	operations := []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse}
+	ownerOperations := []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse}
 	return Resource{
 		Ref:               ResourceRef{Kind: ResourceKindConnector, ID: connector.ID},
 		TenantID:          connector.TenantID,
 		OwnerUserID:       connector.TenantID,
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
-		OwnerOperations:   operations,
-		TenantOperations:  operations,
+		OwnerOperations:   ownerOperations,
+		TenantOperations:  []Operation{OperationRun, OperationUse},
 		Active:            true,
 	}
 }
@@ -1159,7 +1140,7 @@ func mcpServerResource(id, tenantID, ownerUserID string) Resource {
 		Visibility:        VisibilityTenant,
 		TenantRequirement: TenantMember,
 		OwnerOperations:   []Operation{OperationRead, OperationCreate, OperationUpdate, OperationDelete, OperationUse},
-		TenantOperations:  []Operation{OperationRead, OperationUse},
+		TenantOperations:  []Operation{OperationUse},
 		Active:            true,
 	}
 }

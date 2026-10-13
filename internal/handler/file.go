@@ -65,6 +65,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Accept json
 // @Produce json
 // @Param parent_id query string false "parent folder ID (empty means root folder)"
+// @Param tenant_id query string false "tenant whose files are listed (defaults to the current user)"
 // @Param keywords query string false "search keywords (case-insensitive)"
 // @Param page query int false "page number (default: 1, min: 1)"
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
@@ -82,6 +83,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	userID := user.ID
 
 	parentID := c.Query("parent_id")
+	tenantID := c.Query("tenant_id")
+	if tenantID == "" {
+		tenantID = userID
+	}
 	keywords := c.Query("keywords")
 
 	page := 1
@@ -119,7 +124,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ctx := c.Request.Context()
-	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, terms, keywords)
+	result, err := h.fileService.ListFilesForTenant(ctx, userID, tenantID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
 		respondFileServiceError(c, err)
 		return
@@ -232,6 +237,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "file ID"
+// @Param tenant_id query string false "tenant the file belongs to"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/ancestors [get]
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
@@ -250,7 +256,14 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
+	tenantID := c.Query("tenant_id")
+	var parentFolders []map[string]interface{}
+	var err error
+	if tenantID == "" {
+		parentFolders, err = h.fileService.GetAllParentFolders(ctx, userID, fileID)
+	} else {
+		parentFolders, err = h.fileService.GetAllParentFoldersForTenant(ctx, userID, tenantID, fileID)
+	}
 	if err != nil {
 		respondFileServiceError(c, err)
 		return

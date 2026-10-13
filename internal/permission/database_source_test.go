@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"net/url"
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
@@ -63,6 +64,16 @@ func TestDatabaseCheckerAuthorizesDatasetFromPersistedRows(t *testing.T) {
 	if err := checker.CheckResource(context.Background(), subject, ref, OperationRead); err != nil {
 		t.Errorf("CheckResource(%+v) error = %v, want nil", ref, err)
 	}
+	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDeleteContent, OperationRun, OperationUse} {
+		if err := checker.CheckResource(context.Background(), subject, ref, operation); err != nil {
+			t.Errorf("shared dataset CheckResource(%s) error = %v, want nil", operation, err)
+		}
+	}
+	for _, operation := range []Operation{OperationCreate, OperationDelete, OperationShare} {
+		if err := checker.CheckResource(context.Background(), subject, ref, operation); !errors.Is(err, ErrPermissionDenied) {
+			t.Errorf("shared dataset CheckResource(%s) error = %v, want permission denied", operation, err)
+		}
+	}
 	adminMembership := entity.UserTenant{
 		ID: "admin-membership", UserID: "admin-1", TenantID: dataset.TenantID,
 		Role: string(RoleAdmin), Status: &valid,
@@ -72,6 +83,9 @@ func TestDatabaseCheckerAuthorizesDatasetFromPersistedRows(t *testing.T) {
 	}
 	if err := checker.CheckResource(context.Background(), Subject{UserID: adminMembership.UserID}, ref, OperationRead); !errors.Is(err, ErrPermissionDenied) {
 		t.Errorf("CheckResource(admin member) error = %v, want %v", err, ErrPermissionDenied)
+	}
+	if err := checker.CheckResource(context.Background(), Subject{UserID: ownerMembership.UserID}, ref, OperationDelete); err != nil {
+		t.Errorf("tenant owner CheckResource(delete dataset) error = %v, want nil", err)
 	}
 
 	access, err := checker.ResolveAccess(context.Background(), subject, ref)
@@ -146,6 +160,7 @@ func TestDatabaseCheckerScopesDatasetsToMembershipAndVisibility(t *testing.T) {
 	}
 	memberships := []entity.UserTenant{
 		{ID: "member", UserID: "member-user", TenantID: "member-tenant", Role: string(RoleNormal), Status: &valid},
+		{ID: "admin", UserID: "admin-user", TenantID: "member-tenant", Role: string(RoleAdmin), Status: &valid},
 		{ID: "owner", UserID: "tenant-owner", TenantID: "member-tenant", Role: string(RoleOwner), Status: &valid},
 		{ID: "other-owner", UserID: "other-owner", TenantID: "other-tenant", Role: string(RoleOwner), Status: &valid},
 	}
@@ -155,7 +170,8 @@ func TestDatabaseCheckerScopesDatasetsToMembershipAndVisibility(t *testing.T) {
 		}
 	}
 
-	scope, err := NewDatabaseChecker(db).Scope(context.Background(), Subject{UserID: "member-user"}, ScopeQuery{
+	checker := NewDatabaseChecker(db)
+	scope, err := checker.Scope(context.Background(), Subject{UserID: "member-user"}, ScopeQuery{
 		Kind: ResourceKindDataset, Operation: OperationRead,
 	})
 	if err != nil {
@@ -164,9 +180,91 @@ func TestDatabaseCheckerScopesDatasetsToMembershipAndVisibility(t *testing.T) {
 	if scope.Mode != ScopeIDs || len(scope.ResourceIDs) != 1 || scope.ResourceIDs[0] != "team-visible" {
 		t.Fatalf("Scope(datasets) = %+v, want only the team-visible dataset", scope)
 	}
+
+	adminScope, err := checker.Scope(context.Background(), Subject{UserID: "admin-user"}, ScopeQuery{
+		Kind: ResourceKindDataset, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("Scope(datasets, admin) error = %v", err)
+	}
+	if adminScope.Mode != ScopeNone {
+		t.Fatalf("Scope(datasets, admin) = %+v, want no accessible datasets", adminScope)
+	}
+
+	queryScope, err := checker.QueryScope(context.Background(), Subject{UserID: "member-user"}, ScopeQuery{
+		Kind: ResourceKindDataset, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("QueryScope(datasets) error = %v", err)
+	}
+	var queryIDs []string
+	if err := queryScope.Apply(db.Model(&entity.Knowledgebase{})).Order("knowledgebase.id").Pluck("knowledgebase.id", &queryIDs).Error; err != nil {
+		t.Fatalf("query authorized datasets: %v", err)
+	}
+	if len(queryIDs) != 1 || queryIDs[0] != "team-visible" {
+		t.Fatalf("QueryScope(datasets) returned %v, want only team-visible", queryIDs)
+	}
+	adminQueryScope, err := checker.QueryScope(context.Background(), Subject{UserID: "admin-user"}, ScopeQuery{
+		Kind: ResourceKindDataset, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("QueryScope(datasets, admin) error = %v", err)
+	}
+	var adminQueryIDs []string
+	if err := adminQueryScope.Apply(db.Model(&entity.Knowledgebase{})).Order("knowledgebase.id").Pluck("knowledgebase.id", &adminQueryIDs).Error; err != nil {
+		t.Fatalf("query authorized datasets for admin: %v", err)
+	}
+	if len(adminQueryIDs) != 0 {
+		t.Fatalf("QueryScope(datasets, admin) returned %v, want no datasets", adminQueryIDs)
+	}
+	dryRun := db.Session(&gorm.Session{DryRun: true})
+	statement := queryScope.Apply(dryRun.Model(&entity.Knowledgebase{})).Find(&[]entity.Knowledgebase{}).Statement
+	if !strings.Contains(strings.ToUpper(statement.SQL.String()), "EXISTS") {
+		t.Fatalf("QueryScope should compile authorization into SQL, got: %s", statement.SQL.String())
+	}
 }
 
-func TestDatabaseCheckerSharedCanvasGrantsOwnerOperations(t *testing.T) {
+func TestCheckerQueryScopeFallsBackToAuthorizedIDs(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.Exec("CREATE TABLE dialog (id TEXT PRIMARY KEY)").Error; err != nil {
+		t.Fatalf("create dialog table: %v", err)
+	}
+	if err := db.Exec("INSERT INTO dialog (id) VALUES (?), (?)", "visible-chat", "hidden-chat").Error; err != nil {
+		t.Fatalf("insert chats: %v", err)
+	}
+
+	chatRef := ResourceRef{Kind: ResourceKindChat, ID: "visible-chat"}
+	source := &permissionTestSource{
+		memberships: map[string]*Membership{
+			"member\x00tenant": {UserID: "member", TenantID: "tenant", Role: RoleNormal, Active: true},
+		},
+		resources: map[ResourceRef]Resource{
+			chatRef: {
+				Ref: chatRef, TenantID: "tenant", OwnerUserID: "tenant", Visibility: VisibilityTenant,
+				TenantRequirement: TenantMember, OwnerOperations: []Operation{OperationRead}, Active: true,
+			},
+		},
+		candidates: []ResourceRef{chatRef},
+	}
+	queryScope, err := NewChecker(source).QueryScope(context.Background(), Subject{UserID: "member"}, ScopeQuery{
+		Kind: ResourceKindChat, Operation: OperationRead,
+	})
+	if err != nil {
+		t.Fatalf("QueryScope(chats) error = %v", err)
+	}
+	var ids []string
+	if err := queryScope.Apply(db.Table("dialog")).Order("dialog.id").Pluck("dialog.id", &ids).Error; err != nil {
+		t.Fatalf("query chats with fallback scope: %v", err)
+	}
+	if len(ids) != 1 || ids[0] != "visible-chat" {
+		t.Fatalf("QueryScope(chats) returned %v, want only visible-chat", ids)
+	}
+}
+
+func TestDatabaseCheckerSharedCanvasRestrictsOwnerOperations(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -203,9 +301,19 @@ func TestDatabaseCheckerSharedCanvasGrantsOwnerOperations(t *testing.T) {
 	teamCanvas := ResourceRef{Kind: ResourceKindCanvas, ID: "team-canvas"}
 	privateCanvas := ResourceRef{Kind: ResourceKindCanvas, ID: "private-canvas"}
 
-	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDelete, OperationShare, OperationRun, OperationUse} {
+	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationRun, OperationUse} {
 		if err := checker.CheckResource(context.Background(), Subject{UserID: membership.UserID}, teamCanvas, operation); err != nil {
 			t.Errorf("team member CheckResource(%s) error = %v, want nil", operation, err)
+		}
+	}
+	for _, operation := range []Operation{OperationShare, OperationDelete} {
+		if err := checker.CheckResource(context.Background(), Subject{UserID: membership.UserID}, teamCanvas, operation); !errors.Is(err, ErrPermissionDenied) {
+			t.Errorf("team member CheckResource(%s) error = %v, want permission denied", operation, err)
+		}
+	}
+	for _, operation := range []Operation{OperationShare, OperationDelete} {
+		if err := checker.CheckResource(context.Background(), Subject{UserID: "owner-1"}, teamCanvas, operation); err != nil {
+			t.Errorf("canvas owner CheckResource(%s) error = %v, want nil", operation, err)
 		}
 	}
 	if err := checker.CheckResource(context.Background(), Subject{UserID: adminMembership.UserID}, teamCanvas, OperationRead); err != nil {
@@ -527,7 +635,7 @@ func TestDatabaseCheckerScopesFilesAndFoldersToOwnedFolder(t *testing.T) {
 	}
 }
 
-func TestDatabaseCheckerAuthorizesChatsByTenantAndOwnerOperations(t *testing.T) {
+func TestDatabaseCheckerKeepsChatsPrivateToTheirOwner(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -564,12 +672,9 @@ func TestDatabaseCheckerAuthorizesChatsByTenantAndOwnerOperations(t *testing.T) 
 	teamChat := ResourceRef{Kind: ResourceKindChat, ID: "team-chat"}
 	member := Subject{UserID: membership.UserID}
 	for _, operation := range []Operation{OperationRead, OperationCreate, OperationRun, OperationUse} {
-		if err := checker.CheckResource(context.Background(), member, teamChat, operation); err != nil {
-			t.Errorf("team member CheckResource(chat, %s) error = %v, want nil", operation, err)
+		if err := checker.CheckResource(context.Background(), member, teamChat, operation); !errors.Is(err, ErrPermissionDenied) {
+			t.Errorf("team member CheckResource(chat, %s) error = %v, want permission denied", operation, err)
 		}
-	}
-	if err := checker.CheckResource(context.Background(), member, teamChat, OperationUpdate); !errors.Is(err, ErrPermissionDenied) {
-		t.Errorf("team member CheckResource(chat update) error = %v, want permission denied", err)
 	}
 	if err := checker.CheckResource(context.Background(), Subject{UserID: "team-tenant"}, teamChat, OperationUpdate); err != nil {
 		t.Errorf("chat owner CheckResource(update) error = %v, want nil", err)
@@ -584,8 +689,16 @@ func TestDatabaseCheckerAuthorizesChatsByTenantAndOwnerOperations(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Scope(chats) error = %v", err)
 	}
-	if scope.Mode != ScopeIDs || len(scope.ResourceIDs) != 1 || scope.ResourceIDs[0] != "team-chat" {
-		t.Fatalf("Scope(chats) = %+v, want only team-chat", scope)
+	if scope.Mode != ScopeNone || len(scope.ResourceIDs) != 0 {
+		t.Fatalf("team member Scope(chats) = %+v, want empty scope", scope)
+	}
+
+	ownerScope, err := checker.Scope(context.Background(), Subject{UserID: "team-tenant"}, ScopeQuery{Kind: ResourceKindChat, Operation: OperationRead})
+	if err != nil {
+		t.Fatalf("owner Scope(chats) error = %v", err)
+	}
+	if ownerScope.Mode != ScopeIDs || len(ownerScope.ResourceIDs) != 1 || ownerScope.ResourceIDs[0] != "team-chat" {
+		t.Fatalf("owner Scope(chats) = %+v, want only team-chat", ownerScope)
 	}
 }
 
@@ -665,7 +778,7 @@ func TestDatabaseCheckerScopesChatSessionsAndRestrictsMutations(t *testing.T) {
 	}
 }
 
-func TestDatabaseCheckerAuthorizesSearchAppsByCreatorAndTenant(t *testing.T) {
+func TestDatabaseCheckerKeepsSearchAppsPrivateToTheirCreator(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
@@ -700,8 +813,8 @@ func TestDatabaseCheckerAuthorizesSearchAppsByCreatorAndTenant(t *testing.T) {
 	checker := NewDatabaseChecker(db)
 	teamSearch := ResourceRef{Kind: ResourceKindSearchApp, ID: "team-search"}
 	member := Subject{UserID: "member-1"}
-	if err := checker.CheckResource(context.Background(), member, teamSearch, OperationRead); err != nil {
-		t.Errorf("tenant member CheckResource(search read) error = %v, want nil", err)
+	if err := checker.CheckResource(context.Background(), member, teamSearch, OperationRead); !errors.Is(err, ErrPermissionDenied) {
+		t.Errorf("tenant member CheckResource(search read) error = %v, want permission denied", err)
 	}
 	for _, operation := range []Operation{OperationUpdate, OperationDelete, OperationRun, OperationUse} {
 		if err := checker.CheckResource(context.Background(), member, teamSearch, operation); !errors.Is(err, ErrPermissionDenied) {
@@ -738,8 +851,8 @@ func TestDatabaseCheckerAuthorizesSearchAppsByCreatorAndTenant(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Scope(search read) error = %v", err)
 	}
-	if readScope.Mode != ScopeIDs || len(readScope.ResourceIDs) != 2 {
-		t.Fatalf("Scope(search read) = %+v, want team and personal search", readScope)
+	if readScope.Mode != ScopeIDs || len(readScope.ResourceIDs) != 1 || readScope.ResourceIDs[0] != "member-search" {
+		t.Fatalf("Scope(search read) = %+v, want only member-search", readScope)
 	}
 	runScope, err := checker.Scope(context.Background(), member, ScopeQuery{Kind: ResourceKindSearchApp, Operation: OperationRun})
 	if err != nil {
@@ -810,9 +923,14 @@ func TestDatabaseCheckerAuthorizesConnectorsAndSyncTasks(t *testing.T) {
 	checker := NewDatabaseChecker(db)
 	member := Subject{UserID: "team-member"}
 	teamConnector := ResourceRef{Kind: ResourceKindConnector, ID: "team-connector"}
-	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDelete, OperationRun, OperationUse} {
+	for _, operation := range []Operation{OperationRun, OperationUse} {
 		if err := checker.CheckResource(context.Background(), member, teamConnector, operation); err != nil {
 			t.Errorf("team member CheckResource(connector %s) error = %v, want nil", operation, err)
+		}
+	}
+	for _, operation := range []Operation{OperationRead, OperationUpdate, OperationDelete} {
+		if err := checker.CheckResource(context.Background(), member, teamConnector, operation); !errors.Is(err, ErrPermissionDenied) {
+			t.Errorf("team member CheckResource(connector %s) error = %v, want permission denied", operation, err)
 		}
 	}
 	if err := checker.CheckResource(context.Background(), Subject{UserID: "invited-user"}, teamConnector, OperationRead); !errors.Is(err, ErrPermissionDenied) {
@@ -848,8 +966,8 @@ func TestDatabaseCheckerAuthorizesConnectorsAndSyncTasks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Scope(connectors) error = %v", err)
 	}
-	if connectorScope.Mode != ScopeIDs || len(connectorScope.ResourceIDs) != 2 {
-		t.Fatalf("Scope(connectors) = %+v, want personal and team connectors", connectorScope)
+	if connectorScope.Mode != ScopeIDs || len(connectorScope.ResourceIDs) != 1 || connectorScope.ResourceIDs[0] != "personal-connector" {
+		t.Fatalf("Scope(connectors) = %+v, want personal connector only", connectorScope)
 	}
 	taskScope, err := checker.Scope(context.Background(), member, ScopeQuery{
 		Kind: ResourceKindSyncTask, Parent: teamConnector, Operation: OperationRead,
@@ -1074,7 +1192,7 @@ func TestDatabaseCheckerAuthorizesMCPServersAndSkillSpaces(t *testing.T) {
 		operation Operation
 		wantErr   error
 	}{
-		{name: "member reads MCP config", subject: member, ref: mcpRef, operation: OperationRead},
+		{name: "member cannot directly read MCP config", subject: member, ref: mcpRef, operation: OperationRead, wantErr: ErrPermissionDenied},
 		{name: "member uses MCP server", subject: member, ref: mcpRef, operation: OperationUse},
 		{name: "member cannot manage MCP server", subject: member, ref: mcpRef, operation: OperationUpdate, wantErr: ErrPermissionDenied},
 		{name: "owner manages MCP server", subject: owner, ref: mcpRef, operation: OperationUpdate},
@@ -1125,9 +1243,15 @@ func TestDatabaseCheckerAuthorizesMCPServersAndSkillSpaces(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Scope(%s) error = %v", kind, err)
 			}
-			want := []string{"team-mcp"}
+			want := []string{}
 			if kind == ResourceKindSkillSpace {
 				want = []string{"active-space"}
+			}
+			if len(want) == 0 {
+				if scope.Mode != ScopeNone || len(scope.ResourceIDs) != 0 {
+					t.Fatalf("Scope(%s) = %+v, want no visible resources", kind, scope)
+				}
+				return
 			}
 			if scope.Mode != ScopeIDs || len(scope.ResourceIDs) != len(want) || scope.ResourceIDs[0] != want[0] {
 				t.Fatalf("Scope(%s) = %+v, want IDs %v", kind, scope, want)

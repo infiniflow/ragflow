@@ -1618,8 +1618,8 @@ func (s *MemoryService) memoryWithAccess(ctx context.Context, userID, memoryID s
 // Example:
 //
 //	resp, err := service.ListMemories("user123", []string{}, []string{"semantic"}, "table", "test", 1, 10)
-func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int) (*ListMemoryResponse, error) {
-	memoryIDs, err := accessibleMemoryIDs(ctx, userID, permission.OperationRead)
+func (s *MemoryService) ListMemories(ctx context.Context, userID string, tenantIDs []string, memoryTypes []string, storageType string, keywords string, page int, pageSize int, canvasID string) (*ListMemoryResponse, error) {
+	memoryIDs, err := accessibleMemoryIDsForCanvas(ctx, userID, canvasID)
 	if err != nil {
 		return nil, err
 	}

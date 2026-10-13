@@ -496,8 +496,8 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	ctx := t.Context()
 	service := NewModelProviderService()
 	providers, code, err := service.ListProvidersOfTenant(ctx, "member-1")
-	if err != nil || code != common.CodeSuccess || len(providers) != 1 {
-		t.Fatalf("ListProvidersOfTenant() = (%v, %v, %d providers), want success and one provider", code, err, len(providers))
+	if err != nil || code != common.CodeSuccess || len(providers) != 0 {
+		t.Fatalf("ListProvidersOfTenant() = (%v, %v, %d providers), want success and no providers for a non-owner", code, err, len(providers))
 	}
 
 	if _, code, err = service.ShowProviderInstance(ctx, "OpenAI", "instance-1", "member-1"); err == nil || code != common.CodeNotFound {
@@ -523,6 +523,128 @@ func TestModelPermissionsAllowMemberUseButHideInstanceConfiguration(t *testing.T
 	}
 	if model.Status != "active" {
 		t.Fatalf("denied update changed model status to %q", model.Status)
+	}
+}
+
+func TestListProvidersOfTenantExcludesOtherTenants(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "Anthropic"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	providers, code, err := NewModelProviderService().ListProvidersOfTenant(t.Context(), "user-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListProvidersOfTenant() = (%v, %v), want success", code, err)
+	}
+	if len(providers) != 1 || providers[0]["name"] != "OpenAI" {
+		t.Fatalf("ListProvidersOfTenant() = %v, want only user-1's own-tenant OpenAI provider", providers)
+	}
+}
+
+func TestListProviderInstancesUsesOwnedTenantProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "other-default", APIKey: "sk-other", Status: "active", Extra: "{}"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	service := NewModelProviderService()
+	instances, code, err := service.ListProviderInstances(t.Context(), "OpenAI", "user-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ListProviderInstances() = (%v, %v), want success", code, err)
+	}
+	if len(instances) != 1 || instances[0]["id"] != "instance-1" {
+		t.Fatalf("ListProviderInstances() = %v, want only the instance from user-1's own tenant", instances)
+	}
+
+	if instances, code, err = service.ListProviderInstances(t.Context(), "provider-2", "user-1"); err == nil || len(instances) != 0 {
+		t.Fatalf("ListProviderInstances() for another tenant's provider = (%v, %v, %v), want it hidden", instances, code, err)
+	}
+}
+
+func TestProviderModelListingUsesOwnedTenant(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "default", APIKey: "sk-other", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-2", ProviderID: "provider-2", InstanceID: "instance-2", ModelName: "foreign-model", ModelType: int(entity.ModelTypeChat), Status: "active"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	service := NewModelProviderService()
+	models, err := service.ListInstanceModels(t.Context(), "OpenAI", "default", "user-1")
+	if err != nil {
+		t.Fatalf("ListInstanceModels() error = %v, want success", err)
+	}
+	if len(models) != 1 || models[0]["name"] != "gpt-test" {
+		t.Fatalf("ListInstanceModels() = %v, want only user-1's own-tenant model", models)
+	}
+
+	if _, err = service.ListInstanceModels(t.Context(), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("ListInstanceModels() for another tenant's provider error = %v, want record not found", err)
+	}
+	if _, err = service.ListSupportedModels(t.Context(), "provider-2", "default", "user-1"); !errors.Is(err, gorm.ErrRecordNotFound) {
+		t.Fatalf("ListSupportedModels() for another tenant's provider error = %v, want record not found", err)
+	}
+}
+
+func TestShowProviderInstanceUsesOwnedTenantProvider(t *testing.T) {
+	db := setupModelProviderServiceTestDB(t)
+	useModelProviderServiceTestDB(t, db)
+	seedModelProviderServiceScope(t, db)
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-owner-2", UserID: "owner-2", TenantID: "tenant-2", Role: string(permission.RoleOwner), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.UserTenant{ID: "user-tenant-member-2", UserID: "user-1", TenantID: "tenant-2", Role: string(permission.RoleNormal), InvitedBy: "owner-2", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-2", TenantID: "tenant-2", ProviderName: "OpenAI"},
+		&entity.TenantModelInstance{ID: "instance-2", ProviderID: "provider-2", InstanceName: "default", APIKey: "sk-other", Status: "active", Extra: "{}"},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+
+	service := NewModelProviderService()
+	instance, code, err := service.ShowProviderInstance(t.Context(), "OpenAI", "instance-1", "user-1")
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("ShowProviderInstance() = (%v, %v), want success", code, err)
+	}
+	if instance["id"] != "instance-1" || instance["provider_id"] != "provider-1" {
+		t.Fatalf("ShowProviderInstance() = %v, want user-1's own-tenant instance", instance)
+	}
+
+	if _, code, err = service.ShowProviderInstance(t.Context(), "provider-2", "instance-2", "user-1"); err == nil || code != common.CodeDataError {
+		t.Fatalf("ShowProviderInstance() for another tenant's provider = (%v, %v), want hidden provider", code, err)
 	}
 }
 

@@ -85,13 +85,14 @@ const (
 type Operation string
 
 const (
-	OperationRead   Operation = "read"
-	OperationCreate Operation = "create"
-	OperationUpdate Operation = "update"
-	OperationDelete Operation = "delete"
-	OperationShare  Operation = "share"
-	OperationRun    Operation = "run"
-	OperationUse    Operation = "use"
+	OperationRead          Operation = "read"
+	OperationCreate        Operation = "create"
+	OperationUpdate        Operation = "update"
+	OperationDelete        Operation = "delete"
+	OperationDeleteContent Operation = "delete_content"
+	OperationShare         Operation = "share"
+	OperationRun           Operation = "run"
+	OperationUse           Operation = "use"
 )
 
 // TenantRequirement describes the tenant role required by a check.
@@ -228,6 +229,10 @@ type policy interface {
 	FilterResources(context.Context, Subject, []ResourceRef, Operation) ([]ResourceRef, error)
 }
 
+type queryScopePolicy interface {
+	QueryScope(context.Context, Subject, ScopeQuery) (QueryScope, bool, error)
+}
+
 // Checker exposes edition-independent permission methods.
 type Checker struct {
 	policy policy
@@ -287,6 +292,31 @@ func (c *Checker) Scope(ctx context.Context, subject Subject, query ScopeQuery) 
 		return Scope{}, ErrSourceUnavailable
 	}
 	return c.policy.Scope(ctx, subject, query)
+}
+
+// QueryScope returns a database-applied authorization predicate for a resource
+// query. Policies may compile the authorization rules into SQL. When they do
+// not, the checker falls back to the existing authorized-ID scope and applies
+// those IDs as an IN predicate.
+func (c *Checker) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, error) {
+	if c == nil || c.policy == nil {
+		return QueryScope{}, ErrSourceUnavailable
+	}
+	if queryPolicy, ok := c.policy.(queryScopePolicy); ok {
+		queryScope, supported, err := queryPolicy.QueryScope(ctx, subject, query)
+		if err != nil {
+			return QueryScope{}, err
+		}
+		if supported {
+			return queryScope, nil
+		}
+	}
+
+	scope, err := c.policy.Scope(ctx, subject, query)
+	if err != nil {
+		return QueryScope{}, err
+	}
+	return queryScopeForIDs(query.Kind, scope.ResourceIDs), nil
 }
 
 // FilterResources returns only candidate resources that allow operation.

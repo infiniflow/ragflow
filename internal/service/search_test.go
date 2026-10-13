@@ -222,14 +222,14 @@ func TestSearchServiceListSearchesUsesPermissionScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListSearches failed: %v", err)
 	}
-	if result.Total != 2 || len(result.SearchApps) != 2 {
-		t.Fatalf("ListSearches returned total=%d rows=%d, want only the team-visible and member-owned apps", result.Total, len(result.SearchApps))
+	if result.Total != 1 || len(result.SearchApps) != 1 {
+		t.Fatalf("ListSearches returned total=%d rows=%d, want only the member-owned app", result.Total, len(result.SearchApps))
 	}
 	ids := map[string]bool{}
 	for _, app := range result.SearchApps {
 		ids[app["id"].(string)] = true
 	}
-	if !ids["team-search"] || !ids["member-search"] || ids["unshared-search"] {
+	if ids["team-search"] || !ids["member-search"] || ids["unshared-search"] {
 		t.Fatalf("ListSearches returned unauthorized scope: %v", ids)
 	}
 }
@@ -260,8 +260,8 @@ func TestSearchServiceSeparatesSearchReadFromRunPermission(t *testing.T) {
 	}
 
 	service := NewSearchService()
-	if _, err := service.GetSearchDetail(t.Context(), "member-1", search.ID); err != nil {
-		t.Fatalf("tenant member should be able to read Search App metadata: %v", err)
+	if _, err := service.GetSearchDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("tenant member should not be able to read another user's Search App metadata, got %v", err)
 	}
 	if _, err := service.GetDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("tenant member should not be able to run another user's Search App, got %v", err)

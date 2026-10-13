@@ -33,20 +33,6 @@ func checkMCPServerPermission(ctx context.Context, userID, mcpID string, operati
 	)
 }
 
-func accessibleMCPServerIDs(ctx context.Context, userID string, operation permission.Operation) ([]string, error) {
-	scope, err := permission.NewDatabaseChecker(dao.DB).Scope(ctx, permission.Subject{UserID: userID}, permission.ScopeQuery{
-		Kind:      permission.ResourceKindMCPServer,
-		Operation: operation,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if scope.Mode != permission.ScopeIDs {
-		return []string{}, nil
-	}
-	return scope.ResourceIDs, nil
-}
-
 func normalizeMCPServerPermissionError(err error) (common.ErrorCode, error) {
 	return permissionresponse.NormalizeHidden(err)
 }

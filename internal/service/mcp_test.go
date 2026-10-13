@@ -235,7 +235,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
@@ -338,10 +338,10 @@ func TestMCPServerPermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
 	service := NewMCPService()
 	ctx := t.Context()
 
-	if _, code, err := service.GetMCPServer(ctx, "member", "team-server"); err != nil || code != common.CodeSuccess {
-		t.Fatalf("member read: code=%d err=%v", code, err)
+	if _, code, err := service.GetMCPServer(ctx, "member", "team-server"); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("member direct read should be hidden: code=%d err=%v", code, err)
 	}
-	listed, code, err := service.ListMCPServers(ctx, "member", nil, "", 0, 0, "create_time", false)
+	listed, code, err := service.ListMCPServers(ctx, "member", "team", nil, "", 0, 0, "create_time", false)
 	if err != nil || code != common.CodeSuccess || len(listed.MCPServers) != 1 {
 		t.Fatalf("member list: response=%#v code=%d err=%v", listed, code, err)
 	}

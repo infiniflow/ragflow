@@ -39,6 +39,7 @@ const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
+	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
 	mcpServerDateFormat         = "2006-01-02T15:04:05"
 	maskedMCPSecret             = "********"
@@ -525,15 +526,25 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 	return false
 }
 
-// ListMCPServers lists MCP servers the caller can read.
-func (s *MCPService) ListMCPServers(ctx context.Context, userID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
-	accessibleIDs, err := accessibleMCPServerIDs(ctx, userID, permission.OperationRead)
-	if err != nil {
+// ListMCPServers lists MCP servers belonging to a tenant the caller can use.
+func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		var err error
+		tenantID, err = requireOwnedTenantID(ctx, userID)
+		if errors.Is(err, permission.ErrMembershipNotFound) {
+			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
+		}
+		if err != nil {
+			code, normalized := normalizeMCPServerPermissionError(err)
+			return nil, code, normalized
+		}
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
 		code, normalized := normalizeMCPServerPermissionError(err)
 		return nil, code, normalized
 	}
-	ids = intersectMCPServerIDs(accessibleIDs, ids)
-	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, ids, keywords, orderby, desc)
+
+	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc)
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
 		if errors.As(err, &orderbyErr) {
@@ -568,28 +579,6 @@ func (s *MCPService) ListMCPServers(ctx context.Context, userID string, ids []st
 		MCPServers: items,
 		Total:      total,
 	}, common.CodeSuccess, nil
-}
-
-func intersectMCPServerIDs(accessibleIDs, requestedIDs []string) []string {
-	requested := make(map[string]struct{}, len(requestedIDs))
-	for _, id := range requestedIDs {
-		requested[id] = struct{}{}
-	}
-	ids := make([]string, 0, len(accessibleIDs))
-	seen := make(map[string]struct{}, len(accessibleIDs))
-	for _, id := range accessibleIDs {
-		if len(requested) > 0 {
-			if _, ok := requested[id]; !ok {
-				continue
-			}
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		ids = append(ids, id)
-	}
-	return ids
 }
 
 // DeleteMCPServer deletes an MCP server the caller can manage.
@@ -832,9 +821,11 @@ func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
 	}
-	if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationUpdate); err != nil {
-		_, normalized := normalizeMCPServerPermissionError(err)
-		return nil, normalized
+	if mcpID != mcpServerPreviewID {
+		if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationUpdate); err != nil {
+			_, normalized := normalizeMCPServerPermissionError(err)
+			return nil, normalized
+		}
 	}
 	hasMask := req.Variables["authorization_token"] == maskedMCPSecret
 	for _, value := range req.Headers {

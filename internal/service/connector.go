@@ -331,18 +331,27 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 	return connector, nil
 }
 
-// ListConnectors returns connectors the user can read.
-func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*ListConnectorsResponse, error) {
+// ListConnectors returns connectors belonging to a tenant the caller can use.
+func (s *ConnectorService) ListConnectors(ctx context.Context, userID, requestedTenantID string) (*ListConnectorsResponse, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
 
-	connectorIDs, err := accessibleConnectorIDs(ctx, userID, permission.OperationRead)
-	if err != nil {
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		var err error
+		tenantID, err = requireOwnedTenantID(ctx, userID)
+		if errors.Is(err, permission.ErrMembershipNotFound) {
+			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
 		return nil, err
 	}
-	connectors, err := s.connectorDAO.ListByIDs(ctx, dao.DB, connectorIDs)
+	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}

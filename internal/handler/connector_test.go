@@ -34,7 +34,7 @@ type logListCapture struct {
 	pageSize int
 }
 
-func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(context.Context, string, string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{}, nil
 }
 

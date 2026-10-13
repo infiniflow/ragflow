@@ -92,7 +92,7 @@ func (h *MCPHandler) CreateMCPServer(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
-// ListMCPServers lists MCP servers for the current user.
+// ListMCPServers lists MCP servers for an owned tenant or a requested tenant the caller belongs to.
 func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -115,8 +115,9 @@ func (h *MCPHandler) ListMCPServers(c *gin.Context) {
 	desc := strings.ToLower(c.DefaultQuery("desc", "true")) != "false"
 	keywords := c.Query("keywords")
 	mcpIDs := getMCPIDsFromQuery(c)
+	tenantID := c.Query("tenant_id")
 
-	result, code, err := h.mcpService.ListMCPServers(ctx, user.ID, mcpIDs, keywords, page, pageSize, orderby, desc)
+	result, code, err := h.mcpService.ListMCPServers(ctx, user.ID, tenantID, mcpIDs, keywords, page, pageSize, orderby, desc)
 	if err != nil {
 		if code == common.CodeServerError {
 			common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, code, nil, err.Error())

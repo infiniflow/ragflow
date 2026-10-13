@@ -220,7 +220,7 @@ const GoExtractorForm = ({
     control: form.control,
     name: 'tags.tag_file_id',
   });
-  const { treeData, loadData } = useTagFileTree(tagFileId);
+  const { treeData, loadData } = useTagFileTree(tagFileId, ownerTenantId);
 
   const keywordsEnabledRaw = useWatch({
     control: form.control,
