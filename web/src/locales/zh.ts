@@ -2379,7 +2379,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       communication: '通信',
       developer: '开发者',
       typeCommandORsearch: '输入命令或或搜索...',
-      builtIn: '内置解析模板',
+      builtIn: '内置',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
