@@ -43,9 +43,14 @@ SYSTEM_DEPS="/opt/ragflow-native-libs"
 # office_oxide native library settings — static linking
 OFFICE_OXIDE_PREFIX="${HOME}/ragflow-native-libs/office_oxide"
 # Derived from go.mod (single source of truth: the Go module version). Matches
-# ragflow_deps/versions.py's office_oxide_url derivation.
-OFFICE_OXIDE_VERSION="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' "$PROJECT_ROOT/go.mod" | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')" || {
-    echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1; }
+# ragflow_deps/versions.py's office_oxide_url derivation. The pipeline exits 0
+# with an empty value when go.mod has no matching entry (no pipefail here), so
+# the empty case needs its own check: an empty version would slip past the
+# stale-lib comparison below and produce a broken .../lib/v link path.
+OFFICE_OXIDE_VERSION="$(grep -m1 -E '^[[:space:]]*github.com/yfedoseev/office_oxide/go[[:space:]]+v' "$PROJECT_ROOT/go.mod" | sed -E 's/.*v([0-9][^[:space:]]*).*/\1/')"
+if [ -z "$OFFICE_OXIDE_VERSION" ]; then
+    echo -e "${RED}Error: could not read office_oxide version from go.mod${NC}" >&2; exit 1
+fi
 
 # pdfium native library settings — static linking (kognitos/pdfium-static)
 PDFIUM_STATIC_PREFIX="${HOME}/ragflow-native-libs/pdfium-static"

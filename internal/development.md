@@ -213,7 +213,7 @@ missing from the model directory.
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run ragflow_deps/download_native_deps.py` and rebuild
+  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 

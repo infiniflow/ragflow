@@ -913,7 +913,7 @@ jobs:
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
           uv run pytest ragflow_deps/test_download_deps.py -q --durations=100
-          ./build.sh --test ./internal/tokenizer/ -run 'TestTokenizerAssetsAreWellFormed|TestEveryRuntimeAssetIsCopiedIntoEveryRuntimeImage|TestEveryRuntimeAssetIsPinnedByTheLoader|TestOracleOnlyAssetsAreNotShipped' -- -count=1
+          ./build.sh --test ./internal/tokenizer/ -run 'TestTokenizerAssetsAreWellFormed|TestEveryRuntimeAssetIsCopiedIntoEveryRuntimeImage|TestEveryRuntimeAssetIsPinnedByTheLoader|TestOracleOnlyAssetsAreNotShipped'
 
       - name: Build ragflow:nightly
         run: |
