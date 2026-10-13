@@ -64,7 +64,7 @@ type CallResult struct {
 // tools/call) — a future optimization can pool sessions.
 func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.URL == "" {
-		return nil, errors.New("Invalid url.")
+		return nil, errors.New("invalid url")
 	}
 	if opts.ToolName == "" {
 		return nil, errors.New("MCP tool name is required")
@@ -72,7 +72,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 	if opts.Timeout <= 0 {
 		opts.Timeout = 10 * time.Second
 	}
-	hostname, resolvedIP, err := AssertURLSafe(opts.URL)
+	hostname, resolvedIP, err := AssertMCPURLSafe(opts.URL)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +101,7 @@ func CallTool(ctx context.Context, opts CallOptions) (*CallResult, error) {
 		}
 		return parseCallResult(result)
 	default:
-		return nil, fmt.Errorf("Unsupported MCP server type.")
+		return nil, fmt.Errorf("unsupported MCP server type: %s", opts.ServerType)
 	}
 }
 

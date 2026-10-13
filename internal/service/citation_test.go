@@ -22,7 +22,45 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agentic_rag"
 )
+
+func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
+	for _, answer := range []string{
+		"Public facts. [ID:1]",
+		"Public facts. [Public source](https://example.com/source)",
+	} {
+		t.Run(answer, func(t *testing.T) {
+			registry := agentic_rag.NewEvidenceRegistry()
+			registry.Stamp("uncited-corpus-chunk")
+			web := agentic_rag.WebResult{Title: "Public source", URL: "https://example.com/source", Content: "Public facts."}
+			registry.StampWebResult(web)
+			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
+			s := &ChatPipelineService{}
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
+				t.Errorf("citation was not compacted to its reference position: %q", marked)
+			}
+			chunks, ok := reference["chunks"].([]map[string]interface{})
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected only the cited web chunk: %v", reference)
+			}
+			chunk := chunks[0]
+			if chunk["id"] != registry.IDs()[1] || chunk["document_id"] != web.URL || chunk["document_name"] != web.Title || chunk["content"] != web.Content || chunk["url"] != web.URL {
+				t.Errorf("web reference lost its source metadata: %v", chunk)
+			}
+			aggs, ok := reference["doc_aggs"].([]interface{})
+			if !ok || len(aggs) != 1 {
+				t.Fatalf("expected one web source card: %v", reference["doc_aggs"])
+			}
+			agg, ok := aggs[0].(map[string]interface{})
+			if !ok || agg["url"] != web.URL || agg["doc_name"] != web.Title || agg["count"] != 1 {
+				t.Errorf("web source card lost its URL or snippet count: %v", agg)
+			}
+		})
+	}
+}
 
 func TestSentenceSplit_PlainText(t *testing.T) {
 	result := sentenceSplit("Hello world. This is a test.")
@@ -495,7 +533,7 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 		},
 	}
 	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil)
+	res := s.decorateHarnessAnswer("The range claim holds [ID:1-3].", kbinfos, nil, nil, true)
 
 	if strings.Contains(res.Answer, "1-3") {
 		t.Fatalf("final answer still carries the range citation: %q", res.Answer)
@@ -511,5 +549,50 @@ func TestDecorateHarnessAnswerExpandsRangeCitations(t *testing.T) {
 	// filtered out of the reference (recall_docs = cited docs).
 	if aggs, _ := res.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 {
 		t.Fatalf("reference doc_aggs = %#v, want the single cited doc", res.Reference["doc_aggs"])
+	}
+}
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
+	}
+}
+
+// TestDecorateHarnessAnswerKeepsCitationsForNotFoundAnswer pins that an answer
+// reporting no result is decorated like any other answer: its resolvable [ID:n]
+// markers and the referenced doc_aggs still reach the client. The citation
+// switch (quote) is the only thing that removes them.
+func TestDecorateHarnessAnswerKeepsCitationsForNotFoundAnswer(t *testing.T) {
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{"chunk_id": "c0", "content_with_weight": "a", "doc_id": "d1", "docnm_kwd": "Doc One"},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"},
+		},
+	}
+	answer := "知识库中未找到您要的答案！因此无法统计得克萨斯州和加利福尼亚州 [ID:0] 选出同一候选人的次数。"
+	s := &ChatPipelineService{}
+	res := s.decorateHarnessAnswer(answer, kbinfos, nil, nil, true)
+
+	if !strings.Contains(res.Answer, "[ID:0]") {
+		t.Fatalf("answer lost its citation markers: %q", res.Answer)
+	}
+	if _, has := res.Reference["doc_aggs"]; !has {
+		t.Fatalf("answer lost its doc_aggs: %#v", res.Reference)
+	}
+	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
+	if len(chunks) != 1 || chunks[0]["id"] != "c0" {
+		t.Fatalf("reference chunks = %#v, want the evidence passage", res.Reference["chunks"])
 	}
 }

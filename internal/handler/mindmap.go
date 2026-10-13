@@ -37,7 +37,7 @@ type mindMapRunConfig struct {
 	AuthUserID    string
 	ModelTenantID string
 	ChunkSvc      service.Retriever
-	LLM           *service.ModelProviderService
+	LLM           *service.ModelFactory
 	TenantSvc     *service.TenantService
 }
 
@@ -67,20 +67,17 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 	streamCtx, streamCancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer streamCancel()
 
-	// search_config chat_id can be a stale tenant_model ID that no longer
-	// exists. ResolveModelConfig tries ID lookup first, then falls back to
-	// composite-name parsing which fails for bare IDs. If the configured
-	// model can't be resolved, fall back to the tenant's default chat model
-	// (mirrors Python's gen_mindmap get_tenant_default_model_by_type).
-	ch, streamErrs, findChatModelErr := config.LLM.ChatStream(streamCtx, modelTenantID, modelID, messages, &modelModule.ChatConfig{})
-	if findChatModelErr != nil && config.TenantSvc != nil {
-		if defaultModel, err := config.TenantSvc.GetDefaultModelName(streamCtx, modelTenantID, entity.ModelTypeChat); err == nil && defaultModel != "" && defaultModel != modelID {
-			ch, streamErrs, findChatModelErr = config.LLM.ChatStream(streamCtx, modelTenantID, defaultModel, messages, &modelModule.ChatConfig{})
-		}
+	// A stale search_config chat_id should not prevent mind-map generation;
+	// fall back to the tenant's configured default model.
+	access := service.ModelAccess{UserID: config.AuthUserID, TenantID: modelTenantID}
+	chatModel, modelErr := config.LLM.NewChatModel(streamCtx, access, modelID)
+	if modelErr != nil {
+		chatModel, modelErr = config.LLM.NewDefaultChatModel(streamCtx, access)
 	}
-	if findChatModelErr != nil {
-		return mindMapNode{}, findChatModelErr
+	if modelErr != nil {
+		return mindMapNode{}, modelErr
 	}
+	ch, streamErrs := streamChatModel(streamCtx, chatModel, messages)
 	fullText, err := collectMindMapStream(streamCtx, ch, streamErrs)
 	if err != nil {
 		return mindMapNode{}, err
@@ -89,6 +86,30 @@ func runMindMap(ctx context.Context, config mindMapRunConfig) (mindMapNode, erro
 		return mindMapNode{ID: "root", Children: []mindMapNode{}}, nil
 	}
 	return parseMindMapMarkdown(fullText), nil
+}
+
+func streamChatModel(ctx context.Context, chatModel *modelModule.ChatModel, messages []modelModule.Message) (<-chan string, <-chan error) {
+	chunks := make(chan string, 256)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(chunks)
+		defer close(errs)
+		err := chatModel.ChatStreamlyWithSender(ctx, messages, &modelModule.ChatConfig{}, nil, func(delta *string, _ *string) error {
+			if delta == nil || *delta == "[DONE]" {
+				return nil
+			}
+			select {
+			case chunks <- *delta:
+				return nil
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		})
+		if err != nil && ctx.Err() == nil {
+			errs <- err
+		}
+	}()
+	return chunks, errs
 }
 
 func collectMindMapStream(ctx context.Context, chunks <-chan string, streamErrs <-chan error) (string, error) {

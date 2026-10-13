@@ -169,13 +169,15 @@ func TestMergeByTokenSizeFromJSON_NonTextBoundaryResetsMergeRun(t *testing.T) {
 	}
 	// Lock the merge precondition: T1+T2 must have merged into chunk0,
 	// otherwise the later assertions could pass without exercising the merge.
-	if merged[0].Text != t1+"\n"+t2 {
+	// The JSON merge joins with "" (each unit already carries its own retained
+	// delimiter), so the merged text is the concatenation.
+	if merged[0].Text != t1+t2 {
 		t.Errorf("chunk[0] should be the merged T1+T2 chunk: got %q", merged[0].Text)
 	}
 	if merged[1].CKType != "image" {
 		t.Errorf("chunk[1] should be the non-text image chunk, got CKType=%q text=%q", merged[1].CKType, merged[1].Text)
 	}
-	wantMerged := t3 + "\n" + t4
+	wantMerged := t3 + t4
 	if merged[2].Text != wantMerged {
 		t.Errorf("chunk[2] should merge T3+T4: want %q got %q", wantMerged, merged[2].Text)
 	}
@@ -309,10 +311,10 @@ func TestTakeContextSentencesCoversBudgetOnSentenceBoundaries(t *testing.T) {
 	const text = "alpha beta. gamma delta. epsilon zeta."
 	budget := tokenizeStr("gamma delta. epsilon zeta.")
 
-	if got, want := takeContextSentences(text, budget, true), "gamma delta. epsilon zeta."; got != want {
+	if got, want := takeContextSentences(text, budget, true, contextSentencePattern), "gamma delta. epsilon zeta."; got != want {
 		t.Errorf("tail context = %q, want %q", got, want)
 	}
-	if got, want := takeContextSentences(text, budget, false), "alpha beta. gamma delta. "; got != want {
+	if got, want := takeContextSentences(text, budget, false, contextSentencePattern), "alpha beta. gamma delta. "; got != want {
 		t.Errorf("prefix context = %q, want %q", got, want)
 	}
 	// One sentence less falls short of the budget, so the walk stopped at the
@@ -328,10 +330,10 @@ func TestTakeContextSentencesCoversBudgetOnSentenceBoundaries(t *testing.T) {
 // — comes back whole.
 func TestTakeContextSentencesKeepsBoundarylessText(t *testing.T) {
 	s := strings.Repeat("中", 60)
-	if got := takeContextSentences(s, 20, true); got != s {
+	if got := takeContextSentences(s, 20, true, contextSentencePattern); got != s {
 		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
-	if got := takeContextSentences(s, 20, false); got != s {
+	if got := takeContextSentences(s, 20, false, contextSentencePattern); got != s {
 		t.Fatalf("context = %q, want the whole boundary-less text", got)
 	}
 }

@@ -111,3 +111,44 @@ func TestAnchoredItemsIsEmptyWithoutItems(t *testing.T) {
 		t.Errorf("anchored(blank name) = %v, want nothing", got)
 	}
 }
+
+// TestCiteAnchoredMembersFillsWhatTheModelLeftUncited pins the step's whole reason: which passage
+// a member rests on is the naming node's finding, so the runtime writes that member's citation
+// itself. A line that already carries a marker is kept verbatim, a member the answer never states
+// is left alone, and a member whose passage holds no published position cannot be pointed at.
+func TestCiteAnchoredMembersFillsWhatTheModelLeftUncited(t *testing.T) {
+	refs := []AnchoredRef{
+		{Name: "华雄", ChunkID: "c-hua"},
+		{Name: "管亥", ChunkID: "c-guan"},
+		{Name: "蔡阳", ChunkID: "c-cai"},
+		{Name: "不在答案里", ChunkID: "c-absent"},
+		{Name: "庞德", ChunkID: "c-unpublished"},
+	}
+	ids := []string{"c-hua", "c-guan", "c-cai"}
+	answer := strings.Join([]string{
+		"关羽所斩：",
+		"华雄——\"温酒斩华雄\"",
+		"管亥——\"劈管亥于马下\" [ID:1]",
+		"蔡阳——\"蔡阳头已落地\"",
+		"庞德——\"德引颈受刑\"",
+		"除上述数人外，另斩华雄、蔡阳等",
+	}, "\n")
+	got := CiteAnchoredMembers(answer, refs, ids)
+	want := strings.Join([]string{
+		"关羽所斩：",
+		"华雄——\"温酒斩华雄\" [ID:0]",
+		"管亥——\"劈管亥于马下\" [ID:1]",
+		"蔡阳——\"蔡阳头已落地\" [ID:2]",
+		"庞德——\"德引颈受刑\"",
+		"除上述数人外，另斩华雄、蔡阳等 [ID:0][ID:2]",
+	}, "\n")
+	if got != want {
+		t.Errorf("CiteAnchoredMembers =\n%s\nwant\n%s", got, want)
+	}
+	if got := CiteAnchoredMembers(answer, nil, ids); got != answer {
+		t.Errorf("no refs must change nothing, got %q", got)
+	}
+	if got := CiteAnchoredMembers(answer, refs, nil); got != answer {
+		t.Errorf("no published positions must change nothing, got %q", got)
+	}
+}

@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strings"
-	"time"
 )
 
 type JieKouAIModel struct {
@@ -33,16 +32,11 @@ type JieKouAIModel struct {
 }
 
 func NewJieKouAIModel(baseURL map[string]string, urlSuffix URLSuffix) *JieKouAIModel {
-	// JieKouAI's methods issue requests without a per-call context deadline, so
-	// keep an explicit 120s client-level timeout to bound them. Built on the
-	// shared transport via NewDriverHTTPClient.
-	client := NewDriverHTTPClient(false)
-	client.Timeout = 120 * time.Second
 	return &JieKouAIModel{
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: client,
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -129,7 +123,7 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, modelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {
@@ -376,7 +370,10 @@ func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	}
 	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
-	req, err := http.NewRequest("GET", url, nil)
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}

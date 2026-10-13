@@ -46,6 +46,26 @@ type groundingTestInvoker struct {
 	calls     int
 }
 
+type groundingStreamingInvoker struct {
+	groundingTestInvoker
+	streamCalls int
+}
+
+func (g *groundingStreamingInvoker) Stream(ctx context.Context, db *gorm.DB, req ChatInvokeRequest, onDelta func(string, bool) error) (*ChatInvokeResponse, error) {
+	g.streamCalls++
+	resp, err := g.Invoke(ctx, db, req)
+	if err != nil {
+		return nil, err
+	}
+	mid := len(resp.Content) / 2
+	for _, delta := range []string{resp.Content[:mid], resp.Content[mid:]} {
+		if err := onDelta(delta, false); err != nil {
+			return nil, err
+		}
+	}
+	return resp, nil
+}
+
 func (g *groundingTestInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -64,7 +84,7 @@ func (g *groundingTestInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInv
 // TestGrounding_Applied: Cite=true + state has chunks → second
 // LLM call is made and the grounded content replaces the original.
 func TestGrounding_Applied(t *testing.T) {
-	inv := &groundingTestInvoker{responses: []string{"grounded answer [ID:0]"}}
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"grounded answer [ID:0]"}}}
 	prev := getDefaultChatInvoker()
 	SetDefaultChatInvoker(inv)
 	defer SetDefaultChatInvoker(prev)
@@ -78,6 +98,12 @@ func TestGrounding_Applied(t *testing.T) {
 		{"id": "0", "content": "the source content"},
 	})
 	ctx := runtime.WithState(t.Context(), state)
+	var streamed string
+	var deltas int
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		streamed += content
+		deltas++
+	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
 	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
@@ -92,6 +118,9 @@ func TestGrounding_Applied(t *testing.T) {
 	}
 	if inv.calls != 1 {
 		t.Errorf("expected 1 chat call, got %d", inv.calls)
+	}
+	if inv.streamCalls != 1 || deltas != 2 || streamed != "grounded answer [ID:0]" {
+		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 2 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
 	}
 	// System message should contain the citation prompt + sources block.
 	if got := inv.lastReq.Messages[0].Role; got != schema.System {

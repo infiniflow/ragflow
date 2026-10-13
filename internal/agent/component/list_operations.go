@@ -38,6 +38,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"ragflow/internal/common"
 	"sort"
 	"strings"
 
@@ -106,7 +107,14 @@ func (p *listOperationsParam) Update(conf map[string]any) error {
 		p.Operations = "nth"
 	}
 	p.Operations = normalizeListOperationName(p.Operations)
-	p.N = toInt(conf["n"])
+	var ok bool
+
+	p.N, ok = common.ToInt(conf["n"])
+	if !ok {
+		common.Error("n must be an integer", nil)
+		return &ParamError{Field: "n", Reason: "must be an integer"}
+	}
+
 	if v, ok := conf["strict"]; ok {
 		p.Strict = coerceBool(v)
 	}
@@ -212,31 +220,6 @@ func parseSortByFieldList(v any) []string {
 	return out
 }
 
-// toInt coerces a value to int. Floats are truncated; strings parsed
-// via Atoi; bools follow Python's int() semantics (true → 1, false → 0);
-// everything else falls back to 0. Mirrors Python's _coerce_n in
-// agent/component/list_operations.py:73-77.
-func toInt(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		var n int
-		fmt.Sscanf(x, "%d", &n)
-		return n
-	case bool:
-		if x {
-			return 1
-		}
-		return 0
-	}
-	return 0
-}
-
 // ListOperationsComponent implements the 6 list transforms.
 type ListOperationsComponent struct {
 	name  string
@@ -285,7 +268,7 @@ func (l *ListOperationsComponent) Invoke(ctx context.Context, db *gorm.DB, _ map
 		panic(r)
 	}()
 
-	state, _, serr := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, serr := runtime.GetStateFromContext(ctx)
 	if serr != nil {
 		return nil, fmt.Errorf("ListOperations: %w", serr)
 	}
@@ -638,13 +621,18 @@ func lessKey(a, b any) bool {
 }
 
 // lessScalar compares two scalar (or non-tuple) values. Numbers are
-// compared numerically; everything else via fmt.Sprintf.
+// sorted before non-numbers and compared numerically, with NaN after all
+// other numbers. Non-numbers compare via fmt.Sprintf. A type rank avoids
+// cycles when numeric comparison and formatted string comparison differ.
 func lessScalar(a, b any) bool {
 	af, aok := toFloat64OK(a)
 	bf, bok := toFloat64OK(b)
-	if aok && bok {
-		// Keep NaN ordering deterministic and aligned with Python: every
-		// finite number sorts before NaN, while two NaNs compare equal.
+	if aok != bok {
+		return aok
+	}
+	if aok {
+		// NaN compares false in both directions with every number. Give it
+		// an explicit position so stable sort has a strict weak ordering.
 		aNaN, bNaN := math.IsNaN(af), math.IsNaN(bf)
 		if aNaN || bNaN {
 			return !aNaN && bNaN

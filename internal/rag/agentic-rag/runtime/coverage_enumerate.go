@@ -29,7 +29,14 @@ import (
 // of a passage a verdict is asked about, and the two caps keep the seed and the call list
 // finite.
 const (
-	coverageRecallTopN      = 200
+	// 200 was the HEAD OF A RANKING sold as a total (measured 2026-09-17, 三国, 1718 chunks:
+	// `operand "斩"/"杀": recall hit its bound (200 passage(s))`, both runs). A member stated
+	// in a passage ranked past 200 could then never become a window, never be judged, never be
+	// named — and the pass-through set came out as "the famous ones", which is why an answer
+	// named the right members while citing only a handful of them. The bound is per OPERAND
+	// (actor forms + act words, see Coverage.Operands), so this is a corpus-scale ask, not a
+	// per-pair one.
+	coverageRecallTopN      = 1000
 	coverageWindowsPerChunk = 3
 	coverageWindowBefore    = 80
 	coverageWindowAfter     = 60
@@ -39,8 +46,18 @@ const (
 	// clock / a slow call × batch — so the two move together: a cap above the capacity is a
 	// ceiling that can never be reached, and the member set then moves with the provider's
 	// latency instead of with the corpus.
-	coverageWindowsMax   = 192
-	coverageSeedMaxChars = 8000
+	//
+	// 288 is the capacity the resolve node already documents for itself (coverage_resolve.go:
+	// six workers × (CoverageResolveTimeoutS / a five-second call) × batch = 6 × 6 × 8 = 288).
+	// At 192 the cap was BELOW that capacity, and every window past it was reported as UNKNOWN
+	// (ResolveCoverage: "nobody judged them"), i.e. evidence the enumeration had paid a search
+	// for was dropped without ever being read.
+	coverageWindowsMax = 288
+	// coverageSeedMaxChars is the PROSE budget of the seed, not a cap on what a session can
+	// cite: past it the quote is dropped and the chunk id is still written (see Render), because
+	// a window omitted outright is a passage no session can name, and a member nothing can name
+	// is a member that only exists in the model's own memory.
+	coverageSeedMaxChars = 32000
 )
 
 // CoverageWindow is one place the corpus states the deed: the chunk it is in, the words
@@ -53,7 +70,27 @@ type CoverageWindow struct {
 	ChunkID string
 	Quote   string
 	Act     string
+	// Source is the line's PROVENANCE, and it is the whole difference between what used to be
+	// three pipelines (see CoverageSource): the enumeration's windows, the names a probe reached
+	// and the names a session asserted are judged side by side, in one list with one budget —
+	// not in three lists with three caps, three dedup rules and three counters.
+	Source CoverageSource
 }
+
+// CoverageSource says where one ledger line came from. Nothing downstream may branch on it
+// except a report: a line is judged, or it is not, and a member named in it is a member.
+type CoverageSource string
+
+const (
+	// CoverageSourceEnumeration: a window this run's own enumeration built; it carries an Act.
+	CoverageSourceEnumeration CoverageSource = "enumeration"
+	// CoverageSourceReached: a name a probe asked about and DID reach, with the pool chunk that
+	// carries it (see Kbinfos.RecordReachedTerm).
+	CoverageSourceReached CoverageSource = "reached"
+	// CoverageSourceClaim: a name a session asserted with no passage. The pool is asked what it
+	// can show about it, so a claim the run can refute is refuted rather than counted.
+	CoverageSourceClaim CoverageSource = "claim"
+)
 
 // CoverageSet is what one enumeration of the corpus produced: the operands it asked
 // about, the windows the deed was stated in, and how many distinct passages came back.
@@ -136,6 +173,43 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 	}
 	set.Recalled = len(byID)
 
+	// The vocabulary the filter below asks about. The plan's words are a guess about a text
+	// nobody had read when they were written (see Coverage.ActsAll): the passages THIS recall just
+	// brought back through the actor's own name are read here, once, so that a death stated in a
+	// phrasing the plan had no word for — 第一回's "被云长刀起处，挥为两段" — becomes a window
+	// instead of being dropped before any node ever sees it.
+	acts := cov.ActsAll()
+	sampleIDs := make([]string, 0, len(byID))
+	for id := range byID {
+		sampleIDs = append(sampleIDs, id)
+	}
+	// Sorted by chunk id: which passages are sampled is what the induced vocabulary is read from,
+	// and that vocabulary becomes a filter, so it must not vary with the map's iteration order.
+	sort.Strings(sampleIDs)
+	var samples []string
+	var probe strings.Builder
+	probe.WriteString("Passages:\n")
+	for _, id := range sampleIDs {
+		if len(samples) >= coverageVocabSamples {
+			break
+		}
+		text := strings.Join(strings.Fields(ChunkTextOf(byID[id])), " ")
+		if text == "" || (len(actors) > 0 && !coverageMentionsAny(text, actors)) {
+			continue
+		}
+		if r := []rune(text); len(r) > coverageVocabSampleChars {
+			text = string(r[:coverageVocabSampleChars])
+		}
+		samples = append(samples, text)
+		fmt.Fprintf(&probe, "[%d] %s\n", len(samples), text)
+	}
+	if induced := induceActWords(ctx, deps.Model, cov.Acts, probe.String(), samples); len(induced) > 0 {
+		for _, w := range induced {
+			acts = appendUnique(acts, w)
+		}
+		_LOG.Printf("[Coverage] vocabulary probe: read %d word(s) out of the corpus that the plan had not declared (%s) — the filter knows them now.", len(induced), strings.Join(induced, " / "))
+	}
+
 	// Sorted by chunk id: these windows are rendered into EVERY session's seed (and the
 	// cap below keeps the first N), so walking the map made both the seed's wording and
 	// which windows survived the cap differ from run to run.
@@ -145,10 +219,30 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 	}
 	sort.Strings(ids)
 
+	// An actor form that matches NOTHING in what the recall just brought back is a suspect
+	// DECLARATION, not a fact about the corpus: 2026-09-18 the plan's subject came through as
+	// "None", the actor test rejected all 852 passages this recall had returned, and the run lost
+	// every citation it could have had (the point-of-naming node was handed no window at all). A
+	// test that rejects 100% of the recall has stopped being a filter, so the passages below are
+	// judged on the act words alone — the model is the node that decides whether the deed is
+	// stated — and the miss is said out loud instead of turning into silence.
+	if len(actors) > 0 {
+		matched := false
+		for _, id := range ids {
+			if coverageMentionsAny(strings.Join(strings.Fields(ChunkTextOf(byID[id])), " "), actors) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			_LOG.Printf("[Coverage] actor %q matches NONE of the %d recalled passage(s): dropping the actor test (the declaration is suspect; the act words still stand) instead of judging nothing.", cov.Actor, len(ids))
+			actors = nil
+		}
+	}
 	for _, id := range ids {
 		c := byID[id]
 		text := strings.Join(strings.Fields(ChunkTextOf(c)), " ")
-		act := coverageFirstAct(text, cov.Acts)
+		act := coverageFirstAct(text, acts)
 		if act == "" {
 			continue
 		}
@@ -158,12 +252,12 @@ func EnumerateCoverage(ctx context.Context, deps SearchDeps, cov Coverage, kb *K
 		if kb != nil {
 			kb.Admit(func(p *PoolAdmitter) { p.Add(c) })
 		}
-		for _, w := range coverageWindows(text, cov.Acts, coverageWindowsPerChunk) {
+		for _, w := range coverageWindows(text, acts, coverageWindowsPerChunk) {
 			if len(set.Windows) >= coverageWindowsMax {
 				set.Truncated = true
 				break
 			}
-			set.Windows = append(set.Windows, CoverageWindow{ChunkID: ChunkIDOf(c), Quote: w.quote, Act: w.act})
+			set.Windows = append(set.Windows, CoverageWindow{ChunkID: ChunkIDOf(c), Quote: w.quote, Act: w.act, Source: CoverageSourceEnumeration})
 		}
 	}
 	return set
@@ -188,7 +282,7 @@ func CoverageActsMeetActor(kb *Kbinfos, cov Coverage) bool {
 	actors := cov.Actors()
 	for _, c := range kb.Chunks {
 		text := ChunkTextOf(c)
-		if coverageFirstAct(text, cov.Acts) == "" {
+		if coverageFirstAct(text, cov.ActsAll()) == "" {
 			continue
 		}
 		if len(actors) > 0 && !coverageMentionsAny(text, actors) {
@@ -221,13 +315,28 @@ func (s CoverageSet) Render() string {
 		b.WriteString("(nothing)\n")
 		return b.String()
 	}
+	quotesDropped, idsDropped := 0, 0
 	for _, w := range s.Windows {
 		line := fmt.Sprintf("- chunk_id=%s  %q\n", w.ChunkID, w.Quote)
 		if b.Len()+len(line) > coverageSeedMaxChars {
-			b.WriteString("(further windows omitted; all of them are in the pool)\n")
-			break
+			// Over the prose budget: the passage is still NAMED, only its text is left out.
+			// Dropping the line outright would hide a window the enumeration already paid a
+			// search for, and a member that no line names is a member the session can only
+			// answer from its own memory — the very thing the seed exists to replace.
+			line = fmt.Sprintf("- chunk_id=%s\n", w.ChunkID)
+			if b.Len()+len(line) > coverageSeedMaxChars {
+				idsDropped++
+				continue
+			}
+			quotesDropped++
 		}
 		b.WriteString(line)
+	}
+	if quotesDropped > 0 {
+		fmt.Fprintf(&b, "(the %d window(s) above list a chunk id without its quote; the text is in the pool under that id)\n", quotesDropped)
+	}
+	if idsDropped > 0 {
+		fmt.Fprintf(&b, "(%d further window(s) are in the pool but are not listed here)\n", idsDropped)
 	}
 	if s.Truncated {
 		b.WriteString("(the enumeration ran out of clock; the corpus holds more than is shown here)\n")

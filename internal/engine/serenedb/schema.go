@@ -55,7 +55,7 @@ var (
 	textColumns = []string{
 		"docnm_kwd", "doc_type_kwd", "title_tks", "title_sm_tks", "content_with_weight",
 		"content_ltks", "content_sm_ltks", "important_tks", "question_tks", "create_time",
-		"img_id", "knowledge_graph_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
+		"img_id", "knowledge_graph_kwd", "type_kwd", "entity_kwd", "entity_type_kwd", "from_entity_kwd",
 		"to_entity_kwd", "removed_kwd", "raptor_kwd", "group_id", "mom_id", "n_hop_with_weight",
 	}
 	arrayColumns = []string{"important_kwd", "question_kwd", "tag_kwd", "source_id", "entities_kwd"}

@@ -24,7 +24,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	knowledge_compile "ragflow/internal/ingestion/knowledge_compile"
+	"ragflow/internal/ingestion/knowledge_compile"
 
 	"go.uber.org/zap"
 )
@@ -38,12 +38,6 @@ func (s *DocumentService) publishKnowledgeCompileStatusChange(ctx context.Contex
 	if err != nil {
 		common.Warn("document mutation: failed to resolve knowledge compile variants",
 			zap.String("document_id", documentID), zap.Error(err))
-		if status == 0 {
-			if publishErr := knowledge_compile.PublishDisabled(ctx, tenantID, datasetID, documentID, nil, nil); publishErr != nil {
-				common.Warn("document mutation: failed to publish fallback knowledge compile disable",
-					zap.String("document_id", documentID), zap.Error(publishErr))
-			}
-		}
 		return
 	}
 	if len(variants) == 0 {
@@ -69,14 +63,17 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 	seenVariants := make(map[string]struct{})
 	seenTaskTypes := make(map[string]struct{})
 	for offset := 0; ; offset += 1000 {
-		result, err := s.docEngine.Search(ctx, &types.SearchRequest{
-			IndexNames:   []string{indexName},
-			KbIDs:        []string{datasetID},
-			Offset:       offset,
-			Limit:        1000,
-			SelectFields: []string{"compile_kwd", "compilation_template_kind_kwd"},
-			Filter:       map[string]any{"doc_id": []string{documentID}},
+		searchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(searchCtx, &types.SearchRequest{
+			IndexNames:         []string{indexName},
+			KbIDs:              []string{datasetID},
+			Offset:             offset,
+			Limit:              1000,
+			SelectFields:       []string{"compile_kwd", "compilation_template_kind_kwd", "type_kwd"},
+			Filter:             map[string]any{"doc_id": []string{documentID}},
+			IncludeUnavailable: true,
 		})
+		cancel()
 		if err != nil {
 			return nil, nil, err
 		}
@@ -84,7 +81,10 @@ func (s *DocumentService) documentKnowledgeCompileTypes(ctx context.Context, ten
 			break
 		}
 		for _, row := range result.Chunks {
-			kind := strings.TrimSpace(documentStoreString(row["compilation_template_kind_kwd"]))
+			if types.IsNavigationRow(row) {
+				continue
+			}
+			kind := types.CompilationKind(row)
 			variant, variantErr := kccommon.KindToVariant(kind)
 			if variantErr != nil {
 				variant, variantErr = knowledge_compile.KwdToVariant(strings.TrimSpace(documentStoreString(row["compile_kwd"])))

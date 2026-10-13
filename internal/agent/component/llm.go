@@ -31,7 +31,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -66,6 +65,16 @@ type LLMParam struct {
 	// in the text so far, decreasing the model's likelihood to repeat the
 	// same line verbatim.
 	FrequencyPenalty *float64
+
+	// TemperatureDisabled, TopPDisabled, MaxTokensDisabled,
+	// PresencePenaltyDisabled and FrequencyPenaltyDisabled record a DSL
+	// *Enabled switch set to false, so runtime inputs that carry the value
+	// without its switch do not bring it back (see gateSampler).
+	TemperatureDisabled      bool
+	TopPDisabled             bool
+	MaxTokensDisabled        bool
+	PresencePenaltyDisabled  bool
+	FrequencyPenaltyDisabled bool
 
 	// Driver is the configured provider driver to use (e.g. "openai"). When
 	// empty, the default ChatInvoker derives it from ModelID or uses the explicit
@@ -245,7 +254,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromMessage(out),
 	}
 	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
 		resp.ToolCalls = calls
@@ -253,17 +262,28 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 	return resp, nil
 }
 
-// usageFromCM copies a ChatModel's LastUsage split into the chat.Response Usage,
-// and mirrors its total into Tokens for the callers that still read the legacy
-// single counter.
-func usageFromCM(cm *models.ChatModel) *chat.Usage {
-	if cm == nil || cm.LastUsage == nil {
+// usageFromMessage copies the call's own token split - which the model attaches to the
+// message it returns (ResponseMeta.Usage) - into the chat.Response Usage. The split
+// travels with the call instead of being read back off the shared ChatModel, where a
+// concurrent call could have replaced it before the read.
+func usageFromMessage(msg *schema.Message) *chat.Usage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return usageFromEinoUsage(msg.ResponseMeta.Usage)
+}
+
+// usageFromEinoUsage converts eino's own usage metadata into the chat.Response Usage.
+// A nil usage yields a nil Response.Usage, which is the honest answer for a call whose
+// provider reported none - better than a value left behind by another call.
+func usageFromEinoUsage(u *schema.TokenUsage) *chat.Usage {
+	if u == nil {
 		return nil
 	}
 	return &chat.Usage{
-		PromptTokens:     cm.LastUsage.PromptTokens,
-		CompletionTokens: cm.LastUsage.CompletionTokens,
-		TotalTokens:      cm.LastUsage.TotalTokens,
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
 	}
 }
 
@@ -410,6 +430,11 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 
 	var content, reasoning strings.Builder
 	pendingCalls := map[int]*schema.ToolCall{}
+	// A streamed call reports its usage on the last message that carries it
+	// (stream_options.include_usage), so keep the newest one and read it out below.
+	// It is this call's own split: the model no longer parks it on a field shared by
+	// every call on the ChatModel.
+	var streamUsage *schema.TokenUsage
 	for {
 		chunk, recvErr := sr.Recv()
 		if recvErr == io.EOF {
@@ -420,6 +445,9 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 		}
 		if chunk == nil {
 			continue
+		}
+		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+			streamUsage = chunk.ResponseMeta.Usage
 		}
 		// Streaming tool-call deltas are merged before any content handling so a
 		// chunk that carries both is processed exactly once.
@@ -469,7 +497,7 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 		Thinking: reasoning.String(),
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromEinoUsage(streamUsage),
 	}
 	if len(pendingCalls) > 0 {
 		// Preserve provider-given index order (Python's final_tool_calls.values()
@@ -490,32 +518,29 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 	return resp, nil
 }
 
-// resolvedModelInvoker is a ChatInvoker pinned to an already-resolved model
-// (driver/modelName/apiConfig). Unlike einoChatInvoker it never consults the
-// process-global default model name nor splits a composite llm id — the caller
-// (e.g. the Go chat pipeline's harness bridge) resolves the tenant model up
-// front via the model provider service. This mirrors Python, where RAGTools
-// receives a fully-resolved LLMBundle, and lets the agentic-RAG harness call a
-// tenant's actual chat model (which may be a UUID/tenant_model id) instead of
-// falling through to a dummy driver.
+// resolvedModelInvoker pins agent calls to one factory-created tenant model.
+// Unlike einoChatInvoker it never consults a process-global default or parses a
+// composite model reference.
 type resolvedModelInvoker struct {
-	driver    models.ModelDriver
-	modelName string
-	apiConfig *models.APIConfig
+	model *models.ChatModel
 }
 
-// NewResolvedInvoker builds a ChatInvoker bound to the given resolved model
-// config. modelName may be a bare model name; apiConfig carries the api key and
-// base url already resolved for the tenant.
-func NewResolvedInvoker(driver models.ModelDriver, modelName string, apiConfig *models.APIConfig) ChatInvoker {
-	return &resolvedModelInvoker{driver: driver, modelName: modelName, apiConfig: apiConfig}
+// NewResolvedInvoker builds a ChatInvoker around a typed, resolved chat model.
+func NewResolvedInvoker(model *models.ChatModel) ChatInvoker {
+	if model == nil {
+		return nil
+	}
+	return &resolvedModelInvoker{model: model}
 }
 
 // resolvedChatWrapper builds the eino wrapper for the pinned model, applying the
 // request's sampling config, thinking switch and tool binding. Invoke and Stream
 // share it so both send an identical request; only the transport differs.
 func (c *resolvedModelInvoker) resolvedChatWrapper(modelName string, req ChatInvokeRequest) (*models.EinoChatModel, *models.ChatModel, error) {
-	cm := models.NewChatModel(c.driver, &modelName, c.apiConfig)
+	cm := c.model
+	if cm.ModelName == nil || *cm.ModelName != modelName {
+		cm = models.NewChatModelWithInfo(cm.ModelDriver, &modelName, cm.APIConfig, cm.Info())
+	}
 	chatCfg := &models.ChatConfig{
 		Temperature: req.Temperature,
 		TopP:        req.TopP,
@@ -547,13 +572,19 @@ func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
 	if req.ModelName != "" {
 		return req.ModelName
 	}
-	return c.modelName
+	if info := c.model.Info(); info != nil {
+		return info.Name
+	}
+	if c.model.ModelName != nil {
+		return *c.model.ModelName
+	}
+	return ""
 }
 
 // Invoke satisfies ChatInvoker.
 func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	modelName := c.modelFor(req)
-	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
+	wrapper, _, err := c.resolvedChatWrapper(modelName, req)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +597,7 @@ func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req Chat
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromMessage(out),
 	}
 	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
 		resp.ToolCalls = calls
@@ -665,20 +696,20 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
 	// Resolve the model's context window (content_length) for message
-	// fitting. 0 means the model is unknown → fitMessages falls back to
+	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
 	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
 	// tenantID scopes composite-reference resolution to the tenant's own rows
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if tid, ok := state.Sys["tenant_id"].(string); ok {
 			tenantID = tid
 		}
 	}
 	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
-		// A 0 makes fitMessages fall back to the 8192 default budget, which can
-		// silently discard most of a large-context prompt, so surface the
+		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
+		// can silently discard most of a large-context prompt, so surface the
 		// resolution failure for diagnosis.
 		common.Warn("llm: content_length not resolved, falling back to 8192",
 			zap.String("model_ref", originalModelID),
@@ -696,7 +727,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// state is absent (e.g. tests that call Invoke directly without
 	// going through the canvas scheduler), the prompts pass through
 	// unchanged — backward compatible.
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
@@ -734,7 +765,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileTexts []string
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
 			return nil, err
 		}
@@ -793,7 +824,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// empty,
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}
@@ -805,7 +836,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// generation length only.
 	{
 		// The system prompt is already embedded as the first message
-		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// in msgs by buildMessagesWithImages; pass "" so chat.FitMessages
 		// does not duplicate it.
 		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
@@ -1329,18 +1360,22 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		f := v
 		p.Temperature = &f
 	}
+	gateSampler(inputs, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 	if v, ok := floatFrom(inputs, "top_p"); ok {
 		f := v
 		p.TopP = &f
 	}
+	gateSampler(inputs, "topPEnabled", &p.TopP, &p.TopPDisabled)
 	if v, ok := floatFrom(inputs, "presence_penalty"); ok {
 		f := v
 		p.PresencePenalty = &f
 	}
+	gateSampler(inputs, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 	if v, ok := floatFrom(inputs, "frequency_penalty"); ok {
 		f := v
 		p.FrequencyPenalty = &f
 	}
+	gateSampler(inputs, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 	// visual_files: accept []string or single string with embedded
 	// data URIs. The current implementation only walks top-level
 	// string values; recursive walk is a future enhancement.
@@ -1353,6 +1388,7 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		i := v
 		p.MaxTokens = &i
 	}
+	gateSampler(inputs, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 	if v, ok := stringFrom(inputs, "thinking"); ok {
 		// Forward any non-empty, non-"default" value to match the
 		// lenient Python gate: hasattr(self,"thinking") and
@@ -1365,157 +1401,6 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 		}
 	}
 	return p
-}
-
-// effectiveContextLength returns maxLength if positive, otherwise 8192.
-// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
-// zero/negative context windows from silently trimming all prompt content.
-func effectiveContextLength(maxLength int) int {
-	if maxLength > 0 {
-		return maxLength
-	}
-	return 8192
-}
-
-// contextFitBudget returns 97% of the effective context length as the
-// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
-// in PR #16413.
-func contextFitBudget(maxLength int) int {
-	return int(float64(effectiveContextLength(maxLength)) * 0.97)
-}
-
-// validateFittedMessages checks that the fitted message list is non-empty
-// and the last message is a non-empty user turn (content or multi-modal
-// parts). Returns an error string on failure, empty string on success.
-// Python requires len >= 2 because the system prompt is always injected
-// upstream; Go allows len >= 1 because the system message may be embedded
-// inside msgs (from buildMessagesWithImages) or absent entirely.
-func validateFittedMessages(msgFit []schema.Message) string {
-	if len(msgFit) == 0 {
-		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
-	}
-	last := msgFit[len(msgFit)-1]
-	if last.Role != schema.User {
-		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
-	}
-	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
-		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
-	}
-	return ""
-}
-
-// FitMessages exposes message_fit_in semantics (LLM.fit_messages, PR #16413)
-// for packages that compose final-answer prompts outside the agent loop.
-func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	return fitMessages(systemPrompt, msgs, maxLength)
-}
-
-// fitMessages calls message_fit_in semantics on the given messages and
-// validates that the result ends with a non-empty user turn. Returns the
-// fitted messages and an error string (empty on success).
-// Mirrors Python's LLM.fit_messages in PR #16413.
-func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
-	copied := make([]schema.Message, len(msgs))
-	for i, m := range msgs {
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		copied[i] = schema.Message{
-			Role:                  m.Role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		}
-	}
-
-	// Convert to tokenizer.Message. Track where each entry's text lives
-	// (plain Content or a multi-modal text part) so the fitted text can be
-	// written back to the right field. Entries with no text at all
-	// (image-only turns) carry an empty Content for fitting and survive
-	// fitting when kept.
-	type fitSource struct {
-		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
-		multiIdx      int  // -1 means the text lives in Content
-		textInContent bool // the original message carried text in Content
-	}
-	all := make([]tokenizer.Message, 0, 1+len(copied))
-	sources := make([]fitSource, 0, 1+len(copied))
-
-	if systemPrompt != "" {
-		all = append(all, tokenizer.Message{Role: "system", Content: systemPrompt})
-		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
-	}
-
-	for i := range copied {
-		text := copied[i].Content
-		multiIdx := -1
-		hadText := text != ""
-		if !hadText {
-			// Fold every non-empty text part into the token budget: only the
-			// first text part is written back, so leaving later parts out
-			// would let text exceed the fitted budget after reconstruction.
-			var textParts []string
-			for j, p := range copied[i].UserInputMultiContent {
-				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
-					textParts = append(textParts, p.Text)
-					if multiIdx < 0 {
-						multiIdx = j
-					}
-				}
-			}
-			if len(textParts) > 0 {
-				text = strings.Join(textParts, "\n\n")
-				hadText = true
-			}
-		}
-		all = append(all, tokenizer.Message{Role: string(copied[i].Role), Content: text})
-		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
-	}
-
-	// Use 97% of effective context as the token budget.
-	budget := contextFitBudget(maxLength)
-	kept, keptIdx, _ := tokenizer.Fit(all, budget)
-
-	// Convert back to []schema.Message. tokenizer.Fit reports exactly which
-	// entries are kept (keptIdx); dropped entries are simply absent, so no
-	// empty-content sentinel is needed and image-only turns are preserved.
-	result := make([]schema.Message, 0, len(kept))
-	for j, i := range keptIdx {
-		src := sources[i]
-		if src.copiedIdx < 0 {
-			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
-			continue
-		}
-		m := copied[src.copiedIdx]
-		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
-			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
-			// Drop any additional text parts: their content was folded into
-			// the first part before fitting, so keeping them would re-introduce
-			// text outside the token budget.
-			keptParts := m.UserInputMultiContent[:0]
-			for k, part := range m.UserInputMultiContent {
-				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
-					continue
-				}
-				keptParts = append(keptParts, part)
-			}
-			m.UserInputMultiContent = keptParts
-		} else if src.textInContent {
-			// Always write the fitted text back (even when trimmed to empty):
-			// leaving the original would send untrimmed content past the budget.
-			m.Content = kept[j].Content
-		}
-		result = append(result, m)
-	}
-	return result, validateFittedMessages(result)
 }
 
 // stringFrom extracts a string from inputs[name], accepting both string and
@@ -1555,6 +1440,19 @@ func boolFrom(inputs map[string]any, name string) (bool, bool) {
 		return b, true
 	}
 	return false, false
+}
+
+// gateSampler applies the sampler switch inputs[flag] to value. The switch
+// state is kept in disabled, so a later merge whose inputs carry the value
+// without the switch still drops it. Mirrors Python's LLMParam.gen_conf, which
+// only sends a sampler value when its switch is on.
+func gateSampler[T any](inputs map[string]any, flag string, value **T, disabled *bool) {
+	if enabled, ok := boolFrom(inputs, flag); ok {
+		*disabled = !enabled
+	}
+	if *disabled {
+		*value = nil
+	}
 }
 
 // floatFrom extracts a float64 from inputs[name], also accepting int.
@@ -1614,14 +1512,17 @@ func init() {
 			f := v
 			p.Temperature = &f
 		}
+		gateSampler(params, "temperatureEnabled", &p.Temperature, &p.TemperatureDisabled)
 		if v, ok := floatFrom(params, "top_p"); ok {
 			f := v
 			p.TopP = &f
 		}
+		gateSampler(params, "topPEnabled", &p.TopP, &p.TopPDisabled)
 		if v, ok := intFrom(params, "max_tokens"); ok {
 			i := v
 			p.MaxTokens = &i
 		}
+		gateSampler(params, "maxTokensEnabled", &p.MaxTokens, &p.MaxTokensDisabled)
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
@@ -1632,10 +1533,12 @@ func init() {
 			f := v
 			p.PresencePenalty = &f
 		}
+		gateSampler(params, "presencePenaltyEnabled", &p.PresencePenalty, &p.PresencePenaltyDisabled)
 		if v, ok := floatFrom(params, "frequency_penalty"); ok {
 			f := v
 			p.FrequencyPenalty = &f
 		}
+		gateSampler(params, "frequencyPenaltyEnabled", &p.FrequencyPenalty, &p.FrequencyPenaltyDisabled)
 		// cite defaults to true (matches Python) when neither LLMParam
 		// nor inputs set it.
 		p.Cite = true

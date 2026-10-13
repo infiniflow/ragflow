@@ -283,61 +283,6 @@ func (p *Parser) parseDevDeleteMeta() (*Command, error) {
 	return cmd, nil
 }
 
-// parseDevRemoveTags parses: REMOVE TAGS 'tag1', 'tag2' from DATASET 'dataset_name';
-func (p *Parser) parseDevRemoveTags() (*Command, error) {
-	p.nextToken() // consume TAGS
-
-	// Parse first tag
-	tag, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected tag: %w", err)
-	}
-	tags := []string{tag}
-
-	// Parse additional tags separated by commas
-	for {
-		p.nextToken()
-		if p.curToken.Type == TokenComma {
-			p.nextToken()
-			tag, err := p.parseQuotedString()
-			if err != nil {
-				return nil, fmt.Errorf("expected tag after comma: %w", err)
-			}
-			tags = append(tags, tag)
-		} else {
-			break
-		}
-	}
-	cmd := NewCommand("dev_rm_tags")
-	cmd.Params["tags"] = tags
-
-	// Expect from
-	if p.curToken.Type != TokenFrom {
-		return nil, fmt.Errorf("expected FROM after tags")
-	}
-	p.nextToken()
-
-	// Expect DATASET
-	if p.curToken.Type != TokenDataset {
-		return nil, fmt.Errorf("expected DATASET after FROM")
-	}
-	p.nextToken()
-
-	// Parse dataset_name
-	datasetName, err := p.parseQuotedString()
-	if err != nil {
-		return nil, fmt.Errorf("expected dataset_name: %w", err)
-	}
-	cmd.Params["dataset_name"] = datasetName
-
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
-		p.nextToken()
-	}
-
-	return cmd, nil
-}
-
 // parseDevRemoveChunk parses:
 //   - REMOVE CHUNKS 'chunk_id1', 'chunk_id2' FROM DOCUMENT 'doc_id' IN DATASET 'dataset_name';
 //   - REMOVE ALL CHUNKS FROM DOCUMENT 'doc_id' IN DATASET 'dataset_name';

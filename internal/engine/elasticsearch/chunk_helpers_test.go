@@ -18,7 +18,7 @@ func TestBuildQueryStringQueryMapsSkillFieldsToTokenFields(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10", "tags^5", "description^3", "content^1"},
-	}, 0, true, false)
+	}, true, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
@@ -32,13 +32,44 @@ func TestBuildQueryStringQueryKeepsDocumentFieldsUnchanged(t *testing.T) {
 	query := buildQueryStringQuery(&types.MatchTextExpr{
 		MatchingText: "test",
 		Fields:       []string{"name^10"},
-	}, 0, false, false)
+	}, false, false)
 
 	queryString, ok := query["query_string"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("query_string missing from %#v", query)
 	}
 	assertEqual(t, queryString["fields"], []string{"name^10"})
+}
+
+func TestBuildQueryStringQueryLowercasesMatchingText(t *testing.T) {
+	// The *_tks/*_ltks fields are whitespace-analyzed and store lowercase
+	// tokens; a capitalized query term must not silently match nothing.
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: "Isabel Wood co-lead Ross Feldner Bob Musil Bird Watch Wonder Program",
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		"isabel wood co-lead ross feldner bob musil bird watch wonder program")
+}
+
+func TestBuildQueryStringQueryKeepsBooleanOperators(t *testing.T) {
+	// Only AND/OR/NOT are operators, and only in upper case: a folded "or" is a
+	// term clause, which re-bases minimum_should_match and turns a 94-hit search
+	// into a 32-hit one (see lowerCaseQueryText).
+	query := buildQueryStringQuery(&types.MatchTextExpr{
+		MatchingText: `(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("MES"^0.7)`,
+	}, false, false)
+
+	queryString, ok := query["query_string"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("query_string missing from %#v", query)
+	}
+	assertEqual(t, queryString["query"],
+		`(病毒 OR 勒索)^0.3 (系统)^0.2 ("系统 因为 勒索"~2)^1.5 OR ("mes"^0.7)`)
 }
 
 func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
@@ -99,6 +130,48 @@ func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
 	}
 	if strings.Contains(filter, "query_string") {
 		t.Fatalf("dense-only KNN filter contains lexical predicate: %s", filter)
+	}
+}
+
+func TestKNNScoresSearchesAllCandidateIndices(t *testing.T) {
+	searches := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		searches++
+		if r.URL.Path != "/ragflow_a,ragflow_b/_search" {
+			t.Errorf("KNN search path = %s, want both candidate indices once", r.URL.Path)
+		}
+		if r.URL.Query().Get("allow_partial_search_results") != "false" {
+			t.Error("partial KNN results must trigger the local reranking fallback")
+		}
+		var query map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+			t.Error(err)
+		}
+		knn, _ := query["knn"].(map[string]interface{})
+		filter, _ := json.Marshal(knn["filter"])
+		if string(filter) != `{"terms":{"id":["a1","a2","b1"]}}` {
+			t.Errorf("KNN candidate filter = %s, want candidates from both indices", filter)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		_, _ = w.Write([]byte(`{"hits":{"hits":[{"_id":"a1","_score":0.9},{"_id":"a2","_score":0.8},{"_id":"b1","_score":0.7}]}}`))
+	}))
+	defer server.Close()
+	eng := newTestEngine(t, server.URL)
+	chunks := []map[string]interface{}{
+		{"_id": "a1", "_index": "ragflow_a"},
+		{"_id": "a2", "_index": "ragflow_a"},
+		{"_id": "b1", "_index": "ragflow_b"},
+	}
+	result, err := eng.KNNScores(t.Context(), chunks, []float64{0.1, 0.2}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.GetScores(result); !reflect.DeepEqual(got, map[string]float64{"a1": 0.9, "a2": 0.8, "b1": 0.7}) {
+		t.Fatalf("KNN scores = %v, want scores from both indices", got)
+	}
+	result, err = eng.KNNScores(t.Context(), []map[string]interface{}{{"_id": "unscoped"}}, []float64{0.1, 0.2}, 1)
+	if err == nil || result != nil || searches != 1 {
+		t.Fatalf("missing index: result = %v, err = %v, searches = %d, want fallback without a cluster-wide query", result, err, searches)
 	}
 }
 
@@ -164,8 +237,8 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 	}
 	engine := &Engine{client: client}
 	deleted, err := engine.DeleteChunks(ctx, map[string]interface{}{
-		"kb_id":       "kb-1",
-		"compile_kwd": []string{"wiki_entity", "wiki_relation"},
+		"kb_id":          "kb-1",
+		"source_doc_ids": []string{"doc-a", "doc-b"},
 	}, "ragflow_tenant", "kb-1")
 	if err != nil {
 		t.Fatalf("DeleteChunks: %v", err)
@@ -187,7 +260,7 @@ func TestDeleteChunksPreservesStringSliceCondition(t *testing.T) {
 		t.Fatalf("delete query must=%#v, want one terms clause", boolQuery["must"])
 	}
 	terms := must[0].(map[string]interface{})["terms"].(map[string]interface{})
-	assertEqual(t, terms["compile_kwd"], []interface{}{"wiki_entity", "wiki_relation"})
+	assertEqual(t, terms["source_doc_ids"], []interface{}{"doc-a", "doc-b"})
 }
 
 // TestDeleteChunksIDStringSlice guards against the id filter being dropped when
@@ -250,10 +323,11 @@ func TestDeleteChunksIDStringSlice(t *testing.T) {
 }
 
 // TestUpdateChunksPreservesStringSliceCondition guards the document
-// availability switch: updateSourceChunkAvailability passes a typed []string id
-// list, and a builder that only understands []interface{} silently drops the id
-// clause, widening the update-by-query to every chunk of the dataset (kb_id is
-// then the only remaining filter).
+// availability switch: the doc-service caller of UpdateChunks
+// (updateDocumentChunkAvailability) passes a typed []string id list, and a
+// builder that only understands []interface{} silently drops the id clause,
+// widening the update-by-query to every chunk of the dataset (kb_id is then the
+// only remaining filter).
 func TestUpdateChunksPreservesStringSliceCondition(t *testing.T) {
 	var updateQuery map[string]interface{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

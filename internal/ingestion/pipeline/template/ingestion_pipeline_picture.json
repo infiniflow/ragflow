@@ -26,11 +26,15 @@
             },
             "Parser:ViewsCaptureLight": {
                 "downstream": [
-                    "TokenChunker:BrightColorsGlow"
+                    "OneChunker:BrightColorsGlow"
                 ],
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -50,8 +54,8 @@
                             }
                         },
                         "image": {
+                            "ocr_enabled": true,
                             "output_format": "json",
-                            "parse_method": "ocr",
                             "preprocess": [
                                 "main_content"
                             ],
@@ -92,7 +96,7 @@
                     "File"
                 ]
             },
-            "TokenChunker:BrightColorsGlow": {
+            "OneChunker:BrightColorsGlow": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
@@ -131,7 +135,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TokenChunker:BrightColorsGlow"
+                    "OneChunker:BrightColorsGlow"
                 ],
                 "downstream": [
                     "Tokenizer:SharpLensFocus"
@@ -175,15 +179,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:ViewsCaptureLightstart-TokenChunker:BrightColorsGlowend",
+                    "id": "xy-edge__Parser:ViewsCaptureLightstart-OneChunker:BrightColorsGlowend",
                     "source": "Parser:ViewsCaptureLight",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:BrightColorsGlow",
+                    "target": "OneChunker:BrightColorsGlow",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:BrightColorsGlowstart-Extractor:AutoExtractDefaultend",
-                    "source": "TokenChunker:BrightColorsGlow",
+                    "id": "xy-edge__OneChunker:BrightColorsGlowstart-Extractor:AutoExtractDefaultend",
+                    "source": "OneChunker:BrightColorsGlow",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -204,7 +208,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -218,6 +222,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -239,8 +247,8 @@
                             "setups": [
                                 {
                                     "fileFormat": "image",
+                                    "ocr_enabled": true,
                                     "output_format": "json",
-                                    "parse_method": "ocr",
                                     "preprocess": [
                                         "main_content"
                                     ]
@@ -255,17 +263,17 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_picture"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:ViewsCaptureLight",
                     "measured": {
-                        "height": 57,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -283,16 +291,16 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker_picture"
+                        "name": "Picture Chunker"
                     },
-                    "id": "TokenChunker:BrightColorsGlow",
+                    "id": "OneChunker:BrightColorsGlow",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -311,16 +319,16 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_picture"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:SharpLensFocus",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
-                        "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 1216.9952409420641,
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",
@@ -329,9 +337,13 @@
                 {
                     "id": "Extractor:AutoExtractDefault",
                     "type": "contextNode",
+                    "measured": {
+                        "height": 59,
+                        "width": 200
+                    },
                     "position": {
-                        "x": 796.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 916.9952409420641,
+                        "y": 195
                     },
                     "data": {
                         "label": "Extractor",

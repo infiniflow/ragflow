@@ -214,8 +214,8 @@ func TestMatchAndTagChunk_TitleFallback(t *testing.T) {
 	if matched.TagWeights["BiddingDoc"] <= 0 || matched.TagWeights["Engineering"] <= 0 {
 		t.Fatalf("expected BiddingDoc and Engineering tags matched, got: %v", matched.TagWeights)
 	}
-	if chunk["tag_kwd"] == nil {
-		t.Fatal("expected tag_kwd to be populated on chunk")
+	if _, ok := chunk["tag_kwd"]; ok {
+		t.Fatal("tag_kwd must not be written onto the tagged chunk")
 	}
 }
 

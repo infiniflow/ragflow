@@ -24,6 +24,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode/utf8"
 
 	"github.com/pkoukk/tiktoken-go"
 	"go.uber.org/zap"
@@ -113,6 +114,9 @@ func Init(cfg *PoolConfig) error {
 		if cfg.AcquireTimeout <= 0 {
 			cfg.AcquireTimeout = 10 * time.Second
 		}
+
+		// The dictionaries are reloaded below, so stale lookups must not survive.
+		resetTermLookupCaches()
 
 		common.Info("Initializing analyzer pool",
 			zap.String("dict_path", cfg.DictPath),
@@ -528,22 +532,100 @@ func IsInitialized() bool {
 	return globalPool != nil && globalPool.initialized
 }
 
+// termLookupCacheMax caps each memo below. Reaching it rotates the memo instead
+// of freezing it: freezing lets whatever happened to arrive first occupy the
+// budget permanently, so a term that only became hot later would miss forever,
+// with no way back. Rotating keeps the memo representative of recent traffic and
+// costs one re-warm of the (small) hot set per rotation. This mirrors
+// bpeModel.memoPut in bpe.go, for the same reason: the memo is an optimisation,
+// not a correctness structure, so clearing it beats tracking recency.
+const termLookupCacheMax = 1 << 16
+
+// termCacheRotateMu serialises rotation so a burst of writers past the cap does
+// not clear the memo repeatedly. It is only taken on the rotation path, never on
+// a hit.
+var termCacheRotateMu sync.Mutex
+
+// Memoized because every lookup acquires a pooled analyzer and crosses cgo,
+// while Weights issues one freq plus one tag per token per retrieved chunk. A
+// result depends only on the term and on the dictionaries Init loads, so the
+// term alone is a valid key. Only successful lookups are cached, so a call made
+// before Init cannot pin a zero.
+//
+// The analyzer resolves both halves from the same packed trie entry, so they
+// share one memo rather than two maps keyed by the same term: that halves the
+// key storage, and a miss resolves the pair with a single analyzer checkout.
+var (
+	termLookupCache  sync.Map // term -> termLookup
+	termLookupCached atomic.Int64
+)
+
+// termLookup is one dictionary entry: the pair the analyzer resolves together.
+type termLookup struct {
+	freq int32
+	tag  string
+}
+
+func resetTermLookupCaches() {
+	termLookupCache.Clear()
+	termLookupCached.Store(0)
+}
+
+// admitTerm memoizes key -> val in cache, rotating the whole memo once it has
+// reached limit. Rotation runs before the insert, so the value just looked up
+// survives into the new generation instead of being recomputed.
+//
+// Admission is a check-then-act: concurrent writers can overshoot limit by the
+// number of writers in flight, and a rotation can race an in-flight insert (that
+// entry is dropped, its count lost with it). Both leave the memo bounded and
+// approximately counted, which is all this policy needs.
+func admitTerm[V any](cache *sync.Map, counter *atomic.Int64, limit int64, key string, val V) {
+	if counter.Load() >= limit {
+		termCacheRotateMu.Lock()
+		if counter.Load() >= limit {
+			cache.Clear()
+			counter.Store(0)
+			common.Info("term lookup memo rotated", zap.Int64("limit", limit))
+		}
+		termCacheRotateMu.Unlock()
+	}
+	if _, loaded := cache.LoadOrStore(key, val); !loaded {
+		counter.Add(1)
+	}
+}
+
+// GetTermFreqAndTag returns the frequency and the POS tag of a term, resolving
+// both in one analyzer checkout. They come from the same packed trie entry, so
+// asking for them separately pays for two checkouts and two cgo round trips.
+// Returns: the frequency, or 0 if the term is not in the dictionary; and the POS
+// tag, or "" if it has none.
+func GetTermFreqAndTag(term string) (int32, string) {
+	if v, ok := termLookupCache.Load(term); ok {
+		entry := v.(termLookup)
+		return entry.freq, entry.tag
+	}
+	entry, err := withAnalyzerResult("", func(a *rag.Analyzer) (termLookup, error) {
+		return termLookup{freq: a.GetTermFreq(term), tag: a.GetTermTag(term)}, nil
+	})
+	if err != nil {
+		return entry.freq, entry.tag
+	}
+	admitTerm(&termLookupCache, &termLookupCached, termLookupCacheMax, term, entry)
+	return entry.freq, entry.tag
+}
+
 // GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
 // Returns: frequency value, or 0 if term not found
 func GetTermFreq(term string) int32 {
-	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (int32, error) {
-		return a.GetTermFreq(term), nil
-	})
-	return result
+	freq, _ := GetTermFreqAndTag(term)
+	return freq
 }
 
 // GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
 // Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
 func GetTermTag(term string) string {
-	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (string, error) {
-		return a.GetTermTag(term), nil
-	})
-	return result
+	_, tag := GetTermFreqAndTag(term)
+	return tag
 }
 
 var cl100kEncoder struct {
@@ -627,6 +709,13 @@ func NumTokensFromString(s string) int {
 // Like Python's trim_content, an unavailable encoder PANICS: the previous
 // byte-length fallback silently produced a differently-truncated string instead
 // of surfacing the missing table. See NumTokensFromString.
+// The decoded prefix is snapped back to a rune boundary before it is returned.
+// Cutting the token list is not enough on its own: a single emoji is four UTF-8
+// bytes and may span tokens, so a token-boundary cut can end mid-character and
+// hand the caller - and the index - invalid UTF-8. (TestCountersSatisfyTrimProperties
+// caught exactly that on the emoji corpus at limit=1.) Dropping the partial rune
+// can only shrink the text, but the token count is re-checked anyway so the
+// "at most limit tokens" contract holds unconditionally.
 func TrimContentToTokenLimit(s string, limit int) string {
 	if limit < 0 {
 		limit = 0
@@ -642,7 +731,35 @@ func TrimContentToTokenLimit(s string, limit int) string {
 	if len(tokens) <= limit {
 		return s
 	}
-	return enc.Decode(tokens[:limit])
+	trimmed := clampToValidUTF8(enc.Decode(tokens[:limit]))
+	for i := 0; i < utf8.UTFMax && len(trimmed) > 0 && len(enc.Encode(trimmed, nil, nil)) > limit; i++ {
+		trimmed = dropLastRune(trimmed)
+	}
+	return trimmed
+}
+
+// clampToValidUTF8 returns the longest prefix of s that is valid UTF-8. Only the
+// tail can be broken after a token-boundary cut, so this is at most three bytes
+// of backtracking rather than a scan for an interior invalid byte.
+func clampToValidUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	for cut := 1; cut <= utf8.UTFMax && cut <= len(s); cut++ {
+		if prefix := s[:len(s)-cut]; utf8.ValidString(prefix) {
+			return prefix
+		}
+	}
+	return ""
+}
+
+// dropLastRune removes the final rune of s, tolerating a trailing partial rune.
+func dropLastRune(s string) string {
+	_, size := utf8.DecodeLastRuneInString(s)
+	if size <= 0 {
+		return ""
+	}
+	return s[:len(s)-size]
 }
 
 // EncodeCL100KTokens returns the cl100k_base token ids of s, from the same

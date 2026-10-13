@@ -1,9 +1,48 @@
 package indexdoc
 
 import (
+	"reflect"
 	"testing"
 	"time"
 )
+
+func TestProcessChunksForPipeline_PreservesTypedMetadata(t *testing.T) {
+	want := map[string]any{
+		"year": float64(2025), "verified": false, "scalar": map[string]any{"x": 1},
+		"labels": []string{"a", "b", "c"}, "object": map[string]any{"x": 1},
+		"tags":    []any{"contract", float64(123)},
+		"outline": []any{map[string]any{"title": "Intro"}},
+	}
+	chunks := []map[string]any{
+		{"text": "first", "metadata": map[string]any{
+			"year": float64(2024), "verified": true, "scalar": map[string]any{"x": 1},
+			"labels": []any{"a", "b"}, "object": map[string]any{"x": 1},
+			"tags":    []any{"contract", float64(123)},
+			"outline": []any{map[string]any{"title": "Intro"}},
+		}},
+		{"text": "second", "metadata": map[string]any{
+			"year": float64(2025), "verified": false, "scalar": float64(42),
+			"labels": []any{"b", "c"}, "object": map[string]any{"x": 2},
+			"tags": false, "outline": float64(42),
+		}},
+		{"text": "third", "metadata": map[string]any{
+			"scalar": nil, "labels": "c",
+			"outline": []any{map[string]any{"title": "Replacement"}},
+		}},
+	}
+	got, err := ProcessChunksForPipeline(chunks, "doc-1", "report.pdf", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("metadata = %#v, want %#v", got, want)
+	}
+	for i, chunk := range chunks {
+		if _, exists := chunk["metadata"]; exists {
+			t.Fatalf("consumed metadata must be removed from chunk %d", i)
+		}
+	}
+}
 
 // =============================================================================
 // RenameTextToContentWithWeight - Python processChunks logic
@@ -351,7 +390,7 @@ func TestProcessChunkPositions_FlatFloat64(t *testing.T) {
 		// positions is 1-indexed (parser normalized before we see it)
 		"positions": []float64{1, 100, 50, 200, 150},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -369,7 +408,7 @@ func TestProcessChunkPositions_2DFloat64(t *testing.T) {
 			{2, 200, 60, 300, 250},
 		},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 
 	if _, exists := chunk["positions"]; exists {
 		t.Fatal("positions key must be removed")
@@ -391,7 +430,7 @@ func TestProcessChunkPositions_NoPositions(t *testing.T) {
 		"text":           "hello",
 		"_pdf_positions": []any{[]any{0, 1, 2, 3, 4}},
 	}
-	processChunkPositions(chunk)
+	processChunkPositions(chunk, false)
 	if _, exists := chunk["page_num_int"]; exists {
 		t.Error("page_num_int must not be set when positions is missing")
 	}
@@ -495,5 +534,65 @@ func TestProcessChunksForPipeline_StripsPipelineOnlyFields(t *testing.T) {
 	}
 	if ck["doc_id"] != "doc-1" {
 		t.Errorf("doc_id = %v, want doc-1 (the strip must not touch persist fields)", ck["doc_id"])
+	}
+}
+
+// =============================================================================
+// processChunkPositions — the two position vocabularies
+// =============================================================================
+
+// TestProcessChunkPositions_SpreadsheetKeepsRowIndex: a spreadsheet chunk's
+// positions become position_int (the preview carrier) instead of being decoded
+// as PDF boxes — no page_num_int, and the chunk's own top_int (the QA row
+// index, aligned with Python's beAdoc) survives.
+func TestProcessChunkPositions_SpreadsheetKeepsRowIndex(t *testing.T) {
+	chunk := map[string]any{
+		"positions": [][]float64{{2, 42, 42, 1, 3}},
+		"top_int":   []int{41},
+	}
+	processChunkPositions(chunk, true)
+
+	matrix, ok := chunk["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 2 || matrix[0][4] != 3 {
+		t.Fatalf("position_int = %v, want the sheet tuple", chunk["position_int"])
+	}
+	if _, exists := chunk["page_num_int"]; exists {
+		t.Errorf("page_num_int must not be derived from spreadsheet tuples: %v", chunk["page_num_int"])
+	}
+	if top, ok := chunk["top_int"].([]int); !ok || len(top) != 1 || top[0] != 41 {
+		t.Errorf("top_int = %v, want the chunk's own row index [41]", chunk["top_int"])
+	}
+	if _, exists := chunk["positions"]; exists {
+		t.Error("raw positions must be removed")
+	}
+}
+
+// TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex pins the whole
+// chunk loop: the spreadsheet identity has to be read before
+// stripPipelineOnlyFields removes sheet_index, or the positions of a
+// spreadsheet chunk would be decoded as PDF layout boxes.
+func TestProcessChunksForPipeline_SpreadsheetPositionsKeepRowIndex(t *testing.T) {
+	chunks := []map[string]any{{
+		"text":        "<table><tr><th>q</th><th>a</th></tr></table>",
+		"sheet_index": 1,
+		"top_int":     []int{41},
+		"positions":   [][]float64{{1, 42, 42, 1, 3}},
+	}}
+	if _, err := ProcessChunksForPipeline(chunks, "doc-1", "doc.xlsx", time.Now()); err != nil {
+		t.Fatalf("ProcessChunksForPipeline: %v", err)
+	}
+	ck := chunks[0]
+	if _, exists := ck["sheet_index"]; exists {
+		t.Error("sheet_index must be stripped at the index boundary")
+	}
+	matrix, ok := ck["position_int"].([][]int)
+	if !ok || len(matrix) != 1 || matrix[0][0] != 1 || matrix[0][1] != 42 {
+		t.Fatalf("position_int = %v, want the sheet tuple", ck["position_int"])
+	}
+	if _, exists := ck["page_num_int"]; exists {
+		t.Errorf("page_num_int must not be derived from spreadsheet tuples: %v", ck["page_num_int"])
+	}
+	if top, ok := ck["top_int"].([]int); !ok || len(top) != 1 || top[0] != 41 {
+		t.Errorf("top_int = %v, want the chunk's own row index [41]", ck["top_int"])
 	}
 }

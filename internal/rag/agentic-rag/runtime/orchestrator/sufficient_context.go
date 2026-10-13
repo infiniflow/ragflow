@@ -19,6 +19,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -408,14 +409,19 @@ func scaChunkText(c map[string]any) string {
 }
 
 // boundedExcerpt: a bounded window around a
-// term from the draft. Table text is returned whole.
+// term from the draft. Table text is returned whole, serialized to Markdown.
 func boundedExcerpt(text, hints string, maxChars int) string {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return ""
 	}
 	if isTableText(text) {
-		return text
+		// The SCA is a plain LLM call: raw <table>/<td> markup makes it parse cells
+		// itself, and the same table costs ~61% more in HTML than in Markdown. The
+		// renderer never prunes rows (a row can carry the answer mid-table), so the
+		// SCA still sees the complete row set — just in a readable form. No-op for
+		// non-tables.
+		return runtime.TableViewOrRaw(text)
 	}
 	if maxChars < 80 {
 		maxChars = 80
@@ -498,7 +504,7 @@ func coerceDict(v any) map[string]any {
 
 // clamp: coerce to [0,1], defaulting to 1.0 on failure.
 func clamp(v any) float64 {
-	f, ok := toFloat(v)
+	f, ok := common.ToFloat(v)
 	if !ok {
 		return 1.0
 	}
@@ -603,20 +609,4 @@ func containsStr(ss []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		return runtime.ParseFloat(n)
-	}
-	return 0, false
 }

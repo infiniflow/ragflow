@@ -93,6 +93,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 
 			// Environments
 			protected.GET("/environments", r.handler.ListEnvironments)
+			protected.GET("/hardware", r.handler.GetHardwareInfo)
 
 			// Version
 			protected.GET("/version", r.handler.GetVersion)

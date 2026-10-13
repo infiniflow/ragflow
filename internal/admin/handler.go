@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
@@ -113,13 +113,13 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -682,7 +682,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -740,7 +741,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig(c.Request.Context())
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
 		writeSandboxError(c, err)
 		return
@@ -1145,7 +1146,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",
@@ -1175,8 +1176,8 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	errCode, message := h.service.HandleHeartbeat(&req)
-	common.ErrorWithCode(c, errCode, message)
+	errCode, data, message := h.service.HandleHeartbeat(&req)
+	common.ResponseWithCodeData(c, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1250,7 +1251,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
@@ -1274,4 +1275,13 @@ func (h *Handler) PingEngine(c *gin.Context) {
 	}
 
 	common.SuccessNoMessage(c, "SUCCESS")
+}
+
+func (h *Handler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }

@@ -1,16 +1,19 @@
 package layout
 
 import (
-	"log/slog"
 	"math"
-	pdf "ragflow/internal/deepdoc/parser/pdf/type"
-	util "ragflow/internal/deepdoc/parser/pdf/util"
 	"regexp"
 	"slices"
 	"sort"
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
+	pdf "ragflow/internal/deepdoc/parser/pdf/type"
+	util "ragflow/internal/deepdoc/parser/pdf/util"
 )
 
 // ---- Column assignment ----
@@ -142,17 +145,38 @@ func DedupIdenticalText(boxes []pdf.TextBox) []pdf.TextBox {
 // RAG分词, 三国人物). Geometry (boxInsideTolerant) remains the actual
 // containment proof; whitespace normalization only makes the fragment check
 // robust to the char-vs-OCR space divergence.
+// dedupBucket groups box indices by (page, column) so the substring-overlap scan
+// only walks boxes that can actually be OCR double-detection fragments of one
+// another. The original O(n²) loop skipped every pair whose PageNumber or ColID
+// differed, so restricting each i to its own bucket is exactly equivalent while
+// cutting the inner-loop count from n² to Σ_bucket size²: OCR fragments always
+// share their container's page and column (see the ColID guard below), so no
+// valid comparison pair is lost.
+func dedupBucket(boxes []pdf.TextBox) map[[2]int][]int {
+	byPageCol := make(map[[2]int][]int, len(boxes))
+	for i, b := range boxes {
+		key := [2]int{b.PageNumber, b.ColID}
+		byPageCol[key] = append(byPageCol[key], i)
+	}
+	return byPageCol
+}
+
 func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 	drop := make([]bool, len(boxes))
-	// Precompute the whitespace-normalized text once per box. The inner loop
-	// compares every OCR pair, so recomputing norm there would make the O(n²)
-	// loop O(n²·len) in the worst case (a large scan document hits ~3k boxes).
+	// Precompute the whitespace-normalized text once per box. The pair scan
+	// still touches many OCR boxes, so recomputing norm per comparison would
+	// make the worst case O(bucketSize²·len).
 	norm := make([]string, len(boxes))
 	for i, b := range boxes {
 		if b.IsOCR {
 			norm[i] = dedupNormText(strings.TrimSpace(b.Text))
 		}
 	}
+	// Index boxes by (page, column) so each i only compares against same-page,
+	// same-column boxes instead of the whole slice — equivalent to the original
+	// per-pair PageNumber/ColID guards, but O(n) to build and Σ_bucket size² to
+	// scan.
+	byPageCol := dedupBucket(boxes)
 	for i := range boxes {
 		if drop[i] {
 			continue
@@ -166,15 +190,19 @@ func DedupSubstringOverlaps(boxes []pdf.TextBox) []pdf.TextBox {
 		if ai == "" {
 			continue
 		}
-		for j := range boxes {
-			if i == j || drop[j] || boxes[i].PageNumber != boxes[j].PageNumber || !boxes[j].IsOCR {
+		ni := norm[i]
+		// Candidates are the boxes sharing i's (page, column). The bucket keeps
+		// the original slice order, so the early `break` (i is a substring of a
+		// larger box) fires at the same point as in the unindexed loop.
+		for _, j := range byPageCol[[2]int{boxes[i].PageNumber, boxes[i].ColID}] {
+			if i == j || drop[j] || !boxes[j].IsOCR {
 				continue
 			}
 			aj := strings.TrimSpace(boxes[j].Text)
 			if aj == "" || ai == aj {
 				continue
 			}
-			ni, nj := norm[i], norm[j]
+			nj := norm[j]
 			// Never collapse a substring across columns. OCR double-detection
 			// fragments always share the SAME column as their container; a
 			// substring in a DIFFERENT column (e.g. the opposite column of a
@@ -472,7 +500,7 @@ func NaiveVerticalMerge(boxes []pdf.TextBox, medianHeights map[int]float64, medi
 		processed := processPageBoxes(bxs, mh, mw, pageEnglish[pg])
 		result = append(result, processed...)
 	}
-	slog.Debug("vm result", "in", len(boxes), "out", len(result))
+	common.Debug("vm result", zap.Int("in", len(boxes)), zap.Int("out", len(result)))
 	return result
 }
 
@@ -528,21 +556,24 @@ func groupBoxesByPage(boxes []pdf.TextBox) (map[int][]int, []int) {
 func shouldMergeBoxes(prev, curr *pdf.TextBox, mh, mw float64, isEnglish bool) bool {
 	// Check layout number
 	if prev.LayoutNo != curr.LayoutNo {
-		slog.Debug("vm reject", "reason", "layoutNo", "prevLayout", prev.LayoutNo, "currLayout", curr.LayoutNo)
+		common.Debug("vm reject", zap.String("reason", "layoutNo"),
+			zap.String("prevLayout", prev.LayoutNo), zap.String("currLayout", curr.LayoutNo))
 		return false
 	}
 
 	// Check vertical gap
 	gap := curr.Top - prev.Bottom
 	if gap > mh*1.5 {
-		slog.Debug("vm reject", "reason", "gap", "gap", gap, "threshold", mh*1.5, "mh", mh)
+		common.Debug("vm reject", zap.String("reason", "gap"),
+			zap.Float64("gap", gap), zap.Float64("threshold", mh*1.5), zap.Float64("mh", mh))
 		return false
 	}
 
 	// Check horizontal overlap
 	ov := util.OverlapX(prev, curr)
 	if ov < 0.3 {
-		slog.Debug("vm reject", "reason", "ovX", "ov", ov, "threshold", 0.3)
+		common.Debug("vm reject", zap.String("reason", "ovX"),
+			zap.Float64("ov", ov), zap.Float64("threshold", 0.3))
 		return false
 	}
 
@@ -586,7 +617,7 @@ func mergeTwoBoxes(prev, curr pdf.TextBox) pdf.TextBox {
 	if r := []rune(currTrunc); len(r) > 40 {
 		currTrunc = string(r[:40])
 	}
-	slog.Debug("vm merge", "prev", prevTrunc, "curr", currTrunc)
+	common.Debug("vm merge", zap.String("prev", prevTrunc), zap.String("curr", currTrunc))
 
 	return prev
 }

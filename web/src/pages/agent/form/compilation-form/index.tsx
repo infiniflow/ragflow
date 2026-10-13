@@ -1,7 +1,15 @@
 import { CompilationTemplateFormField } from '@/components/compilation-template-form-field';
-import { LargeModelFormField } from '@/components/large-model-form-field';
+import {
+  LlmSettingFieldItems,
+  LlmSettingSchema,
+} from '@/components/llm-setting-items/next';
 import { useSyncExternalFormErrors } from '@/components/pipeline-operator-tabs/use-sync-external-form-errors';
 import { Form } from '@/components/ui/form';
+import {
+  useRevalidateUnavailableValue,
+  useUnavailableCompilationTemplateGroupFormSchema,
+  useUnavailableModelFormSchema,
+} from '@/hooks/use-unavailable-value-validation';
 import { zodResolver } from '@hookform/resolvers/zod';
 import type { TFunction } from 'i18next';
 import { memo } from 'react';
@@ -23,7 +31,7 @@ export function buildCompilationFormSchema(t: TFunction) {
     compilation_template_group_id: z
       .string()
       .min(1, t('knowledgeConfiguration.compilationTemplateRequired')),
-    llm_id: z.string().optional(),
+    ...LlmSettingSchema,
   });
 }
 
@@ -47,10 +55,18 @@ const CompilationForm = ({
   const defaultValues = useFormValues(initialCompilationValues, node);
   const ownerTenantId = useOwnerTenantId();
   const FormSchema = useFormSchema();
+  const { formSchema: groupFormSchema, templateGroupsFetched } =
+    useUnavailableCompilationTemplateGroupFormSchema(FormSchema, {
+      ownerTenantId,
+    });
+  const { formSchema, modelsFetched } = useUnavailableModelFormSchema(
+    groupFormSchema,
+    { ownerTenantId },
+  );
 
   const form = useForm<CompilationFormSchemaType>({
     defaultValues,
-    resolver: zodResolver(FormSchema),
+    resolver: zodResolver(formSchema),
     mode: 'onChange',
   });
 
@@ -59,14 +75,25 @@ const CompilationForm = ({
   useWatchFormChange(node?.id, form);
   useFormChangeCallback(form, onValuesChange);
 
+  // Persisted model/group references from an imported dsl.json do not exist
+  // under the importer's tenant — surface the errors once the lists load.
+  useRevalidateUnavailableValue(
+    form,
+    templateGroupsFetched,
+    'compilation_template_group_id',
+  );
+  useRevalidateUnavailableValue(form, modelsFetched, 'llm_id');
+
   return (
     <Form {...form}>
       <FormWrapper>
-        <CompilationTemplateFormField name="compilation_template_group_id"></CompilationTemplateFormField>
-        <LargeModelFormField
-          name="llm_id"
+        <CompilationTemplateFormField
+          name="compilation_template_group_id"
           ownerTenantId={ownerTenantId}
-        ></LargeModelFormField>
+        ></CompilationTemplateFormField>
+        <LlmSettingFieldItems
+          ownerTenantId={ownerTenantId}
+        ></LlmSettingFieldItems>
       </FormWrapper>
       {!hideOutputs && (
         <div className="p-5">

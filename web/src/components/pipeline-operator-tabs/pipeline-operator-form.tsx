@@ -25,6 +25,7 @@ import TokenizerForm from '@/pages/agent/form/tokenizer-form';
 import { getOperatorType } from '@/utils/pipeline-operator';
 import { memo, useCallback } from 'react';
 import { FieldErrors } from 'react-hook-form';
+import { useTranslation } from 'react-i18next';
 
 type PipelineOperatorFormProps = {
   node: RAGFlowNodeType;
@@ -35,12 +36,20 @@ type PipelineOperatorFormProps = {
   fixedFileFormats?: boolean;
 };
 
+// Derive the built-in parser name from the chunker node name, e.g.
+// "Table Chunker" -> "Table".
+function getBuiltinParserName(node: RAGFlowNodeType): string {
+  return String(node.data?.name ?? '').replace(/\s*Chunker$/, '');
+}
+
 const PipelineOperatorForm = ({
   node,
   onValuesChange,
   externalErrors,
   fixedFileFormats,
 }: PipelineOperatorFormProps) => {
+  const { t } = useTranslation();
+
   const operatorType = getOperatorType(
     (node.data as Record<string, any>)?.operatorId || node.data?.label || '',
   );
@@ -91,6 +100,18 @@ const PipelineOperatorForm = ({
           externalErrors={externalErrors}
         />
       );
+    case Operator.ManualChunker:
+      // The backend pins ManualChunker to the title chunker's "group" method
+      // (manual.go) and ignores its token cap, so expose only the rules.
+      return (
+        <TitleChunkerForm
+          node={node}
+          onValuesChange={handleValuesChange}
+          hideOutputs
+          externalErrors={externalErrors}
+          pinMethodGroup
+        />
+      );
     case Operator.Extractor:
       return (
         <ExtractorForm
@@ -117,6 +138,19 @@ const PipelineOperatorForm = ({
           hideOutputs
           externalErrors={externalErrors}
         />
+      );
+    case Operator.TableChunker:
+    case Operator.QAChunker:
+    case Operator.OneChunker:
+    case Operator.PageChunker:
+      // These chunkers have no configurable parameters — the built-in parser
+      // handles chunking internally.
+      return (
+        <div className="p-4 text-sm text-text-secondary">
+          {t('knowledgeConfiguration.noConfigChunkerHint', {
+            name: getBuiltinParserName(node),
+          })}
+        </div>
       );
     default:
       return null;

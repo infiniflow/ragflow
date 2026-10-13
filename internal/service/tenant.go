@@ -23,37 +23,34 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 )
 
 // TenantService tenant service
 type TenantService struct {
-	tenantDAO            *dao.TenantDAO
-	userTenantDAO        *dao.UserTenantDAO
-	userDAO              *dao.UserDAO
-	modelProviderDAO     *dao.TenantModelProviderDAO
-	modelInstanceDAO     *dao.TenantModelInstanceDAO
-	modelDAO             *dao.TenantModelDAO
-	modelGroupDAO        *dao.TenantModelGroupDAO
-	modelGroupMappingDAO *dao.TenantModelGroupMappingDAO
-	kbDAO                *dao.KnowledgebaseDAO
-	docEngine            engine.DocEngine
+	tenantDAO        *dao.TenantDAO
+	userTenantDAO    *dao.UserTenantDAO
+	userDAO          *dao.UserDAO
+	modelProviderDAO *dao.TenantModelProviderDAO
+	modelInstanceDAO *dao.TenantModelInstanceDAO
+	modelDAO         *dao.TenantModelDAO
+	kbDAO            *dao.KnowledgebaseDAO
+	docEngine        engine.DocEngine
 }
 
 // NewTenantService create tenant service
 func NewTenantService() *TenantService {
 	return &TenantService{
-		tenantDAO:            dao.NewTenantDAO(),
-		userTenantDAO:        dao.NewUserTenantDAO(),
-		userDAO:              dao.NewUserDAO(),
-		modelProviderDAO:     dao.NewTenantModelProviderDAO(),
-		modelInstanceDAO:     dao.NewTenantModelInstanceDAO(),
-		modelDAO:             dao.NewTenantModelDAO(),
-		modelGroupDAO:        dao.NewTenantModelGroupDAO(),
-		modelGroupMappingDAO: dao.NewTenantModelGroupMappingDAO(),
-		kbDAO:                dao.NewKnowledgebaseDAO(),
-		docEngine:            engine.Get(),
+		tenantDAO:        dao.NewTenantDAO(),
+		userTenantDAO:    dao.NewUserTenantDAO(),
+		userDAO:          dao.NewUserDAO(),
+		modelProviderDAO: dao.NewTenantModelProviderDAO(),
+		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
+		modelDAO:         dao.NewTenantModelDAO(),
+		kbDAO:            dao.NewKnowledgebaseDAO(),
+		docEngine:        engine.Get(),
 	}
 }
 
@@ -110,7 +107,6 @@ type TenantListItem struct {
 // TenantLLMService tenant LLM service
 // This service handles operations related to tenant-specific LLM configurations
 type TenantLLMService struct {
-	tenantLLMDAO     *dao.TenantLLMDAO
 	modelProviderDAO *dao.TenantModelProviderDAO
 	modelInstanceDAO *dao.TenantModelInstanceDAO
 	modelDAO         *dao.TenantModelDAO
@@ -119,68 +115,10 @@ type TenantLLMService struct {
 // NewTenantLLMService creates a new TenantLLMService instance
 func NewTenantLLMService() *TenantLLMService {
 	return &TenantLLMService{
-		tenantLLMDAO:     dao.NewTenantLLMDAO(),
 		modelProviderDAO: dao.NewTenantModelProviderDAO(),
 		modelInstanceDAO: dao.NewTenantModelInstanceDAO(),
 		modelDAO:         dao.NewTenantModelDAO(),
 	}
-}
-
-// GetAPIKey retrieves the tenant LLM record by tenant ID and model name
-/**
- * This method splits the model name into name and factory parts using the "@" separator,
- * then queries the database for the matching tenant LLM configuration.
- *
- * Parameters:
- *   - tenantID: the unique identifier of the tenant
- *   - modelName: the model name, optionally including factory suffix (e.g., "gpt-4@OpenAI")
- *
- * Returns:
- *   - *model.TenantLLM: the tenant LLM record if found, nil otherwise
- *   - error: an error if the query fails, nil otherwise
- *
- * Example:
- *
- *	service := NewTenantLLMService()
- *
- *	// Get API key for model with factory
- *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4@OpenAI")
- *	if err != nil {
- *	    log.Printf("Error: %v", err)
- *	}
- *
- *	// Get API key for model without factory
- *	tenantLLM, err := service.GetAPIKey("tenant-123", "gpt-4")
- */
-func (s *TenantLLMService) GetAPIKey(ctx context.Context, tenantID, modelName string) (*entity.TenantLLM, error) {
-	modelName, factory := s.SplitModelNameAndFactory(modelName)
-
-	var tenantLLM *entity.TenantLLM
-	var err error
-
-	if factory == "" {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDAndLLMName(ctx, dao.DB, tenantID, modelName)
-	} else {
-		tenantLLM, err = s.tenantLLMDAO.GetByTenantIDLLMNameAndFactory(ctx, dao.DB, tenantID, modelName, factory)
-	}
-
-	if err != nil {
-		return nil, err
-	}
-
-	return tenantLLM, nil
-}
-
-// SplitModelNameAndFactory splits a model name into name and factory parts
-func (s *TenantLLMService) SplitModelNameAndFactory(modelName string) (string, string) {
-	arr := strings.Split(modelName, "@")
-	if len(arr) < 2 {
-		return modelName, ""
-	}
-	if len(arr) > 2 {
-		return strings.Join(arr[0:len(arr)-1], "@"), arr[len(arr)-1]
-	}
-	return arr[0], arr[1]
 }
 
 // GetAPIKeyFromInstance returns the API key for the given composite model name
@@ -224,66 +162,6 @@ func (s *TenantLLMService) GetAPIKeyFromInstance(ctx context.Context, tenantID, 
 		return "", fmt.Errorf("no API key configured for model %s", compositeModelName)
 	}
 	return instance.APIKey, nil
-}
-
-// EnsureTenantModelIDForParams ensures tenant model IDs are populated for LLM-related parameters
-/**
- * This method iterates through a predefined list of LLM-related parameter keys (llm_id, embd_id,
- * asr_id, img2txt_id, rerank_id, tts_id) and automatically populates the corresponding tenant_*
- * fields (tenant_llm_id, tenant_embd_id, etc.) with the tenant LLM record IDs.
- *
- * If a parameter key exists and its corresponding tenant_* key doesn't exist, this method will:
- *  1. Query the tenant LLM record using GetAPIKey
- *  2. If found, set the tenant_* key to the record's ID
- *  3. If not found, set the tenant_* key to 0
- *
- * Parameters:
- *   - tenantID: the unique identifier of the tenant
- *   - params: a map of parameters to be updated (will be modified in place)
- *
- * Returns:
- *   - map[string]interface{}: the updated parameters map (same as input, modified in place)
- *
- * Example:
- *
- *	service := NewTenantLLMService()
- *	params := map[string]interface{}{
- *	    "llm_id": "gpt-4@OpenAI",
- *	    "embd_id": "text-embedding-3-small@OpenAI",
- *	}
- *	result := service.EnsureTenantModelIDForParams("tenant-123", params)
- *	// result will contain:
- *	// {
- *	//     "llm_id": "gpt-4@OpenAI",
- *	//     "embd_id": "text-embedding-3-small@OpenAI",
- *	//     "tenant_llm_id": 123,    // ID from tenant_llm table
- *	//     "tenant_embd_id": 456,   // ID from tenant_llm table
- *	// }
- */
-func (s *TenantLLMService) EnsureTenantModelIDForParams(ctx context.Context, tenantID string, params map[string]interface{}) map[string]interface{} {
-	paramKeys := []string{"llm_id", "embd_id", "asr_id", "img2txt_id", "rerank_id", "tts_id"}
-
-	for _, key := range paramKeys {
-		tenantKey := "tenant_" + key
-
-		if value, exists := params[key]; exists && value != nil && value != "" {
-			if _, tenantExists := params[tenantKey]; !tenantExists {
-				modelName, ok := value.(string)
-				if !ok || modelName == "" {
-					continue
-				}
-
-				tenantLLM, err := s.GetAPIKey(ctx, tenantID, modelName)
-				if err == nil && tenantLLM != nil {
-					params[tenantKey] = tenantLLM.ID
-				} else {
-					params[tenantKey] = int64(0)
-				}
-			}
-		}
-	}
-
-	return params
 }
 
 // GetTenantList get tenant list for a user
@@ -847,10 +725,10 @@ type TenantMemberResponse struct {
 }
 
 // ListMembers returns all non-owner members of tenantID.
-// Only the tenant owner (userID == tenantID) may call this.
 func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
-	if userID != tenantID {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
@@ -892,10 +770,10 @@ type AddMemberResponse struct {
 }
 
 // AddMember invites a user (by email) to the tenant.
-// Only the tenant owner (userID == tenantID) may call this.
 func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
-	if userID != tenantID {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
@@ -929,7 +807,7 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 
 	status := string(entity.StatusValid)
 	ut := &entity.UserTenant{
-		ID:        utility.GenerateUUID(),
+		ID:        common.GenerateUUID(),
 		UserID:    invitee.ID,
 		TenantID:  tenantID,
 		Role:      TenantRoleInvite,
@@ -952,18 +830,40 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 	}, common.CodeSuccess, nil
 }
 
-// RemoveMember removes a user from the tenant.
-// Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
-// The tenant owner (targetUserID == tenantID) cannot be removed.
+// RemoveMember removes a user from the tenant. The owner may remove members,
+// and a member may remove themselves. An invitee may decline their own pending
+// invitation. The tenant owner cannot be removed.
 func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
-	if userID != tenantID && userID != targetUserID {
-		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
-	}
-	if targetUserID == tenantID {
-		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
-	}
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
+	}
+	if userID != "" && userID == targetUserID {
+		removed, err := s.userTenantDAO.DeleteByUserAndTenantAndRole(ctx, dao.DB, userID, tenantID, TenantRoleInvite)
+		if err != nil {
+			return common.CodeServerError, fmt.Errorf("failed to decline tenant invitation: %w", err)
+		}
+		if removed {
+			return common.CodeSuccess, nil
+		}
+	}
+
+	requirement := permission.TenantOwner
+	if userID == targetUserID {
+		requirement = permission.TenantMember
+	}
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return code, permissionErr
+	}
+	targetMembership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, targetUserID, tenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, fmt.Errorf("user is not a tenant member")
+		}
+		return common.CodeServerError, fmt.Errorf("failed to load tenant member: %w", err)
+	}
+	if targetMembership.Role == TenantRoleOwner {
+		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
 	}
 	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)

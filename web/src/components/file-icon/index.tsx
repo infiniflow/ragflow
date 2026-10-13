@@ -26,15 +26,16 @@ import styles from './index.module.less';
 interface IProps {
   name: string;
   id: string;
+  width?: number;
 }
 
-const FileIcon = ({ name, id }: IProps) => {
+const FileIcon = ({ name, id, width = 24 }: IProps) => {
   const fileExtension = getExtension(name);
 
   const { data: fileThumbnails, setDocumentIds } =
     useFetchDocumentThumbnailsByIds();
   const fileThumbnail = fileThumbnails[id];
-  const blobUrl = useAuthenticatedImageUrl(fileThumbnail);
+  const { src: blobUrl } = useAuthenticatedImageUrl(fileThumbnail);
 
   useEffect(() => {
     if (id) {
@@ -47,9 +48,9 @@ const FileIcon = ({ name, id }: IProps) => {
   return blobUrl ? (
     <img src={blobUrl} className={styles.thumbnailImg}></img>
   ) : hasSvgIcon(iconName) ? (
-    <SvgIcon name={iconName} width={24}></SvgIcon>
+    <SvgIcon name={iconName} width={width}></SvgIcon>
   ) : (
-    <LucideFile size={24}></LucideFile>
+    <LucideFile size={width}></LucideFile>
   );
 };
 

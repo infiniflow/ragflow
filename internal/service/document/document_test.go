@@ -73,6 +73,7 @@ func (r *recordingTaskPublisher) PublishTaskMessage(subject string, msg common.T
 type fakeUploadStorage struct {
 	objects  map[string][]byte
 	afterPut func()
+	getCalls int
 }
 
 func newFakeUploadStorage() *fakeUploadStorage {
@@ -90,11 +91,23 @@ func (f *fakeUploadStorage) Put(ctx context.Context, bucket, fnm string, binary 
 	return nil
 }
 func (f *fakeUploadStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...string) ([]byte, error) {
+	f.getCalls++
 	v, ok := f.objects[f.key(bucket, fnm)]
 	if !ok {
 		return nil, errors.New("not found")
 	}
 	return append([]byte(nil), v...), nil
+}
+
+type imageOwnershipEngine struct {
+	fakeChatDocEngine
+	result  *types.SearchResult
+	request *types.SearchRequest
+}
+
+func (e *imageOwnershipEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.request = req
+	return e.result, nil
 }
 func (f *fakeUploadStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ...string) error {
 	delete(f.objects, f.key(bucket, fnm))
@@ -110,8 +123,15 @@ func (f *fakeUploadStorage) ListObjects(ctx context.Context, bucket string, tena
 func (f *fakeUploadStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, expires time.Duration, tenantID ...string) (string, error) {
 	return "", nil
 }
-func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool  { return true }
-func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) BucketExists(ctx context.Context, bucket string) bool       { return true }
+func (f *fakeUploadStorage) RemoveBucket(ctx context.Context, bucket string) error      { return nil }
+func (f *fakeUploadStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error { return nil }
+func (f *fakeUploadStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	return f.ObjExist(ctx, bucket, fnm), nil
+}
+func (f *fakeUploadStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	return true, nil
+}
 func (f *fakeUploadStorage) Copy(ctx context.Context, srcBucket, srcPath, destBucket, destPath string) bool {
 	v, ok := f.objects[f.key(srcBucket, srcPath)]
 	if !ok {
@@ -235,17 +255,52 @@ type rerunDeleteDocEngine struct {
 	condition   map[string]interface{}
 	indexName   string
 	datasetID   string
+	search      *types.SearchRequest
+}
+
+type failingDeleteDocEngine struct {
+	fakeChatDocEngine
+	err error
+}
+
+type generatedCleanupDocEngine struct {
+	fakeChatDocEngine
+	deleteCalls      int
+	generatedDeleted bool
+	generatedCond    map[string]interface{}
+}
+
+func (e *generatedCleanupDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
+	return true, nil
+}
+
+func (e *generatedCleanupDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	if req.Offset > 0 {
+		return &types.SearchResult{Chunks: nil, Total: 1}, nil
+	}
+	return &types.SearchResult{Chunks: []map[string]interface{}{{"id": "source-1", "img_id": "kb-1-image-001"}}, Total: 1}, nil
+}
+
+func (e *generatedCleanupDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, _, _ string) (int64, error) {
+	e.deleteCalls++
+	if available, ok := condition["available_int"].(int); ok && available == 0 {
+		e.generatedDeleted = true
+		e.generatedCond = condition
+	}
+	return 1, nil
 }
 
 func (e *rerunDeleteDocEngine) ChunkStoreExists(context.Context, string, string) (bool, error) {
 	return true, nil
 }
 
-func (e *rerunDeleteDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *rerunDeleteDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "parent-1", "available_int": 0},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
-	}, Total: 2}, nil
+	}, Total: 3}, nil
 }
 
 func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[string]interface{}, indexName string, datasetID string) (int64, error) {
@@ -256,21 +311,34 @@ func (e *rerunDeleteDocEngine) DeleteChunks(_ context.Context, condition map[str
 	return 3, nil
 }
 
+func (e *failingDeleteDocEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
+	return 0, e.err
+}
+
 type sourceAvailabilityDocEngine struct {
 	fakeChatDocEngine
 	updateConditions []map[string]interface{}
+	search           *types.SearchRequest
+	updateValues     []map[string]interface{}
 }
 
-func (e *sourceAvailabilityDocEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
+func (e *sourceAvailabilityDocEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.search = req
 	return &types.SearchResult{Chunks: []map[string]interface{}{
 		{"id": "source-1"},
+		{"id": "tree-1", "compile_kwd": "tree"},
+		// structure stamps its inferred kind verbatim; both are final products.
+		{"id": "struct-1", "compile_kwd": "hypergraph"},
+		{"id": "pageindex-1", "compile_kwd": "page_index"},
 		{"id": "wiki-1", "compile_kwd": "wiki_page"},
 		{"id": "map-1", "compile_kwd": []interface{}{"wiki_map_active"}},
-	}, Total: 3}, nil
+		{"id": "nav-1", "compile_kwd": "dataset_nav"},
+	}, Total: 7}, nil
 }
 
-func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, _ map[string]interface{}, _, _ string) error {
+func (e *sourceAvailabilityDocEngine) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, _, _ string) error {
 	e.updateConditions = append(e.updateConditions, condition)
+	e.updateValues = append(e.updateValues, newValue)
 	return nil
 }
 
@@ -467,6 +535,7 @@ func setupServiceTestDBWithDSN(t *testing.T, dsn string) *gorm.DB {
 		&entity.User{},
 		&entity.Tenant{},
 		&entity.UserTenant{},
+		&entity.UserCanvas{},
 		&entity.API4Conversation{},
 	); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
@@ -495,7 +564,6 @@ func testDocumentService(t *testing.T) *DocumentService {
 		file2DocumentDAO: dao.NewFile2DocumentDAO(),
 		fileDAO:          dao.NewFileDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
-		pipelineLogDAO:   dao.NewPipelineOperationLogDAO(),
 		ingestionTaskSvc: service.NewIngestionTaskService(),
 		docEngine:        nil,
 		metadataSvc:      nil, // nil engine → metadata ops skipped
@@ -533,6 +601,7 @@ func sptr(s string) *string { return &s }
 
 func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum int64) {
 	t.Helper()
+	ensureTestTenantOwner(t, "user-1", tenantID)
 	kb := &entity.Knowledgebase{
 		ID:         id,
 		TenantID:   tenantID,
@@ -547,6 +616,41 @@ func insertTestKB(t *testing.T, id, tenantID string, docNum, tokenNum, chunkNum 
 	}
 	if err := dao.DB.Create(kb).Error; err != nil {
 		t.Fatalf("insert test kb: %v", err)
+	}
+}
+
+func ensureTestTenantOwner(t *testing.T, userID, tenantID string) {
+	t.Helper()
+	var owner entity.UserTenant
+	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", string(entity.StatusValid)).First(&owner).Error
+	if err == nil {
+		return
+	}
+	if !dao.IsNotFoundErr(err) {
+		t.Fatalf("find test tenant owner: %v", err)
+	}
+	status := string(entity.StatusValid)
+	owner = entity.UserTenant{
+		ID:        userID + "_" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &status,
+	}
+	if err := dao.DB.Create(&owner).Error; err != nil {
+		t.Fatalf("insert test tenant owner: %v", err)
+	}
+}
+
+func insertTestCanvas(t *testing.T, canvasID, ownerID string) {
+	t.Helper()
+	if err := dao.DB.Create(&entity.UserCanvas{
+		ID:         canvasID,
+		UserID:     ownerID,
+		Permission: string(entity.TenantPermissionMe),
+	}).Error; err != nil {
+		t.Fatalf("insert test canvas: %v", err)
 	}
 }
 
@@ -683,6 +787,72 @@ func TestDeleteDocumentFull_Basic(t *testing.T) {
 	}
 }
 
+func TestDeleteDocumentFullPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("deleteDocumentFull error = %v, want purge error", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
+func TestDeleteDocumentFullKeepsDocumentWhenChunkDeletionFails(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	deleteErr := errors.New("chunk store unavailable")
+	svc := testDocumentService(t)
+	svc.docEngine = &failingDeleteDocEngine{err: deleteErr}
+
+	if err := svc.deleteDocumentFull(t.Context(), "doc-1"); !errors.Is(err, deleteErr) {
+		t.Fatalf("deleteDocumentFull error = %v, want chunk deletion error", err)
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted after chunk deletion failure: %v", err)
+	}
+}
+
+func TestRemoveDocumentKeepFilePurgesTaskStateBeforeDeletingDocument(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("RemoveDocumentKeepFile error = %v, want purge error", err)
+	}
+	if task, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	} else if task == nil {
+		t.Fatal("ingestion task was deleted despite resumable state cleanup failure")
+	}
+	if _, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document was deleted despite resumable state cleanup failure: %v", err)
+	}
+}
+
 func TestDeleteDocumentFull_NotFound(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -704,8 +874,16 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
 	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
 	loc := "path/to/blob"
-	insertTestFile(t, "file-1", "kb-1", "test.pdf", &loc)
+	insertTestFile(t, "file-1", "dataset-folder-1", "test.pdf", &loc)
 	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+	store := newFakeUploadStorage()
+	if err := store.Put(t.Context(), "kb-1", loc, []byte("document")); err != nil {
+		t.Fatalf("store document blob: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(store)
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
@@ -726,6 +904,9 @@ func TestDeleteDocumentFull_CleansUpFile2Document(t *testing.T) {
 	files, _ := dao.NewFileDAO().GetByIDs(ctx, db, []string{"file-1"})
 	if len(files) != 0 {
 		t.Fatalf("expected 0 files, got %d", len(files))
+	}
+	if store.ObjExist(ctx, "kb-1", loc) {
+		t.Fatal("document blob should be deleted")
 	}
 }
 
@@ -827,6 +1008,55 @@ func TestSyncDocumentUpsertRemovesStagedBlobWhenInsertFails(t *testing.T) {
 		if strings.Contains(key, "/.staged/") {
 			t.Fatalf("expected staged object cleanup, found %s", key)
 		}
+	}
+}
+
+func TestSyncDocumentUpsertWithNilDatasetParserConfig(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+
+	kb := entity.Knowledgebase{
+		ID: "kb-sync-nil-config", TenantID: "tenant-1", Name: "Sync KB", ParserID: "naive",
+	}
+	if err := db.Create(&kb).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	if err := db.First(&kb, "id = ?", kb.ID).Error; err != nil {
+		t.Fatalf("load dataset: %v", err)
+	}
+	if kb.ParserConfig != nil {
+		t.Fatalf("dataset parser_config = %#v, want nil", kb.ParserConfig)
+	}
+
+	factory := storage.GetStorageFactory()
+	originalStorage := factory.GetStorage()
+	factory.SetStorage(newFakeUploadStorage())
+	t.Cleanup(func() { factory.SetStorage(originalStorage) })
+
+	result, err := testDocumentService(t).Upsert(ctx, service.DocumentUpsertInput{
+		TaskContext: service.SyncTaskContext{
+			Connector:     entity.Connector{TenantID: "tenant-1"},
+			Knowledgebase: kb,
+		},
+		SourceType: "github",
+		DocumentID: "doc-sync-nil-config",
+		SourceDocument: syncerconnector.SourceDocument{
+			SourceID: "source-1", SemanticIdentifier: "source", Extension: ".txt", Blob: []byte("content"),
+		},
+	})
+	if err != nil {
+		t.Fatalf("sync document: %v", err)
+	}
+	if result.Action != service.DocumentActionAdded {
+		t.Fatalf("sync action = %q, want added", result.Action)
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", result.DocID).Error; err != nil {
+		t.Fatalf("load synced document: %v", err)
+	}
+	if doc.ParserConfig == nil || len(doc.ParserConfig) != 0 {
+		t.Fatalf("document parser_config = %#v, want empty object", doc.ParserConfig)
 	}
 }
 
@@ -1058,7 +1288,7 @@ func insertUserTenantForAccessCheck(t *testing.T, userID, tenantID string) {
 			ID:       userID + "_" + tenantID,
 			UserID:   userID,
 			TenantID: tenantID,
-			Role:     "admin",
+			Role:     "owner",
 		}
 		if err = dao.DB.Create(ut).Error; err != nil {
 			t.Fatalf("insert test user_tenant: %v", err)
@@ -1353,6 +1583,57 @@ func TestStartParseDocumentsSerializesConcurrentReruns(t *testing.T) {
 	}
 	if secondPublishedBeforeFirstCompletes {
 		t.Fatal("second reparse published a task before the first reparse completed cleanup")
+	}
+}
+
+func TestStartParseDocumentsSupersedesQueuedRun(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 10, 5)
+	insertTestDoc(t, "doc-1", "kb-1", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set document location: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(&recordingTaskPublisher{})
+	ctx := t.Context()
+	kb, err := svc.kbDAO.GetByID(ctx, db, "kb-1")
+	if err != nil {
+		t.Fatalf("load knowledgebase: %v", err)
+	}
+	doc, err := svc.documentDAO.GetByID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{}); err != nil {
+		t.Fatalf("start first parse: %v", err)
+	}
+	if err = svc.StartParseDocuments(ctx, doc, kb, "user-1", StartParseOptions{RerunWithDelete: true}); err != nil {
+		t.Fatalf("rerun queued parse: %v", err)
+	}
+
+	var logs []entity.PipelineOperationLog
+	if err = db.Where("document_id = ?", "doc-1").Order("run_count ASC").Find(&logs).Error; err != nil {
+		t.Fatalf("list pipeline logs: %v", err)
+	}
+	if len(logs) != 2 {
+		t.Fatalf("pipeline logs = %d, want 2", len(logs))
+	}
+	if logs[0].RunCount == nil || *logs[0].RunCount != 1 || logs[0].OperationStatus != string(entity.TaskStatusCancel) {
+		t.Fatalf("first run = %+v, want cancelled run 1", logs[0])
+	}
+	if logs[1].RunCount == nil || *logs[1].RunCount != 2 || logs[1].OperationStatus != string(entity.TaskStatusSchedule) {
+		t.Fatalf("second run = %+v, want scheduled run 2", logs[1])
+	}
+
+	var terminal entity.IngestionTaskLog
+	if err = db.Where("pipeline_log_id = ? AND event_type = ?", logs[0].ID, dao.EventTypeTerminal).First(&terminal).Error; err != nil {
+		t.Fatalf("load superseded terminal event: %v", err)
+	}
+	if terminal.Message != "Task superseded by a new parse request." {
+		t.Fatalf("terminal message = %q", terminal.Message)
 	}
 }
 
@@ -1707,7 +1988,7 @@ func TestCleanupFileReferences_NoMappings(t *testing.T) {
 	svc := testDocumentService(t)
 	// Should not panic with no f2d mappings
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "no-mappings")
+	svc.cleanupFileReferences(ctx, "no-mappings", "kb-1")
 }
 
 func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
@@ -1720,7 +2001,7 @@ func TestCleanupFileReferences_SingleFileDeleted(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -1745,7 +2026,7 @@ func TestCleanupFileReferences_SharedFileSurvives(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	svc.cleanupFileReferences(ctx, "doc-1")
+	svc.cleanupFileReferences(ctx, "doc-1", "kb-1")
 
 	// f2d for doc-1 gone
 	mappings, _ := dao.NewFile2DocumentDAO().GetByDocumentID(ctx, db, "doc-1")
@@ -1804,7 +2085,7 @@ func TestGetDocumentPreview_DocumentNotFound(t *testing.T) {
 	svc := testDocumentService(t)
 
 	ctx := t.Context()
-	_, err := svc.GetDocumentPreview(ctx, "tenant-1", "nonexistent")
+	_, err := svc.GetDocumentPreview(ctx, "user-1", "nonexistent")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Errorf("expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -1854,7 +2135,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	ctx := t.Context()
 
 	// Dataset owner reads the original file.
-	p, err := svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev")
+	p, err := svc.GetDocumentPreview(ctx, "user-1", "doc-prev")
 	if err != nil {
 		t.Fatalf("owner preview: %v", err)
 	}
@@ -1874,7 +2155,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	}
 
 	// An unrelated user gets the same answer as for a missing document.
-	_, err = svc.GetDocumentPreview(ctx, "tenant-2", "doc-prev")
+	_, err = svc.GetDocumentPreview(ctx, "user-3", "doc-prev")
 	if !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("stranger preview: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
@@ -1893,7 +2174,7 @@ func TestGetDocumentPreview_AccessControl(t *testing.T) {
 	if _, err = svc.GetDocumentPreview(ctx, "user-2", "doc-prev-me"); !errors.Is(err, ErrPreviewDocumentNotFound) {
 		t.Fatalf("team member on private dataset: expected ErrPreviewDocumentNotFound, got %v", err)
 	}
-	p, err = svc.GetDocumentPreview(ctx, "tenant-1", "doc-prev-me")
+	p, err = svc.GetDocumentPreview(ctx, "user-1", "doc-prev-me")
 	if err != nil {
 		t.Fatalf("owner preview private dataset: %v", err)
 	}
@@ -1910,7 +2191,7 @@ func TestGetDocumentPreview_EmptyObject(t *testing.T) {
 	insertTestPreviewDoc(t, db, mockStorage, "doc-prev-empty", "kb-prev-empty", "")
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-empty")
+	_, err := svc.GetDocumentPreview(t.Context(), "user-1", "doc-prev-empty")
 	if !errors.Is(err, ErrPreviewFileEmpty) {
 		t.Fatalf("expected ErrPreviewFileEmpty, got %v", err)
 	}
@@ -1933,7 +2214,7 @@ func TestGetDocumentPreview_MissingObjectSurfacesStorageError(t *testing.T) {
 	}
 
 	svc := testDocumentService(t)
-	_, err := svc.GetDocumentPreview(t.Context(), "tenant-1", "doc-prev-miss")
+	_, err := svc.GetDocumentPreview(t.Context(), "user-1", "doc-prev-miss")
 	if err == nil {
 		t.Fatal("expected storage read error")
 	}
@@ -1968,6 +2249,26 @@ func TestDownloadDocument_WrongDataset(t *testing.T) {
 	}
 }
 
+func TestDownloadDocument_DatabaseErrorIsNotNotFound(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	if err := db.Migrator().DropTable(&entity.Document{}); err != nil {
+		t.Fatalf("drop document table: %v", err)
+	}
+
+	svc := testDocumentService(t)
+	_, err := svc.DownloadDocument(t.Context(), "kb-1", "doc-1")
+	if err == nil {
+		t.Fatal("expected database error")
+	}
+	if errors.Is(err, ErrDocumentNotFound) {
+		t.Fatalf("database error was masked as document not found: %v", err)
+	}
+	if !strings.Contains(err.Error(), "failed to get document doc-1") {
+		t.Fatalf("unexpected database error: %v", err)
+	}
+}
+
 func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -1976,14 +2277,14 @@ func TestUpdateDatasetDocumentRejectsNonOwner(t *testing.T) {
 
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-2", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{}, map[string]bool{})
 	if err == nil {
 		t.Fatal("expected ownership error")
 	}
-	if code != common.CodeDataError {
-		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	if code != common.CodeForbidden {
+		t.Fatalf("code = %v, want %v", code, common.CodeForbidden)
 	}
-	if err.Error() != "you don't own the dataset" {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("err = %q", err.Error())
 	}
 }
@@ -1997,7 +2298,7 @@ func TestUpdateDatasetDocumentRejectsCounterMutation(t *testing.T) {
 	chunkCount := int64(6)
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ChunkCount: &chunkCount,
 	}, map[string]bool{"chunk_count": true})
 	if err == nil {
@@ -2035,7 +2336,7 @@ func TestUpdateDatasetDocumentRejectsZeroImmutableFields(t *testing.T) {
 				t.Fatalf("prepare document: %v", err)
 			}
 
-			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "tenant-1", "kb-1", "doc-1", &tt.request, tt.present)
+			_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &tt.request, tt.present)
 			if err == nil {
 				t.Fatalf("expected %s mutation error", tt.name)
 			}
@@ -2155,7 +2456,7 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	parseType := 1
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &parserID,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -2181,7 +2482,7 @@ func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	newName := "new.pdf"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Name: &newName,
 	}, map[string]bool{"name": true})
 	if err != nil {
@@ -2211,7 +2512,7 @@ func TestUpdateDatasetDocumentParserIDResetsForReparse(t *testing.T) {
 	chunkMethod := "manual"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
 	}, map[string]bool{"parser_id": true, "parse_type": true})
@@ -2300,28 +2601,149 @@ func TestClearDocumentParseResultsClearsCountersTasksAndChunks(t *testing.T) {
 	if remainingTask != nil {
 		t.Fatalf("ingestion task should be deleted, status was %q", remainingTask.Status)
 	}
-	if engine.deleteCalls != 1 {
-		t.Fatalf("deleteCalls = %d, want 1", engine.deleteCalls)
+	if engine.deleteCalls != 2 {
+		t.Fatalf("deleteCalls = %d, want 2 (generated and source chunks)", engine.deleteCalls)
 	}
-	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1"}) {
+	if engine.indexName != "ragflow_tenant-1" || engine.datasetID != "kb-1" || !reflect.DeepEqual(engine.condition["id"], []string{"source-1", "parent-1"}) {
 		t.Fatalf("unexpected delete call: index=%s dataset=%s condition=%v", engine.indexName, engine.datasetID, engine.condition)
+	}
+	if engine.search == nil || !engine.search.IncludeUnavailable {
+		t.Fatalf("reparse search = %#v, want hidden parent rows included", engine.search)
 	}
 }
 
-func TestUpdateSourceChunkAvailabilityExcludesCompiledProducts(t *testing.T) {
+func TestClearDocumentParseResultsDeletesDocumentGeneratedChunks(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	engine := &generatedCleanupDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults failed: %v", err)
+	}
+	if !engine.generatedDeleted {
+		t.Fatalf("document-generated chunks were not deleted; calls=%d", engine.deleteCalls)
+	}
+	if engine.generatedCond["doc_id"] != "doc-1" || engine.generatedCond["kb_id"] != "kb-1" {
+		t.Fatalf("generated cleanup condition = %#v, want document and dataset scope", engine.generatedCond)
+	}
+}
+
+func TestClearDocumentParseResultsDeletesSourceChunkImages(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+
+	imageStore := newFakeUploadStorage()
+	if err := imageStore.Put(t.Context(), "kb-1", "image-001", []byte("png")); err != nil {
+		t.Fatalf("seed chunk image: %v", err)
+	}
+	factory := storage.GetStorageFactory()
+	previousStore := factory.GetStorage()
+	factory.SetStorage(imageStore)
+	t.Cleanup(func() { factory.SetStorage(previousStore) })
+
+	svc := testDocumentService(t)
+	svc.docEngine = &generatedCleanupDocEngine{}
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); err != nil {
+		t.Fatalf("clearDocumentParseResults failed: %v", err)
+	}
+	if imageStore.ObjExist(t.Context(), "kb-1", "image-001") {
+		t.Fatal("source chunk image still exists after cleanup")
+	}
+}
+
+func TestClearDocumentParseResultsPurgesTaskStateBeforeDeletingTask(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	purgeErr := errors.New("redis unavailable")
+	svc := testDocumentService(t)
+	svc.purgeTaskState = func(context.Context, string) error { return purgeErr }
+	doc, err := svc.documentDAO.GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("load document: %v", err)
+	}
+
+	if err := svc.clearDocumentParseResults(t.Context(), doc, "tenant-1"); !errors.Is(err, purgeErr) {
+		t.Fatalf("clearDocumentParseResults error = %v, want purge error", err)
+	}
+	remaining, err := svc.ingestionTaskDAO.GetByDocumentID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatalf("reload ingestion task: %v", err)
+	}
+	if remaining == nil {
+		t.Fatal("task was deleted despite resumable state cleanup failure")
+	}
+}
+
+// TestUpdateDocumentChunkAvailabilityTogglesFinalProducts pins the disable/enable
+// contract: source chunks and final compiled products (tree/structure/mindmap)
+// follow the document status; wiki staging and unknown-kwd rows stay hidden.
+func TestUpdateDocumentChunkAvailabilityTogglesFinalProducts(t *testing.T) {
 	docEngine := &sourceAvailabilityDocEngine{}
 	svc := testDocumentService(t)
 	svc.docEngine = docEngine
 
-	if err := svc.updateSourceChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 1); err != nil {
-		t.Fatalf("updateSourceChunkAvailability failed: %v", err)
+	if err := svc.updateDocumentChunkAvailability(t.Context(), "tenant-1", "kb-1", "doc-1", 0); err != nil {
+		t.Fatalf("updateDocumentChunkAvailability failed: %v", err)
 	}
 	if len(docEngine.updateConditions) != 1 {
 		t.Fatalf("UpdateChunks calls = %d, want 1", len(docEngine.updateConditions))
 	}
 	ids, ok := docEngine.updateConditions[0]["id"].([]string)
-	if !ok || len(ids) != 1 || ids[0] != "source-1" {
-		t.Fatalf("updated ids = %#v, want only source-1", docEngine.updateConditions[0]["id"])
+	want := []string{"source-1", "tree-1", "struct-1", "pageindex-1"}
+	if !ok || !reflect.DeepEqual(ids, want) {
+		t.Fatalf("updated ids = %#v, want %v (wiki/unknown-kwd rows excluded)", docEngine.updateConditions[0]["id"], want)
+	}
+	if got := docEngine.updateValues[0]["available_int"]; got != 0 {
+		t.Fatalf("available_int = %#v, want 0", got)
+	}
+	if docEngine.search == nil || docEngine.search.IncludeUnavailable {
+		t.Fatalf("availability search = %#v, must not include hidden parents", docEngine.search)
+	}
+}
+
+func TestDocumentKnowledgeCompileTypesIncludesUnavailableProducts(t *testing.T) {
+	docEngine := &sourceAvailabilityDocEngine{}
+	svc := testDocumentService(t)
+	svc.docEngine = docEngine
+
+	variants, _, err := svc.documentKnowledgeCompileTypes(t.Context(), "tenant-1", "kb-1", "doc-1")
+	if err != nil {
+		t.Fatalf("documentKnowledgeCompileTypes failed: %v", err)
+	}
+	if docEngine.search == nil || !docEngine.search.IncludeUnavailable {
+		t.Fatalf("knowledge compile type search = %#v, want unavailable products included", docEngine.search)
+	}
+	for _, want := range []string{"tree", "structure", "wiki"} {
+		found := false
+		for _, variant := range variants {
+			if variant == want {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("variants = %v, missing %q", variants, want)
+		}
 	}
 }
 
@@ -2499,34 +2921,164 @@ func TestAssertIngestionTasksTerminal_AcceptsAllTerminal(t *testing.T) {
 	}
 }
 
-// TestIngest_RerunWithDelete_RejectsBatchWithRunningTask verifies the batch
-// pre-check: when re-parsing with delete, if any document's ingestion task is
-// non-terminal, the whole request is rejected up front so no document is
-// partially cleaned.
-func TestIngest_RerunWithDelete_RejectsBatchWithRunningTask(t *testing.T) {
+// TestIngest_RunningTask_SkippedWhenBatchStartingParse verifies that when
+// starting parse on a batch of documents, in-flight active tasks (RUNNING,
+// CREATED, SCHEDULED, STOPPING) are skipped and leave existing tasks untouched,
+// while eligible documents are parsed.
+func TestIngest_RunningTask_SkippedWhenBatchStartingParse(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
 	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-3", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("location", "loc-1").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+
 	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
 	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
+	insertTestIngestionTaskWithStatus(t, "task-3", "user-1", "doc-3", "kb-1", common.CREATED)
 
-	ctx := t.Context()
+	publisher := &recordingTaskPublisher{}
 	svc := testDocumentService(t)
-	_, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2", "doc-3"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: true,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// doc-2 (RUNNING) and doc-3 (CREATED) must be untouched
+	task2, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-2")
+	if task2 == nil || task2.Status != common.RUNNING {
+		t.Fatalf("doc-2 task status = %v, want %s", task2, common.RUNNING)
+	}
+	task3, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-3")
+	if task3 == nil || task3.Status != common.CREATED {
+		t.Fatalf("doc-3 task status = %v, want %s", task3, common.CREATED)
+	}
+
+	// Only doc-1 should have been re-enqueued
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message for doc-1, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_AllActiveTasks_ReturnsSuccessIdempotent(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.RUNNING)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.SCHEDULED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
 		DocIDs: []string{"doc-1", "doc-2"},
 		Run:    string(entity.TaskStatusRunning),
 		Delete: true,
 	})
-	if err == nil {
-		t.Fatal("expected error for batch with RUNNING task, got nil")
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
 	}
-	// doc-1 (terminal) task must NOT be deleted - the whole batch was rejected.
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+	if len(publisher.messages) != 0 {
+		t.Fatalf("expected 0 published messages, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_CompletedTask_SkippedWhenDeleteIsFalse(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id = ?", "doc-2").Update("location", "loc-2").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.COMPLETED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: false,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// doc-1 (COMPLETED with Delete=false) should remain COMPLETED and not fail
 	task1, _ := svc.ingestionTaskDAO.GetByDocumentID(ctx, db, "doc-1")
-	if task1 == nil {
-		t.Fatal("doc-1 terminal task should not be deleted when batch is rejected")
+	if task1 == nil || task1.Status != common.COMPLETED {
+		t.Fatalf("doc-1 task status = %v, want %s", task1, common.COMPLETED)
+	}
+
+	// doc-2 (unstarted) should have been started
+	if len(publisher.messages) != 1 {
+		t.Fatalf("expected 1 published message for doc-2, got %d", len(publisher.messages))
+	}
+}
+
+func TestIngest_FailedAndStoppedTasks_Restarted(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertUserTenantForAccessCheck(t, "user-1", "tenant-1")
+	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
+	insertTestDoc(t, "doc-2", "kb-1", 0, 0)
+	if err := dao.DB.Model(&entity.Document{}).Where("id IN ?", []string{"doc-1", "doc-2"}).Update("location", "loc").Error; err != nil {
+		t.Fatalf("set location: %v", err)
+	}
+	insertTestIngestionTaskWithStatus(t, "task-1", "user-1", "doc-1", "kb-1", common.FAILED)
+	insertTestIngestionTaskWithStatus(t, "task-2", "user-1", "doc-2", "kb-1", common.STOPPED)
+
+	publisher := &recordingTaskPublisher{}
+	svc := testDocumentService(t)
+	svc.ingestionTaskSvc.SetTaskPublisher(publisher)
+	ctx := t.Context()
+
+	code, err := svc.Ingest(ctx, "user-1", &IngestDocumentRequest{
+		DocIDs: []string{"doc-1", "doc-2"},
+		Run:    string(entity.TaskStatusRunning),
+		Delete: false,
+	})
+	if err != nil {
+		t.Fatalf("Ingest failed: %v", err)
+	}
+	if code != common.CodeSuccess {
+		t.Fatalf("expected code %v, got %v", common.CodeSuccess, code)
+	}
+
+	// Both FAILED and STOPPED tasks should have been re-enqueued
+	if len(publisher.messages) != 2 {
+		t.Fatalf("expected 2 published messages, got %d", len(publisher.messages))
 	}
 }
 
@@ -2541,7 +3093,7 @@ func TestUpdateDatasetDocumentPropagatesMetadataDeleteFailure(t *testing.T) {
 	svc.docEngine = engine
 	svc.metadataSvc = service.NewMetadataServiceForTest(nil, nil)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		MetaFields: map[string]any{"new": "value"},
 	}, map[string]bool{"meta_fields": true})
 	if err == nil {
@@ -2877,15 +3429,14 @@ func TestUpdateDatasetDocumentPipelineIDTakesPrecedenceOverParserID(t *testing.T
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	pipelineID := "1234567890abcdef1234567890abcdef"
-	chunkMethod := "manual"
+	insertTestCanvas(t, pipelineID, "user-1")
 	parseType := 2
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		PipelineID: &pipelineID,
-		ParserID:   &chunkMethod,
 		ParseType:  &parseType,
-	}, map[string]bool{"pipeline_id": true, "parser_id": true, "parse_type": true})
+	}, map[string]bool{"pipeline_id": true, "parse_type": true})
 	if err != nil {
 		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
 	}
@@ -2917,7 +3468,7 @@ func TestUpdateDatasetDocumentParseTypeBuiltin(t *testing.T) {
 	pipelineIDEmpty := ""
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineIDEmpty,
@@ -2950,9 +3501,10 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 
 	parseType := 2
 	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		PipelineID: &pipelineID,
 	}, map[string]bool{"parser_id": false, "pipeline_id": true, "parse_type": true})
@@ -2967,50 +3519,74 @@ func TestUpdateDatasetDocumentParseTypePipeline(t *testing.T) {
 	}
 }
 
-// TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID reproduces
-// the comment-3 bug: parse_type=2 (pipeline) with a dirty req.ParserID must
-// still resolve to pipeline mode so parser_config is cleaned against the
-// canvas DSL (fallback when the canvas is absent), not the builtin DSL.
-//
-// With the bug, req.ParserID != nil flipped isCanvas=false inside the
-// parser_config block, so the config was rebuilt against the builtin "manual"
-// DSL and unknown fields were dropped. After the fix, the canvas load fails
-// (no such pipeline in the test DB) and the original config is persisted as-is.
-func TestUpdateDatasetDocumentParseTypePipelineIgnoresDirtyParserID(t *testing.T) {
+// TestUpdateDatasetDocumentParseTypePipelineRejectsParserID locks in the new
+// explicit contract: parse_type=2 (Pipeline) must not carry a parser_id. The
+// previous lenient behavior silently ignored the contradictory id; now it is
+// rejected so a malformed request can never pick the wrong mode.
+func TestUpdateDatasetDocumentParseTypePipelineRejectsParserID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
 	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
 
 	parseType := 2
-	// Dirty parser_id that the builtin branch would otherwise use to load a
-	// builtin DSL and strip unknown fields.
 	parserID := "manual"
 	pipelineID := "1234567890abcdef1234567890abcdef"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType:  &parseType,
 		ParserID:   &parserID,
 		PipelineID: &pipelineID,
-		ParserConfig: map[string]any{
-			"nonexistent_field": "value",
+	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true})
+	if err == nil {
+		t.Fatal("expected error rejecting parser_id in Pipeline mode")
+	}
+	if code != common.CodeDataError {
+		t.Fatalf("code = %v, want %v", code, common.CodeDataError)
+	}
+	if err.Error() != "parser_id must not be set when parse_type is Pipeline" {
+		t.Fatalf("err = %q", err.Error())
+	}
+}
+
+func TestUpdateDatasetDocumentParentChildConfigSurvivesDSLFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("parser_config", entity.JSONMap{
+		"GeneralChunker:SixApplesFall": map[string]any{
+			"children_delimiters": []any{},
 		},
-	}, map[string]bool{"parser_id": true, "pipeline_id": true, "parse_type": true, "parser_config": true})
-	if err != nil {
-		t.Fatalf("UpdateDatasetDocument failed: code=%v err=%v", code, err)
+	}).Error; err != nil {
+		t.Fatalf("seed document parser config: %v", err)
 	}
-	if resp.PipelineID == nil || *resp.PipelineID != pipelineID {
-		t.Fatalf("pipeline_id = %v, want %q", resp.PipelineID, pipelineID)
+
+	parseType := 2
+	pipelineID := "1234567890abcdef1234567890abcdef"
+	insertTestCanvas(t, pipelineID, "user-1")
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParseType:  &parseType,
+		PipelineID: &pipelineID,
+		ParserConfig: map[string]any{
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
+			},
+		},
+	}, map[string]bool{"pipeline_id": true, "parse_type": true, "parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
 	}
-	if resp.ParserID != "naive" {
-		t.Fatalf("parser_id = %q, want original naive (parser_id must not apply in pipeline mode)", resp.ParserID)
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
 	}
-	// Pipeline mode with an absent canvas must fall back to persisting the
-	// original config verbatim. If the builtin path ran instead, the unknown
-	// field would have been stripped during DSL cleaning.
-	if v, ok := resp.ParserConfig["nonexistent_field"]; !ok || v != "value" {
-		t.Fatalf("parser_config = %v, want nonexistent_field=value preserved (canvas fallback)", resp.ParserConfig)
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
 	}
 }
 
@@ -3027,7 +3603,7 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	parserID := "manual"
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	_, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	_, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		ParseType: &parseType,
 		ParserID:  &parserID,
 		ParserConfig: map[string]any{
@@ -3046,6 +3622,41 @@ func TestUpdateDatasetDocumentRejectsInvalidPages(t *testing.T) {
 	}
 }
 
+func TestUpdateDatasetDocumentParentChildConfigReachesGeneralChunker(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 10, 5)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "doc.txt", 10, 5)
+
+	resp, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		ParserConfig: map[string]any{
+			"GeneralChunker:SixApplesFall": map[string]any{
+				"parent_child": map[string]any{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
+			},
+		},
+	}, map[string]bool{"parser_config": true})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("UpdateDatasetDocument err=%v code=%d", err, code)
+	}
+	chunker, ok := resp.ParserConfig["GeneralChunker:SixApplesFall"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("general chunker params = %#v", resp.ParserConfig["GeneralChunker:SixApplesFall"])
+	}
+	if got, ok := chunker["children_delimiters"].([]interface{}); !ok || len(got) != 1 || got[0] != "|" {
+		t.Fatalf("children_delimiters = %#v, want [|]", chunker["children_delimiters"])
+	}
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
+	if !ok || parentChild["use_parent_child"] != true || parentChild["children_delimiter"] != "|" {
+		t.Fatalf("chunker parent_child = %#v, want persisted public setting", chunker["parent_child"])
+	}
+	if _, ok := resp.ParserConfig["parent_child"]; ok {
+		t.Fatalf("top-level flat parent_child should be absent, got %#v", resp.ParserConfig["parent_child"])
+	}
+}
+
 func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -3055,7 +3666,7 @@ func TestUpdateDatasetDocumentEnabledUpdatesStatus(t *testing.T) {
 	enabled := 0
 	svc := testDocumentService(t)
 	ctx := t.Context()
-	resp, code, err := svc.UpdateDatasetDocument(ctx, "tenant-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+	resp, code, err := svc.UpdateDatasetDocument(ctx, "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
 		Enabled: &enabled,
 	}, map[string]bool{"enabled": true})
 	if err != nil {
@@ -3201,7 +3812,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 		Title:          sptr("Agent"),
 		CanvasCategory: "agent_canvas",
 	}).Error; err != nil {
-		t.Fatalf("seed canvas: %v", err)
+		t.Fatalf("seed agent: %v", err)
 	}
 	// Seed an API4Conversation whose message references the filename.
 	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), db, &entity.API4Conversation{
@@ -3218,7 +3829,7 @@ func TestGetDocumentArtifact_AuthGate(t *testing.T) {
 
 	mockStorage := useFakeStorage(t)
 	data := []byte("artifact content")
-	if err := mockStorage.Put(ctx, sandboxArtifactBucket(), "result.png", data); err != nil {
+	if err := mockStorage.Put(ctx, common.SandboxArtifactBucket(), "result.png", data); err != nil {
 		t.Fatalf("seed artifact: %v", err)
 	}
 
@@ -3275,17 +3886,15 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
 	insertTestKB(t, "kb-2", "tenant-1", 0, 0, 0)
 	insertTestKB(t, "kb-other", "tenant-other", 0, 0, 0)
-	if err := db.Create(&entity.UserTenant{
-		ID:        "user-1_tenant-1",
-		UserID:    "user-1",
-		TenantID:  "tenant-1",
-		Role:      "owner",
-		InvitedBy: "user-1",
-		Status:    sptr("1"),
-	}).Error; err != nil {
-		t.Fatalf("seed user tenant: %v", err)
+	if err := db.Where("tenant_id = ? AND role = ?", "tenant-other", "owner").Delete(&entity.UserTenant{}).Error; err != nil {
+		t.Fatalf("remove fixture owner: %v", err)
 	}
-
+	if err := db.Create(&entity.UserTenant{
+		ID: "other-owner_tenant-other", UserID: "other-owner", TenantID: "tenant-other",
+		Role: "owner", InvitedBy: "other-owner", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("seed other tenant owner: %v", err)
+	}
 	base64Thumb := "data:image/png;base64,AAAA"
 	fileThumb := "thumb.png"
 	otherThumb := "secret.png"
@@ -3336,7 +3945,7 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 		t.Fatalf("GetThumbnails failed: %v", err)
 	}
 
-	if got["doc-file"] != "/api/v1/documents/images/kb-1-thumb.png" {
+	if got["doc-file"] != "/api/v1/documents/doc-file/thumbnail" {
 		t.Fatalf("unexpected file thumbnail: %q", got["doc-file"])
 	}
 	if got["doc-base64"] != base64Thumb {
@@ -3347,6 +3956,103 @@ func TestGetThumbnails_AlignsWithPythonFormatting(t *testing.T) {
 	}
 	if _, ok := got["doc-other"]; ok {
 		t.Fatalf("did not expect other tenant doc in result: %#v", got)
+	}
+}
+
+func TestGetDocumentImageRejectsUnindexedObjectBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("a", 32)
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	engine := &imageOwnershipEngine{result: &types.SearchResult{}}
+	store := useFakeStorage(t)
+	if err := store.Put(ctx, kbID, "raw.pdf", []byte("%PDF-1.7")); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	if _, err := svc.GetDocumentImage(ctx, "user-1", kbID+"-raw.pdf"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("GetDocumentImage() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after ownership denial", store.getCalls)
+	}
+}
+
+func TestGetDocumentImageForDocumentAllowsIndexedSharedBucketImage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	originalDB := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = originalDB })
+
+	kbID := strings.Repeat("b", 32)
+	status := string(entity.StatusValid)
+	ensureTestTenantOwner(t, "user-1", "user-1")
+	if err := db.Create(&entity.Knowledgebase{ID: kbID, TenantID: "user-1", Name: "kb", EmbdID: "embd", Status: &status}).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: kbID, CreatedBy: "user-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	imageID := "imagetemps-page-1.png"
+	engine := &imageOwnershipEngine{result: &types.SearchResult{Total: 1, Chunks: []map[string]any{{"doc_id": "doc-1", "img_id": imageID}}}}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "imagetemps", "page-1.png", image); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewDocumentService()
+	svc.docEngine = engine
+
+	got, err := svc.GetDocumentImageForDocument(ctx, "user-1", "doc-1", imageID)
+	if err != nil {
+		t.Fatalf("GetDocumentImageForDocument() error = %v", err)
+	}
+	if !bytes.Equal(got, image) {
+		t.Fatalf("GetDocumentImageForDocument() = %q", got)
+	}
+	if engine.request == nil || engine.request.Filter["doc_id"] != "doc-1" || engine.request.Filter["img_id"] != imageID {
+		t.Fatalf("ownership search = %#v", engine.request)
+	}
+}
+
+func TestGetDocumentThumbnailAuthorizesBeforeStorage(t *testing.T) {
+	ctx := t.Context()
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-thumb", "owner-1", 0, 0, 0)
+	thumbnail := "thumbnail.png"
+	if err := db.Create(&entity.Document{
+		ID: "doc-thumb", KbID: "kb-thumb", Thumbnail: &thumbnail,
+		ParserID: "naive", ParserConfig: entity.JSONMap{}, SourceType: "local", Type: "pdf", CreatedBy: "owner-1",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	store := useFakeStorage(t)
+	image := []byte("\x89PNG\r\n\x1a\nimage")
+	if err := store.Put(ctx, "kb-thumb", thumbnail, image); err != nil {
+		t.Fatal(err)
+	}
+	svc := testDocumentService(t)
+
+	if _, err := svc.GetDocumentThumbnail(ctx, "other-user", "doc-thumb"); !errors.Is(err, ErrDocumentImageNotFound) {
+		t.Fatalf("unauthorized GetDocumentThumbnail() error = %v", err)
+	}
+	if store.getCalls != 0 {
+		t.Fatalf("storage Get called %d times after authorization denial", store.getCalls)
+	}
+	got, err := svc.GetDocumentThumbnail(ctx, "user-1", "doc-thumb")
+	if err != nil || !bytes.Equal(got, image) {
+		t.Fatalf("authorized GetDocumentThumbnail() = %q, %v", got, err)
 	}
 }
 
@@ -3711,32 +4417,55 @@ func TestIngest_DeleteOnlyCleansTasks(t *testing.T) {
 	}
 }
 
-func TestUpdateRunProgressMirrorsFields(t *testing.T) {
+func TestDocumentResponseEmbedsLatestEventForCurrentRun(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertTestDoc(t, "doc-1", "kb-1", 0, 0)
-	begin := time.Now().Add(-2 * time.Second)
-	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Update("process_begin_at", begin).Error; err != nil {
-		t.Fatalf("set process_begin_at: %v", err)
+	insertTestIngestionTask(t, "task-1", "user-1", "doc-1", "kb-1")
+	runCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "run-1",
+		DocumentID:      "doc-1",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		DocumentName:    "doc.txt",
+		DocumentSuffix:  ".txt",
+		DocumentType:    "text",
+		SourceFrom:      "local",
+		TaskType:        string(entity.PipelineTaskTypeParse),
+		OperationStatus: string(entity.TaskStatusRunning),
+		RunCount:        &runCount,
+	}).Error; err != nil {
+		t.Fatalf("insert run: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", "task-1").Update("pipeline_log_id", "run-1").Error; err != nil {
+		t.Fatalf("bind run: %v", err)
+	}
+	for _, message := range []string{"first", "latest"} {
+		if err := db.Model(&entity.IngestionTaskLog{}).Create(map[string]interface{}{
+			"task_id":         "task-1",
+			"pipeline_log_id": "run-1",
+			"checkpoint":      entity.JSONMap{},
+			"event_type":      dao.EventTypeMessage,
+			"component":       "",
+			"phase":           0,
+			"message":         message,
+		}).Error; err != nil {
+			t.Fatalf("insert event: %v", err)
+		}
 	}
 
-	svc := testDocumentService(t)
-	ctx := t.Context()
-	if err := svc.UpdateRunProgress(ctx, "doc-1", 0.5, "halfway"); err != nil {
-		t.Fatalf("UpdateRunProgress failed: %v", err)
-	}
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
 	if err != nil {
 		t.Fatalf("load document: %v", err)
 	}
-	if doc.Progress != 0.5 {
-		t.Fatalf("progress = %v, want 0.5", doc.Progress)
+	response, err := testDocumentService(t).toResponse(t.Context(), doc)
+	if err != nil {
+		t.Fatalf("toResponse: %v", err)
 	}
-	if doc.ProgressMsg == nil || *doc.ProgressMsg != "halfway" {
-		t.Fatalf("progress_msg = %v, want halfway", doc.ProgressMsg)
-	}
-	if doc.ProcessDuration <= 0 {
-		t.Fatalf("process_duration = %v, want positive live duration", doc.ProcessDuration)
+	if response.LatestIngestionEvent == nil || response.LatestIngestionEvent.ID != 2 || response.LatestIngestionEvent.Message != "latest" {
+		t.Fatalf("response = %+v, want latest current-run event", response)
 	}
 }
 
@@ -3767,14 +4496,10 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	docSvc := testDocumentService(t)
-	fileSvc := file.NewFileService(
-		func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
-		docSvc,
-	)
+	fileSvc := file.NewFileService(docSvc)
 
-	success, msg := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"})
-	if !success {
-		t.Fatalf("DeleteFiles failed: %s", msg)
+	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")

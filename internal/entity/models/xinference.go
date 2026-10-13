@@ -46,7 +46,7 @@ func NewXinferenceModel(baseURL map[string]string, urlSuffix URLSuffix) *Xinfere
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -94,7 +94,7 @@ func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams response via sender.

@@ -109,6 +109,9 @@ export enum LLMFactory {
   GreenPT = 'GreenPT',
   Synthorai = 'Synthorai',
   ApiRoute = 'API-Route',
+  CheaperInference = 'Cheaper Inference',
+  Opper = 'Opper',
+  DemonRoute = 'Demon Route',
 }
 
 // Please lowercase the file name
@@ -201,6 +204,8 @@ export const IconMap = {
   [LLMFactory.Synthorai]: 'synthorai',
   [LLMFactory.ApiRoute]: 'apiroute',
   [LLMFactory.MWS]: 'mws',
+  [LLMFactory.CheaperInference]: 'cheaperinference',
+  [LLMFactory.Opper]: 'opper',
 };
 
 export const ModelTypeToField: Record<string, string> = {
@@ -228,6 +233,8 @@ export const APIMapUrl = {
   [LLMFactory.Synthorai]: 'https://synthorai.io',
   [LLMFactory.ApiRoute]: 'https://www.api-route.com',
   [LLMFactory.DaoXE]: 'https://daoxe.com',
+  [LLMFactory.CheaperInference]: 'https://cheaperinference.com',
+  [LLMFactory.Opper]: 'https://platform.opper.ai',
   [LLMFactory.MWS]:
     'https://mws.ru/docs/cloud-platform/gpt/general/inference-text.html',
   [LLMFactory.Anthropic]: 'https://console.anthropic.com/settings/keys',
@@ -249,7 +256,7 @@ export const APIMapUrl = {
   [LLMFactory.AzureOpenAI]:
     'https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI',
   [LLMFactory.OpenRouter]: 'https://openrouter.ai/keys',
-  [LLMFactory.XunFeiSpark]: 'https://console.xfyun.cn/services/cbm',
+  [LLMFactory.XunFeiSpark]: 'https://maas.xfyun.cn/apikey',
   [LLMFactory.MiniMax]:
     'https://platform.minimaxi.com/user-center/basic-information',
   [LLMFactory.Groq]: 'https://console.groq.com/keys',

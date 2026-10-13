@@ -37,7 +37,6 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
   getMetaKeys,
   retrievalTestShare,
@@ -63,10 +62,6 @@ const methods = {
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
-  },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -196,7 +191,7 @@ const chunkService = {
       page: rest.page,
       page_size: rest.page_size ?? rest.size,
       similarity_threshold: rest.similarity_threshold,
-      vector_similarity_weight: rest.vector_similarity_weight,
+      keywords_similarity_weight: rest.keywords_similarity_weight,
       top_k: rest.top_k,
       knn_top_k: rest.knn_top_k,
       knn_num_candidates: rest.knn_num_candidates,
@@ -358,10 +353,15 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list.
-export const listDatasetByIds = (ids: string[]) =>
+// in the first page of the paginated list. `canvasID` limits results to
+// datasets usable by both the canvas owner and the current user.
+export const listDatasetByIds = (ids: string[], canvasID?: string) =>
   request.get(api.kbList, {
-    params: { ids: ids.join(','), page_size: ids.length },
+    params: {
+      ids: ids.join(','),
+      page_size: ids.length,
+      ...(canvasID ? { canvas_id: canvasID } : {}),
+    },
   });
 
 export const datasetFilter = () => request.get(api.datasetFilter);
@@ -508,6 +508,12 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const listIngestionMessages = (
+  datasetId: string,
+  logId: string,
+  params?: Record<string, any>,
+) => request.get(api.listIngestionMessages(datasetId, logId), { params });
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));

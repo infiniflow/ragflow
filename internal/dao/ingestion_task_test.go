@@ -568,3 +568,50 @@ func TestIngestionTaskDAOHasDatasetStatusIndex(t *testing.T) {
 		t.Fatal("expected composite dataset/status index on ingestion_task")
 	}
 }
+
+// TestIngestionTaskDAOGetByDocumentID_ReturnsTask verifies the plain
+// single-row lookup: with no task recorded for the document GetByDocumentID
+// returns nil, and once one exists it returns that task. The test DB's
+// AutoMigrate enforces the unique index on document_id, so this stays a
+// one-row case — the ordering behaviour (newest first, id as tie-breaker) is
+// covered by TestIngestionTaskDAOGetByDocumentIDUsesLatestTask and
+// TestIngestionTaskDAOGetByDocumentIDUsesIDAsTieBreaker, both of which drop
+// that index so they can create duplicate rows.
+func TestIngestionTaskDAOGetByDocumentID_ReturnsTask(t *testing.T) {
+	db := setupTaskTestDB(t)
+	orig := DB
+	DB = db
+	t.Cleanup(func() { DB = orig })
+
+	ctx := t.Context()
+	dao := NewIngestionTaskDAO()
+
+	// No task yet.
+	task, err := dao.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("GetByDocumentID empty: %v", err)
+	}
+	if task != nil {
+		t.Fatalf("expected nil for doc-1, got %+v", task)
+	}
+
+	// Create one task.
+	task = &entity.IngestionTask{
+		ID:         "task-1",
+		UserID:     "user-1",
+		DocumentID: "doc-1",
+		DatasetID:  "kb-1",
+		Status:     common.CREATED,
+	}
+	if err := db.Create(task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	got, err := dao.GetByDocumentID(ctx, db, "doc-1")
+	if err != nil {
+		t.Fatalf("GetByDocumentID: %v", err)
+	}
+	if got == nil || got.ID != "task-1" {
+		t.Fatalf("doc-1 task = %+v, want task-1", got)
+	}
+}

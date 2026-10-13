@@ -14,9 +14,9 @@
 // limitations under the License.
 //
 
-// Package component — vision figure enhancement: enriches parsed JSON items
-// (PDF / DOCX / Markdown, OutputFormat=="json") with vision-model descriptions
-// of embedded images/tables. Mirrors Python's enhance_media_sections_with_vision
+// Package component — vision media enhancement: enriches parsed JSON items
+// with vision-model descriptions of embedded images/tables.
+// Mirrors Python's enhance_media_sections_with_vision
 // (rag/flow/parser/utils.py:162, called at parser.py:772/978/1115).
 
 package component
@@ -24,21 +24,22 @@ package component
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
-	"log/slog"
-	"os"
-	"path/filepath"
-	"regexp"
+	"image"
+	"io"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
-	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -47,71 +48,26 @@ import (
 var (
 	figureVisionPromptBuilder func(language string) (string, error) = buildFigureVisionPrompt
 	visionChatInvoker                                               = defaultVisionChatInvoker
+	visionImageCropperFactory                                       = newVisionImageCropper
 )
 
 const (
-	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
 	// per-image call in @timeout(30, 3) (deepdoc/parser/figure_parser.py).
-	visionChatTimeout = 30 * time.Second
+	visionChatTimeout     = 30 * time.Second
+	visionMediaItemBudget = 10 * time.Second
 )
 
-var (
-	figureVisionPrompts     promptDirState
-	figureVisionPromptCache = make(map[string]string)
-	figureVisionPromptMu    sync.RWMutex
-)
-
-// promptDirState caches the project root that contains rag/prompts. The once
-// guard makes initialization sticky; unlike a function-local initErr, an
-// initialization failure is preserved for every subsequent call.
-type promptDirState struct {
-	once    sync.Once
-	root    string
-	initErr error
-}
-
-func (s *promptDirState) resolve(requestedRoot string) (string, error) {
-	s.once.Do(func() {
-		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
-			s.root = requestedRoot
-			return
-		}
-		s.initErr = fmt.Errorf("rag/prompts not found under project root %q", requestedRoot)
-	})
-	if s.initErr != nil {
-		return "", s.initErr
-	}
-	if s.root == "" {
-		return "", errors.New("prompts base dir not initialized")
-	}
-	return s.root, nil
-}
-
-// cleanMarkdownBlock mirrors Python common/string_utils.py:clean_markdown_block
-// and removes a closing fence only after recognizing an opening markdown wrapper.
-//
-// Matches Python without re.MULTILINE so ^/$ anchor only the whole text.
-var (
-	reMarkdownOpen  = regexp.MustCompile(`^\s*` + "```" + `markdown\s*\n?`)
-	reMarkdownClose = regexp.MustCompile(`\n?\s*` + "```" + `\s*$`)
-)
-
-func cleanMarkdownBlock(s string) string {
-	if reMarkdownOpen.MatchString(s) {
-		s = reMarkdownOpen.ReplaceAllString(s, "")
-		s = reMarkdownClose.ReplaceAllString(s, "")
-	}
-	return strings.TrimSpace(s)
-}
-
-// isUsableVisionImage reports whether raw carries a valid image data URI or a
-// base64 payload that can be sent to a vision model.
+// isUsableVisionImage checks the encoded size and rejects raster dimensions
+// beyond the limits shared by Parser and VLM materialization.
 func isUsableVisionImage(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
+		return false
+	}
+	if len(raw) > maxVLMEncodedBytes+256 {
 		return false
 	}
 	if strings.HasPrefix(raw, "data:image/") {
@@ -119,45 +75,56 @@ func isUsableVisionImage(raw string) bool {
 		if idx < 0 {
 			return false
 		}
-		return isValidBase64(raw[idx+len("base64,"):])
+		return isValidBase64(raw[idx+len("base64,"):], false)
 	}
 	if strings.HasPrefix(raw, "http://") || strings.HasPrefix(raw, "https://") {
 		return true
 	}
-	cleaned := strings.Map(func(r rune) rune {
-		if r == '\r' || r == '\n' || r == ' ' || r == '\t' {
-			return -1
+	if len(raw) > maxVLMEncodedBytes {
+		return false
+	}
+	return isValidBase64(raw, true)
+}
+
+func isValidBase64(s string, stripWhitespace bool) bool {
+	if s == "" || len(s) > maxVLMEncodedBytes {
+		return false
+	}
+	for _, encoding := range []*base64.Encoding{base64.StdEncoding, base64.RawStdEncoding} {
+		var source io.Reader = strings.NewReader(s)
+		if stripWhitespace {
+			source = &visionPayloadReader{source: s}
 		}
-		return r
-	}, raw)
-	return isValidBase64(cleaned)
+		decoded := base64.NewDecoder(encoding, source)
+		n, err := io.CopyN(io.Discard, decoded, int64(maxVisionImageBytes)+1)
+		if n > int64(maxVisionImageBytes) {
+			return false
+		}
+		if err == io.EOF {
+			return n > 0
+		}
+	}
+	return false
 }
 
-func isValidBase64(s string) bool {
-	if s == "" {
-		return false
-	}
-	if _, err := base64.StdEncoding.DecodeString(s); err == nil {
-		return true
-	}
-	_, err := base64.RawStdEncoding.DecodeString(s)
-	return err == nil
+// visionImageCropper prepares any source document before image admission,
+// materializes one item's VLM payload under image admission, and releases
+// source resources when the batch finishes.
+type visionImageCropper interface {
+	Prepare(ctx context.Context, item map[string]any) error
+	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
+	Close() error
 }
 
-// isVisionEnhancementAllowed mirrors Python's 3 call sites in
-// rag/flow/parser/parser.py:772/978/1115 (PDF/DOCX/Markdown JSON branches).
-func isVisionEnhancementAllowed(fileType utility.FileType) bool {
-	switch fileType {
-	case utility.FileTypePDF, utility.FileTypeDOCX, utility.FileTypeMarkdown:
-		return true
-	default:
-		return false
-	}
+type visionImage struct {
+	Raster           image.Image
+	VLMData          string
+	VLMDataValidated bool
 }
 
-// maybeDispatchVisionEnhancement enriches parsed JSON items with vision-model
-// descriptions of embedded images and tables (doc_type_kwd in {"image", "table"}
-// with non-empty image field).
+// maybeDispatchVisionEnhancement appends VLM descriptions to parsed image
+// resources and table regions. PDF OCR remains in the PDF parser; non-PDF
+// image text comes from this optional enhancement.
 // Mirrors Python's enhance_media_sections_with_vision in rag/flow/parser/utils.py:162.
 func maybeDispatchVisionEnhancement(
 	ctx context.Context,
@@ -165,173 +132,275 @@ func maybeDispatchVisionEnhancement(
 	fileType utility.FileType,
 	dispatched parser.ParseResult,
 	inputs map[string]any,
-	setups map[string]schema.ParserSetup,
+	vision visionSettings,
+	window fractionWindow,
 ) (parser.ParseResult, bool, error) {
-	// 0. FileType allowlist guard.
-	if !isVisionEnhancementAllowed(fileType) {
-		return dispatched, false, nil
-	}
+	w := window
+
 	// Only enhance successful JSON output format containing items.
 	if dispatched.Err != nil || dispatched.OutputFormat != "json" || len(dispatched.JSON) == 0 {
 		return dispatched, false, nil
 	}
 
 	tenantID := getStringOr(inputs, "tenant_id", "")
-	if tenantID == "" {
-		return dispatched, false, nil
-	}
-	language := resolveVisionLanguage(inputs, "")
-
-	// 1. Collect target items (images/tables with non-empty image data).
-	type target struct {
-		idx int
-	}
-	var targets []target
-	for i, item := range dispatched.JSON {
-		kd, _ := item["doc_type_kwd"].(string)
-		if kd != "image" && kd != "table" {
-			continue
-		}
-		img, _ := item["image"].(string)
-		if img == "" {
-			continue
-		}
-		targets = append(targets, target{idx: i})
-	}
-	if len(targets) == 0 {
-		return dispatched, false, nil
-	}
-
-	// 2. Resolve the per-call IMAGE2TEXT model, then fall back to the tenant
-	// default. Mirror Python's vlm_conf["llm_id"] preference.
 	family := resolveParserFamily(fileType)
-	setup := setups[family]
-	modelRef := configuredMediaModelID(setup, family)
+	// Captions follow the knowledge base language, which also drives
+	// tokenization. The family setup's lang is an OCR engine parameter
+	// (pdf_vision_dispatch.go), not an input here — see issue #20727.
+	language := resolveVisionLanguage(inputs)
+
+	// Collect visual resources, including Markdown images whose type is text
+	// because flatten_media_to_text is enabled.
+	var items []int
+	for i, item := range dispatched.JSON {
+		if img, _ := item["image"].(string); img != "" {
+			items = append(items, i)
+			continue
+		}
+		kd, _ := item["doc_type_kwd"].(string)
+		if kd == "image" || kd == "table" {
+			if _, ok := parser.ExtractPDFPositions(item); ok {
+				items = append(items, i)
+			}
+		}
+	}
+	if len(items) == 0 {
+		return dispatched, false, nil
+	}
+	// Resolve VLM before materializing image payloads, so disabled or
+	// unavailable enhancement does not spend time loading media.
 	var driver modelModule.ModelDriver
 	var modelName string
 	var apiConfig *modelModule.APIConfig
-	var err error
-	if modelRef != "" {
-		driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, modelRef)
-		if err != nil {
-			slog.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
-				"family", family, "modelRef", modelRef, "tenant", tenantID, "err", err)
+	var prompt string
+	vlmReady := false
+	var resolveErr error
+	if tenantID != "" {
+		var err error
+		if vision.modelID != "" {
+			driver, modelName, apiConfig, _, err = resolveModelConfig(ctx, db, tenantID, entity.ModelTypeImage2Text, vision.modelID)
+			if err != nil {
+				common.Warn("vision enhancement: per-call VLM resolve failed, falling back to tenant default",
+					zap.String("family", family), zap.String("modelRef", vision.modelID), zap.String("tenant", tenantID), zap.Error(err))
+				driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+			}
+		} else {
 			driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
 		}
-	} else {
-		driver, modelName, apiConfig, _, err = resolveTenantModelByType(ctx, db, tenantID, entity.ModelTypeImage2Text)
+		if err == nil {
+			prompt, err = figureVisionPromptBuilder(language)
+			vlmReady = err == nil && driver != nil
+		}
+		resolveErr = err
 	}
-	if err != nil {
-		// Model not available — skip vision enhancement silently, matching Python's try/except pass.
+	if !vlmReady {
+		warning := "vision enhancement skipped: tenant ID is missing"
+		if tenantID != "" {
+			warning = "vision enhancement skipped: no usable vision model"
+			if resolveErr != nil {
+				warning = fmt.Sprintf("vision enhancement skipped: %v", resolveErr)
+			}
+		}
+		dispatched.Warnings = append(dispatched.Warnings, warning)
 		return dispatched, false, nil
 	}
 
-	// Hoist prompt once: language is invariant across items.
-	prompt, perr := figureVisionPromptBuilder(language)
-	if perr != nil {
-		//nolint:nilerr // Vision enhancement is best-effort.
+	// Prepare PDF sources outside image admission so slow storage reads do not
+	// block unrelated image materialization. The separate VLM semaphore bounds
+	// how many encoded payloads remain live while model requests run.
+	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
+	if cerr != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
 		return dispatched, false, nil
 	}
-
-	// 3. Concurrently invoke VLM — acquire semaphore before launching goroutine
-	// so live goroutine count is bounded by visionEnhancementConcurrency.
-	// Stop scheduling new VLM calls after cancellation; already-running calls
-	// finish via wg.Wait() and cancellation propagates via ctx through
-	// visionChatInvoker.
-	descriptions := make([]string, len(targets))
+	// Close is invoked explicitly after materialization so the engine and the
+	// source bytes are released while model requests are still in flight. Keep
+	// a deferred Close as a panic/early-return safety net: Close is idempotent
+	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
+	defer cropper.Close()
+	modified := false
+	descriptions := make([]string, len(items))
+	failures := make([]string, len(items))
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, visionEnhancementConcurrency)
-
-dispatch:
-	for slot, tg := range targets {
-		if ctx.Err() != nil {
-			break dispatch
+	var settled atomic.Int64
+	total := int64(len(items))
+	for slot, itemIdx := range items {
+		if err := ctx.Err(); err != nil {
+			break
 		}
+		vlmSlot := false
 		select {
 		case sem <- struct{}{}:
+			vlmSlot = true
 		case <-ctx.Done():
-			break dispatch
+			// The loop exits below when no slot was acquired.
 		}
-		wg.Add(1)
-		go func(slot int, itemIdx int) {
-			defer wg.Done()
-			defer func() { <-sem }()
-
-			img, _ := dispatched.JSON[itemIdx]["image"].(string)
-			if !isUsableVisionImage(img) {
-				slog.Warn("vision enhancement: invalid image data skipped",
-					"item", itemIdx)
+		if !vlmSlot {
+			break
+		}
+		var releaseSlotOnce sync.Once
+		releaseSlot := func() {
+			releaseSlotOnce.Do(func() { <-sem })
+		}
+		var resource *visionImage
+		func() {
+			item := dispatched.JSON[itemIdx]
+			if err := cropper.Prepare(ctx, item); err != nil {
+				if ctx.Err() == nil {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("image source preparation failed: %v", err)
+				}
 				return
 			}
-			messages := buildVisionMessages(prompt, img)
+
+			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
+			defer cancelItem()
+			release, err := parser.AcquireImageMedia(itemCtx)
+			if err != nil {
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("media admission failed: %v", err)
+				}
+				return
+			}
+			defer release()
+			resource, err = cropper.Crop(itemCtx, item)
+			if err != nil || resource == nil {
+				cropErr := err
+				if ctx.Err() == nil && vlmReady {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					if cropErr != nil {
+						failures[slot] = fmt.Sprintf("image materialization failed: %v", cropErr)
+					} else {
+						failures[slot] = "no usable image payload"
+					}
+				}
+				return
+			}
+			if ctx.Err() == nil && vlmReady && resource.VLMData == "" && resource.Raster != nil {
+				resource.VLMData, err = encodeVisionRaster(resource.Raster)
+				if err != nil {
+					resource.VLMData = ""
+					failures[slot] = fmt.Sprintf("image encoding failed: %v", err)
+				} else {
+					resource.VLMDataValidated = resource.VLMData != ""
+				}
+			}
+		}()
+		if err := ctx.Err(); err != nil {
+			releaseSlot()
+			break
+		}
+		if resource == nil {
+			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
+			continue
+		}
+		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
+			if failures[slot] == "" {
+				failures[slot] = "image payload is invalid or exceeds configured limits"
+			}
+			releaseSlot()
+			n := settled.Add(1)
+			w.report(ctx, float64(n)/float64(total))
+			continue
+		}
+		wg.Add(1)
+		go func(slot int, imageData string) {
+			defer wg.Done()
+			defer releaseSlot()
+			defer func() {
+				if ctx.Err() == nil {
+					n := settled.Add(1)
+					w.report(ctx, float64(n)/float64(total))
+				}
+			}()
+
+			messages := buildVisionMessages(prompt, imageData)
 			if len(messages) == 0 {
+				failures[slot] = "could not build a VLM request"
 				return
 			}
 			resp, ierr := visionChatInvoker(ctx, driver, modelName, messages, apiConfig)
 			if ierr != nil {
+				failures[slot] = fmt.Sprintf("VLM request failed: %v", ierr)
 				return
 			}
 			descriptions[slot] = extractVisionAnswer(resp)
-		}(slot, tg.idx)
+			if strings.TrimSpace(descriptions[slot]) == "" {
+				failures[slot] = "VLM returned an empty description"
+			}
+		}(slot, resource.VLMData)
+	}
+	if err := cropper.Close(); err != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement cleanup failed: %v", err))
+		common.Warn("vision enhancement: failed to close image cropper", zap.Error(err))
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
-		return dispatched, false, err
+		return dispatched, modified, err
+	}
+	w.report(ctx, 1.0)
+	failedItems := 0
+	firstFailure := ""
+	for _, failure := range failures {
+		if failure == "" {
+			continue
+		}
+		failedItems++
+		if firstFailure == "" {
+			firstFailure = failure
+		}
+	}
+	if failedItems > 0 {
+		warning := fmt.Sprintf("vision enhancement failed for %d item(s): %s", failedItems, firstFailure)
+		dispatched.Warnings = append(dispatched.Warnings, warning)
+		common.Warn("vision enhancement: one or more image descriptions failed",
+			zap.Int("failed_items", failedItems), zap.String("first_failure", firstFailure))
 	}
 
-	// 4. Append descriptions to item text (single newline \n, matching Python).
-	modified := false
-	for slot, tg := range targets {
+	// Append descriptions after parser-provided text and captions.
+	for slot, itemIdx := range items {
 		desc := strings.TrimSpace(descriptions[slot])
 		if desc == "" {
 			continue
 		}
-		existing, _ := dispatched.JSON[tg.idx]["text"].(string)
-		if existing != "" {
-			dispatched.JSON[tg.idx]["text"] = existing + "\n" + desc
-		} else {
-			dispatched.JSON[tg.idx]["text"] = desc
-		}
+		appendItemText(dispatched.JSON[itemIdx], desc)
 		modified = true
 	}
 
 	return dispatched, modified, nil
 }
 
+func appendItemText(item map[string]any, text string) {
+	existing, _ := item["text"].(string)
+	if existing == "" {
+		item["text"] = text
+		return
+	}
+	item["text"] = existing + "\n" + text
+}
+
 func buildFigureVisionPrompt(language string) (string, error) {
-	template, err := loadFigureVisionPromptFile(figureVisionPromptFile)
+	template, err := (prompts.EmbeddedPromptLoader{}).Load("vision_llm_figure_describe_prompt")
 	if err != nil {
 		return "", err
 	}
 	return renderFigureVisionLanguage(template, language), nil
-}
-
-func loadFigureVisionPromptFile(filename string) (string, error) {
-	figureVisionPromptMu.RLock()
-	if cached, ok := figureVisionPromptCache[filename]; ok {
-		figureVisionPromptMu.RUnlock()
-		return cached, nil
-	}
-	figureVisionPromptMu.RUnlock()
-
-	baseDir, err := figureVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", filename)
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("figure vision prompt %q: %w", filename, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	figureVisionPromptMu.Lock()
-	figureVisionPromptCache[filename] = cached
-	figureVisionPromptMu.Unlock()
-	return cached, nil
-}
-
-func figureVisionPromptsBaseDir() (string, error) {
-	return figureVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {
@@ -356,7 +425,7 @@ func extractVisionAnswer(resp *modelModule.ChatResponse) string {
 	if resp == nil || resp.Answer == nil {
 		return ""
 	}
-	return cleanMarkdownBlock(*resp.Answer)
+	return common.CleanMarkdownBlock(*resp.Answer)
 }
 
 func defaultVisionChatInvoker(
@@ -374,5 +443,6 @@ func defaultVisionChatInvoker(
 		thinking := false
 		config.Thinking = &thinking
 	}
-	return driver.ChatWithMessages(chatCtx, modelName, messages, apiConfig, config, nil)
+	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
+	return chatModel.ChatWithMessages(chatCtx, messages, config, nil)
 }

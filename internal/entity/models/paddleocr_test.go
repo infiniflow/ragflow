@@ -2,6 +2,10 @@ package models
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -40,8 +44,10 @@ func TestPaddleOCRLocalListModels(t *testing.T) {
 // TestPaddleOCRConfigFromAPIKey pins the api_key JSON contract shared with
 // Python's PaddleOCROcrModel: the cloud provider stores
 // paddleocr_base_url / paddleocr_api_url, paddleocr_access_token and
-// paddleocr_algorithm in the api_key payload, while a plain-text api_key
-// (PaddleOCR.local bearer token) yields zero values.
+// paddleocr_algorithm in the api_key payload — either with the lower-case UI
+// keys or the upper-case env-style keys the env auto-provisioning writes —
+// while a plain-text api_key (PaddleOCR.local bearer token) yields zero
+// values.
 func TestPaddleOCRConfigFromAPIKey(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -92,11 +98,25 @@ func TestPaddleOCRConfigFromAPIKey(t *testing.T) {
 			wantToken: "",
 			wantAlgo:  "",
 		},
+		{
+			name:      "upper-case env-style payload",
+			apiKey:    `{"PADDLEOCR_BASE_URL":"http://envbase.test","PADDLEOCR_ACCESS_TOKEN":"tok-env","PADDLEOCR_ALGORITHM":"PP-OCRv5"}`,
+			wantURL:   "http://envbase.test",
+			wantToken: "tok-env",
+			wantAlgo:  "PP-OCRv5",
+		},
+		{
+			name:      "upper-case api_url fallback",
+			apiKey:    `{"PADDLEOCR_API_URL":"http://envapi.test","PADDLEOCR_ACCESS_TOKEN":"tok-env2"}`,
+			wantURL:   "http://envapi.test",
+			wantToken: "tok-env2",
+			wantAlgo:  "",
+		},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			url, token, algo := PaddleOCRConfigFromAPIKey(tc.apiKey)
+			url, token, algo := paddleOCRConfigFromAPIKey(tc.apiKey)
 			if url != tc.wantURL {
 				t.Errorf("baseURL = %q, want %q", url, tc.wantURL)
 			}
@@ -149,6 +169,173 @@ const sampleArrayResult = `[
     "errorMsg": "Success"
   }
 ]`
+
+// TestPaddleOCRResolvedAPIConfig pins the wire-config resolution order shared
+// by both PaddleOCR drivers: bearer token from the api_key payload, base url
+// from the instance field, then the payload, then the PADDLEOCR_* env vars.
+func TestPaddleOCRResolvedAPIConfig(t *testing.T) {
+	t.Run("json payload supplies token and base url", func(t *testing.T) {
+		apiKey := `{"paddleocr_api_url":"http://key.test/api","paddleocr_access_token":"tok-456"}`
+		emptyBaseURL := ""
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL})
+		if got := *resolved.ApiKey; got != "tok-456" {
+			t.Errorf("ApiKey = %q, want tok-456", got)
+		}
+		if got := *resolved.BaseURL; got != "http://key.test/api" {
+			t.Errorf("BaseURL = %q, want http://key.test/api", got)
+		}
+	})
+
+	t.Run("instance base url wins over payload", func(t *testing.T) {
+		apiKey := `{"paddleocr_base_url":"http://key.test","paddleocr_access_token":"tok-1"}`
+		baseURL := "http://instance.test"
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.BaseURL; got != "http://instance.test" {
+			t.Errorf("BaseURL = %q, want http://instance.test", got)
+		}
+		if got := *resolved.ApiKey; got != "tok-1" {
+			t.Errorf("ApiKey = %q, want tok-1", got)
+		}
+	})
+
+	t.Run("plain token passes through", func(t *testing.T) {
+		apiKey := "tok-plain"
+		baseURL := "http://instance.test"
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.ApiKey; got != "tok-plain" {
+			t.Errorf("ApiKey = %q, want tok-plain", got)
+		}
+		if got := *resolved.BaseURL; got != "http://instance.test" {
+			t.Errorf("BaseURL = %q, want http://instance.test", got)
+		}
+	})
+
+	t.Run("env base url fallback", func(t *testing.T) {
+		t.Setenv("PADDLEOCR_BASE_URL", "http://envbase.test")
+		apiKey := `{"paddleocr_access_token":"tok-env"}`
+		emptyBaseURL := ""
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL})
+		if got := *resolved.BaseURL; got != "http://envbase.test" {
+			t.Errorf("BaseURL = %q, want http://envbase.test", got)
+		}
+	})
+
+	t.Run("env auto-provisioned payload resolves", func(t *testing.T) {
+		apiKey := `{"PADDLEOCR_BASE_URL":"http://envauto.test","PADDLEOCR_ACCESS_TOKEN":"tok-auto","PADDLEOCR_ALGORITHM":"PaddleOCR-VL"}`
+		emptyBaseURL := ""
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL})
+		if got := *resolved.ApiKey; got != "tok-auto" {
+			t.Errorf("ApiKey = %q, want tok-auto", got)
+		}
+		if got := *resolved.BaseURL; got != "http://envauto.test" {
+			t.Errorf("BaseURL = %q, want http://envauto.test", got)
+		}
+	})
+
+	t.Run("whitespace instance base url falls back to payload", func(t *testing.T) {
+		apiKey := `{"paddleocr_base_url":"http://key.test","paddleocr_access_token":"tok-2"}`
+		baseURL := "   "
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.BaseURL; got != "http://key.test" {
+			t.Errorf("BaseURL = %q, want http://key.test", got)
+		}
+		if got := *resolved.ApiKey; got != "tok-2" {
+			t.Errorf("ApiKey = %q, want tok-2", got)
+		}
+	})
+
+	t.Run("padded instance base url is trimmed", func(t *testing.T) {
+		apiKey := `{"paddleocr_access_token":"tok-3"}`
+		baseURL := "  http://instance.test  "
+		resolved := paddleOCRResolvedAPIConfig(&APIConfig{ApiKey: &apiKey, BaseURL: &baseURL})
+		if got := *resolved.BaseURL; got != "http://instance.test" {
+			t.Errorf("BaseURL = %q, want http://instance.test", got)
+		}
+	})
+}
+
+// TestPaddleOCRModelOCRFileUnwrapsAPIKeyPayload pins the layering contract the
+// cloud driver owns: OCRFile receives the tenant api_key JSON payload verbatim
+// and resolves the bearer token and server endpoint itself, mirroring Python's
+// PaddleOCROcrModel constructor.
+func TestPaddleOCRModelOCRFileUnwrapsAPIKeyPayload(t *testing.T) {
+	withSSRFBypass(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v2/ocr/jobs":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("submit Authorization = %q, want %q", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"jobId":"job-1"}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v2/ocr/jobs/job-1":
+			if got, want := r.Header.Get("Authorization"), "Bearer tok-123"; got != want {
+				t.Errorf("poll Authorization = %q, want %q", got, want)
+			}
+			_, _ = w.Write([]byte(`{"data":{"state":"done","resultUrl":{"jsonUrl":"http://` + r.Host + `/result"}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/result":
+			_, _ = w.Write([]byte(`[{"logId":"l1","errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Unwrapped\n"}}]}}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	driver := NewPaddleOCRModel(nil, URLSuffix{OCR: "v2/ocr/jobs"})
+	apiKey := fmt.Sprintf(`{"paddleocr_api_url":%q,"paddleocr_access_token":"tok-123"}`, server.URL+"/api")
+	emptyBaseURL := ""
+	modelName := "PaddleOCR-VL-1.6"
+
+	resp, err := driver.OCRFile(context.Background(), &modelName, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, nil, nil)
+	if err != nil {
+		t.Fatalf("OCRFile: %v", err)
+	}
+	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Unwrapped") {
+		t.Fatalf("OCRFile text = %v, want Unwrapped", resp)
+	}
+}
+
+// TestPaddleOCRLocalModelOCRFileResolvesPayload pins the local driver's share
+// of the same contract: bearer token and algorithm are resolved inside the
+// driver from the tenant api_key payload.
+func TestPaddleOCRLocalModelOCRFileResolvesPayload(t *testing.T) {
+	withSSRFBypass(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/layout-parsing" {
+			http.NotFound(w, r)
+			return
+		}
+		if got, want := r.Header.Get("Authorization"), "Bearer tok-local"; got != want {
+			t.Errorf("Authorization = %q, want %q", got, want)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode body: %v", err)
+			return
+		}
+		if got, want := body["algorithm"], "PaddleOCR-VL"; got != want {
+			t.Errorf("algorithm = %v, want %v", got, want)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"# Local Title\n"}}]}}`))
+	}))
+	defer server.Close()
+
+	driver := NewPaddleOCRLocalModel(nil, URLSuffix{OCR: "layout-parsing"})
+	apiKey := fmt.Sprintf(`{"paddleocr_base_url":%q,"paddleocr_access_token":"tok-local","paddleocr_algorithm":"PaddleOCR-VL"}`, server.URL)
+	emptyBaseURL := ""
+	modelName := "PaddleOCR-VL"
+
+	resp, err := driver.OCRFile(context.Background(), &modelName, []byte("%PDF-1.4"), nil, &APIConfig{ApiKey: &apiKey, BaseURL: &emptyBaseURL}, nil, nil)
+	if err != nil {
+		t.Fatalf("OCRFile: %v", err)
+	}
+	if resp == nil || resp.Text == nil || !strings.Contains(*resp.Text, "Local Title") {
+		t.Fatalf("OCRFile text = %v, want Local Title", resp)
+	}
+}
 
 func TestParseOCRResultBodyArray(t *testing.T) {
 	p := &PaddleOCRModel{}

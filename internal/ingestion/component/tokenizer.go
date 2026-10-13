@@ -38,7 +38,7 @@
 //   - EMBEDDING MODEL RESOLUTION: mirrored. Python uses
 //     `LLMBundle(tenant_id, embd_id).encode([...])` from
 //     `rag/flow/tokenizer/tokenizer.py:54-66`; the Go port goes
-//     through `service.ModelProviderService.GetEmbeddingModel`
+//     through the model solver injected by the ingestion task package
 //     (callers inject the resolver, see `DefaultEmbedderResolver`).
 //     The component does NOT directly construct a model driver —
 //     the resolution path depends on tenant/DAO context that lives
@@ -81,7 +81,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"regexp"
 	"slices"
 	"strings"
@@ -106,11 +105,9 @@ const ComponentNameTokenizer = "Tokenizer"
 // `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// htmlTableRE matches HTML table-cell tags so the embedded text fed
-// to the embedding model doesn't carry raw markup. Mirrors the python
-// `re.sub(r"</?(table|td|caption|tr|th)( [^<>]{0,12})?>", " ", txt)` at
-// tokenizer.py:79.
-var htmlTableRE = regexp.MustCompile(`</?(table|td|caption|tr|th)( [^<>]{0,12})?>`)
+// Table content is no longer carried as HTML markup (the parser emits the
+// structured entity.TableData contract), so there is no table markup to strip
+// from the embedded text. The legacy htmlTableRE was removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
@@ -152,6 +149,43 @@ type Embedder interface {
 	MaxTokens() int
 	BatchSize() int
 	Encode(ctx context.Context, texts []string) ([]EmbeddingResult, error)
+}
+
+// EmbedderTrimmer is an OPTIONAL extension of Embedder, implemented by embedders
+// that can count with the embedding model's own tokenizer (or a calibrated upper
+// bound of it) instead of cl100k_base. When present the component uses it for
+// every truncation, because cl100k and a model's own tokenizer disagree by up to
+// ~2% and the sign of the disagreement depends on the content: a chunk that
+// cl100k scores just under the limit can be over it in the model's tokenizer,
+// which the provider answers with a 400 and, before this, the loss of the whole
+// document. See internal/tokenizer/embedding_token_limits.md.
+type EmbedderTrimmer interface {
+	Trim(text string) (trimmed string, tokens int)
+}
+
+// EmbedderMaxResolver is the optional counterpart that exposes the input window
+// to honour: the model's declared value, then the provider catalog's
+// context_length. Without it the component has to guess, and guessing 8192
+// overshoots the window of every model with a smaller one.
+type EmbedderMaxResolver interface {
+	ResolveMaxTokens() int
+}
+
+// trimForEmbedding trims `text` the best way the embedder allows.
+func trimForEmbedding(embedder Embedder, text string) string {
+	if trimmer, ok := embedder.(EmbedderTrimmer); ok {
+		trimmed, _ := trimmer.Trim(text)
+		return trimmed
+	}
+	return truncateForEmbedding(text, resolveEmbedderMaxTokens(embedder))
+}
+
+// resolveEmbedderMaxTokens is the window the embedder will actually honour.
+func resolveEmbedderMaxTokens(embedder Embedder) int {
+	if resolver, ok := embedder.(EmbedderMaxResolver); ok {
+		return resolver.ResolveMaxTokens()
+	}
+	return embedder.MaxTokens()
 }
 
 // EmbedderResolver resolves the embedder and its dataset-bound embedding-model
@@ -332,6 +366,9 @@ func (c *TokenizerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		zap.Int("input_chunks", len(chunks)),
 	)
 	titleStem := titleExtRE.ReplaceAllString(name, "")
+	if toks := declaredTitleTokens(chunks); len(toks) > 0 {
+		titleStem = strings.TrimSpace(titleStem + " " + strings.Join(toks, " "))
+	}
 
 	// chunk_order_int is the position of the chunk in the (post-filter) reading
 	// sequence. It is set unconditionally on every surviving chunk so that all
@@ -428,10 +465,12 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// truncs[i] is the embedded text for texts[i] / pairs[i]; carried so the
 	// Set-side key matches the Get-side key for freshly embedded content.
 	truncs := make([]string, 0, len(chunks))
+	// cacheHits counts the chunks served from the per-chunk embedding cache;
+	// they are already-resolved work, so the progress fraction starts from them.
+	cacheHits := 0
 	for i, ck := range chunks {
 		raw := concatFields(ck, c.param.Fields)
-		txt := htmlTableRE.ReplaceAllString(raw, " ")
-		txt = strings.TrimSpace(txt)
+		txt := strings.TrimSpace(raw)
 		if txt == "" {
 			continue
 		}
@@ -444,12 +483,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 		// stale embedding for up to the cache TTL. embdID must be non-empty or
 		// every model would collapse onto one key and served vectors could come
 		// from a different model.
-		trunc := truncateForEmbedding(txt, embedder.MaxTokens())
+		trunc := trimForEmbedding(embedder, txt)
 		if chunkID, ok := ck.GetExtraString("id"); ok && embdID != "" && store != nil {
 			if cached, hit := chunkcache.Get(ctx, store, chunkcache.Key("emb", embdID, chunkID, trunc)); hit {
 				var vec []float64
 				if err := json.Unmarshal([]byte(cached), &vec); err == nil && len(vec) > 0 {
 					resolved[i] = &resolvedVec{content: vec, isHit: true, trunc: trunc}
+					cacheHits++
 					continue
 				}
 			}
@@ -479,7 +519,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	// skip is the correct behavior (go_intentional). Do NOT "align" this to
 	// the DSL.
 	if trimmedName == "" {
-		log.Printf("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
+		common.Warn("Tokenizer: empty name provided from upstream, embedding will skip title weighting")
 	} else {
 		// Encode the raw name (no TrimSpace) to mirror Python
 		// tokenizer.py:95 which passes name verbatim to embedding. The
@@ -502,6 +542,7 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 	if batchSize <= 0 {
 		return nil, 0, fmt.Errorf("tokenizer: embedder reported non-positive batch size %d", batchSize)
 	}
+	embedTotal := cacheHits + len(texts)
 	for start := 0; start < len(texts); start += batchSize {
 		end := start + batchSize
 		if end > len(texts) {
@@ -518,6 +559,13 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 			tokenCount += result.TokenCount
 		}
 		contentResults = append(contentResults, batchResults...)
+		runtime.ReportComponentFraction(ctx, float64(cacheHits+end)/float64(embedTotal))
+	}
+	if len(texts) == 0 && embedTotal > 0 {
+		// With no cache misses the batch loop never runs, so the phase would
+		// otherwise report nothing at all; every content embedding is already
+		// resolved, which is the loop's completion value.
+		runtime.ReportComponentFraction(ctx, 1)
 	}
 
 	titleWeight := c.param.FilenameEmbdWeight
@@ -559,34 +607,31 @@ func (c *TokenizerComponent) embedChunks(ctx context.Context, tenantID, kbID, na
 }
 
 // defaultEmbeddingTokenLimit is the safe fallback used when an embedder reports
-// no token limit (maxTokens <= 0). It both prevents empty embedding inputs and
-// keeps truncation active for every path instead of passing the full text through.
-const defaultEmbeddingTokenLimit = 8192
+// no token limit at all. It is deliberately conservative: overshooting a model's
+// window is a rejected request, while undershooting only truncates.
+const defaultEmbeddingTokenLimit = tokenizer.EmbeddingTokenLimitDefault
 
-// truncateForEmbedding keeps the first maxTokens tokens of text so it fits the
-// embedding model's limit.
+// truncateForEmbedding keeps the first `limit` cl100k tokens of text so it fits
+// the embedding model's limit.
 //
-// For a positive maxTokens it mirrors Python common/token_utils.py:183-185
-// `truncate(string, max_len)` (keep the first max_len tokens).
+// This is the LEGACY path: it is used only when the embedder cannot trim for
+// itself (i.e. it does not implement EmbedderTrimmer), such as a test stub. The
+// production embedder counts with the model's own tokenizer instead, because
+// cl100k alone is not the model's tokenizer and the difference is
+// content-dependent.
 //
-// An unconfigured embedder reports maxTokens <= 0. Rather than mirror Python's
-// behaviour of returning "" (which would make the embeddings API reject the whole
-// batch with "inputs cannot be empty"), Go clamps the limit to a safe default
-// (defaultEmbeddingTokenLimit = 8192). This both prevents empty inputs AND keeps
-// truncation active for every path (Builtin and generic) instead of silently
-// passing the full, untruncated text when no limit is configured.
+// Two changes from the original implementation, both fixing the same incident:
+//
+//   - the margin is proportional (tokenizer.EmbeddingTokenLimit) instead of a
+//     flat 10 tokens, which was 0.12% of an 8192-token window — an order of
+//     magnitude smaller than the disagreement between two tokenizers;
+//   - the fallback limit is the resolved window (declared value, then the
+//     catalog's context_length, then a conservative default) rather than a
+//     hard-coded 8192, which overshoots the window of every smaller model.
 func truncateForEmbedding(text string, maxTokens int) string {
-	if maxTokens <= 0 {
-		maxTokens = defaultEmbeddingTokenLimit
-	}
-	// Keep a 10-token safety margin, mirroring Python's embedding path
-	// (rag/svr/task_executor.py uses `mdl.max_length - 10`). Only apply it
-	// when the limit is large enough; for small limits (<=10) keep the full
-	// value so the result stays non-empty instead of collapsing to "".
-	if maxTokens > 10 {
-		maxTokens -= 10
-	}
-	return tokenizer.TrimContentToTokenLimit(text, maxTokens)
+	declared := tokenizer.ResolveEmbeddingMaxTokens(maxTokens, 0)
+	limit := tokenizer.EmbeddingTokenLimit(declared)
+	return tokenizer.TrimContentToTokenLimit(text, limit)
 }
 
 func mergeEmbeddingVectors(titleVec, contentVec []float64, titleWeight float64) ([]float64, error) {
@@ -705,6 +750,151 @@ func cloneTokenizerChunkDoc(in schema.ChunkDoc) schema.ChunkDoc {
 	}
 	if len(in.Positions) > 0 {
 		out.Positions = append(json.RawMessage(nil), in.Positions...)
+	}
+	return out
+}
+
+// declaredTitleTokens returns the tokens of the title a document declares about itself, when its
+// header block carries one ("title: Pragyan Ojha", "name: Lesley Manyathela", "fullname: ...").
+//
+// Why it exists: a corpus whose files are named by id ("93372.md") otherwise leaves title_tks
+// holding nothing but the id, while the retriever weights title_tks on a par with content_ltks -
+// so the declared title is a ranking signal that costs nothing to index. Label words, the word
+// "wikipedia", English stopwords and pure numbers are dropped: they are noise that would match
+// unrelated queries once the field is weighted.
+//
+// Only the first non-empty chunk is inspected, because the header block (when present at all)
+// belongs to the head of the document.
+//
+// The extraction is script-agnostic. A word that is not pure ASCII — Chinese, Japanese, Korean,
+// Cyrillic, Arabic, Greek, Hebrew, Thai, or Latin carrying diacritics — is kept whole and handed
+// to the analyzer downstream, which is what segments it. Splitting such a word here, on ASCII
+// boundaries, is the older behaviour and it dissolved the whole title into nothing.
+// Tokens that ARE pure ASCII keep the older treatment: englishStopwords are dropped (the
+// tokenizer keeps function words such as "the", "for" and "and" as-is — verified via the ES
+// _analyze API on title_tks and via tokenizer.Tokenize — so they have to be filtered here), and
+// so are the label words and pure numbers. The stopword list stays English-only on purpose: a
+// multilingual one would have to be invented, and getting a language wrong silently deletes real
+// content words from that language's titles.
+// This replaced an earlier length heuristic (keep only tokens >= 5 chars) which also removed real
+// content words such as "icc", "cup", "john", "star", "bros".
+var englishStopwords = map[string]bool{
+	"a": true, "an": true, "and": true, "are": true, "as": true, "at": true, "be": true, "been": true,
+	"but": true, "by": true, "d": true, "for": true, "from": true, "had": true, "has": true, "have": true,
+	"he": true, "her": true, "him": true, "his": true, "i": true, "if": true, "in": true, "into": true,
+	"is": true, "it": true, "its": true, "ll": true, "m": true, "me": true, "my": true, "no": true,
+	"not": true, "of": true, "on": true, "or": true, "our": true, "re": true, "s": true, "she": true,
+	"so": true, "t": true, "that": true, "the": true, "their": true, "them": true, "then": true,
+	"there": true, "these": true, "they": true, "this": true, "to": true, "too": true, "up": true,
+	"us": true, "ve": true, "was": true, "we": true, "were": true, "what": true, "when": true,
+	"where": true, "which": true, "who": true, "will": true, "with": true, "y": true,
+	"you": true, "your": true,
+}
+
+// asciiOnly reports whether s is made of ASCII bytes alone. A pure-ASCII string is the only thing
+// ASCII decoding produces, so a byte scan decides it.
+func asciiOnly(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+// allDigits reports whether s is non-empty and made only of decimal digits, in any script.
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsDigit(r) {
+			return false
+		}
+	}
+	return true
+}
+
+// trimWordEdges drops leading and trailing runes that are neither letters nor digits, so the
+// punctuation a title tends to carry — 《三国演义》, «Война и мир», (1917), a trailing comma — does
+// not reach the token stream.
+func trimWordEdges(s string) string {
+	return strings.TrimFunc(s, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+}
+
+func declaredTitleTokens(chunks []schema.ChunkDoc) []string {
+	const (
+		headerLines = 20
+		maxTokens   = 20
+	)
+	var values []string
+	for i := range chunks {
+		head := chunks[i].Text
+		if head == "" {
+			continue
+		}
+		lines := strings.Split(head, "\n")
+		if len(lines) > headerLines {
+			lines = lines[:headerLines]
+		}
+		for _, line := range lines {
+			l := strings.ToLower(strings.TrimSpace(line))
+			for _, key := range []string{"title:", "name:", "fullname:"} {
+				if strings.HasPrefix(l, key) {
+					values = append(values, l[len(key):])
+				}
+			}
+		}
+		break
+	}
+	if len(values) == 0 {
+		return nil
+	}
+	skip := map[string]bool{"title": true, "name": true, "fullname": true, "wikipedia": true}
+	seen := map[string]bool{}
+	var out []string
+	// keep records one accepted token and reports whether the cap is now reached.
+	keep := func(token string) bool {
+		if seen[token] {
+			return false
+		}
+		seen[token] = true
+		out = append(out, token)
+		return len(out) >= maxTokens
+	}
+	for _, v := range values {
+		// Split on whitespace, NOT on ASCII boundaries. A word in another script is a word, and
+		// the analyzer downstream segments it (RAGFlow's tokenizer handles CJK); the
+		// ASCII-boundary splitter dissolved such a word into fragments of length zero.
+		for _, word := range strings.Fields(v) {
+			word = trimWordEdges(word)
+			if word == "" {
+				continue
+			}
+			if !asciiOnly(word) {
+				// Pure numbers stay out of the title channel whichever script writes them: the
+				// corpus file stem is numeric, so a numeric title token matches every document.
+				if !allDigits(word) && keep(word) {
+					return out
+				}
+				continue
+			}
+			for _, w := range strings.FieldsFunc(word, func(r rune) bool {
+				return !(r >= 'a' && r <= 'z') && !(r >= '0' && r <= '9')
+			}) {
+				// Pure numbers stay out (years, ids, and the corpus file stem are all numeric
+				// noise for the title channel); everything else is kept unless it is an English
+				// stopword, a label or a duplicate.
+				if englishStopwords[w] || skip[w] || allDigits(w) {
+					continue
+				}
+				if keep(w) {
+					return out
+				}
+			}
+		}
 	}
 	return out
 }
@@ -884,7 +1074,7 @@ func requiresEmbeddingVector(ck schema.ChunkDoc, fields []string) bool {
 }
 
 func cleanEmbeddingText(text string) string {
-	return strings.TrimSpace(htmlTableRE.ReplaceAllString(text, " "))
+	return strings.TrimSpace(text)
 }
 
 func hasEmbeddingVector(ck schema.ChunkDoc) bool {
@@ -911,6 +1101,18 @@ func getStringOr(m map[string]any, key, def string) string {
 		return v
 	}
 	return def
+}
+
+// firstNonEmpty returns the first non-empty value, or "" when all are empty.
+// Used to walk a settings precedence chain (global choice → legacy per-family
+// choice).
+func firstNonEmpty(values ...string) string {
+	for _, v := range values {
+		if v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 // cloneInputs returns a shallow copy of m with room for one extra key.

@@ -38,17 +38,14 @@ package agentic_rag
 // floorS, and capped by the room the QUESTION still has (roomS is what is left after the
 // reserve the callers below it need).
 //
-// The FLOOR WINS over a room that is merely small: with room 2s and a floor of 10s the
-// call gets 10s, because a node that cannot finish inside its floor is not worth starting
-// at all. A caller that needs the room protected therefore passes a smaller floor, or a
-// roomS that already has the reserve subtracted.
-//
-// A room already GONE (roomS <= 0) yields zero, which every caller treats as "do not
-// start" rather than "start and get cancelled".
+// The FLOOR WINS over a room that is merely small OR already spent: with room 2s — or -50s
+// — and a floor of 10s the call gets 10s, because a node that cannot finish inside its
+// floor is not worth starting at all, and a node that is the only chance to gather a
+// candidate pool is worth its floor even on an overrun budget. A caller that needs the room
+// protected therefore passes a smaller floor, or a roomS that already has the reserve
+// subtracted; a step that must not run at all on a spent budget says so at its own call
+// site (see RunCoverageResolve).
 func nodeClock(budgetS, floorS, roomS float64) float64 {
-	if roomS <= 0 {
-		return 0
-	}
 	return min(budgetS, max(floorS, roomS))
 }
 

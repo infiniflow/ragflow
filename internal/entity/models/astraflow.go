@@ -54,7 +54,7 @@ func NewAstraflowModel(baseURL map[string]string, urlSuffix URLSuffix) *Astraflo
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -93,7 +93,7 @@ func (a *AstraflowModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender opens the SSE chat-completions

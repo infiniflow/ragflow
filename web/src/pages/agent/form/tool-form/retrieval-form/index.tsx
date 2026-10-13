@@ -17,30 +17,36 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  DocumentIdsFormField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
+  refineRetrievalBindings,
   useHideKnowledgeGraphField,
 } from '../../retrieval-form/next';
 import { useValues } from '../use-values';
 import { useWatchFormChange } from '../use-watch-change';
 
-export const FormSchema = z.object({
-  ...RetrievalPartialSchema,
-  description: z.string().optional(),
-});
+export const FormSchema = z
+  .object({
+    ...RetrievalPartialSchema,
+    description: z.string().optional(),
+  })
+  .superRefine(refineRetrievalBindings);
 
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
+  const ownerTenantId = useOwnerTenantId();
+  const { id: canvasID } = useParams();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
+    { canvasID },
   );
 
   const form = useForm({
@@ -55,19 +61,15 @@ const RetrievalForm = () => {
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
-  const ownerTenantId = useOwnerTenantId();
-
   return (
     <Form {...form}>
       <FormWrapper>
         <DescriptionField></DescriptionField>
-        <DocumentIdsFormField></DocumentIdsFormField>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>

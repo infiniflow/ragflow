@@ -187,6 +187,7 @@ var pipelineLogOrderableColumns = map[string]struct{}{
 	"task_type":        {},
 	"operation_status": {},
 	"status":           {},
+	"run_count":        {},
 	"create_time":      {},
 	"create_date":      {},
 	"update_time":      {},
@@ -235,10 +236,6 @@ func compilationTemplateGroupOrderClause(terms []OrderTerm) string {
 
 func fileOrderClause(terms []OrderTerm) string {
 	return orderClause(fileOrderableColumns, terms, defaultOrderColumn)
-}
-
-func knowledgebaseOrderClause(terms []OrderTerm) string {
-	return orderClause(knowledgebaseOrderableColumns, terms, defaultOrderColumn)
 }
 
 func knowledgebaseQualifiedOrderClause(terms []OrderTerm) string {

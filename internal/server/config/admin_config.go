@@ -28,7 +28,7 @@ type AdminConfig struct {
 func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 	// Default Admin config
 	c.admin.Host = "localhost"
-	c.admin.HTTPPort = 9383
+	c.admin.HTTPPort = 9381
 
 	if !v.IsSet("admin") {
 		return nil
@@ -44,10 +44,6 @@ func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 
 	if sub.IsSet("http_port") {
 		c.admin.HTTPPort = sub.GetInt("http_port")
-	}
-
-	if c.admin.HTTPPort == 9381 {
-		c.admin.HTTPPort = 9383
 	}
 
 	return nil

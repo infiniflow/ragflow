@@ -430,7 +430,7 @@ func TestValidateTokenizerOutputs_SymbolOnlyContentLtksIsEmptyFails(t *testing.T
 // Tokenizer-(T)1: the tokenizer emits chunks via schema.ChunkDocsToMaps
 // (ChunkDoc.ToMap), which must carry the raw `positions` / `_pdf_positions`
 // through untouched so the downstream executor stage
-// (internal/ingestion/task processChunkPositions → AddPositions) can convert
+// (internal/ingestion/task processChunkPositions → addPDFPositions) can convert
 // them into position_int / page_num_int / top_int exactly once. This does NOT
 // require the C++ analyzer pool, so it runs under plain `go test`.
 func TestChunkDocsToMaps_PreservesPDFPositions(t *testing.T) {

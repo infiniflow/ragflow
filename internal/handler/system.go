@@ -21,6 +21,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
+	"ragflow/internal/utility"
 
 	"github.com/gin-gonic/gin"
 )
@@ -81,24 +82,6 @@ func (h *SystemHandler) GetConfig(c *gin.Context) {
 	}
 
 	common.SuccessWithData(c, config, "success")
-}
-
-// GetConfigs get all system configurations
-// @Summary Get All System Configurations
-// @Description Get all system configurations from globalConfig
-// @Tags system
-// @Accept json
-// @Produce json
-// @Success 200 {object} config.Config
-// @Router /v1/system/configs [get]
-func (h *SystemHandler) GetConfigs(c *gin.Context) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, "Configuration not initialized")
-		return
-	}
-
-	common.SuccessWithData(c, cfg, "success")
 }
 
 // GetStatus get RAGFlow status
@@ -272,4 +255,13 @@ func (h *SystemHandler) ListEnvironments(c *gin.Context) {
 // choose the appropriate code path (Go vs Python).
 func (h *SystemHandler) Language(c *gin.Context) {
 	common.SuccessWithData(c, map[string]string{"language": "go"}, "success")
+}
+
+func (h *SystemHandler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }

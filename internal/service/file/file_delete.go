@@ -4,71 +4,93 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
+
+	"go.uber.org/zap"
 )
 
-// DeleteFiles deletes files by IDs
-// Returns (success, message) where success is true if all files were deleted
-func (s *FileService) DeleteFiles(ctx context.Context, uid string, fileIDs []string) (bool, string) {
+// DeleteFiles deletes files and folders by ID after authorizing every entry in
+// each selected folder tree.
+func (s *FileService) DeleteFiles(ctx context.Context, userID string, fileIDs []string) error {
+	files, err := s.fileDAO.GetByIDs(ctx, dao.DB, fileIDs)
+	if err != nil {
+		return err
+	}
+	filesByID := make(map[string]*entity.File, len(files))
+	for _, file := range files {
+		filesByID[file.ID] = file
+	}
+
 	for _, fileID := range fileIDs {
-		// 1. Get file
-		file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
-		if err != nil || file == nil {
-			return false, "File or Folder not found!"
+		file, ok := filesByID[fileID]
+		if !ok {
+			return errors.New("File or Folder not found!")
 		}
-
-		// 2. Check tenant_id
 		if file.TenantID == "" {
-			return false, "Tenant not found!"
+			return errors.New("Tenant not found!")
 		}
-
-		// Block root-folder deletion (root folders have parent_id == id)
 		if file.ParentID == file.ID {
-			return false, "Root folder cannot be deleted."
+			return errors.New("Root folder cannot be deleted.")
 		}
-
-		// 3. Permission check
-		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-			return false, "no authorization"
-		}
-
-		// 4. Skip dataset source files
-		if file.SourceType == FileSourceDataset {
-			continue
-		}
-
-		// 5. Delete based on type
-		if file.Type == FileTypeFolder {
-			if err = s.deleteFolderRecursive(ctx, file, uid); err != nil {
-				return false, fmt.Sprintf("Failed to delete folder: %v", err)
-			}
-		} else {
-			if err = s.deleteSingleFile(ctx, file); err != nil {
-				return false, fmt.Sprintf("Failed to delete file: %v", err)
-			}
+		if err := s.checkFileTreeAccess(ctx, userID, file, permission.OperationDelete); err != nil {
+			return err
 		}
 	}
 
-	return true, ""
+	for _, fileID := range fileIDs {
+		file := filesByID[fileID]
+		if file.SourceType == FileSourceDataset {
+			continue
+		}
+		if file.Type == FileTypeFolder {
+			if err := s.deleteFolderRecursive(ctx, file); err != nil {
+				return fmt.Errorf("Failed to delete folder: %w", err)
+			}
+		} else if err := s.deleteSingleFile(ctx, file); err != nil {
+			return fmt.Errorf("Failed to delete file: %w", err)
+		}
+	}
+	return nil
 }
 
 // deleteSingleFile deletes a single file (not folder)
 // Matches Python's _delete_single_file function
 func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) error {
-	// 1. Delete storage object
-	if file.Location != nil && *file.Location != "" {
-		storageImpl := storage.GetStorageFactory().GetStorage()
-		if storageImpl != nil {
-			if err := storageImpl.Remove(ctx, file.ParentID, *file.Location); err != nil {
-				common.Logger.Error(fmt.Sprintf("Fail to remove object: %s/%s, error: %v", file.ParentID, *file.Location, err))
-			}
-		}
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if err := removeFileObject(ctx, storageImpl, file); err != nil {
+		return err
 	}
+	return s.deleteSingleFileRecords(ctx, file)
+}
 
-	// 2. Handle associated documents
+func removeFileObject(ctx context.Context, storageImpl storage.Storage, file *entity.File) error {
+	if file.Location != nil && *file.Location != "" {
+		if storageImpl == nil {
+			return fmt.Errorf("storage is not configured for file %s", file.ID)
+		}
+		exists, err := storageImpl.ObjectExists(ctx, file.ParentID, *file.Location)
+		if err != nil {
+			return fmt.Errorf("check file %s: %w", file.ID, err)
+		}
+		if !exists {
+			common.Warn("File object already missing", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
+			return nil
+		}
+		if err := storageImpl.Remove(ctx, file.ParentID, *file.Location); err != nil {
+			return fmt.Errorf("remove file %s: %w", file.ID, err)
+		}
+		common.Info("Removed file object", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID), zap.String("bucket", file.ParentID))
+	}
+	return nil
+}
+
+func (s *FileService) deleteSingleFileRecords(ctx context.Context, file *entity.File) error {
+	// Handle associated documents
 	informs, err := s.file2DocumentDAO.GetByFileID(ctx, dao.DB, file.ID)
 	if err != nil {
 		return fmt.Errorf("failed to get file2document mappings: %w", err)
@@ -81,10 +103,7 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 			docID := *inform.DocumentID
 			if s.documentService != nil {
 				if err = s.documentService.RemoveDocumentKeepFile(ctx, docID); err != nil {
-					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-						return fmt.Errorf("context cancelled while removing document %s: %w", docID, err)
-					}
-					common.Logger.Error(fmt.Sprintf("Fail to remove document: %s, error: %v", docID, err))
+					return fmt.Errorf("remove document %s: %w", docID, err)
 				}
 			}
 		}
@@ -95,41 +114,84 @@ func (s *FileService) deleteSingleFile(ctx context.Context, file *entity.File) e
 		}
 	}
 
-	// 3. Delete file record
+	// Delete file record
 	if err = s.fileDAO.Delete(ctx, dao.DB, file.ID); err != nil {
 		return err
 	}
+	common.Info("Deleted file", zap.String("file", fileNameAndID(file)), zap.String("file_id", file.ID))
 
 	return nil
 }
 
 // deleteFolderRecursive recursively deletes a folder and its contents
 // Matches Python's _delete_folder_recursive function
-func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File, uid string) error {
-	// Get all sub-files
+func (s *FileService) deleteFolderRecursive(ctx context.Context, folder *entity.File) error {
+	storageImpl := storage.GetStorageFactory().GetStorage()
+	if storageImpl == nil {
+		return fmt.Errorf("storage is not configured for folder %s", folder.ID)
+	}
+	if err := s.removeFolderObjectsRecursive(ctx, folder, storageImpl); err != nil {
+		return err
+	}
+	return s.deleteFolderRecordsRecursive(ctx, folder)
+}
+
+func (s *FileService) removeFolderObjectsRecursive(ctx context.Context, folder *entity.File, storageImpl storage.Storage) error {
 	subFiles, err := s.fileDAO.ListByParentID(ctx, dao.DB, folder.ID)
 	if err != nil {
 		return err
 	}
-
 	for _, subFile := range subFiles {
 		if subFile.Type == FileTypeFolder {
-			// Recursively delete subfolder
-			if err = s.deleteFolderRecursive(ctx, subFile, uid); err != nil {
+			if err = s.removeFolderObjectsRecursive(ctx, subFile, storageImpl); err != nil {
 				return err
 			}
 		} else {
-			// Delete single file
-			if err = s.deleteSingleFile(ctx, subFile); err != nil {
+			if err = removeFileObject(ctx, storageImpl, subFile); err != nil {
 				return err
 			}
 		}
 	}
+	exists, err := storageImpl.BucketExistsWithError(ctx, folder.ID)
+	if err != nil {
+		return fmt.Errorf("check folder bucket %s: %w", folder.ID, err)
+	}
+	if !exists {
+		common.Warn("Folder bucket already missing", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID))
+		return nil
+	}
+	if err := storageImpl.RemoveEmptyBucket(ctx, folder.ID); err != nil {
+		common.Warn("Unable to remove empty folder bucket", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID), zap.Error(err))
+	} else {
+		common.Info("Removed empty folder bucket", zap.String("folder", fileNameAndID(folder)), zap.String("bucket", folder.ID))
+	}
+	return nil
+}
 
-	// Delete the folder itself
+func (s *FileService) deleteFolderRecordsRecursive(ctx context.Context, folder *entity.File) error {
+	subFiles, err := s.fileDAO.ListByParentID(ctx, dao.DB, folder.ID)
+	if err != nil {
+		return err
+	}
+	for _, subFile := range subFiles {
+		if subFile.Type == FileTypeFolder {
+			if err = s.deleteFolderRecordsRecursive(ctx, subFile); err != nil {
+				return err
+			}
+		} else if err = s.deleteSingleFileRecords(ctx, subFile); err != nil {
+			return err
+		}
+	}
 	if err = s.fileDAO.Delete(ctx, dao.DB, folder.ID); err != nil {
 		return err
 	}
-
+	common.Info("Deleted folder", zap.String("folder", fileNameAndID(folder)), zap.String("folder_id", folder.ID))
 	return nil
+}
+
+func fileNameAndID(file *entity.File) string {
+	if file.Name == "" {
+		return file.ID
+	}
+	return fmt.Sprintf("%s (%s)", file.Name, file.ID)
 }

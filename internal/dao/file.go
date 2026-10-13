@@ -19,11 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
-	"log"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -161,7 +161,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Create root folder if not exists
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -354,7 +354,7 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 // CreateFolder creates a folder in the database
 func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -401,6 +401,21 @@ func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentI
 		return nil, err
 	}
 	return files, nil
+}
+
+// NameExists reports whether a file or folder with the given name already
+// exists under parentID for the tenant, comparing names case-insensitively.
+// excludeID, when non-empty, omits that entry from the check so moving or
+// renaming an entry does not collide with itself.
+func (dao *FileDAO) NameExists(ctx context.Context, db *gorm.DB, name, parentID, tenantID, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.File{}).
+		Where("LOWER(name) = LOWER(?) AND parent_id = ? AND tenant_id = ?", name, parentID, tenantID)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var count int64
+	err := q.Count(&count).Error
+	return count > 0, err
 }
 
 // Delete deletes a file by ID (hard delete)
@@ -475,12 +490,12 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 
 	if len(existing) > 0 {
 		if len(existing) > 1 {
-			log.Printf("[WARN] Found %d duplicate '%s' folders under root %s, keeping only the first",
-				len(existing), DatasetFolderName, rootID)
+			common.Warn("Found duplicate folders under root, keeping only the first",
+				zap.Int("duplicates", len(existing)), zap.String("name", DatasetFolderName), zap.String("root_id", rootID))
 			keepID := existing[0].ID
 			for _, dup := range existing[1:] {
 				if err := reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate folder %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate folder", err, zap.String("folder_id", dup.ID))
 				}
 			}
 		}
@@ -534,19 +549,19 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 
 	if len(existingFiles) > 0 {
 		if len(existingFiles) > 1 {
-			log.Printf("[WARN] Found %d duplicate entries named '%s' under parent %s, keeping only the first",
-				len(existingFiles), name, parentID)
+			common.Warn("Found duplicate entries under parent, keeping only the first",
+				zap.Int("duplicates", len(existingFiles)), zap.String("name", name), zap.String("parent_id", parentID))
 			keepID := existingFiles[0].ID
 			for _, dup := range existingFiles[1:] {
 				if err = reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate file entry %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate file entry", err, zap.String("entry_id", dup.ID))
 				}
 			}
 		}
 		return existingFiles[0], nil
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
@@ -588,7 +603,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		docLocation = *doc.Location
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
@@ -605,7 +620,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		return err
 	}
 
-	f2dID := utility.GenerateToken()
+	f2dID := common.GenerateToken()
 	f2d := &entity.File2Document{
 		ID:         f2dID,
 		FileID:     &fileID,

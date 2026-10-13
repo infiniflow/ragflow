@@ -1087,12 +1087,14 @@ var playbookAnchors = []string{"WHEN TO CALL", "DO NOT CALL", "ARGUMENTS", "OUTP
 // executorSupportedParams lists the params the executor actually consumes per
 // tool (mirrors _EXECUTOR_SUPPORTED). The schema MUST NOT declare any param
 // outside this set — otherwise the model is told to fill an argument the runtime
-// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: doc_scope /
-// keywords are supported by the executor but intentionally NOT declared in the
-// schema (keep the description honest with the implementation).
+// silently ignores (the list_chunks(chunk_ids) ghost bug). Note: keywords are
+// supported by the executor but intentionally NOT declared in the schema (keep
+// the description honest with the implementation); doc_scope IS declared on the
+// two tools that consume it (retrieve, graph_explore).
 var executorSupportedParams = map[string]map[string]bool{
 	"retrieve":           {"query": true, "doc_scope": true},
 	"search_chunks":      {"query": true},
+	"metadata_search":    {"filters": true, "logic": true},
 	"list_chunks":        {"doc_id": true},
 	"navigate_tree":      {"query": true, "keywords": true},
 	"navigate_structure": {"doc_id": true, "query": true, "kind": true},
@@ -1100,8 +1102,8 @@ var executorSupportedParams = map[string]map[string]bool{
 	"web_search":         {"query": true},
 }
 
-// TestToolSpecsHavePlaybookSections pins the PR: each of the 7 tools documents
-// the 5-section contract, within the token budget (cap 1200 chars).
+// TestToolSpecsHavePlaybookSections pins the PR: every tool documents the
+// 5-section contract, within the token budget (cap 1200 chars).
 func TestToolSpecsHavePlaybookSections(t *testing.T) {
 	for _, name := range allTools {
 		desc := ToolMap[name].Function.Description
@@ -1117,7 +1119,7 @@ func TestToolSpecsHavePlaybookSections(t *testing.T) {
 }
 
 // TestActiveToolSpecsToolSurface pins mode -> exposed tool count: low=0,
-// medium/high=7, ultra=8, web-hidden=6.
+// medium/high=8, ultra=9, web-hidden=7.
 func TestActiveToolSpecsToolSurface(t *testing.T) {
 	cases := []struct {
 		mode string
@@ -1125,10 +1127,10 @@ func TestActiveToolSpecsToolSurface(t *testing.T) {
 		want int
 	}{
 		{"low", true, 0},
-		{"medium", true, 7},
-		{"high", true, 7},
-		{"ultra", true, 8},
-		{"medium", false, 6},
+		{"medium", true, 8},
+		{"high", true, 8},
+		{"ultra", true, 9},
+		{"medium", false, 7},
 	}
 	for _, c := range cases {
 		ts := &Toolset{ThinkingMode: c.mode, HasWebSearch: c.web}
@@ -1390,5 +1392,95 @@ func TestDigestShowsAPassageWholeEnoughToNameSomeone(t *testing.T) {
 	}
 	if evidenceDigestChars < 1200 {
 		t.Errorf("digest cap = %d, want at least the 1200 an admitted passage carries", evidenceDigestChars)
+	}
+}
+
+// seedRecordingModel captures the messages of every completion call, so a test can assert
+// what the session seed actually carried. The canned reply is an empty state patch, which
+// ends the session after its first turn.
+type seedRecordingModel struct{ seen [][]schema.Message }
+
+func (m *seedRecordingModel) Complete(_ context.Context, msgs []schema.Message, _ []ToolSpec) (*ModelReply, error) {
+	cp := make([]schema.Message, len(msgs))
+	copy(cp, msgs)
+	m.seen = append(m.seen, cp)
+	return &ModelReply{Content: `<state>{"new_states": []}</state>`}, nil
+}
+
+// TestRunActionSessionSeedCarriesMetadataCatalog pins the seed half of the catalog: the
+// session is TOLD which fields its dataset carries, so a metadata_search filter can name
+// one without a trial-and-error call first. Without a catalog the block is absent — a
+// metadata-free corpus's prompt stays exactly as it shipped.
+func TestRunActionSessionSeedCarriesMetadataCatalog(t *testing.T) {
+	cases := []struct {
+		name string
+		cat  *MetadataCatalog
+		want bool
+	}{
+		{
+			name: "catalog",
+			cat: &MetadataCatalog{
+				Keys:    []string{"author"},
+				Samples: map[string][]MetadataSample{"author": {{Value: "Alice", Docs: 1}}},
+			},
+			want: true,
+		},
+		{name: "no metadata", cat: nil, want: false},
+	}
+	for _, c := range cases {
+		mdl := &seedRecordingModel{}
+		deps := SessionDeps{
+			Tools: &Toolset{ThinkingMode: "high", MetadataFields: c.cat},
+			Model: mdl,
+			KB:    &Kbinfos{},
+		}
+		RunActionSession(context.Background(), deps, "who wrote it", State{State: []Variable{{ID: 0, Type: "aspect"}}}, 60, "", nil, nil)
+		if len(mdl.seen) == 0 {
+			t.Fatalf("%s: the session never called the model", c.name)
+		}
+		var joined strings.Builder
+		for _, m := range mdl.seen[0] {
+			// Only the USER message is the seed: the system prompt names AVAILABLE
+			// METADATA in its playbook, so scanning every message would pass vacuously.
+			if m.Role != schema.User {
+				continue
+			}
+			joined.WriteString(m.Content)
+			joined.WriteString("\n")
+		}
+		seed := joined.String()
+		if got := strings.Contains(seed, "AVAILABLE METADATA"); got != c.want {
+			t.Errorf("%s: seed carries AVAILABLE METADATA = %v, want %v:\n%s", c.name, got, c.want, seed)
+		}
+		if c.want && !strings.Contains(seed, "author") {
+			t.Errorf("%s: the seed block must name the dataset's field:\n%s", c.name, seed)
+		}
+	}
+}
+
+// TestActiveToolSpecsDoesNotMutateSharedToolMap pins the copy-then-patch contract: the
+// catalog rewrites the spec a SESSION sees, never the package-level ToolMap entry every
+// other session (and every concurrent rag call in this one) reads from. Rendered under
+// -race as well, so the maps a patch touches cannot be written concurrently.
+func TestActiveToolSpecsDoesNotMutateSharedToolMap(t *testing.T) {
+	cat := &MetadataCatalog{Keys: []string{"author", "title"}, Samples: map[string][]MetadataSample{}}
+
+	var wg sync.WaitGroup
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ts := &Toolset{ThinkingMode: "high", MetadataFields: cat}
+			_ = ts.ActiveToolSpecs()
+		}()
+	}
+	wg.Wait()
+
+	shipped := ToolMap["metadata_search"]
+	if got := metadataKeyEnum(shipped); len(got) != 0 {
+		t.Errorf("shipped key enum = %v, want NO field baked into the shared spec", got)
+	}
+	if desc, _ := metadataKeyParam(shipped)["description"].(string); strings.Contains(desc, "this dataset's metadata fields") {
+		t.Errorf("a session rewrite leaked its catalog wording into the shipped key parameter: %q", desc)
 	}
 }

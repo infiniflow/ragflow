@@ -21,8 +21,6 @@ import (
 	"fmt"
 	modelModule "ragflow/internal/entity/models"
 	"strings"
-
-	"ragflow/internal/entity"
 )
 
 // NavEmbedder is the production implementation of nlp.NavEmbedder. It resolves
@@ -30,15 +28,15 @@ import (
 // dataset-nav index stores q_<dim>_vec as float). It lives in the service
 // package (not nlp) so it can import model_service without an import cycle.
 type NavEmbedder struct {
-	modelSvc *ModelProviderService
+	modelFactory *ModelFactory
 	// embdModelName is the composite embedding model name (e.g.
 	// "embedding_model@..." ). Empty falls back to resolving the tenant default.
 	embdModelName string
 }
 
 // NewNavEmbedder builds the production embedder used by NavService.
-func NewNavEmbedder(modelSvc *ModelProviderService, embdModelName string) *NavEmbedder {
-	return &NavEmbedder{modelSvc: modelSvc, embdModelName: embdModelName}
+func NewNavEmbedder(modelFactory *ModelFactory, embdModelName string) *NavEmbedder {
+	return &NavEmbedder{modelFactory: modelFactory, embdModelName: embdModelName}
 }
 
 // Encode embeds texts as DOCUMENTS for the tenant and returns float32 vectors.
@@ -56,24 +54,18 @@ func (e *NavEmbedder) EncodeQueries(ctx context.Context, tenantID string, texts 
 }
 
 func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []string, query bool) ([][]float32, error) {
-	if e.modelSvc == nil {
-		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
+	if e.modelFactory == nil {
+		return nil, fmt.Errorf("datasetnav: model factory not initialized")
 	}
 	name := e.embdModelName
+	var model *modelModule.EmbeddingModel
+	access := ModelAccess{TenantID: tenantID}
+	var err error
 	if name == "" {
-		// Resolve the tenant's default embedding model composite reference
-		// ("<model>@<instance>@<provider>") — NOT the tenant id. Passing the
-		// tenant id as the model ref makes ResolveModelConfig parse it as a
-		// "model@provider" key, which fails with "provider name missing in model
-		// name: <tenant_id>". Mirrors knowledge_compiler_wiring.go's chat-model
-		// default resolution.
-		ref, err := e.modelSvc.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeEmbedding)
-		if err != nil {
-			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
-		}
-		name = ref
+		model, err = e.modelFactory.NewDefaultEmbeddingModel(ctx, access)
+	} else {
+		model, err = e.modelFactory.NewEmbeddingModel(ctx, access, name)
 	}
-	model, err := e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
 	if err != nil {
 		return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 	}
@@ -86,7 +78,8 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
+	request := modelModule.EmbedRequest{Texts: nonEmpty, Query: query}
+	embeds, err := model.Embed(ctx, request, nil, nil)
 	if err != nil {
 		return nil, err
 	}

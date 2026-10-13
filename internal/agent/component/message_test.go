@@ -118,6 +118,37 @@ func TestMessage_NoTemplate(t *testing.T) {
 	}
 }
 
+func TestMessage_DanglingReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-dangling", "task-dangling")
+	ctx := withStateForTest(t.Context(), state)
+
+	for _, text := range []string{
+		"{{Agent:Deleted@content}}",
+		"prefix {{Agent:Deleted@content}} suffix",
+	} {
+		_, err := c.Invoke(ctx, nil, map[string]any{"text": text})
+		if err == nil || err.Error() != "Can't find variable: 'Agent:Deleted@content'" {
+			t.Errorf("Invoke(%q) error = %v, want clean missing-variable error", text, err)
+		}
+	}
+}
+
+func TestMessage_ExistingEmptyReference(t *testing.T) {
+	c, _ := NewMessageComponent(nil)
+	state := canvas.NewCanvasState("run-empty", "task-empty")
+	state.SetVar("Agent:Empty", "content", "")
+	ctx := withStateForTest(t.Context(), state)
+
+	out, err := c.Invoke(ctx, nil, map[string]any{"text": "{{Agent:Empty@content}}"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
+	}
+}
+
 func TestMessage_RuntimeContentInput(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-4", "task-4")
@@ -421,7 +452,7 @@ func TestMessage_FormalizedContentFallback(t *testing.T) {
 	}
 }
 
-func TestMessage_SingleStringFallback(t *testing.T) {
+func TestMessage_DoesNotUseUnconfiguredUpstreamResult(t *testing.T) {
 	c, _ := NewMessageComponent(nil)
 	state := canvas.NewCanvasState("run-6", "task-6")
 	ctx := withStateForTest(t.Context(), state)
@@ -433,8 +464,49 @@ func TestMessage_SingleStringFallback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	if got, _ := out["content"].(string); got != "single upstream text" {
-		t.Errorf("content: got %q, want %q", got, "single upstream text")
+	if got, _ := out["content"].(string); got != "" {
+		t.Errorf("content: got %q, want empty content", got)
+	}
+}
+
+func TestMessage_AttachmentOnlyDoesNotResurrectResult(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-attachment-only", "task-attachment-only")
+	state.SetVar("source", "attachments", []map[string]any{{
+		"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown",
+		"url": "/api/v1/agents/attachments/d-1/download",
+	}})
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content":     "upstream content",
+		"attachments": []any{map[string]any{"doc_id": "d-1", "filename": "report.md", "mime_type": "text/markdown", "url": "/api/v1/agents/attachments/d-1/download"}},
+		"result":      "upstream result",
+		"stream":      false,
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); strings.Contains(got, "upstream result") || strings.Contains(got, "upstream content") {
+		t.Fatalf("content = %q, must not contain unconfigured upstream text", got)
+	}
+	downloads, ok := out["downloads"].([]DownloadInfo)
+	if !ok || len(downloads) != 1 || downloads[0].DocID != "d-1" {
+		t.Fatalf("downloads = %#v, want attachment metadata", out["downloads"])
+	}
+}
+
+func TestMessage_MissingAttachmentIsOptional(t *testing.T) {
+	c, _ := NewMessageComponent(map[string]any{"content": []any{"{{source@attachments}}"}})
+	state := canvas.NewCanvasState("run-missing-attachment", "task-missing-attachment")
+	ctx := withStateForTest(t.Context(), state)
+	out, err := c.Invoke(ctx, nil, map[string]any{
+		"content": "upstream content", "result": "upstream result",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, _ := out["content"].(string); got != "" {
+		t.Fatalf("content = %q, want empty", got)
 	}
 }
 

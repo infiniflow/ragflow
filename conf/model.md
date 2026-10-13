@@ -178,6 +178,7 @@ The following providers are **aggregators** — they host models from multiple u
 | **Baidu (Qianwen)** | Ernie + third-party models |
 | **CometAPI** | Multi-provider aggregator |
 | **DeepInfra** | Open-source model hosting |
+| **Demon Route** | OpenAI-compatible router |
 | **FuturMix** | Multi-provider aggregator |
 | **GiteeAI** | Chinese aggregator |
 | **GreenPT** | GLM-based models |

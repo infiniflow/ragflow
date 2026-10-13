@@ -39,19 +39,33 @@ go version
 ### 1.4 Install dependent library
 ```shell
 sudo apt install libpcre2-dev
-python3 ragflow_deps/download_go_deps.py
+uv run ragflow_deps/download_deps.py
 ```
 
+Install `uv` before running the downloader; it installs the script's declared Python dependencies.
+
+This downloader provisions Go native libraries, `.ort` weights, model tokenizer assets, and `cl100k_base.tiktoken`. It installs the local stagehand driver into the SDK's cache, using the SDK version from `go.mod`. Native archives support Linux x86_64.
+
+Build the Go resource image from `ragflow_deps/` after preparing these files:
+
+```shell
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
+```
+
+The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stagehand binaries. DeepDoc weights are prepared under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for packaging and under `internal/rag/res/deepdoc/` for local use.
 > **Note**: If you use IDEs like GoLand to run/debug directly (via Run/Debug buttons), or run `go build` / `go run` from command line, set these CGO environment variables:
 >
 > ```bash
-> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_go_deps.py + download_deps.py
-> PLATFORM="linux_amd64"  # or darwin_amd64, linux_arm64, darwin_arm64
-> # NOTE: the ONNX Runtime static lib fetched by download_go_deps.py is
+> RAGFLOW_DEPS="${HOME}/ragflow-native-libs"  # created by download_deps.py
+> PLATFORM="linux_amd64"  # macOS (darwin_*) is temporarily unsupported; linux_arm64 is not a supported native build target
+> # NOTE: the ONNX Runtime static lib fetched by download_deps.py is
 > # linux-x64 ONLY (onnxruntime-linux-x64-static_lib-*). On darwin_* / non-amd64
 > # PLATFORM values the production DeepDoc backend cannot be linked, so those
 > # PLATFORM examples cover office_oxide/pdfium/pdf_oxide only — ORT is a
-> # Linux-amd64 link dependency here.
+> # Linux-amd64 link dependency here. macOS is temporarily not supported by the
+> # Go backend; use a Linux x86-64 host for a supported native build.
 >
 > # Resolve the version-stamped ORT archive path FIRST, in its own unquoted
 > # assignment: the shell does not expand `*` inside the double-quoted
@@ -97,7 +111,7 @@ python3 ragflow_deps/download_go_deps.py
 > Since `build.sh` (`build_go`) now **fails fast** when ORT is absent from
 > `CGO_LDFLAGS`, this breakage surfaces at build time instead of at runtime. If
 > you see `Error: ONNX Runtime static libraries are not linked`, run
-> `uv run python3 ragflow_deps/download_go_deps.py` (or pre-seed
+> `uv run ragflow_deps/download_deps.py` (or pre-seed
 > `/opt/ragflow-native-libs/onnxruntime` as the CI runner image does). There is
 > no ORT-free production build path — if ORT is absent the binary fails at
 > startup, so the remedy is always to seed the static lib above, never to build
@@ -107,8 +121,8 @@ python3 ragflow_deps/download_go_deps.py
 > that must stay in sync. Bumping it in one spot and not the others fails the
 > build with `Error: ONNX Runtime version is inconsistent`:
 > - `internal/common/environments.go` — `DeepDocORTVersion`
-> - `Dockerfile_go` — `ARG ORT_VERSION`
-> - `ragflow_deps/download_go_deps.py` and `ragflow_deps/download_deps.py` — `ORT_VERSION`
+> - `Dockerfile` — `ARG ORT_VERSION`
+> - `ragflow_deps/download_deps.py` — `ORT_VERSION`
 >
 > `build.sh` runs this consistency check automatically before the Go build
 > (through `check_go_deps`) and fails fast on any mismatch. Run it on demand
@@ -116,6 +130,30 @@ python3 ragflow_deps/download_go_deps.py
 > to the same version, then run the check. The Python pip `onnxruntime==` pin in
 > `pyproject.toml` is versioned independently and is intentionally not part of
 > this check.
+
+> **Note**: `build.sh` also guards ONNX Runtime **archive integrity** and the
+> **link cache**, because a silently-stale `.a` is easy to miss:
+> - `check_onnxruntime_deps` compares the local release ZIP under `ragflow_deps/`
+>   (`onnxruntime-v<ver>-linux-x86_64.zip`) against the SHA-256 digest pinned in
+>   `build.sh`, without a network request. The downloader separately checks the
+>   published `onnxruntime-v<ver>-linux-x86_64.zip.sha256` sidecar. A local ZIP
+>   mismatch only emits a warning with the expected/actual SHA-256 and the
+>   refresh command (`rm -f <zip>` + `uv run ragflow_deps/download_deps.py`);
+>   the build continues checking and linking the extracted static libraries. CI seeds
+>   ORT from `/opt` and has no local zip, so the check is skipped there (the bake
+>   is authoritative). This matters because the `onnxruntime_go` binding reaches
+>   ORT only through the OrtApi function-pointer table
+>   (`ort_api->SessionGetInitializer*`), so a `.a` lacking a custom slot links
+>   successfully and only crashes at runtime — not at link time.
+> - The link passes `CGO_LDFLAGS` a version-stamped path
+>   `onnxruntime/static_lib/v<ver>-<sha256:0:16>/libonnxruntime.a`. Go's build
+>   cache keys `CGO_LDFLAGS` as a string and does NOT hash the referenced `.a`,
+>   so swapping the `.a` in place (same path, re-issued under the same name)
+>   would otherwise silently reuse a stale linked binary. Stamping the path with
+>   the archive's sha256 changes the flag string whenever the content changes →
+>   automatic relink. If you ever see a stale-`.a` crash after an ORT re-issue,
+>   re-run `uv run ragflow_deps/download_deps.py`
+>   so the stamp moves; a plain `go clean -cache` also forces it.
 
 ### 1.5 Build RAGFlow
 
@@ -141,7 +179,7 @@ binary carries it and registers the backend at startup.
 #### Model weights
 
 The Go backend loads **`.ort`** (FlatBuffer) weights; the Python side loads
-**`.onnx`**. Both formats live side by side in `rag/res/deepdoc/` — neither
+**`.onnx`**. Both formats live side by side in `internal/rag/res/deepdoc/` — neither
 supersedes the other, so do not delete one to "clean up".
 
 |        | Go (in-process)                                          | Python                                                       |
@@ -149,13 +187,14 @@ supersedes the other, so do not delete one to "clean up".
 | Format | `.ort`                                                   | `.onnx`                                                      |
 | Files  | `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` | `det.onnx`, `layout.onnx`, `tsr.onnx`, `rec.onnx`, `ocr.res` |
 
-`download_go_deps.py` (§1.4) fetches the five required files — four `.ort` plus
-`ocr.res` — into `rag/res/deepdoc/`; `download_deps.py` snapshots the whole
-`InfiniFlow/deepdoc` repo and therefore carries both formats.
+`download_deps.py` (§1.4) fetches the five required files — four `.ort` plus
+`ocr.res` — into `internal/rag/res/deepdoc/`. Python `.onnx` weights require separate provisioning.
+The resource image packages these files under
+`/huggingface.co/InfiniFlow/deepdoc/` for the Go runtime image.
 
 Auto-discovery is **relative to the server process's working directory**:
 `resolveDeepDocModelDir()` (`cmd/ragflow_server.go`) probes
-`<cwd>/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
+`<cwd>/internal/rag/res/deepdoc`, then `<cwd>/huggingface.co/InfiniFlow/deepdoc`.
 Launching `./bin/ragflow_server` from the repo root therefore needs no
 `MODEL_DIR` / `DEEPDOC_MODEL_DIR` export; from any other CWD — or an image with
 a different WORKDIR — set `MODEL_DIR` explicitly.
@@ -164,16 +203,16 @@ a different WORKDIR — set `MODEL_DIR` explicitly.
 authoritative list — `HasModelFiles()` refuses to serve when any file in it is
 missing from the model directory.
 
-> **Note**: A `rag/res/deepdoc/` populated before the `.ort` switch holds only
+> **Note**: A `internal/rag/res/deepdoc/` populated before the `.ort` switch holds only
 > `.onnx` and will NOT serve the Go backend, even though the directory looks
-> fully populated. Re-run `download_go_deps.py` after updating.
+> fully populated. Re-run `download_deps.py` after updating.
 
 - **Confirm it is serving** — the server logs, at startup:
   `in-process DeepDoc backend registered (production backend)`
   If you instead see a fatal `no in-process DeepDoc backend serving`, it has
   two possible causes: ORT was not linked into the binary, or the model
   directory is missing one of the five required files listed above. Check the
-  weights first, then re-run `uv run python3 ragflow_deps/download_go_deps.py` and rebuild
+  weights first, then re-run `uv run ragflow_deps/download_deps.py` and rebuild
   (§1.4 explains the ORT link failure; `build.sh` fails fast with
   `Error: ONNX Runtime static libraries are not linked` before that happens).
 
@@ -182,14 +221,8 @@ missing from the model directory.
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 
-- **Run the Go Docker image** — the container entrypoint only starts the Go
-  server (`bin/ragflow_server --api/--ingestor/--admin`) when
-  `API_PROXY_SCHEME` is `go` or `hybrid`. With the variable unset (or `python`)
-  the Go server does NOT start, so the in-process backend is absent and the
-  image looks like a Python-only build. Start it with:
-  ```bash
-  docker run -e API_PROXY_SCHEME=go infiniflow/ragflow:go-test-1
-  ```
+- **Run the Go Docker image** — the container entrypoint only starts the server
+  (`bin/ragflow_server --api/--ingestor/--admin`)
 
 - ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
   `-rpath` is needed and no `libonnxruntime.so` ships with the image.
@@ -198,8 +231,21 @@ missing from the model directory.
 
 - Start dependencies
 ```bash
-docker compose -f docker/docker-compose-base.yml --profile ragflow-go --profile infinity up -d
+docker compose -f docker/docker-compose-base.yml --profile infinity up -d
 ```
+
+- Point the host-run Go binaries at Kvrocks. Kvrocks is published on
+  `127.0.0.1:6379` (loopback, reusing the conventional Redis port; the Go
+  deployment disables the Valkey/Redis service so there is no clash). Export these
+  before running `./bin/ragflow_server ...` on the host, or load them from
+  `docker/.env-go`:
+```bash
+export KVROCKS_HOST=127.0.0.1
+export KVROCKS_PORT=6379
+```
+  In docker the Go services override these to `kvrocks:6379` automatically
+  (see `docker-compose-go.yml`). If Kvrocks is unreachable at startup the
+  process fails fast with `failed to connect to Kvrocks`.
 
 
 - Start RAGFlow
@@ -214,7 +260,7 @@ otherwise, they will encounter errors when sending heartbeats.
 `--migrate` writes the database version marker that server modes check on
 startup, and a development branch regularly records a version for a release
 that has not been tagged yet — a build from a `v0.27.x` commit that writes
-`v1.0.0-rc1.dev1` refuses to start afterwards, because the recorded version
+`v1.0.0-rc1` refuses to start afterwards, because the recorded version
 looks newer than the code. Set `RAGFLOW_DEV_MODE=true` (see `docker/.env`) for
 such a checkout: it turns the "code version must not be older than the database
 version" guard off. Leave it off in production.
@@ -249,23 +295,14 @@ version" guard off. Leave it off in production.
 
 ## 3. Start Frontend
 ```bash
-cd web && export API_PROXY_SCHEME=hybrid && npm run dev
+cd web && npm run dev
 ```
 
 ## 4. Service Ports & API Routing
-- api server listens on port 9384 by default
-- admin server listens on port 9383 by default
+- api server listens on port 9380 by default
+- admin server listens on port 9381 by default
 
 After updating or implementing an API, update the frontend development environment routes in web/vite.config.ts under proxySchemes.
-
-### 4.1 Proxy Schemes
-
-| Scheme   | Description                                                                           |
-|----------|---------------------------------------------------------------------------------------|
-| `python` | All API requests from the frontend are routed to the Python server                    |
-| `hybrid` | API requests are partially routed to the Go server and partially to the Python server |
-| `go`     | All API requests from the frontend are routed to the Go server                        |
-
 
 ## 5. RAGFlow commands
 
@@ -674,11 +711,6 @@ RAGFlow(api/default)> CREATE CHUNK STORE FOR DATASET 'test' VECTOR SIZE 384
 - Update a chunk's content
 ```
 RAGFlow(api/default)> UPDATE CHUNK 'deb165dc6a732a64' OF DOCUMENT 'bbe55942535e11f1bc5184ba59049aa3' IN DATASET 'test' SET '{"content": "Updated chunk content here", "important_keywords": ["keyword1", "keyword2"], "questions": ["What is this about?", "Why is it important?"], "available": true, "tag_kwd": ["tag5", "tag2"]}'
-```
-
-- Remove tags from a dataset
-```
-RAGFlow(api/default)> REMOVE TAGS 'tag1', 'tag2' FROM DATASET 'test'
 ```
 
 - Remove specific chunks from a document

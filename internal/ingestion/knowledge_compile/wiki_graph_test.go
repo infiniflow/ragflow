@@ -34,7 +34,7 @@ func page(pageType, slug string, outlinks ...string) wikiPageProjection {
 
 func findEntity(rows []map[string]interface{}, slug string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
 			return r
 		}
 	}
@@ -43,7 +43,7 @@ func findEntity(rows []map[string]interface{}, slug string) map[string]interface
 
 func findRelation(rows []map[string]interface{}, from, to string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
 			return r
 		}
 	}
@@ -65,10 +65,27 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	if entity == nil {
 		t.Fatal("missing entity")
 	}
-	for _, field := range []string{"title_tks", "title_sm_tks", "content_ltks", "content_sm_ltks"} {
+	var payload struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+		t.Fatalf("decode graph entity: %v", err)
+	}
+	if payload.Description != p.Summary {
+		t.Fatalf("description = %q, want stored summary %q", payload.Description, p.Summary)
+	}
+	// Python tokenizes slug + description into content_ltks and writes no title
+	// token column on the entity row (dataset_wiki_generator.py:750-773); the
+	// row's title stays in title_kwd / the payload.
+	for _, field := range []string{"content_ltks", "content_sm_ltks"} {
 		value, ok := entity[field].(string)
 		if !ok || strings.TrimSpace(value) == "" {
 			t.Fatalf("entity[%q] = %#v, want non-empty search content", field, entity[field])
+		}
+	}
+	for _, field := range []string{"title_tks", "title_sm_tks"} {
+		if _, ok := entity[field]; ok {
+			t.Fatalf("entity row must not carry %q (Python writes no title token column)", field)
 		}
 	}
 }
@@ -217,9 +234,9 @@ func TestProjectWikiGraphRowsDropsDanglingAndSelfLoop(t *testing.T) {
 	}
 }
 
-// TestProjectWikiGraphRowsFieldMapping verifies the reader-facing display
-// columns are written (aliases_kwd from entity_names_kwd, description_with_weight
-// from summary_with_weight), and the id is the xxhash colon-namespaced form.
+// TestProjectWikiGraphRowsFieldMapping verifies the entity row matches Python's
+// shape (dataset_wiki_generator.py:759-776): display fields in the
+// content_with_weight payload, schema columns only, xxhash id.
 func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	w := engineWriter{}
 	pages := []wikiPageProjection{
@@ -244,14 +261,8 @@ func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	if e == nil {
 		t.Fatalf("missing entity")
 	}
-	if e["aliases_kwd"] == nil {
-		t.Fatalf("expected aliases_kwd (mapped from entity_names_kwd) to be set")
-	}
-	if e["description_with_weight"] != "the alpha page" {
-		t.Fatalf("expected description_with_weight=summary, got %v", e["description_with_weight"])
-	}
-	if e["entity_type_kwd"] != "wiki_concept" {
-		t.Fatalf("expected entity_type_kwd=wiki_concept, got %v", e["entity_type_kwd"])
+	if e["entity_type_kwd"] != "concept" {
+		t.Fatalf("expected entity_type_kwd=concept, got %v", e["entity_type_kwd"])
 	}
 	// id format: wiki_entity:{kb}:{slug} xxhashed to 16 hex chars.
 	id, _ := e["id"].(string)
@@ -263,14 +274,27 @@ func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	if id != wantID {
 		t.Fatalf("id mismatch: got %q want %q", id, wantID)
 	}
-	// content_with_weight JSON must round-trip the slug/page_type/title/aliases/summary/weight.
+	// content_with_weight JSON is the canvas payload (Python keys), the
+	// authoritative source for name/aliases/description/type.
 	raw, _ := e["content_with_weight"].(string)
 	var decoded map[string]any
 	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
 		t.Fatalf("content_with_weight not valid JSON: %v", err)
 	}
-	if decoded["slug"] != "concept/alpha" || decoded["page_type"] != "concept" {
-		t.Fatalf("content_with_weight missing slug/page_type: %v", decoded)
+	if decoded["slug"] != "concept/alpha" || decoded["type"] != "concept" {
+		t.Fatalf("content_with_weight missing slug/type: %v", decoded)
+	}
+	if decoded["name"] != "Alpha" || decoded["description"] != "the alpha page" {
+		t.Fatalf("content_with_weight missing name/description: %v", decoded)
+	}
+	if aliases, _ := decoded["aliases"].([]any); len(aliases) != 2 || aliases[0] != "A" {
+		t.Fatalf("content_with_weight aliases = %v, want [A Alpha Prime]", decoded["aliases"])
+	}
+	// No Go-only field: none of these exists in an engine mapping.
+	for _, forbidden := range []string{"aliases_kwd", "description_with_weight", "tenant_id", "from_id", "to_id"} {
+		if _, ok := e[forbidden]; ok {
+			t.Fatalf("entity row must not carry the non-schema field %q", forbidden)
+		}
 	}
 }
 

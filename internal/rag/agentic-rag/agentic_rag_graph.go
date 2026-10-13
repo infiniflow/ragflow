@@ -418,7 +418,10 @@ func prefetchNode(ctx context.Context, deps RAGTools, st *AgenticState, logger *
 	step(ctx, logger, "Prefetch", "%s", prefetchSummary(len(st.Plan), len(queries)))
 	// The legs report one level deeper: they are what this prefetch runs, not
 	// sibling steps of it.
-	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity)
+	// The FIRST prefetch round is the one that runs the metadata channel: the rewrites
+	// that follow are already targeted at a gap, while these sub-questions are the
+	// planner's raw wording and more likely to NAME a document.
+	added := FanoutSearch(runtime.Nested(callCtx), deps, st, queries, FanoutTopN, capacity, true)
 	for _, q := range queries {
 		st.Attempted = append(st.Attempted, map[string]any{"q": q, "r": 0, "new": added})
 	}
@@ -695,7 +698,7 @@ func queryRewriteNode(ctx context.Context, deps RAGTools, st *AgenticState, logg
 	// round got room <= 0 and admitted nothing, so the round reported "retrieval
 	// saturated" and discarded itself while the pool still had room to take the
 	// evidence it had just asked for.
-	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap())
+	added := FanoutSearch(callCtx, deps, st, queries, FanoutTopNRewrite, runtime.EvidencePoolCap(), false)
 	// Retrieval saturation early-exit: a rewrite round that produced ZERO new
 	// snippets means further full research passes just burn latency.
 	if added == 0 && st.SearchRounds >= 1 {
@@ -826,6 +829,15 @@ func formalizeAnswerNode(ctx context.Context, deps RAGTools, st *AgenticState, l
 	// is the last moment at which the window set is complete and the members still reach
 	// everything downstream: the count, the record the answer reads, and the answer itself.
 	RunCoverageResolve(ctx, deps, st, logger)
+
+	// Publish what the table already holds, before the answer reads it. The record lists the
+	// members, and a list of names with no passage behind it is what the answer states as facts
+	// its evidence does not carry (see publishAnchoredMembers). The enumeration's own write-back
+	// runs above and publishes its members; this adds the ones no enumeration reached — every
+	// member a metadata selection defined.
+	if derived, resolved := publishAnchoredMembers(st.KB, &st.SlotTable); derived > 0 {
+		logger.Printf("[Finalize][members] derived=%d resolved=%d", derived, resolved)
+	}
 
 	// "Partial" is a statement about the EVIDENCE, so it is decided by facts rather
 	// than by a verdict that may not exist: unresolved slots are the table's own
@@ -1718,9 +1730,13 @@ func NewAgenticLoop() AgenticLoop {
 			// web_search is visible only when the mode exposes it AND a provider is actually
 			// wired. Advertising it without a provider leaves the model calling a tool that can
 			// only return an infra error.
-			HasWebSearch:  resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
-			DisabledTools: map[string]bool{},
-			Exec:          runtime.NewSearchExecutor(sd, req),
+			HasWebSearch: resp.Mode.HasTool("web_search") && deps.WebSearch != nil,
+			// The dataset's real metadata fields, read once here and rendered into the
+			// metadata_search schema and the session seed. Nil (no metadata / unreadable
+			// index / no resolver) keeps the shipped title-only schema.
+			MetadataFields: runtime.MetadataCatalogPtr(ctx, sd),
+			DisabledTools:  map[string]bool{},
+			Exec:           runtime.NewSearchExecutor(sd, req),
 		}
 
 		st, runErr := BuildAgenticGraph(ctx, RAGTools{
@@ -1981,6 +1997,27 @@ type AnswerResult struct {
 	Failed bool
 }
 
+// providerErrorSummary renders a provider failure as ONE bounded line for the
+// think block: whitespace collapsed (a model client's error can embed newlines
+// and a whole JSON body) and cut at providerErrorSummaryMax. The developer log
+// keeps the error verbatim — this is the sentence a user reads while waiting.
+func providerErrorSummary(err error) string {
+	if err == nil {
+		return ""
+	}
+	return truncateRunes(strings.Join(strings.Fields(err.Error()), " "), providerErrorSummaryMax)
+}
+
+// errorAnswerText renders a provider failure as the ANSWER, in the shape the
+// classic chat path uses for its own failures (`**ERROR**: …`): an agentic run
+// that cannot call the model must read to the user exactly like a naive-mode one
+// — bold ERROR plus the provider's own message — instead of Python's generic
+// "I'm sorry…" sentence, which hid the cause and made an exhausted quota look
+// like a RAG bug.
+func errorAnswerText(err error) string {
+	return "**ERROR**: " + providerErrorSummary(err)
+}
+
 // ComposeAnswer: turn the gathered
 // evidence into a grounded, cited answer.
 //
@@ -2071,12 +2108,221 @@ func withCitedChunks(ranked []map[string]any, kb *runtime.Kbinfos, cap int) []ma
 	return cited
 }
 
+// compactAnchored renders each anchored member's block from the quote the naming node matched it
+// to, leaving every other chunk as it is. The block is what the budget is spent on, so whole
+// passages put only the first handful of members inside the render — and a member outside it has
+// no block number the model could cite. The quote carries the same words the record already
+// states, so no evidence is lost: the passage keeps its place in the pool and in the reference.
+func compactAnchored(chunks []map[string]any, kb *runtime.Kbinfos) []map[string]any {
+	if kb == nil {
+		return chunks
+	}
+	quotes := map[string]string{}
+	for _, ref := range kb.AnchoredRefs() {
+		if ref.ChunkID == "" || ref.Quote == "" {
+			continue
+		}
+		if _, dup := quotes[ref.ChunkID]; !dup {
+			quotes[ref.ChunkID] = ref.Quote
+		}
+	}
+	if len(quotes) == 0 {
+		return chunks
+	}
+	out := make([]map[string]any, 0, len(chunks))
+	for _, c := range chunks {
+		q, ok := quotes[runtime.ChunkIDOf(c)]
+		if !ok {
+			out = append(out, c)
+			continue
+		}
+		cp := make(map[string]any, len(c)+1)
+		for k, v := range c {
+			cp[k] = v
+		}
+		cp["content"] = q
+		out = append(out, cp)
+	}
+	return out
+}
+
+// anchoredPoolEntries rebuilds a pool record for every enumerated member whose passage is NOT in
+// the pool, from the quote the naming node took from that passage.
+//
+// The citation chain is: marker number → position in the published list → the pool entry that id
+// resolves to. A member whose passage is gone therefore cannot be cited at all — the marker is
+// dropped (citePoolIdx answers -1) or opens nothing. Rebuilding the record from the member's own
+// quote keeps that chain whole, and the content it opens is exactly the text the answer states.
+func anchoredPoolEntries(kb *runtime.Kbinfos) []map[string]any {
+	if kb == nil {
+		return nil
+	}
+	var out []map[string]any
+	for _, r := range kb.AnchoredRefs() {
+		id := strings.TrimSpace(r.ChunkID)
+		quote := strings.TrimSpace(r.Quote)
+		if id == "" || quote == "" || kb.ChunkByID(id) != nil {
+			continue
+		}
+		out = append(out, map[string]any{
+			"chunk_id":            id,
+			"content":             quote,
+			"content_with_weight": quote,
+		})
+	}
+	return out
+}
+
+// publishAnchoredMembers publishes the slot table's anchored members into the answer's evidence
+// ledger: the citation list the compose puts IN FRONT of the answer (see withCitedChunks) and the
+// member→passage table its markers are written from (see CiteAnchoredMembers).
+//
+// It exists because the enumeration is not the only writer of members. Both publish sites sit in the
+// enumeration's write-back (coverage_step.go), so a member set a METADATA selection defined never
+// reached the answer's evidence at all: measured (2026-09-21) the record listed 6 documents with
+// their update times, the answer stated all 6 — and the evidence it read carried six blocks about
+// OTHER documents with zero markers resolved. The data was in the table the whole time; nobody
+// published it.
+//
+// The anchors such a session records are not pool chunk ids. metadata_search runs no retrieval and
+// admits no passage (tool_executor.go), so it hands the session DOC ids and the session writes those
+// in: measured, 12 anchors, all 32-hex doc ids, none resolvable by ChunkByID. Resolution is
+// therefore part of publishing rather than a refinement of it (see resolveMemberAnchor).
+//
+// derived is what the table claims, resolved what the pool could point at. A member that resolves to
+// nothing is NOT published — it stays a name in the record, but gets no block and no marker rather
+// than a block that opens somebody else's passage.
+func publishAnchoredMembers(kb *runtime.Kbinfos, table *runtime.State) (derived, resolved int) {
+	if kb == nil || table == nil {
+		return 0, 0
+	}
+	refs := runtime.AnchoredItemRefs(table)
+	if derived = len(refs); derived == 0 {
+		return 0, 0
+	}
+	published := make([]runtime.AnchoredRef, 0, len(refs))
+	cited := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		id, quote := resolveMemberAnchor(kb, ref)
+		if id == "" {
+			continue
+		}
+		ref.ChunkID, ref.Quote = id, quote
+		published = append(published, ref)
+		cited = append(cited, id)
+	}
+	if resolved = len(cited); resolved == 0 {
+		return derived, 0
+	}
+	// UNION, not replace: NoteCitedChunks replaces, and the enumeration's own list may hold
+	// passages this derivation does not — a member whose anchor no longer resolves must not cost
+	// the answer a passage that still does.
+	kb.NoteCitedChunks(appendMissingIDs(kb.CitedChunks(), cited))
+	kb.NoteAnchoredRefs(mergeAnchoredRefs(kb.AnchoredRefs(), published))
+	return derived, resolved
+}
+
+// resolveMemberAnchor maps one member's recorded anchor to a passage the pool holds, and returns the
+// quote that block may be rendered from ("" = render the whole passage).
+//
+//  1. the anchor is a pool chunk id — the enumeration's own case;
+//  2. the anchor is a doc id the pool holds chunks for — a metadata selection's case: the member IS
+//     the document, so it takes that document's passage, preferring the one that carries the quote.
+//     Which passage stands for a document is otherwise arbitrary, and an arbitrary passage is one
+//     the answer's own quotation will not match (see CitedAnchoredMembers);
+//  3. neither — no passage, and the caller publishes nothing for it.
+//
+// The quote is KEPT only when the resolved passage carries it. compactAnchored renders a published
+// member's block from the quote INSTEAD of the passage, so a quote the passage does not contain —
+// measured: "file_name: …; update_time: 2026-09-21 13:35:46", the metadata line the session was
+// shown — would replace the passage with something that is not in it.
+func resolveMemberAnchor(kb *runtime.Kbinfos, ref runtime.AnchoredRef) (string, string) {
+	anchor := strings.TrimSpace(ref.ChunkID)
+	if anchor == "" {
+		return "", ""
+	}
+	if chunk := kb.ChunkByID(anchor); chunk != nil {
+		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
+			return anchor, ref.Quote
+		}
+		return anchor, ""
+	}
+	bestID := ""
+	bestScore := 0.0
+	for _, chunk := range kb.Chunks {
+		if runtime.DocIDOf(chunk) != anchor {
+			continue
+		}
+		id := runtime.ChunkIDOf(chunk)
+		if id == "" {
+			continue
+		}
+		if runtime.QuoteHeldBy(runtime.ChunkTextOf(chunk), ref.Quote) {
+			return id, ref.Quote
+		}
+		if score := similarityOrScore(chunk); bestID == "" || score > bestScore {
+			bestID, bestScore = id, score
+		}
+	}
+	return bestID, ""
+}
+
+// mergeAnchoredRefs unions the refs already recorded with the ones just published, first occurrence
+// winning: a member the enumeration already matched to a passage keeps that passage, and this step
+// only adds the members it did not have.
+func mergeAnchoredRefs(existing, added []runtime.AnchoredRef) []runtime.AnchoredRef {
+	out := make([]runtime.AnchoredRef, 0, len(existing)+len(added))
+	seen := make(map[string]bool, len(existing)+len(added))
+	for _, group := range [][]runtime.AnchoredRef{existing, added} {
+		for _, ref := range group {
+			name := strings.ToLower(strings.TrimSpace(ref.Name))
+			if name == "" || strings.TrimSpace(ref.ChunkID) == "" || seen[name] {
+				continue
+			}
+			seen[name] = true
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// appendMissingIDs appends the ids not already present, in order: a passage the render left out
+// (the budget admits only the first few whole chunks) still has to hold a position in the
+// published list, or nothing can cite it.
+func appendMissingIDs(ids, extra []string) []string {
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		seen[id] = true
+	}
+	for _, id := range extra {
+		if id = strings.TrimSpace(id); id == "" || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	return ids
+}
+
 // answerPromptWithEvidence renders the parts list in order: question, answer-target
 // contract, optional no-evidence instruction, research summary, partial preamble,
 // evidence. The no-evidence flag is `abstain or empty_result or not chunks`.
 func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question string, partial, noEvidence bool) answerPrompt {
 	chunks := []map[string]any{}
 	if kb != nil {
+		// An enumerated member whose passage is no longer in the pool is rebuilt from the quote the
+		// naming node took from it BEFORE anything is rendered or published: the marker's number
+		// indexes the published list and the client opens the pool entry behind it, so a member
+		// whose passage was evicted (the pool cap, or selectEvidence narrowing to another call)
+		// would otherwise lose its citation in the chat pipeline (citePoolIdx answers -1 and the
+		// marker is dropped).
+		if extra := anchoredPoolEntries(kb); len(extra) > 0 {
+			kb.Admit(func(p *runtime.PoolAdmitter) {
+				for _, c := range extra {
+					p.Add(c)
+				}
+			})
+		}
 		chunks = kb.Chunks
 	}
 	ranked := rankByScore(chunks)
@@ -2084,6 +2330,11 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	if len(citeChunks) == 0 {
 		citeChunks = chunks
 	}
+	// An anchored member's block is rendered from its QUOTE: the budget is spent per block, so a
+	// whole ~1200-char passage per member fits only the first handful of them, and every member
+	// past that one is a member neither the model nor the answer can cite. The quote is the same
+	// words the record states, and the passage itself stays in the pool and in the reference.
+	citeChunks = compactAnchored(citeChunks, kb)
 	maxTokens := d.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = evidenceBudgetTokens
@@ -2100,9 +2351,27 @@ func (d AnswerDeps) answerPromptWithEvidence(kb *runtime.Kbinfos, question strin
 	// The ids come from the render's SOURCE indices, not from citeChunks: a chunk
 	// with no content renders no block, so walking citeChunks would publish an id for
 	// the skipped chunk and put every marker past it one block off.
+	//
+	// The enumerated members then follow whether or not their block rendered: the evidence
+	// budget admits only the first few whole chunks, so a member past them holds no block
+	// number the model could write — and a member with no position is a member the answer
+	// cannot cite and the user cannot open. Appending keeps the rendered prefix intact
+	// (block n is still position n) and gives the completion its target
+	// (runtime.CiteAnchoredMembers).
 	blocks, sources := prompts.KBPromptZeroBasedWithSourceIndices(citeChunks, maxTokens)
 	if kb != nil {
-		kb.CiteChunkIDs = citeChunkIDsAt(citeChunks, sources)
+		// Only ids the POOL still holds are appended: the chat pipeline resolves a marker by
+		// looking its chunk up in the pool, and a member whose passage is gone would publish a
+		// nil reference entry — the marker is then dropped and the line loses its citation
+		// entirely. A member the pool no longer holds must lose its citation, not break the one
+		// the user can open.
+		present := make([]string, 0, len(kb.CitedChunks()))
+		for _, id := range kb.CitedChunks() {
+			if kb.ChunkByID(id) != nil {
+				present = append(present, id)
+			}
+		}
+		kb.CiteChunkIDs = appendMissingIDs(citeChunkIDsAt(citeChunks, sources), present)
 	}
 	evidence := strings.Join(blocks, "\n")
 

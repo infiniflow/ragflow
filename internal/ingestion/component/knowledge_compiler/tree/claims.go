@@ -4,13 +4,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/agent/runtime"
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -101,6 +103,46 @@ Return JSON only, no commentary.`
 type claimEntry struct {
 	id   string
 	text string
+}
+
+const claimProgressMilestones = 20
+
+type claimProgressReporter struct {
+	total      int
+	step       int
+	last       int
+	nextTarget int
+}
+
+func newClaimProgressReporter(total int) *claimProgressReporter {
+	step := 1
+	if total > 0 {
+		step = (total + claimProgressMilestones - 1) / claimProgressMilestones
+	}
+	return &claimProgressReporter{total: total, step: step, nextTarget: step}
+}
+
+func (r *claimProgressReporter) shouldReport(completed int) bool {
+	if r == nil || completed <= 0 {
+		return false
+	}
+	if r.total > 0 && completed >= r.total {
+		if r.last == r.total {
+			return false
+		}
+		r.last = r.total
+		return true
+	}
+	if r.last == 0 {
+		r.last = completed
+		return true
+	}
+	if completed >= r.nextTarget {
+		r.last = completed
+		r.nextTarget = (completed/r.step + 1) * r.step
+		return true
+	}
+	return false
 }
 
 // renderClaimSource builds the user prompt body for one claim-extraction call.
@@ -200,6 +242,7 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 		// and is not required to be goroutine-safe.
 		mu        sync.Mutex
 		completed int
+		reporter  = newClaimProgressReporter(total)
 	)
 	for i := range batches {
 		i := i
@@ -213,7 +256,10 @@ func ExtractClaimsForChunks(ctx context.Context, deps common.Deps, llmID string,
 			// which advances the counter only for finished batches; workers
 			// finish out of order, so the figure jumps by batch size).
 			completed += len(batch)
-			runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
+			runtime.ReportComponentFraction(ctx, float64(completed)/float64(total))
+			if reporter.shouldReport(completed) {
+				runtime.ReportProgressMessage(ctx, "Compiler", fmt.Sprintf("tree-template: extracting claims for chunk %d/%d", completed, total))
+			}
 			mu.Unlock()
 			return nil
 		})
@@ -258,13 +304,13 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	}
 	raw, err := common.GenJSON(ctx, deps.Chat, req)
 	if err != nil {
-		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
+		rfcommon.Warn("tree: claim extraction skipped for batch", zap.String("batch", claimBatchLabel(batch)), zap.Error(err))
 		return nil
 	}
 
 	items, err := parseClaimItemsMap(raw)
 	if err != nil {
-		log.Printf("tree: claim extraction skipped for batch %s: %v", claimBatchLabel(batch), err)
+		rfcommon.Warn("tree: claim extraction skipped for batch", zap.String("batch", claimBatchLabel(batch)), zap.Error(err))
 		return nil
 	}
 	if len(items) == 0 {
@@ -301,8 +347,9 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 	// document would let a quote match an unrelated chunk that merely happens to
 	// contain the same sentence, and would then attribute the claim to it.
 	claims, verified, rejected := ValidateClaims(claims, textByID, mode)
-	log.Printf("tree: claim extraction batch=%s chunks=%d claims=%d emitted_evidence=%d verified=%d rejected=%d",
-		claimBatchLabel(batch), len(batch), len(claims), emitted, verified, rejected)
+	rfcommon.Info("tree: claim extraction",
+		zap.String("batch", claimBatchLabel(batch)), zap.Int("chunks", len(batch)), zap.Int("claims", len(claims)),
+		zap.Int("emitted_evidence", emitted), zap.Int("verified", verified), zap.Int("rejected", rejected))
 
 	// Recover attribution from the evidence that survived the gate: the chunk a
 	// quote was located in IS where the claim came from. A claim that neither the
@@ -323,7 +370,7 @@ func extractClaimsForBatch(ctx context.Context, deps common.Deps, llmID, claimPr
 			}
 		}
 		if id == "" {
-			log.Printf("tree: dropped claim with no attributable source: %s", c.Name)
+			rfcommon.Warn("tree: dropped claim with no attributable source", zap.String("claim", c.Name))
 			continue
 		}
 		c.SourceChunkIDs = []string{id}

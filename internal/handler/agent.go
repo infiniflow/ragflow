@@ -23,7 +23,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +40,6 @@ import (
 	"ragflow/internal/ingestion/task"
 	"ragflow/internal/service"
 	"ragflow/internal/service/file"
-	"ragflow/internal/utility"
 
 	dslpkg "ragflow/internal/agent/dsl"
 )
@@ -78,12 +77,12 @@ type AgentHandler struct {
 	fileService  agentFileService
 	loader       canvasLoader
 	// redisGet fetches a raw string from Redis. Defaults to the global
-	// client (redis.Get) so production behaviour is unchanged; tests inject
+	// client (kvrocks.Get) so production behaviour is unchanged; tests inject
 	// a miniredis-backed getter to exercise Agent log endpoints without a
 	// live Redis (mirrors the newExecutor injection pattern).
 	redisGet func(key string) (string, error)
 	// redisStore writes the debug-run log array. Defaults to the global
-	// client (redis.Get, which satisfies task.DebugLogStore); tests inject a
+	// client (kvrocks.Get, which satisfies task.DebugLogStore); tests inject a
 	// miniredis-backed writer so runCanvasPipelineDebug can be exercised without a
 	// live Redis.
 	redisStore task.DebugLogStore
@@ -112,8 +111,8 @@ func NewAgentHandler(ctx context.Context, agentService *service.AgentService, fi
 		chatRunner:   agentService,
 		fileService:  fileService,
 		loader:       agentService,
-		redisGet:     func(key string) (string, error) { return redis.Get().Get(ctx, key) },
-		redisStore:   redis.Get(),
+		redisGet:     func(key string) (string, error) { return kvrocks.Get().Get(ctx, key) },
+		redisStore:   kvrocks.Get(),
 		newExecutor: func(taskCtx *task.TaskContext, canvasID string, docBulkSize int) (debugExecutor, error) {
 			return task.NewPipelineExecutor(taskCtx, canvasID, docBulkSize)
 		},
@@ -295,8 +294,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	req.UserID = user.ID
-	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
+	row, code, err := h.agentService.CreateAgent(c.Request.Context(), user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -309,7 +307,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 // @Tags agents
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Success 200 {object} entity.UserCanvas
+// @Success 200 {object} agentDetailResponse
 // @Router /api/v1/agents/{canvas_id} [get]
 func (h *AgentHandler) GetAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
@@ -339,18 +337,25 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	common.SuccessWithData(c, &agentDetailResponse{UserCanvas: row, LastPublishTime: lastPublishTime}, "success")
+	tenantID := ""
+	if row != nil {
+		tenantID = row.UserID
+	}
+	common.SuccessWithData(c, &agentDetailResponse{
+		UserCanvas:      row,
+		TenantID:        tenantID,
+		LastPublishTime: lastPublishTime,
+	}, "success")
 }
 
-// agentDetailResponse wraps the canvas row with derived fields that Python's
-// get_agent handler adds to the response.
+// agentDetailResponse adds the canvas owner's tenant scope and publish time.
+// user_canvas stores the owner identity in user_id, so that value is exposed
+// as tenant_id for resource-scoped selectors.
 type agentDetailResponse struct {
 	*entity.UserCanvas
+	TenantID        string `json:"tenant_id"`
 	LastPublishTime *int64 `json:"last_publish_time,omitempty"`
 }
-
-// updateAgentRequest is the wire shape for PUT /api/v1/agents/:canvas_id.
-type updateAgentRequest map[string]interface{}
 
 func decodeJSONWithNumber(body io.Reader, target any) error {
 	decoder := json.NewDecoder(body)
@@ -374,13 +379,13 @@ func (h *AgentHandler) UpdateAgent(c *gin.Context) {
 		return
 	}
 	canvasID := c.Param("canvas_id")
-	var req updateAgentRequest
+	var req map[string]interface{}
 	if err := decodeJSONWithNumber(c.Request.Body, &req); err != nil && !errors.Is(err, io.EOF) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
 	if req == nil {
-		req = updateAgentRequest{}
+		req = map[string]interface{}{}
 	}
 	if err := h.agentService.UpdateAgent(c.Request.Context(), user.ID, canvasID, req); err != nil {
 		ec, em := mapAgentError(err)
@@ -468,7 +473,8 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	if sessionID == "" {
 		// Allocate the ordinary-Agent session identity at the HTTP boundary.
 		// Persistence of the session record remains owned by AgentService.RunAgent.
-		sessionID = utility.GenerateToken()
+		sessionID = common.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), sessionID))
 	}
 	userInput, err := readUserInput(c)
 	if err != nil {
@@ -1110,28 +1116,29 @@ func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
 	if len(inputs) == 0 {
 		return nil
 	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]interface{}); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
 
 	out := make(map[string]any, len(inputs))
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
+		out[name] = unwrapFormInput(raw)
 	}
 	return out
+}
+
+func unwrapFormInput(raw any) any {
+	field, ok := raw.(map[string]interface{})
+	if !ok {
+		return raw
+	}
+	if value, exists := field["value"]; exists {
+		return value
+	}
+	// Frontend form state can omit an untouched optional value. A field
+	// descriptor without a submitted value represents nil, not the
+	// descriptor itself (which would make Switch's `empty` fail).
+	if _, descriptor := field["type"]; descriptor {
+		return nil
+	}
+	return raw
 }
 
 func countInputValues(inputs map[string]interface{}) int {
@@ -1221,7 +1228,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		return
 	}
 
-	// DataFlow canvas: run a synchronous, side-effect-free debug (dry-run)
+	// DataFlow agent: run a synchronous, side-effect-free debug (dry-run)
 	// and return the parsed chunks inline — reusing this existing
 	// chat/completions endpoint instead of a dedicated dataflow/debug route.
 	// This mirrors the Python agent_api.py:1569 DataFlow branch, which is
@@ -1269,7 +1276,8 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		// Keep the effective session available to the non-stream response and
 		// to the task_id=session_id wire alias even when the canvas emits no
 		// events (for example an empty query).
-		req.SessionID = utility.GenerateToken()
+		req.SessionID = common.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	// req.Files is already normalized to the 1D file list by the
@@ -1302,6 +1310,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		emitted := false
 		doneSent := false
 		for ev := range events {
+			if ev.Type == "error" {
+				ev = convertAgentRunErrorToMessage(ev)
+			}
 			emitted = true
 			if ev.Type == "done" {
 				doneSent = true
@@ -1363,6 +1374,11 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	hasEvents := false
 	for ev := range events {
 		hasEvents = true
+		if ev.Type == "error" {
+			ev = convertAgentRunErrorToMessage(ev)
+			copy := ev
+			finalAns = &copy
+		}
 		var evData map[string]any
 		if err := json.Unmarshal([]byte(ev.Data), &evData); err == nil {
 			if ev.Type == "message" {
@@ -1466,13 +1482,7 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[string]any {
 	values := make(map[string]any, len(inputs)+1)
 	for name, raw := range inputs {
-		if field, ok := raw.(map[string]interface{}); ok {
-			if value, exists := field["value"]; exists {
-				values[name] = value
-				continue
-			}
-		}
-		values[name] = raw
+		values[name] = unwrapFormInput(raw)
 	}
 	values["query"] = query
 	return values
@@ -1635,7 +1645,7 @@ func (h *AgentHandler) checkCanvasAccessForHandler(c *gin.Context, userID, canva
 // api/apps/restful_apis/agent_api.py:992 — but unlike the Python
 // implementation this handler does not sync a Canvas replica.
 // `api.apps.services.canvas_replica_service.CanvasReplicaService` is
-// the Python Redis-backed runtime replica (distributed lock + 3h TTL);
+// the Python Kvrocks-backed runtime replica (distributed lock + 3h TTL);
 // it is intentionally NOT ported to Go. The Go agent port runs every
 // agent through eino's compose.Workflow.Invoke, which is reconstructed
 // from the DSL on each run, so the replica's read-side acceleration

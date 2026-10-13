@@ -68,12 +68,34 @@ func (n *NatsEngine) initSyncerStreamLocked() error {
 		Retention:  jetstream.WorkQueuePolicy,
 		Storage:    jetstream.FileStorage,
 		Discard:    jetstream.DiscardNew,
-		MaxMsgs:    1024 * 128,
-		MaxBytes:   1024 * 1024 * 64,
+		MaxMsgs:    1024 * 1024,
+		MaxBytes:   1024 * 1024 * 1024,
 		Duplicates: 10 * time.Minute,
 	})
 	if err != nil {
-		return fmt.Errorf("syncer: create stream: %w", err)
+		if !isStreamExistsErr(err) {
+			return fmt.Errorf("syncer: create stream: %w", err)
+		}
+		stream, err = n.jetStream.Stream(ctx, syncerStreamName)
+		if err != nil {
+			return fmt.Errorf("syncer: get existing stream: %w", err)
+		}
+		// Reconcile an existing stream created under older settings with the
+		// current config (DiscardNew + larger MaxMsgs/MaxBytes). CreateStream
+		// never touches an already-existing stream, so UpdateStream is required.
+		stream, err = n.jetStream.UpdateStream(ctx, jetstream.StreamConfig{
+			Name:       syncerStreamName,
+			Subjects:   []string{syncerSubjectPattern},
+			Retention:  jetstream.WorkQueuePolicy,
+			Storage:    jetstream.FileStorage,
+			Discard:    jetstream.DiscardNew,
+			MaxMsgs:    1024 * 1024,
+			MaxBytes:   1024 * 1024 * 1024,
+			Duplicates: 10 * time.Minute,
+		})
+		if err != nil {
+			return fmt.Errorf("syncer: update existing stream: %w", err)
+		}
 	}
 	n.syncerStream = stream
 	return nil

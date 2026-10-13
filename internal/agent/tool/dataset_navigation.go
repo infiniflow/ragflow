@@ -20,14 +20,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
+	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nav"
 )
 
@@ -152,6 +154,9 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 			Error:    "dataset navigation requires a tenant and dataset context",
 		}), nil
 	}
+	if err := CheckCanvasDependencies(ctx, dao.DB, permission.ResourceKindDataset, datasetIDs); err != nil {
+		return "", err
+	}
 
 	// Route RELEVANT docs by querying the nav tree with the topic (semantic KNN).
 	// The topic is the routing signal — we must not return arbitrary doc ids.
@@ -222,19 +227,19 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 	// as doc_ids to the retrieval), and collect()'s inScope still applies.
 	if len(docs) == 0 {
 		threshold := datasetNavRecallMinScore
-		w := datasetNavRecallVectorWeight
+		keywordsWeight := 1 - datasetNavRecallVectorWeight
 		chunks, err := GetRetrievalService().Search(ctx, dao.DB, RetrievalRequest{
-			Query:                  query,
-			DatasetIDs:             datasetIDs,
-			TopN:                   datasetNavRecallTopN,
-			SimilarityThreshold:    &threshold,
-			VectorSimilarityWeight: &w,
-			TenantID:               tenantID,
-			DocScope:               docScope,
-			RetrievalFrom:          "dataset",
+			Query:                    query,
+			DatasetIDs:               datasetIDs,
+			TopN:                     datasetNavRecallTopN,
+			SimilarityThreshold:      &threshold,
+			KeywordsSimilarityWeight: &keywordsWeight,
+			TenantID:                 tenantID,
+			DocScope:                 docScope,
+			RetrievalFrom:            "dataset",
 		})
 		if err != nil {
-			log.Printf("[Dataset navigation] content-recall retrieval failed: %v", err)
+			common.Warn("dataset navigation: content-recall retrieval failed", zap.Error(err))
 		} else {
 			// Python :557-563 — the retrieval's doc_aggs read in order; the ES
 			// aggregation orders by hit count descending, so the same order is
@@ -252,7 +257,7 @@ func (d *DatasetNavigationByTree) InvokableRun(ctx context.Context, argumentsInJ
 				counts[did]++
 			}
 			sort.SliceStable(order, func(i, j int) bool { return counts[order[i]] > counts[order[j]] })
-			log.Printf("[Dataset navigation] Content recall found %d candidate doc(s).", len(order))
+			common.Info("dataset navigation: content recall found candidates", zap.Int("docs", len(order)))
 			for _, did := range order {
 				collect(did)
 			}

@@ -29,7 +29,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/cloudwego/eino/schema"
-	"ragflow/internal/entity/models"
 	"ragflow/internal/rag/agentic-rag/runtime"
 )
 
@@ -717,10 +716,6 @@ func TestOuterLoopEndLine(t *testing.T) {
 // the question or the research, and a deployment without an outer loop would print
 // it on every single run — while the reader-visible trace is simply and honestly
 // missing its "[Tool loop]" section.
-//
-// It also pins that the two reasons stay apart: no outer model wired vs a wired one
-// that cannot emit tool calls (the capability probe fails closed, so an operator
-// needs the log to tell a failed probe from a deployment that has no outer model).
 func TestOuterLoopAbsentLineStaysOutOfTheThinkBlock(t *testing.T) {
 	var think, logged strings.Builder
 	ctx := runtime.WithSteps(context.Background(), runtime.StepReporter{
@@ -738,11 +733,6 @@ func TestOuterLoopAbsentLineStaysOutOfTheThinkBlock(t *testing.T) {
 	}
 	if strings.Contains(think.String(), "outer tool loop") {
 		t.Errorf("the wiring note must not reach the think block; got:\n%s", think.String())
-	}
-
-	if got := outerLoopAbsentLine(RAGTools{Outer: &models.ChatModel{}}); got !=
-		"The outer model cannot call tools, so this run has no outer tool loop." {
-		t.Errorf("outerLoopAbsentLine (tool-incapable model) = %q", got)
 	}
 }
 

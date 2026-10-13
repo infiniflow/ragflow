@@ -23,7 +23,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -33,8 +32,10 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"go.uber.org/zap"
 
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 )
 
 const (
@@ -281,7 +282,7 @@ func (c *discordChannel) Send(ctx context.Context, msg core.OutgoingMessage) err
 func (c *discordChannel) run(ctx context.Context) {
 	for ctx.Err() == nil {
 		if err := c.runGateway(ctx); err != nil && ctx.Err() == nil {
-			log.Printf("[discord:%s] gateway error: %v", c.account.AccountID, err)
+			common.Error("discord: gateway error", err, zap.String("account_id", c.account.AccountID))
 		}
 		if ctx.Err() != nil {
 			return
@@ -440,7 +441,7 @@ func (c *discordChannel) handleDispatch(ctx context.Context, payload discordGate
 		c.selfID = ready.User.ID
 		c.mu.Unlock()
 
-		log.Printf("[discord:%s] connected as bot id %s", c.account.AccountID, ready.User.ID)
+		common.Info("discord: connected", zap.String("account_id", c.account.AccountID), zap.String("bot_id", ready.User.ID))
 	case "MESSAGE_CREATE":
 		c.handleMessageCreate(ctx, payload.D)
 	}
@@ -532,7 +533,7 @@ func (c *discordChannel) enqueueIncoming(ctx context.Context, incoming core.Inco
 	}
 
 	if queueFull {
-		log.Printf("[discord:%s] dropping message %s for chat %s: queue is full", c.account.AccountID, incoming.MessageID, incoming.ChatID)
+		common.Warn("discord: dropping message, queue is full", zap.String("account_id", c.account.AccountID), zap.String("message_id", incoming.MessageID), zap.String("chat_id", incoming.ChatID))
 	}
 
 	return false
@@ -589,7 +590,7 @@ func (c *discordChannel) handleIncoming(ctx context.Context, incoming core.Incom
 		return
 	}
 	if err := handler(ctx, incoming); err != nil {
-		log.Printf("[discord:%s] message handler error: %v", c.account.AccountID, err)
+		common.Error("discord: message handler error", err, zap.String("account_id", c.account.AccountID))
 	}
 }
 

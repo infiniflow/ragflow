@@ -20,11 +20,14 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/mail"
 	"regexp"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 )
 
 // compactOffsetPattern expands the legacy "+0000" style offsets to "+00:00".
@@ -106,7 +109,7 @@ func (f *FlexibleTime) parse(value string) {
 		}
 	}
 	if strings.TrimSpace(original) != "" {
-		log.Printf("flexible_time: cannot parse %q as time, falling back to zero time", original)
+		common.Warn("flexible_time: cannot parse value as time, falling back to zero time", zap.String("value", original))
 	}
 	*f = FlexibleTime{}
 }

@@ -186,6 +186,21 @@ func TestBoundedExcerptKeepsTablesWhole(t *testing.T) {
 	if got := boundedExcerpt(table, "unrelated hint", 50); got != table {
 		t.Errorf("table text must be returned whole, got %q", got)
 	}
+	// An HTML table reaches the SCA as Markdown with every row: the SCA is a plain LLM
+	// call, so raw <table>/<td> markup makes it parse the cells itself, and the row set
+	// must stay complete (a row can carry the answer mid-table).
+	htmlTable := "<table><tr><th>Rank</th><th>Rider</th><th>Points</th></tr>" +
+		"<tr><td>19</td><td>Danilo</td><td>62</td></tr>" +
+		"<tr><td>20</td><td>Erik</td><td>61</td></tr></table>"
+	gotTable := boundedExcerpt(htmlTable, "unrelated hint", 50)
+	if strings.Contains(gotTable, "<td>") || strings.Contains(gotTable, "<table") {
+		t.Errorf("HTML table must reach the SCA as Markdown, got %q", gotTable)
+	}
+	for _, want := range []string{"| 19 |", "Danilo", "| 20 |", "Erik"} {
+		if !strings.Contains(gotTable, want) {
+			t.Errorf("anchor lost %q: %q", want, gotTable)
+		}
+	}
 	// Prose is windowed around a hint token.
 	prose := strings.Repeat("prefix filler ", 40) + "TARGET sentence here" + strings.Repeat(" trailing filler", 40)
 	got := boundedExcerpt(prose, "TARGET", 120)

@@ -18,7 +18,8 @@ import { Operator } from '@/constants/agent';
 import { DSL, RAGFlowNodeType } from '@/interfaces/database/agent';
 import {
   getInitialExtractorValues,
-  initialGoExtractorValues,
+  initialCompilationValues,
+  initialExtractorValues,
   initialGeneralChunkerValues,
   initialParserValues,
   initialTitleChunkerValues,
@@ -26,14 +27,15 @@ import {
   initialTokenizerValues,
 } from '@/pages/agent/constant/pipeline';
 import {
+  normalizeTokenChunkerFormValues,
+  transformCompilationParams,
   transformExtractorParams,
   transformGeneralChunkerParams,
   transformParserParams,
   transformTitleChunkerParams,
   transformTokenChunkerParams,
 } from '@/pages/agent/utils';
-import { pickByBackend } from '@/utils/backend-variant';
-import { cloneDeep, isEmpty } from 'lodash';
+import { cloneDeep, isEmpty, omit } from 'lodash';
 
 export const FileNodeId = 'File';
 
@@ -61,7 +63,28 @@ export function transformParserConfigSetups(
     return [];
   }
 
-  return Object.entries(setups)
+  // parser_config entries saved by the Python-era frontend (or derived from
+  // a Python canvas) nest the per-family setups under a "setups" key; the Go
+  // shape lists file families at the top level. Lift the nested group —
+  // top-level families win — and drop the non-family protocol keys so they
+  // never render as a bogus file format. The vision options
+  // (enable_vision_enhancement / vlm) are global params-level keys, not
+  // families, so they are dropped here too (the caller lifts them back onto
+  // the form's top level).
+  let source = setups;
+  const nested = source.setups;
+  if (nested && typeof nested === 'object' && !Array.isArray(nested)) {
+    source = { ...nested, ...omit(source, ['setups']) };
+  }
+
+  return Object.entries(
+    omit(source, [
+      'outputs',
+      'allowed_output_format',
+      'enable_vision_enhancement',
+      'vlm',
+    ]),
+  )
     .map(([fileFormat, config]) => {
       const { pages, ...rest } = (config ?? {}) as Record<string, any>;
       const normalizedPages = Array.isArray(pages)
@@ -98,9 +121,17 @@ function transformLevelsToRules(
     .filter((rule) => rule !== null);
 }
 
-// Python form: flatten the DSL prompts array into the form's single field;
-// the Python extractor form consumes the legacy flat fields as-is.
-function transformExtractorConfigToFormPython(
+/**
+ * Converts Extractor config from API/DSL format to form format: flattens the
+ * DSL prompts array into the form's single field and normalizes the nested
+ * per-feature groups the extractor schema reads (schema.ExtractorParam).
+ * Legacy flat keys (auto_keywords, keywords_sys_prompt, enable_summary, ...)
+ * are accepted as read fallbacks and never re-emitted.
+ *
+ * DSL:  { prompts: [{ content: "text", role: "user" }] }
+ * Form: { prompts: "text" }
+ */
+export function transformExtractorConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
   if (!config) return {};
@@ -109,17 +140,6 @@ function transformExtractorConfigToFormPython(
   if (Array.isArray(config.prompts) && config.prompts.length > 0) {
     result.prompts = config.prompts[0]?.content ?? '';
   }
-
-  return result;
-}
-
-// Go form: additionally normalize the nested per-feature groups the Go
-// extractor schema reads (schema.ExtractorParam).
-function transformExtractorConfigToFormGo(
-  config: Record<string, any> | undefined,
-): Record<string, any> {
-  const result = transformExtractorConfigToFormPython(config);
-  if (!config) return result;
 
   const isSummaryEnabled =
     config.summary?.enabled !== undefined
@@ -141,27 +161,44 @@ function transformExtractorConfigToFormGo(
       ? Boolean(metadataGroup.enabled)
       : config.enable_metadata === 1 || config.enable_metadata === true;
 
+  // The enabled switch is authoritative when the group carries it; legacy
+  // configs without it derive enabled from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const keywordsTopN =
+    config.keywords?.top_n ??
+    config.auto_keywords ??
+    initialExtractorValues.keywords.top_n;
+  const questionsTopN =
+    config.questions?.top_n ??
+    config.auto_questions ??
+    initialExtractorValues.questions.top_n;
+  const tagsTopN =
+    config.tags?.top_n ?? config.auto_tags ?? initialExtractorValues.tags.top_n;
+
   result.keywords = {
-    top_n:
-      config.keywords?.top_n ??
-      config.auto_keywords ??
-      initialGoExtractorValues.keywords.top_n,
+    enabled:
+      config.keywords?.enabled !== undefined
+        ? Boolean(config.keywords.enabled)
+        : keywordsTopN > 0,
+    top_n: keywordsTopN,
     system_prompt:
       config.keywords?.system_prompt ?? config.keywords_sys_prompt ?? '',
   };
   result.questions = {
-    top_n:
-      config.questions?.top_n ??
-      config.auto_questions ??
-      initialGoExtractorValues.questions.top_n,
+    enabled:
+      config.questions?.enabled !== undefined
+        ? Boolean(config.questions.enabled)
+        : questionsTopN > 0,
+    top_n: questionsTopN,
     system_prompt:
       config.questions?.system_prompt ?? config.questions_sys_prompt ?? '',
   };
   result.tags = {
-    top_n:
-      config.tags?.top_n ??
-      config.auto_tags ??
-      initialGoExtractorValues.tags.top_n,
+    enabled:
+      config.tags?.enabled !== undefined
+        ? Boolean(config.tags.enabled)
+        : tagsTopN > 0,
+    top_n: tagsTopN,
     tag_file_id: config.tags?.tag_file_id ?? config.tag_file_id ?? '',
   };
   result.summary = {
@@ -178,26 +215,12 @@ function transformExtractorConfigToFormGo(
       metadataGroup?.built_in_metadata ?? config.built_in_metadata ?? [],
   };
   // Drop the historical keys so they don't linger in form state and get
-  // re-emitted into the DSL on save — the Go extractor only reads the group.
+  // re-emitted into the DSL on save — the extractor only reads the group.
   delete result.metadata_config;
   delete result.enable_metadata;
   delete result.built_in_metadata;
 
   return result;
-}
-
-/**
- * Converts Extractor config from API/DSL format to form format.
- * DSL:  { prompts: [{ content: "text", role: "user" }] }
- * Form: { prompts: "text" }
- */
-export function transformExtractorConfigToForm(
-  config: Record<string, any> | undefined,
-): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorConfigToFormGo,
-    python: transformExtractorConfigToFormPython,
-  })(config);
 }
 
 /**
@@ -207,18 +230,17 @@ export function transformExtractorConfigToForm(
  */
 function transformTokenChunkerConfigToForm(
   config: Record<string, any> | undefined,
+  { seedLegacyDelimiter = true } = {},
 ): Record<string, any> {
   if (!config) return {};
 
   const result = { ...config };
 
-  // Convert string array delimiters to object array; seed the default '\n'
-  // row when the saved list is empty (legacy token_size nodes saved []).
+  // Convert string array delimiters to object arrays. The legacy re-seed and
+  // mode normalization happen in normalizeTokenChunkerFormValues below, which
+  // still sees the raw delimiter_mode.
   if (Array.isArray(config.delimiters)) {
     result.delimiters = config.delimiters.map((d: string) => ({ value: d }));
-    if (result.delimiters.length === 0) {
-      result.delimiters = [{ value: '\n' }];
-    }
   }
   if (Array.isArray(config.children_delimiters)) {
     result.children_delimiters = config.children_delimiters.map(
@@ -236,28 +258,25 @@ function transformTokenChunkerConfigToForm(
   const imageSize = Number(config.image_context_size ?? 0);
   result.image_table_context_window = Math.max(tableSize, imageSize);
 
-  // Normalize delimiter_mode: the 'token_size' tab was removed from the form,
-  // so legacy configs (explicit 'token_size' or absent) load as 'delimiter'.
-  result.delimiter_mode = config.delimiter_mode === 'one' ? 'one' : 'delimiter';
-
-  // Derive enable_children from presence of children_delimiters
-  if (config.enable_children === undefined) {
-    result.enable_children =
-      Array.isArray(config.children_delimiters) &&
-      config.children_delimiters.length > 0;
-  }
+  const normalized = normalizeTokenChunkerFormValues(result, {
+    seedLegacyDelimiter,
+  });
 
   // Clean up DSL-only fields not in form schema
-  delete result.table_context_size;
-  delete result.image_context_size;
+  delete normalized.table_context_size;
+  delete normalized.image_context_size;
 
-  return result;
+  return normalized;
 }
 
 function transformGeneralChunkerConfigToForm(
   config: Record<string, any> | undefined,
 ): Record<string, any> {
-  const result = transformTokenChunkerConfigToForm(config);
+  // The general chunker never had the legacy 'token_size' tab, so an empty
+  // saved list is always a deliberate choice — skip the legacy re-seed.
+  const result = transformTokenChunkerConfigToForm(config, {
+    seedLegacyDelimiter: false,
+  });
   result.table_context_size = Number(config?.table_context_size ?? 0);
   result.image_context_size = Number(config?.image_context_size ?? 0);
   delete result.image_table_context_window;
@@ -327,7 +346,16 @@ export function transformApiConfigToForm(
 ): Record<string, any> {
   switch (operatorType) {
     case Operator.Parser:
-      return { setups: transformParserConfigSetups(config) };
+      // Lift the global vision options back onto the form's top level; omit
+      // them when absent so an explicit undefined cannot clobber template or
+      // default baselines downstream (Object.assign/spread copies undefined).
+      return {
+        setups: transformParserConfigSetups(config),
+        ...(config?.enable_vision_enhancement !== undefined
+          ? { enable_vision_enhancement: config.enable_vision_enhancement }
+          : {}),
+        ...(config?.vlm !== undefined ? { vlm: config.vlm } : {}),
+      };
     case Operator.Extractor:
       return transformExtractorConfigToForm(config);
     case Operator.Tokenizer:
@@ -337,6 +365,7 @@ export function transformApiConfigToForm(
     case Operator.GeneralChunker:
       return transformGeneralChunkerConfigToForm(config);
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return transformTitleChunkerConfigToForm(config);
     default:
       return config ?? {};
@@ -395,6 +424,8 @@ export function transformFormConfigToApi(
       return transformParserParams(config as any);
     case Operator.Extractor:
       return transformExtractorParams(config as any);
+    case Operator.Compiler:
+      return transformCompilationParams(config as Record<string, any>);
     case Operator.Tokenizer:
       return config; // passthrough for Tokenizer
     case Operator.TokenChunker:
@@ -403,6 +434,13 @@ export function transformFormConfigToApi(
       return transformGeneralChunkerParams(config as any);
     case Operator.TitleChunker:
       return transformTitleChunkerParams(config as any);
+    case Operator.ManualChunker:
+      // These fields are UI-only for the title chunker and are not read by
+      // the backend ManualChunker component (manual.go pins method=group,
+      // ignores the token cap).
+      return transformTitleChunkerParams(
+        omit(config, ['include_heading_content', 'chunk_token_cap']) as any,
+      );
     default:
       return config;
   }
@@ -425,6 +463,7 @@ export function normalizeOperatorForm(
       };
     }
     case Operator.TitleChunker:
+    case Operator.ManualChunker:
       return {
         ...cloneDeep(initialTitleChunkerValues),
         ...rawForm,
@@ -442,6 +481,11 @@ export function normalizeOperatorForm(
     case Operator.Extractor:
       return {
         ...cloneDeep(getInitialExtractorValues()),
+        ...rawForm,
+      };
+    case Operator.Compiler:
+      return {
+        ...cloneDeep(initialCompilationValues),
         ...rawForm,
       };
     case Operator.Tokenizer:

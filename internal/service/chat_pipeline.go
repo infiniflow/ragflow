@@ -22,10 +22,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	ragprompts "ragflow/internal/rag/prompts"
 	"ragflow/internal/service/file"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -34,6 +36,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"ragflow/internal/dao"
 
@@ -53,17 +56,17 @@ var llmMessageFields = [...]string{"role", "content", "name", "tool_calls", "too
 // and all their supporting helpers. Callers (OpenAIChatService, ChatSessionService)
 // compose it to avoid code duplication.
 type ChatPipelineService struct {
-	ModelProviderSvc *ModelProviderService
-	MetadataSvc      *MetadataService
-	kbDAO            *dao.KnowledgebaseDAO
+	ModelFactory *ModelFactory
+	MetadataSvc  *MetadataService
+	kbDAO        *dao.KnowledgebaseDAO
 }
 
 // NewChatPipelineService creates a new ChatPipelineService with all required dependencies.
 func NewChatPipelineService() *ChatPipelineService {
 	return &ChatPipelineService{
-		ModelProviderSvc: NewModelProviderService(),
-		MetadataSvc:      NewMetadataService(),
-		kbDAO:            dao.NewKnowledgebaseDAO(),
+		ModelFactory: NewModelFactory(),
+		MetadataSvc:  NewMetadataService(),
+		kbDAO:        dao.NewKnowledgebaseDAO(),
 	}
 }
 
@@ -98,6 +101,11 @@ type AsyncChatResult struct {
 	// the think-block sentence), forwarded so a client can render steps —
 	// tool, status, counts, sources, duration — instead of paragraphs.
 	ThinkEvent *ThinkEvent `json:"think_event,omitempty"`
+	// Internal-only: set when Answer is the run's authoritative full text —
+	// <think> stretch included, citation handles already compacted against the
+	// shipped reference — so the session writer must persist it instead of the
+	// accumulated stream deltas, which still carry the pre-compaction handles.
+	AnswerIsAuthoritative bool
 	// Internal-only: accumulated answer for building the decorated final result.
 	accumulatedAnswer string
 }
@@ -221,7 +229,8 @@ func (s *ChatPipelineService) AsyncChat(
 		return nil, fmt.Errorf("the last content of this conversation is not from user")
 	}
 
-	// No KBs & no web search → fast-path to LLM-only chat.
+	// Resolve what this conversation can reach BEFORE dispatching: whether it
+	// has knowledge bases, and whether web search is enabled.
 	hasKBs := false
 	for _, raw := range chat.KBIDs {
 		if id, ok := raw.(string); ok && id != "" {
@@ -238,6 +247,37 @@ func (s *ChatPipelineService) AsyncChat(
 			zap.Bool("enabled", useWebSearch))
 	}
 
+	// The smart-reasoning agent runs its own retrieval through its corpus
+	// tools, so the pipeline's search and generation phases do not apply. Two
+	// things select it: an explicit agent_mode kwarg, and reasoning level
+	// reasoningLevelAgentic. Reading a nil kwargs map is safe (the zero value
+	// is "").
+	//
+	// The level is resolved from the request first and the dialog's
+	// prompt_config second, exactly as Phase 9 resolves it; a dialog pinned to
+	// the agentic mode therefore keeps that mode when the request omits the
+	// level, and the check stays ahead of the solo-chat short-circuit below so
+	// a level-selected turn is never diverted to a plain LLM answer.
+	//
+	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
+	// resolves a citation with an explicit kb_id scope, and an empty scope
+	// drops that term from the ES query (buildBoolQueryFromCondition), which
+	// would let a cited chunk resolve out of any KB in the tenant. Falling
+	// through keeps an empty scope unreachable instead of trusting every
+	// citation path to defend itself; grep_chunks already refuses an empty
+	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
+	_, agenticSelected := kwargs["agent_mode"].(string)
+	if !agenticSelected {
+		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
+	}
+	if agenticSelected && hasKBs {
+		if useWebSearch {
+			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
+		}
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
+	}
+
+	// No KBs & no web search → fast-path to LLM-only chat.
 	if !hasKBs && !useWebSearch {
 		return s.AsyncChatSolo(ctx, userID, chat, messages, stream, kwargs)
 	}
@@ -402,9 +442,24 @@ func (s *ChatPipelineService) AsyncChat(
 				zap.Int("attachment_bytes", len(attachments)))
 		}
 
+		var historyImageFiles []string
+		for _, previous := range messages[:len(messages)-1] {
+			if previous["role"] == "user" && previous["files"] != nil {
+				_, images := s.splitChatAttachments(ctx, userID, previous["files"])
+				modelType, _ := llmModelConfig["model_type"].(string)
+				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				historyImageFiles = append(historyImageFiles, images...)
+			}
+		}
+		hasImageAttachments = hasImageAttachments || len(historyImageFiles) > 0
+
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
 		promptConfig := chat.PromptConfig
+		// Either the chat setting or the request can disable citations. Resolved
+		// once before any retrieval path can return early. The agentic dispatch
+		// above resolves the same value through quoteEnabled.
+		quote := quoteEnabled(kwargs, promptConfig)
 		fieldMap, fmErr := s.kbDAO.GetFieldMap(ctx, dao.DB, kbIDStrings(kbs))
 		if fmErr != nil {
 			common.Warn("get_field_map failed; proceeding without field_map", zap.Error(fmErr))
@@ -417,11 +472,6 @@ func (s *ChatPipelineService) AsyncChat(
 		if len(fieldMap) > 0 && chatModel != nil && len(kbs) > 0 {
 			common.Info("Phase 6: Use SQL to retrieval")
 			common.Debug("field_map retrieved", zap.Any("field_map", fieldMap))
-			quote := true
-			if v, ok := promptConfig["quote"].(bool); ok {
-				quote = v
-			}
-
 			ans, sqlErr := s.useSQL(
 				ctx, chat, kbs, questions[len(questions)-1], chatModel, fieldMap, quote,
 			)
@@ -604,41 +654,14 @@ func (s *ChatPipelineService) AsyncChat(
 		// meta_data_filter — use LLM to map the question to metadata
 		// criteria, then filter docIDs to matching
 		// documents only.
-		if chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0 && len(kbs) > 0 {
-			kbIDs := kbIDStrings(kbs)
-			if metaQ := questions[len(questions)-1]; metaQ != "" {
-				var flattedMeta common.MetaData
-				var mErr error
-				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
-				}
-				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
-						ctx,
-						*chat.MetaDataFilter,
-						flattedMeta,
-						metaQ,
-						chatModel,
-						docIDs,
-						kbIDs,
-					); filtered != nil {
-						common.Debug("meta_data_filter applied",
-							zap.Int("filtered_count", len(filtered)),
-							zap.Int("pre_filter_count", len(docIDs)))
-						docIDs = filtered
-					}
-				} else {
-					common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(mErr))
-				}
-			}
-		}
+		docIDs = s.chatMetadataDocIDs(ctx, chat, questions[len(questions)-1], chatModel, docIDs, kbIDStrings(kbs))
 
 		// keyword — extract top-N keywords from the question via LLM and
 		// append them to the question text to boost lexical retrieval recall.
 		if useKW, _ := chat.PromptConfig["keyword"].(bool); useKW && chatModel != nil && len(questions) > 0 {
 			if kw, err := KeywordExtraction(ctx, chatModel, questions[len(questions)-1], 3); err == nil && kw != "" {
 				original := questions[len(questions)-1]
-				questions[len(questions)-1] = questions[len(questions)-1] + "," + kw
+				questions[len(questions)-1] = AppendKeywords(original, kw)
 				common.Debug("keyword extraction applied",
 					zap.String("original_question", original),
 					zap.String("augmented_question", questions[len(questions)-1]))
@@ -649,11 +672,19 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		// reasoning is an integer level 0..4 (mirrors Python rag_agent): 0 = off
-		// (regular RAG via async_chat), 1..4 = low/medium/high/ultra (harness
-		// agentic). It comes from the request kwargs first, then prompt_config.
+		// reasoning is an integer level: 0 = off (regular RAG via async_chat),
+		// 1..4 = low/medium/high/ultra (harness agentic). It comes from the
+		// request kwargs first, then prompt_config. reasoningLevelAgentic never
+		// reaches here: the AsyncChat dispatch already routed it to the
+		// smart-reasoning agent, which returns before this goroutine starts.
+		//
+		// Python rag_agent also refuses the agentic loop when the model cannot
+		// call tools, and routes those requests to async_chat.
 		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-		useReasoning := reasoningLevel > 0
+		// The chat model's tool capability rides on the config Phase 2 resolved,
+		// so the guard costs nothing here and judges the model the request
+		// actually runs on.
+		useReasoning := reasoningNeedsAgenticGraph(chat, llmModelConfig, reasoningLevel)
 		common.Info("Phase 9: Retrieval",
 			zap.Bool("has_knowledge_param", hasKnowledgeParam),
 			zap.Int("reasoning_level", reasoningLevel),
@@ -683,16 +714,10 @@ func (s *ChatPipelineService) AsyncChat(
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
 			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// Reasoning chat (level 1..4): drive the agentic-RAG harness at
-				// the corresponding mode, mirroring Python's dialog_service →
-				// RAGTools → harness/*.
-				//
-				// The harness 'rag' tool composes the final cited answer itself
-				// (terminal tool, mirroring Python). When it returns a non-empty
-				// Answer we emit that answer directly (decorated per Python's
-				// decorate_answer: references resolved, prompt empty) and stop —
-				// there is no second-generation pass in Phase 10/11. Otherwise
-				// we keep its evidence as kbinfos and fall through.
+				// The harness collects evidence and composes the answer for
+				// reasoning levels 1..4. Apply citation visibility to its stream
+				// and final answer. If no answer is returned, keep the evidence
+				// and continue through the regular generation path.
 				thinkingMode := harnessModeForLevel(reasoningLevel)
 				question := strings.Join(questions, " ")
 				// Stream the answer as the harness composes it (Python
@@ -725,16 +750,17 @@ func (s *ChatPipelineService) AsyncChat(
 				// Engine progress (B) is pushed from concurrent research-slot
 				// goroutines while the final compose runs on the main goroutine, so
 				// serialize the think-framing state machine and the out<-send.
+				var answerFilter, reasoningFilter citationStreamFilter
 				var sinkMu sync.Mutex
+				send := func(ev AsyncChatResult) {
+					select {
+					case out <- ev:
+					case <-ctx.Done():
+					}
+				}
 				sink := func(delta string, isThink bool) {
 					sinkMu.Lock()
 					defer sinkMu.Unlock()
-					send := func(ev AsyncChatResult) {
-						select {
-						case out <- ev:
-						case <-ctx.Done():
-						}
-					}
 					if isThink {
 						if answerStreamed {
 							// Never reopen a thought block after the answer: drop the
@@ -750,6 +776,9 @@ func (s *ChatPipelineService) AsyncChat(
 								StartToThink: true,
 							})
 						}
+						if !quote {
+							delta = reasoningFilter.write(delta)
+						}
 						if delta != "" {
 							send(AsyncChatResult{
 								Reasoning: delta,
@@ -761,6 +790,9 @@ func (s *ChatPipelineService) AsyncChat(
 						return
 					}
 					if harnessThinking {
+						if text := reasoningFilter.flush(); text != "" {
+							send(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
 						harnessThinking = false
 						send(AsyncChatResult{
 							Reference:  map[string]interface{}{},
@@ -771,6 +803,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					if delta != "" {
 						answerStreamed = true
+					}
+					if !quote {
+						delta = answerFilter.write(delta)
+					}
+					if delta != "" {
 						send(AsyncChatResult{
 							Answer:    delta,
 							Reference: map[string]interface{}{},
@@ -809,11 +846,17 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
+				harnessImages := append(historyImageFiles, imageFiles...)
 				var history []map[string]interface{}
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, webSearch, sink, thinkSink, harnessSystemPrompt, history)
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
+					TopN:                   int(chat.TopN),
+					SimilarityThreshold:    chat.SimilarityThreshold,
+					VectorSimilarityWeight: chat.VectorSimilarityWeight,
+					RerankCandidatesCount:  int(chat.RerankCandidatesCount),
+				}, webSearch, sink, thinkSink, harnessSystemPrompt, history)
 				// The harness streams think-then-answer inside ONE compose call.
 				// Close the block here, once that call (and its trailing
 				// narration line) has returned: a reasoning-only run would
@@ -821,6 +864,11 @@ func (s *ChatPipelineService) AsyncChat(
 				// EndToThink after the Phase 10/11 answer or the Final below.
 				// No-op when no block is open.
 				sink("", false)
+				sinkMu.Lock()
+				if text := answerFilter.flush(); text != "" {
+					send(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+				}
+				sinkMu.Unlock()
 				if hErr != nil {
 					common.Warn("harness retrieval failed", zap.Error(hErr))
 				} else {
@@ -828,7 +876,7 @@ func (s *ChatPipelineService) AsyncChat(
 					if harnessAnswer != "" {
 						common.Info("harness produced final cited answer; short-circuiting",
 							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs)
+						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, quote)
 						final.Final = true
 						out <- final
 						return
@@ -898,7 +946,11 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					if err != nil {
 						common.Warn("Retrieval failed", zap.Error(err))
-						// Continue with empty kbinfos.
+						out <- AsyncChatResult{
+							Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+							Final:  true,
+						}
+						return
 					}
 				}
 
@@ -1016,13 +1068,17 @@ func (s *ChatPipelineService) AsyncChat(
 		//      otherwise see an empty reply.
 		if emptyResponseApplies(len(knowledges), attachments, hasImageAttachments) {
 			if emptyResp, ok := promptConfig["empty_response"].(string); ok && emptyResp != "" {
+				finalReference := kbinfos
+				if !quote {
+					finalReference = map[string]interface{}{}
+				}
 				out <- AsyncChatResult{
 					Answer:    emptyResp,
 					Reference: map[string]interface{}{},
 				}
 				out <- AsyncChatResult{
 					Answer:      emptyResp,
-					Reference:   kbinfos,
+					Reference:   finalReference,
 					AudioBinary: s.synthesizeTTS(ctx, ttsModel, emptyResp),
 					Prompt:      fmt.Sprintf("\n\n### Query:\n%s", strings.Join(questions, " ")),
 					Final:       true,
@@ -1050,27 +1106,29 @@ func (s *ChatPipelineService) AsyncChat(
 			}
 		}
 		if systemPrompt != "" {
+			// Python logs characters; a Chinese prompt is ~3x longer in bytes, so
+			// report both to keep the two comparable.
 			common.Info("System prompt built",
-				zap.Int("length", len(systemPrompt)))
+				zap.Int("length", len(systemPrompt)),
+				zap.Int("runes", utf8.RuneCountInString(systemPrompt)),
+				zap.Int("knowledgeRunes", utf8.RuneCountInString(knowledge)))
 		}
 
 		// Build citation prompt if quoting is enabled.
 		prompt4citation := ""
-		quote := true
-		if v, ok := kwargs["quote"].(bool); ok {
-			quote = v
-		}
-		if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
-			quote = quote && promptConfigQuote
-		}
 		if len(knowledges) > 0 && quote {
-			prompt4citation = citationPrompt()
+			// Python's citation_prompt() (generator.py:226) renders
+			// citation_prompt.md — the full rules with examples, which the agent
+			// path already reads from the same embedded copy. The standard path
+			// used a ~380-char paraphrase of it.
+			prompt4citation = ragprompts.CitationPrompt("")
 		}
 
 		if prompt4citation != "" {
 			common.Info("Citation prompt built",
 				zap.Bool("quote", quote),
-				zap.Int("length", len(prompt4citation)))
+				zap.Int("length", len(prompt4citation)),
+				zap.Int("runes", utf8.RuneCountInString(prompt4citation)))
 		}
 
 		// Build the message list: system + cleaned user/assistant messages.
@@ -1088,12 +1146,16 @@ func (s *ChatPipelineService) AsyncChat(
 		if factoryName == "" {
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
-		for _, m := range messages {
+		modelType, _ := llmModelConfig["model_type"].(string)
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
+			if i < len(messages)-1 {
+				llmMessage["files"] = m["files"]
+			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
@@ -1109,6 +1171,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
+		for i := range llmMessages[:len(llmMessages)-1] {
+			llmMessages[i] = s.chatHistoryMessage(ctx, userID, llmMessages[i], modelType, factoryName)
+		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
 			zap.Int("used_token_count", usedTokenCount),
@@ -1146,7 +1211,21 @@ func (s *ChatPipelineService) AsyncChat(
 		}
 
 		chatCfg := BuildChatConfig(chat, kwargs)
-		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount); err != nil {
+		// The citation template joins the prompt only when the request is issued
+		// (prompt+prompt4citation, below), which is after messageFitIn sized the
+		// window — so its tokens are added here by hand. They are deliberately NOT
+		// folded into messageFitIn: the reference implementation trims on the same
+		// budget (dialog_service async_chat: message_fit_in(msg, max_tokens*0.95),
+		// then prompt + prompt4citation), and moving the trim boundary would change
+		// which messages get cut. The completion clamp is where the omission bites:
+		// it derives the completion budget from the room the prompt leaves, so
+		// leaving ~2k tokens of citation instructions out of that sum can hand the
+		// provider a prompt plus completion that overruns the context window.
+		citationTokens := 0
+		if prompt4citation != "" {
+			citationTokens = graph.NumTokensFromString(prompt4citation)
+		}
+		if adjusted, ok, err := clampChatConfigMaxTokens(chatCfg, modelMaxTokens, usedTokenCount+citationTokens); err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
 				Final:  true,
@@ -1215,6 +1294,34 @@ func (s *ChatPipelineService) AsyncChat(
 			// Streaming path: accumulate answer, emit deltas.
 			var fullAnswer string
 			thinkState := &ThinkStreamState{}
+			var answerFilter, reasoningFilter citationStreamFilter
+			emit := func(result AsyncChatResult) {
+				if !result.Final && result.Answer != "" {
+					result.AudioBinary = s.synthesizeTTS(ctx, ttsModel, result.Answer)
+				}
+				out <- result
+			}
+			send := func(result AsyncChatResult) {
+				if !quote {
+					// Flush before a boundary so buffered text stays in its section.
+					if result.StartToThink || result.EndToThink || result.Final {
+						if text := reasoningFilter.flush(); text != "" {
+							emit(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+						if text := answerFilter.flush(); text != "" {
+							emit(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
+						}
+					}
+					if !result.Final && (result.Answer != "" || result.Reasoning != "") {
+						result.Answer = answerFilter.write(result.Answer)
+						result.Reasoning = reasoningFilter.write(result.Reasoning)
+						if result.Answer == "" && result.Reasoning == "" {
+							return
+						}
+					}
+				}
+				emit(result)
+			}
 
 			// Tool routing: use tool-loop method when tools are bound.
 			var driverErr error
@@ -1233,77 +1340,75 @@ func (s *ChatPipelineService) AsyncChat(
 
 						if text == "<think>" {
 							inThink = true
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:       "",
 								Reference:    map[string]interface{}{},
 								AudioBinary:  nil,
 								CreatedAt:    float64(time.Now().Unix()),
 								Final:        false,
 								StartToThink: true,
-							}
+							})
 							return nil
 						}
 						if text == "</think>" {
 							inThink = false
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Answer:      "",
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
 								EndToThink:  true,
-							}
+							})
 							return nil
 						}
 						if inThink {
 							// Reasoning text — route to Reasoning field so
 							// the SSE handler maps it to
 							// `delta.reasoning_content`.
-							out <- AsyncChatResult{
+							send(AsyncChatResult{
 								Reasoning:   text,
 								Reference:   map[string]interface{}{},
 								AudioBinary: nil,
 								CreatedAt:   float64(time.Now().Unix()),
 								Final:       false,
-							}
+							})
 						} else {
 							// Regular answer content
-							out <- AsyncChatResult{
-								Answer:      text,
-								Reference:   map[string]interface{}{},
-								AudioBinary: s.synthesizeTTS(ctx, ttsModel, text),
-								CreatedAt:   float64(time.Now().Unix()),
-								Final:       false,
-							}
+							send(AsyncChatResult{
+								Answer:    text,
+								Reference: map[string]interface{}{},
+								CreatedAt: float64(time.Now().Unix()),
+								Final:     false,
+							})
 						}
 						return nil
 					})
 			} else {
-				driverErr = chatDriver.ModelDriver.ChatStreamlyWithSender(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
+				driverErr = chatDriver.ChatStreamlyWithSender(
+					ctx, chatMessages, chatCfg, nil,
 					func(answer *string, reason *string) error {
 						if reason != nil && *reason != "" {
 							if thinkState.EnterReasoning() {
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:       "",
 									Reference:    map[string]interface{}{},
 									AudioBinary:  nil,
 									CreatedAt:    float64(time.Now().Unix()),
 									Final:        false,
 									StartToThink: true,
-								}
+								})
 							}
 							deltas := NextThinkDelta(thinkState, *reason, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
 									fullAnswer += d.Value
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1312,35 +1417,33 @@ func (s *ChatPipelineService) AsyncChat(
 								for _, d := range FlushRemaining(thinkState) {
 									if d.Kind == ThinkDeltaText && d.Value != "" {
 										fullAnswer += d.Value
-										out <- AsyncChatResult{
-											Answer:      d.Value,
-											Reference:   map[string]interface{}{},
-											AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-											CreatedAt:   float64(time.Now().Unix()),
-											Final:       false,
-										}
+										send(AsyncChatResult{
+											Answer:    d.Value,
+											Reference: map[string]interface{}{},
+											CreatedAt: float64(time.Now().Unix()),
+											Final:     false,
+										})
 									}
 								}
-								out <- AsyncChatResult{
+								send(AsyncChatResult{
 									Answer:      "",
 									Reference:   map[string]interface{}{},
 									AudioBinary: nil,
 									CreatedAt:   float64(time.Now().Unix()),
 									Final:       false,
 									EndToThink:  true,
-								}
+								})
 							}
 							fullAnswer += *answer
 							deltas := BufferAnswerDelta(thinkState, *answer, 16)
 							for _, d := range deltas {
 								if d.Kind == ThinkDeltaText && d.Value != "" {
-									out <- AsyncChatResult{
-										Answer:      d.Value,
-										Reference:   map[string]interface{}{},
-										AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-										CreatedAt:   float64(time.Now().Unix()),
-										Final:       false,
-									}
+									send(AsyncChatResult{
+										Answer:    d.Value,
+										Reference: map[string]interface{}{},
+										CreatedAt: float64(time.Now().Unix()),
+										Final:     false,
+									})
 								}
 							}
 						}
@@ -1349,10 +1452,10 @@ func (s *ChatPipelineService) AsyncChat(
 				)
 			}
 			if driverErr != nil {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer: fmt.Sprintf("**ERROR**: %s", driverErr.Error()),
 					Final:  true,
-				}
+				})
 				return
 			}
 
@@ -1363,36 +1466,35 @@ func (s *ChatPipelineService) AsyncChat(
 			for _, d := range FlushRemaining(thinkState) {
 				if d.Kind == ThinkDeltaMarker && d.Value == "</think>" {
 					hadThinkClose = true
-					out <- AsyncChatResult{
+					send(AsyncChatResult{
 						Answer:      "",
 						Reference:   map[string]interface{}{},
 						AudioBinary: nil,
 						CreatedAt:   float64(time.Now().Unix()),
 						Final:       false,
 						EndToThink:  true,
-					}
+					})
 				} else if d.Kind == ThinkDeltaText && d.Value != "" {
-					out <- AsyncChatResult{
-						Answer:      d.Value,
-						Reference:   map[string]interface{}{},
-						AudioBinary: s.synthesizeTTS(ctx, ttsModel, d.Value),
-						CreatedAt:   float64(time.Now().Unix()),
-						Final:       false,
-					}
+					send(AsyncChatResult{
+						Answer:    d.Value,
+						Reference: map[string]interface{}{},
+						CreatedAt: float64(time.Now().Unix()),
+						Final:     false,
+					})
 				}
 			}
 			// Close reasoning if the stream ended while still in reasoning mode
 			// (e.g. model returned only reasoning chunks with no content delta).
 			// Skip when FlushRemaining already emitted a </think> marker.
 			if !hadThinkClose && thinkState.ExitReasoning() {
-				out <- AsyncChatResult{
+				send(AsyncChatResult{
 					Answer:      "",
 					Reference:   map[string]interface{}{},
 					AudioBinary: nil,
 					CreatedAt:   float64(time.Now().Unix()),
 					Final:       false,
 					EndToThink:  true,
-				}
+				})
 			}
 
 			// Decorate and yield the final answer.
@@ -1405,7 +1507,7 @@ func (s *ChatPipelineService) AsyncChat(
 			final.Final = true
 			final.AudioBinary = nil
 			timer.Exit(common.PhaseGenerateAnswer)
-			out <- final
+			send(final)
 		} else {
 			// Non-streaming: get the answer synchronously.
 			var answer string
@@ -1414,9 +1516,7 @@ func (s *ChatPipelineService) AsyncChat(
 			if chatDriver.ToolConfig != nil {
 				answer, _, err = chatDriver.ChatWithTools(ctx, prompt+prompt4citation, chatMessages, chatCfg)
 			} else {
-				resp, respErr := chatDriver.ModelDriver.ChatWithMessages(
-					ctx, *chatDriver.ModelName, chatMessages, chatDriver.APIConfig, chatCfg, nil,
-				)
+				resp, respErr := chatDriver.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 				if respErr != nil {
 					err = respErr
 				} else if resp != nil && resp.Answer != nil {
@@ -1544,10 +1644,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
-		for _, m := range messages {
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && config["store_history_messages"] != false {
 				continue
+			}
+			if i < len(messages)-1 {
+				m = s.chatHistoryMessage(ctx, userID, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -1564,8 +1667,14 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 		}
 
-		// 4. Build the chat model wrapper.
-		driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+		// 4. Construct the selected chat model through the factory.
+		access := ModelAccess{UserID: userID, TenantID: chat.TenantID}
+		var chatModel *modelModule.ChatModel
+		if strings.TrimSpace(chat.LLMID) == "" {
+			chatModel, err = s.ModelFactory.NewDefaultChatModel(ctx, access)
+		} else {
+			chatModel, err = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
+		}
 		if err != nil {
 			out <- AsyncChatResult{
 				Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
@@ -1573,21 +1682,17 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			}
 			return
 		}
-		chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 
 		// 5. Resolve TTS model. Best-effort: warn and proceed without TTS on lookup failure.
-		var ttsModel *modelModule.ChatModel
+		var ttsModel *modelModule.TTSModel
 		if promptConfig != nil {
 			if useTTS, _ := promptConfig["tts"].(bool); useTTS {
-				ttsDriver, ttsName, ttsConfig, _, ttsErr := s.ModelProviderSvc.GetTenantDefaultModelByType(
-					ctx, chat.TenantID, entity.ModelTypeTTS,
-				)
-				if ttsErr != nil {
+				ttsModel, err = s.ModelFactory.NewDefaultTTSModel(ctx, access)
+				if err != nil || ttsModel == nil {
 					common.Warn("AsyncChatSolo: TTS lookup failed; proceeding without TTS",
 						zap.String("tenant_id", chat.TenantID),
-						zap.Error(ttsErr))
-				} else {
-					ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
+						zap.Error(err))
+					ttsModel = nil
 				}
 			}
 		}
@@ -1624,8 +1729,8 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
 
-			driverErr := chatModel.ModelDriver.ChatStreamlyWithSender(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
+			driverErr := chatModel.ChatStreamlyWithSender(
+				ctx, chatMessages, chatCfg, nil,
 				func(answer *string, reason *string) error {
 					if reason != nil && *reason != "" {
 						if thinkState.EnterReasoning() {
@@ -1750,9 +1855,7 @@ func (s *ChatPipelineService) AsyncChatSolo(
 			// Non-streaming: one-shot call.
 			chatCfg := BuildChatConfig(chat, config)
 			timer.Enter(common.PhaseGenerateAnswer)
-			resp, err := chatModel.ModelDriver.ChatWithMessages(
-				ctx, *chatModel.ModelName, chatMessages, chatModel.APIConfig, chatCfg, nil,
-			)
+			resp, err := chatModel.ChatWithMessages(ctx, chatMessages, chatCfg, nil)
 			timer.Exit(common.PhaseGenerateAnswer)
 			if err != nil {
 				out <- AsyncChatResult{
@@ -1805,7 +1908,7 @@ func (s *ChatPipelineService) splitChatAttachments(ctx context.Context, userID s
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed in splitChatAttachments",
@@ -1989,7 +2092,7 @@ func (s *ChatPipelineService) tavilyRetrieve(ctx context.Context, apiKey, questi
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	client := &http.Client{Timeout: 30 * time.Second}
+	client := tavilyWebSearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily: do request: %w", err)
@@ -2059,12 +2162,13 @@ func tokenizeText(text string) string {
 }
 
 // getLLMModelConfig resolves the LLM model configuration for the chat.
-// Mirrors Python's three-branch resolver at dialog_service.py:552-561,
-// extended so the tenant-default branch also probes vision capability:
+// Mirrors Python's three-branch resolver at dialog_service.py:552-561. Chat
+// model resolution always requires the enrolled Chat type; vision capability
+// is determined separately for attachment dispatch:
 //
 //	if chat.llm_id:
-//	    if "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
-//	    else:                                            → CHAT
+//	    if "chat" and "image2text" in get_model_type_by_name(...): → IMAGE2TEXT
+//	    else:                                                       → CHAT
 //	else:                                                → tenant default
 //	    (IMAGE2TEXT when the default model is vision-capable, else CHAT)
 //
@@ -2074,90 +2178,78 @@ func tokenizeText(text string) string {
 // models reject them at the provider (e.g. Zhipu GLM error 1210:
 // messages.content.type only allows 'text').
 func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entity.Chat) (map[string]interface{}, string, string, string, error) {
-	if chat.LLMID == "" {
-		// Branch 3: no explicit LLM → tenant default chat model.
-		cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-			s.ModelProviderSvc.GetTenantDefaultModelByType(ctx, chat.TenantID, entity.ModelTypeChat),
-		)
-		if err != nil {
-			return nil, "", "", "", err
-		}
-		// Probe the default model's enrolled types so a vision-capable
-		// default dispatches as image2text (same rule as the explicit-LLM
-		// branches below).
-		if ref, refErr := s.ModelProviderSvc.GetTenantDefaultModelRef(ctx, chat.TenantID, entity.ModelTypeChat); refErr == nil {
-			cfg["model_type"] = s.resolveChatModelType(ctx, chat.TenantID, ref)
-		}
-		return cfg, modelName, factoryName, baseURL, nil
+	access := ModelAccess{TenantID: chat.TenantID}
+	var info *modelModule.ModelInfo
+	var err error
+	if strings.TrimSpace(chat.LLMID) == "" {
+		info, err = s.ModelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+	} else {
+		info, err = s.ModelFactory.ResolveInfo(ctx, access, entity.ModelTypeChat, chat.LLMID)
 	}
-
-	// Branches 1/2: explicit LLM. Probe model types and pick IMAGE2TEXT
-	// when the LLM is registered as such, otherwise CHAT.
-	modelTypeStr := s.resolveChatModelType(ctx, chat.TenantID, chat.LLMID)
-	modelType := entity.ModelTypeChat
-	if modelTypeStr == "image2text" {
-		modelType = entity.ModelTypeImage2Text
-	}
-	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(
-		s.ModelProviderSvc.ResolveModelConfig(ctx, chat.TenantID, modelType, chat.LLMID),
-	)
 	if err != nil {
 		return nil, "", "", "", err
 	}
-	cfg["model_type"] = modelTypeStr
+	cfg, modelName, factoryName, baseURL, err := s.buildLLMModelConfig(info)
+	if err != nil {
+		return nil, "", "", "", err
+	}
+	cfg["model_type"] = "chat"
+	if entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+		cfg["model_type"] = "image2text"
+	}
+	cfg["is_tools"] = info.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
 }
 
-// resolveChatModelType probes the enrolled model types for llmRef and
-// returns "image2text" when the model is vision-capable (enrolled with an
-// image2text / "vision" type), "chat" otherwise. Probe failures are
-// conservative: they yield "chat", which drops image attachments instead
-// of risking a provider-side rejection.
-func (s *ChatPipelineService) resolveChatModelType(ctx context.Context, tenantID, llmRef string) string {
-	modelTypes, err := s.ModelProviderSvc.ResolveModelType(ctx, tenantID, llmRef)
-	if err != nil {
-		return "chat"
+// reasoningNeedsAgenticGraph gates the agentic path on reasoning being enabled
+// and the resolved chat model supporting tool calls.
+func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, reasoningLevel int) bool {
+	if chat == nil || reasoningLevel <= 0 {
+		return false
 	}
-	for _, mt := range modelTypes {
-		// ModelType is a bitmask: a model enrolled as chat+image2text
-		// reports a combined value, so test membership, not equality.
-		if mt.Has(entity.ModelTypeImage2Text) {
-			return "image2text"
-		}
+	if chatConfigSupportsTools(cfg) {
+		return true
 	}
-	return "chat"
+	common.Info("LLM does not support tool calls; falling back to regular RAG chat",
+		zap.Int("reasoning_level", reasoningLevel))
+	return false
 }
 
-// buildLLMModelConfig collapses the (driver, modelName, apiConfig,
-// _, err) tuple from a model-provider lookup into the dict-shaped
-// config the rest of async_chat.go consumes. Default "model_type" is
-// "chat"; callers that resolved a different type overwrite the key
-// before returning.
-func (s *ChatPipelineService) buildLLMModelConfig(
-	driver modelModule.ModelDriver,
-	modelName string,
-	apiConfig *modelModule.APIConfig,
-	maxTokens int,
-	err error,
-) (map[string]interface{}, string, string, string, error) {
-	if err != nil {
-		return nil, "", "", "", err
+func chatConfigSupportsTools(cfg map[string]interface{}) bool {
+	if cfg == nil {
+		return false
 	}
-	// Match Python: llm.max_tokens if llm.max_tokens else 8192.
-	if maxTokens == 0 {
-		maxTokens = 8192
+	switch v := cfg["is_tools"].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	case float64:
+		return v != 0
+	default:
+		return false
+	}
+}
+
+// buildLLMModelConfig returns only the public metadata needed by RAG's token
+// fitting and attachment dispatch. The persisted legacy max_tokens value is
+// the input/context budget; generated output limits are enforced by ChatModel
+// against ModelInfo.MaxOutput.
+func (s *ChatPipelineService) buildLLMModelConfig(info *modelModule.ModelInfo) (map[string]interface{}, string, string, string, error) {
+	if info == nil {
+		return nil, "", "", "", fmt.Errorf("chat model metadata is unavailable")
+	}
+	contextLength := info.ContextLength
+	if contextLength <= 0 {
+		contextLength = 8192
 	}
 	cfg := map[string]interface{}{
 		"model_type":  "chat",
-		"llm_name":    modelName,
-		"max_tokens":  maxTokens,
-		"llm_factory": driver.Name(),
+		"llm_name":    info.Name,
+		"max_tokens":  contextLength,
+		"llm_factory": info.ProviderName,
 	}
-	baseURL := ""
-	if apiConfig != nil && apiConfig.BaseURL != nil {
-		baseURL = *apiConfig.BaseURL
-	}
-	return cfg, modelName, driver.Name(), baseURL, nil
+	return cfg, info.Name, info.ProviderName, "", nil
 }
 
 // getModels resolves all models needed for the RAG pipeline.
@@ -2167,7 +2259,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 	*modelModule.EmbeddingModel,
 	*modelModule.RerankModel,
 	*modelModule.ChatModel,
-	*modelModule.ChatModel, // TTS model
+	*modelModule.TTSModel, // TTS model
 	error,
 ) {
 	kbDAO := dao.NewKnowledgebaseDAO()
@@ -2198,9 +2290,7 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 		}
 		if kbs[0].EmbdID != "" {
 			embdTenantID := kbs[0].TenantID
-			driver, modelName, apiConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
-				ctx, embdTenantID, entity.ModelTypeEmbedding, kbs[0].EmbdID,
-			)
+			model, err := s.ModelFactory.NewEmbeddingModel(ctx, ModelAccess{TenantID: embdTenantID}, kbs[0].EmbdID)
 			if err != nil {
 				common.Warn("Failed to get embedding model for chat retrieval",
 					zap.String("embdID", kbs[0].EmbdID),
@@ -2208,38 +2298,30 @@ func (s *ChatPipelineService) getModels(ctx context.Context, chat *entity.Chat) 
 					zap.Error(err))
 				return nil, nil, nil, nil, nil, fmt.Errorf("failed to get embedding model: %w", err)
 			}
-			embModel = modelModule.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+			embModel = model
 		}
 	}
 
 	// Chat model.
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	access := ModelAccess{TenantID: chat.TenantID}
 	var chatModel *modelModule.ChatModel
-	if err == nil {
-		chatModel = modelModule.NewChatModel(driver, &modelName, apiConfig)
+	if strings.TrimSpace(chat.LLMID) == "" {
+		chatModel, _ = s.ModelFactory.NewDefaultChatModel(ctx, access)
+	} else {
+		chatModel, _ = s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	}
 
 	// Rerank model.
 	var rerankModel *modelModule.RerankModel
 	if chat.RerankID != "" {
-		rerankDriver, rerankName, rerankConfig, maxTokens, err := s.ModelProviderSvc.ResolveModelConfig(
-			ctx, chat.TenantID, entity.ModelTypeRerank, chat.RerankID,
-		)
-		if err == nil {
-			rerankModel = modelModule.NewRerankModel(rerankDriver, &rerankName, rerankConfig, maxTokens)
-		}
+		rerankModel, _ = s.ModelFactory.NewRerankModel(ctx, access, chat.RerankID)
 	}
 
 	// TTS model.
-	var ttsModel *modelModule.ChatModel
+	var ttsModel *modelModule.TTSModel
 	if chat.PromptConfig != nil {
 		if useTTS, _ := chat.PromptConfig["tts"].(bool); useTTS {
-			ttsDriver, ttsName, ttsConfig, _, err := s.ModelProviderSvc.GetTenantDefaultModelByType(
-				ctx, chat.TenantID, entity.ModelTypeTTS,
-			)
-			if err == nil {
-				ttsModel = modelModule.NewChatModel(ttsDriver, &ttsName, ttsConfig)
-			}
+			ttsModel, _ = s.ModelFactory.NewDefaultTTSModel(ctx, access)
 		}
 	}
 
@@ -2336,7 +2418,7 @@ func splitFileAttachments(ctx context.Context, userID string, files interface{},
 	if fileDicts, ok := parseFileDicts(files); ok {
 		// Only used for GetFileContents (read-only); nil DocRemover means
 		// this FileService MUST NOT be used for DeleteFiles.
-		fileSvc := file.NewFileService(CheckFileTeamPermission, nil)
+		fileSvc := file.NewFileService(nil)
 		texts, images, err := fileSvc.GetFileContents(ctx, userID, fileDicts)
 		if err != nil {
 			common.Warn("GetFileContents failed, falling back to string splitting",
@@ -2438,30 +2520,68 @@ func parseFileDicts(files interface{}) ([]map[string]interface{}, bool) {
 }
 
 // cleanTTSText sanitizes text for TTS synthesis.
-// Mirrors dialog_service.py:1404-1423.
 func cleanTTSText(text string) string {
 	if text == "" {
 		return ""
 	}
+	// Drop invalid UTF-8 before applying the character limit.
+	text = strings.ToValidUTF8(text, "")
 	// Strip control chars.
 	controlRe := regexp.MustCompile(`[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]`)
 	text = controlRe.ReplaceAllString(text, "")
 	// Strip emojis.
 	emojiRe := regexp.MustCompile("[\U0001f600-\U0001f64f\U0001f300-\U0001f5ff\U0001f680-\U0001f6ff\U0001f1e0-\U0001f1ff\U00002700-\U000027bf\U0001f900-\U0001f9ff\U0001fa70-\U0001faff\U0001fad0-\U0001faff]+")
 	text = emojiRe.ReplaceAllString(text, "")
+	text = stripTTSTags(text)
 	// Collapse whitespace.
 	wsRe := regexp.MustCompile(`\s+`)
 	text = wsRe.ReplaceAllString(text, " ")
 	text = strings.TrimSpace(text)
-	if len(text) > 500 {
-		text = text[:500]
+	if r := []rune(text); len(r) > 500 {
+		text = string(r[:500])
 	}
 	return text
 }
 
+// stripTTSTags removes paired markup and standalone reasoning/void tags.
+// Unmatched tags stay literal so compact comparisons such as a<b>c survive.
+func stripTTSTags(text string) string {
+	// Quoted attributes may contain > without ending the tag.
+	tagRe := regexp.MustCompile(`<(/?)([A-Za-z][A-Za-z0-9:-]*)(?:\s+(?:[^<>"']|"[^"]*"|'[^']*')*)?\s*/?>`)
+	matches := tagRe.FindAllStringSubmatchIndex(text, -1)
+	strip := make([]bool, len(matches))
+	open := make(map[string][]int)
+	for i, match := range matches {
+		name := strings.ToLower(text[match[4]:match[5]])
+		switch name {
+		case "think", "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr":
+			strip[i] = true
+		default:
+			if strings.HasSuffix(text[match[0]:match[1]], "/>") {
+				strip[i] = true
+			} else if match[2] == match[3] {
+				open[name] = append(open[name], i)
+			} else if stack := open[name]; len(stack) > 0 {
+				strip[stack[len(stack)-1]] = true
+				strip[i] = true
+				open[name] = stack[:len(stack)-1]
+			}
+		}
+	}
+	var result strings.Builder
+	last := 0
+	for i, match := range matches {
+		if strip[i] {
+			result.WriteString(text[last:match[0]])
+			last = match[1]
+		}
+	}
+	result.WriteString(text[last:])
+	return result.String()
+}
+
 // synthesizeTTS calls the TTS model to convert text to audio.
-// Mirrors dialog_service.py:1426-1432.
-func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.ChatModel, text string) interface{} {
+func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *modelModule.TTSModel, text string) interface{} {
 	if ttsModel == nil || text == "" {
 		return nil
 	}
@@ -2469,9 +2589,7 @@ func (s *ChatPipelineService) synthesizeTTS(ctx context.Context, ttsModel *model
 	if text == "" {
 		return nil
 	}
-	ttsResp, err := ttsModel.ModelDriver.AudioSpeech(
-		ctx, ttsModel.ModelName, &text, ttsModel.APIConfig, &modelModule.TTSConfig{Format: "mp3"}, nil,
-	)
+	ttsResp, err := ttsModel.Speech(ctx, &text, &modelModule.TTSConfig{Format: "mp3"}, nil)
 	if err != nil {
 		common.Warn("TTS synthesis failed", zap.Error(err))
 		return nil
@@ -2758,6 +2876,21 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 	return result
 }
 
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, userID string, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+	if message["role"] != "user" || message["files"] == nil {
+		return message
+	}
+	_, images := s.splitChatAttachments(ctx, userID, message["files"])
+	images, _ = gateImageAttachments("", modelType, images)
+	msg := normalizeLLMMessage(message)
+	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
+	if err != nil {
+		common.Warn("chat history multimodal conversion failed", zap.Error(err))
+		return msg
+	}
+	return converted
+}
+
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
 	normalized := make(map[string]interface{}, len(llmMessageFields))
 	for _, field := range llmMessageFields {
@@ -2789,11 +2922,19 @@ func (s *ChatPipelineService) buildChatDriver(ctx context.Context, chat *entity.
 	if chatModel != nil {
 		return chatModel
 	}
-	driver, modelName, apiConfig, _, err := s.ModelProviderSvc.GetChatModelConfig(ctx, chat.TenantID, chat.LLMID)
+	access := ModelAccess{TenantID: chat.TenantID}
+	if strings.TrimSpace(chat.LLMID) == "" {
+		model, err := s.ModelFactory.NewDefaultChatModel(ctx, access)
+		if err != nil {
+			return nil
+		}
+		return model
+	}
+	model, err := s.ModelFactory.NewChatModel(ctx, access, chat.LLMID)
 	if err != nil {
 		return nil
 	}
-	return modelModule.NewChatModel(driver, &modelName, apiConfig)
+	return model
 }
 
 // HydrateChunkVectors fills the `vector` field on each chunk in `kbinfos`
@@ -2945,7 +3086,9 @@ type embeddingModelEmbedder struct {
 
 func (e *embeddingModelEmbedder) Encode(ctx context.Context, texts []string) ([][]float64, error) {
 	config := &modelModule.EmbeddingConfig{Dimension: 0}
-	embeds, err := e.embModel.ModelDriver.Embed(ctx, e.embModel.ModelName, modelModule.EmbedRequest{Texts: texts}, e.embModel.APIConfig, config, nil)
+	// Embed inside the model's window: the caller supplies arbitrary text and the
+	// provider rejects an over-window input with 400/20015 instead of truncating it.
+	embeds, err := e.embModel.Embed(ctx, modelModule.EmbedRequest{Texts: texts}, config, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -2974,7 +3117,7 @@ func (s *ChatPipelineService) decorateAnswer(
 	embModel *modelModule.EmbeddingModel,
 	vectorSimilarityWeight float64,
 	quote bool,
-	ttsModel *modelModule.ChatModel,
+	ttsModel *modelModule.TTSModel,
 	langfuseTraceID string,
 	llmModelConfig map[string]interface{},
 	tenantID string,
@@ -2992,6 +3135,10 @@ func (s *ChatPipelineService) decorateAnswer(
 			ans = strings.TrimSpace(parts[1])
 		}
 	}
+	if !quote {
+		think = stripCitations(think)
+		ans = stripCitations(ans)
+	}
 
 	var citationIdx map[int]struct{}
 	var refs map[string]interface{}
@@ -3005,6 +3152,9 @@ func (s *ChatPipelineService) decorateAnswer(
 	if hasKnowledges && quote {
 		chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{})
 		if ok && len(chunksRaw) > 0 {
+			think = RepairBadCitationFormats(think)
+			ans = RepairBadCitationFormats(ans)
+			normalizedOutput := normalizeArabicDigits(think + ans)
 			// P7 — _hydrate_chunk_vectors. Mirrors
 			// dialog_service.py:794. Fetch the chunk embeddings insertCitations
 			// scores against, in one batched engine call. The agentic evidence
@@ -3012,7 +3162,7 @@ func (s *ChatPipelineService) decorateAnswer(
 			// ships zero placeholders, so the dimension comes from the embedding
 			// model whenever no chunk carries one. Only needed when we'll
 			// actually call insertCitations (the LLM didn't emit markers).
-			if embModel != nil && !HasCitationMarkers(ans) {
+			if embModel != nil && !HasCitationMarkers(normalizedOutput) {
 				dim := firstChunkVectorDim(chunksRaw)
 				if dim <= 0 {
 					// One short probe encode buys the q_{dim}_vec field name.
@@ -3053,27 +3203,13 @@ func (s *ChatPipelineService) decorateAnswer(
 						}
 					}
 				}
-			} else {
+			} else if HasCitationMarkers(normalizedOutput) {
 				// P0.11 pre-check matched: collect indices from existing
-				// markers instead of calling insertCitations.
-				for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-					if citationIdx == nil {
-						citationIdx = make(map[int]struct{})
-					}
+				// markers in both the thinking block and final answer.
+				citationIdx = make(map[int]struct{})
+				for _, ci := range ExtractCitationMarkers(normalizedOutput, len(chunksRaw)) {
 					citationIdx[ci] = struct{}{}
 				}
-			}
-		}
-
-		// repair_bad_citation_formats — runs even when chunks are empty.
-		// Mirrors dialog_service.py:818.
-		if ok {
-			ans = RepairBadCitationFormats(ans)
-			for _, ci := range ExtractCitationMarkers(ans, len(chunksRaw)) {
-				if citationIdx == nil {
-					citationIdx = make(map[int]struct{})
-				}
-				citationIdx[ci] = struct{}{}
 			}
 		}
 
@@ -3092,7 +3228,7 @@ func (s *ChatPipelineService) decorateAnswer(
 				}
 			}
 			if len(citedDocIDs) > 0 {
-				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+				if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
 					var filtered []interface{}
 					for _, da := range docAggsRaw {
 						if dam, ok := da.(map[string]interface{}); ok {
@@ -3103,19 +3239,20 @@ func (s *ChatPipelineService) decorateAnswer(
 							}
 						}
 					}
-					if len(filtered) > 0 {
-						kbinfos["doc_aggs"] = filtered
-					}
+					kbinfos["doc_aggs"] = filtered
 				}
 			}
 		}
 	}
 
-	// Build refs: deepcopy kbinfos and strip vectors — done whenever
-	// hasKnowledges is true, regardless of quote flag.
-	// Mirrors dialog_service.py:826-829.
+	// Reference assembly. `chunks` is the evidence the answer was grounded on,
+	// so it ships whenever knowledge was retrieved and independent of the cite
+	// setting; `doc_aggs` is the list of source cards the UI opens from a
+	// citation marker, so it ships only while citations are enabled — with no
+	// marker to open them from, the cards would be dead weight. Chunk vectors
+	// never leave this function.
 	if hasKnowledges {
-		refs = make(map[string]interface{})
+		refs = make(map[string]interface{}, len(kbinfos))
 		for k, v := range kbinfos {
 			refs[k] = v
 		}
@@ -3132,6 +3269,9 @@ func (s *ChatPipelineService) decorateAnswer(
 				newChunks = append(newChunks, newChunk)
 			}
 			refs["chunks"] = chunksFormat(newChunks)
+		}
+		if !quote {
+			delete(refs, "doc_aggs")
 		}
 	}
 
@@ -3209,13 +3349,26 @@ func (s *ChatPipelineService) decorateAnswer(
 	}
 }
 
-// decorateHarnessAnswer mirrors Python's rag_agent decorate_answer used on the
-// reasoning>=1 path (dialog_service.py:2092-2137). The harness 'rag' tool
-// already composed the final answer WITH its own [ID:N] citations, so — unlike
-// decorateAnswer for the native async_chat path — we never run insert_citations
-// here. We only resolve the existing markers, repair bad formats, filter
-// doc_aggs to the cited docs, and build the reference from the harness citation
-// pool (chunks stripped of their vectors). Prompt stays empty, matching Python.
+// chunksOnlyReference is the reference of an answer whose citations were
+// disabled: the retrieved evidence, in the client-facing shape, without
+// doc_aggs. The evidence still records what the answer was grounded on; only
+// the source cards go, since there is no citation marker left in the answer to
+// open them from.
+func chunksOnlyReference(kbinfos map[string]interface{}) map[string]interface{} {
+	refs := map[string]interface{}{}
+	if chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+		refs["chunks"] = chunksFormat(referenceChunks(nil, chunksRaw))
+	}
+	return refs
+}
+
+// decorateHarnessAnswer formats the reasoning chat's final answer. The harness
+// 'rag' tool already composed the answer WITH its own [ID:N] citations, so —
+// unlike decorateAnswer for the native async_chat path — we never run
+// insert_citations here. We only resolve the existing markers, repair bad
+// formats, filter doc_aggs to the cited docs, and build the reference from the
+// harness citation pool (chunks stripped of their vectors). Prompt stays empty,
+// matching Python.
 //
 // The answer's [ID:n] markers index the evidence list the compose rendered for
 // the model — harness.Kbinfos.CiteChunkIDs, passed in as citeChunkIDs. That list
@@ -3230,11 +3383,9 @@ func (s *ChatPipelineService) decorateAnswer(
 // returned whenever the pool is non-empty, so an answer the model composed without
 // markers still carries its sources.
 //
-// Precondition for marker n to open passage n: the rendered blocks resolve to pool
-// chunks in order. A block whose id the pool does not know keeps its slot — an empty
-// entry the reference carries — so the later blocks keep their numbers; its own
-// citations are dropped, since the user could not open them.
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string) AsyncChatResult {
+// When quote is false the citations are removed entirely and the reference is
+// cleared (see stripCitations).
+func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string, quote bool) AsyncChatResult {
 	think := ""
 	ans := answer
 	if strings.Contains(answer, "</think>") {
@@ -3244,10 +3395,24 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		}
 	}
 
+	// Invalid-key hint (dialog_service.py:2134-2135).
+	if strings.Contains(strings.ToLower(ans), "invalid key") ||
+		strings.Contains(strings.ToLower(ans), "invalid api") {
+		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
+	}
+
+	if !quote {
+		return AsyncChatResult{
+			Answer:    stripCitations(think + ans),
+			Reference: chunksOnlyReference(kbinfos),
+			CreatedAt: float64(time.Now().Unix()),
+		}
+	}
+
 	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
 	// The markers exactly as the model wrote them (before any repair), for the
 	// citation observability log below.
-	rawMarkers := rawCitationMarkers(ans, 8)
+	rawMarkers := rawCitationMarkers(think+ans, 8)
 
 	// The evidence list the model was shown, as pool positions: citeIdx[i] is the
 	// pool chunk behind the i-th rendered block. Empty ids fall back to pool
@@ -3274,8 +3439,11 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 	// markers: each is the 0-based index of the rendered block it cites.
 	// Canonical markers that name no block are dropped; the resolved pool
 	// positions drive doc_aggs filtering.
+	think = RepairBadCitationFormats(think)
 	ans = RepairBadCitationFormats(ans)
-	ans, citedIdx := ResolveCitationMarkers(ans, citeIdx)
+	think, thinkCitedIdx := ResolveCitationMarkers(think, citeIdx)
+	ans, answerCitedIdx := ResolveCitationMarkers(ans, citeIdx)
+	citedIdx := append(thinkCitedIdx, answerCitedIdx...)
 
 	// Citation observability: the markers the model wrote against the blocks it was
 	// shown, so a numbering mismatch is visible in the log (`raw_markers` is what
@@ -3304,10 +3472,10 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 		}
 	}
 
-	// recall_docs = cited docs, or all when nothing cited (dialog_service.py:
-	// 2124-2127). Only rewrite doc_aggs when we actually found cited docs.
+	// Keep only documents referenced by a citation. An uncited evidence pool is
+	// not a document reference and must not be returned to the client.
 	if len(citedDocIDs) > 0 {
-		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok && len(docAggsRaw) > 0 {
+		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
 			filtered := make([]interface{}, 0, len(docAggsRaw))
 			for _, da := range docAggsRaw {
 				if dam, ok := da.(map[string]interface{}); ok {
@@ -3318,41 +3486,22 @@ func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[s
 					}
 				}
 			}
-			if len(filtered) > 0 {
-				kbinfos["doc_aggs"] = filtered
-			}
+			kbinfos["doc_aggs"] = filtered
 		}
 	}
 
-	// refs = deepcopy(kbinfos), each chunk stripped of its vector
-	// (dialog_service.py:2129-2132). Python gates this on `doc_ids` — the answer
-	// cited at least one chunk — but an agentic answer the model composed without
-	// markers then came back with no reference at all, while the naive path
-	// returns the passages unconditionally (dialog_service.py:826-829). Build it
-	// whenever the harness left a citation pool, so the user always gets the
-	// sources the answer was composed from; doc_aggs stays filtered to the cited
-	// documents when something was cited.
-	var refs map[string]interface{}
-	if len(chunksRaw) > 0 {
-		ref := make(map[string]interface{}, len(kbinfos))
-		for k, v := range kbinfos {
-			ref[k] = v
-		}
-		// The rendered evidence list comes first, in the order the model saw it,
-		// so a marker's number is that entry's index; the remaining pool chunks
-		// follow so no retrieved passage is lost. chunksFormat builds the
-		// client-facing shape (content, document_name, dataset_id, ...) in NEW
-		// maps, so the engine keys and the per-chunk vector never reach the
-		// reference and the shared chunks stay intact.
-		ref["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
-		refs = ref
+	// The rendered evidence list comes first, in the order the model saw it, so a
+	// marker's number is that entry's index; the remaining pool chunks follow so
+	// no retrieved passage is lost. chunksFormat builds the client-facing shape
+	// (content, document_name, dataset_id, ...) in NEW maps, so the engine keys
+	// and the per-chunk vector never reach the reference and the shared chunks
+	// stay intact. The evidence ships even when the final answer cited none of
+	// it; doc_aggs, absent here, is what stays gated on `quote`.
+	refs := make(map[string]interface{}, len(kbinfos))
+	for k, v := range kbinfos {
+		refs[k] = v
 	}
-
-	// Invalid-key hint (dialog_service.py:2134-2135).
-	if strings.Contains(strings.ToLower(ans), "invalid key") ||
-		strings.Contains(strings.ToLower(ans), "invalid api") {
-		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
-	}
+	refs["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
 
 	return AsyncChatResult{
 		Answer:    think + ans,
@@ -3497,16 +3646,6 @@ func langfuseExtractTimeElapsed(prompt string) string {
 // extractVisibleAnswer mirrors Python's _extract_visible_answer.
 func (s *ChatPipelineService) extractVisibleAnswer(text string) string {
 	return ExtractVisibleAnswer(text)
-}
-
-// citationPrompt returns the citation instruction prompt.
-// Mirrors Python's citation_prompt() in rag/prompts/generator.py.
-func citationPrompt() string {
-	return "\n\n### Citation\nWhen answering, please cite sources using the format [ID:N] " +
-		"after each sentence where the information from that chunk is used, " +
-		"where N is the id printed at the start of the evidence block (" +
-		"the blocks are numbered from 0, so the FIRST block is [ID:0]). " +
-		"Cite each source individually ([ID:0][ID:1]); never merge consecutive citations into a range such as [ID:1-3]."
 }
 
 // -----------------------------------------------------------------------
@@ -3717,23 +3856,6 @@ Please correct the error and write SQL again using the exact field names above, 
 //
 //   - err: non-nil when something went wrong; caller should log and fall
 //     through.
-//
-// StructuredQuery is the exported narrow entrypoint for the agentic-search
-// structured_query tool: translate a natural-language question to SQL over the
-// given tabular KBs and return the answer + reference chunks. It forwards to the
-// internal useSQL with quote=false (the agent tool returns the answer directly,
-// not a cited natural-language response).
-func (s *ChatPipelineService) StructuredQuery(
-	ctx context.Context,
-	chat *entity.Chat,
-	kbs []*entity.Knowledgebase,
-	question string,
-	chatModel *modelModule.ChatModel,
-	fieldMap map[string]interface{},
-) (ans map[string]interface{}, err error) {
-	return s.useSQL(ctx, chat, kbs, question, chatModel, fieldMap, false)
-}
-
 func (s *ChatPipelineService) useSQL(
 	ctx context.Context,
 	chat *entity.Chat,
@@ -3835,7 +3957,7 @@ func (s *ChatPipelineService) useSQL(
 	// repair doesn't yield source columns, fall through to the
 	// best-effort answer (matches Python's `returning best-effort
 	// answer` log at line 1221).
-	if !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
+	if quote && !isAggregateSQL(sqlText) && !hasSourceColumns(rows) {
 		common.Debug("SQL retrieval: result missing source columns; attempting repair",
 			zap.String("sql", sqlText))
 		expectedCol := expectedDocNameColumn(engineName)
@@ -3871,7 +3993,7 @@ func (s *ChatPipelineService) useSQL(
 	// and best-effort empty refs.
 	answerStr, ref := s.buildSQLReference(
 		ctx, docEngine, tableName, sqlText, rows,
-		sysPrompt, engineName, kbs, fieldMap,
+		sysPrompt, engineName, kbs, fieldMap, quote,
 	)
 	return map[string]interface{}{
 		"answer":    answerStr,
@@ -4198,17 +4320,11 @@ func chatForSQL(
 	cfg := &modelModule.ChatConfig{
 		Temperature: &tempLow,
 	}
-	modelName := ""
-	if chatModel.ModelName != nil {
-		modelName = *chatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: sysPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := chatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, chatModel.APIConfig, cfg, nil,
-	)
+	resp, err := chatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}
@@ -4279,23 +4395,6 @@ func normalizeSQL(s string) string {
 // -----------------------------------------------------------------------
 // Python parity helpers (dialog_service.py:56-59, 1238-1309, 1321-1365)
 // -----------------------------------------------------------------------
-
-// Redundant-space cleanup regexes. Mirrors
-// common.string_utils.remove_redundant_spaces (string_utils.py:20-46).
-// Pass 1: drop spaces after a "left boundary" character (parens, <, >).
-// Pass 2: drop spaces before a "right boundary" character (parens, !).
-var (
-	redundantSpacePass1Re = regexp.MustCompile(`([^a-z0-9.,)>\x{ff08}]) +([^ ])`) // left boundary + space + non-space
-	redundantSpacePass2Re = regexp.MustCompile(`([^ ]) +([^a-z0-9.,(<])`)         // non-space + space + right boundary
-)
-
-// removeRedundantSpaces ports common.string_utils.remove_redundant_spaces.
-// Two-pass regex cleanup; both passes use case-insensitive matching.
-func removeRedundantSpaces(s string) string {
-	s = redundantSpacePass1Re.ReplaceAllString(s, "$1$2")
-	s = redundantSpacePass2Re.ReplaceAllString(s, "$1$2")
-	return s
-}
 
 // ISO timestamp stripping regex. Mirrors the cleanup at
 // dialog_service.py:1309. Matches `T13:24:55|` or `T13:24:55.123Z|`.
@@ -4385,7 +4484,7 @@ func chunkKBIDForDoc(rowDict map[string]interface{}, kbIDs []string, docID inter
 func cleanCellValue(v interface{}) string {
 	s := fmt.Sprintf("%v", v)
 	s = strings.ReplaceAll(s, "None", " ")
-	return removeRedundantSpaces(s)
+	return common.RemoveRedundantSpaces(s)
 }
 
 // extractSourceColumnIndexes returns, for a set of SQL result rows,
@@ -4585,8 +4684,12 @@ func (s *ChatPipelineService) buildSQLReference(
 	sysPrompt, engineName string,
 	kbs []*entity.Knowledgebase,
 	fieldMap map[string]interface{},
+	quote bool,
 ) (string, map[string]interface{}) {
 	if len(rows) == 0 {
+		if !quote {
+			return "No results.", map[string]interface{}{}
+		}
 		return "No results.", map[string]interface{}{
 			"chunks":   []map[string]interface{}{},
 			"doc_aggs": []interface{}{},
@@ -4597,6 +4700,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	// Scalar shortcut — matches the previous renderSQLAnswer behavior.
 	if len(rows) == 1 && len(rows[0]) == 1 {
 		for _, v := range rows[0] {
+			if !quote {
+				return cleanCellValue(v), map[string]interface{}{}
+			}
 			return cleanCellValue(v), map[string]interface{}{
 				"chunks":   []map[string]interface{}{},
 				"doc_aggs": []interface{}{},
@@ -4609,6 +4715,7 @@ func (s *ChatPipelineService) buildSQLReference(
 	docIDIdx, docNameIdx, kbIDIdx, columns := extractSourceColumnIndexes(rows)
 	expectedCol := expectedDocNameColumn(engineName)
 	hasSrc := len(docIDIdx) > 0 && len(docNameIdx) > 0
+	showSource := quote && hasSrc
 
 	// Build the set of "display column" indices (everything except
 	// doc_id, docnm*, kb_id*). Python uses set subtraction at
@@ -4637,13 +4744,13 @@ func (s *ChatPipelineService) buildSQLReference(
 		header.WriteString(mapColumnName(columns[i], fieldMap))
 		header.WriteString("|")
 	}
-	if hasSrc {
+	if showSource {
 		header.WriteString("Source|")
 	}
 
 	// --- Separator (Python L1285) ---
 	sep := strings.Repeat("|------", len(displayCols)) + "|"
-	if hasSrc {
+	if showSource {
 		sep += "------|"
 	}
 
@@ -4656,7 +4763,7 @@ func (s *ChatPipelineService) buildSQLReference(
 			cells.WriteString(cleanCellValue(r[columns[i]]))
 			cells.WriteString("|")
 		}
-		if hasSrc {
+		if showSource {
 			cells.WriteString(fmt.Sprintf(" ##%d$$|", rowIdx))
 		}
 		// Skip rows that are entirely empty/whitespace (Python's
@@ -4669,6 +4776,9 @@ func (s *ChatPipelineService) buildSQLReference(
 	rowsJoined := stripISOTimestamps(strings.Join(bodyRows, "\n"))
 
 	answer := strings.Join([]string{header.String(), sep, rowsJoined}, "\n")
+	if !quote {
+		return answer, map[string]interface{}{}
+	}
 
 	// --- Reference: chunks + doc_aggs ---
 	ref := map[string]interface{}{
@@ -4987,6 +5097,19 @@ func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
 	return strings.Join(names, ", ")
 }
 
+// HarnessRetrieval is the dialog-level retrieval tuning the chat pipeline hands
+// to the agentic harness. Without it the harness falls back to its package
+// defaults (top_n=12), silently overriding the dialog's configured top_n and
+// making a reasoning run retrieve a different passage set than the standard
+// path — a two-document comparison could come back with one document's chunks
+// filling the whole budget.
+type HarnessRetrieval struct {
+	TopN                   int
+	SimilarityThreshold    float64
+	VectorSimilarityWeight float64
+	RerankCandidatesCount  int
+}
+
 // HarnessRequest carries the minimal inputs the chat pipeline hands to the
 // agentic-RAG harness for evidence collection.
 type HarnessRequest struct {
@@ -5035,6 +5158,9 @@ type HarnessRequest struct {
 	// its own evidence block). Empty when the dialog configures none — Python
 	// then composes without the "# Assistant configuration" block.
 	SystemPrompt string
+	// Retrieval is the dialog's own retrieval tuning, so the harness searches
+	// with the same budget as the standard path.
+	Retrieval HarnessRetrieval
 }
 
 // HarnessResult is the evidence the harness returns, normalized to the map
@@ -5060,12 +5186,11 @@ type HarnessResult struct {
 	CiteChunkIDs []string
 }
 
-// harnessRetriever is wired at server bootstrap (cmd/ragflow_server.go:889) to
-// the agentic-RAG entry point advanced_rag.Rag (:1022). The advanced_rag package
-// imports internal/service (e.g. harness/tool_exploration.go), so the service
-// layer cannot import it back without an import cycle; the function is injected
-// instead. When nil, retrieveViaHarness reports an error and the pipeline
-// continues with empty kbinfos.
+// harnessRetriever is installed at server bootstrap using
+// retrievalbridge.NewHarnessRetriever. The bridge imports internal/service,
+// so this package receives the callback instead of importing the bridge.
+// When nil, retrieveViaHarness reports an error and the pipeline continues
+// with empty kbinfos.
 var harnessRetriever func(ctx context.Context, req HarnessRequest) (HarnessResult, error)
 
 // SetHarnessRetriever injects the agentic-RAG harness driver. Call once at
@@ -5121,7 +5246,7 @@ func harnessThinkSink(ctx context.Context, out chan<- AsyncChatResult) func(Thin
 	}
 }
 
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
+func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, retrieval HarnessRetrieval, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
 	if harnessRetriever == nil {
 		return nil, nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
 	}
@@ -5146,6 +5271,7 @@ func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question s
 		TextAttachments: textAttachments,
 		WebSearch:       webSearch,
 		SystemPrompt:    dialogSystemPrompt,
+		Retrieval:       retrieval,
 	})
 	if err != nil {
 		return nil, nil, nil, "", err
@@ -5203,11 +5329,39 @@ func asInt64(v interface{}) (int64, bool) {
 	return 0, false
 }
 
+// quoteEnabled resolves the effective citation-visibility setting: either the
+// chat setting or the request can disable citations, and both must agree. An
+// absent setting on either side leaves citations on.
+//
+// It is a function because two dispatch points need it — the agentic branch
+// and Phase 6 — and the agentic branch returns before Phase 6 runs. Resolving
+// it twice is how the agentic path ended up ignoring a request's quote:false.
+func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interface{}) bool {
+	quote := true
+	if v, ok := kwargs["quote"].(bool); ok {
+		quote = v
+	}
+	if promptConfigQuote, ok := promptConfig["quote"].(bool); ok {
+		quote = quote && promptConfigQuote
+	}
+	return quote
+}
+
+// reasoningLevelAgentic is the reasoning level that hands the turn to the
+// smart-reasoning agent (internal/agentic_rag) instead of running the pipeline's
+// own retrieval phases.
+//
+// It is deliberately NOT one of harnessModeForLevel's levels. 1..4 pick a depth
+// within the harness graph; this level picks a different engine outright, so
+// harnessModeForLevel must never see it — its `level >= 4` case would silently
+// answer "ultra" for a level that is no longer part of that domain.
+const reasoningLevelAgentic = 5
+
 // resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
 // level is taken from the request kwargs first, falling back to the chat
-// prompt_config, and is an integer in 0..4 (0 = off, 1..4 = low/medium/high/
-// ultra). Frontend sends Number(getThinkingLevel()), so the raw value is
-// numeric, not a bool.
+// prompt_config, and is an integer 0..4 (0 = off, 1..4 = low/medium/high/
+// ultra), or reasoningLevelAgentic for the smart-reasoning agent. Frontend
+// sends Number(getThinkingLevel()), so the raw value is numeric, not a bool.
 func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
 	if kwargs != nil {
 		if v, ok := kwargs["reasoning"]; ok {
@@ -5229,6 +5383,10 @@ func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[strin
 // harnessModeForLevel maps a Python-style reasoning level to the harness
 // thinking mode. Python uses THINKING_MODES = [low, medium, high, ultra] and
 // falls back to "medium" when n is out of range.
+//
+// Its domain is levels 1..4 only. reasoningLevelAgentic never arrives here — the
+// AsyncChat dispatch hands that turn to the smart-reasoning agent before Phase 9
+// runs — so the `level >= 4` case below does not need to exclude it.
 func harnessModeForLevel(level int) string {
 	switch {
 	case level >= 4:

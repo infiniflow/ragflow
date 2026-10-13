@@ -28,8 +28,11 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
+
+	"go.uber.org/zap"
 )
 
 // TenantHandler tenant handler
@@ -157,7 +160,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Tags tenants
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/list [get]
+// @Router /api/v1/tenants [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -263,8 +266,8 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -311,8 +314,8 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -352,17 +355,23 @@ func (h *TenantHandler) ListTenantMembers(c *gin.Context) {
 	common.SuccessWithData(c, members, "success")
 }
 
-func sendTenantInviteEmail(toEmail, recipientEmail, tenantID, inviter string) error {
+// tenantSMTPConfig returns the SMTP settings together with a flag telling
+// whether they are usable. SMTP is optional: when it is not configured the
+// caller must skip sending instead of failing the request.
+func tenantSMTPConfig() (common.SMTPConfig, bool) {
 	config := server.GetConfig()
 	if config == nil {
-		return fmt.Errorf("server config is not initialized")
+		return common.SMTPConfig{}, false
 	}
 
 	smtpCfg := config.GetSMTPConfig()
-	if smtpCfg.MailServer == "" || smtpCfg.MailPort == 0 {
-		return fmt.Errorf("SMTP config is incomplete")
+	if smtpCfg.MailServer == "" || smtpCfg.MailPort == 0 || smtpCfg.MailFromAddress == "" {
+		return common.SMTPConfig{}, false
 	}
+	return smtpCfg, true
+}
 
+func sendTenantInviteEmail(smtpCfg common.SMTPConfig, toEmail, recipientEmail, tenantID, inviter string) error {
 	from := mail.Address{
 		Name:    smtpCfg.MailFromName,
 		Address: smtpCfg.MailFromAddress,
@@ -511,9 +520,15 @@ func (h *TenantHandler) AddTenantMember(c *gin.Context) {
 	if inviter == "" {
 		inviter = user.Email
 	}
-	if err = sendTenantInviteEmail(req.Email, req.Email, tenantID, inviter); err != nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())
-		return
+	// The member is already invited at this point; a missing or broken SMTP
+	// setup must not turn the whole invitation into a failure.
+	if smtpCfg, ok := tenantSMTPConfig(); ok {
+		if err = sendTenantInviteEmail(smtpCfg, req.Email, req.Email, tenantID, inviter); err != nil {
+			common.Warn("failed to send tenant invite email",
+				zap.String("tenant_id", tenantID),
+				zap.String("email", req.Email),
+				zap.Error(err))
+		}
 	}
 
 	common.SuccessWithData(c, resp, "success")

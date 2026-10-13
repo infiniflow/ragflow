@@ -26,11 +26,15 @@
             },
             "Parser:SongsFillAir": {
                 "downstream": [
-                    "TokenChunker:BlueSkiesLaugh"
+                    "OneChunker:BlueSkiesLaugh"
                 ],
                 "obj": {
                     "component_name": "Parser",
                     "params": {
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
+                        },
                         "outputs": {
                             "html": {
                                 "type": "string",
@@ -78,7 +82,7 @@
                     "File"
                 ]
             },
-            "TokenChunker:BlueSkiesLaugh": {
+            "OneChunker:BlueSkiesLaugh": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
@@ -117,7 +121,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TokenChunker:BlueSkiesLaugh"
+                    "OneChunker:BlueSkiesLaugh"
                 ],
                 "downstream": [
                     "Tokenizer:KindEyesWatch"
@@ -161,15 +165,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:SongsFillAirstart-TokenChunker:BlueSkiesLaughend",
+                    "id": "xy-edge__Parser:SongsFillAirstart-OneChunker:BlueSkiesLaughend",
                     "source": "Parser:SongsFillAir",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:BlueSkiesLaugh",
+                    "target": "OneChunker:BlueSkiesLaugh",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:BlueSkiesLaughstart-Extractor:AutoExtractDefaultend",
-                    "source": "TokenChunker:BlueSkiesLaugh",
+                    "id": "xy-edge__OneChunker:BlueSkiesLaughstart-Extractor:AutoExtractDefaultend",
+                    "source": "OneChunker:BlueSkiesLaugh",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -190,7 +194,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -204,6 +208,10 @@
                 {
                     "data": {
                         "form": {
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
+                            },
                             "outputs": {
                                 "html": {
                                     "type": "string",
@@ -233,17 +241,17 @@
                             ]
                         },
                         "label": "Parser",
-                        "name": "Parser_audio"
+                        "name": "Parser"
                     },
                     "dragging": false,
                     "id": "Parser:SongsFillAir",
                     "measured": {
-                        "height": 57,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -261,16 +269,16 @@
                             }
                         },
                         "label": "OneChunker",
-                        "name": "OneChunker_audio"
+                        "name": "Audio Chunker"
                     },
-                    "id": "TokenChunker:BlueSkiesLaugh",
+                    "id": "OneChunker:BlueSkiesLaugh",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -289,16 +297,16 @@
                             ]
                         },
                         "label": "Tokenizer",
-                        "name": "Indexer_audio"
+                        "name": "Indexer"
                     },
                     "id": "Tokenizer:KindEyesWatch",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
-                        "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 1216.9952409420641,
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",
@@ -307,9 +315,13 @@
                 {
                     "id": "Extractor:AutoExtractDefault",
                     "type": "contextNode",
+                    "measured": {
+                        "height": 59,
+                        "width": 200
+                    },
                     "position": {
-                        "x": 796.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 916.9952409420641,
+                        "y": 195
                     },
                     "data": {
                         "label": "Extractor",

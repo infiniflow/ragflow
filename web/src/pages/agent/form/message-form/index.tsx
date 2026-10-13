@@ -16,6 +16,7 @@ import { X } from 'lucide-react';
 import { memo } from 'react';
 import { useFieldArray, useForm } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { ExportFileType } from '../../constant';
 import { INextOperatorForm } from '../../interface';
@@ -28,6 +29,7 @@ import { useWatchFormChange } from './use-watch-change';
 
 function MessageForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
+  const { id: canvasID } = useParams();
 
   const values = useValues(node);
 
@@ -163,7 +165,10 @@ function MessageForm({ node }: INextOperatorForm) {
             </FormItem>
           </>
         )}
-        <MemoriesFormField label={t('flow.saveToMemory')}></MemoriesFormField>
+        <MemoriesFormField
+          label={t('flow.saveToMemory')}
+          canvasID={canvasID}
+        ></MemoriesFormField>
         <UserIdFormField></UserIdFormField>
       </FormWrapper>
     </Form>

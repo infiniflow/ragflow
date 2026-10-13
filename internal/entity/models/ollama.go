@@ -40,7 +40,7 @@ func NewOllamaModel(baseURL map[string]string, urlSuffix URLSuffix) *OllamaModel
 			BaseURL:          baseURL,
 			URLSuffix:        urlSuffix,
 			AllowEmptyAPIKey: true,
-			httpClient:       NewDriverHTTPClient(true),
+			httpClient:       common.GetSchemeSafeHTTPClient(),
 		},
 	}
 }
@@ -370,6 +370,7 @@ func (o *OllamaModel) Embed(ctx context.Context, modelName *string, request Embe
 
 	resp, err := o.baseModel.httpClient.Do(req)
 	if err != nil {
+		common.Error(fmt.Sprintf("failed to send request, response: %v", resp), err)
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()

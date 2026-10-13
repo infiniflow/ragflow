@@ -12,12 +12,12 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 )
 
 // CompilationStatus is the dataset-level knowledge-compile lifecycle state
-// surfaced by GET /datasets/:id/compilation/status. It is the Go scheduler
-// contract that replaces the Python-era RunIndex/TraceIndex task progress for
-// API_PROXY_SCHEME=go / hybrid.
+// surfaced by GET /datasets/:id/compilation/status.
 //
 // State only takes one of idle/pending/running/completed. Error is NOT a fifth
 // state: it is a diagnostic attached to a pending/running batch left for retry,
@@ -43,8 +43,9 @@ func (d *DatasetService) GetDatasetCompilationStatus(ctx context.Context, userID
 	if datasetID == "" {
 		return CompilationStatus{}, common.CodeDataError, errors.New("dataset_id is required")
 	}
-	if !d.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return CompilationStatus{}, common.CodeDataError, errors.New("no authorization")
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return CompilationStatus{}, code, permissionErr
 	}
 	requestedKind := strings.ToLower(strings.TrimSpace(kind))
 	normalizedKind := normalizeCompilationKind(requestedKind)

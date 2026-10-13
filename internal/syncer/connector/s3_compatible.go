@@ -38,6 +38,9 @@ const (
 
 // S3CompatibleConnector reads objects from any S3-compatible object store.
 type S3CompatibleConnector struct {
+	// source is the registered source name; it prefixes document IDs and
+	// resume anchors.
+	source          string
 	bucketName      string
 	prefix          string
 	endpointURL     string
@@ -57,6 +60,12 @@ type S3CompatibleConnector struct {
 // NewS3CompatibleConnector creates an S3-compatible connector from
 // Python-compatible config.
 func NewS3CompatibleConnector(config map[string]any) (*S3CompatibleConnector, error) {
+	return newS3CompatibleConnector(config, s3CompatibleSource)
+}
+
+// newS3CompatibleConnector creates the connector under the source name it is
+// registered as, which names the ID namespace of its documents.
+func newS3CompatibleConnector(config map[string]any, source string) (*S3CompatibleConnector, error) {
 	credentials := configAnyMap(config["credentials"])
 	batchSize := configInt(firstNonEmpty(stringConfig(config["sync_batch_size"]), stringConfig(config["batch_size"])), defaultS3BatchSize)
 	sizeThreshold := int64(configInt(config["size_threshold"], defaultS3SizeThreshold))
@@ -65,6 +74,7 @@ func NewS3CompatibleConnector(config map[string]any) (*S3CompatibleConnector, er
 	}
 	addressingStyle := firstNonEmpty(stringConfig(credentials["addressing_style"]), "virtual")
 	return &S3CompatibleConnector{
+		source:          source,
 		bucketName:      strings.TrimSpace(stringConfig(config["bucket_name"])),
 		prefix:          normalizeS3Prefix(stringConfig(config["prefix"])),
 		endpointURL:     strings.TrimSpace(stringConfig(credentials["endpoint_url"])),
@@ -197,11 +207,16 @@ func s3PinnedHTTPClient() *http.Client {
 		// correct endpoint. Only method-preserving 307/308 are followed, same
 		// as the SDK default. Without this, Go's default client would follow a
 		// 301/302 before the SDK sees it, replaying a request signed for one
-		// endpoint against another host.
+		// endpoint against another host. A followed hop must still be HTTPS:
+		// the dial-time pin cannot see the scheme, and Go keeps the
+		// Authorization header on a same-host or subdomain downgrade.
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if req.Response != nil {
 				switch req.Response.StatusCode {
 				case http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+					if err := assertConnectorSchemeHTTPS(req.URL); err != nil {
+						return fmt.Errorf("refusing redirect: %w", err)
+					}
 					return nil
 				}
 			}
@@ -227,7 +242,7 @@ func s3PinnedHTTPClient() *http.Client {
 }
 
 func (c *S3CompatibleConnector) listObjectPage(ctx context.Context, startAfter string, maxKeys int32) ([]s3Object, string, bool, error) {
-	return listS3ObjectPage(ctx, c.listObjects, c.ensureClient, c.bucketName, c.prefix, s3CompatibleSource, startAfter, maxKeys)
+	return listS3ObjectPage(ctx, c.listObjects, c.ensureClient, c.bucketName, c.prefix, c.source, startAfter, maxKeys)
 }
 
 func (c *S3CompatibleConnector) download(ctx context.Context, key string) ([]byte, error) {
@@ -239,7 +254,7 @@ func (c *S3CompatibleConnector) sourceName() string {
 }
 
 func (c *S3CompatibleConnector) sourceID(key string) string {
-	return s3SourceID(s3CompatibleSource, c.bucketName, key)
+	return s3SourceID(c.source, c.bucketName, key)
 }
 
 func (c *S3CompatibleConnector) sourceDocument(sourceID string, object s3Object) (SourceDocument, bool) {
@@ -279,9 +294,11 @@ func validateS3CompatibleEndpoint(raw string) error {
 	}
 	// The endpoint host is user-controlled and connected to server-side, so it
 	// must resolve only to public addresses (blocks loopback, RFC1918 and
-	// cloud metadata). The per-connection transport in s3PinnedHTTPClient
-	// re-validates and pins at dial time.
-	if _, _, err := assertConnectorURLSafe(raw); err != nil {
+	// cloud metadata). Every request is signed with the configured credentials
+	// and carries object contents, so the endpoint must also use HTTPS. The
+	// per-connection transport in s3PinnedHTTPClient re-validates and pins at
+	// dial time.
+	if _, _, err := assertConnectorURLSafeHTTPS(raw); err != nil {
 		return fmt.Errorf("invalid S3-compatible endpoint_url %q: %v", raw, err)
 	}
 	return nil

@@ -2,6 +2,8 @@ jest.mock('@/constants/agent', () => ({
   Operator: {
     QueritContents: 'QueritContents',
     QueritSearch: 'QueritSearch',
+    Search1APICrawl: 'Search1APICrawl',
+    Search1APISearch: 'Search1APISearch',
   },
 }));
 
@@ -20,6 +22,20 @@ describe('getToolOperatorName', () => {
     'maps the Querit Contents timeline name %p to its operator',
     (toolName) => {
       expect(getToolOperatorName(toolName)).toBe(Operator.QueritContents);
+    },
+  );
+
+  it.each(['Search1APISearch', 'search1api_search'])(
+    'maps the Search1API timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.Search1APISearch);
+    },
+  );
+
+  it.each(['Search1APICrawl', 'search1api_crawl'])(
+    'maps the Search1API crawl timeline name %p to its operator',
+    (toolName) => {
+      expect(getToolOperatorName(toolName)).toBe(Operator.Search1APICrawl);
     },
   );
 

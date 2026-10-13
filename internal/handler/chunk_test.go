@@ -312,6 +312,190 @@ func TestChunkHandlerUpdateChunkValidationErrorIsBadRequest(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerUpdateChunkForwardsImageFields(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+		if req.ImageBase64 == nil || *req.ImageBase64 != "aGVsbG8=" {
+			t.Fatalf("image_base64 = %v, want aGVsbG8=", req.ImageBase64)
+		}
+		if req.ImageUpdateMode == nil || *req.ImageUpdateMode != "replace" {
+			t.Fatalf("image_update_mode = %v, want replace", req.ImageUpdateMode)
+		}
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1",
+		strings.NewReader(`{"content":"updated","image_base64":"aGVsbG8=","image_update_mode":"replace"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsNonStringImageFields(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"image_base64 as number", `{"image_base64":123}`, "`image_base64` must be a non-empty string"},
+		{"image_base64 as null", `{"image_base64":null}`, "`image_base64` must be a non-empty string"},
+		{"image_update_mode as number", `{"image_update_mode":5}`, "`image_update_mode` must be a string"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+				t.Fatal("service must not be called for a malformed image field")
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			message, _ := resp["message"].(string)
+			if message != tc.want {
+				t.Fatalf("message = %q, want %q", message, tc.want)
+			}
+			// Python answers the image paths with DATA_ERROR (102).
+			if resp["code"] != float64(common.CodeDataError) {
+				t.Fatalf("code = %v, want %d", resp["code"], common.CodeDataError)
+			}
+		})
+	}
+}
+
+func TestChunkHandlerUpdateChunkForwardsTagKwd(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want []string
+	}{
+		{"tags", `{"tag_kwd":["alpha","beta"]}`, []string{"alpha", "beta"}},
+		{"empty list clears tags", `{"tag_kwd":[]}`, []string{}},
+		{"absent", `{"content":"updated"}`, nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			called := false
+			mock.updateChunkFn = func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
+				called = true
+				if !reflect.DeepEqual(req.TagKwd, tc.want) {
+					t.Fatalf("tag_kwd = %#v, want %#v", req.TagKwd, tc.want)
+				}
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			if !called {
+				t.Fatal("service was not called")
+			}
+		})
+	}
+}
+
+func TestChunkHandlerUpdateChunkRejectsInvalidTagKwd(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"string", `{"tag_kwd":"alpha"}`, "`tag_kwd` is required to be a list"},
+		{"object", `{"tag_kwd":{}}`, "`tag_kwd` is required to be a list"},
+		{"non-string item", `{"tag_kwd":["alpha",1]}`, "`tag_kwd` must be a list of strings"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := &mockChunkSvc{}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+			mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+				t.Fatal("service must not be called for a malformed tag_kwd")
+				return nil
+			}
+
+			req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			w := httptest.NewRecorder()
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+			}
+			var resp map[string]interface{}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if resp["message"] != tc.want {
+				t.Fatalf("message = %v, want %q", resp["message"], tc.want)
+			}
+			if resp["code"] != float64(common.CodeDataError) {
+				t.Fatalf("code = %v, want %d", resp["code"], common.CodeDataError)
+			}
+		})
+	}
+}
+
+func TestChunkHandlerUpdateChunkStillRejectsUnknownFields(t *testing.T) {
+	mock := &mockChunkSvc{}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.PATCH("/api/v1/datasets/:dataset_id/documents/:document_id/chunks/:chunk_id", h.UpdateChunk)
+
+	mock.updateChunkFn = func(context.Context, *service.UpdateChunkRequest, string) error {
+		t.Fatal("service must not be called for an unsupported field")
+		return nil
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/datasets/kb-1/documents/doc-1/chunks/chunk-1", strings.NewReader(`{"doc_type_kwd":"image"}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, body = %s", w.Code, w.Body.String())
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	message, _ := resp["message"].(string)
+	for _, field := range []string{"image_base64", "image_update_mode", "tag_kwd"} {
+		if !strings.Contains(message, field) {
+			t.Fatalf("message = %q, want it to list %s as updatable", message, field)
+		}
+	}
+}
+
 func TestChunkRetrieval_EmptyQuestion(t *testing.T) {
 	r, _ := setupChunkRetrievalTest("user1")
 
@@ -756,8 +940,18 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			wantMsg: "`important_keywords` is required to be a list",
 		},
 		{
-			name:    "tag kwd element type",
-			body:    `{"content":"chunk body","tag_kwd":[1]}`,
+			name:    "tag_kwd null",
+			body:    `{"content":"chunk body","tag_kwd":null}`,
+			wantMsg: "`tag_kwd` is required to be a list",
+		},
+		{
+			name:    "tag_kwd type",
+			body:    `{"content":"chunk body","tag_kwd":{}}`,
+			wantMsg: "`tag_kwd` is required to be a list",
+		},
+		{
+			name:    "tag_kwd element type",
+			body:    `{"content":"chunk body","tag_kwd":["ok",42]}`,
 			wantMsg: "`tag_kwd` must be a list of strings",
 		},
 	}
@@ -789,6 +983,75 @@ func TestChunkHandlerAddChunkValidatesListFields(t *testing.T) {
 			}
 			if resp["message"] != tt.wantMsg {
 				t.Fatalf("message = %v, want %q", resp["message"], tt.wantMsg)
+			}
+		})
+	}
+}
+
+// TestChunkHandlerAddChunkForwardsTagKwd pins the Go/Python parity contract
+// that callers can attach a tag list at write time and the field survives on
+// the service-side AddChunkRequest. Issue #20138 documented that the Go path
+// was silently dropping the field while the Python chunk API accepted it.
+func TestChunkHandlerAddChunkForwardsTagKwd(t *testing.T) {
+	cases := []struct {
+		name    string
+		body    string
+		wantTag []string
+		wantNil bool
+	}{
+		{
+			name:    "tag_kwd omitted",
+			body:    `{"content":"chunk body"}`,
+			wantNil: true,
+		},
+		{
+			name:    "tag_kwd explicit empty list",
+			body:    `{"content":"chunk body","tag_kwd":[]}`,
+			wantTag: []string{},
+		},
+		{
+			name:    "tag_kwd with values",
+			body:    `{"content":"chunk body","tag_kwd":["alpha","beta"]}`,
+			wantTag: []string{"alpha", "beta"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var got *service.AddChunkRequest
+			mock := &mockChunkSvc{
+				addChunkFn: func(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
+					got = req
+					return &service.AddChunkResponse{Chunk: map[string]interface{}{"id": "chunk-1"}}, nil
+				},
+			}
+			gin.SetMode(gin.TestMode)
+			r := gin.New()
+			r.Use(func(c *gin.Context) {
+				c.Set("user", &entity.User{ID: "user1"})
+			})
+			h := &ChunkHandler{chunkService: mock}
+			r.POST("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.AddChunk)
+
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("POST", "/api/v1/datasets/kb1/documents/doc1/chunks", strings.NewReader(tc.body))
+			req.Header.Set("Content-Type", "application/json")
+			r.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200; body = %s", w.Code, w.Body.String())
+			}
+			if got == nil {
+				t.Fatal("service was not called")
+			}
+			if tc.wantNil {
+				if got.TagKwd != nil {
+					t.Fatalf("TagKwd = %v, want nil", got.TagKwd)
+				}
+				return
+			}
+			if !reflect.DeepEqual(got.TagKwd, tc.wantTag) {
+				t.Fatalf("TagKwd = %v, want %v", got.TagKwd, tc.wantTag)
 			}
 		})
 	}

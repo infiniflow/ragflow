@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/testutil"
 	servicepkg "ragflow/internal/service"
@@ -160,6 +161,130 @@ func TestHandleAndExecute_StartRunningTransientErrorNacks(t *testing.T) {
 	}
 }
 
+func TestHandleAndExecute_InvalidRunIdentityFailsAndAcks(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("pipeline_log_id", nil).Error; err != nil {
+		t.Fatalf("remove run binding: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("schedule task: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-invalid-run-identity", 1, []string{"pdf"})
+	pipelineRan := false
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+
+	ingestor.handleAndExecute(handle)
+
+	if pipelineRan {
+		t.Fatal("pipeline ran despite an invalid run identity")
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+}
+
+func TestHandleAndExecute_InvalidRunIdentitySettlesBoundRun(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.SCHEDULED).Error; err != nil {
+		t.Fatalf("schedule task: %v", err)
+	}
+	if err := db.Model(&entity.PipelineOperationLog{}).Where("id = ?", "run-"+taskID).
+		Update("run_count", 0).Error; err != nil {
+		t.Fatalf("invalidate run count: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-invalid-run-settle", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		t.Fatal("pipeline ran despite an invalid run identity")
+		return nil
+	}
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+
+	ingestor.handleAndExecute(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-"+taskID).Error; err != nil {
+		t.Fatalf("reload pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("pipeline log status = %q, want FAIL", run.OperationStatus)
+	}
+	var terminalCount int64
+	if err := db.Model(&entity.IngestionTaskLog{}).
+		Where("pipeline_log_id = ? AND event_type = ?", "run-"+taskID, dao.EventTypeTerminal).
+		Count(&terminalCount).Error; err != nil {
+		t.Fatalf("count terminal events: %v", err)
+	}
+	if terminalCount != 1 {
+		t.Fatalf("terminal events = %d, want 1", terminalCount)
+	}
+}
+
+func TestHandleAndExecute_InvalidRunIdentityDoesNotCloseForeignRun(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	foreignRunCount := 1
+	if err := db.Create(&entity.PipelineOperationLog{
+		ID:              "foreign-run",
+		DocumentID:      "foreign-doc",
+		TenantID:        "tenant-1",
+		KbID:            "kb-1",
+		ParserID:        "naive",
+		OperationStatus: string(entity.TaskStatusRunning),
+		RunCount:        &foreignRunCount,
+	}).Error; err != nil {
+		t.Fatalf("create foreign run: %v", err)
+	}
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{
+		"status":          common.SCHEDULED,
+		"pipeline_log_id": "foreign-run",
+	}).Error; err != nil {
+		t.Fatalf("corrupt task binding: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-foreign-run", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask}}
+	ingestor.handleAndExecute(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "foreign-run").Error; err != nil {
+		t.Fatalf("reload foreign pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusRunning) {
+		t.Fatalf("foreign pipeline log status = %q, want RUNNING", run.OperationStatus)
+	}
+}
+
 // TestHandleAndExecute_AlreadyTerminalTaskAcks verifies that tasks already in a
 // terminal state (COMPLETED, STOPPED, FAILED) are Ack-skipped without re-execution.
 func TestHandleAndExecute_AlreadyTerminalTaskAcks(t *testing.T) {
@@ -253,6 +378,14 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	if !ingestor.claimTask(taskID) {
 		t.Fatal("first claim should succeed")
 	}
+	if err := db.Model(&entity.Document{}).Where("id = ?", "doc-1").Updates(map[string]interface{}{
+		"progress":         0.42,
+		"chunk_num":        7,
+		"token_num":        9,
+		"process_duration": 12.5,
+	}).Error; err != nil {
+		t.Fatalf("seed in-flight document state: %v", err)
+	}
 
 	pipelineRan := false
 	ingestor.runDocumentTask = func(ctx context.Context, task *entity.IngestionTask) error {
@@ -275,6 +408,13 @@ func TestHandleAndExecute_DocumentDuplicateClaimRenewsLease(t *testing.T) {
 	}
 	if handle.acks.Load() != 0 || handle.nacks.Load() != 0 {
 		t.Fatalf("expected 0 Ack/0 Nack for duplicate delivery, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var doc entity.Document
+	if err := db.First(&doc, "id = ?", "doc-1").Error; err != nil {
+		t.Fatalf("reload document: %v", err)
+	}
+	if doc.Progress != 0.42 || doc.ChunkNum != 7 || doc.TokenNum != 9 || doc.ProcessDuration != 12.5 {
+		t.Fatalf("duplicate delivery rewrote document state: progress=%v chunks=%d tokens=%d duration=%v", doc.Progress, doc.ChunkNum, doc.TokenNum, doc.ProcessDuration)
 	}
 }
 

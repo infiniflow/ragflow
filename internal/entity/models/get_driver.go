@@ -47,6 +47,20 @@ func GetPreconfiguredDriver(driver string, baseURLOverride string) (ModelDriver,
 	}
 	provider := pm.FindProvider(driver)
 	if provider == nil || provider.ModelDriver == nil {
+		// Some drivers expose a short runtime name that differs from the
+		// provider name in conf/models. For example, the Zhipu provider is
+		// configured as "ZHIPU-AI" while its driver name is "zhipu".
+		// Match the registered driver name as a fallback so callers that
+		// already resolved a ModelDriver can safely use its name here.
+		for i := range pm.Providers {
+			candidate := &pm.Providers[i]
+			if candidate.ModelDriver != nil && strings.EqualFold(candidate.ModelDriver.Name(), driver) {
+				provider = candidate
+				break
+			}
+		}
+	}
+	if provider == nil || provider.ModelDriver == nil {
 		return nil, fmt.Errorf("provider %q is not configured", driver)
 	}
 	md := provider.ModelDriver

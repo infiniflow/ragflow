@@ -78,18 +78,25 @@ var mergeSourceLines = []string{
 // preservation is pinned by the dedicated suites instead — token_oversize_split_test.go
 // (lossless concatenation) and token_overlap_test.go (no space-less boundaries).
 func goMergeGroupsOracle(paragraphs []string, cap int, overlapPct float64) []string {
+	// Model the production text-path unitization exactly: split on the active
+	// delimiter and KEEP it attached (lossless). This mirrors
+	// TokenChunkerComponent.mergeByTokenSize, which calls
+	// splitByDelim(text, delimPattern, true) — no synthetic leading "\n" glue
+	// is prepended. Reconstructing the units the same way keeps the rune layout
+	// (and therefore token counts and merge structure) identical to production,
+	// so the overlap-prefix trim lands on the same rune.
+	text := strings.Join(paragraphs, "\n")
 	units := make([]schema.ChunkDoc, 0, len(paragraphs))
-	for _, p := range paragraphs {
-		if strings.TrimSpace(p) == "" {
+	for _, sub := range splitByDelim(text, compileDelimPattern([]string{"\n"}), true) {
+		if sub == "" {
 			continue
 		}
-		u := "\n" + p
-		units = append(units, schema.ChunkDoc{Text: u, TKNums: intPtr(tokenizeStr(u)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
 	}
 	merged := mergeUnits(units, cap, overlapPct, "")
 	out := make([]string, 0, len(merged))
 	for _, ck := range merged {
-		text := removeTag(strings.TrimSpace(ck.Text))
+		text := removeTag(ck.Text)
 		if text == "" {
 			continue
 		}
@@ -222,13 +229,17 @@ func TestTokenChunkerMergeMatchesGoOracle(t *testing.T) {
 // trimmed to fit the hard cap). It is the Go-side oracle for the overlap
 // parity tests below.
 func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappedPercent float64) []string {
+	// Same lossless unitization as goMergeGroupsOracle: split on the active
+	// delimiter and KEEP it (no leading "\n" glue). This must match production
+	// (TokenChunkerComponent.mergeByTokenSize) so the overlap-prefix trim
+	// reproduces the same rune as the component emits.
+	text := strings.Join(paragraphs, "\n")
 	units := make([]schema.ChunkDoc, 0, len(paragraphs))
-	for _, p := range paragraphs {
-		if strings.TrimSpace(p) == "" {
+	for _, sub := range splitByDelim(text, compileDelimPattern([]string{"\n"}), true) {
+		if sub == "" {
 			continue
 		}
-		u := "\n" + p
-		units = append(units, schema.ChunkDoc{Text: u, TKNums: intPtr(tokenizeStr(u)), CKType: "text"})
+		units = append(units, schema.ChunkDoc{Text: sub, TKNums: intPtr(tokenizeStr(sub)), CKType: "text"})
 	}
 	merged := mergeUnits(units, chunkTokenSize, overlappedPercent, "")
 	out := make([]string, 0, len(merged))
@@ -236,7 +247,7 @@ func goMergeWithOverlapOracle(paragraphs []string, chunkTokenSize int, overlappe
 		// Mirror production token.go: removeTag first, then TrimSpace, so
 		// whitespace between visible text and a trailing position tag survives
 		// exactly as the Go TokenChunker emits it.
-		text := removeTag(strings.TrimSpace(ck.Text))
+		text := removeTag(ck.Text)
 		if text == "" {
 			continue
 		}

@@ -36,10 +36,10 @@ func validateRetrievalWindow(page, pageSize int) error {
 	return nil
 }
 
-// MCPRetrieval executes a retrieval request on behalf of the MCP tool handler.
+// mcpRetrieval executes a retrieval request on behalf of the MCP tool handler.
 // It translates the mcp.RetrievalRequest into a service.SearchDatasetsRequest
 // and calls DatasetService.SearchDatasets. The result is serialized as JSON.
-func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
+func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string, req mcp.RetrievalRequest) (string, error) {
 	if err := validateRetrievalWindow(req.Page, req.PageSize); err != nil {
 		return "", err
 	}
@@ -51,7 +51,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		ids, err := fetchAllDatasetIDs(func(page, pageSize int) ([]map[string]interface{}, int64, error) {
 			data, total, _, err := ds.ListDatasets(ctx,
 				"", "", page, pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}},
-				"", nil, "", userID, nil,
+				"", nil, "", userID, nil, "",
 			)
 			return data, total, err
 		}, maxPageSize)
@@ -122,9 +122,6 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 		}
 		name, _ := info["name"].(string)
 		datasetNames[id] = name
-		if !ds.Accessible(ctx, id, userID) {
-			continue
-		}
 		// Read only documents returned by retrieval, through the existing listing
 		// and metadata services. This avoids loading entire document collections.
 		for _, chunk := range resp.Chunks {
@@ -136,7 +133,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if _, ok := documentMetadata[docID]; ok {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}}, 1, 1)
+			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
 			if err != nil || len(docs) == 0 {
 				continue
 			}
@@ -144,7 +141,7 @@ func MCPRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if err != nil {
 				fields = map[string]any{}
 			}
-			doc := mapDocumentListItem(docs[0], fields)
+			doc := mapDocumentListItem(docs[0], fields, nil)
 			metadata := map[string]any{"document_id": docID}
 			for _, key := range []string{"name", "location", "type", "size", "chunk_count", "create_date", "update_date", "token_count", "thumbnail", "dataset_id", "meta_fields"} {
 				metadata[key] = doc[key]

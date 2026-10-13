@@ -19,9 +19,11 @@ import {
   EmptyConversationId,
 } from '@/constants/chat';
 import { IMessage, Message } from '@/interfaces/database/chat';
+import type { CompletionChunk } from '@/services/chat-completion-stream';
 import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
+  buildCitationDisplayMap,
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
@@ -57,6 +59,43 @@ export const buildMessageUuidWithRole = (
 ) => {
   return `${message.role}_${message.id}`;
 };
+
+/** Merges streamed deltas, replacing the visible text with a final answer. */
+export function mergeAnswerChunk(
+  previousAnswer: string,
+  chunk: CompletionChunk,
+): string {
+  const currentAnswer = chunk.answer || '';
+
+  let nextAnswer: string;
+  if (chunk.final && currentAnswer) {
+    // Final answers can add or repair citations anywhere in the text.
+    // Keep streamed thinking when the final payload only contains the answer.
+    const thinkEnd = previousAnswer.lastIndexOf('</think>');
+    const thinking =
+      thinkEnd >= 0 &&
+      !currentAnswer.includes('<think>') &&
+      !currentAnswer.includes('</think>')
+        ? previousAnswer.slice(0, thinkEnd + '</think>'.length) + '\n\n'
+        : '';
+    nextAnswer = thinking + currentAnswer;
+  } else if (previousAnswer && currentAnswer.startsWith(previousAnswer)) {
+    nextAnswer = currentAnswer;
+  } else {
+    nextAnswer = previousAnswer + currentAnswer;
+  }
+
+  if (chunk.start_to_think === true) {
+    nextAnswer = nextAnswer + '<think>';
+  }
+
+  if (chunk.end_to_think === true) {
+    // Keep the answer's first Markdown heading on its own line.
+    nextAnswer = nextAnswer + '</think>\n\n';
+  }
+
+  return nextAnswer;
+}
 
 // Preprocess LaTeX equations to be rendered by KaTeX
 // ref: https://github.com/remarkjs/react-markdown/issues/785
@@ -206,7 +245,11 @@ export function setChatVariableEnabledFieldValuePage() {
 
 const oldReg = /(#{2}[0-9\u0660-\u0669\u06F0-\u06F9]+\${2})/g;
 export const currentReg = citationMarkerReg;
-export { normalizeCitationDigits, parseCitationIndex };
+export {
+  buildCitationDisplayMap,
+  normalizeCitationDigits,
+  parseCitationIndex,
+};
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

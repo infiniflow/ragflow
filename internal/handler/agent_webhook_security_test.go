@@ -517,13 +517,6 @@ func TestValidateIPWhitelist_AllowsRealPeerDespiteSpoof(t *testing.T) {
 	}
 }
 
-// TestValidateIPWhitelist_BehindBundledProxy covers the shipped deployment:
-// docker/entrypoint.sh runs nginx in the same container and
-// docker/nginx/ragflow.conf.golang proxies the webhook route to
-// 127.0.0.1:9384 with X-Forwarded-For set by proxy.conf. The socket peer is
-// therefore always loopback and the whitelist has to be evaluated against
-// the forwarded address, which the loopback default in
-// common.DefaultTrustedProxies makes gin.ClientIP() return.
 func TestValidateIPWhitelist_BehindBundledProxy(t *testing.T) {
 	cfg := map[string]any{"ip_whitelist": []any{"203.0.113.7"}}
 

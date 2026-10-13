@@ -18,6 +18,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { useRef } from 'react';
 
+import { modelNameKey } from '@/utils/llm-util';
 import { useInstanceSaveState } from '../hooks';
 import {
   DRAFT_INSTANCE_SENTINEL,
@@ -197,7 +198,7 @@ describe('Bedrock model credentials', () => {
         instance,
         instanceItems: [],
         filteredModels: [model],
-        addedSet: new Set(),
+        isModelAdded: () => false,
         setCatalog: jest.fn(),
         clearCatalogOverride: jest.fn(),
       });
@@ -364,7 +365,8 @@ describe('saved instance model baseline', () => {
         useModelEdit({
           providerName,
           instanceName,
-          addedSet: new Set([persistedModel.name]),
+          isModelAdded: (name: string) =>
+            modelNameKey(name) === modelNameKey(persistedModel.name),
           updateCatalogModel: jest.fn(),
           clearCatalogOverride: jest.fn(),
         }),
@@ -427,5 +429,47 @@ describe('saved instance model baseline', () => {
     expect(queryClient.getQueryData(queryKey)).toEqual([
       expect.objectContaining({ max_tokens: 8192 }),
     ]);
+  });
+});
+
+describe('model name matching', () => {
+  it('collapses instance and catalog entries that differ only in case', () => {
+    const { result } = renderHook(() =>
+      useModelsDerived({
+        catalog: [
+          {
+            name: 'gpt-4o',
+            model_types: ['chat'],
+            max_tokens: 4096,
+            features: [],
+          },
+          {
+            name: 'embedding-1',
+            model_types: ['embedding'],
+            max_tokens: 512,
+            features: [],
+          },
+        ],
+        instanceModels: [
+          {
+            name: 'GPT-4O',
+            model_type: ['chat'],
+            max_tokens: 2048,
+            status: 'active',
+          },
+        ],
+        instanceModelsLoading: false,
+        instanceModelsSucceeded: true,
+        draftModels: [],
+        isDraftInstance: false,
+        onInstanceModelsChange: jest.fn(),
+      }),
+    );
+
+    expect(result.current.models.map((m) => m.name)).toEqual([
+      'GPT-4O',
+      'embedding-1',
+    ]);
+    expect(result.current.isModelAdded('gpt-4o')).toBe(true);
   });
 });
