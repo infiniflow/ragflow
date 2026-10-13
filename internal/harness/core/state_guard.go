@@ -38,11 +38,11 @@ func copyMessage[M MessageType](msg M) M {
 	switch v := any(msg).(type) {
 	case *schema.Message:
 		cp := &schema.Message{
-			Role:    v.Role,
-			Content: v.Content,
-			Name:    v.Name,
+			Role:     v.Role,
+			Content:  v.Content,
+			Name:     v.Name,
+			ToolName: v.ToolName,
 		}
-		cp.ToolName = v.ToolName
 		if len(v.ToolCalls) > 0 {
 			cp.ToolCalls = make([]schema.ToolCall, len(v.ToolCalls))
 			copy(cp.ToolCalls, v.ToolCalls)
