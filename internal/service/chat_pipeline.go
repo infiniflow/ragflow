@@ -34,7 +34,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -110,17 +109,15 @@ type AsyncChatResult struct {
 	accumulatedAnswer string
 }
 
-// ThinkEvent is one structured agentic-RAG reasoning step as it goes over the
-// wire (the SSE `think_event` field). This is the ONE definition: the harness
-// that produces the step aliases it (harness.ThinkEvent), because the dependency
-// runs this way only — the harness imports this package for its exploration
-// providers, so this package cannot import the harness back.
+// ThinkEvent is one structured agentic reasoning step as it goes over the
+// wire (the SSE `think_event` field). This is the ONE definition, so a
+// producer that needs structured steps aliases this type instead of carrying
+// a second copy bridged field by field — that older shape compiled for as
+// long as one side stayed a subset, and a field added on the producer side
+// then reached the client as nothing at all.
 //
-// The two sides used to carry two identical structs bridged field by field in
-// cmd. That shape compiles for as long as one side stays a subset, so a field
-// added on the harness side and not mirrored here reached the client as nothing
-// at all. The JSON tags below ARE the client contract; TestThinkEventWireKeys
-// pins them.
+// The JSON tags below ARE the client contract; TestThinkEventWireKeys pins
+// them.
 type ThinkEvent struct {
 	Kind string `json:"kind"`
 	// Stage is the bracketed tag the step belongs to ("Function tool",
@@ -130,7 +127,7 @@ type ThinkEvent struct {
 	Tool string `json:"tool,omitempty"`
 	// Args is the tool call's arguments, rendered for display.
 	Args string `json:"args,omitempty"`
-	// Status and Reason mirror the harness ToolOutcome.
+	// Status and Reason describe a tool step's outcome.
 	Status string `json:"status,omitempty"`
 	Reason string `json:"reason,omitempty"`
 	// Cause is the tool's own explanation of a failure: a bare reason such as
@@ -672,23 +669,13 @@ func (s *ChatPipelineService) AsyncChat(
 		timer.Exit(common.PhaseQueryRefinement)
 
 		// === Phase 9: Retrieval ===
-		// reasoning is an integer level: 0 = off (regular RAG via async_chat),
-		// 1..4 = low/medium/high/ultra (harness agentic). It comes from the
-		// request kwargs first, then prompt_config. reasoningLevelAgentic never
-		// reaches here: the AsyncChat dispatch already routed it to the
-		// smart-reasoning agent, which returns before this goroutine starts.
-		//
-		// Python rag_agent also refuses the agentic loop when the model cannot
-		// call tools, and routes those requests to async_chat.
-		reasoningLevel := resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig))
-		// The chat model's tool capability rides on the config Phase 2 resolved,
-		// so the guard costs nothing here and judges the model the request
-		// actually runs on.
-		useReasoning := reasoningNeedsAgenticGraph(chat, llmModelConfig, reasoningLevel)
+		// The retrieval strategy was chosen before this goroutine started:
+		// AsyncChat hands reasoning level reasoningLevelAgentic to the
+		// smart-reasoning agent, which runs its own retrieval and never returns
+		// here. Every other level — including a stale 1..4 sent by an older
+		// client — retrieves through the standard path below.
 		common.Info("Phase 9: Retrieval",
-			zap.Bool("has_knowledge_param", hasKnowledgeParam),
-			zap.Int("reasoning_level", reasoningLevel),
-			zap.Bool("reasoning", useReasoning))
+			zap.Bool("has_knowledge_param", hasKnowledgeParam))
 
 		timer.Enter(common.PhaseRetrieval)
 		var kbinfos map[string]interface{}
@@ -703,323 +690,150 @@ func (s *ChatPipelineService) AsyncChat(
 			rerankCandidatesCount = 64
 		}
 
-		// When hasKnowledgeParam is true, runs (mutually exclusive):
-		//   a) If reasoning is enabled: DeepResearcher replaces vector retrieval.
-		//   b) Otherwise: standard retrieval, then:
-		//      - TOC enhancement (if toc_enhance is enabled).
-		//      - Child chunk retrieval.
-		//      - Web search provider (if internet is enabled).
-		//      - Knowledge graph retrieval (if use_kg is enabled).
+		// When hasKnowledgeParam is true, runs standard retrieval, then:
+		//   - TOC enhancement (if toc_enhance is enabled).
+		//   - Child chunk retrieval.
+		//   - Web search provider (if internet is enabled).
+		//   - Knowledge graph retrieval (if use_kg is enabled).
 		// Populates kbinfos (chunks + doc_aggs) and knowledges.
 		// When false, the entire block is skipped.
 		if hasKnowledgeParam {
-			if useReasoning && chatModel != nil && len(kbs) > 0 {
-				// The harness collects evidence and composes the answer for
-				// reasoning levels 1..4. Apply citation visibility to its stream
-				// and final answer. If no answer is returned, keep the evidence
-				// and continue through the regular generation path.
-				thinkingMode := harnessModeForLevel(reasoningLevel)
-				question := strings.Join(questions, " ")
-				// Stream the answer as the harness composes it (Python
-				// tools.answer_sink). The final event below still carries the
-				// complete answer plus references, matching how the non-agentic
-				// path streams deltas and then re-sends the full answer
-				// (dialog_service.py:807).
-				//
-				// isThink marks pieces of the harness's hidden reasoning block
-				// (the final-answer model's native reasoning). Frame them like
-				// the tool path above (ChatStreamlyWithTools): StartToThink →
-				// Reasoning → EndToThink, so every SSE consumer (chat_session,
-				// bot_completion, openai_chat) sees the standard think framing.
-				// Reasoning text is deliberately kept on the Reasoning field
-				// (not Answer) so OpenAI-compat maps it to reasoning_content.
-				harnessThinking := false
-				// answerStreamed records that an answer delta already reached the
-				// client, which makes any LATER think delta unrenderable: the UI
-				// would show a stray "Thought" block after the finished answer.
-				//
-				// That is what the loop narration around the single harness call
-				// would otherwise do: "…produced the final answer, done." is emitted
-				// after retrieveViaHarness returns, but the answer itself streams
-				// DURING it. Python logs that line immediately before yielding the
-				// terminal tool's answer (chat_model.py:799-802), so its "done" line
-				// still belongs to the thinking phase. Same for late engine-progress
-				// lines (concurrent research slots); a thought block after the answer
-				// is never useful.
-				answerStreamed := false
-				// Engine progress (B) is pushed from concurrent research-slot
-				// goroutines while the final compose runs on the main goroutine, so
-				// serialize the think-framing state machine and the out<-send.
-				var answerFilter, reasoningFilter citationStreamFilter
-				var sinkMu sync.Mutex
-				send := func(ev AsyncChatResult) {
-					select {
-					case out <- ev:
-					case <-ctx.Done():
+			// Regular RAG mirroring Python's async_chat — native docStore
+			// retrieval, then the TOC / child chunk / web search / KG
+			// enhancements below.
+			searchQuestion := strings.Join(questions, " ")
+			if embModel != nil {
+				rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
+				{
+					tenantIDs := make([]string, 0)
+					kbIDs := make([]string, 0)
+					for _, kb := range kbs {
+						tenantIDs = append(tenantIDs, kb.TenantID)
+						kbIDs = append(kbIDs, kb.ID)
 					}
-				}
-				sink := func(delta string, isThink bool) {
-					sinkMu.Lock()
-					defer sinkMu.Unlock()
-					if isThink {
-						if answerStreamed {
-							// Never reopen a thought block after the answer: drop the
-							// late narration/progress line instead.
-							return
-						}
-						if !harnessThinking {
-							harnessThinking = true
-							send(AsyncChatResult{
-								Reference:    map[string]interface{}{},
-								CreatedAt:    float64(time.Now().Unix()),
-								Final:        false,
-								StartToThink: true,
-							})
-						}
-						if !quote {
-							delta = reasoningFilter.write(delta)
-						}
-						if delta != "" {
-							send(AsyncChatResult{
-								Reasoning: delta,
-								Reference: map[string]interface{}{},
-								CreatedAt: float64(time.Now().Unix()),
-								Final:     false,
-							})
-						}
-						return
-					}
-					if harnessThinking {
-						if text := reasoningFilter.flush(); text != "" {
-							send(AsyncChatResult{Reasoning: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
-						}
-						harnessThinking = false
-						send(AsyncChatResult{
-							Reference:  map[string]interface{}{},
-							CreatedAt:  float64(time.Now().Unix()),
-							Final:      false,
-							EndToThink: true,
-						})
-					}
-					if delta != "" {
-						answerStreamed = true
-					}
-					if !quote {
-						delta = answerFilter.write(delta)
-					}
-					if delta != "" {
-						send(AsyncChatResult{
-							Answer:    delta,
-							Reference: map[string]interface{}{},
-							CreatedAt: float64(time.Now().Unix()),
-							Final:     false,
-						})
-					}
-				}
-				thinkSink := harnessThinkSink(ctx, out)
-				// Python dialog_service.py:2077 — the web provider is handed to
-				// RAGTools only when the internet flag enables web search;
-				// otherwise web_search stays off the agentic tool surface.
-				var webSearch func(context.Context, []string) ([]string, error)
-				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					webSearch = s.harnessWebSearchFunc(chat.PromptConfig)
-				}
-				// Python passes system_prompt=_render_reasoning_system_prompt(
-				// dialog, prompt_config, kwargs) to RAGTools
-				// (dialog_service.py:2084): the dialog system prompt rendered
-				// with the caller kwargs, a UTC date, and {knowledge} defaulted
-				// to the BOUND DATASET NAMES — the agentic graph supplies the
-				// evidence itself, but an empty binding made the outer model
-				// read the prompt as "the dataset is empty" and answer the
-				// canned "not found in the dataset!" line without calling the
-				// terminal `rag` tool (first-turn short-circuit, observed
-				// 2026-09-14: answer_chars=59, zero graph LLM calls).
-				harnessSystemPrompt := ""
-				if sp, ok := chat.PromptConfig["system"].(string); ok && sp != "" {
-					kws := make(map[string]interface{}, len(kwargs)+2)
-					for k, v := range kwargs {
-						kws[k] = v
-					}
-					kws["date"] = time.Now().UTC().Format(time.RFC3339)
-					if _, ok := kws["knowledge"]; !ok {
-						kws["knowledge"] = harnessBoundDatasetNames(kbs)
-					}
-					harnessSystemPrompt = s.formatPrompt(sp, kws)
-				}
-				harnessImages := append(historyImageFiles, imageFiles...)
-				var history []map[string]interface{}
-				if kwargs["store_history_messages"] == false {
-					history = messages
-				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
-					TopN:                   int(chat.TopN),
-					SimilarityThreshold:    chat.SimilarityThreshold,
-					VectorSimilarityWeight: chat.VectorSimilarityWeight,
-					RerankCandidatesCount:  int(chat.RerankCandidatesCount),
-				}, webSearch, sink, thinkSink, harnessSystemPrompt, history)
-				// The harness streams think-then-answer inside ONE compose call.
-				// Close the block here, once that call (and its trailing
-				// narration line) has returned: a reasoning-only run would
-				// otherwise keep it open until the goroutine exits, emitting
-				// EndToThink after the Phase 10/11 answer or the Final below.
-				// No-op when no block is open.
-				sink("", false)
-				sinkMu.Lock()
-				if text := answerFilter.flush(); text != "" {
-					send(AsyncChatResult{Answer: text, Reference: map[string]interface{}{}, CreatedAt: float64(time.Now().Unix())})
-				}
-				sinkMu.Unlock()
-				if hErr != nil {
-					common.Warn("harness retrieval failed", zap.Error(hErr))
-				} else {
-					kbinfos = hk
-					if harnessAnswer != "" {
-						common.Info("harness produced final cited answer; short-circuiting",
-							zap.Int("answer_chars", len(harnessAnswer)))
-						final := s.decorateHarnessAnswer(harnessAnswer, kbinfos, slotCites, citeChunkIDs, quote)
-						final.Final = true
-						out <- final
-						return
-					}
-				}
-			} else {
-				// Non-reasoning chat (level 0): regular RAG mirroring Python's
-				// async_chat — native docStore retrieval, then the TOC / child
-				// chunk / web search / KG enhancements below.
-				searchQuestion := strings.Join(questions, " ")
-				if embModel != nil {
-					rankFeature := s.MetadataSvc.LabelQuestion(ctx, searchQuestion, kbs)
-					{
-						tenantIDs := make([]string, 0)
-						kbIDs := make([]string, 0)
-						for _, kb := range kbs {
-							tenantIDs = append(tenantIDs, kb.TenantID)
-							kbIDs = append(kbIDs, kb.ID)
-						}
 
-						docEngine := engine.Get()
-						documentDAO := dao.NewDocumentDAO()
-						retrievalSvc := nlp.NewRetrievalService(docEngine, documentDAO)
+					docEngine := engine.Get()
+					documentDAO := dao.NewDocumentDAO()
+					retrievalSvc := nlp.NewRetrievalService(docEngine, documentDAO)
 
-						top := int(chat.TopK)
-						threshold := chat.SimilarityThreshold
-						vsw := chat.VectorSimilarityWeight
-						topN := int(chat.TopN)
+					top := int(chat.TopK)
+					threshold := chat.SimilarityThreshold
+					vsw := chat.VectorSimilarityWeight
+					topN := int(chat.TopN)
 
-						req := &nlp.RetrievalRequest{
-							Question:               searchQuestion,
-							TenantIDs:              tenantIDs,
-							KbIDs:                  kbIDs,
-							DocIDs:                 docIDs,
-							Page:                   1,
-							PageSize:               topN,
-							RerankCandidatesCount:  &rerankCandidatesCount,
-							KNNTopK:                &top,
-							SimilarityThreshold:    &threshold,
-							VectorSimilarityWeight: &vsw,
-							RankFeature:            &rankFeature,
-							RerankModel:            rerankModel,
-							EmbeddingModel:         embModel,
-							Aggs:                   func() *bool { v := true; return &v }(),
-						}
-
-						result, retErr := retrievalSvc.Retrieval(ctx, req)
-						if retErr != nil {
-							kbinfos = map[string]interface{}{
-								"total":    0,
-								"chunks":   []map[string]interface{}{},
-								"doc_aggs": []interface{}{},
-							}
-							err = retErr
-						} else {
-							docAggs := make([]interface{}, len(result.DocAggs))
-							for i, da := range result.DocAggs {
-								docAggs[i] = da
-							}
-
-							kbinfos = map[string]interface{}{
-								"total":    len(result.Chunks),
-								"chunks":   result.Chunks,
-								"doc_aggs": docAggs,
-							}
-						}
+					req := &nlp.RetrievalRequest{
+						Question:               searchQuestion,
+						TenantIDs:              tenantIDs,
+						KbIDs:                  kbIDs,
+						DocIDs:                 docIDs,
+						Page:                   1,
+						PageSize:               topN,
+						RerankCandidatesCount:  &rerankCandidatesCount,
+						KNNTopK:                &top,
+						SimilarityThreshold:    &threshold,
+						VectorSimilarityWeight: &vsw,
+						RankFeature:            &rankFeature,
+						RerankModel:            rerankModel,
+						EmbeddingModel:         embModel,
+						Aggs:                   func() *bool { v := true; return &v }(),
 					}
-					if err != nil {
-						common.Warn("Retrieval failed", zap.Error(err))
-						out <- AsyncChatResult{
-							Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
-							Final:  true,
+
+					result, retErr := retrievalSvc.Retrieval(ctx, req)
+					if retErr != nil {
+						kbinfos = map[string]interface{}{
+							"total":    0,
+							"chunks":   []map[string]interface{}{},
+							"doc_aggs": []interface{}{},
 						}
-						return
-					}
-				}
-
-				// TOC enhancement
-				if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
-					enhancer := NewTOCEnhancer(
-						engine.Get(),
-						chatModel,
-						kbTenantIDStrings(kbs),
-						kbIDStrings(kbs),
-						searchQuestion,
-						int(chat.TopN),
-					)
-					if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
-						common.Warn("TOC enhance failed", zap.Error(err))
-					} else if added > 0 {
-						common.Debug("TOC enhance added chunks", zap.Int("added", added))
-					}
-				}
-
-				// Child chunk retrieval
-				if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(existingChunks) > 0 {
-					kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
-				}
-
-				// Web search
-				if s.shouldUseWebSearch(chat, kwargs["internet"]) {
-					provider := resolveWebSearchProvider(chat.PromptConfig)
-					webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
-					if webErr != nil {
-						common.Warn("Web search failed", zap.Error(webErr))
+						err = retErr
 					} else {
-						// Extend chunks and doc_aggs with web search results.
-						if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-							if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
-								kbinfos["chunks"] = append(existingChunks, newChunks...)
-							}
+						docAggs := make([]interface{}, len(result.DocAggs))
+						for i, da := range result.DocAggs {
+							docAggs[i] = da
 						}
-						if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-							if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
-								kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
-							}
+
+						kbinfos = map[string]interface{}{
+							"total":    len(result.Chunks),
+							"chunks":   result.Chunks,
+							"doc_aggs": docAggs,
 						}
 					}
 				}
+				if err != nil {
+					common.Warn("Retrieval failed", zap.Error(err))
+					out <- AsyncChatResult{
+						Answer: fmt.Sprintf("**ERROR**: %s", err.Error()),
+						Final:  true,
+					}
+					return
+				}
+			}
 
-				// Knowledge Graph retrieval
-				if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
-					kgIDs := kbIDStrings(kbs)
-					if len(kgIDs) > 0 {
-						kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
-						kgPipeline.SetChatModel(chatModel)
-						if embModel != nil {
-							kgPipeline.SetEmbModel(embModel)
+			// TOC enhancement
+			if useTOC, _ := chat.PromptConfig["toc_enhance"].(bool); useTOC && chatModel != nil && len(kbs) > 0 {
+				enhancer := NewTOCEnhancer(
+					engine.Get(),
+					chatModel,
+					kbTenantIDStrings(kbs),
+					kbIDStrings(kbs),
+					searchQuestion,
+					int(chat.TopN),
+				)
+				if added, err := enhancer.Enhance(ctx, kbinfos); err != nil {
+					common.Warn("TOC enhance failed", zap.Error(err))
+				} else if added > 0 {
+					common.Debug("TOC enhance added chunks", zap.Int("added", added))
+				}
+			}
+
+			// Child chunk retrieval
+			if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok && len(existingChunks) > 0 {
+				kbinfos["chunks"] = nlp.RetrievalByChildren(existingChunks, kbTenantIDStrings(kbs), engine.Get(), ctx)
+			}
+
+			// Web search
+			if s.shouldUseWebSearch(chat, kwargs["internet"]) {
+				provider := resolveWebSearchProvider(chat.PromptConfig)
+				webResult, webErr := s.retrieveWebSearch(ctx, provider, searchQuestion)
+				if webErr != nil {
+					common.Warn("Web search failed", zap.Error(webErr))
+				} else {
+					// Extend chunks and doc_aggs with web search results.
+					if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+						if newChunks, ok := webResult["chunks"].([]map[string]interface{}); ok {
+							kbinfos["chunks"] = append(existingChunks, newChunks...)
 						}
-						kgChunk, kgErr := kgPipeline.Retrieval(ctx)
-						if kgErr != nil {
-							common.Warn("KG retrieval failed; falling through to vector-only",
-								zap.Error(kgErr))
-						} else if kgChunk != nil {
-							if _, hasContent := kgChunk["content_with_weight"]; hasContent {
-								if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-									newChunks := make([]map[string]interface{}, 0, len(existingChunks)+1)
-									newChunks = append(newChunks, kgChunk)
-									newChunks = append(newChunks, existingChunks...)
-									kbinfos["chunks"] = newChunks
-									common.Debug("KG chunk prepended",
-										zap.Int("total_chunks", len(newChunks)))
-								}
+					}
+					if existingAggs, ok := kbinfos["doc_aggs"].([]interface{}); ok {
+						if newAggs, ok := webResult["doc_aggs"].([]interface{}); ok {
+							kbinfos["doc_aggs"] = append(existingAggs, newAggs...)
+						}
+					}
+				}
+			}
+
+			// Knowledge Graph retrieval
+			if useKG, _ := chat.PromptConfig["use_kg"].(bool); useKG && chatModel != nil && len(kbs) > 0 {
+				kgIDs := kbIDStrings(kbs)
+				if len(kgIDs) > 0 {
+					kgPipeline := graph.NewPipeline(engine.Get(), kgIDs, kbTenantIDStrings(kbs), searchQuestion)
+					kgPipeline.SetChatModel(chatModel)
+					if embModel != nil {
+						kgPipeline.SetEmbModel(embModel)
+					}
+					kgChunk, kgErr := kgPipeline.Retrieval(ctx)
+					if kgErr != nil {
+						common.Warn("KG retrieval failed; falling through to vector-only",
+							zap.Error(kgErr))
+					} else if kgChunk != nil {
+						if _, hasContent := kgChunk["content_with_weight"]; hasContent {
+							if existingChunks, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
+								newChunks := make([]map[string]interface{}, 0, len(existingChunks)+1)
+								newChunks = append(newChunks, kgChunk)
+								newChunks = append(newChunks, existingChunks...)
+								kbinfos["chunks"] = newChunks
+								common.Debug("KG chunk prepended",
+									zap.Int("total_chunks", len(newChunks)))
 							}
 						}
 					}
@@ -2036,39 +1850,6 @@ func (s *ChatPipelineService) shouldUseWebSearch(chat *entity.Chat, internet int
 	return normalized != nil && *normalized
 }
 
-// harnessWebSearchFunc builds the callback the agentic harness' web_search tool
-// invokes (Python RAGTools(web_search=...)). It resolves the provider once and
-// runs one provider query per requested query, flattening each result's chunk
-// text. A per-query failure is logged and skipped — mirroring Python
-// _exec_web_search, where one bad query must not fail the whole tool call.
-// Returns nil when no provider is configured so the tool stays hidden.
-func (s *ChatPipelineService) harnessWebSearchFunc(promptConfig map[string]interface{}) func(context.Context, []string) ([]string, error) {
-	provider := resolveWebSearchProvider(promptConfig)
-	if provider == nil {
-		return nil
-	}
-	return func(ctx context.Context, queries []string) ([]string, error) {
-		out := make([]string, 0, len(queries)*6)
-		for _, q := range queries {
-			if strings.TrimSpace(q) == "" {
-				continue
-			}
-			res, err := s.retrieveWebSearch(ctx, provider, q)
-			if err != nil {
-				common.Warn("harness web search failed for a query", zap.Error(err))
-				continue
-			}
-			chunks, _ := res["chunks"].([]map[string]interface{})
-			for _, c := range chunks {
-				if text := getMapString(c, "content_with_weight", "content"); text != "" {
-					out = append(out, text)
-				}
-			}
-		}
-		return out, nil
-	}
-}
-
 // tavilyRetrieve calls the Tavily API and returns results in the same chunk
 // format used by performRetrieval. Mirrors Python's Tavily.retrieve_chunks()
 // in rag/utils/tavily_conn.py.
@@ -2199,36 +1980,6 @@ func (s *ChatPipelineService) getLLMModelConfig(ctx context.Context, chat *entit
 	}
 	cfg["is_tools"] = info.SupportsTools
 	return cfg, modelName, factoryName, baseURL, nil
-}
-
-// reasoningNeedsAgenticGraph gates the agentic path on reasoning being enabled
-// and the resolved chat model supporting tool calls.
-func reasoningNeedsAgenticGraph(chat *entity.Chat, cfg map[string]interface{}, reasoningLevel int) bool {
-	if chat == nil || reasoningLevel <= 0 {
-		return false
-	}
-	if chatConfigSupportsTools(cfg) {
-		return true
-	}
-	common.Info("LLM does not support tool calls; falling back to regular RAG chat",
-		zap.Int("reasoning_level", reasoningLevel))
-	return false
-}
-
-func chatConfigSupportsTools(cfg map[string]interface{}) bool {
-	if cfg == nil {
-		return false
-	}
-	switch v := cfg["is_tools"].(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(strings.TrimSpace(v), "true")
-	case float64:
-		return v != 0
-	default:
-		return false
-	}
 }
 
 // buildLLMModelConfig returns only the public metadata needed by RAG's token
@@ -3347,284 +3098,6 @@ func (s *ChatPipelineService) decorateAnswer(
 		CreatedAt: float64(finishChatTs.Unix()),
 		Final:     false, // caller sets Final = true
 	}
-}
-
-// chunksOnlyReference is the reference of an answer whose citations were
-// disabled: the retrieved evidence, in the client-facing shape, without
-// doc_aggs. The evidence still records what the answer was grounded on; only
-// the source cards go, since there is no citation marker left in the answer to
-// open them from.
-func chunksOnlyReference(kbinfos map[string]interface{}) map[string]interface{} {
-	refs := map[string]interface{}{}
-	if chunksRaw, ok := kbinfos["chunks"].([]map[string]interface{}); ok {
-		refs["chunks"] = chunksFormat(referenceChunks(nil, chunksRaw))
-	}
-	return refs
-}
-
-// decorateHarnessAnswer formats the reasoning chat's final answer. The harness
-// 'rag' tool already composed the answer WITH its own [ID:N] citations, so —
-// unlike decorateAnswer for the native async_chat path — we never run
-// insert_citations here. We only resolve the existing markers, repair bad
-// formats, filter doc_aggs to the cited docs, and build the reference from the
-// harness citation pool (chunks stripped of their vectors). Prompt stays empty,
-// matching Python.
-//
-// The answer's [ID:n] markers index the evidence list the compose rendered for
-// the model — harness.Kbinfos.CiteChunkIDs, passed in as citeChunkIDs. That list
-// is similarity-ranked and capped, and it is numbered 0-based: the client resolves
-// a marker by using its number as an index into reference.chunks, and the text it
-// already streamed carries the model's own numbers (this function repairs and drops
-// markers, and rewrites the slot-table ones, but never renumbers a citation). The
-// reference is therefore built with that list in front, in the rendered order, so
-// marker n is the n-th rendered passage — and the rest of the pool follows so no
-// source is lost. Canonical "[ID:n]" markers that name nothing are dropped (a bare
-// "[5]" is left alone: in prose it may be a footnote or a year). The reference is
-// returned whenever the pool is non-empty, so an answer the model composed without
-// markers still carries its sources.
-//
-// When quote is false the citations are removed entirely and the reference is
-// cleared (see stripCitations).
-func (s *ChatPipelineService) decorateHarnessAnswer(answer string, kbinfos map[string]interface{}, slotCitations map[string][]string, citeChunkIDs []string, quote bool) AsyncChatResult {
-	think := ""
-	ans := answer
-	if strings.Contains(answer, "</think>") {
-		if parts := strings.Split(answer, "</think>"); len(parts) == 2 {
-			think = parts[0] + "</think>"
-			ans = strings.TrimSpace(parts[1])
-		}
-	}
-
-	// Invalid-key hint (dialog_service.py:2134-2135).
-	if strings.Contains(strings.ToLower(ans), "invalid key") ||
-		strings.Contains(strings.ToLower(ans), "invalid api") {
-		ans += " Please set LLM API-Key in 'User Setting -> Model providers -> API-Key'"
-	}
-
-	if !quote {
-		return AsyncChatResult{
-			Answer:    stripCitations(think + ans),
-			Reference: chunksOnlyReference(kbinfos),
-			CreatedAt: float64(time.Now().Unix()),
-		}
-	}
-
-	chunksRaw, _ := kbinfos["chunks"].([]map[string]interface{})
-	// The markers exactly as the model wrote them (before any repair), for the
-	// citation observability log below.
-	rawMarkers := rawCitationMarkers(think+ans, 8)
-
-	// The evidence list the model was shown, as pool positions: citeIdx[i] is the
-	// pool chunk behind the i-th rendered block. Empty ids fall back to pool
-	// order, which is the pre-CiteChunkIDs behavior.
-	citeIdx := citePoolIdx(chunksRaw, citeChunkIDs)
-	citeChunks := citeChunksByIdx(citeIdx, chunksRaw)
-
-	// Slot-table markers ("[ID:Slot 0]") are internal references the compose
-	// model leaks from the Research Summary's slot draft — they index the slot
-	// table, not any chunk the user can open. Rewrite them into citations of
-	// the chunk that filled the slot (or drop them) BEFORE the marker scan, so
-	// they resolve like any other citation. The rewrite emits the evidence
-	// block's 0-based index in the rendered list, the numbering the client
-	// indexes.
-	ans = RepairSlotCitations(ans, slotCitations, citeChunks)
-
-	// Range-merged citations ("[ID:1-3]") are the model compressing
-	// consecutive individual citations on its own; expand them back so every
-	// marker resolves to exactly one chunk (out-of-range ranges are dropped).
-	// Bounds are 0-based indexes in the rendered list.
-	ans = ExpandRangeCitations(ans, len(citeChunks))
-
-	// repair_bad_citation_formats (dialog_service.py:2109), then resolve the
-	// markers: each is the 0-based index of the rendered block it cites.
-	// Canonical markers that name no block are dropped; the resolved pool
-	// positions drive doc_aggs filtering.
-	think = RepairBadCitationFormats(think)
-	ans = RepairBadCitationFormats(ans)
-	think, thinkCitedIdx := ResolveCitationMarkers(think, citeIdx)
-	ans, answerCitedIdx := ResolveCitationMarkers(ans, citeIdx)
-	citedIdx := append(thinkCitedIdx, answerCitedIdx...)
-
-	// Citation observability: the markers the model wrote against the blocks it was
-	// shown, so a numbering mismatch is visible in the log (`raw_markers` is what
-	// the model actually emitted, before any repair). No judgement is attached —
-	// see zeroBasedEvidenceRule for the prompt-side guard on the numbering.
-	if len(citeIdx) > 0 {
-		common.Info("agentic citation markers",
-			zap.Int("rendered_blocks", len(citeIdx)),
-			zap.Ints("raw_markers", rawMarkers),
-			zap.Int("resolved_blocks", len(citedIdx)),
-			// Which figure points at which chunk, and whether that chunk can show a
-			// picture at all: "why is there no image under Fig. n" is asked far more
-			// often than "the numbering was off", and from the page the two look the
-			// same. See citationAudit.
-			zap.String("cited", citationAudit(citeIdx, citedIdx, chunksRaw)),
-		)
-	}
-
-	// Map cited chunks to doc_ids (dialog_service.py:2111-2122).
-	citedDocIDs := make(map[string]struct{})
-	for _, ci := range citedIdx {
-		if ci >= 0 && ci < len(chunksRaw) {
-			if docID, ok := chunksRaw[ci]["doc_id"].(string); ok && docID != "" {
-				citedDocIDs[docID] = struct{}{}
-			}
-		}
-	}
-
-	// Keep only documents referenced by a citation. An uncited evidence pool is
-	// not a document reference and must not be returned to the client.
-	if len(citedDocIDs) > 0 {
-		if docAggsRaw, ok := kbinfos["doc_aggs"].([]interface{}); ok {
-			filtered := make([]interface{}, 0, len(docAggsRaw))
-			for _, da := range docAggsRaw {
-				if dam, ok := da.(map[string]interface{}); ok {
-					if docID, ok := dam["doc_id"].(string); ok {
-						if _, cited := citedDocIDs[docID]; cited {
-							filtered = append(filtered, da)
-						}
-					}
-				}
-			}
-			kbinfos["doc_aggs"] = filtered
-		}
-	}
-
-	// The rendered evidence list comes first, in the order the model saw it, so a
-	// marker's number is that entry's index; the remaining pool chunks follow so
-	// no retrieved passage is lost. chunksFormat builds the client-facing shape
-	// (content, document_name, dataset_id, ...) in NEW maps, so the engine keys
-	// and the per-chunk vector never reach the reference and the shared chunks
-	// stay intact. The evidence ships even when the final answer cited none of
-	// it; doc_aggs, absent here, is what stays gated on `quote`.
-	refs := make(map[string]interface{}, len(kbinfos))
-	for k, v := range kbinfos {
-		refs[k] = v
-	}
-	refs["chunks"] = chunksFormat(referenceChunks(citeIdx, chunksRaw))
-
-	return AsyncChatResult{
-		Answer:    think + ans,
-		Reference: refs,
-		Prompt:    "",
-		CreatedAt: float64(time.Now().Unix()),
-	}
-}
-
-// citePoolIdx maps the ordered evidence list the compose rendered for the model
-// (harness.Kbinfos.CiteChunkIDs) onto the pool: entry i is the index in pool of
-// the i-th rendered block. A block whose id is empty or unknown stays in the list
-// as -1 so the blocks after it keep the number the model saw; its citations simply
-// cannot be resolved. An empty id list — a harness that published none — falls
-// back to pool order, where block i is pool[i].
-func citePoolIdx(pool []map[string]interface{}, ids []string) []int {
-	if len(ids) == 0 {
-		out := make([]int, len(pool))
-		for i := range pool {
-			out[i] = i
-		}
-		return out
-	}
-	byID := make(map[string]int, len(pool))
-	for i, c := range pool {
-		if id := chunkCitationID(c); id != "" {
-			if _, dup := byID[id]; !dup {
-				byID[id] = i
-			}
-		}
-	}
-	out := make([]int, len(ids))
-	for i, id := range ids {
-		idx, found := byID[id]
-		if id == "" || !found {
-			idx = -1
-		}
-		out[i] = idx
-	}
-	return out
-}
-
-// citeChunksByIdx gathers the rendered evidence list from its pool positions,
-// keeping -1 entries as nil so positions stay aligned with the numbering the model
-// was shown (a nil chunk matches no slot-citation evidence id and resolves no
-// marker, but it must not shift the blocks after it).
-func citeChunksByIdx(citeIdx []int, pool []map[string]interface{}) []map[string]interface{} {
-	out := make([]map[string]interface{}, len(citeIdx))
-	for i, pi := range citeIdx {
-		if pi >= 0 && pi < len(pool) {
-			out[i] = pool[pi]
-		}
-	}
-	return out
-}
-
-// referenceChunks orders the reference payload: the evidence list the compose
-// rendered first, in exactly that order, then the rest of the pool. The client
-// resolves a citation marker by indexing this list with the number the model
-// wrote, so the rendered order has to come first — and one entry per RENDERED
-// block, at the block's own index. A block whose chunk cannot be located in the
-// pool (or a repeat of one already placed) still occupies its slot, as a nil
-// chunk: dropping it would slide every later marker one position down, onto a
-// passage the model never cited. Such a block's marker is dropped from the answer
-// upstream, so the slot is a gap in the sources panel, not a broken citation.
-//
-// The trailing chunks keep every retrieved passage reachable from the sources
-// panel.
-func referenceChunks(citeIdx []int, pool []map[string]interface{}) []map[string]interface{} {
-	if len(citeIdx) == 0 {
-		return pool
-	}
-	placed := make(map[int]struct{}, len(citeIdx))
-	out := make([]map[string]interface{}, 0, len(pool)+len(citeIdx))
-	for _, pi := range citeIdx {
-		if pi < 0 || pi >= len(pool) {
-			out = append(out, nil)
-			continue
-		}
-		if _, dup := placed[pi]; dup {
-			out = append(out, nil)
-			continue
-		}
-		placed[pi] = struct{}{}
-		out = append(out, pool[pi])
-	}
-	for i, c := range pool {
-		if _, dup := placed[i]; dup {
-			continue
-		}
-		out = append(out, c)
-	}
-	return out
-}
-
-// citationAudit renders the resolved citations for the observability log: for every
-// cited pool chunk, the figure number(s) that point at it and whether the chunk
-// carries a picture.
-//
-// Fig. n is the client's label for rendered block n-1 (the marker's number plus
-// one), and the client draws a picture under a figure only when that chunk has an
-// image_id. So "Fig. n shows no image" has two very different explanations — the
-// marker resolved to a text-only chunk (expected, nothing to show) or the chunk
-// behind that figure is not the one the model cited (a resolution bug) — and they
-// look identical on the page. This line tells them apart without a re-run.
-func citationAudit(citeIdx, citedIdx []int, chunksRaw []map[string]interface{}) string {
-	cited := make(map[int]struct{}, len(citedIdx))
-	for _, ci := range citedIdx {
-		cited[ci] = struct{}{}
-	}
-	parts := make([]string, 0, len(citedIdx))
-	for block, ci := range citeIdx {
-		if _, ok := cited[ci]; !ok {
-			continue
-		}
-		if ci < 0 || ci >= len(chunksRaw) {
-			continue
-		}
-		imageID, _ := getChunkValue(chunksRaw[ci], "image_id", "img_id").(string)
-		parts = append(parts, fmt.Sprintf("Fig.%d=%s image=%t",
-			block+1, chunkCitationID(chunksRaw[ci]), imageID != ""))
-	}
-	return strings.Join(parts, " ")
 }
 
 // langfuseExtractTimeElapsed extracts the time-elapsed + token-usage
@@ -5078,219 +4551,6 @@ func getChunkValue(chunk map[string]interface{}, k1, k2 string) interface{} {
 	return chunk[k2]
 }
 
-// harnessBoundDatasetNames renders the {knowledge} default for the agentic
-// (reasoning) system prompt: the comma-joined names of the chat's bound
-// datasets. Python parity: dialog_service._render_reasoning_system_prompt /
-// _bound_dataset_names. The agentic graph supplies the retrieved evidence
-// itself, but the prompt must still NAME the bound datasets — defaulting the
-// placeholder to "" left the web UI's default template rendering as
-// "derived solely from this dataset: “", which the outer model read as an
-// empty dataset and answered the canned "not found in the dataset!" line
-// without ever calling the terminal `rag` tool.
-func harnessBoundDatasetNames(kbs []*entity.Knowledgebase) string {
-	names := make([]string, 0, len(kbs))
-	for _, kb := range kbs {
-		if kb != nil && kb.Name != "" {
-			names = append(names, kb.Name)
-		}
-	}
-	return strings.Join(names, ", ")
-}
-
-// HarnessRetrieval is the dialog-level retrieval tuning the chat pipeline hands
-// to the agentic harness. Without it the harness falls back to its package
-// defaults (top_n=12), silently overriding the dialog's configured top_n and
-// making a reasoning run retrieve a different passage set than the standard
-// path — a two-document comparison could come back with one document's chunks
-// filling the whole budget.
-type HarnessRetrieval struct {
-	TopN                   int
-	SimilarityThreshold    float64
-	VectorSimilarityWeight float64
-	RerankCandidatesCount  int
-}
-
-// HarnessRequest carries the minimal inputs the chat pipeline hands to the
-// agentic-RAG harness for evidence collection.
-type HarnessRequest struct {
-	Question   string
-	DatasetIDs []string
-	Messages   []map[string]interface{}
-	// DocIDs scopes the agentic search to these document ids (Python
-	// dialog_service.py doc_scope). chat_pipeline folds the chat-level
-	// meta_data_filter into docIDs before calling, so forwarding this alone
-	// restores both doc_ids and meta_data_filter scoping without double-filtering.
-	DocIDs       []string
-	ThinkingMode string
-	TenantID     string
-	// ModelID is the tenant-scoped chat model id (dialog llm_id). The harness
-	// driver uses it as the default model name for agentic LLM turns.
-	ModelID string
-	// SessionID scopes cross-turn state such as the near-duplicate answer cache
-	// (Python RAGTools._rag_cache lives on an instance spanning the dialog).
-	SessionID string
-	// AnswerSink receives the answer as the model produces it (Python
-	// tools.answer_sink), so the caller can stream instead of waiting for the
-	// whole answer. Nil disables streaming; the full answer is still returned.
-	AnswerSink func(delta string, isThink bool)
-	// ThinkSink receives the structured form of each reasoning step (the twin
-	// of what AnswerSink narrates as think text). Nil disables it; the text
-	// narration is unaffected.
-	ThinkSink func(ThinkEvent)
-	// Images are vision-gated base64 data URIs (Python image_attachments) that
-	// survive gateImageAttachments. They ride the last user message into the
-	// outer react loop so a vision model can see them. chat_pipeline drops them
-	// for text-only models, so only surviving URIs reach here.
-	Images []string
-	// TextAttachments is the joined text-file content (Python
-	// text_attachments_content); it is appended to the last user message so the
-	// model reads attached documents even in the reasoning path.
-	TextAttachments string
-	// WebSearch runs an open-web search for the harness' web_search tool
-	// (Python RAGTools(web_search=create_web_search_provider(...))). Nil hides
-	// the tool from the agentic surface, mirroring Python's provider gate
-	// (action_session.py:463 discards web_search when tools.web_search is None).
-	WebSearch func(ctx context.Context, queries []string) ([]string, error)
-	// SystemPrompt is the dialog-level system prompt rendered the way Python's
-	// _render_reasoning_system_prompt (dialog_service.py:1887-1917) renders it
-	// for RAGTools(system_prompt=...): caller kwargs + a UTC date, with
-	// {knowledge} defaulted to "" (the agentic graph supplies evidence through
-	// its own evidence block). Empty when the dialog configures none — Python
-	// then composes without the "# Assistant configuration" block.
-	SystemPrompt string
-	// Retrieval is the dialog's own retrieval tuning, so the harness searches
-	// with the same budget as the standard path.
-	Retrieval HarnessRetrieval
-}
-
-// HarnessResult is the evidence the harness returns, normalized to the map
-// shape chat_pipeline's downstream phases already consume.
-type HarnessResult struct {
-	Chunks     []map[string]any
-	DocAggs    []map[string]any
-	Memory     []map[string]any
-	PreSummary string
-	// Answer is the harness's own composed final cited answer (RunResponse.Answer),
-	// populated when a model was available. When non-empty, the chat pipeline uses
-	// it directly as the reply instead of re-generating via a second model pass —
-	// mirroring Python's terminal `rag` tool.
-	Answer string
-	// SlotCitations maps a slot-table id ("0", ...) to the evidence chunk ids
-	// that filled it (RunResponse.SlotCitations). The citation decoration uses
-	// it to rewrite leaked "[ID:Slot N]" markers into locatable chunk citations.
-	SlotCitations map[string][]string
-	// CiteChunkIDs is the ordered evidence list the compose rendered for the
-	// model (RunResponse.CiteChunkIDs): similarity-ranked and capped, so it is
-	// NOT Chunks in pool order. The answer's "[ID:n]" markers index THIS list —
-	// resolving them against Chunks by position is what lost citations.
-	CiteChunkIDs []string
-}
-
-// harnessRetriever is installed at server bootstrap using
-// retrievalbridge.NewHarnessRetriever. The bridge imports internal/service,
-// so this package receives the callback instead of importing the bridge.
-// When nil, retrieveViaHarness reports an error and the pipeline continues
-// with empty kbinfos.
-var harnessRetriever func(ctx context.Context, req HarnessRequest) (HarnessResult, error)
-
-// SetHarnessRetriever injects the agentic-RAG harness driver. Call once at
-// server bootstrap.
-func SetHarnessRetriever(fn func(ctx context.Context, req HarnessRequest) (HarnessResult, error)) {
-	harnessRetriever = fn
-}
-
-// retrieveViaHarness collects evidence chunks for the chat question by driving
-// the agentic-RAG harness, mirroring Python's dialog_service → RAGTools →
-// harness/* path. It returns the same map shape the downstream phases
-// (TOC/child-chunk/web/KG/enrich/kbPrompt) already consume, so the rest of the
-// chat pipeline is unaffected by where the chunks came from.
-//
-// thinkingMode is "naive" (reasoning disabled) or one of the agentic levels
-// ("low"/"medium"/"high"/"ultra", reasoning enabled).
-//
-// answerSink and thinkSink are the request's two narration sinks, both optional:
-// answerSink receives the streamed answer plus think TEXT, thinkSink the structured
-// step events. They are parameters rather than something built in here because only
-// the streaming caller owns the channel they write to.
-//
-// The reasoning NARRATION ("[Tool loop] Deciding what to do next ...", the tool
-// calls and their results, the research stages) is not produced here: the
-// harness reports each step from where it happens, over the sinks this request
-// carries (AnswerSink for the think text, ThinkSink for the structured form).
-// The pipeline used to synthesize the "[Tool loop]" lines around its single
-// harness call, which made every non-naive run read as if an outer tool loop had
-// run — including the ones the direct graph answered.
-//
-// harnessThinkSink forwards the harness' STRUCTURED reasoning steps (the twin of
-// the think text) onto the pipeline's own channel, so the client can render
-// steps — tool, status, reason, counts, sources, duration — instead of
-// paragraphs.
-//
-// Unlike think TEXT, a late event is not dropped after the answer: text would
-// reopen a stray "Thought" block, while an event is a record a client may still
-// want. No mutex is needed either: this path touches neither the think-framing
-// state machine nor anything but the channel, which is safe for the concurrent
-// research goroutines that emit most of the events.
-func harnessThinkSink(ctx context.Context, out chan<- AsyncChatResult) func(ThinkEvent) {
-	return func(ev ThinkEvent) {
-		e := ev
-		select {
-		case out <- AsyncChatResult{
-			ThinkEvent: &e,
-			Reference:  map[string]interface{}{},
-			CreatedAt:  float64(time.Now().Unix()),
-			Final:      false,
-		}:
-		case <-ctx.Done():
-		}
-	}
-}
-
-func (s *ChatPipelineService) retrieveViaHarness(ctx context.Context, question string, kbs []*entity.Knowledgebase, docIDs []string, images []string, textAttachments string, thinkingMode, tenantID, modelID, sessionID string, retrieval HarnessRetrieval, webSearch func(context.Context, []string) ([]string, error), answerSink func(delta string, isThink bool), thinkSink func(ThinkEvent), dialogSystemPrompt string, messages []map[string]interface{}) (map[string]interface{}, map[string][]string, []string, string, error) {
-	if harnessRetriever == nil {
-		return nil, nil, nil, "", fmt.Errorf("harness retriever not wired at bootstrap")
-	}
-	kbIDs := kbIDStrings(kbs)
-	// The "[Tool loop]" narration is NOT synthesized here. The outer react loop
-	// reports its own steps from where it runs (advanced_rag.runOuterReact*), so
-	// the trace describes a loop only when one actually ran — the pipeline used
-	// to emit those lines for every non-naive run, including the ones the direct
-	// graph answered, which read as a loop that had not happened.
-	res, err := harnessRetriever(ctx, HarnessRequest{
-		Question:        question,
-		Messages:        messages,
-		DatasetIDs:      kbIDs,
-		DocIDs:          docIDs,
-		ThinkingMode:    thinkingMode,
-		TenantID:        tenantID,
-		ModelID:         modelID,
-		SessionID:       sessionID,
-		AnswerSink:      answerSink,
-		ThinkSink:       thinkSink,
-		Images:          images,
-		TextAttachments: textAttachments,
-		WebSearch:       webSearch,
-		SystemPrompt:    dialogSystemPrompt,
-		Retrieval:       retrieval,
-	})
-	if err != nil {
-		return nil, nil, nil, "", err
-	}
-
-	kbinfos := map[string]interface{}{
-		"total":    len(res.Chunks),
-		"chunks":   res.Chunks,
-		"doc_aggs": toAnySlice(res.DocAggs),
-	}
-	if res.Memory != nil {
-		kbinfos["memory"] = res.Memory
-	}
-	if res.PreSummary != "" {
-		kbinfos["pre_summary"] = res.PreSummary
-	}
-	return kbinfos, res.SlotCitations, res.CiteChunkIDs, res.Answer, nil
-}
-
 // toAnySlice widens a []map[string]any to []interface{} so the doc_aggs field
 // keeps the element type the downstream phases expect from the native pipeline.
 func toAnySlice(in []map[string]any) []interface{} {
@@ -5351,17 +4611,15 @@ func quoteEnabled(kwargs map[string]interface{}, promptConfig map[string]interfa
 // smart-reasoning agent (internal/agentic_rag) instead of running the pipeline's
 // own retrieval phases.
 //
-// It is deliberately NOT one of harnessModeForLevel's levels. 1..4 pick a depth
-// within the harness graph; this level picks a different engine outright, so
-// harnessModeForLevel must never see it — its `level >= 4` case would silently
-// answer "ultra" for a level that is no longer part of that domain.
+// It is the only level that means anything beyond "retrieve normally": every
+// other value — including a stale 1..4 from a client still sending one of the
+// removed thinking modes — runs the standard retrieval path below.
 const reasoningLevelAgentic = 5
 
-// resolveReasoningLevel mirrors Python's rag_agent: the requesting reasoning
-// level is taken from the request kwargs first, falling back to the chat
-// prompt_config, and is an integer 0..4 (0 = off, 1..4 = low/medium/high/
-// ultra), or reasoningLevelAgentic for the smart-reasoning agent. Frontend
-// sends Number(getThinkingLevel()), so the raw value is numeric, not a bool.
+// resolveReasoningLevel reads the requesting reasoning level from the request
+// kwargs first, falling back to the chat prompt_config. Only
+// reasoningLevelAgentic selects the smart-reasoning agent. Frontend sends
+// Number(getThinkingLevel()), so the raw value is numeric, not a bool.
 func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[string]interface{}) int {
 	if kwargs != nil {
 		if v, ok := kwargs["reasoning"]; ok {
@@ -5378,26 +4636,4 @@ func resolveReasoningLevel(kwargs map[string]interface{}, promptConfig map[strin
 		}
 	}
 	return 0
-}
-
-// harnessModeForLevel maps a Python-style reasoning level to the harness
-// thinking mode. Python uses THINKING_MODES = [low, medium, high, ultra] and
-// falls back to "medium" when n is out of range.
-//
-// Its domain is levels 1..4 only. reasoningLevelAgentic never arrives here — the
-// AsyncChat dispatch hands that turn to the smart-reasoning agent before Phase 9
-// runs — so the `level >= 4` case below does not need to exclude it.
-func harnessModeForLevel(level int) string {
-	switch {
-	case level >= 4:
-		return "ultra"
-	case level == 3:
-		return "high"
-	case level == 2:
-		return "medium"
-	case level == 1:
-		return "low"
-	default:
-		return "medium"
-	}
 }

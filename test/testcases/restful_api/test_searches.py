@@ -107,7 +107,7 @@ def test_search_completion_requires_question(rest_client, search_resource):
     search_id = search_resource
     expected_message = "question is required"
 
-    completion_res = rest_client.post(f"/searches/{search_id}/completion", json={})
+    completion_res = rest_client.post(f"/searches/{search_id}/completions", json={})
     assert completion_res.status_code == 200
     completion_payload = completion_res.json()
     assert completion_payload["code"] == 101, completion_payload
@@ -123,7 +123,7 @@ def test_search_completion_requires_question(rest_client, search_resource):
 @pytest.mark.p2
 def test_search_completion_requires_kb_ids(rest_client, search_resource):
     search_id = search_resource
-    for path in ("completion", "completions"):
+    for path in ["completions"]:
         res = rest_client.post(
             f"/searches/{search_id}/{path}",
             json={"question": "what is coriander?"},
@@ -140,7 +140,7 @@ def test_search_completion_sse_shape_when_kb_ids_provided(rest_client, search_re
     # Even with kb_ids provided, runtime may return an error event in-stream, but
     # contract remains SSE with JSON data lines and terminal boolean event.
     res = rest_client.post(
-        f"/searches/{search_id}/completion",
+        f"/searches/{search_id}/completions",
         json={"question": "what is coriander?", "kb_ids": ["nonexistent_dataset"]},
         timeout=60,
     )

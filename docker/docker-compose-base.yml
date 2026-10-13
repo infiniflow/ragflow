@@ -241,6 +241,7 @@ services:
       # Shared secret for the /run API. Set it in .env (same value is passed
       # to the ragflow service). Current Sandbox source rejects unconfigured
       # authentication; verify the behavior of the deployed image version.
+      - SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED=${SANDBOX_EXECUTOR_MANAGER_ALLOW_UNAUTHENTICATED:-false}
       - SANDBOX_EXECUTOR_MANAGER_API_TOKEN=${SANDBOX_EXECUTOR_MANAGER_API_TOKEN:-}
       # Sandbox runner containers get no external network by default.
       - SANDBOX_CONTAINER_NETWORK=${SANDBOX_CONTAINER_NETWORK:-none}

@@ -88,6 +88,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -544,13 +545,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
 		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
 		enhanceOn := c.enableVisionEnhancement
-		split := newFractionSplit(parsePagesOn, enhanceOn)
-		pageWin := split.take(parsePagesOn)
-		visionWin := split.take(enhanceOn)
+		split := progress.NewSplit(parsePagesOn, enhanceOn)
+		pageWin := split.Take(parsePagesOn)
+		visionWin := split.Take(enhanceOn)
 
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
-			pageWin.report(ctx, 1.0)
+			pageWin.Report(ctx, 1.0)
 		}
 
 		if c.enableVisionEnhancement {

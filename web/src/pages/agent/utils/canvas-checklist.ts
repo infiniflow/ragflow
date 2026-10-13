@@ -26,6 +26,7 @@ import {
   VariableRegex,
 } from '../constant';
 import { FormSchema as ParserFormSchema } from '../form/parser-form/schema';
+import { FormSchema as VariableAssignerFormSchema } from '../form/variable-assigner-form/schema';
 import { isEmptyMessageContent } from '../utils';
 
 /**
@@ -622,6 +623,21 @@ export function collectCanvasIssues({
       label === Operator.Parser &&
       editedNodeFormIds.includes(node.id) &&
       !ParserFormSchema.safeParse(form).success
+    ) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.nodeFormInvalid',
+      });
+    }
+
+    // The backend hard-fails a run on an empty variable/operator and reports
+    // per-item errors for an empty parameter, so an incomplete row must be
+    // caught before Run/Publish. Same edited-node gate as the Parser check.
+    if (
+      label === Operator.VariableAssigner &&
+      editedNodeFormIds.includes(node.id) &&
+      !VariableAssignerFormSchema.safeParse(form).success
     ) {
       issues.push({
         ...target,

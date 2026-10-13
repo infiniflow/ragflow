@@ -20,6 +20,7 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 
@@ -88,6 +89,9 @@ func (c *KnowledgeCompilerComponent) Outputs() map[string]string {
 // {output_format:"chunks", chunks:[...]}.
 func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	_ = db
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	param := c.Param
 	// Resolve the run-level tenant scope from the shared CanvasState.Globals
 	// bag first (seeded by the pipeline at run start), falling back to the
@@ -134,7 +138,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// template's id and kind. All products are buffered (no streaming sink), so
 	// the post-run loop below covers every row (M1).
 	var out common.Outputs
-	for _, spec := range specs {
+	for specIndex, spec := range specs {
 		variant, err := common.KindToVariant(spec.Kind)
 		if err != nil {
 			return nil, err
@@ -157,6 +161,8 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		}
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
+		// Reserve 1% for converting and merging all products.
+		deps.Progress = (progress.Window{Span: 0.99}).Sub(specIndex, len(specs))
 
 		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
 		// otherwise specIn.VariantSpecific below would mutate the shared map and
@@ -201,6 +207,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			return nil, err
 		}
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		deps.Progress.Report(ctx, 1)
 		for i := range o.Products {
 			if o.Products[i].Meta == nil {
 				o.Products[i].Meta = map[string]any{}
@@ -260,6 +270,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	if len(out.WikiActiveStates) > 0 {
 		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	(progress.Window{Span: 1}).Report(ctx, 1)
 	return result, nil
 }
 
