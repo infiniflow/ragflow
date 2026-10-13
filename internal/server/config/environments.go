@@ -223,7 +223,7 @@ func (c *Config) GetEnvironments() error {
 		c.environments.DefaultSuperUser.Password = superUserPassword
 	}
 
-	superUserNickname := common.GetEnv(common.EnvDefaultSuperuserNickname)
+	superUserNickname := strings.TrimSpace(common.GetEnv(common.EnvDefaultSuperuserNickname))
 	if superUserNickname != "" {
 		c.environments.DefaultSuperUser.Nickname = superUserNickname
 	}
