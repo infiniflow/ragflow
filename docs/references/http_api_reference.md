@@ -3847,6 +3847,7 @@ Starts a chat completion request. The same endpoint supports three modes:
 
   - `"question"`: `string`
   - `"messages"`: `list[object]`
+  - `"store_history_messages"`: `boolean` (optional)
   - `"stream"`: `boolean`
   - `"chat_id"`: `string` (optional)
   - `"session_id"`: `string` (optional)
@@ -3893,9 +3894,11 @@ curl --request POST \
 ##### Body parameters
 
 - `"question"`: `string`
-  The user question. Provide either `"question"` or `"messages"`. When both are provided, `"question"` takes precedence.
+  The user question. Provide either `"question"` or `"messages"`. When both are provided, `"question"` takes precedence unless `"store_history_messages"` is `false`.
 - `"messages"`: `list[object]`
-  The conversation messages. The last message must have the `user` role. This field is required when `"store_history_messages"` is `false`.
+  The conversation messages. The last message must have the `user` role. When `"store_history_messages"` is `false`, this field is required and the full message list is used instead of `"question"`.
+- `"store_history_messages"`: `boolean`
+  Controls whether conversation history is stored. It defaults to `true`; the only supported explicit value is `false`. When set to `false`, `"messages"` is required and the supplied message list is processed without storing it as conversation history.
 - `"stream"`: `boolean`
   Enables streaming output:
   - `true`: Enable streaming (default).
@@ -6121,7 +6124,7 @@ curl --location 'http://{address}/api/v1/messages' \
 
 - `user_id`: `string`, *Optional*
 
-  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. Any other authentication, whether a JWT bearer token or a browser session, ignores it and attributes the message to the authenticated user. Surrounding whitespace is stripped, and a value that is missing, blank or not a string falls back to the API key owner.
+  The user participating in the conversation with the agent. Honoured only when the request is authenticated with an API key. For API key authentication, this field must be a non-empty string; surrounding whitespace is stripped, and a missing, blank, or non-string value causes the request to fail. Any other authentication, whether a JWT bearer token or a browser session, ignores this field and attributes the message to the authenticated user.
 
 - `user_input`: `string`, *Required*
 
