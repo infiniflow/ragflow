@@ -19,6 +19,8 @@
 	"page_num_int": {"type": "varchar", "default": ""},
 	"top_int": {"type": "varchar", "default": ""},
 	"position_int": {"type": "varchar", "default": ""},
+	"slide_number": {"type": "integer", "default": 0},
+	"media_order": {"type": "integer", "default": 0},
 	"weight_int": {"type": "integer", "default": 0},
 	"weight_flt": {"type": "float", "default": 0.0},
 	"mention_count_int": {"type": "integer", "default": 0},
