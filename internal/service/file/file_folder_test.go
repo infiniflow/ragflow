@@ -374,3 +374,164 @@ func TestMoveEntryRecursiveRenameUpdatesAllLinkedDocuments(t *testing.T) {
 		}
 	}
 }
+
+// seedMoveHierarchyDB seeds R (root) > D (destination) and R > A > B > C so
+// tests can select an entry together with one of its descendants.
+func seedMoveHierarchyDB(t *testing.T) {
+	t.Helper()
+	setupFolderTestDB(t)
+	for _, f := range []*entity.File{
+		{ID: "R", ParentID: "R", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder},
+		{ID: "D", ParentID: "R", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "A", ParentID: "R", TenantID: "tenant-1", Name: "A", Type: FileTypeFolder},
+		{ID: "B", ParentID: "A", TenantID: "tenant-1", Name: "B", Type: FileTypeFolder},
+		{ID: "C", ParentID: "B", TenantID: "tenant-1", Name: "C", Type: FileTypeFolder},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+}
+
+func requireParent(t *testing.T, id, wantParent string) {
+	t.Helper()
+	f, err := dao.NewFileDAO().GetByID(context.Background(), dao.DB, id)
+	if err != nil {
+		t.Fatalf("get %s: %v", id, err)
+	}
+	if f.ParentID != wantParent {
+		t.Fatalf("%s parent = %q, want %q", id, f.ParentID, wantParent)
+	}
+}
+
+func countChildren(t *testing.T, parentID string) int64 {
+	t.Helper()
+	var count int64
+	if err := dao.DB.Model(&entity.File{}).Where("parent_id = ?", parentID).Count(&count).Error; err != nil {
+		t.Fatalf("count children of %s: %v", parentID, err)
+	}
+	return count
+}
+
+func childByName(t *testing.T, parentID, name string) *entity.File {
+	t.Helper()
+	var f entity.File
+	if err := dao.DB.Where("parent_id = ? AND name = ?", parentID, name).First(&f).Error; err != nil {
+		t.Fatalf("find %q under %s: %v", name, parentID, err)
+	}
+	return &f
+}
+
+// Selecting a folder together with its direct subfolder must be rejected before
+// any mutation: the ancestor's recursive move already relocates and deletes the
+// subfolder, so processing it again would recreate an empty duplicate.
+func TestMoveFilesRejectsFolderAndSubfolder(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "B"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+subfolder = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "B", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// A grandchild (any depth) in the selection is rejected too.
+func TestMoveFilesRejectsFolderAndGrandchild(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "C"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+grandchild = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "C", "B")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// A file contained in a selected folder counts as a descendant relationship.
+func TestMoveFilesRejectsFolderAndContainedFile(t *testing.T) {
+	seedMoveHierarchyDB(t)
+	insertFolderTestFile(t, "f1", "A", "inside.pdf")
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "f1"}, "D", "")
+	if ok || !strings.Contains(msg, "descendant") {
+		t.Fatalf("move folder+contained file = %v, %q, want descendant rejection", ok, msg)
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "f1", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// The rejection must not depend on the order of src_file_ids.
+func TestMoveFilesRejectsNestedSourcesInEitherOrder(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	for _, src := range [][]string{{"A", "B"}, {"B", "A"}} {
+		ok, msg := svc.MoveFiles(context.Background(), "user-1", src, "D", "")
+		if ok || !strings.Contains(msg, "descendant") {
+			t.Fatalf("move %v = %v, %q, want descendant rejection", src, ok, msg)
+		}
+	}
+
+	requireParent(t, "A", "R")
+	requireParent(t, "B", "A")
+	if got := countChildren(t, "D"); got != 0 {
+		t.Fatalf("destination children = %d, want 0 (nothing should move)", got)
+	}
+}
+
+// Unrelated entries (no ancestor/descendant relationship) must still move.
+func TestMoveFilesAllowsUnrelatedEntries(t *testing.T) {
+	setupFolderTestDB(t)
+	for _, f := range []*entity.File{
+		{ID: "R", ParentID: "R", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder},
+		{ID: "D", ParentID: "R", TenantID: "tenant-1", Name: "dest", Type: FileTypeFolder},
+		{ID: "A", ParentID: "R", TenantID: "tenant-1", Name: "A", Type: FileTypeFolder},
+		{ID: "X", ParentID: "R", TenantID: "tenant-1", Name: "X", Type: FileTypeFolder},
+	} {
+		if err := dao.DB.Create(f).Error; err != nil {
+			t.Fatalf("seed %s: %v", f.ID, err)
+		}
+	}
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A", "X"}, "D", "")
+	if !ok {
+		t.Fatalf("move unrelated entries failed: %q", msg)
+	}
+	if got := countChildren(t, "D"); got != 2 {
+		t.Fatalf("destination children = %d, want 2", got)
+	}
+	childByName(t, "D", "A")
+	childByName(t, "D", "X")
+}
+
+// A single folder still moves with its whole subtree; the new check must not
+// block the legitimate case it was designed around.
+func TestMoveFilesSingleFolderWithSubtreeStillMoves(t *testing.T) {
+	seedMoveHierarchyDB(t)
+
+	svc := testFileService()
+	ok, msg := svc.MoveFiles(context.Background(), "user-1", []string{"A"}, "D", "")
+	if !ok {
+		t.Fatalf("move single folder failed: %q", msg)
+	}
+
+	movedA := childByName(t, "D", "A")
+	childByName(t, movedA.ID, "B")
+}
