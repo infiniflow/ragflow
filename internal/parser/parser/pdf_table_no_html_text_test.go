@@ -58,7 +58,7 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 				t.Fatalf("table item still carries legacy HTML text %q", v)
 			}
 			td, ok := tableItem["table"].(*entity.TableData)
-			if !ok || td == nil || len(td.Rows) == 0 {
+			if !ok || td == nil || len(td.CellTexts()) == 0 {
 				t.Fatalf("table item missing structured TableData: %#v", tableItem)
 			}
 			if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") && !strings.Contains(got, "cell") {
@@ -76,7 +76,7 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 // ParseTableHTML/RenderTableHTML round-trip).
 func TestPDFItemsToMarkdownRendersTableFromTableField(t *testing.T) {
 	td := &entity.TableData{
-		Rows:       [][]string{{"What is RAGFlow?", "A RAG engine."}, {"Is it open source?", "Yes."}},
+		Grid:       [][]entity.TableCell{{{Text: "What is RAGFlow?"}, {Text: "A RAG engine."}}, {{Text: "Is it open source?"}, {Text: "Yes."}}},
 		HeaderRows: 1,
 	}
 	// Producer-after-cleanup shape: `table` present, `text` absent.

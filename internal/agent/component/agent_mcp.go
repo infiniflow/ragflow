@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"time"
 
 	einotool "github.com/cloudwego/eino/components/tool"
@@ -13,10 +14,11 @@ import (
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
 	"ragflow/internal/dao"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 )
 
-// buildAgentMCPTools binds the saved tool selection to tenant-owned servers.
+// buildAgentMCPTools binds the saved tool selection to servers the canvas can use.
 // Discovery happens when configuring the server; execution uses those schemas.
 func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.Duration) ([]einotool.BaseTool, error) {
 	if raw == nil {
@@ -43,13 +45,30 @@ func buildAgentMCPTools(ctx context.Context, db *gorm.DB, raw any, timeout time.
 		if err != nil || state == nil || db == nil {
 			return nil, fmt.Errorf("MCP server %q: missing runtime tenant or database", selection.ID)
 		}
-		tenantID, _ := state.Sys["tenant_id"].(string)
-		if tenantID == "" {
-			return nil, fmt.Errorf("MCP server %q: missing runtime tenant", selection.ID)
+		userID, _ := state.Sys["user_id"].(string)
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		if strings.TrimSpace(userID) == "" || strings.TrimSpace(canvasID) == "" {
+			return nil, fmt.Errorf("MCP server %q: missing runtime user or canvas", selection.ID)
 		}
-		server, err := dao.NewMCPServerDAO().GetByIDAndTenant(ctx, db, selection.ID, tenantID)
+		tenantID, _ := state.Sys["tenant_id"].(string)
+		checker := permission.NewDatabaseChecker(db)
+		err = checker.CheckDependency(
+			ctx,
+			permission.Subject{UserID: userID, TenantID: tenantID},
+			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID},
+			permission.ResourceRef{Kind: permission.ResourceKindMCPServer, ID: selection.ID},
+			permission.OperationRun,
+			permission.OperationUse,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("MCP server %q: authorize canvas dependency: %w", selection.ID, err)
+		}
+		server, err := dao.NewMCPServerDAO().GetByID(ctx, db, selection.ID)
 		if err != nil {
 			return nil, fmt.Errorf("load MCP server %q: %w", selection.ID, err)
+		}
+		if server == nil {
+			return nil, fmt.Errorf("load MCP server %q: %w", selection.ID, permission.ErrResourceNotFound)
 		}
 		headers := make(map[string]string, len(server.Headers))
 		for key, value := range server.Headers {

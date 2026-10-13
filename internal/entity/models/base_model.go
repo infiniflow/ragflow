@@ -496,6 +496,8 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
+		}
+		if cfg.Tools != nil || cfg.ToolChoice != nil || cfg.ToolChoiceValue != nil {
 			switch {
 			case cfg.ToolChoiceValue != nil:
 				reqBody["tool_choice"] = cfg.ToolChoiceValue

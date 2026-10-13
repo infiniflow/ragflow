@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
@@ -371,11 +372,13 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	// ShowColumns returns a result set where Data contains arrays of column values
 	re := regexp.MustCompile(`Embedding\([a-z]+,(\d+)\)`)
 	hasChunkData := false
+	columns := make(map[string]bool)
 	if nameArr, ok := result.Data["name"]; ok {
 		if typeArr, ok := result.Data["type"]; ok {
 			for i := 0; i < len(nameArr); i++ {
 				colName, _ := nameArr[i].(string)
 				colType, _ := typeArr[i].(string)
+				columns[colName] = true
 				if colName == "chunk_data" {
 					hasChunkData = true
 				}
@@ -405,6 +408,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
 		// so the producer value (if any) is intentionally overridden here.
 		insertChunks[i]["kb_id"] = datasetID
+	}
+	if err := e.dropUndeclaredFields(tableName, insertChunks, columns); err != nil {
+		return nil, err
 	}
 
 	// Delete existing rows with matching IDs
@@ -444,6 +450,67 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	common.Info("InfinityConnection.InsertChunks result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
 	return []string{}, nil
+}
+
+// vectorColumnPattern matches the q_<dim>_vec columns the engine adds per
+// embedding size; no mapping file declares them.
+var vectorColumnPattern = regexp.MustCompile(`^q_\d+_vec$`)
+
+// dropUndeclaredFields removes each row key that is not a column of the table
+// and that no mapping file declares, such as parser bookkeeping keys
+// (slide_number, __outline__). Infinity fails the whole batch on one unknown
+// column. A declared key that the table lacks is kept, so a stale table still
+// fails the insert instead of losing that value.
+func (e *Engine) dropUndeclaredFields(tableName string, rows []map[string]interface{}, columns map[string]bool) error {
+	var declared map[string]bool
+	dropped := make(map[string]bool)
+	for _, row := range rows {
+		for key := range row {
+			if columns[key] || key == "chunk_data" || vectorColumnPattern.MatchString(key) {
+				continue
+			}
+			if declared == nil {
+				var err error
+				if declared, err = declaredChunkColumns(e.mappingFileName); err != nil {
+					return err
+				}
+			}
+			if !declared[key] {
+				delete(row, key)
+				dropped[key] = true
+			}
+		}
+	}
+	if len(dropped) > 0 {
+		common.Warn("Dropping fields that are not Infinity columns",
+			zap.String("tableName", tableName),
+			zap.Strings("fields", slices.Sorted(maps.Keys(dropped))))
+	}
+	return nil
+}
+
+// declaredChunkColumns returns the columns of the chunk mapping and of the
+// memory message mapping, because memory messages go through InsertChunks too.
+func declaredChunkColumns(mappingFileName string) (map[string]bool, error) {
+	declared := make(map[string]bool)
+	for _, name := range []string{mappingFileName, "message_infinity_mapping.json"} {
+		path, err := utility.FindConfFileInProject(name)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(*path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping file %s: %w", *path, err)
+		}
+		var schema map[string]json.RawMessage
+		if err := json.Unmarshal(data, &schema); err != nil {
+			return nil, fmt.Errorf("failed to parse mapping file %s: %w", *path, err)
+		}
+		for column := range schema {
+			declared[column] = true
+		}
+	}
+	return declared, nil
 }
 
 // UpdateChunks updates chunks in a dataset

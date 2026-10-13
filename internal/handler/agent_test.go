@@ -310,6 +310,29 @@ func TestGetAgentVersionHandler_VersionNotFound(t *testing.T) {
 	}
 }
 
+func TestCreateAgentUsesAuthenticatedUserID(t *testing.T) {
+	c, w, db := setupGinContextWithUserAndDB(t, http.MethodPost, "/api/v1/agents")
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/agents", strings.NewReader(`{
+		"user_id":"other-user",
+		"title":"Agent",
+		"dsl":{}
+	}`))
+
+	h := NewAgentHandler(t.Context(), service.NewAgentService(), nil)
+	h.CreateAgent(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("CreateAgent status = %d, body: %s", w.Code, w.Body.String())
+	}
+
+	var created entity.UserCanvas
+	if err := db.Where("title = ?", "Agent").First(&created).Error; err != nil {
+		t.Fatalf("load created agent: %v", err)
+	}
+	if created.UserID != "user-1" {
+		t.Fatalf("created agent owner = %q, want authenticated user user-1", created.UserID)
+	}
+}
+
 // sptr returns a pointer to the given string.
 // ptr returns a pointer to the given int64.
 func ptr(v int64) *int64 { return &v }
@@ -441,7 +464,7 @@ type fullFakeAgentService struct {
 func (f *fullFakeAgentService) ListAgents(string, string, int, int, string, bool, []string, string, []string) (*service.ListAgentsResponse, common.ErrorCode, error) {
 	return &service.ListAgentsResponse{}, common.CodeSuccess, nil
 }
-func (f *fullFakeAgentService) CreateAgent(context.Context, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
+func (f *fullFakeAgentService) CreateAgent(context.Context, string, *service.CreateAgentRequest) (*entity.UserCanvas, common.ErrorCode, error) {
 	return nil, common.CodeArgumentError, nil
 }
 func (f *fullFakeAgentService) GetAgent(context.Context, string, string) (*entity.UserCanvas, error) {

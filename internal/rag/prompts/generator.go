@@ -14,21 +14,9 @@
 //  limitations under the License.
 //
 
-// Package prompts is the Go mirror of Python rag/prompts/generator.py — the
-// prompt helpers the agentic loop, the chat seam and the deep parsers share
-// (chunk formatting, token-budget fitting, knowledge-block rendering, tool
-// schema serialization, history formatting, and the named prompt templates
-// that load from rag/prompts/*.md).
-//
-// Porting is staged function-by-function: pure helpers that do not touch an
-// LLM are mirrored first and covered by tests; helpers that call the model
-// (Python chat_mdl.async_chat) are left as declared entry points until the Go
-// LLM-call seam is confirmed, so they are not part of the compile surface yet.
-//
-// Template loading mirrors Python rag/prompts/template.py::load_prompt, which
-// reads {name}.md from rag/prompts/ at import time. The Go seam for that is a
-// named-template loader passed in by callers so this package stays free of a
-// hard dependency on the service layer (see the Render* helpers).
+// Package prompts provides embedded templates and prompt helpers shared by
+// retrieval, chat, and ingestion, including chunk formatting, token-budget
+// fitting, knowledge-block rendering, and history formatting.
 package prompts
 
 import (
@@ -98,11 +86,8 @@ func ChunksFormat(reference map[string]any) []map[string]any {
 	return out
 }
 
-// DefaultCiteRules mirrors rag/prompts/generator.citation_prompt's
-// CITATION_PROMPT_TEMPLATE output. Python loads citation_prompt.md via
-// load_prompt("citation_prompt"); the Go build keeps the same .md embedded
-// (citation_prompt.md) and reads it here so the template has a single source of
-// truth. A user-defined override (RAGConfig.CiteRules / user_defined_prompts)
+// DefaultCiteRules loads the embedded citation_prompt.md template.
+// A user-defined override (RAGConfig.CiteRules / user_defined_prompts)
 // replaces it verbatim when present — see CitationPrompt.
 //
 // Loaded from the embedded md rather than a string literal so edits to

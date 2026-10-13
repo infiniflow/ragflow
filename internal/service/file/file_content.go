@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -21,8 +22,8 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("no authorization")
+	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 	return file, nil
 }
