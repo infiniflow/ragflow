@@ -23,17 +23,8 @@ import (
 	"strings"
 )
 
-// Prompt template loading, the Go mirror of Python rag/prompts/template.py
-// ::load_prompt. Python reads {name}.md from rag/prompts/ at import time; the
-// Go column keeps the authoritative copy of each template as a .md embedded
-// here so the binary is self-contained and survives the Python source being
-// deleted.
-//
-// The templates mirrored by this package (action_run, action_set,
-// action_initialize_state, consumed by the harness action session; sca_select
-// and sca_query_rewrite, consumed by the orchestrator) were previously
-// duplicated as copies under harness/prompts/. They are now unified here, with
-// the harness wiring its PromptLoader default to this package's embedded loader.
+// Prompt templates for retrieval, chat, and ingestion are embedded here so
+// callers can load them independently of the working directory.
 //
 // action_set is the ONE template that is not part of a system prompt: the harness
 // appends it to a session's seed message, and only for a direction that is a SET
@@ -41,6 +32,7 @@ import (
 // every question, including the ones it cannot help.
 
 //go:embed action_run.md action_set.md action_initialize_state.md sca_select.md sca_query_rewrite.md citation_prompt.md
+//go:embed ask_summary.md keyword_prompt.md cross_languages_sys_prompt.md cross_languages_user_prompt.md meta_filter.md related_question.md vision_llm_describe_prompt.md vision_llm_figure_describe_prompt.md
 var templatesFS embed.FS
 
 // EmbeddedPromptLoader serves the bundled .md templates by name. Load returns
@@ -73,12 +65,10 @@ type Loader interface {
 // verbatim in the prompt.
 var leftoverVarRE = regexp.MustCompile(`\{\{\s*[A-Za-z_][A-Za-z0-9_.]*\s*\}\}`)
 
-// Render loads `name` and substitutes the {{var}} placeholders the way
-// PROMPT_JINJA_ENV.from_string(...).render(...) does on the Python side. A nil
-// loader defaults to the embedded canonical .md templates (1:1 copies of the
-// Python rag/prompts/*.md); a loader that cannot resolve `name` falls back to
-// `fallback`. Unprovided variables render as the empty string (Jinja default
-// Undefined), not as a literal placeholder.
+// Render loads `name` and substitutes the {{var}} placeholders. A nil loader
+// defaults to the embedded templates; a loader that cannot resolve `name`
+// falls back to `fallback`. Unprovided variables render as the empty string
+// (Jinja default Undefined), not as a literal placeholder.
 func Render(loader Loader, name, fallback string, vars map[string]string) string {
 	if loader == nil {
 		loader = EmbeddedPromptLoader{}

@@ -24,6 +24,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cloudwego/eino/adk"
@@ -73,6 +74,14 @@ type Input struct {
 	// DocIDs is the server-bound document scope. Nil leaves retrieval unrestricted;
 	// a non-nil empty slice restricts all corpus tools to no documents.
 	DocIDs []string
+	// ConversationKey is the conversation's stable identifier (the chat id). When
+	// set, the compiled-knowledge tools (navigate_tree / graph_explore) record a
+	// dataset-level absence once and drop themselves from the tool list until the
+	// 30-minute mark expires, so the agent stops spending calls on a tool the
+	// corpus cannot satisfy. When empty, a per-run key scopes the decision to this
+	// single ReAct turn. The chat pipeline sets it from the conversation id; see
+	// nav_tool_enablement.go.
+	ConversationKey string
 	// Tools are the eino tools the agent may call. When empty, the tool set of
 	// the resolved template (TemplateID, else the config's default) is used.
 	// The web_search tool is NOT passed here: it is injected from the run's
@@ -114,6 +123,11 @@ type Input struct {
 const defaultMaxIterations = 120
 
 var errNilModel = errors.New("agentic_rag: model is required")
+
+// runSeq issues a unique key for each Run that carries no ConversationKey, so a
+// disable decision is scoped to that turn and does not collide with a concurrent
+// one.
+var runSeq uint64
 
 // llmRetryMax bounds retry attempts per model call on top of the initial one
 // (adk semantics: MaxRetries=1 → up to 2 calls). With the backoff below the
@@ -299,6 +313,23 @@ func Run(ctx context.Context, in Input) (string, error) {
 		ctx = withDocumentScope(ctx, in.DocIDs)
 	}
 
+	// Conversation identity for per-conversation compiled-knowledge tool
+	// availability: the chat pipeline passes the chat id; when absent, a unique
+	// per-run key keeps any availability decision scoped to this turn and
+	// isolated from concurrent runs.
+	convKey := in.ConversationKey
+	generatedKey := convKey == ""
+	if generatedKey {
+		convKey = fmt.Sprintf("run-%d", atomic.AddUint64(&runSeq, 1))
+	}
+	ctx = WithConversationKey(ctx, convKey)
+	if generatedKey {
+		// The generated key belongs to this turn alone: no later run reuses it,
+		// so release its availability marks on the way out instead of leaking
+		// one dead entry per keyless run into the process-wide map.
+		defer forgetConversation(convKey)
+	}
+
 	tmpl, errT := resolveTemplateFor(in.TemplateID)
 	if errT != nil {
 		common.ErrorCtx(ctx, "agentic_rag: resolve template", errT)
@@ -314,6 +345,14 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// With no explicit tools, use the requested template. The config reloads
 	// when its mtime changes so operators can change the tool list and prompt.
 	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	// The compiled-knowledge tools are injected, never declared: they only make
+	// sense when the bound datasets have produced knowledge-compilation products
+	// (navigation tree / compiled structure / knowledge graph), so an uncompiled
+	// corpus never offers - or pays for - them. A caller that passes explicit
+	// tools owns its own set and is left untouched.
+	if len(in.Tools) == 0 && datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
+		tools = append(tools, compiledKnowledgeTools(in.TenantID, in.DatasetIDs)...)
+	}
 	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
 	if err != nil {
 		return "", err
@@ -341,6 +380,21 @@ func Run(ctx context.Context, in Input) (string, error) {
 		}
 	}
 	tools = wrapped
+
+	// Drop compiled-knowledge tools this conversation has already proven
+	// unusable (dataset-level absence), so the model cannot keep calling them
+	// and wasting turns. The tool still short-circuits on its own for any call
+	// that slips through, but removing it from the list is the clean stop.
+	if unavailable := navUnavailableToolSet(ctx); len(unavailable) > 0 {
+		kept := tools[:0]
+		for _, t := range tools {
+			if info, ierr := t.Info(ctx); ierr == nil && info != nil && unavailable[info.Name] {
+				continue
+			}
+			kept = append(kept, t)
+		}
+		tools = kept
+	}
 
 	common.DebugCtx(ctx, "agentic_rag: run start",
 		zap.Int("max_iterations", maxIter),

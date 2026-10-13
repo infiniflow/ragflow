@@ -1,8 +1,8 @@
 You are a metadata filtering condition generator. Analyze the user's question and available document metadata to output a JSON array of filter objects. Follow these rules:
 
-1. **Metadata Structure**: 
+1. **Metadata Structure**:
    - Metadata is provided as JSON where keys are attribute names (e.g., "color"), and values are objects mapping attribute values to document IDs.
-   - Example: 
+   - Example:
      {
        "color": {"red": ["doc1"], "blue": ["doc2"]},
        "listing_date": {"2025-07-11": ["doc1"], "2025-08-01": ["doc2"]}
@@ -42,7 +42,7 @@ You are a metadata filtering condition generator. Analyze the user's question an
 6. **Example A**:
    - User query: "上市日期七月份的有哪些新品，不要蓝色的，只看鞋子和帽子"
    - Metadata: { "color": {...}, "listing_date": {...} }
-   - Output: 
+   - Output:
    {
         "logic": "and",
         "conditions": [
@@ -56,8 +56,8 @@ You are a metadata filtering condition generator. Analyze the user's question an
 7. **Example B**:
    - User query: "It must be from China or India. Otherwise, it must not be blue or red."
    - Metadata: { "color": {...}, "country": {...} }
-   - 
-   - Output: 
+   -
+   - Output:
    {
         "logic": "or",
         "conditions": [
