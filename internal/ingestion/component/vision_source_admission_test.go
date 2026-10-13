@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
@@ -78,7 +79,7 @@ func TestVisionSourceFetchDoesNotBlockImageAdmission(t *testing.T) {
 		dispatched := parser.ParseResult{OutputFormat: "json", JSON: []map[string]any{newItem()}}
 		res, _, err := maybeDispatchVisionEnhancement(
 			context.Background(), dao.DB, utility.FileTypePDF, dispatched,
-			inputs, visionSettings{}, fractionWindow{},
+			inputs, visionSettings{}, progress.Window{},
 		)
 		if err != nil {
 			t.Errorf("maybeDispatchVisionEnhancement: %v", err)

@@ -67,7 +67,7 @@ export function QueryVariable({
   );
 
   if (pureQuery) {
-    renderWidget(value, onChange);
+    return renderWidget(value, onChange);
   }
 
   return (

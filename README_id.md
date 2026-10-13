@@ -209,13 +209,14 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
    cd ragflow
    ```
 
-2. Jalankan [skrip pengunduh dependensi](./ragflow_deps/download_deps.py) untuk menyiapkan pustaka native dan file model:
+2. Jalankan skrip pengunduh dependensi untuk menyiapkan pustaka native statis yang ditautkan oleh build Go (`download_dev_deps.py`) dan sumber daya model / tokenizer yang dimuat backend saat runtime (`download_deps.py`):
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py` mengunduh dan mengekstrak pdfium, pdf_oxide, office_oxide, dan onnxruntime ke `~/ragflow-native-libs`; `download_deps.py` mengunduh kosakata cl100k, model DeepDoc, dan aset tokenizer embedding ke `ragflow_deps/`. Keduanya adalah skrip Python; `uv run` memasang dependensi yang dideklarasikan secara otomatis (`requests`, plus `huggingface-hub` untuk unduhan model dan tokenizer). Lewati langkah ini jika Anda sudah menyiapkan sumber daya yang sama dengan cara lain. Saat dijalankan dari akar repositori, layanan Go secara otomatis menemukan `internal/rag/res/deepdoc`; untuk menjalankan dari direktori lain, tetapkan `DEEPDOC_MODEL_DIR` ke jalur absolutnya.
 
 3. Build layanan:
 
@@ -270,7 +271,7 @@ Docker menggunakan `docker/.env` dan `docker/docker-compose.yml`. Ikuti [panduan
 
 Lihat [Menjalankan Layanan dari Sumber](./docs/develop/launch_ragflow_from_source.md) untuk detailnya.
 
-> **Catatan operasional:** agar pengaturan Elasticsearch permanen, tambahkan `vm.max_map_count=262144` ke `/etc/sysctl.conf`. Dengan MySQL default, entrypoint image Docker menjalankan migrasi sebelum memulai Admin, Syncer, Ingestor, dan API. DeepDoc open-source 1.0 memakai inferensi CPU untuk layout, OCR, dan tabel. Setelah konfigurasi Docker berubah, mulai ulang layanan dan ikuti [panduan Docker](./docker/README.md) untuk mempertahankan atau menghapus data. `download_deps.py` menyiapkan pustaka native dan model serta memerlukan `requests` dan `huggingface-hub`. `--migrate` menjalankan migrasi lalu keluar; `--admin` memulai layanan administrasi, `--ingestor` layanan ingestion, `--syncer` layanan sinkronisasi sumber data eksternal, dan `--api` layanan API untuk Web UI dan SDK. HTTP 200 berarti API siap.
+> **Catatan operasional:** agar pengaturan Elasticsearch permanen, tambahkan `vm.max_map_count=262144` ke `/etc/sysctl.conf`. Dengan MySQL default, entrypoint image Docker menjalankan migrasi sebelum memulai Admin, Syncer, Ingestor, dan API. DeepDoc open-source 1.0 memakai inferensi CPU untuk layout, OCR, dan tabel. Setelah konfigurasi Docker berubah, mulai ulang layanan dan ikuti [panduan Docker](./docker/README.md) untuk mempertahankan atau menghapus data. `download_dev_deps.py` menyiapkan pustaka native untuk build Go, dan `download_deps.py` menyiapkan model, aset tokenizer, serta tabel cl100k; keduanya dijalankan melalui `uv run`. `--migrate` menjalankan migrasi lalu keluar; `--admin` memulai layanan administrasi, `--ingestor` layanan ingestion, `--syncer` layanan sinkronisasi sumber data eksternal, dan `--api` layanan API untuk Web UI dan SDK. HTTP 200 berarti API siap.
 
 ## 📚 Dokumentasi
 
