@@ -441,14 +441,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				workspaceFiles.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
-			// File routes
-			file := authorized.Group("/v1/file")
-			{
-				file.GET("/root_folder", r.fileHandler.GetRootFolder)
-				file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-				file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
-			}
-
 			// File commit routes — /folders/ takes folder_id directly
 			commitFolders := v1.Group("/folders")
 			{
