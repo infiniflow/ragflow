@@ -2504,7 +2504,6 @@ curl --request POST \
           "knn_num_candidates": 2048,
           "rerank_candidates_count": 64,
           "include_knowledge_compilation": true,
-          "knowledge_compilation_scope": "all",
           "metadata_condition": {
             "logic": "and",
             "conditions": [
