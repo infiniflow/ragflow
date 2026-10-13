@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -30,9 +31,10 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 		"title_chunker.json":               true,
 	}
 
-	// subTaskActive mirrors the runtime gate in internal/ingestion/component:
-	// keywords/questions/tags run when top_n > 0 (extractor.go),
-	// summary/metadata run when enabled is true.
+	// subTaskActive mirrors the runtime gates in internal/ingestion/component:
+	// summary/metadata run when enabled is true; keywords/questions/tags follow
+	// resolveExtractToggle — an explicit "enabled" key is authoritative, and only
+	// a legacy group without it derives its state from top_n > 0.
 	subTaskActive := func(name string, v any) bool {
 		m, ok := v.(map[string]any)
 		if !ok {
@@ -40,6 +42,13 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 		}
 		switch name {
 		case "keywords", "questions", "tags":
+			if enabled, ok := m["enabled"]; ok {
+				if b, ok := enabled.(bool); ok {
+					return b
+				}
+				n, ok := enabled.(float64)
+				return ok && n == 1
+			}
 			n, ok := m["top_n"].(float64)
 			return ok && n > 0
 		default:
@@ -68,6 +77,21 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 			}
 			base := filepath.Base(f)
 			components, _ := doc["dsl"].(map[string]any)["components"].(map[string]any)
+
+			// Canvas nodes mirror the component params in data.form for the
+			// agent templates; collect them by id so the two copies can be
+			// compared.
+			nodeForms := map[string]map[string]any{}
+			if nodes, ok := doc["dsl"].(map[string]any)["graph"].(map[string]any)["nodes"].([]any); ok {
+				for _, n := range nodes {
+					node, _ := n.(map[string]any)
+					id, _ := node["id"].(string)
+					form, _ := node["data"].(map[string]any)["form"].(map[string]any)
+					if id != "" && form != nil {
+						nodeForms[id] = form
+					}
+				}
+			}
 			for cpnID, comp := range components {
 				obj, _ := comp.(map[string]any)["obj"].(map[string]any)
 				if obj["component_name"] != "Extractor" {
@@ -75,6 +99,10 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 				}
 				seen++
 				params, _ := obj["params"].(map[string]any)
+
+				if form, ok := nodeForms[cpnID]; ok && !reflect.DeepEqual(form, params) {
+					t.Errorf("%s: Extractor %s params and canvas data.form diverge; both must be updated together", f, cpnID)
+				}
 				for _, k := range legacyKeys {
 					if _, found := params[k]; found {
 						t.Errorf("%s: Extractor %s still uses legacy param %q; migrate it to the modular format", f, cpnID, k)
