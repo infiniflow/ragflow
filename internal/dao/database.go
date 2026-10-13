@@ -26,11 +26,18 @@ import (
 	"time"
 
 	"ragflow/internal/server"
+	"ragflow/internal/server/config"
 
 	"go.uber.org/zap"
+
+	// The vastbase metadata connection speaks lib/pq (DriverName "postgres"),
+	// matching the document engine's client; the blank import registers the
+	// database/sql driver regardless of which engines the binary links in.
+	_ "github.com/lib/pq"
 	gormLogger "gorm.io/gorm/logger"
 
 	"gorm.io/driver/mysql"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/migrator"
 	"gorm.io/gorm/schema"
@@ -109,53 +116,75 @@ func (m namedIndexMigrator) MigrateColumnUnique(dst interface{}, field *schema.F
 	return m.Migrator.MigrateColumnUnique(dst, field, columnType)
 }
 
-// InitDB initialize database connection
-func InitDB(ctx context.Context, migrateDB bool) error {
-	globalConfig := server.GetConfig()
-	databaseConfig := globalConfig.GetMySQLConfig()
-
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
-		databaseConfig.User,
-		databaseConfig.Password,
-		databaseConfig.Host,
-		databaseConfig.Port,
-		databaseConfig.DatabaseName,
-		databaseConfig.Charset,
-	)
-
-	// Set log level
-	var gormLogLevel gormLogger.LogLevel
-	if globalConfig.GetMode() == "debug" {
-		gormLogLevel = gormLogger.Info
-	} else {
-		gormLogLevel = gormLogger.Silent
-	}
-
-	// Connect to database
-	var err error
-	DB, err = gorm.Open(newMigrationAwareDialector(dsn), &gorm.Config{
-		Logger: gormLogger.Default.LogMode(gormLogLevel),
-		NowFunc: func() time.Time {
-			return time.Now().Local()
-		},
-		TranslateError: true,
+// newVastbaseDialector builds the metadata-database dialector. lib/pq is the
+// driver (DriverName "postgres"), matching the document engine's connection to
+// the same instance; WithoutReturning is the peewee returning_clause=False
+// escape hatch, off by default because plain RETURNING is how GORM reads back
+// auto-increment ids.
+//
+// The metadata database must run in B (MySQL) compatibility mode — created
+// that way by docker/vastbase/init/01_init.sh. B mode parses MySQL syntax
+// over the PostgreSQL wire protocol, so every SQL statement the codebase
+// issues (DAO queries, migrations, entity-tag DDL types like longtext) stays
+// verbatim MySQL; no dialect branching is needed anywhere.
+func newVastbaseDialector(cfg config.VastbaseMetaConfig) gorm.Dialector {
+	return postgres.New(postgres.Config{
+		DriverName:       "postgres",
+		DSN:              buildVastbaseMetaDSN(cfg),
+		WithoutReturning: cfg.DisableReturning,
 	})
-	if err != nil {
-		return fmt.Errorf("failed to connect database: %w", err)
+}
+
+// isLocalMetaDBHost reports whether the metadata host is loopback or a
+// unix-socket path — the only addresses allowed to default to plaintext.
+func isLocalMetaDBHost(host string) bool {
+	switch strings.ToLower(strings.TrimSpace(host)) {
+	case "localhost", "127.0.0.1", "::1", "[::1]":
+		return true
 	}
+	return strings.HasPrefix(host, "/")
+}
 
-	// Get general database object sql.DB
-	sqlDB, err := DB.DB()
-	if err != nil {
-		return fmt.Errorf("failed to get database instance: %w", err)
+// quoteMetaDSNValue wraps a lib/pq keyword-DSN value in single quotes so
+// hosts/users/passwords with special characters cannot break the DSN.
+func quoteMetaDSNValue(v string) string {
+	r := strings.ReplaceAll(v, `\`, `\\`)
+	r = strings.ReplaceAll(r, `'`, `\'`)
+	return "'" + r + "'"
+}
+
+// buildVastbaseMetaDSN builds the lib/pq keyword DSN for the Vastbase metadata
+// database, mirroring the document engine's DSN contract: quoted values, an
+// empty ssl_mode resolved by host (disable on loopback, verify-full on every
+// other TCP host) and the same connect/statement timeouts. lib/pq forwards
+// unrecognized keywords as startup parameters, which is how statement_timeout
+// reaches the server.
+func buildVastbaseMetaDSN(cfg config.VastbaseMetaConfig) string {
+	sslMode := cfg.SSLMode
+	if sslMode == "" {
+		if isLocalMetaDBHost(cfg.Host) {
+			sslMode = "disable"
+		} else {
+			sslMode = "verify-full"
+		}
 	}
+	parts := []string{
+		fmt.Sprintf("host=%s", quoteMetaDSNValue(cfg.Host)),
+		fmt.Sprintf("port=%d", cfg.Port),
+		fmt.Sprintf("user=%s", quoteMetaDSNValue(cfg.User)),
+		fmt.Sprintf("dbname=%s", quoteMetaDSNValue(cfg.DatabaseName)),
+		fmt.Sprintf("sslmode=%s", quoteMetaDSNValue(sslMode)),
+	}
+	if cfg.Password != "" {
+		parts = append(parts, fmt.Sprintf("password=%s", quoteMetaDSNValue(cfg.Password)))
+	}
+	parts = append(parts, "connect_timeout=30", "statement_timeout=300000")
+	return strings.Join(parts, " ")
+}
 
-	// Set connection pool
-	sqlDB.SetMaxIdleConns(databaseConfig.MaxConnections)
-	sqlDB.SetMaxOpenConns(databaseConfig.MaxConnections)
-	sqlDB.SetConnMaxLifetime(time.Duration(databaseConfig.StaleTimeout) * time.Second)
-
-	// Auto migrate all dataModels
+// autoMigrateModels lists every entity AutoMigrate converges, as one source
+// for InitDB and the dialect shape tests.
+func autoMigrateModels() []interface{} {
 	dataModels := []interface{}{
 		&entity.User{},
 		&entity.Tenant{},
@@ -216,6 +245,72 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 	}
 	dataModels = append(dataModels, permissionDataModelsEE()...)
 	dataModels = append(dataModels, billingDataModelsEE()...)
+	return dataModels
+}
+
+// InitDB initialize database connection
+func InitDB(ctx context.Context, migrateDB bool) error {
+	globalConfig := server.GetConfig()
+
+	// The metadata database dialect: mysql/oceanbase share the MySQL wire
+	// path, vastbase speaks PostgreSQL.
+	var dialector gorm.Dialector
+	var maxConnections, staleTimeout int
+	switch globalConfig.DatabaseType() {
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		dialector = newVastbaseDialector(vastbaseConfig)
+		maxConnections = vastbaseConfig.MaxConnections
+		staleTimeout = vastbaseConfig.StaleTimeout
+	default:
+		databaseConfig := globalConfig.GetMySQLConfig()
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?charset=%s&parseTime=True&loc=Local",
+			databaseConfig.User,
+			databaseConfig.Password,
+			databaseConfig.Host,
+			databaseConfig.Port,
+			databaseConfig.DatabaseName,
+			databaseConfig.Charset,
+		)
+		dialector = newMigrationAwareDialector(dsn)
+		maxConnections = databaseConfig.MaxConnections
+		staleTimeout = databaseConfig.StaleTimeout
+	}
+
+	// Set log level
+	var gormLogLevel gormLogger.LogLevel
+	if globalConfig.GetMode() == "debug" {
+		gormLogLevel = gormLogger.Info
+	} else {
+		gormLogLevel = gormLogger.Silent
+	}
+
+	// Connect to database
+	var err error
+	DB, err = gorm.Open(dialector, &gorm.Config{
+		Logger: gormLogger.Default.LogMode(gormLogLevel),
+		NowFunc: func() time.Time {
+			return time.Now().Local()
+		},
+		TranslateError: true,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to connect database: %w", err)
+	}
+
+	// Get general database object sql.DB
+	sqlDB, err := DB.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get database instance: %w", err)
+	}
+
+	// Set connection pool
+	sqlDB.SetMaxIdleConns(maxConnections)
+	sqlDB.SetMaxOpenConns(maxConnections)
+	sqlDB.SetConnMaxLifetime(time.Duration(staleTimeout) * time.Second)
+
+	// Auto migrate all dataModels
+	dataModels := autoMigrateModels()
 
 	if migrateDB {
 		// Mirror the Python flow, where tools/scripts/run_migrations.sh runs before
@@ -378,6 +473,17 @@ func autoMigrateSafely(ctx context.Context, db *gorm.DB, model interface{}) erro
 
 	if strings.Contains(errStr, "Error 1138") && strings.Contains(errStr, "Invalid use of NULL") {
 		common.Warn("NULL value in existing rows, skipping migration change", zap.String("error", errStr))
+		return nil
+	}
+
+	// PostgreSQL/Vastbase: the same converging conditions surface as
+	// SQLSTATE 42P07 (relation), 42701 (column) and 42710 (object), all
+	// reported as "<object> already exists". Matching the fragment rather
+	// than the SQLSTATE keeps lib/pq and pgx text forms covered. A blanket
+	// "does not exist" match is deliberately absent: it would also hide a
+	// bad type name, which is a schema bug, not convergence.
+	if strings.Contains(strings.ToLower(errStr), "already exists") {
+		common.Warn("Schema object already exists, skipping", zap.String("error", errStr))
 		return nil
 	}
 

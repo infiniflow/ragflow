@@ -193,6 +193,9 @@ func GetAllConfigs() ([]map[string]interface{}, error) {
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		exportedMySQLConfigs := mysqlConfig.ExportConfigs()
 		allConfigs = append(allConfigs, exportedMySQLConfigs)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		allConfigs = append(allConfigs, vastbaseConfig.ExportConfigs())
 	default:
 		return nil, fmt.Errorf("not supported database: %s", databaseType)
 	}
