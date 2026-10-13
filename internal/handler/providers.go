@@ -412,7 +412,7 @@ func (h *ProviderHandler) ShowModel(c *gin.Context) {
 
 type CreateProviderInstanceRequest struct {
 	InstanceName string                            `json:"instance_name" binding:"required"`
-	APIKey       string                            `json:"api_key"`
+	APIKey       common.FlexibleJSONString         `json:"api_key"`
 	BaseURL      string                            `json:"base_url"`
 	Region       string                            `json:"region"`
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
@@ -468,7 +468,7 @@ func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.CreateProviderInstance(ctx, providerName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, userID, req.ModelInfo)
+	code, err := h.modelProviderService.CreateProviderInstance(ctx, providerName, req.InstanceName, req.APIKey.String(), req.BaseURL, req.Region, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -562,7 +562,7 @@ func (h *ProviderHandler) CheckConnection(c *gin.Context) {
 	}
 
 	userID := c.GetString("user_id")
-	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req.APIKey, req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
+	errCode, err := h.modelProviderService.CheckConnection(ctx, providerName, req.APIKey.String(), req.Region, req.BaseURL, req.InstanceID, userID, req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, errCode, err.Error())
 		return
@@ -666,7 +666,7 @@ func (h *ProviderHandler) ShowTask(c *gin.Context) {
 
 type AlterProviderInstanceRequest struct {
 	InstanceName string                             `json:"instance_name"`
-	APIKey       string                             `json:"api_key"`
+	APIKey       common.FlexibleJSONString          `json:"api_key"`
 	BaseURL      string                             `json:"base_url"`
 	Region       string                             `json:"region"`
 	ModelInfo    *[]service.CreateInstanceModelInfo `json:"model_info" binding:"required"`
@@ -698,7 +698,7 @@ func (h *ProviderHandler) AlterProviderInstance(c *gin.Context) {
 		return
 	}
 
-	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey, req.BaseURL, req.Region, *req.ModelInfo)
+	code, err := h.modelProviderService.AlterProviderInstance(ctx, userID, providerName, instanceName, req.InstanceName, req.APIKey.String(), req.BaseURL, req.Region, *req.ModelInfo)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

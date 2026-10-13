@@ -29,7 +29,9 @@ const buildMineruApiKey = (values: Record<string, any>) => {
   ) {
     delete cfg.mineru_server_url;
   }
-  return cfg;
+  // Go instance APIs decode api_key as a string. Sending the config object
+  // yields "Mismatch type string with value object" on verify/save.
+  return JSON.stringify(cfg);
 };
 
 /**

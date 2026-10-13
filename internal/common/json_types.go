@@ -16,7 +16,40 @@
 
 package common
 
-import "encoding/json"
+import (
+	"bytes"
+	"encoding/json"
+)
+
+// FlexibleJSONString unmarshals a JSON string, or a JSON object/array by
+// keeping the compact JSON text. Provider UIs (MinerU, OpenDataLoader)
+// historically POST api_key as an object while instance APIs persist it as
+// TEXT; Sonic otherwise fails with "Mismatch type string with value object".
+type FlexibleJSONString string
+
+func (s FlexibleJSONString) String() string { return string(s) }
+
+func (s *FlexibleJSONString) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || bytes.Equal(data, []byte("null")) {
+		*s = ""
+		return nil
+	}
+	if data[0] == '"' {
+		var str string
+		if err := json.Unmarshal(data, &str); err != nil {
+			return err
+		}
+		*s = FlexibleJSONString(str)
+		return nil
+	}
+	*s = FlexibleJSONString(data)
+	return nil
+}
+
+func (s FlexibleJSONString) MarshalJSON() ([]byte, error) {
+	return json.Marshal(string(s))
+}
 
 // StringSlice is a []string that unmarshals from either a JSON string or
 // a JSON array of strings.  This matches Python endpoints that accept

@@ -19,6 +19,8 @@ package common
 import (
 	"encoding/json"
 	"testing"
+
+	"github.com/bytedance/sonic"
 )
 
 func TestStringSlice_UnmarshalJSON_Array(t *testing.T) {
@@ -110,5 +112,53 @@ func TestStringSlice_EmbeddedInStruct(t *testing.T) {
 	}
 	if len(r2.KbIDs) != 2 || r2.KbIDs[0] != "a" || r2.KbIDs[1] != "b" {
 		t.Fatalf("got %v", []string(r2.KbIDs))
+	}
+}
+
+func TestFlexibleJSONString_StringOrObject(t *testing.T) {
+	type req struct {
+		APIKey FlexibleJSONString `json:"api_key"`
+	}
+	objectBody := []byte(`{"api_key":{"mineru_apiserver":"http://127.0.0.1:8000","mineru_backend":"standard"}}`)
+	stringBody := []byte(`{"api_key":"{\"mineru_apiserver\":\"http://127.0.0.1:8000\"}"}`)
+	issueBody := []byte(`{"instance_name":"ddd","api_key":{"mineru_apiserver":"http://127.0.0.1:8000"}}`)
+
+	var viaJSON req
+	if err := json.Unmarshal(objectBody, &viaJSON); err != nil {
+		t.Fatalf("encoding/json object: %v", err)
+	}
+	if viaJSON.APIKey != `{"mineru_apiserver":"http://127.0.0.1:8000","mineru_backend":"standard"}` {
+		t.Fatalf("encoding/json object api_key = %q", viaJSON.APIKey)
+	}
+
+	var viaSonic req
+	if err := sonic.Unmarshal(objectBody, &viaSonic); err != nil {
+		t.Fatalf("sonic object: %v", err)
+	}
+	if viaSonic.APIKey != viaJSON.APIKey {
+		t.Fatalf("sonic object api_key = %q, want %q", viaSonic.APIKey, viaJSON.APIKey)
+	}
+
+	var asString req
+	if err := sonic.Unmarshal(stringBody, &asString); err != nil {
+		t.Fatalf("sonic string: %v", err)
+	}
+	if asString.APIKey != `{"mineru_apiserver":"http://127.0.0.1:8000"}` {
+		t.Fatalf("sonic string api_key = %q", asString.APIKey)
+	}
+
+	type createReq struct {
+		InstanceName string             `json:"instance_name"`
+		APIKey       FlexibleJSONString `json:"api_key"`
+	}
+	var issue createReq
+	if err := sonic.Unmarshal(issueBody, &issue); err != nil {
+		t.Fatalf("issue #20881 body: %v", err)
+	}
+	if issue.InstanceName != "ddd" {
+		t.Fatalf("instance_name = %q", issue.InstanceName)
+	}
+	if issue.APIKey != `{"mineru_apiserver":"http://127.0.0.1:8000"}` {
+		t.Fatalf("issue api_key = %q", issue.APIKey)
 	}
 }

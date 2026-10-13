@@ -52,6 +52,21 @@ import {
 } from '@/utils/llm-util';
 import { useWarnEmptyModel } from './use-warn-empty-model';
 
+// Go instance APIs bind api_key as string. Nested provider configs
+// (MinerU, OpenDataLoader, Bedrock extra credentials) are objects in the
+// UI and must be JSON-stringified before POST/PUT, same as list-models.
+export function serializeProviderApiKey(
+  apiKey: string | Record<string, any> | undefined | null,
+): string | undefined {
+  if (apiKey == null) {
+    return undefined;
+  }
+  if (typeof apiKey === 'string') {
+    return apiKey;
+  }
+  return JSON.stringify(apiKey);
+}
+
 export const enum LLMApiAction {
   AllModels = 'allModels',
   AvailableProviders = 'availableProviders',
@@ -309,7 +324,10 @@ export const useAddProviderInstance = () => {
       // (native-config form) and send the remaining fields as the body.
       const { llm_factory, ...body } = params;
       const { data } = await llmService.addProviderInstance(
-        { llm_factory, data: body },
+        {
+          llm_factory,
+          data: { ...body, api_key: serializeProviderApiKey(body.api_key) },
+        },
         true,
       );
       if (data.code === 0 && !params.verify) {
@@ -349,13 +367,16 @@ export const useVerifyProviderConnection = () => {
     mutationKey: [LLMApiAction.VerifyProviderConnection],
     mutationFn: async (params: {
       provider_name: string;
-      api_key: string;
+      api_key: string | Record<string, any>;
       base_url?: string;
       region?: string;
       model_info?: IModelInfo[];
       instance_id?: string;
     }) => {
-      const { data } = await llmService.verifyProviderConnection(params);
+      const { data } = await llmService.verifyProviderConnection({
+        ...params,
+        api_key: serializeProviderApiKey(params.api_key) ?? '',
+      });
       return data;
     },
   });
@@ -374,8 +395,7 @@ export const useListProviderModels = () => {
       // JSON-stringified before being sent.
       const queryParams: Record<string, string> = {};
       if (api_key) {
-        queryParams.api_key =
-          typeof api_key === 'string' ? api_key : JSON.stringify(api_key);
+        queryParams.api_key = serializeProviderApiKey(api_key) ?? '';
       }
       if (base_url) {
         queryParams.base_url = base_url;
@@ -609,7 +629,10 @@ export const useUpdateProviderInstance = () => {
   const { isPending: loading, mutateAsync } = useMutation({
     mutationKey: [LLMApiAction.UpdateProviderInstance],
     mutationFn: async (params: IUpdateProviderInstanceRequestBody) => {
-      const { data } = await llmService.updateProviderInstance(params);
+      const { data } = await llmService.updateProviderInstance({
+        ...params,
+        api_key: serializeProviderApiKey(params.api_key),
+      });
       if (data.code === 0) {
         queryClient.invalidateQueries({
           queryKey: LlmKeys.addedProviders(),
