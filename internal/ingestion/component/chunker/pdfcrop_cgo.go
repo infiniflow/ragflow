@@ -209,7 +209,12 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			if len(single) == 0 {
 				return
 			}
-			img := util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+			var img string
+			if cropChunkType(ck) == "text" {
+				img = util.CropTextSectionPositions(positions, single, deepdoctype.DlaScale)
+			} else {
+				img = util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
+			}
 			// Release the page bitmaps now that cropping is done. They are no
 			// longer needed and may be evicted under the LRU cap; the image
 			// below is encoded from single and does not depend on the pages.
@@ -283,14 +288,17 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // set (general/token) it takes priority, so headings (CKType "heading") stay
 // excluded from preview cropping.
 func needsCrop(ck schema.ChunkDoc) bool {
-	typ := ck.CKType
-	if typ == "" {
-		typ = ck.DocType
-	}
-	switch typ {
+	switch cropChunkType(ck) {
 	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:
 		return false
 	}
+}
+
+func cropChunkType(ck schema.ChunkDoc) string {
+	if ck.CKType != "" {
+		return ck.CKType
+	}
+	return ck.DocType
 }

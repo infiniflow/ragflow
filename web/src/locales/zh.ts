@@ -2585,11 +2585,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
       wikipedia: '维基百科',
       emailTip:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       email: '邮箱',
       pubMed: 'PubMed',
       pubMedDescription:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       bGPT: 'BGPT',
       bGPTDescription:
         '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API Key。',

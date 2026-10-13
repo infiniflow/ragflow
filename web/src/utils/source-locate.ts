@@ -14,10 +14,8 @@
  *  limitations under the License.
  */
 
-/** File types that support in-app citation source location. */
-export const SourceLocateExtensions = ['pdf', 'xlsx', 'xls'] as const;
+import { ExceptiveType } from '@/constants/common';
 
 /** True when the citation should open the in-app preview locate drawer. */
 export const supportsSourceLocate = (ext?: string) =>
-  !!ext &&
-  (SourceLocateExtensions as readonly string[]).includes(ext.toLowerCase());
+  !!ext && (ExceptiveType as readonly string[]).includes(ext.toLowerCase());

@@ -23,21 +23,47 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/common"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
+
+// memoryMessageSearcher is the MemoryService surface the adapter searches.
+type memoryMessageSearcher interface {
+	SearchMessage(
+		ctx context.Context,
+		userID string,
+		filterDict, params map[string]any,
+	) ([]map[string]any, common.ErrorCode, error)
+}
+
+// queryTranslator translates the query into the tool's cross_languages.
+type queryTranslator interface {
+	CrossLanguages(
+		ctx context.Context,
+		tenantID, query string,
+		languages []string,
+	) (string, error)
+}
 
 // MemoryAdapter exposes MemoryService.SearchMessage through the agent tool's
 // retrieval interface.
 type MemoryAdapter struct {
-	svc *service.MemoryService
+	svc        memoryMessageSearcher
+	translator queryTranslator
 }
 
-// NewMemoryAdapter creates a memory retrieval adapter.
-func NewMemoryAdapter(svc *service.MemoryService) *MemoryAdapter {
-	return &MemoryAdapter{svc: svc}
+// NewMemoryAdapter creates a memory retrieval adapter. The translator applies
+// the tool's cross_languages to the query, as the dataset path does.
+func NewMemoryAdapter(svc *service.MemoryService, translator queryTranslator) *MemoryAdapter {
+	adapter := &MemoryAdapter{translator: translator}
+	if svc != nil {
+		adapter.svc = svc
+	}
+	return adapter
 }
 
 // Search performs hybrid memory-message retrieval and translates messages to
@@ -66,6 +92,18 @@ func (a *MemoryAdapter) Search(
 	if err := agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs); err != nil {
 		return nil, err
 	}
+	query := req.Query
+	if len(req.CrossLanguages) > 0 {
+		if a.translator == nil {
+			return nil, fmt.Errorf("memory retrieval: cross-language service is not configured")
+		}
+		translated, err := a.translator.CrossLanguages(ctx, req.TenantID, query, req.CrossLanguages)
+		if err != nil {
+			common.Warn("agent memory retrieval: cross-language query failed; using original query", zap.Error(err))
+		} else if strings.TrimSpace(translated) != "" {
+			query = translated
+		}
+	}
 	keywordWeight := 0.7
 	if req.KeywordsSimilarityWeight != nil {
 		keywordWeight = *req.KeywordsSimilarityWeight
@@ -79,7 +117,7 @@ func (a *MemoryAdapter) Search(
 		actorID,
 		filter,
 		map[string]any{
-			"query":                      req.Query,
+			"query":                      query,
 			"similarity_threshold":       req.SimilarityThreshold,
 			"keywords_similarity_weight": keywordWeight,
 			"top_n":                      req.TopN,
