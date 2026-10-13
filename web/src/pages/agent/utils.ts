@@ -235,6 +235,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
             pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
+            layout_recognize_auto_text: cur.layout_recognize_auto_text,
+            layout_recognize_auto_scanned: cur.layout_recognize_auto_scanned,
+            layout_recognize_auto_min_chars_per_page:
+              cur.layout_recognize_auto_min_chars_per_page,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {

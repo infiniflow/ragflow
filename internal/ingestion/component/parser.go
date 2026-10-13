@@ -478,7 +478,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	}
 	docID, _ := inputs["doc_id"].(string)
 	filename := parserInputName(inputs, docID)
-	setups := c.setups
+	setups := resolveAutoPDFSetups(c.setups, filename, binary)
 
 	// Inject run-level metadata from Globals into inputs so media
 	// dispatch branches (audio/image/video) can resolve tenant_id.

@@ -596,8 +596,15 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       pageRangeToInvalid:
         'End page must be an integer no less than the start page',
       layoutRecognize: 'PDF parser',
+      layoutRecognizeAuto: 'Auto (per document)',
+      layoutRecognizeAutoTitle: 'Auto parser sub-options',
+      layoutRecognizeAutoText: 'Text PDF parser',
+      layoutRecognizeAutoScanned: 'Scanned PDF parser',
+      layoutRecognizeAutoMinChars: 'Text-layer threshold (chars/page)',
+      layoutRecognizeAutoMinCharsTip:
+        'If the average number of non-whitespace characters per page is at or above this value, RAGFlow uses the text parser; otherwise it uses the scanned parser.',
       layoutRecognizeTip:
-        'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents.',
+        'Use a visual model for PDF layout analysis to effectively locate document titles, text blocks, images, and tables. If the naive option is chosen, only the plain text in the PDF will be retrieved. Please note that this option currently works ONLY for PDF documents. Choose Auto to pick a text or scanned parser per document from the PDF text layer.',
       taskPageSize: 'Task page size',
       taskPageSizeMessage: 'Please input your task page size!',
       taskPageSizeTip: `During layout recognition, a PDF file is split into chunks and processed in parallel to increase processing speed. This parameter sets the size of each chunk. A larger chunk size reduces the likelihood of splitting continuous text between pages.`,

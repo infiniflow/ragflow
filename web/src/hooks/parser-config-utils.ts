@@ -70,6 +70,9 @@ export const normalizeParserConfig = (
     delimiter,
     html4excel,
     layout_recognize,
+    layout_recognize_auto_text,
+    layout_recognize_auto_scanned,
+    layout_recognize_auto_min_chars_per_page,
     tag_kb_ids,
     topn_tags,
     filename_embd_weight,
@@ -140,6 +143,42 @@ export const normalizeParserConfig = (
         | undefined),
       parent_child: parentChild,
     };
+  }
+  const parserKey = Object.keys(scoped).find((key) =>
+    key.startsWith('Parser:'),
+  );
+  if (parserKey) {
+    const hasAutoFields =
+      layout_recognize !== undefined ||
+      layout_recognize_auto_text !== undefined ||
+      layout_recognize_auto_scanned !== undefined ||
+      layout_recognize_auto_min_chars_per_page !== undefined;
+    if (hasAutoFields) {
+      const node = {
+        ...((scoped[parserKey] as Record<string, any> | undefined) ?? {}),
+      };
+      const pdf = {
+        ...((node.pdf as Record<string, any> | undefined) ?? {}),
+      };
+      if (
+        typeof layout_recognize === 'string' &&
+        layout_recognize.trim().toLowerCase() === 'auto'
+      ) {
+        pdf.parse_method = layout_recognize;
+      }
+      if (layout_recognize_auto_text !== undefined) {
+        pdf.layout_recognize_auto_text = layout_recognize_auto_text;
+      }
+      if (layout_recognize_auto_scanned !== undefined) {
+        pdf.layout_recognize_auto_scanned = layout_recognize_auto_scanned;
+      }
+      if (layout_recognize_auto_min_chars_per_page !== undefined) {
+        pdf.layout_recognize_auto_min_chars_per_page =
+          layout_recognize_auto_min_chars_per_page;
+      }
+      node.pdf = pdf;
+      scoped[parserKey] = node;
+    }
   }
   return scoped;
 };

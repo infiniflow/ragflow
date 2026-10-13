@@ -8,6 +8,9 @@ export const SetupSchema = z
     // preprocess: z.array(z.string()).optional(),
     output_format: z.string().optional(),
     parse_method: z.string().optional(),
+    layout_recognize_auto_text: z.string().optional(),
+    layout_recognize_auto_scanned: z.string().optional(),
+    layout_recognize_auto_min_chars_per_page: z.coerce.number().int().positive().optional(),
     // Image OCR runs independently of the global vision-enhancement switch.
     // The dropdown used to encode this choice in parse_method; ocr_enabled is
     // the new boolean contract. Legacy setups may still carry a parse_method
