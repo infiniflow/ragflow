@@ -58,6 +58,17 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
+	activeStatus := string(entity.StatusValid)
+	if err = db.Create(&entity.UserTenant{
+		ID:        "user-1-membership",
+		UserID:    "user-1",
+		TenantID:  "user-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant owner membership: %v", err)
+	}
 	if err = db.Create(&entity.TenantModel{
 		ID:         ttsModelID,
 		ModelName:  "FunAudioLLM/CosyVoice2-0.5B",
@@ -88,7 +99,7 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}
 
 	h := NewChatHandler(service.NewChatService(), service.NewUserService())
-	h.SetMindMapDependencies(nil, nil, service.NewModelProviderService(), nil)
+	h.SetMindMapDependencies(nil, nil, service.NewModelFactory(), nil)
 
 	c, w := setupGinContextWithUser(http.MethodPost, "/api/v1/chat/audio/speech", `{"text":"hello"}`)
 	h.ChatAudioSpeech(c)

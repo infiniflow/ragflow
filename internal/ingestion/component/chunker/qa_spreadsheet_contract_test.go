@@ -72,11 +72,10 @@ func TestCSVJSONHTMLTableUsesStrictContinuationRules(t *testing.T) {
 		"name":          "qa.csv",
 		"file_type":     "csv",
 		"output_format": "json",
-		"json": []map[string]any{{
-			"doc_type_kwd": "table",
-			"text": "<table><tr><td>q1</td><td>a1</td></tr>" +
-				"<tr><td>q2</td><td>a2</td><td>trailing</td></tr></table>",
-		}},
+		"json": []map[string]any{
+			tableItem(t, "<table><tr><td>q1</td><td>a1</td></tr>"+
+				"<tr><td>q2</td><td>a2</td><td>trailing</td></tr></table>"),
+		},
 	})
 	if err != nil {
 		t.Fatal(err)

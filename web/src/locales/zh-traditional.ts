@@ -90,6 +90,8 @@ export default {
       noMoreData: `That's all. Nothing more.`,
     },
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        '可繼續上傳，系統將自動切換至支援這些檔案類型的內建解析配置。',
       dataset: '數據集',
       testing: '檢索測試',
       configuration: '配置',
@@ -215,6 +217,7 @@ export default {
       theDocumentBeingParsedCannotBeDeleted: '正在解析的文檔不能被刪除',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       settings: '設置',
       autoMetadataTip:
         '自動生成元數據。適用於解析新文件。現有文件需要重新解析才能更新（ chunk 將保留）。請注意，配置中指定的索引模型將消耗額外的 Token。',
@@ -923,7 +926,7 @@ export default {
       dataManipulation: '數據操控',
       flow: '流程',
       dialog: '對話',
-      cite: '引用',
+      cite: '顯示引文',
       citeTip: 'citeTip',
       name: '名稱',
       nameMessage: '請輸入名稱',

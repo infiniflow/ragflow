@@ -115,6 +115,9 @@ func Init(cfg *PoolConfig) error {
 			cfg.AcquireTimeout = 10 * time.Second
 		}
 
+		// The dictionaries are reloaded below, so stale lookups must not survive.
+		resetTermLookupCaches()
+
 		common.Info("Initializing analyzer pool",
 			zap.String("dict_path", cfg.DictPath),
 			zap.Int("min_size", cfg.MinSize),
@@ -529,22 +532,100 @@ func IsInitialized() bool {
 	return globalPool != nil && globalPool.initialized
 }
 
+// termLookupCacheMax caps each memo below. Reaching it rotates the memo instead
+// of freezing it: freezing lets whatever happened to arrive first occupy the
+// budget permanently, so a term that only became hot later would miss forever,
+// with no way back. Rotating keeps the memo representative of recent traffic and
+// costs one re-warm of the (small) hot set per rotation. This mirrors
+// bpeModel.memoPut in bpe.go, for the same reason: the memo is an optimisation,
+// not a correctness structure, so clearing it beats tracking recency.
+const termLookupCacheMax = 1 << 16
+
+// termCacheRotateMu serialises rotation so a burst of writers past the cap does
+// not clear the memo repeatedly. It is only taken on the rotation path, never on
+// a hit.
+var termCacheRotateMu sync.Mutex
+
+// Memoized because every lookup acquires a pooled analyzer and crosses cgo,
+// while Weights issues one freq plus one tag per token per retrieved chunk. A
+// result depends only on the term and on the dictionaries Init loads, so the
+// term alone is a valid key. Only successful lookups are cached, so a call made
+// before Init cannot pin a zero.
+//
+// The analyzer resolves both halves from the same packed trie entry, so they
+// share one memo rather than two maps keyed by the same term: that halves the
+// key storage, and a miss resolves the pair with a single analyzer checkout.
+var (
+	termLookupCache  sync.Map // term -> termLookup
+	termLookupCached atomic.Int64
+)
+
+// termLookup is one dictionary entry: the pair the analyzer resolves together.
+type termLookup struct {
+	freq int32
+	tag  string
+}
+
+func resetTermLookupCaches() {
+	termLookupCache.Clear()
+	termLookupCached.Store(0)
+}
+
+// admitTerm memoizes key -> val in cache, rotating the whole memo once it has
+// reached limit. Rotation runs before the insert, so the value just looked up
+// survives into the new generation instead of being recomputed.
+//
+// Admission is a check-then-act: concurrent writers can overshoot limit by the
+// number of writers in flight, and a rotation can race an in-flight insert (that
+// entry is dropped, its count lost with it). Both leave the memo bounded and
+// approximately counted, which is all this policy needs.
+func admitTerm[V any](cache *sync.Map, counter *atomic.Int64, limit int64, key string, val V) {
+	if counter.Load() >= limit {
+		termCacheRotateMu.Lock()
+		if counter.Load() >= limit {
+			cache.Clear()
+			counter.Store(0)
+			common.Info("term lookup memo rotated", zap.Int64("limit", limit))
+		}
+		termCacheRotateMu.Unlock()
+	}
+	if _, loaded := cache.LoadOrStore(key, val); !loaded {
+		counter.Add(1)
+	}
+}
+
+// GetTermFreqAndTag returns the frequency and the POS tag of a term, resolving
+// both in one analyzer checkout. They come from the same packed trie entry, so
+// asking for them separately pays for two checkouts and two cgo round trips.
+// Returns: the frequency, or 0 if the term is not in the dictionary; and the POS
+// tag, or "" if it has none.
+func GetTermFreqAndTag(term string) (int32, string) {
+	if v, ok := termLookupCache.Load(term); ok {
+		entry := v.(termLookup)
+		return entry.freq, entry.tag
+	}
+	entry, err := withAnalyzerResult("", func(a *rag.Analyzer) (termLookup, error) {
+		return termLookup{freq: a.GetTermFreq(term), tag: a.GetTermTag(term)}, nil
+	})
+	if err != nil {
+		return entry.freq, entry.tag
+	}
+	admitTerm(&termLookupCache, &termLookupCached, termLookupCacheMax, term, entry)
+	return entry.freq, entry.tag
+}
+
 // GetTermFreq returns the frequency of a term (matching Python rag_tokenizer.freq)
 // Returns: frequency value, or 0 if term not found
 func GetTermFreq(term string) int32 {
-	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (int32, error) {
-		return a.GetTermFreq(term), nil
-	})
-	return result
+	freq, _ := GetTermFreqAndTag(term)
+	return freq
 }
 
 // GetTermTag returns the POS tag of a term (matching Python rag_tokenizer.tag)
 // Returns: POS tag string (e.g., "n", "v", "ns"), or empty string if term not found or no tag
 func GetTermTag(term string) string {
-	result, _ := withAnalyzerResult("", func(a *rag.Analyzer) (string, error) {
-		return a.GetTermTag(term), nil
-	})
-	return result
+	_, tag := GetTermFreqAndTag(term)
+	return tag
 }
 
 var cl100kEncoder struct {

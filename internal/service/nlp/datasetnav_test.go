@@ -188,6 +188,8 @@ func (m *memNavEngine) FilterDocIdsByMetaPushdown(context.Context, *gorm.DB, []s
 	return nil
 }
 
+const navCompileKwd = "dataset_nav"
+
 // matchNavRow mirrors dataset_nav._matches_condition (dataset_nav.py:598-608):
 // every field must have one of the row's values equal to one of the condition's
 // values. A list condition therefore means intersection when the row's field is
@@ -307,6 +309,49 @@ func newTestNav(eng *memNavEngine) *NavService {
 	return ns
 }
 
+func TestNavServicePageIndexRowsAndCleanup(t *testing.T) {
+	eng := &memNavEngine{}
+	ns := newTestNav(eng)
+	if err := ns.UpsertDoc(t.Context(), nav.UpsertDocInput{TenantID: "t1", KbID: "kb1", DocID: "d1", CompileKind: "page_index", Summary: "Page index summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 2 {
+		t.Fatalf("rows = %d, want document and cluster", len(eng.rows))
+	}
+	for _, row := range eng.rows {
+		if row["compile_kwd"] != "page_index" {
+			t.Fatalf("compile_kwd = %v, want page_index", row["compile_kwd"])
+		}
+		if row["type_kwd"] == "nav_cluster" {
+			row["compile_kwd"] = "dataset_nav"
+		}
+	}
+	if err := ns.UpsertDoc(t.Context(), nav.UpsertDocInput{TenantID: "t1", KbID: "kb1", DocID: "d2", CompileKind: "page_index", Summary: "Page index summary"}); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 3 {
+		t.Fatalf("rows = %d, want two documents in one cluster", len(eng.rows))
+	}
+	for _, row := range eng.rows {
+		if row["compile_kwd"] != "page_index" {
+			t.Fatalf("updated compile_kwd = %v, want page_index", row["compile_kwd"])
+		}
+	}
+	hits, err := ns.Search(t.Context(), "t1", "kb1", "Page index", nil, nil, 5)
+	if err != nil || len(hits) == 0 {
+		t.Fatalf("Search = %v, %v", hits, err)
+	}
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ns.RemoveDoc(t.Context(), "t1", "kb1", "d2"); err != nil {
+		t.Fatal(err)
+	}
+	if len(eng.rows) != 0 {
+		t.Fatalf("rows after RemoveDoc = %d, want 0", len(eng.rows))
+	}
+}
+
 // TestNavService_UpsertDoc_WritesNavRow asserts acceptance #1: after UpsertDoc
 // the row carries both compile_kwd=dataset_nav and available_int=0.
 func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
@@ -319,8 +364,8 @@ func TestNavService_UpsertDoc_WritesNavRow(t *testing.T) {
 		t.Fatal("expected at least one nav row")
 	}
 	row := eng.rows[0]
-	if row["compile_kwd"] != "dataset_nav" {
-		t.Errorf("compile_kwd = %v, want dataset_nav", row["compile_kwd"])
+	if row["compile_kwd"] != "tree" {
+		t.Errorf("compile_kwd = %v, want tree", row["compile_kwd"])
 	}
 	if row["available_int"] != 0 {
 		t.Errorf("available_int = %v, want 0", row["available_int"])

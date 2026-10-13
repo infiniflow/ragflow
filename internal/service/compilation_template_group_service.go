@@ -22,9 +22,9 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
@@ -42,6 +42,8 @@ const (
 	groupScopeDataset = "dataset"
 	// maxGroupNameLen is the DB column size for compilation_template_group.name.
 	maxGroupNameLen = 128
+	// maxTemplateNameLen is the DB column size for compilation_template.name.
+	maxTemplateNameLen = 128
 )
 
 // GroupTemplate is a child-template entry in a group create/update payload.
@@ -117,17 +119,24 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 	if err := validateGroupPayload(req, true); err != nil {
 		return nil, err
 	}
+	// Fall back to a numbered name when the requested one is already taken.
+	groupName, err := common.UniqueName(strings.TrimSpace(req.Name), maxGroupNameLen, func(candidate string) (bool, error) {
+		return s.groupDAO.NameExists(ctx, dao.DB, tenantID, candidate, "")
+	})
+	if err != nil {
+		return nil, err
+	}
 	scope, err := s.deriveScope(req.Templates)
 	if err != nil {
 		return nil, err
 	}
 
-	groupID := utility.GenerateUUID()
+	groupID := common.GenerateUUID()
 	if err := dao.DB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		group := &entity.CompilationTemplateGroup{
 			ID:          groupID,
 			TenantID:    tenantID,
-			Name:        strings.TrimSpace(req.Name),
+			Name:        groupName,
 			Description: strptr(req.Description),
 			Scope:       scope,
 			Status:      strptr(string(entity.StatusValid)),
@@ -135,7 +144,7 @@ func (s *CompilationTemplateGroupService) CreateGroup(ctx context.Context, tenan
 		if cerr := s.groupDAO.Create(ctx, tx, group); cerr != nil {
 			return cerr
 		}
-		return s.insertChildren(ctx, tx, tenantID, groupID, req.Templates, nil)
+		return s.insertChildren(ctx, tx, tenantID, groupID, groupName, req.Templates)
 	}); err != nil {
 		return nil, err
 	}
@@ -363,15 +372,24 @@ func validateGroupPayload(req *GroupRequest, requireAll bool) error {
 	return nil
 }
 
-// insertChildren inserts new child templates. usedForReconcile controls whether
-// the duplicate-name guard applies (create always; reconcile passes seen set).
-func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate, seen map[string]struct{}) error {
+// insertChildren inserts new child templates. A group that holds a single
+// template mirrors the resolved group name onto that template so the two never
+// diverge after the group name falls back to "name(N)"; otherwise a requested
+// name already used in the group falls back to a numbered suffix.
+func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db *gorm.DB, tenantID, groupID, groupName string, templates []*GroupTemplate) error {
 	for _, child := range templates {
-		name := strings.TrimSpace(child.Name)
-		if exists, err := s.templateDAO.NameExistsInGroup(ctx, dao.DB, tenantID, groupID, name, ""); err != nil {
-			return err
-		} else if exists {
-			return groupValidationErrorf("template name '%s' already exists in this group.", name)
+		// The client submits the template name as the group name, so a single
+		// child must share the (possibly deduped) group name or the update
+		// endpoint would reject it as a duplicate group name.
+		name := groupName
+		if len(templates) != 1 {
+			var err error
+			name, err = common.UniqueName(strings.TrimSpace(child.Name), maxTemplateNameLen, func(candidate string) (bool, error) {
+				return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
+			})
+			if err != nil {
+				return err
+			}
 		}
 		desc := child.Description
 		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
@@ -380,7 +398,7 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 		}
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
-			ID:       utility.GenerateUUID(),
+			ID:       common.GenerateUUID(),
 			TenantID: &tenantID,
 			GroupID:  &groupID,
 			Name:     name,
@@ -401,6 +419,14 @@ func (s *CompilationTemplateGroupService) insertChildren(ctx context.Context, db
 // reconcileChildren mirrors the Python update_group child reconciliation:
 // existing children (matched by id, or by submitted order for legacy clients)
 // are updated in place, new ones inserted, and removed ones soft-deleted.
+//
+// The reconciliation runs in four passes so a rename onto a name that this same
+// update frees (a dropped child, swapped names) is not rejected as a conflict,
+// while a rename onto a name held by a surviving child still fails:
+//  1. resolve each submitted entry to its existing target,
+//  2. soft-delete the children that leave the group,
+//  3. apply the renames and inserts,
+//  4. reject duplicated (case-insensitive) names among the surviving children.
 func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context, db *gorm.DB, tenantID, groupID string, templates []*GroupTemplate) error {
 	current, err := s.templateDAO.ListByGroup(ctx, db, groupID)
 	if err != nil {
@@ -410,9 +436,18 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 	for _, c := range current {
 		currentByID[c.ID] = c
 	}
+
+	type resolvedChild struct {
+		child  *GroupTemplate
+		target *entity.CompilationTemplate
+		name   string
+	}
 	seenNames := map[string]struct{}{}
 	retained := map[string]struct{}{}
+	resolved := make([]resolvedChild, 0, len(templates))
 
+	// Pass 1: resolve targets before any write so the soft-deletes in pass 2 can
+	// run first.
 	for index, child := range templates {
 		name := strings.TrimSpace(child.Name)
 		if _, dup := seenNames[name]; dup {
@@ -434,33 +469,64 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 				target = current[index]
 			}
 		}
+		if target != nil {
+			retained[target.ID] = struct{}{}
+		}
+		resolved = append(resolved, resolvedChild{child: child, target: target, name: name})
+	}
 
-		config := fillConfigDefaultLLM(ctx, s.tenantDAO, child.Config, &tenantID)
+	// Pass 2: drop the children that leave the group before applying renames, so
+	// a rename onto one of their names is not reported as a conflict.
+	for _, c := range current {
+		if _, keep := retained[c.ID]; keep {
+			continue
+		}
+		if err := s.templateDAO.UpdateStatusByID(ctx, db, c.ID, string(entity.StatusInvalid)); err != nil {
+			return err
+		}
+		// Mirror Python _purge_stale_invalid_children: permanently drop
+		// any stale invalid non-builtin template of the same name, scoped to
+		// this group so a same-named template in another group is untouched.
+		if c.Name != "" && !c.IsBuiltin {
+			if err := s.templateDAO.HardDeleteOrphansByName(ctx, db, tenantID, groupID, c.Name); err != nil {
+				return err
+			}
+		}
+	}
+
+	// Pass 3: apply updates and inserts.
+	for _, item := range resolved {
+		config := fillConfigDefaultLLM(ctx, s.tenantDAO, item.child.Config, &tenantID)
 		if config == nil {
 			config = entity.JSONMap{}
 		}
-		desc := child.Description
-		if target != nil {
+		desc := item.child.Description
+		if item.target != nil {
 			updates := map[string]interface{}{
-				"name": name, "kind": strings.TrimSpace(child.Kind), "config": config,
+				"name": item.name, "kind": strings.TrimSpace(item.child.Kind), "config": config,
 			}
 			if desc != "" {
 				updates["description"] = desc
 			}
-			if err := s.templateDAO.UpdateFields(ctx, db, target.ID, updates); err != nil {
+			if err := s.templateDAO.UpdateFields(ctx, db, item.target.ID, updates); err != nil {
 				return err
 			}
-			retained[target.ID] = struct{}{}
 			continue
 		}
-		newID := utility.GenerateUUID()
+		newName, err := common.UniqueName(item.name, maxTemplateNameLen, func(candidate string) (bool, error) {
+			return s.templateDAO.NameExistsInGroup(ctx, db, tenantID, groupID, candidate, "")
+		})
+		if err != nil {
+			return err
+		}
+		newID := common.GenerateUUID()
 		valid := string(entity.StatusValid)
 		tmpl := &entity.CompilationTemplate{
 			ID:       newID,
 			TenantID: &tenantID,
 			GroupID:  &groupID,
-			Name:     name,
-			Kind:     strings.TrimSpace(child.Kind),
+			Name:     newName,
+			Kind:     strings.TrimSpace(item.child.Kind),
 			Config:   config,
 			Status:   &valid,
 		}
@@ -470,22 +536,56 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 		if err := s.templateDAO.Save(ctx, db, tmpl); err != nil {
 			return err
 		}
-		retained[newID] = struct{}{}
 	}
 
+	// Pass 4: reject the case-insensitive duplicates this update introduces.
+	// Names that this update renames or creates are checked against the final
+	// group, while pre-existing duplicates between untouched names are left alone
+	// so a legacy group stays editable.
+	oldNames := make(map[string]string, len(current))
 	for _, c := range current {
-		if _, keep := retained[c.ID]; !keep {
-			if err := s.templateDAO.UpdateStatusByID(ctx, db, c.ID, string(entity.StatusInvalid)); err != nil {
-				return err
-			}
-			// Mirror Python _purge_stale_invalid_children: permanently drop
-			// any stale invalid non-builtin template of the same name, scoped to
-			// this group so a same-named template in another group is untouched.
-			if c.Name != "" && !c.IsBuiltin {
-				if err := s.templateDAO.HardDeleteOrphansByName(ctx, db, tenantID, groupID, c.Name); err != nil {
-					return err
-				}
-			}
+		oldNames[c.ID] = c.Name
+	}
+	return s.assertUniqueChildNames(ctx, db, groupID, oldNames)
+}
+
+// assertUniqueChildNames rejects a group whose valid children collide on a
+// case-insensitive name, matching the DAO's duplicate guard which ignores
+// built-in templates. oldNames maps each child id to its name before the
+// update; a collision is only an error when at least one of the colliding rows
+// was renamed or newly created, so pre-existing duplicates between untouched
+// names are tolerated.
+func (s *CompilationTemplateGroupService) assertUniqueChildNames(ctx context.Context, db *gorm.DB, groupID string, oldNames map[string]string) error {
+	children, err := s.templateDAO.ListByGroup(ctx, db, groupID)
+	if err != nil {
+		return err
+	}
+	type bucket struct {
+		count      int
+		anyChanged bool
+		name       string
+	}
+	buckets := make(map[string]*bucket, len(children))
+	for _, c := range children {
+		if c.IsBuiltin {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(c.Name))
+		b := buckets[key]
+		if b == nil {
+			b = &bucket{}
+			buckets[key] = b
+		}
+		b.count++
+		old, existed := oldNames[c.ID]
+		if !existed || !strings.EqualFold(strings.TrimSpace(old), strings.TrimSpace(c.Name)) {
+			b.anyChanged = true
+			b.name = c.Name
+		}
+	}
+	for _, b := range buckets {
+		if b.count >= 2 && b.anyChanged {
+			return groupValidationErrorf("template name '%s' already exists in this group.", b.name)
 		}
 	}
 	return nil

@@ -11,7 +11,7 @@ dependencies = [
     "elasticsearch-dsl==8.12.0",
     "json-repair==0.60.1",
     "mysql-connector-python>=9.0.0,<10.0.0",
-    "werkzeug>=3.1.7,<4",
+    "werkzeug>=3.1.9,<4",
     "regex>=2025.11.3",
     "reportlab>=4.4.1",
     "scholarly==1.7.11",

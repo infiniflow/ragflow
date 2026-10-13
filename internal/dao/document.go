@@ -55,7 +55,7 @@ func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*e
 // transaction and perform no external I/O while holding the lock.
 func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
-	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&document, "id = ?", id).Error
+	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -577,19 +577,12 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 	return result, nil
 }
 
-func (dao *DocumentDAO) GetByNameAndKBID(ctx context.Context, db *gorm.DB, name, kbID string) ([]*entity.Document, error) {
-	var docs []*entity.Document
-	err := db.WithContext(ctx).Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
-	return docs, err
-}
-
-// ListNamesByKbID returns every document name in a dataset, used to compute a
-// non-colliding upload filename (mirrors Python duplicate_name).
-func (dao *DocumentDAO) ListNamesByKbID(ctx context.Context, db *gorm.DB, kbID string) ([]string, error) {
-	var names []string
-	err := db.WithContext(ctx).Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
-	if err != nil {
-		return nil, err
-	}
-	return names, nil
+// NameExistsInKB reports whether a document with the given name already
+// exists in the dataset, comparing names case-insensitively.
+func (dao *DocumentDAO) NameExistsInKB(ctx context.Context, db *gorm.DB, kbID, name string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("LOWER(name) = LOWER(?) AND kb_id = ?", name, kbID).
+		Count(&count).Error
+	return count > 0, err
 }

@@ -81,21 +81,46 @@ func (e *wikiMapStoreEngine) Search(_ context.Context, req *types.SearchRequest)
 }
 
 func rowMatchesFilter(row map[string]interface{}, filter map[string]interface{}) bool {
-	if expected, ok := filter["available_int"].(int); ok {
-		if value, ok := row["available_int"].(int); !ok || value != expected {
-			return false
-		}
-	}
-	if mustNot, ok := filter["must_not"].(map[string]interface{}); ok {
-		if exists, ok := mustNot["exists"].(string); ok {
-			if _, present := row[exists]; present {
+	return matchesStoredCompilationRow(row, types.CompilationFilter(filter))
+}
+
+func matchesStoredCompilationRow(row, filter map[string]interface{}) bool {
+	for field, value := range filter {
+		switch field {
+		case "and":
+			for _, child := range types.FilterClauses(value) {
+				if !matchesStoredCompilationRow(row, child) {
+					return false
+				}
+			}
+		case "or":
+			matched := false
+			for _, child := range types.FilterClauses(value) {
+				matched = matched || matchesStoredCompilationRow(row, child)
+			}
+			if !matched {
 				return false
 			}
-		}
-	}
-	for _, field := range []string{"compile_kwd", "type_kwd"} {
-		if expected, ok := filter[field].(string); ok && mapStoreString(row[field]) != expected {
-			return false
+		case "must_not":
+			if matchesStoredCompilationRow(row, value.(map[string]interface{})) {
+				return false
+			}
+		case "exists":
+			if mapStoreString(row[value.(string)]) == "" {
+				return false
+			}
+		default:
+			if expected, ok := value.([]string); ok {
+				matched := false
+				for _, v := range expected {
+					matched = matched || mapStoreString(row[field]) == v
+				}
+				if !matched {
+					return false
+				}
+			} else if !reflect.DeepEqual(row[field], value) {
+				return false
+			}
 		}
 	}
 	return true
@@ -143,7 +168,8 @@ func TestWikiMapVersionStoreUsesNonSearchableDocStoreRows(t *testing.T) {
 		"id":             "version-a",
 		"doc_id":         "wiki_map_cache:doc-1",
 		"kb_id":          "kb-1",
-		"compile_kwd":    wikiMapExtractCompileKWD,
+		"compile_kwd":    "wiki",
+		"type_kwd":       wikiMapExtractCompileKWD,
 		"available_int":  0,
 		"chunk_hash_kwd": "hash-a",
 	} {

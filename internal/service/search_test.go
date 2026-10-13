@@ -17,12 +17,15 @@
 package service
 
 import (
+	"errors"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupSearchServiceTestDB(t *testing.T) {
@@ -75,7 +78,7 @@ func TestSearchServiceUpdateRejectsUnauthorizedSearchID(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected authorization error")
 	}
-	if err.Error() != "no authorization" {
+	if !errors.Is(err, permission.ErrResourceNotFound) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -97,8 +100,8 @@ func TestSearchServiceCreateAndUpdateRoundTrip(t *testing.T) {
 		SearchConfig: map[string]interface{}{},
 	}
 	_, err = NewSearchService().UpdateSearch(ctx, "user-2", created.SearchID, req)
-	if err == nil || err.Error() != "no authorization" {
-		t.Fatalf("expected no authorization, got %v", err)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 
 	// The owner can update name + merge config.
@@ -189,5 +192,130 @@ func TestSearchServiceListSearchesNicknameFallsBackToTenantID(t *testing.T) {
 	}
 	if got, want := result.SearchApps[0]["nickname"], "user-1"; got != want {
 		t.Fatalf("nickname = %v, want %v", got, want)
+	}
+}
+
+func TestSearchServiceListSearchesUsesPermissionScope(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	valid := string(entity.StatusValid)
+	for _, row := range []entity.Search{
+		{ID: "team-search", TenantID: "team-tenant", CreatedBy: "team-owner", Name: "Team Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+		{ID: "member-search", TenantID: "member-1", CreatedBy: "member-1", Name: "Member Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+		{ID: "unshared-search", TenantID: "other-tenant", CreatedBy: "other-owner", Name: "Unshared Search", SearchConfig: entity.JSONMap{}, Status: &valid},
+	} {
+		search := row
+		if err := dao.DB.Create(&search).Error; err != nil {
+			t.Fatalf("create search %s: %v", search.ID, err)
+		}
+	}
+	for _, membership := range []entity.UserTenant{
+		{ID: "member-team", UserID: "member-1", TenantID: "team-tenant", Role: string(permission.RoleNormal), Status: &valid},
+		{ID: "owner-team", UserID: "team-owner", TenantID: "team-tenant", Role: string(permission.RoleOwner), Status: &valid},
+	} {
+		row := membership
+		if err := dao.DB.Create(&row).Error; err != nil {
+			t.Fatalf("create membership %s: %v", row.ID, err)
+		}
+	}
+
+	result, err := NewSearchService().ListSearches(t.Context(), "member-1", "", 0, 0, nil, nil)
+	if err != nil {
+		t.Fatalf("ListSearches failed: %v", err)
+	}
+	if result.Total != 1 || len(result.SearchApps) != 1 {
+		t.Fatalf("ListSearches returned total=%d rows=%d, want only the member-owned app", result.Total, len(result.SearchApps))
+	}
+	ids := map[string]bool{}
+	for _, app := range result.SearchApps {
+		ids[app["id"].(string)] = true
+	}
+	if ids["team-search"] || !ids["member-search"] || ids["unshared-search"] {
+		t.Fatalf("ListSearches returned unauthorized scope: %v", ids)
+	}
+}
+
+func TestSearchServiceSeparatesSearchReadFromRunPermission(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	valid := string(entity.StatusValid)
+	search := entity.Search{
+		ID:           "team-search",
+		TenantID:     "team-tenant",
+		CreatedBy:    "team-owner",
+		Name:         "Team Search",
+		SearchConfig: entity.JSONMap{},
+		Status:       &valid,
+	}
+	if err := dao.DB.Create(&search).Error; err != nil {
+		t.Fatalf("create search: %v", err)
+	}
+	membership := entity.UserTenant{
+		ID:       "member-team",
+		UserID:   "member-1",
+		TenantID: "team-tenant",
+		Role:     string(permission.RoleNormal),
+		Status:   &valid,
+	}
+	if err := dao.DB.Create(&membership).Error; err != nil {
+		t.Fatalf("create membership: %v", err)
+	}
+
+	service := NewSearchService()
+	if _, err := service.GetSearchDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("tenant member should not be able to read another user's Search App metadata, got %v", err)
+	}
+	if _, err := service.GetDetail(t.Context(), "member-1", search.ID); !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("tenant member should not be able to run another user's Search App, got %v", err)
+	}
+}
+
+// TestSearchServiceListSearchesPaginatesOwnerFilter verifies that owner_ids
+// filtering and pagination happen in SQL while total counts all matching rows.
+func TestSearchServiceListSearchesPaginatesOwnerFilter(t *testing.T) {
+	setupSearchServiceTestDB(t)
+	ctx := t.Context()
+
+	for i := 1; i <= 5; i++ {
+		createTime := int64(i * 100)
+		status := string(entity.StatusValid)
+		if err := dao.DB.Create(&entity.Search{
+			ID:           fmt.Sprintf("search-%d", i),
+			TenantID:     "tenant-1",
+			Name:         fmt.Sprintf("Search %d", i),
+			CreatedBy:    "tenant-1",
+			SearchConfig: entity.JSONMap{},
+			Status:       &status,
+			BaseModel:    entity.BaseModel{CreateTime: &createTime},
+		}).Error; err != nil {
+			t.Fatalf("failed to create search %d: %v", i, err)
+		}
+	}
+
+	tests := []struct {
+		name     string
+		page     int
+		pageSize int
+		wantIDs  []string
+	}{
+		{name: "middle page", page: 2, pageSize: 2, wantIDs: []string{"search-3", "search-2"}},
+		{name: "unpaginated returns every row", page: 0, pageSize: 0, wantIDs: []string{"search-5", "search-4", "search-3", "search-2", "search-1"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, err := NewSearchService().ListSearches(ctx, "tenant-1", "", tt.page, tt.pageSize, []dao.OrderTerm{{Column: "create_time", Desc: true}}, []string{"tenant-1"})
+			if err != nil {
+				t.Fatalf("ListSearches failed: %v", err)
+			}
+			if result.Total != 5 {
+				t.Fatalf("total = %d, want 5", result.Total)
+			}
+			if len(result.SearchApps) != len(tt.wantIDs) {
+				t.Fatalf("got %d search apps, want %d", len(result.SearchApps), len(tt.wantIDs))
+			}
+			for i, app := range result.SearchApps {
+				if got := app["id"]; got != tt.wantIDs[i] {
+					t.Fatalf("search app %d id = %v, want %s", i, got, tt.wantIDs[i])
+				}
+			}
+		})
 	}
 }

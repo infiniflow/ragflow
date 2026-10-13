@@ -34,7 +34,7 @@ func page(pageType, slug string, outlinks ...string) wikiPageProjection {
 
 func findEntity(rows []map[string]interface{}, slug string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiEntity && r["slug_kwd"] == slug {
 			return r
 		}
 	}
@@ -43,7 +43,7 @@ func findEntity(rows []map[string]interface{}, slug string) map[string]interface
 
 func findRelation(rows []map[string]interface{}, from, to string) map[string]interface{} {
 	for _, r := range rows {
-		if r["compile_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
+		if r["compile_kwd"] == "wiki" && r["type_kwd"] == compileKwdWikiRelation && r["from_kwd"] == from && r["to_kwd"] == to {
 			return r
 		}
 	}
@@ -64,6 +64,15 @@ func TestProjectWikiGraphRowsWritesSearchContent(t *testing.T) {
 	entity := findEntity(rows, "entity/刘备")
 	if entity == nil {
 		t.Fatal("missing entity")
+	}
+	var payload struct {
+		Description string `json:"description"`
+	}
+	if err := json.Unmarshal([]byte(metaString(entity, "content_with_weight")), &payload); err != nil {
+		t.Fatalf("decode graph entity: %v", err)
+	}
+	if payload.Description != p.Summary {
+		t.Fatalf("description = %q, want stored summary %q", payload.Description, p.Summary)
 	}
 	// Python tokenizes slug + description into content_ltks and writes no title
 	// token column on the entity row (dataset_wiki_generator.py:750-773); the
@@ -252,8 +261,8 @@ func TestProjectWikiGraphRowsFieldMapping(t *testing.T) {
 	if e == nil {
 		t.Fatalf("missing entity")
 	}
-	if e["entity_type_kwd"] != "wiki_concept" {
-		t.Fatalf("expected entity_type_kwd=wiki_concept, got %v", e["entity_type_kwd"])
+	if e["entity_type_kwd"] != "concept" {
+		t.Fatalf("expected entity_type_kwd=concept, got %v", e["entity_type_kwd"])
 	}
 	// id format: wiki_entity:{kb}:{slug} xxhashed to 16 hex chars.
 	id, _ := e["id"].(string)

@@ -18,9 +18,9 @@ package service
 
 import (
 	"context"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"time"
 )
 
@@ -49,7 +49,7 @@ func (s *SystemService) ListAPIKeys(ctx context.Context, tenantID string) ([]*AP
 	for i, key := range keys {
 		beta := key.Beta
 		if beta == nil || *beta == "" {
-			generatedBeta := utility.GenerateBetaAPIToken()
+			generatedBeta := common.GenerateBetaAPIToken()
 			if err = dao.DB.WithContext(ctx).Model(&entity.APIToken{}).
 				Where("tenant_id = ? AND token = ?", tenantID, key.Token).
 				Updates(map[string]interface{}{
@@ -88,9 +88,9 @@ func (s *SystemService) CreateAPIKey(ctx context.Context, tenantID string, req *
 
 	// Generate key and beta values
 	// key: "ragflow-" + secrets.token_urlsafe(32)
-	APIToken := utility.GenerateAPIToken()
+	APIToken := common.GenerateAPIToken()
 	// beta: generate_confirmation_token().replace("ragflow-", "")[:32]
-	betaAPIKey := utility.GenerateBetaAPIToken()
+	betaAPIKey := common.GenerateBetaAPIToken()
 
 	APIKeyData := &entity.APIToken{
 		TenantID: tenantID,

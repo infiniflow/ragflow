@@ -113,7 +113,8 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 
 	responses := make([]*ParseDocumentResponse, 0, len(uniqueDocIDs))
 	for _, docID := range uniqueDocIDs {
-		doc, err := s.documentDAO.GetByID(ctx, dao.DB, docID)
+		// Validate dataset membership before creating or reusing a task.
+		_, err := s.documentDAO.GetByDocumentIDAndDatasetID(ctx, dao.DB, docID, datasetID)
 		if err != nil {
 			responses = append(responses, &ParseDocumentResponse{
 				DocumentID: docID,
@@ -121,14 +122,6 @@ func (s *IngestionTaskService) CreateForDocuments(ctx context.Context, datasetID
 			})
 			continue
 		}
-		if doc == nil {
-			responses = append(responses, &ParseDocumentResponse{
-				DocumentID: docID,
-				Result:     "no such document",
-			})
-			continue
-		}
-
 		task := &entity.IngestionTask{
 			DocumentID: docID,
 			UserID:     userID,
@@ -278,14 +271,14 @@ func (s *IngestionTaskService) TransitionTaskToRunning(ctx context.Context, task
 
 // PrepareValidatedRun performs the document and run-log initialization only
 // after ReloadAndValidateRunIdentity has accepted the task's captured binding.
+// Committed chunk/token counts must survive redelivery so ApplyDocCounts rolls
+// only the result's delta into the knowledge base aggregate.
 func (s *IngestionTaskService) PrepareValidatedRun(ctx context.Context, task *entity.IngestionTask) {
 	if task == nil {
 		return
 	}
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, task.DocumentID, map[string]interface{}{
 		"progress":         float64(0),
-		"chunk_num":        int64(0),
-		"token_num":        int64(0),
 		"process_duration": float64(0),
 		"process_begin_at": time.Now(),
 	}); err != nil {
@@ -576,6 +569,9 @@ func (s *IngestionTaskService) createAndEnqueueWithKBCache(ctx context.Context, 
 		return nil, err
 	}
 	if existing != nil {
+		if existing.DatasetID != task.DatasetID {
+			return nil, fmt.Errorf("document id %s has an ingestion task in a different dataset", task.DocumentID)
+		}
 		switch existing.Status {
 		case common.CREATED:
 			if err = s.ensureRunIdentity(ctx, existing, kbCache); err != nil {
