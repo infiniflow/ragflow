@@ -126,7 +126,7 @@ func SetExtractorConcurrency(n int) {
 }
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
-// keyword/question system prompts (same convention as rag/prompts/*.md).
+// keyword/question system prompts.
 // It is replaced with the configured top_n so the count slider stays
 // authoritative even when a prompt was pre-filled by the frontend.
 var extractorTopNPattern = regexp.MustCompile(`\{\{\s*topn\s*\}\}`)

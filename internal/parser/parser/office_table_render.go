@@ -172,7 +172,15 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			rowsOut = append(rowsOut, trimCells(r.cells))
 			matrix = append(matrix, r.tuple)
 		}
-		td := &entity.TableData{Rows: rowsOut, HeaderRows: 1, Caption: sheet}
+		grid := make([][]entity.TableCell, 0, len(rowsOut))
+		for _, r := range rowsOut {
+			cells := make([]entity.TableCell, 0, len(r))
+			for _, c := range r {
+				cells = append(cells, entity.TableCell{Text: c})
+			}
+			grid = append(grid, cells)
+		}
+		td := &entity.TableData{Grid: grid, HeaderRows: 1, Caption: sheet}
 		item := NewTableDataJSONItem(td, sheet, matrix)
 		item["sheet_index"] = sheetIndex
 		return item

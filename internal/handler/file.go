@@ -43,8 +43,7 @@ type FileHandler struct {
 }
 
 func respondFileServiceError(c *gin.Context, err error) {
-	if errors.Is(err, file.ErrNoAuthorization) {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "no authorization")
+	if respondPermissionErrorIf(c, err, true) {
 		return
 	}
 	jsonInternalError(c, err)
@@ -66,6 +65,7 @@ func NewFileHandler(fileService *file.FileService, userService *service.UserServ
 // @Accept json
 // @Produce json
 // @Param parent_id query string false "parent folder ID (empty means root folder)"
+// @Param tenant_id query string false "tenant whose files are listed (defaults to the current user)"
 // @Param keywords query string false "search keywords (case-insensitive)"
 // @Param page query int false "page number (default: 1, min: 1)"
 // @Param page_size query int false "items per page (default: 15, min: 1, max: 100)"
@@ -83,6 +83,10 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	userID := user.ID
 
 	parentID := c.Query("parent_id")
+	tenantID := c.Query("tenant_id")
+	if tenantID == "" {
+		tenantID = userID
+	}
 	keywords := c.Query("keywords")
 
 	page := 1
@@ -120,9 +124,9 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ctx := c.Request.Context()
-	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, terms, keywords)
+	result, err := h.fileService.ListFilesForTenant(ctx, userID, tenantID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -149,7 +153,7 @@ func (h *FileHandler) GetRootFolder(c *gin.Context) {
 	// Get root folder
 	rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 
@@ -233,6 +237,7 @@ func (h *FileHandler) GetAllParentFolders(c *gin.Context) {
 // @Accept json
 // @Produce json
 // @Param id path string true "file ID"
+// @Param tenant_id query string false "tenant the file belongs to"
 // @Success 200 {object} map[string]interface{}
 // @Router /api/v1/files/{id}/ancestors [get]
 func (h *FileHandler) GetFileAncestors(c *gin.Context) {
@@ -251,7 +256,14 @@ func (h *FileHandler) GetFileAncestors(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Get all parent folders with permission check
-	parentFolders, err := h.fileService.GetAllParentFolders(ctx, userID, fileID)
+	tenantID := c.Query("tenant_id")
+	var parentFolders []map[string]interface{}
+	var err error
+	if tenantID == "" {
+		parentFolders, err = h.fileService.GetAllParentFolders(ctx, userID, fileID)
+	} else {
+		parentFolders, err = h.fileService.GetAllParentFoldersForTenant(ctx, userID, tenantID, fileID)
+	}
 	if err != nil {
 		respondFileServiceError(c, err)
 		return
@@ -310,7 +322,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
-				jsonInternalError(c, err)
+				respondFileServiceError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
@@ -332,6 +344,9 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		ctx := c.Request.Context()
 		result, err := h.fileService.UploadFile(ctx, userID, parentID, files, uploadLimit)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
@@ -351,7 +366,7 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 		if parentID == "" {
 			rootFolder, err := h.fileService.GetRootFolder(ctx, userID)
 			if err != nil {
-				jsonInternalError(c, err)
+				respondFileServiceError(c, err)
 				return
 			}
 			parentID = rootFolder["id"].(string)
@@ -359,6 +374,9 @@ func (h *FileHandler) UploadFile(c *gin.Context) {
 
 		result, err := h.fileService.CreateFolder(ctx, userID, req.Name, parentID, req.Type)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
 			return
 		}
@@ -397,9 +415,11 @@ func (h *FileHandler) DeleteFiles(c *gin.Context) {
 		return
 	}
 
-	success, message := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs)
-	if !success {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
+	if err := h.fileService.DeleteFiles(c.Request.Context(), user.ID, req.IDs); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -452,9 +472,11 @@ func (h *FileHandler) MoveFiles(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	success, message := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName)
-	if !success {
-		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, message)
+	if err := h.fileService.MoveFiles(ctx, user.ID, req.SrcFileIDs, req.DestFileID, req.NewName); err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		common.ResponseWithCodeData(c, common.CodeBadRequest, nil, err.Error())
 		return
 	}
 
@@ -488,6 +510,9 @@ func (h *FileHandler) Download(c *gin.Context) {
 	// Get file metadata and check permission
 	file, err := h.fileService.GetFileContent(ctx, userID, fileID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeUnauthorized, nil, err.Error())
 		return
 	}

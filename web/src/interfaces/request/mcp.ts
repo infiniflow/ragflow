@@ -1,4 +1,9 @@
 import { IExportedMcpServer } from '@/interfaces/database/mcp';
+import { IPaginationRequestBody } from './base';
+
+export interface IMcpServerListRequestBody extends IPaginationRequestBody {
+  tenant_id?: string;
+}
 
 export interface ITestMcpRequestBody {
   mcp_id?: string;

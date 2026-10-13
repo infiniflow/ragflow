@@ -14,6 +14,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
@@ -33,7 +34,7 @@ type logListCapture struct {
 	pageSize int
 }
 
-func (s fakeConnectorService) ListConnectors(context.Context, string) (*service.ListConnectorsResponse, error) {
+func (s fakeConnectorService) ListConnectors(context.Context, string, string) (*service.ListConnectorsResponse, error) {
 	return &service.ListConnectorsResponse{}, nil
 }
 
@@ -170,10 +171,9 @@ func TestConnectorHandlerGetConnector(t *testing.T) {
 		{
 			name:        "unauthorized",
 			connectorID: "connector-1",
-			service:     fakeConnectorService{err: service.ErrConnectorNoAuth},
-			wantCode:    common.CodeAuthenticationError,
-			wantData:    false,
-			wantMsg:     "no authorization",
+			service:     fakeConnectorService{err: permission.ErrPermissionDenied},
+			wantCode:    common.CodeNotFound,
+			wantMsg:     "Resource not found",
 		},
 		{
 			name:        "not found",
@@ -342,9 +342,10 @@ func TestConnectorHandlerTestConnector(t *testing.T) {
 			wantCode: common.CodeDataError,
 		},
 		{
-			name:     "unauthorized",
-			err:      service.ErrConnectorNoAuth,
-			wantCode: common.CodeAuthenticationError,
+			name:        "unauthorized",
+			err:         permission.ErrPermissionDenied,
+			wantCode:    common.CodeNotFound,
+			wantMessage: "Resource not found",
 		},
 		{
 			name:     "unsupported source",

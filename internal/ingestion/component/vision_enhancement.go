@@ -24,12 +24,9 @@ package component
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"image"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +39,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -54,7 +52,6 @@ var (
 )
 
 const (
-	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
@@ -62,38 +59,6 @@ const (
 	visionChatTimeout     = 30 * time.Second
 	visionMediaItemBudget = 10 * time.Second
 )
-
-var (
-	figureVisionPrompts     promptDirState
-	figureVisionPromptCache = make(map[string]string)
-	figureVisionPromptMu    sync.RWMutex
-)
-
-// promptDirState caches the project root that contains rag/prompts. The once
-// guard makes initialization sticky; unlike a function-local initErr, an
-// initialization failure is preserved for every subsequent call.
-type promptDirState struct {
-	once    sync.Once
-	root    string
-	initErr error
-}
-
-func (s *promptDirState) resolve(requestedRoot string) (string, error) {
-	s.once.Do(func() {
-		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
-			s.root = requestedRoot
-			return
-		}
-		s.initErr = fmt.Errorf("rag/prompts not found under project root %q", requestedRoot)
-	})
-	if s.initErr != nil {
-		return "", s.initErr
-	}
-	if s.root == "" {
-		return "", errors.New("prompts base dir not initialized")
-	}
-	return s.root, nil
-}
 
 // isUsableVisionImage reports whether raw carries a valid image data URI or a
 // base64 payload that can be sent to a vision model.
@@ -410,39 +375,11 @@ func appendItemText(item map[string]any, text string) {
 }
 
 func buildFigureVisionPrompt(language string) (string, error) {
-	template, err := loadFigureVisionPromptFile(figureVisionPromptFile)
+	template, err := (prompts.EmbeddedPromptLoader{}).Load("vision_llm_figure_describe_prompt")
 	if err != nil {
 		return "", err
 	}
 	return renderFigureVisionLanguage(template, language), nil
-}
-
-func loadFigureVisionPromptFile(filename string) (string, error) {
-	figureVisionPromptMu.RLock()
-	if cached, ok := figureVisionPromptCache[filename]; ok {
-		figureVisionPromptMu.RUnlock()
-		return cached, nil
-	}
-	figureVisionPromptMu.RUnlock()
-
-	baseDir, err := figureVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", filename)
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("figure vision prompt %q: %w", filename, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	figureVisionPromptMu.Lock()
-	figureVisionPromptCache[filename] = cached
-	figureVisionPromptMu.Unlock()
-	return cached, nil
-}
-
-func figureVisionPromptsBaseDir() (string, error) {
-	return figureVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {

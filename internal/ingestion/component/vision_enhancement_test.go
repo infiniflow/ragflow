@@ -24,8 +24,6 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -1093,33 +1091,6 @@ func TestExtractVisionAnswer_EdgeCases(t *testing.T) {
 				t.Errorf("extractVisionAnswer(%q) = %q, want %q", tc.input, got, tc.want)
 			}
 		})
-	}
-}
-
-func TestPromptDirState_FailureIsSticky(t *testing.T) {
-	dir := t.TempDir()
-	var state promptDirState
-	for i := 0; i < 2; i++ {
-		if _, err := state.resolve(dir); err == nil {
-			t.Fatalf("call %d: resolve() = nil error, want sticky init error", i+1)
-		}
-	}
-}
-
-func TestPromptDirState_SuccessIsCached(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "rag", "prompts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var state promptDirState
-	for i := 0; i < 2; i++ {
-		got, err := state.resolve(dir)
-		if err != nil {
-			t.Fatalf("call %d: resolve() error: %v", i+1, err)
-		}
-		if got != dir {
-			t.Fatalf("call %d: resolve() = %q, want %q", i+1, got, dir)
-		}
 	}
 }
 

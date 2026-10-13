@@ -4496,14 +4496,10 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	docSvc := testDocumentService(t)
-	fileSvc := file.NewFileService(
-		func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
-		docSvc,
-	)
+	fileSvc := file.NewFileService(docSvc)
 
-	success, msg := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"})
-	if !success {
-		t.Fatalf("DeleteFiles failed: %s", msg)
+	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")

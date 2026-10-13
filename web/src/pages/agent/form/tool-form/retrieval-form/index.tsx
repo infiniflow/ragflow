@@ -18,6 +18,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { t } from 'i18next';
 import { omit } from 'lodash';
 import { useForm } from 'react-hook-form';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
@@ -42,10 +43,11 @@ const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
   const ownerTenantId = useOwnerTenantId();
+  const { id: canvasID } = useParams();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
-    { ownerTenantId },
+    { canvasID },
   );
 
   const form = useForm({

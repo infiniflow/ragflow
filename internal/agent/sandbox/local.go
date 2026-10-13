@@ -179,6 +179,9 @@ func (p *LocalProvider) ProviderType() ProviderType { return ProviderLocal }
 // version, we do not set rlimits here — the limits are applied
 // to the child per-execution via Cmd.SysProcAttr.
 func (p *LocalProvider) Initialize(ctx context.Context) error {
+	if p.maxOutputBytes <= 0 {
+		return fmt.Errorf("local: max_output_bytes must be greater than 0")
+	}
 	if err := os.MkdirAll(p.workDir, 0o700); err != nil {
 		return fmt.Errorf("local: create work_dir %q: %w", p.workDir, err)
 	}

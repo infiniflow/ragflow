@@ -18,9 +18,53 @@ package tool
 
 import (
 	"context"
+	"fmt"
+	"strings"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/permission"
+
+	"gorm.io/gorm"
 )
+
+// CheckCanvasDependencies verifies that the canvas caller and canvas owner can
+// both use every configured resource. Calls outside a canvas have no entry
+// dependency and are left to their normal resource checks.
+func CheckCanvasDependencies(ctx context.Context, db *gorm.DB, kind permission.ResourceKind, ids []string) error {
+	state, err := runtime.GetStateFromContext(ctx)
+	if err != nil || state == nil {
+		return nil
+	}
+	canvasID, _ := state.Sys["canvas_id"].(string)
+	userID, _ := state.Sys["user_id"].(string)
+	canvasID = strings.TrimSpace(canvasID)
+	userID = strings.TrimSpace(userID)
+	if canvasID == "" {
+		return nil
+	}
+	if userID == "" {
+		return permission.ErrUnauthenticated
+	}
+
+	checker := permission.NewDatabaseChecker(db)
+	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		dependency := permission.ResourceRef{Kind: kind, ID: id}
+		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
+			return fmt.Errorf("%s %q: %w", kind, id, err)
+		}
+	}
+	return nil
+}
 
 // canvasTenantID derives the tenant id from canvas state, falling back to
 // user_id. Shared by agentic search and dataset-navigation tools.

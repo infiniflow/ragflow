@@ -211,6 +211,10 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)
+	if err := CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasets.kbIDs); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
+	}
 	for _, datasetID := range datasets.kbIDs {
 		if err := checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
 			Kind: permission.ResourceKindDataset, ID: datasetID,
