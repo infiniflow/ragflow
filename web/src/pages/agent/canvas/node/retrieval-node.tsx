@@ -12,8 +12,8 @@ import { get } from 'lodash';
 import { TriangleAlert } from 'lucide-react';
 import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { NodeHandleId, RetrievalFrom } from '../../constant';
-import { useCanvasID } from '../../context';
 import { RetrievalFormSchemaType } from '../../form/retrieval-form/next';
 import { useGetVariableLabelOrTypeByValue } from '../../hooks/use-get-begin-query';
 import { LabelCard } from './card';
@@ -41,7 +41,7 @@ function InnerRetrievalNode({
 
   // Names resolve through resources usable by both the canvas owner and the
   // current user.
-  const canvasID = useCanvasID();
+  const { id: canvasID } = useParams();
 
   // Resolve names/avatars for the persisted ids directly: the paginated
   // knowledge list can miss them (unloaded pages, emptied datasets filtered

@@ -32,9 +32,10 @@ import {
   useWatch,
 } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
+import { useParams } from 'react-router';
 import { z } from 'zod';
 import { RetrievalFrom, initialRetrievalValues } from '../../constant';
-import { useCanvasID, useOwnerTenantId } from '../../context';
+import { useOwnerTenantId } from '../../context';
 import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { FormWrapper } from '../components/form-wrapper';
@@ -100,7 +101,7 @@ export type RetrievalFormSchemaType = z.infer<typeof FormSchema>;
 export function MemoryDatasetForm() {
   const { t } = useTranslation();
   const form = useFormContext();
-  const canvasID = useCanvasID();
+  const { id: canvasID } = useParams();
   const retrievalFrom = useWatch({
     control: form.control,
     name: 'retrieval_from',
@@ -148,7 +149,7 @@ export function useHideKnowledgeGraphField(form: UseFormReturn<any>) {
 function RetrievalForm({ node }: INextOperatorForm) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
-  const canvasID = useCanvasID();
+  const { id: canvasID } = useParams();
 
   const outputList = useMemo(() => {
     return [

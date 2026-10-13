@@ -4498,7 +4498,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	docSvc := testDocumentService(t)
 	fileSvc := file.NewFileService(docSvc)
 
-	if err := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"}); err != nil {
+	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
 		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
