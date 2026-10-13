@@ -38,6 +38,7 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
@@ -133,7 +134,7 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	vision visionSettings,
-	window fractionWindow,
+	window progress.Window,
 ) (parser.ParseResult, bool, error) {
 	w := window
 
@@ -307,7 +308,7 @@ func maybeDispatchVisionEnhancement(
 		if resource == nil {
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
@@ -316,7 +317,7 @@ func maybeDispatchVisionEnhancement(
 			}
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		wg.Add(1)
@@ -326,7 +327,7 @@ func maybeDispatchVisionEnhancement(
 			defer func() {
 				if ctx.Err() == nil {
 					n := settled.Add(1)
-					w.report(ctx, float64(n)/float64(total))
+					w.Report(ctx, float64(n)/float64(total))
 				}
 			}()
 
@@ -354,7 +355,7 @@ func maybeDispatchVisionEnhancement(
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
-	w.report(ctx, 1.0)
+	w.Report(ctx, 1.0)
 	failedItems := 0
 	firstFailure := ""
 	for _, failure := range failures {

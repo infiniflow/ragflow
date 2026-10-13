@@ -653,6 +653,94 @@ describe('collectCanvasIssues: missing required fields', () => {
       }),
     );
   });
+
+  describe('variable assigner rows', () => {
+    const fileNode = () => makeNode('File', 'File', {});
+    const assignerNode = (variables: Record<string, any>[]) =>
+      makeNode('VariableAssigner:v1', 'VariableAssigner', { variables });
+    const wire = () => [makeEdge('File', 'VariableAssigner:v1')];
+    const edited = ['VariableAssigner:v1'];
+
+    const collectRowIssues = (variables: Record<string, any>[]) =>
+      collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+        editedNodeFormIds: edited,
+      }).filter(
+        (x) =>
+          x.nodeId === 'VariableAssigner:v1' &&
+          x.messageKey === 'flow.nodeFormInvalid',
+      );
+
+    it('flags an incomplete row only after the node was edited', () => {
+      const variables = [
+        { variable: '', operator: 'overwrite', parameter: '' },
+      ];
+
+      const untouched = collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+      });
+
+      expect(
+        untouched.some((x) => x.messageKey === 'flow.nodeFormInvalid'),
+      ).toBe(false);
+      expect(collectRowIssues(variables)).toHaveLength(1);
+    });
+
+    it('flags a row with an empty variable or operator', () => {
+      expect(
+        collectRowIssues([{ operator: 'set', parameter: 'x' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([{ variable: 'begin@a', parameter: 'x' }]),
+      ).toHaveLength(1);
+    });
+
+    it('flags a missing, empty-string or empty-array parameter', () => {
+      expect(
+        collectRowIssues([{ variable: 'begin@a', operator: 'overwrite' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'overwrite', parameter: '' },
+        ]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'append', parameter: [] },
+        ]),
+      ).toHaveLength(1);
+    });
+
+    it.each([['clear'], ['remove_first'], ['remove_last']])(
+      'skips the parameter check for the parameterless %s operator',
+      (operator) => {
+        expect(
+          collectRowIssues([{ variable: 'begin@a', operator }]),
+        ).toHaveLength(0);
+      },
+    );
+
+    it('treats 0, yes and {} as filled parameters', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: '+=', parameter: 0 },
+          { variable: 'begin@b', operator: 'set', parameter: 'yes' },
+          { variable: 'begin@c', operator: 'set', parameter: '{}' },
+        ]),
+      ).toHaveLength(0);
+    });
+
+    it('accepts a complete row and an empty variables list', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'set', parameter: 'x' },
+        ]),
+      ).toHaveLength(0);
+      expect(collectRowIssues([])).toHaveLength(0);
+    });
+  });
 });
 
 describe('collectCanvasIssues: stale resources', () => {

@@ -20,13 +20,11 @@ package agentic_rag
 // <structure_navigation> outline with chunk pointers the model can feed to
 // list_chunks.
 //
-// This is the experiment-grade port of the harness navigate_structure
-// (internal/rag/agentic-rag/runtime/tool_navigation.go). The harness version
-// was never wired to a Go-side structure reader in production, so this tool
-// reads the compiled-structure rows directly from the doc-store and reuses the
-// harness's keyword-relevance beam drill (its documented no-vector fallback).
-// The dense-vector seed and claim-recall legs are intentionally omitted here;
-// they are additive and can be layered on without changing the tool's contract.
+// This tool reads the compiled-structure rows directly from the doc-store and
+// drills them with a keyword-relevance beam, the documented no-vector
+// fallback. The dense-vector seed and claim-recall legs are intentionally
+// omitted; they are additive and can be layered on without changing the
+// tool's contract.
 //
 // Typical use: call navigate_tree first to route to a document, take its
 // doc_id, then call navigate_structure with that doc_id to see where the answer
