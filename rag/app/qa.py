@@ -299,9 +299,10 @@ def mdQuestionLevel(s):
 def csv_pair_delimiter(lines):
     """TAB, the documented delimiter, unless the file reads as comma separated.
 
-    A comma separated file can hold a TAB inside one field. Comma wins only when
-    the first row holds no TAB, every row with a TAB still splits into two values,
-    and the two-value rows with no TAB outnumber all other rows.
+    A file with no TAB reads with comma. A comma separated file can still hold a
+    TAB inside one field, so a file with a TAB reads with comma only when the
+    first non-empty row holds no TAB, every row with a TAB splits into two values,
+    and the two-value rows with no TAB outnumber all other non-empty rows.
     """
     if not any("\t" in line for line in lines):
         return ","
