@@ -60,8 +60,8 @@ const (
 	visionMediaItemBudget = 10 * time.Second
 )
 
-// isUsableVisionImage reports whether raw carries a valid image data URI or a
-// base64 payload that can be sent to a vision model.
+// isUsableVisionImage checks the encoded size and rejects raster dimensions
+// beyond the limits shared by Parser and VLM materialization.
 func isUsableVisionImage(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -107,10 +107,11 @@ func isValidBase64(s string, stripWhitespace bool) bool {
 	return false
 }
 
-// visionImageCropper materializes the VLM payload for a parsed item. Under
-// cgo it crops PDF sections on demand; inline images stay encoded. Close
-// releases any re-acquired native engine.
+// visionImageCropper prepares any source document before image admission,
+// materializes one item's VLM payload under image admission, and releases
+// source resources when the batch finishes.
 type visionImageCropper interface {
+	Prepare(ctx context.Context, item map[string]any) error
 	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
@@ -204,14 +205,18 @@ func maybeDispatchVisionEnhancement(
 		return dispatched, false, nil
 	}
 
-	// Materialize one resource at a time. The VLM semaphore is acquired before
-	// materialization, so at most visionEnhancementConcurrency encoded payloads
-	// remain live while model requests run.
+	// Prepare PDF sources outside image admission so slow storage reads do not
+	// block unrelated image materialization. The separate VLM semaphore bounds
+	// how many encoded payloads remain live while model requests run.
 	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
 		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
 		return dispatched, false, nil
 	}
+	// Close is invoked explicitly after materialization so the engine and the
+	// source bytes are released while model requests are still in flight. Keep
+	// a deferred Close as a panic/early-return safety net: Close is idempotent
+	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
 	modified := false
 	descriptions := make([]string, len(items))
@@ -240,13 +245,26 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
+			item := dispatched.JSON[itemIdx]
+			if err := cropper.Prepare(ctx, item); err != nil {
+				if ctx.Err() == nil {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("image source preparation failed: %v", err)
+				}
+				return
+			}
+
 			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
 			defer cancelItem()
 			release, err := parser.AcquireImageMedia(itemCtx)
 			if err != nil {
 				if ctx.Err() == nil && vlmReady {
-					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
-						resource = &visionImage{VLMData: payload}
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
 					}
 				}
 				if resource == nil && ctx.Err() == nil {
@@ -255,7 +273,6 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
-			item := dispatched.JSON[itemIdx]
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				cropErr := err
@@ -328,6 +345,10 @@ func maybeDispatchVisionEnhancement(
 				failures[slot] = "VLM returned an empty description"
 			}
 		}(slot, resource.VLMData)
+	}
+	if err := cropper.Close(); err != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement cleanup failed: %v", err))
+		common.Warn("vision enhancement: failed to close image cropper", zap.Error(err))
 	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
