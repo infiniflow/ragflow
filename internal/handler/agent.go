@@ -487,7 +487,22 @@ func (h *AgentHandler) RunAgent(c *gin.Context) {
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
 	doneSent := false
-	for ev := range events {
+	// Same heartbeat as the chat-completions SSE path: keeps idle
+	// connections alive through proxies during long canvas pauses.
+	heartbeat := time.NewTicker(20 * time.Second)
+	defer heartbeat.Stop()
+runLoop:
+	for {
+		var ev canvas.RunEvent
+		var ok bool
+		select {
+		case ev, ok = <-events:
+			if !ok {
+				break runLoop
+			}
+		case <-heartbeat.C:
+			ev = canvas.RunEvent{Type: "ping", Data: "{}"}
+		}
 		if ev.Type == "done" {
 			doneSent = true
 		}
