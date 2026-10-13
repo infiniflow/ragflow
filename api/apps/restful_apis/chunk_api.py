@@ -90,9 +90,10 @@ _ADD_CHUNK_TIMEOUT_SECONDS = float(os.getenv("RAGFLOW_ADD_CHUNK_TIMEOUT_SECONDS"
 # A worker that outlives its request may still be inside the doc-store insert,
 # so its chunk lock must outlive the request deadline by a wide margin.
 _ADD_CHUNK_LOCK_TTL_SECONDS = 10 * _ADD_CHUNK_TIMEOUT_SECONDS
-# add_chunk embeds and indexes in this pool so a stalled model provider or doc
-# store cannot freeze the event loop. Python cannot stop a worker that outlives
-# its request, so the pool also bounds how many of those can pile up.
+# add_chunk stores the chunk image, embeds and indexes in this pool so a stalled
+# object store, model provider or doc store cannot freeze the event loop. Python
+# cannot stop a worker that outlives its request, so the pool also bounds how
+# many of those can pile up.
 _ADD_CHUNK_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("RAGFLOW_ADD_CHUNK_WORKERS", "4")), thread_name_prefix="add-chunk")
 
 
@@ -1267,13 +1268,11 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         except ValueError as exc:
             return get_error_data_result(f"`tag_feas` {exc}")
 
+    image_binary = None
     if "image_base64" in req:
         image_binary, image_err = _decode_chunk_image_base64(req.get("image_base64"))
         if image_err:
             return get_error_data_result(message=image_err)
-        store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
-        if store_err:
-            return get_error_data_result(message=store_err)
         d["img_id"] = f"{dataset_id}-{chunk_id}"
         d["doc_type_kwd"] = "image"
 
@@ -1283,7 +1282,11 @@ async def add_chunk(tenant_id, dataset_id, document_id):
     index_name = search.index_name(dataset_tenant_id)
     abandoned = threading.Event()
 
-    def _embed_and_index():
+    def _store_image_embed_and_index():
+        if image_binary is not None:
+            store_err = _store_chunk_image_or_error(dataset_id, chunk_id, image_binary)
+            if store_err:
+                return store_err
         v, c = _encode_with_request_user(
             embd_mdl,
             [doc.name, req["content"] if not d["question_kwd"] else "\n".join(d["question_kwd"])],
@@ -1299,19 +1302,23 @@ async def add_chunk(tenant_id, dataset_id, document_id):
             raise _ChunkBeingAdded
         try:
             if abandoned.is_set():
-                return
+                return None
             is_new = settings.docStoreConn.get(chunk_id, index_name, [dataset_id]) is None
+            # The read can itself stall past the deadline.
+            if abandoned.is_set():
+                return None
             settings.docStoreConn.insert([d], index_name, dataset_id)
             if is_new:
                 DocumentService.increment_chunk_num(doc.id, doc.kb_id, c, 1, 0)
         finally:
             lock.release()
+        return None
 
     loop = asyncio.get_running_loop()
     ctx = contextvars.copy_context()
     try:
         async with asyncio.timeout(_ADD_CHUNK_TIMEOUT_SECONDS) as deadline:
-            await loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, _embed_and_index)
+            store_err = await loop.run_in_executor(_ADD_CHUNK_EXECUTOR, ctx.run, _store_image_embed_and_index)
     except TimeoutError:
         if not deadline.expired():
             raise
@@ -1323,6 +1330,8 @@ async def add_chunk(tenant_id, dataset_id, document_id):
         raise
     except _ChunkBeingAdded:
         return get_result(code=RetCode.EXCEPTION_ERROR, message=f"Chunk {chunk_id} is being added by another request")
+    if store_err:
+        return get_error_data_result(message=store_err)
 
     key_mapping = {
         "id": "id",

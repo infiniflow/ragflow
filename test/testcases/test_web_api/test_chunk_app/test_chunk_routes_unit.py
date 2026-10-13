@@ -934,6 +934,56 @@ def test_restful_add_chunk_timeout_skips_insert_and_count(monkeypatch):
 
 
 @pytest.mark.p2
+def test_restful_add_chunk_timeout_during_blocked_read_skips_insert_and_count(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    module.settings.docStoreConn.inserted.clear()
+    monkeypatch.setattr(module, "_ADD_CHUNK_TIMEOUT_SECONDS", 0.2)
+    _set_request_json(monkeypatch, module, {"content": "chunk behind a stalled read"})
+    read_started = threading.Event()
+    release = threading.Event()
+
+    def stalled_get(*_args, **_kwargs):
+        read_started.set()
+        release.wait(5)
+        return None
+
+    monkeypatch.setattr(module.settings.docStoreConn, "get", stalled_get)
+
+    res = _run(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+    assert res["code"] == module.RetCode.EXCEPTION_ERROR, res
+    assert "timed out" in res["message"], res
+    assert read_started.is_set(), "the deadline should pass while the worker is inside the read"
+
+    release.set()
+    module._ADD_CHUNK_EXECUTOR.shutdown(wait=True)
+    assert module.settings.docStoreConn.inserted == [], "a read that returns after the deadline must not be followed by an insert"
+    assert module.DocumentService.increment_calls == [], "a read that returns after the deadline must not be followed by a count"
+
+
+@pytest.mark.p2
+def test_restful_add_chunk_image_store_keeps_event_loop_responsive(monkeypatch):
+    module = _load_chunk_api_module(monkeypatch)
+    module.request = SimpleNamespace(args={}, headers={})
+    valid_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    _set_request_json(monkeypatch, module, {"content": "chunk with slow image", "image_base64": valid_b64})
+    monkeypatch.setattr(module, "store_chunk_image", lambda *_args, **_kwargs: time.sleep(0.3))
+
+    async def scenario():
+        task = asyncio.create_task(_route_core(module.add_chunk)("tenant-1", "kb-1", "doc-1"))
+        ticks = 0
+        while not task.done():
+            await asyncio.sleep(0.01)
+            ticks += 1
+        return await task, ticks
+
+    res, ticks = _run(scenario())
+    assert res["code"] == 0, res
+    assert res["data"]["chunk"]["doc_type_kwd"] == "image", res
+    assert ticks >= 5, f"event loop was blocked while the chunk image was stored ({ticks} ticks)"
+
+
+@pytest.mark.p2
 def test_restful_add_chunk_worker_timeout_error_is_not_the_deadline(monkeypatch):
     module = _load_chunk_api_module(monkeypatch)
     module.request = SimpleNamespace(args={}, headers={})
