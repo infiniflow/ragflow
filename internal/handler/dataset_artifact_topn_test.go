@@ -170,6 +170,7 @@ func TestArtifactGraph_MissingTopNReachesService(t *testing.T) {
 	if status != http.StatusOK {
 		t.Fatalf("status=%d want 200, body=%+v", status, body)
 	}
+
 	if body.Code != int(common.CodeDataError) {
 		t.Fatalf("missing top_n must reach the service and return CodeDataError; got code=%d message=%q",
 			body.Code, body.Message)
