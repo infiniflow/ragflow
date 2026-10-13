@@ -2367,7 +2367,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
-				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+				// Emit even when events were suppressed: a run that ends
+				// with no visible content must surface the failure text,
+				// otherwise the stream closes silently.
+				if visibleAnswer == "" && !contentEventsEmitted {
 					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 					visibleAnswer = failureText
 				}
@@ -2391,8 +2394,10 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			// emitting any content. Otherwise the SSE stream closes silently
 			// and the client cannot tell an exhausted-rounds or provider
 			// failure from a slow answer. Client disconnects are harmless:
-			// the emit just has no consumer.
-			if answer == "" && !contentEventsEmitted && shouldEmitMessage {
+			// the emit just has no consumer. Emitted even under
+			// suppression: nothing visible reached the client yet, so
+			// this cannot duplicate output.
+			if answer == "" && !contentEventsEmitted {
 				failureText := agentRunFailureText(err)
 				emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 				meData, _ := json.Marshal(canvas.MessageEndEvent{
