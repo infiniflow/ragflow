@@ -48,6 +48,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // ChatbotSSEFrame is one envelope pushed to the SSE writer by the
@@ -290,10 +291,10 @@ func writeSSEJSON(w http.ResponseWriter, payload map[string]any) error {
 // api/db/services/conversation_service.py::async_iframe_completion,
 // which delegates to the same async_chat used by regular sessions.
 //
-// Authorisation: dialog must exist, belong to the requester's tenant,
-// and have status == common.StatusDialogValid.
+// Authorization is checked against the Chat resource before the
+// completion pipeline or session state is touched.
 func (s *BotService) ChatbotCompletion(
-	ctx context.Context, tenantID, dialogID string, req ChatbotCompletionRequest,
+	ctx context.Context, userID, dialogID string, req ChatbotCompletionRequest,
 ) (<-chan ChatbotSSEFrame, common.ErrorCode, error) {
 	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
@@ -301,16 +302,22 @@ func (s *BotService) ChatbotCompletion(
 		return nil, common.CodeArgumentError, err
 	}
 	req.Question = question
-	// 1. Load and authorise the dialog.
-	//
-	// ChatSessionDAO.GetDialogByID already filters by status = "1"
-	// so a returned row is valid; we still nil-check defensively
-	// before dereferencing for symmetry with the session path.
+	// 1. Authorize and load the dialog before touching session state.
+	if err := checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRun); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
+	}
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
-	if err != nil || dialog == nil ||
-		dialog.TenantID != tenantID ||
-		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
-		return nil, common.CodeDataError, errors.New("no access to this chatbot")
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+			return nil, code, normalizedErr
+		}
+		return nil, common.CodeServerError, err
+	}
+	if dialog == nil {
+		code, normalizedErr := normalizeChatPermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalizedErr
 	}
 
 	// 2. Resolve or create the session row.
@@ -320,20 +327,7 @@ func (s *BotService) ChatbotCompletion(
 	// check the pointer before dereferencing, otherwise the
 	// session-tenant check below nil-derefs. Plan Risk R7.
 	//
-	// UserID vs tenantID (security H3 follow-up):
-	// `entity.API4Conversation.UserID` is a generic user-id slot
-	// in the production Python flow
-	// (api/db/services/conversation_service.py:258 — the python
-	// async_iframe_completion saves `user_id=kwargs.get("user_id", "")`).
-	// The Go BotHandler routes pass `user.ID` through the
-	// "tenantID" parameter (the Go User struct collapses user and
-	// tenant into one identifier — see project AGENTS.md), so
-	// writing `tenantID` here actually stores the requester's
-	// user-id (== tenant-id) in the python user-id slot. The
-	// session-tenant check on the read path compares against the
-	// same value, so write/read stay symmetric. We keep this
-	// behaviour and add the comment so a future reader doesn't
-	// "fix" it to a tenant-id lookup and break the symmetry.
+	// API4 conversation history is owned by the caller's user ID.
 	if req.SessionID == "" {
 		// Seed a new session. An empty question is the opening handshake;
 		// a supplied question continues through the normal generation path.
@@ -353,7 +347,7 @@ func (s *BotService) ChatbotCompletion(
 		session := &entity.API4Conversation{
 			ID:       common.GenerateUUID(),
 			DialogID: dialogID,
-			UserID:   tenantID,
+			UserID:   userID,
 			Message:  seedMsg,
 		}
 		if err = s.api4ConversationDAO.Create(ctx, dao.DB, session); err != nil {
@@ -387,7 +381,7 @@ func (s *BotService) ChatbotCompletion(
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if session == nil || session.UserID != tenantID {
+	if session == nil || session.UserID != userID {
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
@@ -438,7 +432,7 @@ func (s *BotService) ChatbotCompletion(
 	if err := s.persistChatbotQuestion(ctx, session, req.Question, messageID, receivedAt); err != nil {
 		return nil, common.CodeServerError, err
 	}
-	results, err := s.pipeline.AsyncChat(ctx, tenantID, dialog, messages, true, kwargs)
+	results, err := s.pipeline.AsyncChat(ctx, userID, dialog, messages, true, kwargs)
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}

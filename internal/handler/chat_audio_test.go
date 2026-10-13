@@ -58,6 +58,17 @@ func TestChatAudioSpeechFailureOmitsProviderError(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create tenant: %v", err)
 	}
+	activeStatus := string(entity.StatusValid)
+	if err = db.Create(&entity.UserTenant{
+		ID:        "user-1-membership",
+		UserID:    "user-1",
+		TenantID:  "user-1",
+		Role:      "owner",
+		InvitedBy: "user-1",
+		Status:    &activeStatus,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant owner membership: %v", err)
+	}
 	if err = db.Create(&entity.TenantModel{
 		ID:         ttsModelID,
 		ModelName:  "FunAudioLLM/CosyVoice2-0.5B",

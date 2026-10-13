@@ -17,11 +17,12 @@
 package service
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupSearchShareServiceDB(t *testing.T) {
@@ -150,7 +151,7 @@ func TestSearchServiceGetSearchShareDetailRejectsUnauthorizedUser(t *testing.T) 
 	if err == nil {
 		t.Fatal("expected permission error")
 	}
-	if !strings.Contains(err.Error(), "has no permission") {
+	if !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("err = %v, want permission error", err)
 	}
 }

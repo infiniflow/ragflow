@@ -25,7 +25,7 @@ import (
 
 func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
 	td := &entity.TableData{
-		Rows:       [][]string{{"col"}, {"value"}},
+		Grid:       [][]entity.TableCell{{{Text: "col"}}, {{Text: "value"}}},
 		HeaderRows: 1,
 		Caption:    "Sheet1",
 	}
@@ -41,7 +41,7 @@ func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
 	if !ok {
 		t.Fatalf("item[%q] = %T, want *entity.TableData", "table", item["table"])
 	}
-	if got.Caption != "Sheet1" || len(got.Rows) != 2 {
+	if got.Caption != "Sheet1" || len(got.Grid) != 2 {
 		t.Fatalf("item table = %+v, want caption Sheet1 and 2 rows", got)
 	}
 	if _, ok := item["positions"].([][]float64); !ok {

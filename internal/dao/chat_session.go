@@ -147,10 +147,13 @@ func (dao *ChatSessionDAO) DeleteByID(ctx context.Context, db *gorm.DB, id strin
 	})
 }
 
-// ListByChatID lists chat sessions by chat ID
-func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
+// ListByResourceIDs lists only sessions authorized by the permission layer.
+func (dao *ChatSessionDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error) {
+	if len(sessionIDs) == 0 {
+		return []*entity.ChatSession{}, nil
+	}
 	var chatSessions []*entity.ChatSession
-	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ?", chatID)
+	query := db.WithContext(ctx).Session(&gorm.Session{QueryFields: true}).Where("dialog_id = ? AND id IN ?", chatID, sessionIDs)
 	if sessionID != "" {
 		query = query.Where("id = ?", sessionID)
 	}
@@ -174,18 +177,6 @@ func (dao *ChatSessionDAO) ListByChatID(ctx context.Context, db *gorm.DB, chatID
 		}
 	}
 	return chatSessions, nil
-}
-
-// CheckDialogExists checks if a dialog exists with given tenant_id and dialog_id
-func (dao *ChatSessionDAO) CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error) {
-	var count int64
-	err := db.WithContext(ctx).Model(&entity.Chat{}).
-		Where("tenant_id = ? AND id = ? AND status = ?", tenantID, chatID, common.StatusDialogValid).
-		Count(&count).Error
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
 }
 
 // GetDialogByID gets dialog by ID

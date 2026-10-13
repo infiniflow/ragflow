@@ -110,9 +110,8 @@ def test_openai_compatible_invalid_chat(rest_client):
     )
     assert res.status_code == 200
     payload = res.json()
-    assert payload["code"] != 0, payload
-    expected_message = "no authorization"
-    assert expected_message in payload["message"], payload
+    assert payload["code"] == 404, payload
+    assert payload["message"] == "Resource not found", payload
 
 
 @pytest.mark.p3

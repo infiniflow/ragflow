@@ -28,8 +28,10 @@ import (
 	"testing"
 	"time"
 
+	"gorm.io/gorm"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/utility"
 )
 
@@ -62,6 +64,7 @@ func TestUpdateMCPServerRejectsDuplicatedName(t *testing.T) {
 			t.Fatalf("create mcp server: %v", err)
 		}
 	}
+	addMCPOwnerMembership(t, testDB, tenantID, tenantID)
 
 	s := NewMCPService()
 	ctx := t.Context()
@@ -115,7 +118,13 @@ func TestServerInputValidation(t *testing.T) {
 }
 
 func TestImportServersValidationErrors(t *testing.T) {
-	s := &MCPService{}
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate MCP server: %v", err)
+	}
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "tenant-1", "tenant-1")
+	s := NewMCPService()
 
 	// Missing url and type produce an in-band error per entry rather than
 	// failing the batch.
@@ -207,6 +216,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if err := db.Create(&entity.Tenant{ID: "tenant-1"}).Error; err != nil {
 		t.Fatal(err)
 	}
+	addMCPOwnerMembership(t, db, "tenant-1", "tenant-1")
 	server, captured := newMCPDiscoveryTestServer(t)
 	defer server.Close()
 	withMCPDiscoveryOverrides(t, server)
@@ -225,7 +235,7 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	if created.Headers["Authorization"] != maskedMCPSecret {
 		t.Fatal("create response exposed headers")
 	}
-	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", nil, "", 0, 0, "create_time", false)
+	listed, _, err := s.ListMCPServers(t.Context(), "tenant-1", "", nil, "", 0, 0, "create_time", false)
 	if err != nil || len(listed.MCPServers) != 1 || listed.MCPServers[0].Variables["authorization_token"] != maskedMCPSecret {
 		t.Fatalf("list: result=%#v err=%v", listed, err)
 	}
@@ -301,6 +311,63 @@ func TestMCPManagedTokenLifecycle(t *testing.T) {
 	}
 }
 
+func TestMCPServerPermissionsUsePolicyAcrossServiceOperations(t *testing.T) {
+	db := setupServiceTestDB(t)
+	if err := db.AutoMigrate(&entity.MCPServer{}); err != nil {
+		t.Fatalf("migrate MCP server: %v", err)
+	}
+	pushServiceDB(t, db)
+	addMCPOwnerMembership(t, db, "owner", "team")
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID: "mcp-member-membership", UserID: "member", TenantID: "team",
+		Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP member membership: %v", err)
+	}
+	if err := db.Create(&entity.MCPServer{
+		ID: "team-server", Name: "shared", TenantID: "team", URL: "https://example.com/mcp",
+		ServerType: mcpServerTypeStreamableHTTP,
+	}).Error; err != nil {
+		t.Fatalf("create MCP server: %v", err)
+	}
+
+	server, captured := newMCPDiscoveryTestServer(t)
+	defer server.Close()
+	withMCPDiscoveryOverrides(t, server)
+	service := NewMCPService()
+	ctx := t.Context()
+
+	if _, code, err := service.GetMCPServer(ctx, "member", "team-server"); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("member direct read should be hidden: code=%d err=%v", code, err)
+	}
+	listed, code, err := service.ListMCPServers(ctx, "member", "team", nil, "", 0, 0, "create_time", false)
+	if err != nil || code != common.CodeSuccess || len(listed.MCPServers) != 1 {
+		t.Fatalf("member list: response=%#v code=%d err=%v", listed, code, err)
+	}
+
+	name, _ := json.Marshal("renamed")
+	if _, code, err := service.UpdateMCPServer(ctx, "member", "team-server", UpdateMCPServerRequest{"name": name}); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("member update should be hidden: code=%d err=%v", code, err)
+	}
+	if _, code, err := service.DeleteMCPServer(ctx, "member", "team-server"); err == nil || code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("member delete should be hidden: code=%d err=%v", code, err)
+	}
+	if _, err := service.TestServer(ctx, "member", "team-server", &TestServerRequest{
+		URL: "https://example.com/mcp", ServerType: mcpServerTypeStreamableHTTP,
+	}); err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("member connection test should require update permission: %v", err)
+	}
+	if _, code, err := service.CreateMCPServer(ctx, "member", CreateMCPServerRequest{
+		Name: "new", URL: server.URL, ServerType: mcpServerTypeStreamableHTTP,
+	}); err == nil || code != common.CodeForbidden {
+		t.Fatalf("member create should require an owned tenant: code=%d err=%v", code, err)
+	}
+	if len(captured()) != 0 {
+		t.Fatalf("denied connection/config operations made outbound requests: %d", len(captured()))
+	}
+}
+
 func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 	for _, tc := range []struct {
 		name             string
@@ -332,6 +399,7 @@ func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
 				t.Fatalf("migrate mcp server: %v", err)
 			}
 			pushServiceDB(t, testDB)
+			addMCPOwnerMembership(t, testDB, "tenant-1", "tenant-1")
 
 			srv, captured := newMCPDiscoveryTestServer(t)
 			defer srv.Close()
@@ -528,6 +596,21 @@ func TestPaginateMCPServersPositiveValues(t *testing.T) {
 	}
 	if got[0].ID != "server-3" || got[1].ID != "server-4" {
 		t.Fatalf("expected second page servers, got %q and %q", got[0].ID, got[1].ID)
+	}
+}
+
+func addMCPOwnerMembership(t *testing.T, db *gorm.DB, userID, tenantID string) {
+	t.Helper()
+	active := string(entity.StatusValid)
+	if err := db.Create(&entity.UserTenant{
+		ID:        "mcp-owner-" + tenantID,
+		UserID:    userID,
+		TenantID:  tenantID,
+		Role:      "owner",
+		InvitedBy: userID,
+		Status:    &active,
+	}).Error; err != nil {
+		t.Fatalf("create MCP owner membership: %v", err)
 	}
 }
 

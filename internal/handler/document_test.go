@@ -146,9 +146,6 @@ type fakeDocumentService struct {
 	metadataErr            error
 	metadataKBID           string
 	metadataDocIDs         []string
-	setMetaCalled          bool
-	setMetaDocID           string
-	setMetaValue           map[string]interface{}
 	uploadLocalData        []map[string]interface{}
 	uploadLocalErrs        []string
 	uploadLocalKB          *entity.Knowledgebase
@@ -336,18 +333,6 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 	return f.hasActiveTasks, f.hasActiveTasksErr
 }
 
-func (f *fakeDocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
-	f.setMetaCalled = true
-	f.setMetaDocID = docID
-	f.setMetaValue = meta
-	return nil
-}
-func (f *fakeDocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
-	return nil
-}
-func (f *fakeDocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
-	return nil
-}
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
@@ -457,17 +442,18 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 		body    string
 		params  gin.Params
 		handler gin.HandlerFunc
+		status  int
 	}{
-		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID},
-		{"metadata summary", http.MethodPost, "/api/v1/document/metadata/summary", `{"kb_id":"kb-owner","doc_ids":["doc-1"]}`, nil, h.MetadataSummary},
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusForbidden},
+		{"metadata summary", http.MethodGet, "/api/v1/datasets/kb-owner/metadata/summary?doc_ids=doc-1", "", gin.Params{{Key: "dataset_id", Value: "kb-owner"}}, h.MetadataSummaryByDataset, http.StatusOK},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
 			c.Params = tt.params
 			tt.handler(c)
-			if w.Code != http.StatusForbidden {
-				t.Fatalf("status = %d, want 403: %s", w.Code, w.Body.String())
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.status, w.Body.String())
 			}
 			var resp struct {
 				Code    common.ErrorCode `json:"code"`
@@ -484,73 +470,6 @@ func TestDocumentReadHandlersForbidden(t *testing.T) {
 				t.Fatal("GetMetadataSummary should not be called without dataset access")
 			}
 		})
-	}
-}
-
-func TestSetMetaHandler_NotAccessible(t *testing.T) {
-	setupDocumentPermissionDB(t, false)
-
-	fake := &fakeDocumentService{
-		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
-	}
-	h := &DocumentHandler{
-		documentService: fake,
-		datasetService:  dataset.NewDatasetService(),
-	}
-
-	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"poc\":\"blocked\"}"}`)
-	h.SetMeta(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeForbidden) {
-		t.Fatalf("expected auth error, got %v", resp)
-	}
-	if resp["message"] != "Permission denied" {
-		t.Fatalf("unexpected message: %v", resp["message"])
-	}
-	if fake.setMetaCalled {
-		t.Fatal("SetDocumentMetadata should not be called without dataset access")
-	}
-}
-
-func TestSetMetaHandler_Accessible(t *testing.T) {
-	setupDocumentPermissionDB(t, true)
-
-	fake := &fakeDocumentService{
-		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
-	}
-	h := &DocumentHandler{
-		documentService: fake,
-		datasetService:  dataset.NewDatasetService(),
-	}
-
-	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"category\":\"tech\",\"year\":2026}"}`)
-	h.SetMeta(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
-		t.Fatalf("unexpected response: %v", resp)
-	}
-	if !fake.setMetaCalled {
-		t.Fatal("SetDocumentMetadata should be called with dataset access")
-	}
-	if fake.setMetaDocID != "doc-1" {
-		t.Fatalf("set meta doc id = %q, want doc-1", fake.setMetaDocID)
-	}
-	if fake.setMetaValue["category"] != "tech" || fake.setMetaValue["year"] != float64(2026) {
-		t.Fatalf("unexpected meta: %#v", fake.setMetaValue)
 	}
 }
 
