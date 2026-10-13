@@ -46,7 +46,7 @@ func (s *FileService) ListFiles(ctx context.Context, tenantID, pfID string, page
 	// Check if parent folder exists
 	folder, err := s.fileDAO.GetByID(ctx, dao.DB, pfID)
 	if err != nil {
-		return nil, fmt.Errorf("folder not found")
+		return nil, common.NewCodedError(common.CodeNotFound, "folder not found")
 	}
 
 	// Get files by parent folder ID
@@ -216,7 +216,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, common.NewCodedError(common.CodeNotFound, "file or folder not found")
 	}
 
 	// Permission check
@@ -238,7 +238,7 @@ func (s *FileService) GetAllParentFolders(ctx context.Context, userID, fileID st
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, common.NewCodedError(common.CodeNotFound, "file or folder not found")
 	}
 
 	// Permission check

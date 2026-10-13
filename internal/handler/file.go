@@ -47,6 +47,11 @@ func respondFileServiceError(c *gin.Context, err error) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "no authorization")
 		return
 	}
+	var codedErr *common.CodedError
+	if errors.As(err, &codedErr) {
+		common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+		return
+	}
 	jsonInternalError(c, err)
 }
 
@@ -122,7 +127,7 @@ func (h *FileHandler) ListFiles(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.fileService.ListFiles(ctx, userID, parentID, page, pageSize, terms, keywords)
 	if err != nil {
-		jsonInternalError(c, err)
+		respondFileServiceError(c, err)
 		return
 	}
 

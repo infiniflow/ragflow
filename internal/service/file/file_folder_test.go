@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 
@@ -223,6 +224,22 @@ func insertFolderTestFile(t *testing.T, id, parentID, name string) {
 	}
 	if err := dao.DB.Create(f).Error; err != nil {
 		t.Fatalf("insert test file: %v", err)
+	}
+}
+
+func TestFileService_ListFilesMissingParentReturnsNotFound(t *testing.T) {
+	setupFolderTestDB(t)
+
+	root := &entity.File{ID: "root-1", ParentID: "root-1", TenantID: "tenant-1", Name: "/", Type: FileTypeFolder}
+	if err := dao.DB.Create(root).Error; err != nil {
+		t.Fatalf("seed root: %v", err)
+	}
+
+	svc := testFileService()
+	_, err := svc.ListFiles(context.Background(), "tenant-1", "missing-folder", 1, 10, nil, "")
+	var coded *common.CodedError
+	if !errors.As(err, &coded) || coded.Code != common.CodeNotFound {
+		t.Fatalf("ListFiles error = %v, want CodeNotFound CodedError", err)
 	}
 }
 
