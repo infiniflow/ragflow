@@ -90,7 +90,7 @@ type CheckConnectionModelInfo struct {
 }
 
 type CheckConnectionRequest struct {
-	APIKey     string                     `json:"api_key"`
+	APIKey     json.RawMessage            `json:"api_key"`
 	Region     string                     `json:"region"`
 	BaseURL    string                     `json:"base_url"`
 	InstanceID string                     `json:"instance_id"`
