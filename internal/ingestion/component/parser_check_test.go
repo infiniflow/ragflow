@@ -23,8 +23,9 @@ import (
 	"ragflow/internal/ingestion/component/schema"
 )
 
-// TestParserComponent_Check covers construction-time validation for parser
-// methods that require language configuration.
+// TestParserComponent_Check covers construction-time validation: the pdf
+// parse_method whitelist, the image ocr_enabled type, and the image
+// text-source requirement (OCR off + vision enhancement off is rejected).
 //
 // audio/video vlm.llm_id is not validated: Python's check() has no
 // such branch, and audio resolves its model at dispatch time with a
@@ -101,8 +102,11 @@ func TestParserComponent_Check(t *testing.T) {
 			enhance: true,
 		},
 		{
-			name:   "image: model reference with lang → pass",
-			setups: map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": "English"}},
+			// A legacy model reference disables OCR by construction, so without
+			// the enhancement there is no text source left.
+			name:    "image: model reference without enhancement → error",
+			setups:  map[string]schema.ParserSetup{"image": {"parse_method": "vlm_xyz", "lang": "English"}},
+			wantErr: "no text source",
 		},
 		{
 			// Absent parse_method matches the backend's legacy inference, which
@@ -119,8 +123,14 @@ func TestParserComponent_Check(t *testing.T) {
 			wantErr: "ocr_enabled must be a boolean",
 		},
 		{
-			name:   "image: boolean ocr_enabled → pass",
-			setups: map[string]schema.ParserSetup{"image": {"ocr_enabled": false}},
+			name:    "image: ocr_enabled false without enhancement → error",
+			setups:  map[string]schema.ParserSetup{"image": {"ocr_enabled": false}},
+			wantErr: "no text source",
+		},
+		{
+			name:    "image: ocr_enabled false with enhancement → pass",
+			setups:  map[string]schema.ParserSetup{"image": {"ocr_enabled": false}},
+			enhance: true,
 		},
 		{
 			name:   "image: ocr_enabled alongside a stale parse_method → pass (switch wins)",

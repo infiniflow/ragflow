@@ -133,6 +133,48 @@ func TestSearchUsesConfiguredKNNNumCandidates(t *testing.T) {
 	}
 }
 
+func TestKNNScoresSearchesAllCandidateIndices(t *testing.T) {
+	searches := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		searches++
+		if r.URL.Path != "/ragflow_a,ragflow_b/_search" {
+			t.Errorf("KNN search path = %s, want both candidate indices once", r.URL.Path)
+		}
+		if r.URL.Query().Get("allow_partial_search_results") != "false" {
+			t.Error("partial KNN results must trigger the local reranking fallback")
+		}
+		var query map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+			t.Error(err)
+		}
+		knn, _ := query["knn"].(map[string]interface{})
+		filter, _ := json.Marshal(knn["filter"])
+		if string(filter) != `{"terms":{"id":["a1","a2","b1"]}}` {
+			t.Errorf("KNN candidate filter = %s, want candidates from both indices", filter)
+		}
+		w.Header().Set("X-Elastic-Product", "Elasticsearch")
+		_, _ = w.Write([]byte(`{"hits":{"hits":[{"_id":"a1","_score":0.9},{"_id":"a2","_score":0.8},{"_id":"b1","_score":0.7}]}}`))
+	}))
+	defer server.Close()
+	eng := newTestEngine(t, server.URL)
+	chunks := []map[string]interface{}{
+		{"_id": "a1", "_index": "ragflow_a"},
+		{"_id": "a2", "_index": "ragflow_a"},
+		{"_id": "b1", "_index": "ragflow_b"},
+	}
+	result, err := eng.KNNScores(t.Context(), chunks, []float64{0.1, 0.2}, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := eng.GetScores(result); !reflect.DeepEqual(got, map[string]float64{"a1": 0.9, "a2": 0.8, "b1": 0.7}) {
+		t.Fatalf("KNN scores = %v, want scores from both indices", got)
+	}
+	result, err = eng.KNNScores(t.Context(), []map[string]interface{}{{"_id": "unscoped"}}, []float64{0.1, 0.2}, 1)
+	if err == nil || result != nil || searches != 1 {
+		t.Fatalf("missing index: result = %v, err = %v, searches = %d, want fallback without a cluster-wide query", result, err, searches)
+	}
+}
+
 func TestUpdateSingleMemoryMessageWaitsForRefresh(t *testing.T) {
 	var gotRefresh string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -26,7 +26,7 @@ import (
 )
 
 // JSONFloat64 is a float64 that always marshals with a decimal point.
-// 0 encodes as 0.0. The value itself is kept, so a progress of 0.96 stays 0.96.
+// 0 encodes as 0.0. The value itself is kept, so progress of 0.96 stays 0.96.
 type JSONFloat64 float64
 
 func (f JSONFloat64) MarshalJSON() ([]byte, error) {

@@ -61,6 +61,21 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
+// A provider that supports rerank must declare its rerank url_suffix. Without it
+// the request is posted to the base URL (".../") instead of "/rerank", which the
+// server answers with a generic 500 — the failure reported in #16033.
+func TestOpenAIAPICompatibleDeclaresRerankSuffix(t *testing.T) {
+	var cfg struct {
+		URLSuffix URLSuffix `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(readProviderConfig(t, "openai-api-compatible.json"), &cfg); err != nil {
+		t.Fatalf("parse openai-api-compatible.json: %v", err)
+	}
+	if strings.TrimSpace(cfg.URLSuffix.Rerank) == "" {
+		t.Fatal("openai-api-compatible.json declares no rerank url_suffix")
+	}
+}
+
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to

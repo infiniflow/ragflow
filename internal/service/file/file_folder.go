@@ -456,6 +456,10 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		}
 	}
 
+	if ok, msg := s.checkSourcesDisjoint(ctx, files); !ok {
+		return errors.New(msg)
+	}
+
 	var destFolder *entity.File
 	if destFileID != "" {
 		destFolder, err = s.fileDAO.GetByID(ctx, dao.DB, destFileID)
@@ -558,6 +562,40 @@ func (s *FileService) MoveFiles(ctx context.Context, userID string, srcFileIDs [
 		return errors.New("Database error (Document rename)!")
 	}
 	return nil
+}
+
+// checkSourcesDisjoint reports false with a message when a selected source
+// entry is an ancestor or descendant of another selected source entry.
+// moveEntryRecursive already relocates and deletes an entire subtree, so a
+// descendant selected alongside its ancestor would otherwise be processed
+// twice, recreating a duplicate folder or moving an already-removed object.
+func (s *FileService) checkSourcesDisjoint(ctx context.Context, files []*entity.File) (bool, string) {
+	if len(files) < 2 {
+		return true, ""
+	}
+
+	srcIDs := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		srcIDs[f.ID] = struct{}{}
+	}
+
+	for _, file := range files {
+		ancestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, file.ID)
+		if err != nil {
+			return false, "failed to check source folder hierarchy"
+		}
+		for _, ancestor := range ancestors {
+			if ancestor.ID == file.ID {
+				// GetAllParentFolders includes the entry itself.
+				continue
+			}
+			if _, ok := srcIDs[ancestor.ID]; ok {
+				return false, "cannot move a folder together with its descendant"
+			}
+		}
+	}
+
+	return true, ""
 }
 
 // renameLinkedDocuments renames every knowledgebase document linked to the

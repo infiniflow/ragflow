@@ -545,10 +545,11 @@ func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemor
 	for i, item := range extracted {
 		item.MessageID = generateRawMessageID(ctx)
 		item.ValidAt = formatMemoryTime(item.ValidAt, now)
-		item.InvalidAt = strings.TrimSpace(item.InvalidAt)
-		if item.InvalidAt != "" {
-			item.InvalidAt = formatMemoryTime(item.InvalidAt, now)
-		}
+		// An invalid_at the model made up normalizes to "", which persists as
+		// nil and leaves the memory valid (Python stores nothing via
+		// fallback=""). Falling back to now here would instead expire the
+		// memory at extraction time. valid_at keeps its now fallback above.
+		item.InvalidAt, _ = normalizeMemoryTime(item.InvalidAt)
 		materialized[i] = item
 	}
 	return materialized

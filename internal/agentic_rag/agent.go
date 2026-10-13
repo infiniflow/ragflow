@@ -311,17 +311,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 		in.ToolCallDurations = &durationAccumulator{dur: make(map[string]time.Duration)}
 	}
 
-	tools := in.Tools
-	if len(tools) == 0 {
-		// No explicit tool set: build it from the requested template, which
-		// lets operators change the tool list without recompiling. The config
-		// is reloaded from disk when its mtime changes, so a quick edit +
-		// re-run is enough to try a different tool subset or prompt variant.
-		tools = toolsFor(tmpl, in.TenantID, in.DatasetIDs)
-		// Web search is injected, never declared: the template's tool list
-		// describes the corpus toolset, and a conversation whose context
-		// carries a provider gets one extra tool at run time.
-		tools = append(tools, webSearchTools(ctx)...)
+	// With no explicit tools, use the requested template. The config reloads
+	// when its mtime changes so operators can change the tool list and prompt.
+	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
+	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
+	if err != nil {
+		return "", err
 	}
 
 	maxIter := in.MaxIterations
@@ -336,10 +331,11 @@ func Run(ctx context.Context, in Input) (string, error) {
 	wrapped := make([]tool.BaseTool, len(tools))
 	for i, t := range tools {
 		if it, ok := t.(tool.InvokableTool); ok {
-			wrapped[i] = &instrumentedTool{
+			timed := &instrumentedTool{
 				InvokableTool: it,
 				acc:           in.ToolCallDurations,
 			}
+			wrapped[i] = timed
 		} else {
 			wrapped[i] = t
 		}
@@ -354,8 +350,8 @@ func Run(ctx context.Context, in Input) (string, error) {
 
 	cfg := &adk.ChatModelAgentConfig{
 		Name:          "smart-reasoning",
-		Instruction:   instructionFor(tmpl),
-		Model:         in.Model,
+		Instruction:   tmpl.Content,
+		Model:         agentModel,
 		MaxIterations: maxIter,
 		// Retry transient provider failures (MiniMax 529 overload, 429, 5xx,
 		// network hiccups) with seconds-scale backoff on EVERY model call of
@@ -400,6 +396,12 @@ func Run(ctx context.Context, in Input) (string, error) {
 	}
 	runMessages := sess.explorer.turnMessages(seed, "", question)
 	iter := sess.explorer.runner(ctx, explorerAgent, in.Stream).Run(ctx, runMessages)
+	// Runner assigns IDs to input messages before persisting them. Exclude
+	// these from recovery so a failed turn cannot reuse a historical answer.
+	inputMessageIDs := make(map[string]bool, len(runMessages))
+	for _, msg := range runMessages {
+		inputMessageIDs[adk.GetMessageID(msg)] = true
+	}
 	final, evidence, runErr := consumeAgentEvents(ctx, iter, in.OnDelta, in.ToolCallCounts, in.ToolCallErrors, in.ToolErrorSamples)
 
 	// Recovery, cheapest and most faithful first. A run that ended on a
@@ -410,7 +412,7 @@ func Run(ctx context.Context, in Input) (string, error) {
 	// that tripped the cooldown).
 	if final == "" || runErr != nil {
 		if carried := sess.explorer.lastAssistant(ctx, func(m *schema.Message) bool {
-			return strings.TrimSpace(m.Content) != ""
+			return !inputMessageIDs[adk.GetMessageID(m)] && strings.TrimSpace(m.Content) != ""
 		}); carried != "" {
 			final = carried
 			runErr = nil

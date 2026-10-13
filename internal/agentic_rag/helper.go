@@ -548,13 +548,14 @@ type snippetHit struct {
 	// keyword's neighbourhood, and the model must not read it as evidence that
 	// the query terms appear there.
 	preview bool
+	web     bool
 }
 
 // formatLocateResultsXML renders the UNIFIED payload shared by every locate
 // tool: one compact vocabulary (<search_results> root with a query echo, chunk
 // attributes incl. rank/score, one <match_snippet> per chunk). Roots differ
 // from list_chunks' <chunks> by design: these are triage views, not deep reads.
-func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snippetHit) string {
+func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snippetHit, notices ...string) string {
 	// Single serve point for every locate tool: one debug line per served chunk
 	// records exactly what went in front of the model (silent unless the logger
 	// runs at debug level).
@@ -565,11 +566,24 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 	var b strings.Builder
 	b.WriteString(fmt.Sprintf("<search_results count=\"%d\" query=\"%s\">\n",
 		len(hits), xmlEscape(query)))
+	for _, notice := range notices {
+		b.WriteString(notice)
+		b.WriteString("\n")
+	}
 	truncatedHits := 0
 	previewHits := 0
 	for i, h := range hits {
 		c := h.chunk
-		refAttr := refAttrOf(reg, c.ID)
+		refAttr := ""
+		sourceAttr := ""
+		if h.web {
+			if ref := reg.StampWebResult(WebResult{Title: c.DocumentName, URL: c.URL, Content: c.Content}); ref >= 0 {
+				refAttr = fmt.Sprintf(` ref="%d"`, ref)
+			}
+			sourceAttr = fmt.Sprintf(` source="web" url="%s"`, xmlEscape(c.URL))
+		} else {
+			refAttr = refAttrOf(reg, c.ID)
+		}
 		truncatedAttr := ""
 		if h.truncated {
 			truncatedAttr = ` truncated="true"`
@@ -581,11 +595,11 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			previewHits++
 		}
 		b.WriteString(fmt.Sprintf(
-			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s>\n",
+			"<chunk rank=\"%d\" chunk_id=\"%s\" doc_id=\"%s\" page_num=\"%d\" chunk_index=\"%d\" dataset_id=\"%s\" doc_name=\"%s\" score=\"%.3f\" chunk_runes=\"%d\"%s%s%s%s>\n",
 			i+1,
 			xmlEscape(c.ID), xmlEscape(c.DocumentID), c.PageNum, c.ChunkIndex,
 			xmlEscape(c.DatasetID), xmlEscape(c.DocumentName), c.Score,
-			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr,
+			utf8.RuneCountInString(c.Content), refAttr, truncatedAttr, matchAttr, sourceAttr,
 		))
 		if h.snippet != "" {
 			b.WriteString(fmt.Sprintf("<match_snippet>%s</match_snippet>\n", xmlEscape(h.snippet)))
@@ -600,7 +614,9 @@ func formatLocateResultsXML(ctx context.Context, tool, query string, hits []snip
 			"shows the neighbourhood of the match, not everything the chunk says.</snippet_note>\n",
 			truncatedHits, previewHits))
 	}
-	if len(hits) == 0 {
+	if len(hits) == 0 && tool == webSearchToolName {
+		b.WriteString("<hint>0 web hits. Try different keywords or rely on the available corpus evidence.</hint>\n")
+	} else if len(hits) == 0 {
 		// Zero hits usually means a WORD-FORM mismatch (the corpus says
 		// "mineralization" while the query says "mineralizer"), not corpus
 		// absence. Surface the retry discipline here so the model sees it at

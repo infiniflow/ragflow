@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
@@ -183,7 +184,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
+		ToolCallingModel: &roundLimitedChatModel{ToolCallingChatModel: chatModel, remaining: maxSteps / 2},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -254,6 +255,47 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, err
 	}
 	return msg, nil
+}
+
+// The reserved final model step must answer rather than schedule more tools.
+type roundLimitedChatModel struct {
+	model.ToolCallingChatModel
+	remaining int
+}
+
+func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	bound, err := m.ToolCallingChatModel.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &roundLimitedChatModel{ToolCallingChatModel: bound, remaining: m.remaining}, nil
+}
+
+func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
+	if m.remaining <= 0 {
+		opts = append(opts, model.WithToolChoice(schema.ToolChoiceForbidden))
+	}
+	m.remaining--
+	return opts
+}
+
+func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	input = m.roundInput(input)
+	return m.ToolCallingChatModel.Generate(ctx, input, m.roundOptions(opts)...)
+}
+
+func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	input = m.roundInput(input)
+	return m.ToolCallingChatModel.Stream(ctx, input, m.roundOptions(opts)...)
+}
+
+func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Message {
+	if m.remaining > 0 {
+		return input
+	}
+	final := make([]*schema.Message, 0, len(input)+1)
+	final = append(final, input...)
+	return append(final, schema.SystemMessage("The configured tool-call budget is exhausted. Do not call any more tools. Produce your final answer using the evidence already collected. State any missing evidence or uncertainty; do not claim that unperformed searches were completed."))
 }
 
 // scanAllStreamForToolCall consumes the whole model response, then branches

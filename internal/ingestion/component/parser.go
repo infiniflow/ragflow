@@ -274,8 +274,27 @@ func (c *ParserComponent) Check() error {
 				return errors.New("parser: image ocr_enabled must be a boolean")
 			}
 		}
+		// An image needs at least one text source: local OCR or the global
+		// vision enhancement. With neither, the item carries no text and the
+		// Tokenizer drops it, so reject the configuration at build time
+		// instead of indexing nothing silently.
+		if !c.enableVisionEnhancement && !imageSetupRunsOCR(img) {
+			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
+		}
 	}
 	return nil
+}
+
+// imageSetupRunsOCR mirrors the OCR selection in maybeDispatchImage
+// (media_dispatch.go): the ocr_enabled switch wins when present, otherwise
+// the legacy parse_method reading applies ("ocr"/empty runs local OCR).
+
+func imageSetupRunsOCR(setup schema.ParserSetup) bool {
+	if ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool); hasOCRFlag {
+		return ocrEnabled
+	}
+	method := getStringOr(setup, "parse_method", "")
+	return method == "" || strings.EqualFold(method, "ocr")
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -523,12 +542,21 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 		}
 	}
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
-		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups)
+		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
+		enhanceOn := c.enableVisionEnhancement
+		split := newFractionSplit(parsePagesOn, enhanceOn)
+		pageWin := split.take(parsePagesOn)
+		visionWin := split.take(enhanceOn)
+
+		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
+		if dispatched.Err == nil && ctx.Err() == nil {
+			pageWin.report(ctx, 1.0)
+		}
 
 		if c.enableVisionEnhancement {
 			// Enhancement is optional; parser-provided text and image metadata
 			// remain available if a vision model cannot describe an image.
-			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision)
+			dispatched, _, _ = maybeDispatchVisionEnhancement(ctx, db, fileTypeExt, dispatched, inputs, c.vision, visionWin)
 		}
 	}
 	// Known/supported families must fail loudly when dispatch or
