@@ -55,6 +55,23 @@ func TestAssertMCPURLSafeRejectsPrivateHostWhenDisabled(t *testing.T) {
 	}
 }
 
+func TestAssertMCPURLSafeHostnameListOnlyAllowsListedHosts(t *testing.T) {
+	t.Setenv(common.EnvMCPAllowPrivateHosts, "navigo-mcp, file-analyst")
+	stubLookupHost(t, []string{"172.18.0.5"})
+
+	host, ip, err := AssertMCPURLSafe("http://navigo-mcp:8765/mcp")
+	if err != nil {
+		t.Fatalf("expected listed private host to pass, got %v", err)
+	}
+	if host != "navigo-mcp" || ip != "172.18.0.5" {
+		t.Fatalf("unexpected host/ip: %q %q", host, ip)
+	}
+
+	if _, _, err := AssertMCPURLSafe("http://other-internal:8765/mcp"); err == nil {
+		t.Fatal("expected unlisted private host to be rejected")
+	}
+}
+
 func TestAssertMCPURLSafePublicHostUnaffected(t *testing.T) {
 	stubLookupHost(t, []string{"93.184.216.34"})
 
@@ -86,5 +103,14 @@ func TestAssertMCPURLSafeSameOriginRejectsCrossOriginPrivateAdvertisedURL(t *tes
 
 	if _, _, err := AssertMCPURLSafeSameOrigin("http://other-internal:8765/mcp/messages", "http://navigo-mcp:8765/mcp/sse"); err == nil {
 		t.Fatal("expected cross-origin private advertised URL to be rejected")
+	}
+}
+
+func TestAssertMCPURLSafeSameOriginRejectsSchemeDowngrade(t *testing.T) {
+	t.Setenv(common.EnvMCPAllowPrivateHosts, "true")
+	stubLookupHost(t, []string{"172.18.0.5"})
+
+	if _, _, err := AssertMCPURLSafeSameOrigin("http://navigo-mcp:8765/mcp/messages", "https://navigo-mcp:8765/mcp/sse"); err == nil {
+		t.Fatal("expected HTTPS -> HTTP downgrade to be rejected")
 	}
 }
