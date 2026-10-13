@@ -1,6 +1,10 @@
 package file
 
-import "testing"
+import (
+	"strings"
+	"testing"
+	"unicode/utf8"
+)
 
 func TestSanitizeFilename(t *testing.T) {
 	cases := []struct {
@@ -14,6 +18,9 @@ func TestSanitizeFilename(t *testing.T) {
 		{"reserved device", "CON", "download"},
 		{"only dots", "...", "download"},
 		{"leading dots", ".hidden", "hidden"},
+		{"long name keeps extension", strings.Repeat("a", 300) + ".pdf", strings.Repeat("a", 251) + ".pdf"},
+		// The leading "a" puts the 255-byte boundary inside a 3-byte character.
+		{"long CJK name cut on a character", "a" + strings.Repeat("报", 100), "a" + strings.Repeat("报", 84)},
 	}
 	for _, c := range cases {
 		got := sanitizeFilename(c.in)
@@ -32,6 +39,9 @@ func TestSanitizeFilename(t *testing.T) {
 		}
 		if got == "" {
 			t.Errorf("%s: empty result for %q", c.name, c.in)
+		}
+		if len(got) > maxUploadFilenameBytes || !utf8.ValidString(got) {
+			t.Errorf("%s: %q is longer than %d bytes or not valid UTF-8", c.name, got, maxUploadFilenameBytes)
 		}
 	}
 }

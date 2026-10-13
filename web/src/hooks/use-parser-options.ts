@@ -1,4 +1,5 @@
 import { AgentCategory } from '@/constants/agent';
+import { ParseType } from '@/constants/knowledge';
 import { AgentListItemType } from '@/interfaces/database/agent';
 import {
   useFetchAgentList,
@@ -37,6 +38,46 @@ export function parseParserOptionValue(value?: string): {
     }
   }
   return null;
+}
+
+// Builtin parser ids saved by older versions, mapped to the id the current
+// builtin pipeline catalog uses. The Go backend resolves the same aliases at
+// lookup time (internal/ingestion/pipeline/builtin_registry.go); the select
+// needs them too, otherwise a saved parser_id like "naive" matches no option
+// and renders as unavailable.
+const LegacyBuiltinParserAliases: Record<string, string> = {
+  naive: 'general',
+};
+
+export function resolveBuiltinParserId(rawId: string) {
+  return LegacyBuiltinParserAliases[rawId] ?? rawId;
+}
+
+// buildParserSelectValue derives the ParserSelect value from the form's
+// parse_type / parser_id / pipeline_id triple. Builtin ids pass through the
+// legacy alias map so old saved values keep matching an option. An empty id
+// yields undefined so the select shows its placeholder instead of a dangling
+// "kind:" value.
+export function buildParserSelectValue({
+  parseType,
+  parserId,
+  pipelineId,
+}: {
+  parseType?: ParseType;
+  parserId?: string;
+  pipelineId?: string;
+}): string | undefined {
+  if (parseType === ParseType.BuiltIn) {
+    return parserId
+      ? buildParserOptionValue(
+          ParserOptionKind.BuiltIn,
+          resolveBuiltinParserId(parserId),
+        )
+      : undefined;
+  }
+  return pipelineId
+    ? buildParserOptionValue(ParserOptionKind.Pipeline, pipelineId)
+    : undefined;
 }
 
 // useParserOptions returns the unified list of parser options shown in the

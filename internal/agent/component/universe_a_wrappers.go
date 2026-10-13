@@ -117,10 +117,10 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.UserID = v
 	}
 	if v, ok := params["top_n"]; ok {
-		out.TopN = toIntParam(v)
+		out.TopN, _ = common.ToInt(v)
 	}
 	if v, ok := params["top_k"]; ok {
-		out.TopK = toIntParam(v)
+		out.TopK, _ = common.ToInt(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
 		value := toFloatParam(v)
@@ -810,26 +810,6 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 		}
 	}
 	return nil, false
-}
-
-// toIntParam coerces a node-param int value to int. JSON-decoded
-// values come in as float64 when numeric, so we tolerate that
-// case explicitly. Strings that parse as int also work.
-// (Renamed from toInt to avoid colliding with
-// list_operations.go's same-name helper.)
-func toIntParam(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	}
-	return 0
 }
 
 // toFloatParam coerces a node-param float value to float64. Same

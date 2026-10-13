@@ -596,7 +596,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
                EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
@@ -604,7 +603,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -632,7 +631,6 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
@@ -727,6 +725,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1136,7 +1142,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
                EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
@@ -1144,7 +1149,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -1172,7 +1177,6 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
@@ -1258,6 +1262,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           # Sometimes `docker compose down` fail due to hang container, heavy load etc. Need to remove such containers to release resources(for example, listen ports).
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
@@ -1359,7 +1371,7 @@ jobs:
         # Testdata is pre-seeded on the runner at /opt/ragflow-testdata
         # (asserted by the previous step). RAGFLOW_TESTDATA_DIR points the fetch
         # script at it so the network clone is skipped (see
-        # scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
+        # tools/scripts/fetch_deepdoc_testdata.sh) — which is why no actions/cache step
         # is needed here. XDG_CACHE_HOME remains the location the script falls
         # back to when it runs outside this job (local dev, no mount).
         env:
@@ -1613,7 +1625,6 @@ jobs:
                SVR_HTTP_PORT=$((9380 + PORT_OFFSET))
                ADMIN_SVR_HTTP_PORT=$((9381 + PORT_OFFSET))
                SVR_MCP_PORT=$((9382 + PORT_OFFSET))
-               SANDBOX_EXECUTOR_MANAGER_PORT=$((9385 + PORT_OFFSET))
                SVR_WEB_HTTP_PORT=$((80 + PORT_OFFSET))
                SVR_WEB_HTTPS_PORT=$((443 + PORT_OFFSET))
                EXPOSE_CLICKHOUSE_TCP_PORT=$((9900 + PORT_OFFSET))
@@ -1621,7 +1632,7 @@ jobs:
 
           # Persist computed ports into .env so docker-compose uses the correct host bindings.
           # Remove previous CI overrides first; docker compose uses the last duplicate key.
-               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SANDBOX_EXECUTOR_MANAGER_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
+               sed -i '/^ES_PORT=/d;/^OS_PORT=/d;/^INFINITY_THRIFT_PORT=/d;/^INFINITY_HTTP_PORT=/d;/^INFINITY_PSQL_PORT=/d;/^EXPOSE_MYSQL_PORT=/d;/^MINIO_PORT=/d;/^MINIO_CONSOLE_PORT=/d;/^REDIS_PORT=/d;/^KVROCKS_PORT=/d;/^EXPOSE_NATS_PORT=/d;/^EXPOSE_NATS_MONITORING_PORT=/d;/^NATS_MONITORING_PORT=/d;/^TEI_PORT=/d;/^KIBANA_PORT=/d;/^SVR_HTTP_PORT=/d;/^ADMIN_SVR_HTTP_PORT=/d;/^SVR_MCP_PORT=/d;/^SVR_WEB_HTTP_PORT=/d;/^SVR_WEB_HTTPS_PORT=/d;/^EXPOSE_CLICKHOUSE_TCP_PORT=/d;/^CLICKHOUSE_HTTP_PORT=/d;/^COMPOSE_PROFILES=/d;/^TEI_MODEL=/d;/^RAGFLOW_IMAGE=/d;/^DOC_ENGINE=/d' .env
           # docker-compose-go.yml uses env_file: .env-go for the ragflow-cpu
           # container, so the Go server process reads COMPOSE_PROFILES and
           # TEI_MODEL from .env (not .env). Without syncing these two,
@@ -1649,7 +1660,6 @@ jobs:
                  echo "SVR_HTTP_PORT=${SVR_HTTP_PORT}"
                  echo "ADMIN_SVR_HTTP_PORT=${ADMIN_SVR_HTTP_PORT}"
                  echo "SVR_MCP_PORT=${SVR_MCP_PORT}"
-                 echo "SANDBOX_EXECUTOR_MANAGER_PORT=${SANDBOX_EXECUTOR_MANAGER_PORT}"
                  echo "SVR_WEB_HTTP_PORT=${SVR_WEB_HTTP_PORT}"
                  echo "SVR_WEB_HTTPS_PORT=${SVR_WEB_HTTPS_PORT}"
                  echo "EXPOSE_CLICKHOUSE_TCP_PORT=${EXPOSE_CLICKHOUSE_TCP_PORT}"
@@ -1831,16 +1841,10 @@ jobs:
           # a fully-ready MinIO that this CI stack does not reliably provide
           # (the compose /live probe passes while the S3 API still 502s), so they
           # are exercised elsewhere, not here.
-          # internal/service/nlp is also excluded: its DatasetNav integration test
-          # compiles only against source fixes (Infinity 3013/3052, nav
-          # available_int, doc_ids_kwd) that are intentionally out of scope for this
-          # CI-enabling PR, so the package is left out of this job's package list
-          # rather than patched. Those fixes land in their own PR.
           PKGS=$(go list ./... \
             | grep -v '/test/api' \
             | grep -v '^ragflow/internal/deepdoc' \
-            | grep -v '/internal/storage$' \
-            | grep -v '^ragflow/internal/service/nlp$')
+            | grep -v '/internal/storage$')
           ./build.sh --test-integration-go $PKGS
 
       - name: Tear down
@@ -1848,6 +1852,14 @@ jobs:
         run: |
           set -euo pipefail
           COMPOSE_FILE=docker/docker-compose.yml
+          # This teardown runs with `if: always()`. The prepare step exports
+          # COMPOSE_PROJECT_NAME, but if an earlier step failed and skipped the
+          # prepare step there is no stack to remove — and `set -u` would turn
+          # that clean no-op into a hard "unbound variable" error.
+          if [[ -z "${COMPOSE_PROJECT_NAME:-}" ]]; then
+            echo "COMPOSE_PROJECT_NAME is unset; nothing to tear down"
+            exit 0
+          fi
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} down -v || true
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.

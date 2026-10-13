@@ -19,6 +19,7 @@ package orchestrator
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"regexp"
 	"strings"
 	"unicode/utf8"
@@ -503,7 +504,7 @@ func coerceDict(v any) map[string]any {
 
 // clamp: coerce to [0,1], defaulting to 1.0 on failure.
 func clamp(v any) float64 {
-	f, ok := toFloat(v)
+	f, ok := common.ToFloat(v)
 	if !ok {
 		return 1.0
 	}
@@ -608,20 +609,4 @@ func containsStr(ss []string, s string) bool {
 		}
 	}
 	return false
-}
-
-func toFloat(v any) (float64, bool) {
-	switch n := v.(type) {
-	case float64:
-		return n, true
-	case float32:
-		return float64(n), true
-	case int:
-		return float64(n), true
-	case int64:
-		return float64(n), true
-	case string:
-		return runtime.ParseFloat(n)
-	}
-	return 0, false
 }

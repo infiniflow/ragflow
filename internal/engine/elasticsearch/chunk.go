@@ -2846,14 +2846,22 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 
 	// Extract chunk IDs from first search results
 	chunkIDs := make([]string, 0, len(chunks))
+	indexNames := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := chunk["_id"].(string); ok {
+		if id, ok := chunk["_id"].(string); ok && id != "" {
+			indexName, ok := chunk["_index"].(string)
+			if !ok || indexName == "" {
+				return nil, fmt.Errorf("KNN candidate %s has no index", id)
+			}
 			chunkIDs = append(chunkIDs, id)
+			indexNames = append(indexNames, indexName)
 		}
 	}
 	if len(chunkIDs) == 0 {
 		return nil, nil
 	}
+	chunkIDs = common.Deduplicate(chunkIDs)
+	indexNames = common.Deduplicate(indexNames)
 
 	common.Info("KNNScores starting", zap.Int("chunkCount", len(chunkIDs)), zap.Strings("chunkIDs", chunkIDs), zap.Int("vectorSize", len(queryVector)))
 
@@ -2882,19 +2890,10 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 		return nil, fmt.Errorf("failed to marshal KNN query: %w", err)
 	}
 
-	//common.Info("KNNScores query body", zap.String("body", string(body)))
-
-	// Execute search - use first index name from chunks if available
-	indexName := ""
-	if len(chunks) > 0 {
-		if idx, ok := chunks[0]["_index"].(string); ok {
-			indexName = idx
-		}
-	}
-
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
-		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithIndex(indexNames...),
+		e.client.Search.WithAllowPartialSearchResults(false),
 		e.client.Search.WithBody(bytes.NewReader(body)),
 	)
 	if err != nil {

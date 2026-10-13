@@ -140,7 +140,7 @@ func TestXLSParser_PreservesFormulaErrors(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("res.JSON len = %d, want 1", len(res.JSON))
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text := tableItemHTML(t, res.JSON[0])
 	if !strings.Contains(text, "<tr><td>#DIV/0!</td></tr>") {
 		t.Fatalf("table markup = %q, want formula error row", text)
 	}
@@ -174,7 +174,7 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	}
 
 	first := res.JSON[0]
-	text, _ := first["text"].(string)
+	text := tableItemHTML(t, first)
 	if !strings.Contains(text, "<caption>Inventory</caption>") ||
 		!strings.Contains(text, "<tr><th>Name</th><th>Count</th></tr>") ||
 		!strings.Contains(text, "<tr><td>Apples</td><td>3</td></tr>") {
@@ -195,7 +195,7 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 	}
 
 	second := res.JSON[1]
-	secondText, _ := second["text"].(string)
+	secondText := tableItemHTML(t, second)
 	if !strings.Contains(secondText, "<caption>Notes</caption>") ||
 		!strings.Contains(secondText, "<tr><td>Legacy</td><td>BIFF8</td></tr>") {
 		t.Fatalf("second table markup = %q, want second BIFF8 sheet data", secondText)
@@ -228,7 +228,7 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 	if item["ck_type"] != "table" {
 		t.Errorf("table item ck_type = %v, want table", item["ck_type"])
 	}
-	text, _ := item["text"].(string)
+	text := tableItemHTML(t, item)
 	if !strings.Contains(text, "<tr><th>Header1</th><th>Header2</th></tr>") ||
 		!strings.Contains(text, "<tr><td>Val1</td><td>Val2</td></tr>") {
 		t.Errorf("table markup = %q, want captioned header and data row", text)

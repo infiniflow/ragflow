@@ -47,7 +47,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 				trailingIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(it)
 			tableIdx = i
 			tableCount++
 		default:
@@ -130,7 +130,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 				trailingIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(it)
 			tableIdx = i
 			tableCount++
 		default:
@@ -216,7 +216,7 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 				afterIdx = i
 			}
 		case "table":
-			tableText = text
+			tableText = renderedText(it)
 			tableIdx = i
 			tableCount++
 		default:
@@ -312,8 +312,8 @@ func TestHTMLParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1, _ := res.JSON[tableItemIdx[0]]["text"].(string)
-	t2, _ := res.JSON[tableItemIdx[1]]["text"].(string)
+	t1 := renderedText(res.JSON[tableItemIdx[0]])
+	t2 := renderedText(res.JSON[tableItemIdx[1]])
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Errorf("first table item missing x/y cells: %q", t1)
 	}

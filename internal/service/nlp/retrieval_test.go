@@ -270,7 +270,7 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 		"similarity":          0.8,
 	}
 
-	got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1"}, engine, t.Context())
+	got := RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1", "tenant-2"}, engine, t.Context())
 
 	if len(got) != 1 || got[0]["chunk_id"] != "child-a" {
 		t.Fatalf("retrieval result = %#v, want fallback child", got)
@@ -280,6 +280,12 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 	}
 	if engine.parentSearch.Filter["doc_id"] != "doc-a" {
 		t.Fatalf("parent lookup filter = %#v, want doc_id doc-a", engine.parentSearch.Filter)
+	}
+	if !slices.Equal(engine.parentSearch.IndexNames, buildIndexNames([]string{"tenant-1", "tenant-2"})) {
+		t.Fatalf("parent lookup indices = %v, want both tenant indices", engine.parentSearch.IndexNames)
+	}
+	if !slices.Equal(engine.parentSearch.KbIDs, []string{"kb-1"}) {
+		t.Fatalf("parent lookup KBs = %v, want the child's dataset", engine.parentSearch.KbIDs)
 	}
 	if !engine.parentSearch.IncludeUnavailable {
 		t.Fatal("parent lookup must include hidden parent chunks")

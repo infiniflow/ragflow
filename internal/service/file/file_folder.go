@@ -367,10 +367,17 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 		if file.TenantID == "" {
 			return false, "tenant not found"
 		}
-		// 3. Permission check
+		// Permission check
 		if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
 			return false, "no authorization"
 		}
+	}
+
+	// 3. Reject selecting an entry together with one of its ancestors:
+	// moveEntryRecursive relocates and deletes an entire subtree, so a
+	// descendant selected alongside its ancestor would be processed twice.
+	if ok, msg := s.checkSourcesDisjoint(ctx, files); !ok {
+		return false, msg
 	}
 
 	// 4. Validate destination folder if provided
@@ -500,6 +507,40 @@ func (s *FileService) MoveFiles(ctx context.Context, uid string, srcFileIDs []st
 		// Update names of all linked documents if any exist
 		if err = s.renameLinkedDocuments(ctx, file.ID, newName); err != nil {
 			return false, "Database error (Document rename)!"
+		}
+	}
+
+	return true, ""
+}
+
+// checkSourcesDisjoint reports false with a message when a selected source
+// entry is an ancestor or descendant of another selected source entry.
+// moveEntryRecursive already relocates and deletes an entire subtree, so a
+// descendant selected alongside its ancestor would otherwise be processed
+// twice, recreating a duplicate folder or moving an already-removed object.
+func (s *FileService) checkSourcesDisjoint(ctx context.Context, files []*entity.File) (bool, string) {
+	if len(files) < 2 {
+		return true, ""
+	}
+
+	srcIDs := make(map[string]struct{}, len(files))
+	for _, f := range files {
+		srcIDs[f.ID] = struct{}{}
+	}
+
+	for _, file := range files {
+		ancestors, err := s.fileDAO.GetAllParentFolders(ctx, dao.DB, file.ID)
+		if err != nil {
+			return false, "failed to check source folder hierarchy"
+		}
+		for _, ancestor := range ancestors {
+			if ancestor.ID == file.ID {
+				// GetAllParentFolders includes the entry itself.
+				continue
+			}
+			if _, ok := srcIDs[ancestor.ID]; ok {
+				return false, "cannot move a folder together with its descendant"
+			}
 		}
 	}
 

@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
@@ -270,7 +271,10 @@ func (s *ChatPipelineService) AsyncChat(
 		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
 	}
 	if agenticSelected && hasKBs {
-		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, useWebSearch, quoteEnabled(kwargs, chat.PromptConfig))
+		if useWebSearch {
+			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
+		}
+		return s.agenticRag(ctx, userID, chat, messages, stream, kwargs, quoteEnabled(kwargs, chat.PromptConfig))
 	}
 
 	// No KBs & no web search → fast-path to LLM-only chat.
@@ -437,6 +441,17 @@ func (s *ChatPipelineService) AsyncChat(
 				zap.Int("image_files", len(imageFiles)),
 				zap.Int("attachment_bytes", len(attachments)))
 		}
+
+		var historyImageFiles []string
+		for _, previous := range messages[:len(messages)-1] {
+			if previous["role"] == "user" && previous["files"] != nil {
+				_, images := s.splitChatAttachments(ctx, userID, previous["files"])
+				modelType, _ := llmModelConfig["model_type"].(string)
+				images, _ = gateImageAttachments(chat.LLMID, modelType, images)
+				historyImageFiles = append(historyImageFiles, images...)
+			}
+		}
+		hasImageAttachments = hasImageAttachments || len(historyImageFiles) > 0
 
 		// === Phase 6: SQL Retrieval ===
 		// Retrieve field_map for SQL retrieval (preferred over vector search)
@@ -643,34 +658,7 @@ func (s *ChatPipelineService) AsyncChat(
 		// meta_data_filter — use LLM to map the question to metadata
 		// criteria, then filter docIDs to matching
 		// documents only.
-		if chat.MetaDataFilter != nil && len(*chat.MetaDataFilter) > 0 && len(kbs) > 0 {
-			kbIDs := kbIDStrings(kbs)
-			if metaQ := questions[len(questions)-1]; metaQ != "" {
-				var flattedMeta common.MetaData
-				var mErr error
-				if s.MetadataSvc != nil {
-					flattedMeta, mErr = s.MetadataSvc.GetFlattedMetaByKBs(ctx, kbIDs)
-				}
-				if mErr == nil {
-					if filtered, _ := ApplyMetaDataFilter(
-						ctx,
-						*chat.MetaDataFilter,
-						flattedMeta,
-						metaQ,
-						chatModel,
-						docIDs,
-						kbIDs,
-					); filtered != nil {
-						common.Debug("meta_data_filter applied",
-							zap.Int("filtered_count", len(filtered)),
-							zap.Int("pre_filter_count", len(docIDs)))
-						docIDs = filtered
-					}
-				} else {
-					common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(mErr))
-				}
-			}
-		}
+		docIDs = s.chatMetadataDocIDs(ctx, chat, questions[len(questions)-1], chatModel, docIDs, kbIDStrings(kbs))
 
 		// keyword — extract top-N keywords from the question via LLM and
 		// append them to the question text to boost lexical retrieval recall.
@@ -862,11 +850,12 @@ func (s *ChatPipelineService) AsyncChat(
 					}
 					harnessSystemPrompt = s.formatPrompt(sp, kws)
 				}
+				harnessImages := append(historyImageFiles, imageFiles...)
 				var history []map[string]interface{}
 				if kwargs["store_history_messages"] == false {
 					history = messages
 				}
-				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, imageFiles, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
+				hk, slotCites, citeChunkIDs, harnessAnswer, hErr := s.retrieveViaHarness(ctx, question, kbs, docIDs, harnessImages, attachments, thinkingMode, chat.TenantID, chat.LLMID, chat.ID, HarnessRetrieval{
 					TopN:                   int(chat.TopN),
 					SimilarityThreshold:    chat.SimilarityThreshold,
 					VectorSimilarityWeight: chat.VectorSimilarityWeight,
@@ -1161,12 +1150,16 @@ func (s *ChatPipelineService) AsyncChat(
 		if factoryName == "" {
 			factoryName = factoryFromLLMID(chat.LLMID)
 		}
-		for _, m := range messages {
+		modelType, _ := llmModelConfig["model_type"].(string)
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && kwargs["store_history_messages"] != false {
 				continue
 			}
 			llmMessage := normalizeLLMMessage(m)
+			if i < len(messages)-1 {
+				llmMessage["files"] = m["files"]
+			}
 			content := llmMessage["content"]
 			if contentStr, ok := content.(string); ok {
 				content = cleanCitationMarkers(contentStr)
@@ -1182,6 +1175,9 @@ func (s *ChatPipelineService) AsyncChat(
 
 		// Fit messages within token budget.
 		usedTokenCount, llmMessages := s.messageFitIn(llmMessages, int(float64(modelMaxTokens)*0.95))
+		for i := range llmMessages[:len(llmMessages)-1] {
+			llmMessages[i] = s.chatHistoryMessage(ctx, userID, llmMessages[i], modelType, factoryName)
+		}
 		common.Debug("Messages fitted in token budget",
 			zap.Int("model max_tokens", modelMaxTokens),
 			zap.Int("used_token_count", usedTokenCount),
@@ -1652,10 +1648,13 @@ func (s *ChatPipelineService) AsyncChatSolo(
 
 		// 3. Strip citation markers; non-storing model tests retain payload system messages.
 		var msg []map[string]interface{}
-		for _, m := range messages {
+		for i, m := range messages {
 			role, _ := m["role"].(string)
 			if role == "system" && config["store_history_messages"] != false {
 				continue
+			}
+			if i < len(messages)-1 {
+				m = s.chatHistoryMessage(ctx, userID, m, modelType, factoryName)
 			}
 			llmMessage := normalizeLLMMessage(m)
 			content := llmMessage["content"]
@@ -2879,6 +2878,21 @@ func (s *ChatPipelineService) buildChatMessages(systemContent string, messages [
 		result = append(result, modelMessageFromMap(m))
 	}
 	return result
+}
+
+func (s *ChatPipelineService) chatHistoryMessage(ctx context.Context, userID string, message map[string]interface{}, modelType, factory string) map[string]interface{} {
+	if message["role"] != "user" || message["files"] == nil {
+		return message
+	}
+	_, images := s.splitChatAttachments(ctx, userID, message["files"])
+	images, _ = gateImageAttachments("", modelType, images)
+	msg := normalizeLLMMessage(message)
+	converted, err := common.ConvertLastUserMsgToMultimodal(msg, images, factory)
+	if err != nil {
+		common.Warn("chat history multimodal conversion failed", zap.Error(err))
+		return msg
+	}
+	return converted
 }
 
 func normalizeLLMMessage(message map[string]interface{}) map[string]interface{} {
