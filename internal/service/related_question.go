@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
@@ -37,7 +38,7 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	if modelID == "" {
 		return nil, fmt.Errorf("no chat model configured")
 	}
-	prompt, err := LoadPrompt("related_question")
+	prompt, err := (prompts.EmbeddedPromptLoader{}).Load("related_question")
 	if err != nil {
 		return nil, err
 	}
