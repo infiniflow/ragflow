@@ -3885,6 +3885,13 @@
             "llm": []
         },
         {
+            "name": "LiteLLM",
+            "logo": "",
+            "tags": "LLM,TEXT EMBEDDING,TEXT RE-RANK",
+            "status": "1",
+            "llm": []
+        },
+        {
             "name": "LM-Studio",
             "logo": "",
             "tags": "LLM,TEXT EMBEDDING,IMAGE2TEXT",
