@@ -1,3 +1,5 @@
+import re
+
 import pytest
 from playwright.sync_api import expect
 
@@ -170,12 +172,60 @@ def step_06_run_query(
     require(flow_state, "search_input_ready")
     page = flow_page
     search_input = _search_query_input(page)
-    with step("run search query"):
+    with step("enable mind map and run search query"):
+        settings_trigger = page.locator("[data-testid='search-detail'] > button")
+        expect(settings_trigger.last).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        settings_trigger.last.click()
+
+        mind_map_label = page.locator("label").filter(has_text=re.compile(r"mind\s*map|思维导图", re.I))
+        expect(mind_map_label).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        mind_map_label.click()
+        save_button = page.locator("[data-testid='search-settings-save']")
+        expect(save_button).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        save_button.click()
+        expect(save_button).not_to_be_visible(timeout=RESULT_TIMEOUT_MS)
+
         expect(search_input).to_be_visible(timeout=RESULT_TIMEOUT_MS)
         search_input.fill("ragflow")
         search_input.press("Enter")
         _wait_for_results_navigation(page, timeout_ms=RESULT_TIMEOUT_MS)
+    flow_state["search_results_nav"] = True
     snap("search_results_nav")
+
+
+def step_07_open_mindmap(
+    flow_page,
+    flow_state,
+    base_url,
+    login_url,
+    active_auth_context,
+    step,
+    snap,
+    auth_click,
+    seeded_user_credentials,
+):
+    require(flow_state, "search_results_nav")
+    page = flow_page
+    with step("open mind map and assert rendered state"):
+        trigger = page.locator("[data-testid='search-mindmap-trigger']")
+        expect(trigger).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        trigger.click()
+
+        sheet = page.locator("[data-testid='search-mindmap-sheet']")
+        expect(sheet).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        body = page.locator("[data-testid='search-mindmap-body']")
+        expect(body).to_be_visible(timeout=RESULT_TIMEOUT_MS)
+        box = body.bounding_box()
+        assert box and box["width"] > 0 and box["height"] > 0, (
+            f"Mind map body must have positive dimensions, got {box}"
+        )
+        rendered_state = body.locator(
+            "[data-testid='search-mindmap-loading'], "
+            "[data-testid='search-mindmap-empty'], "
+            "[data-testid='search-mindmap-graph']"
+        )
+        expect(rendered_state).to_have_count(1, timeout=RESULT_TIMEOUT_MS)
+    snap("mindmap_rendered")
 
 
 STEPS = [
@@ -185,6 +235,7 @@ STEPS = [
     ("04_create_search", step_04_create_search),
     ("05_select_dataset", step_05_select_dataset),
     ("06_run_query", step_06_run_query),
+    ("07_open_mindmap", step_07_open_mindmap),
 ]
 
 
