@@ -19,6 +19,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 
 import {
   LlmKeys,
+  serializeProviderApiKey,
   useAddProviderInstance,
   useFetchInstanceModels,
 } from '../use-llm-request';
@@ -66,6 +67,26 @@ jest.mock('../use-warn-empty-model', () => ({
   useWarnEmptyModel: jest.fn(),
 }));
 
+describe('serializeProviderApiKey', () => {
+  it('JSON-stringifies nested provider config so Go can bind api_key as a string', () => {
+    expect(
+      serializeProviderApiKey({
+        mineru_apiserver: 'http://127.0.0.1:8000',
+        mineru_backend: 'standard',
+      }),
+    ).toBe(
+      JSON.stringify({
+        mineru_apiserver: 'http://127.0.0.1:8000',
+        mineru_backend: 'standard',
+      }),
+    );
+  });
+
+  it('leaves an already-string api_key unchanged', () => {
+    expect(serializeProviderApiKey('plain-token')).toBe('plain-token');
+  });
+});
+
 describe('useAddProviderInstance', () => {
   it('invalidates the added-model catalog after creating an instance', async () => {
     mockListProviders.mockResolvedValue({
@@ -110,5 +131,19 @@ describe('useAddProviderInstance', () => {
     expect(invalidateQueries).toHaveBeenCalledWith({
       queryKey: LlmKeys.allModels(),
     });
+    expect(mockAddProviderInstance).toHaveBeenCalledWith(
+      {
+        llm_factory: 'Bedrock',
+        data: expect.objectContaining({
+          instance_name: 'bedrock-api-key',
+          api_key: JSON.stringify({
+            auth_mode: 'bedrock_api_key',
+            bedrock_api_key: 'test-key',
+            bedrock_region: 'us-east-1',
+          }),
+        }),
+      },
+      true,
+    );
   });
 });
