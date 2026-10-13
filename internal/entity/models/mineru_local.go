@@ -24,7 +24,9 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"ragflow/internal/common"
+	"strings"
 )
 
 type MinerULocalModel struct {
@@ -48,6 +50,15 @@ func (m *MinerULocalModel) NewInstance(baseURL map[string]string) ModelDriver {
 
 func (m *MinerULocalModel) Name() string {
 	return "mineru"
+}
+
+// GetBaseURL prefers the instance URL, then mineru_apiserver from the
+// provider api_key JSON, then MINERU_APISERVER, then the factory default.
+func (m *MinerULocalModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
+	if u := ResolveMinerUAPIServer(apiConfig); u != "" {
+		return u, nil
+	}
+	return m.baseModel.GetBaseURL(apiConfig)
 }
 
 func (m *MinerULocalModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
@@ -82,8 +93,14 @@ func (m *MinerULocalModel) AudioSpeechWithSender(ctx context.Context, modelName 
 	return fmt.Errorf("%s no such method", m.Name())
 }
 
+// OCRFile is exercised during model verification (verifyOCRModel). Local MinerU
+// is a document-parsing API and has no image-OCR endpoint, so delegate to
+// CheckConnection — same pattern as the hosted mineru.net driver (mineru.go).
 func (m *MinerULocalModel) OCRFile(ctx context.Context, modelName *string, content []byte, url *string, apiConfig *APIConfig, ocrConfig *OCRConfig, modelUsage *common.ModelUsage) (*OCRFileResponse, error) {
-	return nil, fmt.Errorf("%s no such method", m.Name())
+	if err := m.CheckConnection(ctx, apiConfig); err != nil {
+		return nil, err
+	}
+	return &OCRFileResponse{}, nil
 }
 
 func (m *MinerULocalModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
@@ -95,7 +112,52 @@ func (m *MinerULocalModel) Balance(ctx context.Context, apiConfig *APIConfig) (m
 }
 
 func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APIConfig) error {
-	return fmt.Errorf("%s no such method", m.Name())
+	if err := m.baseModel.APIConfigCheck(apiConfig); err != nil {
+		return err
+	}
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
+	if err != nil {
+		return err
+	}
+	u, err := url.Parse(resolvedBaseURL)
+	if err != nil {
+		return fmt.Errorf("invalid base URL: %w", err)
+	}
+	token := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		token = MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey)
+	}
+	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
+	defer cancel()
+
+	// MinerU 4.0 serves GET /v1/health; 3.x serves GET /health. Probe V1
+	// first so a 4.0-only service (no /health) still verifies, then fall
+	// back. 401/403 mean the credentials are wrong; any other HTTP answer
+	// (including 404 on a server without that path) still proves reachability
+	// once at least one probe got a response.
+	v1URL := *u
+	v1URL.Path = "/v1/health"
+	v1Code, v1Err := minerUProbeGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	if v1Err == nil && v1Code != http.StatusNotFound && v1Code != http.StatusMethodNotAllowed {
+		if v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden {
+			return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
+		}
+		return nil
+	}
+
+	legacy := *u
+	legacy.Path = "/health"
+	code, err := minerUProbeGET(ctx, m.baseModel.httpClient, legacy.String(), token)
+	if err != nil {
+		if v1Err != nil {
+			return fmt.Errorf("connection failed: %w", v1Err)
+		}
+		return fmt.Errorf("connection failed: %w", err)
+	}
+	if code == http.StatusUnauthorized || code == http.StatusForbidden {
+		return fmt.Errorf("authentication failed (HTTP %d)", code)
+	}
+	return nil
 }
 
 func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, content []byte, documentURL *string, apiConfig *APIConfig, parseFileConfig *ParseFileConfig, modelUsage *common.ModelUsage) (*ParseFileResponse, error) {
@@ -107,7 +169,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("local MinerU API requires file content byte array, but content is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -125,10 +187,28 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 		return nil, fmt.Errorf("failed to write file content: %w", err)
 	}
 
-	if modelName != nil && *modelName != "" {
-		_ = writer.WriteField("backend", *modelName)
-	} else {
-		_ = writer.WriteField("backend", "pipeline")
+	apiKeyRaw := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		apiKeyRaw = *apiConfig.ApiKey
+	}
+	setupBackend := ""
+	if modelName != nil && strings.TrimSpace(*modelName) != "" {
+		setupBackend = strings.TrimSpace(*modelName)
+	} else if parseFileConfig != nil {
+		setupBackend = strings.TrimSpace(parseFileConfig.Backend)
+	}
+	setupServerURL := ""
+	if parseFileConfig != nil {
+		setupServerURL = parseFileConfig.ServerURL
+	}
+	backend := ResolveMinerUBackend(setupBackend, apiKeyRaw)
+	serverURL := ResolveMinerUServerURL(setupServerURL, apiKeyRaw)
+	if err := ValidateMinerUConfig(backend, serverURL); err != nil {
+		return nil, err
+	}
+	_ = writer.WriteField("backend", backend)
+	if serverURL != "" {
+		_ = writer.WriteField("server_url", serverURL)
 	}
 
 	if err = writer.Close(); err != nil {
@@ -145,8 +225,10 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)
@@ -200,7 +282,7 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("taskID is empty")
 	}
 
-	resolvedBaseURL, err := m.baseModel.GetBaseURL(apiConfig)
+	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -213,8 +295,10 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("failed to create status request: %w", err)
 	}
 
-	if auth := BearerAuth(apiConfig); auth != "" {
-		req.Header.Set("Authorization", auth)
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
+			req.Header.Set("Authorization", "Bearer "+token)
+		}
 	}
 
 	resp, err := m.baseModel.httpClient.Do(req)

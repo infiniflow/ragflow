@@ -129,7 +129,7 @@ func TestLoadWikiPresets_FrontendContract(t *testing.T) {
 		t.Fatalf("LoadWikiPresets: %v", err)
 	}
 	if len(presets) == 0 {
-		t.Fatal("expected wiki presets to load from api/db/init_data")
+		t.Fatal("expected wiki presets to load from internal/ingestion/knowledge_compile")
 	}
 	for _, preset := range presets {
 		if preset.Instruction == "" {
@@ -165,7 +165,7 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.Chdir(origWd) })
 
-	dir := filepath.Join("api", "db", "init_data", "compilation_templates")
+	dir := filepath.Join("internal", "ingestion", "knowledge_compile", "templates")
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		t.Fatalf("read builtin template directory: %v", err)
@@ -193,7 +193,7 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 		if template.Config["kind"] == nil {
 			t.Errorf("builtin template %q has no config.kind", template.ID)
 		}
-		if _, err := common.KindToVariant(template.Kind); err != nil {
+		if _, err = common.KindToVariant(template.Kind); err != nil {
 			t.Errorf("builtin template %q kind %q is not supported: %v", template.ID, template.Kind, err)
 		}
 		// Tree intentionally carries empty entity/relation stubs for the shared
@@ -204,7 +204,7 @@ func TestLoadBuiltinTemplates_AllYAMLDefinitions(t *testing.T) {
 				"kind":   template.Kind,
 				"config": map[string]interface{}(template.Config),
 			}
-			if err := ValidateTemplatePayload(payload, true); err != nil {
+			if err = ValidateTemplatePayload(payload, true); err != nil {
 				t.Errorf("builtin template %q failed validation: %v", template.ID, err)
 			}
 		}

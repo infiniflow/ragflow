@@ -1,7 +1,7 @@
 package service
 
 import (
-	"strings"
+	"errors"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -10,6 +10,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
@@ -39,6 +40,7 @@ func createServiceTestDialog(t *testing.T, db *gorm.DB, id, tenantID, name strin
 	t.Helper()
 
 	dialogName := name
+	status := string(entity.StatusValid)
 	dialog := &entity.Chat{
 		ID:           id,
 		TenantID:     tenantID,
@@ -48,6 +50,7 @@ func createServiceTestDialog(t *testing.T, db *gorm.DB, id, tenantID, name strin
 		PromptType:   "simple",
 		PromptConfig: entity.JSONMap{"system": "sys"},
 		KBIDs:        entity.JSONSlice{"kb-1"},
+		Status:       &status,
 	}
 	if err := db.Create(dialog).Error; err != nil {
 		t.Fatalf("failed to create dialog: %v", err)
@@ -143,6 +146,25 @@ func TestChatChannelServiceGetChatChannelAllowsJoinedTenant(t *testing.T) {
 	}
 }
 
+func TestChatChannelServiceListUsesPermissionScope(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID: "channel-team", TenantID: "tenant-1", Name: "team", Channel: "wecom", Config: entity.JSONMap{}, Status: 1,
+	})
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID: "channel-other", TenantID: "tenant-2", Name: "other", Channel: "wecom", Config: entity.JSONMap{}, Status: 1,
+	})
+	createServiceTestMembership(t, db, "user-2", "tenant-1")
+
+	channels, err := NewChatChannelService().List(t.Context(), "user-2")
+	if err != nil {
+		t.Fatalf("List() failed: %v", err)
+	}
+	if len(channels) != 1 || channels[0].ID != "channel-team" {
+		t.Fatalf("List() = %+v, want only member-visible channel-team", channels)
+	}
+}
+
 func TestChatChannelServiceUpdateChatChannelSuccess(t *testing.T) {
 	db := setupChatChannelServiceTestDB(t)
 	createServiceTestDialog(t, db, "dialog-1", "tenant-1", "Assistant A")
@@ -197,11 +219,33 @@ func TestChatChannelServiceUpdateChatChannelRejectsCrossTenantDialog(t *testing.
 	_, code, err := NewChatChannelService().UpdateChatChannel(ctx, "tenant-1", "cc-1", map[string]interface{}{
 		"chat_id": "dialog-2",
 	})
-	if code != common.CodeAuthenticationError {
-		t.Fatalf("expected authentication error, got %v", code)
+	if code != common.CodeNotFound {
+		t.Fatalf("expected hidden not-found error, got %v", code)
 	}
-	if err == nil || !strings.Contains(err.Error(), "no authorization") {
-		t.Fatalf("expected authorization error, got %v", err)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected permission denial, got %v", err)
+	}
+}
+
+func TestChatChannelServiceUpdateChatChannelRequiresChannelOwnerAccess(t *testing.T) {
+	db := setupChatChannelServiceTestDB(t)
+	createServiceTestDialog(t, db, "dialog-2", "tenant-2", "Assistant B")
+	createServiceTestChannel(t, db, &entity.ChatChannel{
+		ID:       "cc-1",
+		TenantID: "tenant-1",
+		Name:     "bot-a",
+		Channel:  "wecom",
+		Config:   entity.JSONMap{"token": "old"},
+		Status:   1,
+	})
+	createServiceTestMembership(t, db, "user-1", "tenant-1")
+	createServiceTestMembership(t, db, "user-1", "tenant-2")
+
+	_, code, err := NewChatChannelService().UpdateChatChannel(t.Context(), "user-1", "cc-1", map[string]interface{}{
+		"chat_id": "dialog-2",
+	})
+	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("UpdateChatChannel() = (%d, %v), want hidden denial because channel owner cannot use Chat", code, err)
 	}
 }
 
@@ -220,11 +264,11 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	ctx := t.Context()
 	deleted, code, err := svc.DeleteChatChannel(ctx, "user-2", "cc-1")
-	if code != common.CodeAuthenticationError {
-		t.Fatalf("expected authentication error, got %v", code)
+	if code != common.CodeNotFound || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected hidden permission denial, got code=%v err=%v", code, err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "no authorization") {
-		t.Fatalf("expected authorization error, got %v", err)
+	if err == nil {
+		t.Fatal("expected authorization error")
 	}
 	if deleted {
 		t.Fatal("expected delete to be rejected")
@@ -238,7 +282,7 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 		t.Fatalf("unexpected delete result: deleted=%v code=%v err=%v", deleted, code, err)
 	}
 
-	if _, err = svc.GetByID(ctx, "cc-1"); err == nil {
+	if _, err = dao.NewChatChannel().GetByID(ctx, dao.DB, "cc-1"); err == nil {
 		t.Fatal("expected deleted record to be gone")
 	}
 }

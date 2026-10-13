@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -50,7 +52,7 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14,"keywords_similarity_weight":0.7}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -73,6 +75,9 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	}
 	if fake.req.KNNTopK == nil || *fake.req.KNNTopK != 7 || fake.req.KNNNumCandidates == nil || *fake.req.KNNNumCandidates != 14 {
 		t.Fatalf("KNN parameters = (%v, %v), want (7, 14)", fake.req.KNNTopK, fake.req.KNNNumCandidates)
+	}
+	if fake.req.VectorSimilarityWeight == nil || math.Abs(*fake.req.VectorSimilarityWeight-0.3) > 1e-9 {
+		t.Fatalf("vector_similarity_weight = %v, want 0.3", fake.req.VectorSimilarityWeight)
 	}
 	if len(fake.req.ToSearchDatasetsRequest("ds-1").DatasetIDs) != 1 {
 		t.Fatal("request conversion failed")
@@ -269,6 +274,26 @@ func TestDatasetsHandlerSearchDatasetsPropagatesServiceError(t *testing.T) {
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeDataError) || body["message"] != "boom" {
 		t.Fatalf("response=%v want code=%d message=boom", body, common.CodeDataError)
+	}
+}
+
+func TestDatasetsHandlerSearchDatasetsNormalizesPermissionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{err: permission.ErrPermissionDenied}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"]}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.SearchDatasets(c)
+
+	body := decodeSearchResponse(t, rec)
+	if body["code"] != float64(common.CodeForbidden) || body["message"] != "Permission denied" {
+		t.Fatalf("response=%v want forbidden permission error", body)
 	}
 }
 

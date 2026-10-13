@@ -185,6 +185,24 @@ func TestMergeProviderModelsMatchesNamesCaseInsensitively(t *testing.T) {
 	}
 }
 
+func TestMergeProviderModelsDoesNotUseMaxOutputAsContextWindow(t *testing.T) {
+	static := []map[string]interface{}{
+		{"name": "chat-model", "model_types": []string{"chat"}, "context_length": 128000, "max_output": 4096},
+	}
+	remote := []map[string]interface{}{
+		{"name": "CHAT-MODEL", "model_types": []string{"chat"}, "context_length": 256000, "max_output": 8192},
+	}
+
+	got := indexProviderModels(t, mergeProviderModels(static, remote))
+	model := got["chat-model"]
+	if model["max_tokens"] != 128000 {
+		t.Fatalf("legacy max_tokens = %v, want catalog context length 128000", model["max_tokens"])
+	}
+	if model["max_output"] != 8192 {
+		t.Fatalf("max_output = %v, want remote output ceiling 8192", model["max_output"])
+	}
+}
+
 func TestMergeProviderModelsInheritsCatalogTypesOnConflict(t *testing.T) {
 	static := []map[string]interface{}{
 		{"name": "rerank-1", "model_types": []string{"rerank"}, "max_tokens": 1024},
@@ -237,7 +255,7 @@ func TestProviderHandlerCreateProviderInstanceRejectsInvalidInstanceName(t *test
 		gin.Param{Key: "provider_id_or_name", Value: "OpenAI"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).CreateProviderInstance(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).CreateProviderInstance(ctx)
 
 	body := decodeProviderHandlerResponse(t, recorder)
 	if common.ErrorCode(body["code"].(float64)) != common.CodeBadRequest {
@@ -253,7 +271,7 @@ func TestProviderHandlerAlterModelRejectsMissingModelSelector(t *testing.T) {
 		gin.Param{Key: "instance_id_or_name", Value: "default"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -273,7 +291,7 @@ func TestProviderHandlerAlterModelRejectsInvalidStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusBadRequest, recorder.Body.String())
@@ -297,7 +315,7 @@ func TestProviderHandlerAlterModelUpdatesStatus(t *testing.T) {
 		gin.Param{Key: "model_name", Value: "gpt-test"},
 	)
 
-	NewProviderHandler(nil, service.NewModelProviderService()).AlterModel(ctx)
+	NewProviderHandler(nil, service.NewModelProviderService(), service.NewModelCallService()).AlterModel(ctx)
 
 	if recorder.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", recorder.Code, http.StatusOK, recorder.Body.String())

@@ -211,20 +211,9 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		// predicates can match and the caller sees the real reason.
 		pr, pw := io.Pipe()
 		defer pr.Close()
-		streamErr := make(chan error, 1)
 		go func() {
 			defer pw.Close()
 			// resp.Body is owned by doStreamRequest — do NOT close it here.
-
-			var scanErr error
-			// Ensure streamErr always receives a result, on every exit
-			// path, so the final receive below can never block.
-			defer func() {
-				select {
-				case streamErr <- scanErr:
-				default:
-				}
-			}()
 
 			scanner := bufio.NewScanner(body)
 			scanner.Buffer(make([]byte, 64*1024), 1024*1024)
@@ -243,17 +232,29 @@ func (m *MinimaxModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 					}
 				}
 				if _, err := pw.Write([]byte(line + "\n")); err != nil {
-					scanErr = err
+					// The reader stopped consuming, which means
+					// HandleStreamingResponse already saw the terminal event
+					// and returned. There is nothing left to report.
 					return
 				}
 			}
-			scanErr = scanner.Err()
+			// A body read error reaches the reader through the pipe, so the
+			// caller sees the actual cause instead of a generic "stream ended
+			// before [DONE]" from the shared handler.
+			pw.CloseWithError(scanner.Err())
 		}()
 
-		if err := HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender); err != nil {
-			return err
-		}
-		return <-streamErr
+		// The stream's outcome is decided here and nowhere else:
+		// HandleStreamingResponse returns once it sees [DONE] or a terminal
+		// finish_reason, and its error is the one worth reporting. This
+		// function must NOT then wait for the scanner goroutine to finish.
+		// MiniMax ends a stream by sending [DONE] and leaving the connection
+		// open, so scanner.Scan() never observes an EOF; a wait here blocked
+		// for the whole streamCallTimeout (20 minutes) even though the answer
+		// was already complete. Because this returns immediately,
+		// doStreamRequest's deferred resp.Body.Close() unblocks the scanner
+		// and the goroutine exits.
+		return HandleStreamingResponse(pr, modelUsage, modelConfig, OpenAIParserConfig, sender)
 	})
 }
 

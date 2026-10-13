@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// local.go is the Go port of `agent/sandbox/providers/local.py`.
+// Local execution runs trusted code on the RAGFlow host.
 //
 // LocalProvider runs the user's code on the Go host itself via
 // os/exec. There is no sandboxing — the code runs with the Go
@@ -89,8 +89,25 @@ const localDefaultNoFile = 64
 const localDefaultPythonBin = "python3"
 const localDefaultNodeBin = "node"
 
-// LocalProvider is the Go port of
-// `agent/sandbox/providers/local.py::LocalProvider`.
+// localOutputCapture keeps the bytes needed for a valid result while
+// accepting all writes so a noisy child can finish rather than block.
+type localOutputCapture struct {
+	buffer bytes.Buffer
+	limit  int
+	total  int
+}
+
+func (c *localOutputCapture) Write(p []byte) (int, error) {
+	n := len(p)
+	c.total += n
+	if c.limit > 0 {
+		p = p[:min(len(p), max(0, c.limit-c.buffer.Len()))]
+	}
+	_, err := c.buffer.Write(p)
+	return n, err
+}
+
+// LocalProvider executes code on the current host.
 type LocalProvider struct {
 	pythonBin        string
 	nodeBin          string
@@ -162,6 +179,9 @@ func (p *LocalProvider) ProviderType() ProviderType { return ProviderLocal }
 // version, we do not set rlimits here — the limits are applied
 // to the child per-execution via Cmd.SysProcAttr.
 func (p *LocalProvider) Initialize(ctx context.Context) error {
+	if p.maxOutputBytes <= 0 {
+		return fmt.Errorf("local: max_output_bytes must be greater than 0")
+	}
 	if err := os.MkdirAll(p.workDir, 0o700); err != nil {
 		return fmt.Errorf("local: create work_dir %q: %w", p.workDir, err)
 	}
@@ -320,12 +340,9 @@ func (p *LocalProvider) ExecuteCode(
 		// side-channel — out of scope for a "local" provider.
 	}
 
-	var stdout, stderr bytes.Buffer
 	maxOut := p.maxOutputBytes
-	if maxOut > 0 {
-		stdout = bytes.Buffer{}
-		stderr = bytes.Buffer{}
-	}
+	stdout := localOutputCapture{limit: maxOut}
+	stderr := localOutputCapture{limit: maxOut}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -364,14 +381,14 @@ func (p *LocalProvider) ExecuteCode(
 	// Validate output size: if stdout+stderr exceed the cap,
 	// surface as a runtime error (matches the Python provider).
 	if maxOut > 0 {
-		combined := stdout.Len() + stderr.Len()
+		combined := stdout.total + stderr.total
 		if combined > maxOut {
 			return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
 		}
 	}
 
 	// Extract the structured result from stdout.
-	cleanedStdout, structured := ExtractStructuredResult(stdout.String())
+	cleanedStdout, structured := ExtractStructuredResult(stdout.buffer.String())
 
 	// Collect artifacts under <instance_dir>/artifacts/. Matches
 	// the Python provider's _collect_artifacts behavior
@@ -395,7 +412,7 @@ func (p *LocalProvider) ExecuteCode(
 	}
 	return &ExecutionResult{
 		Stdout:        cleanedStdout,
-		Stderr:        stderr.String(),
+		Stderr:        stderr.buffer.String(),
 		ExitCode:      exitCode,
 		ExecutionTime: time.Since(start).Seconds(),
 		Metadata:      metadata,

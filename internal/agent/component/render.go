@@ -65,14 +65,13 @@ const (
 // entry. Mirrors agent/component/message.py:_is_download_info
 // (the {doc_id, filename, mime_type} tuple).
 type DownloadInfo struct {
-	DocID                        string `json:"doc_id"`
-	Filename                     string `json:"filename"`
-	MimeType                     string `json:"mime_type"`
-	URL                          string `json:"url,omitempty"`
-	Content                      string `json:"content,omitempty"`
-	Size                         int    `json:"size,omitempty"`
-	PreviewURL                   string `json:"preview_url,omitempty"`
-	IncludeDownloadInfoInContent bool   `json:"include_download_info_in_content,omitempty"`
+	DocID      string `json:"doc_id"`
+	Filename   string `json:"filename"`
+	MimeType   string `json:"mime_type"`
+	URL        string `json:"url,omitempty"`
+	Content    string `json:"content,omitempty"`
+	Size       int    `json:"size,omitempty"`
+	PreviewURL string `json:"preview_url,omitempty"`
 }
 
 // RenderRequest is the renderer input. Text is the resolved
@@ -324,9 +323,6 @@ func downloadFromMap(m map[string]any) DownloadInfo {
 		d.Size = int(f)
 	} else if i, ok := m["size"].(int); ok {
 		d.Size = i
-	}
-	if b, ok := m["include_download_info_in_content"].(bool); ok {
-		d.IncludeDownloadInfoInContent = b
 	}
 	return d
 }

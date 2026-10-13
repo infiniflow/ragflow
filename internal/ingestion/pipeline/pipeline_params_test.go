@@ -623,17 +623,12 @@ func TestBuildParserConfig_BuiltinExtractorKeepsBuiltInMetadata(t *testing.T) {
 
 func TestApplyParentChildChunkerConfig(t *testing.T) {
 	config := entity.JSONMap{
-		"GeneralChunker:one": map[string]interface{}{"chunk_token_num": 256, "children_delimiters": []string{"wrong"}},
-		"TokenChunker:two":   map[string]interface{}{"chunk_token_num": 128, "children_delimiters": []string{"wrong"}},
+		"GeneralChunker:one": map[string]interface{}{"chunk_token_num": 256, "children_delimiters": []string{"wrong"}, "parent_child": map[string]interface{}{"use_parent_child": true, "children_delimiter": "|"}},
+		"TokenChunker:two":   map[string]interface{}{"chunk_token_num": 128, "children_delimiters": []string{"wrong"}, "parent_child": map[string]interface{}{"use_parent_child": true, "children_delimiter": "|"}},
 		"Extractor:three":    map[string]interface{}{"llm_id": "llm-1"},
 	}
 
-	ApplyParentChildChunkerConfig(config, map[string]interface{}{
-		"parent_child": map[string]interface{}{
-			"use_parent_child":   true,
-			"children_delimiter": "|",
-		},
-	})
+	ApplyParentChildChunkerConfig(config, map[string]interface{}{})
 
 	for _, componentID := range []string{"GeneralChunker:one", "TokenChunker:two"} {
 		params := config[componentID].(map[string]interface{})
@@ -1155,7 +1150,7 @@ func TestCleanComponentParams_AcceptsOperatorFormParams(t *testing.T) {
 // whitelist coverage.
 var componentParamWhitelistExemptions = map[string]string{
 	"File":           "no user-editable params",
-	"Parser":         "accepted keys are the DSL's file families",
+	"Parser":         "DSL file families plus the global vision parameter whitelist",
 	"GeneralChunker": "param struct lives in the chunker package without json tags; template keys + the delimiters exception cover it",
 	"QAChunker":      "no operator form; param struct is not in the schema package",
 	"OneChunker":     "no user-editable params",

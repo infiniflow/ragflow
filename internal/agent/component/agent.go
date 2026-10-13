@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
@@ -56,8 +57,7 @@ const defaultAgentDeferredTimeout = 10 * time.Minute
 // provider is `parts[1]` for the 2-part shape and `parts[2]` for
 // the 3+ shape. Any middle `@<seg>` segments (the "instance" in
 // Python's split_model_name) are intentionally dropped — the Go
-// drivers and the tenant_llm lookup both key on the bare model
-// name + factory, not on the instance.
+// drivers key on the bare model name, not on the instance.
 //
 // Mirrors Python's split_model_name at
 // api/db/joint_services/tenant_model_service.py:163-178:
@@ -184,7 +184,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	}
 
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
-		ToolCallingModel: chatModel,
+		ToolCallingModel: &roundLimitedChatModel{ToolCallingChatModel: chatModel, remaining: maxSteps / 2},
 		ToolsConfig: compose.ToolsNodeConfig{
 			Tools: tools,
 		},
@@ -255,6 +255,47 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 		return nil, err
 	}
 	return msg, nil
+}
+
+// The reserved final model step must answer rather than schedule more tools.
+type roundLimitedChatModel struct {
+	model.ToolCallingChatModel
+	remaining int
+}
+
+func (m *roundLimitedChatModel) WithTools(tools []*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	bound, err := m.ToolCallingChatModel.WithTools(tools)
+	if err != nil {
+		return nil, err
+	}
+	return &roundLimitedChatModel{ToolCallingChatModel: bound, remaining: m.remaining}, nil
+}
+
+func (m *roundLimitedChatModel) roundOptions(opts []model.Option) []model.Option {
+	if m.remaining <= 0 {
+		opts = append(opts, model.WithToolChoice(schema.ToolChoiceForbidden))
+	}
+	m.remaining--
+	return opts
+}
+
+func (m *roundLimitedChatModel) Generate(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.Message, error) {
+	input = m.roundInput(input)
+	return m.ToolCallingChatModel.Generate(ctx, input, m.roundOptions(opts)...)
+}
+
+func (m *roundLimitedChatModel) Stream(ctx context.Context, input []*schema.Message, opts ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	input = m.roundInput(input)
+	return m.ToolCallingChatModel.Stream(ctx, input, m.roundOptions(opts)...)
+}
+
+func (m *roundLimitedChatModel) roundInput(input []*schema.Message) []*schema.Message {
+	if m.remaining > 0 {
+		return input
+	}
+	final := make([]*schema.Message, 0, len(input)+1)
+	final = append(final, input...)
+	return append(final, schema.SystemMessage("The configured tool-call budget is exhausted. Do not call any more tools. Produce your final answer using the evidence already collected. State any missing evidence or uncertainty; do not claim that unperformed searches were completed."))
 }
 
 // scanAllStreamForToolCall consumes the whole model response, then branches
@@ -991,7 +1032,7 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
-		return map[string]any{"_ERROR": "**ERROR**: " + err.Error()}, nil
+		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
 	}
 	// Post-stream citation grounding. When Cite is enabled and
 	// the canvas state has recorded retrieval chunks (populated
@@ -1130,9 +1171,7 @@ func buildAgentChatModel(ctx context.Context, p AgentParam) (*models.EinoChatMod
 	// llm_id format. The RAGFlow DSL stores the model identifier as
 	// "<model>@<instance>@<provider>" (mirrors Python's
 	// split_model_name at
-	// api/db/joint_services/tenant_model_service.py:163-178 and the
-	// Go-side SplitModelNameAndFactory at
-	// internal/service/tenant.go:168). Two-part
+	// api/db/joint_services/tenant_model_service.py:163-178. Two-part
 	// "<model>@<provider>" and bare "<model>" are also accepted —
 	// bare means no driver known, which falls through to the dummy
 	// driver below. The trailing "@<provider>" suffix must also be

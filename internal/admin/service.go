@@ -36,10 +36,8 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/server"
-	"ragflow/internal/server/config"
 	servicepkg "ragflow/internal/service"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"regexp"
 	"time"
 
@@ -55,7 +53,6 @@ type Service struct {
 	systemSettingsDAO   *dao.SystemSettingsDAO
 	tenantDAO           *dao.TenantDAO
 	userTenantDAO       *dao.UserTenantDAO
-	tenantLLMDAO        *dao.TenantLLMDAO
 	fileDAO             *dao.FileDAO
 	documentDAO         *dao.DocumentDAO
 	taskDAO             *dao.TaskDAO
@@ -87,7 +84,6 @@ func NewService() *Service {
 		systemSettingsDAO:   dao.NewSystemSettingsDAO(),
 		tenantDAO:           dao.NewTenantDAO(),
 		userTenantDAO:       dao.NewUserTenantDAO(),
-		tenantLLMDAO:        dao.NewTenantLLMDAO(),
 		fileDAO:             dao.NewFileDAO(),
 		documentDAO:         dao.NewDocumentDAO(),
 		taskDAO:             dao.NewTaskDAO(),
@@ -207,8 +203,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to hash password: %w", err)
 	}
 
-	userID := utility.GenerateToken()
-	accessToken := utility.GenerateToken()
+	userID := common.GenerateToken()
+	accessToken := common.GenerateToken()
 	status := "1"
 	loginChannel := "password"
 	isSuperuser := role == "admin"
@@ -296,7 +292,7 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	// 3. Create user-tenant relation
 	userTenantStatus := "1"
 	userTenant := &entity.UserTenant{
-		ID:        utility.GenerateToken(),
+		ID:        common.GenerateToken(),
 		UserID:    userID,
 		TenantID:  userID,
 		Role:      "owner",
@@ -308,20 +304,8 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 		return nil, fmt.Errorf("failed to create user-tenant relation: %w", err)
 	}
 
-	// 4. Create tenant LLM configurations
-	tenantLLMs, err := s.getInitTenantLLM(ctx, userID)
-	if err != nil {
-		common.Warn("failed to get init tenant LLM configs", zap.Error(err))
-		// Continue without LLM configs - not a critical error
-	} else if len(tenantLLMs) > 0 {
-		if err = tx.Create(&tenantLLMs).Error; err != nil {
-			common.Warn("failed to create tenant LLM configs", zap.Error(err))
-			// Continue without LLM configs - not a critical error
-		}
-	}
-
-	// 5. Create root file folder
-	fileID := utility.GenerateToken()
+	// 4. Create root file folder
+	fileID := common.GenerateToken()
 	fileLocation := ""
 	file := &entity.File{
 		ID:        fileID,
@@ -355,132 +339,6 @@ func (s *Service) CreateUser(ctx context.Context, username, password, role strin
 	}, nil
 }
 
-// getInitTenantLLM gets initial tenant LLM configurations
-// This matches Python's get_init_tenant_llm function
-func (s *Service) getInitTenantLLM(ctx context.Context, userID string) ([]*entity.TenantLLM, error) {
-	cfg := server.GetConfig()
-	if cfg == nil {
-		return nil, fmt.Errorf("config not initialized")
-	}
-
-	var tenantLLMs []*entity.TenantLLM
-
-	// Get model configs from configuration
-	modelConfigs := []config.ModelConfig{
-		cfg.GetDefaultChatModel(),
-		cfg.GetDefaultEmbeddingModel(),
-		cfg.GetDefaultRerankModel(),
-		cfg.GetDefaultASRModel(),
-		cfg.GetDefaultVisionModel(),
-		cfg.GetDefaultTTSModel(),
-		cfg.GetDefaultOCRModel(),
-	}
-
-	// Track seen factories to avoid duplicates
-	seenFactories := make(map[string]bool)
-	var uniqueFactories []config.ModelConfig
-
-	for _, mc := range modelConfigs {
-		if mc.Factory == "" {
-			continue
-		}
-		if !seenFactories[mc.Factory] {
-			seenFactories[mc.Factory] = true
-			uniqueFactories = append(uniqueFactories, mc)
-		}
-	}
-
-	// Get LLMs for each unique factory
-	for _, factoryConfig := range uniqueFactories {
-		models, err := s.llmDAO.GetByFactory(ctx, dao.DB, factoryConfig.Factory)
-		if err != nil {
-			common.Warn("failed to get LLMs for factory", zap.String("factory", factoryConfig.Factory), zap.Error(err))
-			continue
-		}
-
-		for _, model := range models {
-			// Determine API key and base URL based on model type
-			var apiKey, apiBase string
-			switch model.ModelType {
-			case entity.ModelTypeChat.String():
-				apiKey = factoryConfig.APIKey
-				apiBase = factoryConfig.BaseURL
-			case entity.ModelTypeEmbedding.String():
-				apiKey = cfg.GetDefaultEmbeddingModel().APIKey
-				apiBase = cfg.GetDefaultEmbeddingModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeRerank.String():
-				apiKey = cfg.GetDefaultRerankModel().APIKey
-				apiBase = cfg.GetDefaultRerankModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeSpeech2Text.String():
-				apiKey = cfg.GetDefaultASRModel().APIKey
-				apiBase = cfg.GetDefaultASRModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			case entity.ModelTypeImage2Text.String():
-				apiKey = cfg.GetDefaultVisionModel().APIKey
-				apiBase = cfg.GetDefaultVisionModel().BaseURL
-				if apiKey == "" {
-					apiKey = factoryConfig.APIKey
-				}
-				if apiBase == "" {
-					apiBase = factoryConfig.BaseURL
-				}
-			default:
-				apiKey = factoryConfig.APIKey
-				apiBase = factoryConfig.BaseURL
-			}
-
-			maxTokens := int64(8192)
-			if model.MaxTokens > 0 {
-				maxTokens = model.MaxTokens
-			}
-
-			llmName := model.LLMName
-			modelType := model.ModelType
-			tenantLLM := &entity.TenantLLM{
-				TenantID:   userID,
-				LLMFactory: factoryConfig.Factory,
-				LLMName:    &llmName,
-				ModelType:  &modelType,
-				APIKey:     &apiKey,
-				APIBase:    &apiBase,
-				MaxTokens:  maxTokens,
-				Status:     "1",
-			}
-			tenantLLMs = append(tenantLLMs, tenantLLM)
-		}
-	}
-
-	// Remove duplicates based on (tenant_id, llm_factory, llm_name)
-	seen := make(map[string]bool)
-	var uniqueLLMs []*entity.TenantLLM
-	for _, tenantLLM := range tenantLLMs {
-		key := fmt.Sprintf("%s|%s|%s", tenantLLM.TenantID, tenantLLM.LLMFactory, *tenantLLM.LLMName)
-		if !seen[key] {
-			seen[key] = true
-			uniqueLLMs = append(uniqueLLMs, tenantLLM)
-		}
-	}
-
-	return uniqueLLMs, nil
-}
-
 // GetUserDetails get user details
 func (s *Service) GetUserDetails(ctx context.Context, username string) (map[string]interface{}, error) {
 	user, err := s.userDAO.GetByEmail(ctx, dao.DB, username)
@@ -509,7 +367,6 @@ func (s *Service) GetUserDetails(ctx context.Context, username string) (map[stri
 // DeleteUserResult result of delete user operation
 type DeleteUserResult struct {
 	Username        string   `json:"username"`
-	TenantLLMCount  int      `json:"tenant_llm_count"`
 	LangfuseCount   int      `json:"langfuse_count"`
 	MetadataTable   string   `json:"metadata_table"`
 	TenantCount     int      `json:"tenant_count"`
@@ -625,7 +482,7 @@ func (s *Service) UpdateUserActivateStatus(ctx context.Context, username string,
 
 	user.IsActive = targetStatus
 	if !isActive {
-		invalidToken := "INVALID_" + utility.GenerateToken()
+		invalidToken := "INVALID_" + common.GenerateToken()
 		user.AccessToken = &invalidToken
 	}
 
@@ -760,8 +617,8 @@ func (s *Service) GenerateUserAPIToken(ctx context.Context, username string) (ma
 	tenantID := userTenants[0].TenantID
 
 	// 3. Generate API token
-	key := utility.GenerateAPIToken()
-	beta := utility.GenerateBetaAPIToken()
+	key := common.GenerateAPIToken()
+	beta := common.GenerateBetaAPIToken()
 
 	apiToken := &entity.APIToken{
 		TenantID: tenantID,
@@ -1361,13 +1218,12 @@ func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interf
 }
 
 // GetSandboxConfig get sandbox config
-func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{}, error) {
+func (s *Service) GetSandboxConfig(ctx context.Context, providerType string) (map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, "sandbox.")
 	if err != nil {
 		return nil, err
 	}
 
-	providerType := "self_managed"
 	values := make(map[string]string, len(settings))
 	for _, setting := range settings {
 		if _, exists := values[setting.Name]; exists {
@@ -1375,8 +1231,11 @@ func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{},
 		}
 		values[setting.Name] = setting.Value
 	}
-	if value, exists := values["sandbox.provider_type"]; exists {
-		providerType = value
+	if providerType == "" {
+		providerType = "self_managed"
+		if value, exists := values["sandbox.provider_type"]; exists {
+			providerType = value
+		}
 	}
 	schema, err := sandbox.ConfigSchema(providerType)
 	if err != nil {
@@ -1455,7 +1314,7 @@ func (s *Service) TestSandboxConnection(ctx context.Context, providerType string
 var heartBeatCount int64 = 0
 
 // HandleHeartbeat handle heartbeat
-func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, string) {
+func (s *Service) HandleHeartbeat(message *common.BaseMessage) (common.ErrorCode, map[string]interface{}, string) {
 	heartBeatCount++
 
 	status := &common.BaseMessage{
@@ -1486,8 +1345,8 @@ func (s *Service) InitDefaultAdmin() error {
 	}
 
 	if len(users) == 0 {
-		userID := utility.GenerateToken()
-		accessToken := utility.GenerateToken()
+		userID := common.GenerateToken()
+		accessToken := common.GenerateToken()
 		status := "1"
 		loginChannel := "password"
 		isSuperuser := true

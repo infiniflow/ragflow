@@ -2,14 +2,20 @@ package dataset
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
+
+func testDatasetSubject(id string) permission.Subject {
+	return permission.Subject{UserID: id, TenantID: id}
+}
 
 func insertCreateDatasetTenant(t *testing.T, tenantID string) {
 	t.Helper()
@@ -27,6 +33,7 @@ func insertCreateDatasetTenant(t *testing.T, tenantID string) {
 			t.Fatalf("insert test tenant: %v", err)
 		}
 	}
+	ensureDatasetTestMembership(t, tenantID, tenantID, "owner")
 }
 
 func testDatasetCreateService(t *testing.T) *DatasetService {
@@ -38,6 +45,8 @@ func testDatasetCreateService(t *testing.T) *DatasetService {
 		tenantDAO:    dao.NewTenantDAO(),
 	}
 }
+
+func iptr(i int) *int { return &i }
 
 func TestCreateDataset_NoComponentParams(t *testing.T) {
 	db := setupServiceTestDB(t)
@@ -51,7 +60,7 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 		Name:      "ds-no-cp",
 		ParserID:  &chunkMethod,
 		ParseType: &parseType,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -60,6 +69,12 @@ func TestCreateDataset_NoComponentParams(t *testing.T) {
 	}
 	if result["parser_id"] != string(entity.ParserTypeGeneral) {
 		t.Fatalf("expected canonical parser_id %q, got %#v", entity.ParserTypeGeneral, result["parser_id"])
+	}
+	if got, ok := result["keywords_similarity_weight"].(float64); !ok || math.Abs(got-0.7) > 1e-9 {
+		t.Fatalf("keywords_similarity_weight = %#v, want 0.7", result["keywords_similarity_weight"])
+	}
+	if _, exists := result["vector_similarity_weight"]; exists {
+		t.Fatal("response must not include vector_similarity_weight")
 	}
 }
 
@@ -70,8 +85,10 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 
 	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:         "ds-default-parent-child",
+		ParserID:     sptr("general"),
+		ParseType:    iptr(1),
 		ParserConfig: map[string]interface{}{},
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -80,16 +97,33 @@ func TestCreateDataset_DefaultsParentChildConfig(t *testing.T) {
 	if !ok {
 		t.Fatalf("parser_config type = %T, want entity.JSONMap", result["parser_config"])
 	}
-	parentChild, ok := config["parent_child"].(map[string]interface{})
+	chunker := findChunkerNodeInTest(t, map[string]interface{}(config))
+	parentChild, ok := chunker["parent_child"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("parent_child = %#v, want default map", config["parent_child"])
+		t.Fatalf("chunker parent_child = %#v, want default map", chunker["parent_child"])
 	}
 	if parentChild["use_parent_child"] != false || parentChild["children_delimiter"] != "\n" {
 		t.Fatalf("parent_child = %#v, want disabled defaults", parentChild)
 	}
 }
 
-func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
+// findChunkerNodeInTest returns the first chunker component params from a
+// parser_config (the component-scoped home of the parent_child setting).
+func findChunkerNodeInTest(t *testing.T, config map[string]interface{}) map[string]interface{} {
+	t.Helper()
+	for cpnID, raw := range config {
+		lower := strings.ToLower(cpnID)
+		if strings.HasPrefix(lower, "generalchunker:") || strings.HasPrefix(lower, "tokenchunker:") {
+			if params, ok := raw.(map[string]interface{}); ok {
+				return params
+			}
+		}
+	}
+	t.Fatalf("no chunker node found in parser_config: %#v", config)
+	return nil
+}
+
+func TestCreateDataset_RequiresParseTypeWhenParserIDIsProvided(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
@@ -98,12 +132,11 @@ func TestCreateDataset_BuiltinParserDoesNotRequireParseType(t *testing.T) {
 	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
 		Name:     "ds-parser-only",
 		ParserID: &parserID,
-	}, "tenant-1")
-	if err != nil || code != common.CodeSuccess {
-		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}, testDatasetSubject("tenant-1"))
+	if err == nil || code != common.CodeDataError || err.Error() != "parse_type is required" {
+		t.Fatalf("CreateDataset = (code=%d, err=%v), want data error for missing parse_type", code, err)
 	}
 }
-
 func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -117,7 +150,7 @@ func TestCreateDataset_ComponentParamsPopulated(t *testing.T) {
 		ParserID:     &chunkMethod,
 		ParserConfig: map[string]interface{}{},
 		ParseType:    &parseType,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -152,12 +185,14 @@ func TestCreateDataset_ParentChildConfigReachesGeneralChunker(t *testing.T) {
 		ParserID:  &parserID,
 		ParseType: &parseType,
 		ParserConfig: map[string]interface{}{
-			"parent_child": map[string]interface{}{
-				"use_parent_child":   true,
-				"children_delimiter": "|",
+			"GeneralChunker:SixApplesFall": map[string]interface{}{
+				"parent_child": map[string]interface{}{
+					"use_parent_child":   true,
+					"children_delimiter": "|",
+				},
 			},
 		},
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -190,7 +225,7 @@ func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
 				"chunk_token_size": float64(256),
 			},
 		},
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil || code != common.CodeSuccess {
 		t.Fatalf("CreateDataset err=%v code=%d", err, code)
 	}
@@ -208,21 +243,19 @@ func TestCreateDataset_PreservesChunkerComponentOverrides(t *testing.T) {
 	}
 }
 
-func TestCreateDataset_ParseTypeBuiltinClearsPipelineID(t *testing.T) {
+func TestCreateDataset_ParseTypeBuiltinHasNoPipelineID(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
 	insertCreateDatasetTenant(t, "tenant-1")
 	ctx := t.Context()
 
-	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypeBuiltin := 1
 	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:       "ds-parse-builtin",
-		ParserID:   &chunkMethod,
-		PipelineID: &pipelineID,
-		ParseType:  &parseTypeBuiltin,
-	}, "tenant-1")
+		Name:      "ds-parse-builtin",
+		ParserID:  &chunkMethod,
+		ParseType: &parseTypeBuiltin,
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -246,13 +279,11 @@ func TestCreateDataset_ParseTypePipelineIgnoresParserID(t *testing.T) {
 
 	pipelineID := "0123456789abcdef0123456789abcdef"
 	parseTypePipeline := 2
-	chunkMethod := "naive"
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
 		Name:       "ds-parse-pipeline",
-		ParserID:   &chunkMethod,
 		PipelineID: &pipelineID,
 		ParseType:  &parseTypePipeline,
-	}, "tenant-1")
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -271,7 +302,7 @@ func TestCreateDataset_ValidatesName(t *testing.T) {
 	insertCreateDatasetTenant(t, "tenant-1")
 	ctx := t.Context()
 
-	_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "   "}, "tenant-1")
+	_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "   "}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected name validation error")
 	}
@@ -301,7 +332,11 @@ func TestCreateDataset_DedupesDuplicateName(t *testing.T) {
 
 	ctx := t.Context()
 	// Mirror Python's duplicate_name: the create appends (1) instead of failing.
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "Existing"}, "tenant-1")
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "Existing",
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("expected success, got %v", err)
 	}
@@ -310,6 +345,48 @@ func TestCreateDataset_DedupesDuplicateName(t *testing.T) {
 	}
 	if result["name"] != "Existing(1)" {
 		t.Fatalf("unexpected name: %v", result["name"])
+	}
+}
+
+func TestCreateDataset_UsesActorAsCreatorAndTenantAsOwner(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+	ensureDatasetTestMembership(t, "member-1", "tenant-1", "normal")
+
+	parserID := "general"
+	parseType := 1
+	result, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name:      "created-by-member",
+		ParserID:  &parserID,
+		ParseType: &parseType,
+	}, permission.Subject{UserID: "member-1", TenantID: "tenant-1"})
+	if err != nil || code != common.CodeSuccess {
+		t.Fatalf("CreateDataset err=%v code=%d", err, code)
+	}
+
+	var dataset entity.Knowledgebase
+	if err := db.Where("id = ?", result["id"]).Take(&dataset).Error; err != nil {
+		t.Fatalf("load created dataset: %v", err)
+	}
+	if dataset.TenantID != "tenant-1" {
+		t.Fatalf("tenant_id = %q, want tenant-1", dataset.TenantID)
+	}
+	if dataset.CreatedBy != "member-1" {
+		t.Fatalf("created_by = %q, want member-1", dataset.CreatedBy)
+	}
+}
+
+func TestCreateDatasetRejectsUserWithoutTenantMembership(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertCreateDatasetTenant(t, "tenant-1")
+
+	_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
+		Name: "unauthorized-dataset",
+	}, permission.Subject{UserID: "outsider", TenantID: "tenant-1"})
+	if err == nil || code != common.CodeForbidden || err.Error() != "Permission denied" {
+		t.Fatalf("CreateDataset = (code=%d, err=%v), want forbidden for missing tenant membership", code, err)
 	}
 }
 
@@ -337,8 +414,10 @@ func TestCreateDataset_RejectsInvalidEmbeddingModel(t *testing.T) {
 
 			_, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
 				Name:           "ds-embd-" + tc.name,
+				ParserID:       sptr("general"),
+				ParseType:      iptr(1),
 				EmbeddingModel: &tc.embeddingModel,
-			}, "tenant-1")
+			}, testDatasetSubject("tenant-1"))
 			if err == nil {
 				t.Fatal("expected embedding model validation error")
 			}
@@ -360,9 +439,11 @@ func TestCreateDataset_SetsExplicitLanguage(t *testing.T) {
 
 	language := "  Chinese  "
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language",
-		Language: &language,
-	}, "tenant-1")
+		Name:      "ds-language",
+		Language:  &language,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -382,7 +463,11 @@ func TestCreateDataset_OmittedLanguageKeepsDefault(t *testing.T) {
 
 	// An omitted language must stay unset on the insert so the column default
 	// applies, mirroring the Python service dropping a None language.
-	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{Name: "ds-no-language"}, "tenant-1")
+	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
+		Name:      "ds-no-language",
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed: %v", err)
 	}
@@ -410,9 +495,11 @@ func TestCreateDataset_RejectsBlankLanguage(t *testing.T) {
 			insertCreateDatasetTenant(t, "tenant-1")
 
 			_, code, err := testDatasetCreateService(t).CreateDataset(t.Context(), &service.CreateDatasetRequest{
-				Name:     "ds-blank-language",
-				Language: &language,
-			}, "tenant-1")
+				Name:      "ds-blank-language",
+				Language:  &language,
+				ParserID:  sptr("general"),
+				ParseType: iptr(1),
+			}, testDatasetSubject("tenant-1"))
 			if err == nil {
 				t.Fatal("expected language validation error")
 			}
@@ -438,9 +525,11 @@ func TestCreateDataset_LanguageLimitCountsCharacters(t *testing.T) {
 	ctx := t.Context()
 
 	result, code, err := testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language-at-limit",
-		Language: &atLimit,
-	}, "tenant-1")
+		Name:      "ds-language-at-limit",
+		Language:  &atLimit,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, testDatasetSubject("tenant-1"))
 	if err != nil {
 		t.Fatalf("CreateDataset failed for a %d-character language: %v", datasetLanguageLimit, err)
 	}
@@ -452,9 +541,11 @@ func TestCreateDataset_LanguageLimitCountsCharacters(t *testing.T) {
 	}
 
 	_, code, err = testDatasetCreateService(t).CreateDataset(ctx, &service.CreateDatasetRequest{
-		Name:     "ds-language-over-limit",
-		Language: &overLimit,
-	}, "tenant-1")
+		Name:      "ds-language-over-limit",
+		Language:  &overLimit,
+		ParserID:  sptr("general"),
+		ParseType: iptr(1),
+	}, testDatasetSubject("tenant-1"))
 	if err == nil {
 		t.Fatal("expected language length validation error")
 	}

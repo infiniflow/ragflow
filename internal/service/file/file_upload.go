@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strconv"
@@ -40,9 +41,12 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		parentID = rootFolder.ID
 	}
 
-	_, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
-	if err != nil {
+	parentFolder, err := s.fileDAO.GetByID(ctx, dao.DB, parentID)
+	if err != nil || parentFolder == nil || parentFolder.Type != FileTypeFolder {
 		return nil, fmt.Errorf("can't find this folder")
+	}
+	if err := checkFileAccess(ctx, tenantID, parentFolder, permission.OperationCreate); err != nil {
+		return nil, err
 	}
 
 	maxFileNumPerUser := common.GetEnv(common.EnvMaxFileNumPerUser)
@@ -137,7 +141,7 @@ func (s *FileService) UploadFile(ctx context.Context, tenantID, parentID string,
 		}
 
 		fileRecord := &entity.File{
-			ID:         utility.GenerateToken(),
+			ID:         common.GenerateToken(),
 			ParentID:   lastFolder.ID,
 			TenantID:   tenantID,
 			CreatedBy:  tenantID,
@@ -280,7 +284,7 @@ func (s *FileService) checkUploadInfoHealth(ctx context.Context, userID, filenam
 }
 
 func (s *FileService) storeUploadInfoBlob(ctx context.Context, storageImpl storage.Storage, userID, filename, contentType string, data []byte) (map[string]interface{}, error) {
-	location := utility.GenerateUUID()
+	location := common.GenerateUUID()
 	bucket := fmt.Sprintf("%s-downloads", userID)
 	if err := storageImpl.Put(ctx, bucket, location, data); err != nil {
 		return nil, fmt.Errorf("failed to store file: %w", err)

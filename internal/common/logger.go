@@ -363,9 +363,7 @@ func (stdLogRouter) Write(p []byte) (int, error) {
 // log helpers below lets a single `grep session_id=<id>` reconstruct one
 // turn's full trail (the q71 postmortem had to reconstruct it from timestamps).
 
-type ctxKey int
-
-const sessionIDCtxKey ctxKey = iota
+const sessionIDCtxKey int = iota
 
 // WithSessionID returns a context that tags every Ctx-variant log call with
 // the conversation turn's session id. Empty ids are a no-op so callers do not

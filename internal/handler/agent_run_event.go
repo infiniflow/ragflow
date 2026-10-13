@@ -37,6 +37,15 @@ func agentRunEventMessage(ev canvas.RunEvent, fallback string) string {
 	return fallback
 }
 
+func convertAgentRunErrorToMessage(ev canvas.RunEvent) canvas.RunEvent {
+	data, _ := json.Marshal(map[string]string{
+		"content": agentRunEventMessage(ev, "Agent run failed."),
+	})
+	ev.Type = "message"
+	ev.Data = string(data)
+	return ev
+}
+
 func agentWaitingForUser(ev canvas.RunEvent) canvas.WaitingForUserEvent {
 	var waiting canvas.WaitingForUserEvent
 	if err := json.Unmarshal([]byte(ev.Data), &waiting); err != nil {

@@ -292,7 +292,7 @@ func TestNewDatasetCompiledStore(t *testing.T) {
 	if got := newDatasetCompiledStore(eng, nil, []*entity.Knowledgebase{{ID: "kb1", TenantID: "t1"}}); got == nil {
 		t.Error("engine without an embedder must still build a keyword-only store")
 	}
-	store := newDatasetCompiledStore(eng, service.NewModelProviderService(),
+	store := newDatasetCompiledStore(eng, service.NewModelFactory(),
 		[]*entity.Knowledgebase{{ID: "kb1", EmbdID: "bge-m3@inst@prov", TenantID: "owner-tenant"}})
 	es, ok := store.(*engineCompiledStore)
 	if !ok {

@@ -1,23 +1,19 @@
 import type { IDocumentInfo } from '@/interfaces/database/document';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { useCallback } from 'react';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import {
   FileParserGap,
   findDocumentsParserGaps,
   findFilesParserGaps,
-  getSavedParserSetups,
+  getSavedParserConfig,
 } from './utils';
 
 /**
  * Validates that each file can be parsed under the Parser operator config it
  * actually runs with: the file type must be declared in the operator setups,
  * and audio/video additionally need their model configured.
- * Only the Go backend has parser operator settings — on the Python backend
- * every file passes.
  */
 export function useParserGapValidation() {
-  const isGoBackend = useIsGoBackend();
   const { knowledgeBase, loading } = useKnowledgeBaseContext();
 
   // Skip while the dataset is loading: its parser_config is not readable
@@ -26,16 +22,16 @@ export function useParserGapValidation() {
   // determined either.
   const findParseGaps = useCallback(
     (names: string[]): FileParserGap[] => {
-      if (!isGoBackend || loading) {
+      if (loading) {
         return [];
       }
-      const setups = getSavedParserSetups(knowledgeBase);
-      if (!setups) {
+      const config = getSavedParserConfig(knowledgeBase);
+      if (!config) {
         return [];
       }
-      return findFilesParserGaps(names, setups);
+      return findFilesParserGaps(names, config);
     },
-    [isGoBackend, loading, knowledgeBase],
+    [loading, knowledgeBase],
   );
 
   // Parse-time validation: a document may override the dataset parser, and
@@ -45,15 +41,15 @@ export function useParserGapValidation() {
     (
       documents: Pick<IDocumentInfo, 'name' | 'parser_config'>[],
     ): FileParserGap[] => {
-      if (!isGoBackend || loading) {
+      if (loading) {
         return [];
       }
       return findDocumentsParserGaps(
         documents,
-        getSavedParserSetups(knowledgeBase),
+        getSavedParserConfig(knowledgeBase),
       );
     },
-    [isGoBackend, loading, knowledgeBase],
+    [loading, knowledgeBase],
   );
 
   return { findParseGaps, findDocumentParseGaps };

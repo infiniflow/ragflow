@@ -114,6 +114,92 @@ func TestHTTPHelper_RetriesOn5xx(t *testing.T) {
 	}
 }
 
+func TestHTTPHelper_PostDoesNotRetry5xx(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+
+	resp, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err != nil {
+		t.Fatalf("Do: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusServiceUnavailable || hits.Load() != 1 {
+		t.Fatalf("status = %d, server hits = %d; want 503 and 1 hit", resp.StatusCode, hits.Load())
+	}
+}
+
+func TestHTTPHelper_PostDoesNotRetryAfterTransportError(t *testing.T) {
+	t.Parallel()
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.Copy(io.Discard, r.Body)
+		hits.Add(1)
+		conn, _, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			t.Errorf("hijack: %v", err)
+			return
+		}
+		_ = conn.Close()
+	}))
+	defer srv.Close()
+
+	_, err := newTestHelper(3, time.Millisecond, 5*time.Millisecond).
+		Do(t.Context(), http.MethodPost, srv.URL, "payload", "text/plain", nil)
+	if err == nil {
+		t.Fatal("Do unexpectedly succeeded after server closed the connection")
+	}
+	if got := hits.Load(); got != 1 {
+		t.Fatalf("server hits = %d, want 1 (request body was already delivered)", got)
+	}
+}
+
+func TestHTTPHelper_DoPinnedClosesConnectionAfterResponse(t *testing.T) {
+	t.Parallel()
+	closed := make(chan struct{}, 1)
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "ok")
+	}))
+	srv.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateClosed {
+			closed <- struct{}{}
+		}
+	}
+	srv.Start()
+	defer srv.Close()
+
+	u, err := neturl.Parse(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, port, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h := newTestHelper(3, time.Millisecond, 5*time.Millisecond)
+	resp, err := h.DoPinned(t.Context(), http.MethodGet, "http://example.test:"+port+"/",
+		"", "", nil, "example.test", net.ParseIP("127.0.0.1"))
+	if err != nil {
+		t.Fatalf("DoPinned: %v", err)
+	}
+	if _, err := io.Copy(io.Discard, resp.Body); err != nil {
+		t.Fatal(err)
+	}
+	if err := resp.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-closed:
+	case <-time.After(time.Second):
+		t.Fatal("pinned connection remained idle after response body was closed")
+	}
+}
+
 // TestHTTPHelper_NoRetryOn4xx verifies that 4xx is returned immediately with
 // no retry — the caller is responsible for fixing 4xx, retrying won't help.
 func TestHTTPHelper_NoRetryOn4xx(t *testing.T) {
