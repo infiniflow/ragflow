@@ -119,6 +119,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "tokenhub":
 		return NewTokenHubModel(baseURL, urlSuffix), nil
+	case "demon route":
+		return NewDemonRouteModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
