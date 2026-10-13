@@ -264,6 +264,17 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			flushBody()
 			media := cloneChunkDoc(unit)
 			media.Text = normalizeGeneralNewlines(media.Text)
+			// A parsed table arrives with empty Text: the parser projects the
+			// HTML into the structured `table` field and deletes the redundant
+			// markup (see projectPDFTable in internal/parser/parser). With no
+			// Text the retention filter in finalizeGeneralChunks would drop the
+			// chunk and the table would vanish from the document. Mirror the
+			// TokenChunker path (token.go:264) and render the table into Text so
+			// it stays retrievable and displayable while the structured `table`
+			// field is preserved alongside it.
+			if media.Text == "" && media.TableData != nil {
+				media.Text = tableutil.RenderTableText(media.TableData)
+			}
 			media.DocType = itemDocType(media)
 			media.CKType = media.DocType
 			chunks = append(chunks, media)
@@ -1295,7 +1306,7 @@ func finalizeGeneralChunks(chunks []schema.ChunkDoc, childrenPattern *regexp.Reg
 		// media chunk (text may be only a position tag, or empty) must be
 		// retained via its ImgID — otherwise the already-uploaded image is
 		// dropped and its MinIO object orphaned.
-		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" && chunk.ImgID == "" {
+		if strings.TrimSpace(chunk.Text) == "" && chunk.Image == "" && chunk.ImgID == "" && chunk.TableData == nil {
 			continue
 		}
 		visible = append(visible, chunk)
