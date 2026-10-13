@@ -470,6 +470,12 @@ func GinLogger() gin.HandlerFunc {
 		start := time.Now()
 		path := c.Request.URL.Path
 		raw := c.Request.URL.RawQuery
+
+		clientIP := c.Request.RemoteAddr
+		if i := strings.LastIndexByte(clientIP, ':'); i >= 0 {
+			clientIP = clientIP[:i]
+		}
+
 		c.Next()
 		latency := time.Since(start)
 		status := c.Writer.Status()
@@ -479,7 +485,7 @@ func GinLogger() gin.HandlerFunc {
 			zap.String("method", c.Request.Method),
 			zap.String("path", path),
 			zap.Duration("latency", latency),
-			zap.String("client_ip", c.ClientIP()),
+			zap.String("client_ip", clientIP),
 			zap.Int("size", c.Writer.Size()),
 			zap.Bool("has_query", raw != ""),
 			zap.Int("query_len", len(raw)),
