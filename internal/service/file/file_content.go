@@ -8,6 +8,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/parser/tableutil"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
@@ -20,8 +22,8 @@ func (s *FileService) GetFileContent(ctx context.Context, uid, fileID string) (*
 	if err != nil || file == nil {
 		return nil, fmt.Errorf("document not found")
 	}
-	if !s.checkFilePerm(ctx, s.fileDAO, file, uid) {
-		return nil, fmt.Errorf("no authorization")
+	if err := checkFileAccess(ctx, uid, file, permission.OperationRead); err != nil {
+		return nil, err
 	}
 	return file, nil
 }
@@ -237,6 +239,10 @@ func parseResultText(res parser.ParseResult) (string, error) {
 			for _, item := range res.JSON {
 				if text, ok := item["text"].(string); ok {
 					parts = append(parts, text)
+					continue
+				}
+				if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+					parts = append(parts, tableutil.RenderTableHTML(td))
 					continue
 				}
 				raw, err := json.Marshal(item)

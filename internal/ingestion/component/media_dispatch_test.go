@@ -77,22 +77,33 @@ func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
 		t.Fatal(err)
 	}
 	params := template.DSL.Components["Parser:ViewsCaptureLight"].Obj.Params
+	imageSetup, ok := params["image"].(map[string]any)
+	if !ok {
+		t.Fatal("picture template parser params carry no image setup")
+	}
+	if _, has := imageSetup["parse_method"]; has {
+		t.Fatal("picture template image setup must use ocr_enabled, not parse_method")
+	}
 	original := deepdoctype.NativeDocAnalyzerFactory
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{}, true }
 	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
 	data := picturePNG(t)
+	// ocr_enabled is the OCR switch and vision enhancement is an independent
+	// toggle. The picture template ships with the switch shape, so the merged
+	// setup carries ocr_enabled and parse_method is ignored even though the
+	// defaults still list parse_method:"ocr".
 	for _, tc := range []struct {
 		name    string
-		method  string
+		ocr     bool
 		enabled bool
 		tenant  string
 		want    string
 	}{
-		{"disabled", "ocr", false, "", "OCR text"},
-		{"enabled", "ocr", true, "t1", "OCR text\ncaptured"},
-		{"unavailable", "ocr", true, "", "OCR text"},
-		{"default", "", false, "", "OCR text"},
-		{"vlm-only", "custom-vlm", false, "", ""},
+		{"ocr-only", true, false, "", "OCR text"},
+		{"ocr-and-vision", true, true, "t1", "OCR text\ncaptured"},
+		{"ocr-vision-unavailable", true, true, "", "OCR text"},
+		{"ocr-off", false, false, "", ""},
+		{"vision-only", false, true, "t1", "captured"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			originalResolver := resolveTenantModelByType
@@ -100,13 +111,21 @@ func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
 				return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
 			}
 			t.Cleanup(func() { resolveTenantModelByType = originalResolver })
-			params["image"].(map[string]any)["parse_method"] = tc.method
+			imageSetup["ocr_enabled"] = tc.ocr
+			params["enable_vision_enhancement"] = tc.enabled
 			component, err := NewParserComponent(params)
+			if !tc.ocr && !tc.enabled {
+				// Neither text source is configured: construction must fail
+				// instead of producing an index-nothing pipeline.
+				if err == nil || !strings.Contains(err.Error(), "no text source") {
+					t.Fatalf("err = %v, want no-text-source construction error", err)
+				}
+				return
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
 			pc := component.(*ParserComponent)
-			pc.enableVisionEnhancement = tc.enabled
 			result, err := pc.Invoke(t.Context(), nil, map[string]any{"name": "photo.png", "file_type": "image", "binary": data, "tenant_id": tc.tenant})
 			if err != nil {
 				t.Fatal(err)
@@ -119,6 +138,111 @@ func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
 				t.Fatalf("missing image attachment: %+v", items)
 			}
 		})
+	}
+}
+
+// TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement
+// supersedes the #20668 behaviour, which treated a model named in the image
+// parse_method as its own VLM permission and ran the description even with
+// enable_vision_enhancement off. That bypass existed only because the old
+// contract offered no other way to ask for a description. The image dropdown and
+// its model picker are gone now: the switch is the single permission, and
+// parse_method names at most which model to use once that permission is granted
+// (see TestMaybeDispatchImage_UsesConfiguredVLMModel).
+func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *testing.T) {
+	originalModelResolver := resolveModelConfig
+	originalTenantResolver := resolveTenantModelByType
+	t.Cleanup(func() {
+		resolveModelConfig = originalModelResolver
+		resolveTenantModelByType = originalTenantResolver
+	})
+
+	tenantResolverCalled := false
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		tenantResolverCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	// The VLM model resolver must not be consulted at all: with enhancement off
+	// nothing is permitted to call a vision model, whichever model parse_method
+	// happens to name.
+	resolveModelConfigCalled := false
+	resolveModelConfig = func(_ context.Context, _ *gorm.DB, _ string, _ entity.ModelType, _ string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolveModelConfigCalled = true
+		return &imagePromptCaptureDriver{}, "custom-vlm", &modelModule.APIConfig{}, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["parse_method"] = "custom-vlm@provider"
+
+	res, dispatched, err := maybeDispatchImage(
+		t.Context(),
+		dao.DB,
+		utility.FileTypeVISUAL,
+		"photo.png",
+		picturePNG(t),
+		map[string]any{"tenant_id": "t1"},
+		setups,
+		false, visionSettings{},
+	)
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if !dispatched {
+		t.Fatal("expected dispatched=true for VISUAL file")
+	}
+	if resolveModelConfigCalled {
+		t.Error("model resolution happened with enhancement off")
+	}
+	if tenantResolverCalled {
+		t.Error("tenant default resolver must not be called when enhancement is off")
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
+	}
+	text, _ := res.JSON[0]["text"].(string)
+	if strings.TrimSpace(text) != "" {
+		t.Fatalf("image item text = %q, want empty: enhancement is off and OCR is off", text)
+	}
+	// The image itself is still carried; only the description is withheld, so
+	// turning the switch on later recovers the caption without a re-upload.
+	if res.JSON[0]["image"] == "" || res.JSON[0]["doc_type_kwd"] != "image" {
+		t.Fatalf("image attachment lost: %+v", res.JSON[0])
+	}
+	// #20668 reported this exact configuration producing zero chunks with no
+	// explanation. The answer is now a warning rather than a permission bypass.
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+		t.Fatalf("silent empty result: expected a no-text-source warning, got %v", res.Warnings)
+	}
+}
+
+// TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision pins the other side
+// of the contract: parse_method "ocr" with enhancement off keeps running OCR
+// and must not resolve any vision model.
+func TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision(t *testing.T) {
+	originalAnalyzer := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{}, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = originalAnalyzer })
+
+	originalModelResolver := resolveModelConfig
+	t.Cleanup(func() { resolveModelConfig = originalModelResolver })
+	resolveModelConfigCalled := false
+	resolveModelConfig = func(context.Context, *gorm.DB, string, entity.ModelType, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		resolveModelConfigCalled = true
+		return nil, "", nil, 0, nil
+	}
+
+	setups := defaultSetups()
+	setups["image"]["parse_method"] = "ocr"
+	res, _, err := maybeDispatchImage(t.Context(), dao.DB, utility.FileTypeVISUAL, "photo.png", picturePNG(t), map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
+	if err != nil {
+		t.Fatalf("maybeDispatchImage: %v", err)
+	}
+	if resolveModelConfigCalled {
+		t.Fatal("resolveModelConfig must not be called for parse_method=ocr without enhancement")
+	}
+	if len(res.JSON) != 1 || res.JSON[0]["text"] != "OCR text" {
+		t.Fatalf("res = %+v, want OCR text", res.JSON)
 	}
 }
 
@@ -139,6 +263,17 @@ func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelNa
 	d.mu.Unlock()
 	ans := "captured"
 	return &modelModule.ChatResponse{Answer: &ans}, nil
+}
+
+// blankAnswerVisionDriver models a vision model that answers successfully but
+// with no usable text, which must still leave a trace behind.
+type blankAnswerVisionDriver struct {
+	modelModule.ModelDriver
+}
+
+func (blankAnswerVisionDriver) ChatWithMessages(context.Context, string, []modelModule.Message, *modelModule.APIConfig, *modelModule.ChatConfig, *common.ModelUsage) (*modelModule.ChatResponse, error) {
+	blank := "   "
+	return &modelModule.ChatResponse{Answer: &blank}, nil
 }
 
 // firstUserText extracts the text of the first "text" content part from the
@@ -181,7 +316,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	}
 
 	setups := defaultSetups()
-	// image family's contract key is system_prompt (parser.go:295).
+	// The image family's contract key is system_prompt.
 	// Also set a legacy `prompt` sentinel to assert system_prompt wins
 	// when both keys are present (regression guard against re-reading
 	// setup["prompt"], which is the video-family key, not image).
@@ -197,7 +332,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true, "",
+		true, visionSettings{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -249,7 +384,7 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		setups,
-		true, "",
+		true, visionSettings{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -264,6 +399,70 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 	}
 	if strings.Contains(got, "Respond in Chinese.") {
 		t.Fatalf("VLM user text = %q, setup fallback overrode dataset language", got)
+	}
+}
+
+// TestMaybeDispatchImage_GlobalVisionPromptDrivesImage locks the moved
+// contract: the image description reads its prompt from the global vlm block,
+// and a legacy per-family value only applies when the global one is unset.
+// Language is not part of the enhancement settings — captions follow the
+// knowledge base language (see TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage).
+func TestMaybeDispatchImage_GlobalVisionPromptDrivesImage(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	defer func() { resolveTenantModelByType = origResolver }()
+
+	for _, tc := range []struct {
+		name         string
+		inputs       map[string]any
+		familyLang   string
+		globalPrompt string
+		familyPrompt string
+		want         string
+	}{
+		{
+			name:         "global prompt wins over the family value",
+			inputs:       map[string]any{"tenant_id": "t1"},
+			globalPrompt: "global prompt",
+			familyPrompt: "family prompt",
+			want:         "global prompt",
+		},
+		{
+			name:         "family prompt still applies when global is unset",
+			inputs:       map[string]any{"tenant_id": "t1"},
+			familyPrompt: "family prompt",
+			want:         "family prompt",
+		},
+		{
+			name:       "language comes from the dataset, not the enhancement settings",
+			inputs:     map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+			familyLang: "Chinese",
+			want:       "Respond in Japanese.",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			drv := &imagePromptCaptureDriver{}
+			resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return drv, "img-model", &modelModule.APIConfig{}, 0, nil
+			}
+			setups := defaultSetups()
+			setups["image"]["lang"] = tc.familyLang
+			setups["image"]["system_prompt"] = tc.familyPrompt
+			_, _, err := maybeDispatchImage(
+				t.Context(), dao.DB, utility.FileTypeVISUAL, "test.png", picturePNG(t),
+				tc.inputs, setups, true,
+				visionSettings{systemPrompt: tc.globalPrompt},
+			)
+			if err != nil {
+				t.Fatalf("maybeDispatchImage: %v", err)
+			}
+			got, ok := firstUserText(drv.captured)
+			if !ok {
+				t.Fatalf("no user text captured: %#v", drv.captured)
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("VLM user text = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -292,7 +491,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true, "",
+		true, visionSettings{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -344,7 +543,7 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true, "",
+		true, visionSettings{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -536,7 +735,7 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
-		true, "global-vision-model",
+		true, visionSettings{modelID: "global-vision-model"},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -663,7 +862,7 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 		for _, method := range []string{"ocr", ""} {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
-			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, "")
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false, visionSettings{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -687,7 +886,7 @@ func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
 	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
 		return &unhealthyPictureOCRAnalyzer{}, true
 	}
-	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, "")
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false, visionSettings{})
 	if err != nil || result.Err != nil {
 		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
 	}
@@ -703,7 +902,7 @@ func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
 	for _, method := range []string{"ocr", "custom-vlm"} {
 		setups := defaultSetups()
 		setups["image"]["parse_method"] = method
-		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, "")
+		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false, visionSettings{})
 		if err == nil || !strings.Contains(err.Error(), "decode") {
 			t.Fatalf("method %q: error = %v, want decode error", method, err)
 		}
@@ -723,7 +922,7 @@ func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
 				t.Error("expected OCR analyzer panic")
 			}
 		}()
-		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, "")
+		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false, visionSettings{})
 	}()
 	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
 	defer cancel()
@@ -751,7 +950,7 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 			setups := defaultSetups()
 			setups["image"]["parse_method"] = method
 			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
-				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true, "")
+				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true, visionSettings{})
 			if method == "ocr" {
 				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
 					t.Fatalf("error = %v, want raster decode error", err)
@@ -766,6 +965,121 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestMaybeDispatchImageOCRSwitch drives the new ocr_enabled shape (no
+// parse_method) directly. It locks the switch semantics the dropdown used to
+// encode: OCR on runs local OCR regardless of vision enhancement; OCR off with
+// enhancement off yields an empty-text image that is still kept, plus a warning
+// naming the dead configuration (the #20424 degradation, now diagnosable); OCR
+// off with enhancement on runs only the VLM.
+// The presence of ocr_enabled must also override a stale parse_method:"ocr".
+func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	origResolver := resolveTenantModelByType
+	t.Cleanup(func() { resolveTenantModelByType = origResolver })
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{}, true }
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+
+	ocrSetups := func(on bool) map[string]schema.ParserSetup {
+		setups := defaultSetups()
+		delete(setups["image"], "parse_method")
+		setups["image"]["ocr_enabled"] = on
+		return setups
+	}
+
+	t.Run("ocr-on", func(t *testing.T) {
+		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+			map[string]any{"tenant_id": "t1"}, ocrSetups(true), false, visionSettings{})
+		if err != nil || !handled {
+			t.Fatalf("err = %v, handled = %v", err, handled)
+		}
+		if res.JSON[0]["text"] != "OCR text" {
+			t.Fatalf("text = %v, want OCR text", res.JSON[0]["text"])
+		}
+	})
+	t.Run("ocr-off-no-enhancement-keeps-empty", func(t *testing.T) {
+		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+			map[string]any{"tenant_id": "t1"}, ocrSetups(false), false, visionSettings{})
+		if err != nil || !handled {
+			t.Fatalf("err = %v, handled = %v", err, handled)
+		}
+		if res.JSON[0]["text"] != "" || res.JSON[0]["image"] == "" {
+			t.Fatalf("want empty text with image retained, got %#v", res.JSON[0])
+		}
+		if len(res.Warnings) == 0 {
+			t.Fatalf("OCR off + enhancement off must warn that the item has no text source, got %v", res.Warnings)
+		}
+		if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+			t.Fatalf("missing no-text-source warning: %v", res.Warnings)
+		}
+	})
+	t.Run("ocr-off-vision-only", func(t *testing.T) {
+		res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+			map[string]any{"tenant_id": "t1"}, ocrSetups(false), true, visionSettings{})
+		if err != nil || !handled {
+			t.Fatalf("err = %v, handled = %v", err, handled)
+		}
+		if res.JSON[0]["text"] != "captured" {
+			t.Fatalf("text = %v, want captured (VLM only)", res.JSON[0]["text"])
+		}
+	})
+	t.Run("switch-beats-stale-parse-method", func(t *testing.T) {
+		setups := defaultSetups() // image still carries parse_method:"ocr"
+		setups["image"]["ocr_enabled"] = false
+		res, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+			map[string]any{"tenant_id": "t1"}, setups, false, visionSettings{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if res.JSON[0]["text"] != "" {
+			t.Fatalf("ocr_enabled:false must override stale parse_method, got text %v", res.JSON[0]["text"])
+		}
+	})
+}
+
+// TestMaybeDispatchImageBlankVisionDescriptionWarns covers the third way an
+// image can end up with no text: enhancement is permitted, OCR is off, and the
+// model answers with nothing usable. The chunk is discarded downstream, so the
+// dispatch has to say so rather than return a silent empty item.
+func TestMaybeDispatchImageBlankVisionDescriptionWarns(t *testing.T) {
+	origResolver := resolveTenantModelByType
+	origAnalyzer := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() {
+		resolveTenantModelByType = origResolver
+		deepdoctype.NativeDocAnalyzerFactory = origAnalyzer
+	})
+	// OCR is off, so the analyzer must never run.
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		panic("OCR analyzer must not be used with the switch off")
+	}
+	resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return blankAnswerVisionDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+
+	res, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t),
+		map[string]any{"tenant_id": "t1"}, imageSwitchSetups(t, false), true, visionSettings{})
+	if err != nil || !handled {
+		t.Fatalf("err = %v, handled = %v", err, handled)
+	}
+	if text, _ := res.JSON[0]["text"].(string); strings.TrimSpace(text) != "" {
+		t.Fatalf("text = %q, want empty", text)
+	}
+	if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {
+		t.Fatalf("blank description must warn, got %v", res.Warnings)
+	}
+}
+
+// imageSwitchSetups returns the image family in the new contract shape: the
+// OCR choice lives in ocr_enabled and parse_method is gone.
+func imageSwitchSetups(_ *testing.T, ocrEnabled bool) map[string]schema.ParserSetup {
+	setups := defaultSetups()
+	delete(setups["image"], "parse_method")
+	setups["image"]["ocr_enabled"] = ocrEnabled
+	return setups
 }
 
 func picturePNG(t *testing.T) []byte {

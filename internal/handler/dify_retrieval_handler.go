@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -43,8 +44,8 @@ import (
 
 // KBServiceIface abstracts KnowledgebaseService for the Dify handler.
 type KBServiceIface interface {
-	GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	Accessible(ctx context.Context, kbID, userID string) bool
+	GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
 }
 
 // ModelCreator supplies typed model instances to Dify retrieval.
@@ -205,7 +206,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	kb, err := h.kbSvc.GetByID(ctx, req.KnowledgeID)
+	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
@@ -215,8 +216,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if !h.kbSvc.Accessible(ctx, req.KnowledgeID, user.ID) {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeAuthenticationError, nil, "No authorization")
+	if err := h.kbSvc.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KnowledgeID, permission.OperationUse); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 

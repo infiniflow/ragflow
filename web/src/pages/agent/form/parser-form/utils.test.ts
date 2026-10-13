@@ -62,7 +62,10 @@ describe('parser-form utils', () => {
         [ModelTypeToField.asr]: 'whisper@OpenAI',
       });
 
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        system_prompt: '',
+      });
       expect(values.enable_vision_enhancement).toBe(false);
 
       const byFileType = new Map(
@@ -98,7 +101,10 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(true);
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        system_prompt: '',
+      });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.PDF });
       // Audio keeps its per-setup ASR model.
       expect(values.setups[1]).toEqual({
@@ -116,7 +122,7 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(false);
-      expect(values.vlm).toEqual({ llm_id: '' });
+      expect(values.vlm).toEqual({ llm_id: '', system_prompt: '' });
     });
 
     it('treats a non-empty per-setup model as enabled enhancement', () => {
@@ -127,7 +133,10 @@ describe('parser-form utils', () => {
       });
 
       expect(values.enable_vision_enhancement).toBe(true);
-      expect(values.vlm).toEqual({ llm_id: 'gpt-4o@OpenAI' });
+      expect(values.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        system_prompt: '',
+      });
       expect(values.setups[0]).toEqual({ fileFormat: FileType.Video });
     });
 
@@ -147,7 +156,7 @@ describe('parser-form utils', () => {
 
       const normalized = normalizeParserFormValues(values);
       expect(normalized).toEqual({
-        vlm: { llm_id: 'gpt-4o@OpenAI' },
+        vlm: { llm_id: 'gpt-4o@OpenAI', system_prompt: '' },
         enable_vision_enhancement: true,
         setups: [
           { fileFormat: FileType.PDF },
@@ -164,7 +173,143 @@ describe('parser-form utils', () => {
         setups: [{ fileFormat: FileType.PDF, vlm: { llm_id: 'stale@Model' } }],
       });
 
-      expect(values.vlm).toEqual({ llm_id: '' });
+      expect(values.vlm).toEqual({ llm_id: '', system_prompt: '' });
+    });
+
+    it('migrates a legacy image ocr parse_method onto ocr_enabled', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+      // An empty parse_method also selects OCR.
+      expect(
+        normalizeParserFormValues({
+          setups: [{ fileFormat: FileType.Image, parse_method: '' }],
+        }).setups[0],
+      ).toEqual({ fileFormat: FileType.Image, ocr_enabled: true });
+    });
+
+    it('ignores a stale parse_method once the switch shape is present', () => {
+      // Mirrors the backend: ocr_enabled present means parse_method is dead
+      // data. Hoisting it would overwrite the model the user picked globally.
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: 'qwen-vl@DashScope', system_prompt: '' },
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            parse_method: 'abandoned-model@provider',
+          },
+        ],
+      });
+      expect(normalized.vlm).toEqual({
+        llm_id: 'qwen-vl@DashScope',
+        system_prompt: '',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+    });
+
+    it('lifts a legacy image model reference onto the global vlm and turns OCR off', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [
+          { fileFormat: FileType.Image, parse_method: 'gpt-4o@OpenAI' },
+          { fileFormat: FileType.PDF },
+        ],
+      });
+      // Deliberate precedence: the canvas encodes a model choice, so it wins
+      // even over an already-selected global model rather than being dropped.
+      expect(normalized.vlm).toEqual({
+        llm_id: 'gpt-4o@OpenAI',
+        system_prompt: '',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: false,
+      });
+    });
+
+    it('drops a legacy image language: nothing reads it any more', () => {
+      const normalized = normalizeParserFormValues({
+        setups: [
+          {
+            fileFormat: FileType.Image,
+            ocr_enabled: true,
+            lang: 'French',
+            system_prompt: 'Describe the chart.',
+          },
+        ],
+      });
+      expect(normalized.vlm).toEqual({
+        llm_id: '',
+        system_prompt: 'Describe the chart.',
+      });
+      // Captions follow the knowledge base and the only engine that takes a
+      // language is MinerU on the pdf family, so an image language has no
+      // reader: drop it rather than let it masquerade as a user choice
+      // (issue #20727).
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+      expect(normalizeParserFormValues(normalized)).toEqual(normalized);
+    });
+
+    it('materializes the switch so it matches what the backend will run', () => {
+      // An image setup with neither key runs local OCR in the backend (absent
+      // parse_method falls back to the legacy inference), so the toggle must
+      // read as on instead of showing an unchecked box.
+      const normalized = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image }],
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: true,
+      });
+    });
+
+    it('drops a stale vlm.lang left by an earlier draft of the contract', () => {
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: '', lang: 'German', system_prompt: '' },
+        setups: [
+          { fileFormat: FileType.Image, lang: 'French', system_prompt: 'old' },
+        ],
+      });
+      // Nothing renders that control any more, so it must not survive a save.
+      expect(normalized.vlm).toEqual({
+        llm_id: '',
+        system_prompt: 'old',
+      });
+    });
+
+    it('leaves an existing global model untouched when the image already uses the switch', () => {
+      // Migration only fires for a legacy parse_method. A normalized image
+      // setup (ocr_enabled present, no parse_method) never overrides a model
+      // the user chose at the top level.
+      const normalized = normalizeParserFormValues({
+        vlm: { llm_id: 'qwen-vl@DashScope' },
+        setups: [{ fileFormat: FileType.Image, ocr_enabled: false }],
+      });
+      expect(normalized.vlm).toEqual({
+        llm_id: 'qwen-vl@DashScope',
+        system_prompt: '',
+      });
+      expect(normalized.setups[0]).toEqual({
+        fileFormat: FileType.Image,
+        ocr_enabled: false,
+      });
+    });
+
+    it('is idempotent for the migrated image switch', () => {
+      const once = normalizeParserFormValues({
+        setups: [{ fileFormat: FileType.Image, parse_method: 'ocr' }],
+      });
+      expect(normalizeParserFormValues(once)).toEqual(once);
     });
   });
 });

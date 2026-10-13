@@ -1,9 +1,12 @@
 import { renderHook } from '@testing-library/react';
+import { ParseType } from '@/constants/knowledge';
 import { AgentListItemType } from '@/interfaces/database/agent';
 import {
   buildParserOptionValue,
+  buildParserSelectValue,
   parseParserOptionValue,
   ParserOptionKind,
+  resolveBuiltinParserId,
   useParserOptions,
 } from '@/hooks/use-parser-options';
 
@@ -78,6 +81,55 @@ describe('parser option value encoding', () => {
     expect(parseParserOptionValue(undefined)).toBeNull();
     expect(parseParserOptionValue('general')).toBeNull();
     expect(parseParserOptionValue('unknown:general')).toBeNull();
+  });
+});
+
+describe('resolveBuiltinParserId', () => {
+  it('maps legacy builtin ids to their current id', () => {
+    expect(resolveBuiltinParserId('naive')).toBe('general');
+  });
+
+  it('passes through current and unknown ids unchanged', () => {
+    expect(resolveBuiltinParserId('general')).toBe('general');
+    expect(resolveBuiltinParserId('book')).toBe('book');
+    expect(resolveBuiltinParserId('')).toBe('');
+  });
+});
+
+describe('buildParserSelectValue', () => {
+  it('resolves legacy builtin ids so old saved values match an option', () => {
+    expect(
+      buildParserSelectValue({
+        parseType: ParseType.BuiltIn,
+        parserId: 'naive',
+      }),
+    ).toBe('builtin:general');
+  });
+
+  it('builds the value from the id of the active parse type', () => {
+    expect(
+      buildParserSelectValue({
+        parseType: ParseType.BuiltIn,
+        parserId: 'book',
+        pipelineId: 'pipe-1',
+      }),
+    ).toBe('builtin:book');
+    expect(
+      buildParserSelectValue({
+        parseType: ParseType.Pipeline,
+        parserId: 'book',
+        pipelineId: 'pipe-1',
+      }),
+    ).toBe('pipeline:pipe-1');
+  });
+
+  it('returns undefined when the active id is empty', () => {
+    expect(
+      buildParserSelectValue({ parseType: ParseType.BuiltIn, parserId: '' }),
+    ).toBeUndefined();
+    expect(
+      buildParserSelectValue({ parseType: ParseType.Pipeline }),
+    ).toBeUndefined();
   });
 });
 

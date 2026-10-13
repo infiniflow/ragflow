@@ -1599,6 +1599,8 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		from := metaString(p.Meta, "from")
 		to := metaString(p.Meta, "to")
 		if kind == "relation" || (from != "" && to != "") {
+			from = strings.TrimSpace(from)
+			to = strings.TrimSpace(to)
 			// Skip a relation with an incomplete endpoint pair: writing a bucket
 			// like "A -> " would let multiple malformed relations collapse into
 			// the same dataset row.
@@ -1652,6 +1654,15 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		}
 		appendBucket(b, p)
 	}
+	for key, bucket := range relByKey {
+		if entity := entByKey[ekey{template: key.template, name: key.from, ckwd: key.ckwd}]; entity != nil {
+			bucket.FromEntity = entity.Name
+		}
+		if entity := entByKey[ekey{template: key.template, name: key.to, ckwd: key.ckwd}]; entity != nil {
+			bucket.ToEntity = entity.Name
+		}
+		bucket.Name = bucket.FromEntity + " -> " + bucket.ToEntity
+	}
 	// Re-resolve each relation bucket's endpoint classes from the dataset-level
 	// entity buckets. The doc-level stamp can go stale once several documents
 	// merge, and the dataset-level entity type is what the dataset-level
@@ -1674,7 +1685,6 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			b.ToType = t
 		}
 	}
-
 	buckets := make([]StructureBucket, 0, len(entByKey)+len(relByKey))
 	for _, b := range entByKey {
 		buckets = append(buckets, *b)

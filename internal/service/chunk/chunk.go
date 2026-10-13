@@ -29,6 +29,8 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	"strings"
 	"sync"
@@ -77,13 +79,12 @@ type ChunkService struct {
 	docEngine        engine.DocEngine
 	embeddingCache   *utility.EmbeddingLRU
 	kbDAO            *dao.KnowledgebaseDAO
-	userTenantDAO    *dao.UserTenantDAO
 	documentDAO      *dao.DocumentDAO
 	taskDAO          *dao.TaskDAO
 	ingestionTaskDAO *dao.IngestionTaskDAO
 	searchService    *service.SearchService
 
-	accessibleFunc           func(string, string) bool
+	checkDatasetAccessFunc   func(string, string) error
 	getKnowledgebaseByIDFunc func(string) (*entity.Knowledgebase, error)
 	getDocumentsByIDsFunc    func([]string) ([]*entity.Document, error)
 	// startParseDocumentsFunc overrides the DSL start-parse flow. Production
@@ -111,7 +112,6 @@ func NewChunkService() *ChunkService {
 		docEngine:        engine.Get(),
 		embeddingCache:   utility.NewEmbeddingLRU(1000), // default capacity
 		kbDAO:            dao.NewKnowledgebaseDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
 		documentDAO:      dao.NewDocumentDAO(),
 		taskDAO:          dao.NewTaskDAO(),
 		ingestionTaskDAO: dao.NewIngestionTaskDAO(),
@@ -166,39 +166,27 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	}
 	modelFactory := service.NewModelFactory()
 
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
-	}
-	if len(tenants) == 0 {
-		return nil, fmt.Errorf("user has no accessible tenants")
-	}
-	common.Debug("Retrieved user tenants from database", zap.String("userID", userID), zap.Int("tenantCount", len(tenants)))
-
 	var tenantIDs []string
 	var kbRecords []*entity.Knowledgebase
 	for _, datasetID := range req.Datasets {
-		found := false
-		for _, tenant := range tenants {
-			kb, err := s.kbDAO.GetByIDAndTenantID(ctx, dao.DB, datasetID, tenant.TenantID)
-			if err == nil && kb != nil {
-				if kb.TenantID != userID && kb.Permission != string(entity.TenantPermissionTeam) {
-					continue
-				}
-				common.Debug("Found knowledge base in database",
-					zap.String("datasetID", datasetID),
-					zap.String("tenantID", tenant.TenantID),
-					zap.String("kbName", kb.Name),
-					zap.String("embdID", kb.EmbdID))
-				tenantIDs = append(tenantIDs, tenant.TenantID)
-				kbRecords = append(kbRecords, kb)
-				found = true
-				break
-			}
+		if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, permissionErr
 		}
-		if !found {
-			return nil, fmt.Errorf("only owner of dataset is authorized for this operation")
+		kb, err := s.getKnowledgebaseByID(ctx, datasetID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load dataset %s: %w", datasetID, err)
 		}
+		if kb == nil {
+			return nil, fmt.Errorf("dataset %s not found", datasetID)
+		}
+		common.Debug("Found knowledge base in database",
+			zap.String("datasetID", datasetID),
+			zap.String("tenantID", kb.TenantID),
+			zap.String("kbName", kb.Name),
+			zap.String("embdID", kb.EmbdID))
+		tenantIDs = append(tenantIDs, kb.TenantID)
+		kbRecords = append(kbRecords, kb)
 	}
 
 	// Check if all kbs resolve to the same base embedding model
@@ -225,10 +213,14 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	if req.SearchID != nil && *req.SearchID != "" {
 		// If search_id is set, get meta_data_filter and chat_id from search_config
-		searchDetail, err := s.searchService.GetDetail(ctx, *req.SearchID)
+		if s.searchService == nil {
+			return nil, fmt.Errorf("search service not configured")
+		}
+		searchDetail, err := s.searchService.GetDetail(ctx, userID, *req.SearchID)
 		if err != nil {
-			common.Warn("Failed to get search detail for search_id, proceeding without it", zap.String("searchID", *req.SearchID), zap.Error(err))
-		} else if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+			return nil, fmt.Errorf("failed to get search app %s: %w", *req.SearchID, err)
+		}
+		if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
 			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
 				rerankCandidatesCount = 100
 				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
@@ -517,7 +509,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -590,8 +582,9 @@ func (s *ChunkService) cancelAllTasksOfDoc(ctx context.Context, doc *entity.Docu
 }
 
 func (s *ChunkService) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
-	if !s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
-		return nil, common.CodeDataError, fmt.Errorf("you don't own the dataset %s", datasetID)
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 
 	if len(req.DocumentIDs) == 0 {
@@ -666,11 +659,11 @@ func checkDuplicateIDs(documentIDs []string, idTypes string) ([]string, []string
 	return uniqueDocIDs, duplicateMessages
 }
 
-func (s *ChunkService) accessible(ctx context.Context, datasetID, userID string) bool {
-	if s.accessibleFunc != nil {
-		return s.accessibleFunc(datasetID, userID)
+func (s *ChunkService) checkDatasetAccess(ctx context.Context, datasetID, userID string, operation permission.Operation) error {
+	if s.checkDatasetAccessFunc != nil {
+		return s.checkDatasetAccessFunc(datasetID, userID)
 	}
-	return s.kbDAO.Accessible(ctx, dao.DB, datasetID, userID)
+	return service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, operation)
 }
 
 func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID string) (*entity.Knowledgebase, error) {
@@ -680,9 +673,9 @@ func (s *ChunkService) getKnowledgebaseByID(ctx context.Context, datasetID strin
 	return s.kbDAO.GetByID(ctx, dao.DB, datasetID)
 }
 
-func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string) (*entity.Knowledgebase, error) {
-	if !s.accessible(ctx, datasetID, userID) {
-		return nil, fmt.Errorf("user does not have access to this dataset")
+func (s *ChunkService) getAccessibleKnowledgebase(ctx context.Context, datasetID, userID string, operation permission.Operation) (*entity.Knowledgebase, error) {
+	if err := s.checkDatasetAccess(ctx, datasetID, userID, operation); err != nil {
+		return nil, err
 	}
 	kb, err := s.getKnowledgebaseByID(ctx, datasetID)
 	if err != nil || kb == nil {
@@ -699,8 +692,9 @@ func (s *ChunkService) getDocumentsByIDs(ctx context.Context, docIDs []string) (
 }
 
 func (s *ChunkService) Parse(ctx context.Context, userID, datasetID string, req *service.ParseFileRequest) (map[string]interface{}, common.ErrorCode, error) {
-	if !s.accessible(ctx, datasetID, userID) {
-		return nil, common.CodeOperatingError, fmt.Errorf("you don't own the dataset %s", datasetID)
+	if err := s.checkDatasetAccess(ctx, datasetID, userID, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if req == nil || len(req.DocumentIDs) == 0 {
 		return nil, common.CodeDataError, fmt.Errorf("`document_ids` is required")
@@ -786,7 +780,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		return nil, fmt.Errorf("document not found")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationRead)
 	if err != nil {
 		return nil, err
 	}
@@ -1002,7 +996,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 		return fmt.Errorf("req is null")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, datasetID, userID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1044,7 +1038,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return fmt.Errorf("chunk_id is required")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, req.DatasetID, userID, permission.OperationUpdate)
 	if err != nil {
 		return err
 	}
@@ -1226,7 +1220,7 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("document not found")
 	}
 
-	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID)
+	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
 	if err != nil {
 		return 0, err
 	}
@@ -1276,8 +1270,9 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 	if req == nil {
 		return nil, addChunkError{code: common.CodeDataError, message: "invalid request payload"}
 	}
-	if !s.accessible(ctx, req.DatasetID, userID) {
-		return nil, addChunkError{code: common.CodeDataError, message: fmt.Sprintf("You don't own the dataset %s.", req.DatasetID)}
+	if err := s.checkDatasetAccess(ctx, req.DatasetID, userID, permission.OperationUpdate); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, addChunkError{code: code, message: permissionErr.Error(), cause: permissionErr}
 	}
 
 	kb, err := s.getKnowledgebaseByID(ctx, req.DatasetID)
@@ -1448,6 +1443,7 @@ func (s *ChunkService) markWikiDirty(ctx context.Context, tenantID, datasetID, d
 type addChunkError struct {
 	code    common.ErrorCode
 	message string
+	cause   error
 }
 
 type updateChunkError struct {
@@ -1465,6 +1461,10 @@ func (e updateChunkError) Code() common.ErrorCode {
 
 func (e addChunkError) Error() string {
 	return e.message
+}
+
+func (e addChunkError) Unwrap() error {
+	return e.cause
 }
 
 func (e addChunkError) Code() common.ErrorCode {

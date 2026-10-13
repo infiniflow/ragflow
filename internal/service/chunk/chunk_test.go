@@ -14,6 +14,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/document"
 	"ragflow/internal/storage"
@@ -208,23 +209,23 @@ func TestParsePrevalidatesDocumentsBeforeMutating(t *testing.T) {
 
 func TestParseRejectsInaccessibleDataset(t *testing.T) {
 	svc := newParseTestService(t)
-	svc.accessibleFunc = func(string, string) bool { return false }
+	svc.checkDatasetAccessFunc = func(string, string) error { return permission.ErrPermissionDenied }
 	ctx := t.Context()
 	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
 	if err == nil {
 		t.Fatal("expected parse to fail")
 	}
-	if code != common.CodeOperatingError {
-		t.Fatalf("expected CodeOperatingError, got %v", code)
+	if code != common.CodeForbidden {
+		t.Fatalf("expected CodeForbidden, got %v", code)
 	}
-	if !strings.Contains(err.Error(), "don't own the dataset") {
+	if err.Error() != "Permission denied" {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
 func TestParseRequiresDocumentIDs(t *testing.T) {
 	svc := newParseTestService(t)
-	svc.accessibleFunc = func(string, string) bool { return true }
+	svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 	ctx := t.Context()
 	for _, req := range []*service.ParseFileRequest{nil, {DocumentIDs: nil}, {DocumentIDs: []string{}}} {
 		_, code, err := svc.Parse(ctx, "user-1", "kb-1", req)
@@ -242,7 +243,7 @@ func TestParseRequiresDocumentIDs(t *testing.T) {
 
 func TestParseReturnsDataErrorWhenDatasetMissing(t *testing.T) {
 	svc := newParseTestService(t)
-	svc.accessibleFunc = func(string, string) bool { return true }
+	svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) { return nil, nil }
 	ctx := t.Context()
 	_, code, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1"}})
@@ -260,7 +261,7 @@ func TestParseReturnsDataErrorWhenDatasetMissing(t *testing.T) {
 func TestParseReturnsServerErrorWhenDocumentsQueryFails(t *testing.T) {
 	svc := newParseTestService(t)
 	queryErr := errors.New("documents query failed")
-	svc.accessibleFunc = func(string, string) bool { return true }
+	svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 	svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
 		return &entity.Knowledgebase{ID: "kb-1", TenantID: "user-1"}, nil
 	}
@@ -315,10 +316,9 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 
 	ctx := t.Context()
@@ -375,10 +375,9 @@ func TestListScopesSearchToDocumentDataset(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 
 	ctx := t.Context()
@@ -427,9 +426,8 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 		"content_ltks":        []string{"invoice", "body"},
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	resp, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -484,9 +482,8 @@ func TestGetRejectsChunkOfAnotherDocument(t *testing.T) {
 		"content_with_weight": "other document body",
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -520,9 +517,8 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 		"content_with_weight": "other dataset document body",
 	}}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	_, err := svc.Get(t.Context(), &service.GetChunkRequest{
@@ -602,10 +598,9 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 
 	engine := &listChunksSearchEngine{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
-		documentDAO:   dao.NewDocumentDAO(),
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
 	}
 	ctx := t.Context()
 
@@ -689,9 +684,8 @@ func TestUpdateChunkRejectsChunkFromAnotherDocument(t *testing.T) {
 		existingChunk: map[string]interface{}{"doc_id": "doc-b"},
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -725,9 +719,8 @@ func TestUpdateChunkUpdatesSameDocumentWithDocumentCondition(t *testing.T) {
 		},
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -780,9 +773,8 @@ func TestUpdateChunkStoresTagKwdOnlyWhenSent(t *testing.T) {
 				},
 			}
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 			}
 
 			err := svc.UpdateChunk(t.Context(), &service.UpdateChunkRequest{
@@ -834,9 +826,8 @@ func TestUpdateChunkStoresImageAndFlagsImageChunk(t *testing.T) {
 			var storedBucket, storedChunkID, storedMode string
 			var storedBinary []byte
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 				storeChunkImageFunc: func(bucket, chunkID string, imageBinary []byte, mode string) error {
 					storedBucket, storedChunkID, storedMode, storedBinary = bucket, chunkID, mode, imageBinary
 					return nil
@@ -894,9 +885,8 @@ func TestUpdateChunkRemoveModeClearsImageAfterIndexUpdate(t *testing.T) {
 		order: order,
 	}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		storeChunkImageFunc: func(string, string, []byte, string) error {
 			t.Fatal("remove mode must not store an image")
 			return nil
@@ -954,9 +944,8 @@ func TestUpdateChunkMarksWikiDirtyWhenImageRemovalFails(t *testing.T) {
 	}
 	wikiCalls := 0
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		removeChunkImageFunc: func(string, string) error {
 			return errors.New("storage unavailable")
 		},
@@ -1014,9 +1003,8 @@ func TestUpdateChunkRejectsInvalidImageInput(t *testing.T) {
 				},
 			}
 			svc := &ChunkService{
-				docEngine:     engine,
-				kbDAO:         dao.NewKnowledgebaseDAO(),
-				userTenantDAO: dao.NewUserTenantDAO(),
+				docEngine: engine,
+				kbDAO:     dao.NewKnowledgebaseDAO(),
 				storeChunkImageFunc: func(string, string, []byte, string) error {
 					t.Fatal("invalid input must not reach storage")
 					return nil
@@ -1070,8 +1058,11 @@ func TestAddChunkSuccess(t *testing.T) {
 		docEngine:   engine,
 		kbDAO:       dao.NewKnowledgebaseDAO(),
 		documentDAO: dao.NewDocumentDAO(),
-		accessibleFunc: func(datasetIDArg, userIDArg string) bool {
-			return datasetIDArg == datasetID && userIDArg == userID
+		checkDatasetAccessFunc: func(datasetIDArg, userIDArg string) error {
+			if datasetIDArg == datasetID && userIDArg == userID {
+				return nil
+			}
+			return permission.ErrPermissionDenied
 		},
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
@@ -1166,8 +1157,11 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 			docEngine:   engine,
 			kbDAO:       dao.NewKnowledgebaseDAO(),
 			documentDAO: dao.NewDocumentDAO(),
-			accessibleFunc: func(datasetIDArg, userIDArg string) bool {
-				return datasetIDArg == datasetID && userIDArg == userID
+			checkDatasetAccessFunc: func(datasetIDArg, userIDArg string) error {
+				if datasetIDArg != datasetID || userIDArg != userID {
+					return permission.ErrPermissionDenied
+				}
+				return nil
 			},
 			getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 				return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
@@ -1291,7 +1285,7 @@ func TestAddChunkValidationErrors(t *testing.T) {
 			name: "empty content",
 			req:  &service.AddChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", Content: " "},
 			setup: func(svc *ChunkService) {
-				svc.accessibleFunc = func(string, string) bool { return true }
+				svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 				svc.getKnowledgebaseByIDFunc = func(string) (*entity.Knowledgebase, error) {
 					return &entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", EmbdID: "embed-1"}, nil
 				}
@@ -1323,10 +1317,10 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 
 	storeCalls := 0
 	svc := &ChunkService{
-		docEngine:      &addChunkTestEngine{},
-		kbDAO:          dao.NewKnowledgebaseDAO(),
-		documentDAO:    dao.NewDocumentDAO(),
-		accessibleFunc: func(string, string) bool { return true },
+		docEngine:              &addChunkTestEngine{},
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		documentDAO:            dao.NewDocumentDAO(),
+		checkDatasetAccessFunc: func(string, string) error { return nil },
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
 		},
@@ -1407,10 +1401,10 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 	var incrementCalls int
 	engine := &addChunkTestEngine{}
 	svc := &ChunkService{
-		docEngine:      engine,
-		kbDAO:          dao.NewKnowledgebaseDAO(),
-		documentDAO:    dao.NewDocumentDAO(),
-		accessibleFunc: func(string, string) bool { return true },
+		docEngine:              engine,
+		kbDAO:                  dao.NewKnowledgebaseDAO(),
+		documentDAO:            dao.NewDocumentDAO(),
+		checkDatasetAccessFunc: func(string, string) error { return nil },
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
 		},
@@ -1617,9 +1611,8 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 
 	engine := &parseTestDocEngine{deleteChunksCount: 3}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
@@ -1678,9 +1671,8 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 
 	var decrementCalls int
 	svc := &ChunkService{
-		docEngine:     &parseTestDocEngine{deleteChunksCount: 0},
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: &parseTestDocEngine{deleteChunksCount: 0},
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
 			decrementCalls++
 			return nil
@@ -1710,9 +1702,8 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 	insertChunkTestDoc(t, "doc-1", "kb-1")
 
 	svc := &ChunkService{
-		docEngine:     &parseTestDocEngine{deleteChunksCount: 2},
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: &parseTestDocEngine{deleteChunksCount: 2},
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 		decrementChunkStatsFunc: func(docID, kbID string, tokenNum, chunkNum int64, duration float64) error {
 			if docID != "doc-1" || kbID != "kb-1" || tokenNum != 0 || chunkNum != 2 || duration != 0 {
 				t.Fatalf("unexpected decrement args doc=%s kb=%s token=%d chunk=%d duration=%v", docID, kbID, tokenNum, chunkNum, duration)
@@ -1851,6 +1842,14 @@ func insertChunkTestUserTenant(t *testing.T, userID, tenantID string) {
 
 func insertChunkTestKB(t *testing.T, id, tenantID string) {
 	t.Helper()
+
+	var owner entity.UserTenant
+	err := dao.DB.Where("tenant_id = ? AND role = ? AND status = ?", tenantID, "owner", "1").First(&owner).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		insertChunkTestUserTenant(t, tenantID, tenantID)
+	} else if err != nil {
+		t.Fatalf("find tenant owner: %v", err)
+	}
 
 	status := string(entity.StatusValid)
 	kb := &entity.Knowledgebase{
@@ -2321,9 +2320,8 @@ func TestSwitchChunksUpdatesDocEngineWithAvailableInt(t *testing.T) {
 
 	engine := &switchChunksEngineMock{}
 	svc := &ChunkService{
-		docEngine:     engine,
-		kbDAO:         dao.NewKnowledgebaseDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
+		docEngine: engine,
+		kbDAO:     dao.NewKnowledgebaseDAO(),
 	}
 
 	ctx := t.Context()
@@ -2463,7 +2461,7 @@ func TestChunkServiceParse_RejectsBatchWithRunningIngestionTask(t *testing.T) {
 	insertChunkTestIngestionTask(t, "task-2", "user-1", "doc-2", "kb-1", common.RUNNING)
 
 	svc := newParseTestService(t)
-	svc.accessibleFunc = func(string, string) bool { return true }
+	svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 	ctx := t.Context()
 	_, _, err := svc.Parse(ctx, "user-1", "kb-1", &service.ParseFileRequest{DocumentIDs: []string{"doc-1", "doc-2"}})
 	if err == nil {
@@ -2479,7 +2477,7 @@ func TestChunkServiceParse_CallsStartParseDocumentsWithRerunWithDelete(t *testin
 	insertChunkTestDoc(t, "doc-1", "kb-1")
 
 	svc := newParseTestService(t)
-	svc.accessibleFunc = func(string, string) bool { return true }
+	svc.checkDatasetAccessFunc = func(string, string) error { return nil }
 	var calledOpts document.StartParseOptions
 	var calledDocID string
 	svc.startParseDocumentsFunc = func(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, userID string, opts document.StartParseOptions) error {

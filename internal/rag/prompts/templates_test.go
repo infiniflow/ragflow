@@ -21,16 +21,25 @@ import (
 	"testing"
 )
 
-// TestEmbeddedLoaderCanonicalTemplates makes sure every template the Go column
-// relies on is actually embedded and stripped the way Python's load_prompt
-// strips the canonical rag/prompts/*.md files.
+// TestEmbeddedLoaderCanonicalTemplates checks that templates are available
+// without source files in the working directory and have whitespace trimmed.
 func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
+	t.Chdir(t.TempDir())
 	names := []string{
 		"action_run",
 		"action_set",
 		"action_initialize_state",
 		"sca_select",
 		"sca_query_rewrite",
+		"citation_prompt",
+		"ask_summary",
+		"keyword_prompt",
+		"cross_languages_sys_prompt",
+		"cross_languages_user_prompt",
+		"meta_filter",
+		"related_question",
+		"vision_llm_describe_prompt",
+		"vision_llm_figure_describe_prompt",
 	}
 	for _, name := range names {
 		got, err := (EmbeddedPromptLoader{}).Load(name)
@@ -41,7 +50,7 @@ func TestEmbeddedLoaderCanonicalTemplates(t *testing.T) {
 			t.Errorf("Load(%q) returned an empty template", name)
 		}
 		if strings.TrimSpace(got) != got {
-			t.Errorf("Load(%q) returned surrounding whitespace (load_prompt strips both ends)", name)
+			t.Errorf("Load(%q) returned surrounding whitespace", name)
 		}
 	}
 }
@@ -55,7 +64,7 @@ func TestEmbeddedLoaderMissingName(t *testing.T) {
 }
 
 // TestRenderPromptNilLoaderUsesEmbeddedCanonical locks in that an unset loader
-// now resolves the canonical embedded .md (1:1 with rag/prompts/sca_select.md)
+// resolves the embedded sca_select.md
 // rather than the condensed constant — the whole point of the orchestration
 // parity fix.
 func TestRenderPromptNilLoaderUsesEmbeddedCanonical(t *testing.T) {
@@ -159,7 +168,7 @@ type stubLoader struct{ text string }
 func (s stubLoader) Load(string) (string, error) { return s.text, nil }
 
 // TestRenderPromptNilLoaderUsesEmbeddedCanonical locks in that an unset loader
-// now resolves the canonical embedded .md (1:1 with rag/prompts/sca_select.md)
+// resolves the embedded sca_select.md
 // rather than the condensed constant — the whole point of the orchestration
 // parity fix.
 

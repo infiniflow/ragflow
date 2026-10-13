@@ -221,14 +221,8 @@ missing from the model directory.
   backend. Run it from the repo root so the weights above are auto-discovered
   (see the CWD caveat); no environment variable is required there.
 
-- **Run the Go Docker image** — the container entrypoint only starts the Go
-  server (`bin/ragflow_server --api/--ingestor/--admin`) when
-  `API_PROXY_SCHEME` is `go` or `hybrid`. With the variable unset (or `python`)
-  the Go server does NOT start, so the in-process backend is absent and the
-  image looks like a Python-only build. Start it with:
-  ```bash
-  docker run -e API_PROXY_SCHEME=go infiniflow/ragflow:go-test-1
-  ```
+- **Run the Go Docker image** — the container entrypoint only starts the server
+  (`bin/ragflow_server --api/--ingestor/--admin`)
 
 - ORT is resolved via `dlopen(NULL)` at runtime, so no `LD_LIBRARY_PATH` /
   `-rpath` is needed and no `libonnxruntime.so` ships with the image.
@@ -301,7 +295,7 @@ version" guard off. Leave it off in production.
 
 ## 3. Start Frontend
 ```bash
-cd web && export API_PROXY_SCHEME=hybrid && npm run dev
+cd web && npm run dev
 ```
 
 ## 4. Service Ports & API Routing
@@ -309,15 +303,6 @@ cd web && export API_PROXY_SCHEME=hybrid && npm run dev
 - admin server listens on port 9381 by default
 
 After updating or implementing an API, update the frontend development environment routes in web/vite.config.ts under proxySchemes.
-
-### 4.1 Proxy Schemes
-
-| Scheme   | Description                                                                           |
-|----------|---------------------------------------------------------------------------------------|
-| `python` | All API requests from the frontend are routed to the Python server                    |
-| `hybrid` | API requests are partially routed to the Go server and partially to the Python server |
-| `go`     | All API requests from the frontend are routed to the Go server                        |
-
 
 ## 5. RAGFlow commands
 

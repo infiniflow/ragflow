@@ -9,6 +9,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 )
 
@@ -194,7 +195,7 @@ func (r *kbScopeResolver) Resolve(ctx context.Context, userID string, datasetIDs
 	seen := map[string]bool{}
 	records := make([]*entity.Knowledgebase, 0, len(datasetIDs))
 	for _, datasetID := range datasetIDs {
-		if !r.kbDAO.Accessible(ctx, dao.DB, datasetID, userID) {
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationUse); err != nil {
 			return scope, fmt.Errorf("only the owner of dataset %s is authorized for this operation", datasetID)
 		}
 		kb, err := r.kbDAO.GetByID(ctx, dao.DB, datasetID)

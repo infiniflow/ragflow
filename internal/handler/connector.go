@@ -29,12 +29,13 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
 
 type connectorServiceIface interface {
-	ListConnectors(ctx context.Context, userID string) (*service.ListConnectorsResponse, error)
+	ListConnectors(ctx context.Context, userID, tenantID string) (*service.ListConnectorsResponse, error)
 	CreateConnector(ctx context.Context, userID string, req *service.CreateConnectorRequest) (*entity.Connector, error)
 	GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error)
 	ListLog(ctx context.Context, connectorID, userID string, page, pageSize int) ([]*entity.ConnectorSyncLog, int64, common.ErrorCode, error)
@@ -66,12 +67,13 @@ func NewConnectorHandler(connectorService *service.ConnectorService, userService
 	}
 }
 
-// ListConnectors list connectors
+// ListConnectors lists connectors for an owned tenant or a requested tenant the caller belongs to.
 // @Summary List Connectors
 // @Description Get list of connectors for the current user (equivalent to Python's list_connector)
 // @Tags connector
 // @Accept json
 // @Produce json
+// @Param tenant_id query string false "tenant whose connectors are listed"
 // @Success 200 {object} service.ListConnectorsResponse
 // @Router /connector/list [get]
 func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
@@ -84,8 +86,11 @@ func (h *ConnectorHandler) ListConnectors(c *gin.Context) {
 	ctx := c.Request.Context()
 
 	// List connectors
-	result, err := h.connectorService.ListConnectors(ctx, userID)
+	result, err := h.connectorService.ListConnectors(ctx, userID, c.Query("tenant_id"))
 	if err != nil {
+		if connectorErrorResponse(c, err) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -100,10 +105,11 @@ func connectorErrorResponse(c *gin.Context, err error) bool {
 	switch {
 	case err == nil:
 		return false
+	case permissionresponse.IsPermissionError(err):
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		common.ErrorWithCode(c, code, permissionErr.Error())
 	case errors.Is(err, service.ErrConnectorIDRequired):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-	case errors.Is(err, service.ErrConnectorNoAuth):
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 	case errors.Is(err, service.ErrConnectorNotFound):
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Connector!")
 	case errors.Is(err, service.ErrConnectorTestUnsupported):
@@ -384,11 +390,15 @@ func (h *ConnectorHandler) TestConnector(c *gin.Context) {
 	}
 
 	err := h.connectorService.TestConnector(ctx, connectorID, user.ID, request)
+	if permissionresponse.IsPermissionError(err) {
+		connectorErrorResponse(c, err)
+		return
+	}
 	if errors.Is(err, service.ErrConnectorTestUnsupported) || errors.Is(err, service.ErrConnectorSourceNotImplemented) {
 		connectorErrorResponse(c, err)
 		return
 	}
-	if err != nil && !errors.Is(err, service.ErrConnectorNoAuth) && !errors.Is(err, service.ErrConnectorNotFound) {
+	if err != nil && !errors.Is(err, service.ErrConnectorNotFound) {
 		// Schema/credential validation failures map to DATA_ERROR;
 		// anything unexpected falls back to SERVER_ERROR.
 		var (

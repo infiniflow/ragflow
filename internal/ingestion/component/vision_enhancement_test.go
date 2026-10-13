@@ -24,8 +24,6 @@ import (
 	"fmt"
 	"image"
 	"image/png"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -203,7 +201,8 @@ func TestVisionEnhancement_AppendsVLMToExistingText(t *testing.T) {
 	}
 	res, handled, err := maybeDispatchVisionEnhancement(
 		t.Context(), dao.DB, utility.FileTypeXLSX, dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -232,7 +231,8 @@ func TestVisionEnhancement_ReportsVLMInvocationFailure(t *testing.T) {
 		}},
 	}
 	result, _, err := maybeDispatchVisionEnhancement(t.Context(), dao.DB, utility.FileTypeDOCX, dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -260,8 +260,7 @@ func TestVisionEnhancement_CropFailureFallsBackToInlineImage(t *testing.T) {
 	}
 	result, handled, err := maybeDispatchVisionEnhancement(
 		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
-		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}}, "",
-	)
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -296,8 +295,7 @@ func TestVisionEnhancement_EnhancesPDFTablesRegardlessOfOCRProvider(t *testing.T
 			res, handled, err := maybeDispatchVisionEnhancement(
 				t.Context(), dao.DB, utility.FileTypePDF, dispatched,
 				map[string]any{"tenant_id": "t1"},
-				map[string]schema.ParserSetup{"pdf": {"parse_method": parseMethod}}, "",
-			)
+				visionSettings{}, fractionWindow{})
 			if err != nil {
 				t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 			}
@@ -333,8 +331,7 @@ func TestVisionEnhancement_EnhancesTableAndCellImages(t *testing.T) {
 
 	result, handled, err := maybeDispatchVisionEnhancement(
 		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
-		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "deepdoc"}}, "",
-	)
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -363,8 +360,7 @@ func TestVisionEnhancement_EnhancesExternalPDFImage(t *testing.T) {
 
 	result, handled, err := maybeDispatchVisionEnhancement(
 		t.Context(), dao.DB, utility.FileTypePDF, dispatched,
-		map[string]any{"tenant_id": "t1"}, map[string]schema.ParserSetup{"pdf": {"parse_method": "mineru"}}, "",
-	)
+		map[string]any{"tenant_id": "t1"}, visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -414,7 +410,8 @@ func TestVisionEnhancement_EnhancesJSONImagesAndTables(t *testing.T) {
 				dao.DB,
 				tc.fileType,
 				dispatched,
-				map[string]any{"tenant_id": "t1", "lang": "Japanese"}, nil, "")
+				map[string]any{"tenant_id": "t1", "lang": "Japanese"},
+				visionSettings{}, fractionWindow{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -463,10 +460,10 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 			want:   "Japanese",
 		},
 		{
-			name:   "setup lang used when inputs carry no lang",
+			name:   "family lang no longer drives captions; without a dataset language it is English",
 			inputs: map[string]any{"tenant_id": "t1"},
 			setups: map[string]schema.ParserSetup{"pdf": {"lang": "Chinese"}},
-			want:   "Chinese",
+			want:   "English",
 		},
 		{
 			name:   "english when neither is set",
@@ -493,7 +490,8 @@ func TestVisionEnhancement_LanguagePriority(t *testing.T) {
 			}
 
 			_, handled, err := maybeDispatchVisionEnhancement(
-				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs, tc.setups, "")
+				t.Context(), dao.DB, utility.FileTypePDF, dispatched, tc.inputs,
+				visionSettings{}, fractionWindow{})
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -533,7 +531,8 @@ func TestVisionEnhancement_MarkdownOutputUntouched(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -563,7 +562,8 @@ func TestVisionEnhancement_UsesVisualPayloadRegardlessOfFileType(t *testing.T) {
 		dao.DB,
 		utility.FileTypeOTHER,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -592,7 +592,8 @@ func TestVisionEnhancement_EmptyOrNoTenantSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypeDOCX,
 		dispatched,
-		map[string]any{}, nil, "")
+		map[string]any{},
+		visionSettings{}, fractionWindow{})
 	if err != nil || handled {
 		t.Errorf("handled=%v, err=%v, want false, nil for missing tenant_id", handled, err)
 	}
@@ -618,7 +619,8 @@ func TestVisionEnhancement_DispatchedErrSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -655,7 +657,8 @@ func TestVisionEnhancement_ContextCancellation(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -696,7 +699,8 @@ func TestVisionEnhancement_NonStringImageFieldFiltered(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -738,7 +742,8 @@ func TestVisionEnhancement_MoreThanConcurrencyItems(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -778,7 +783,8 @@ func TestVisionEnhancement_PlainTextResponseNotTruncated(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -816,7 +822,8 @@ func TestVisionEnhancement_PromptBuilderErrorSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -854,7 +861,8 @@ func TestVisionEnhancement_ModelResolveFailureSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -905,7 +913,8 @@ func TestVisionEnhancement_CancellationStopsSchedulingWithManyItems(t *testing.T
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
@@ -1085,33 +1094,6 @@ func TestExtractVisionAnswer_EdgeCases(t *testing.T) {
 	}
 }
 
-func TestPromptDirState_FailureIsSticky(t *testing.T) {
-	dir := t.TempDir()
-	var state promptDirState
-	for i := 0; i < 2; i++ {
-		if _, err := state.resolve(dir); err == nil {
-			t.Fatalf("call %d: resolve() = nil error, want sticky init error", i+1)
-		}
-	}
-}
-
-func TestPromptDirState_SuccessIsCached(t *testing.T) {
-	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "rag", "prompts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	var state promptDirState
-	for i := 0; i < 2; i++ {
-		got, err := state.resolve(dir)
-		if err != nil {
-			t.Fatalf("call %d: resolve() error: %v", i+1, err)
-		}
-		if got != dir {
-			t.Fatalf("call %d: resolve() = %q, want %q", i+1, got, dir)
-		}
-	}
-}
-
 func TestVisionEnhancement_GlobalModelPreferredOverPDFParser(t *testing.T) {
 	origTenantResolver := resolveTenantModelByType
 	origModelResolver := resolveModelConfig
@@ -1142,9 +1124,6 @@ func TestVisionEnhancement_GlobalModelPreferredOverPDFParser(t *testing.T) {
 	visionChatInvoker = invoker.invoke
 	figureVisionPromptBuilder = fakePrompt
 
-	setups := map[string]schema.ParserSetup{
-		"pdf": {"parse_method": "pdf-parser-model", "vlm": map[string]any{"llm_id": "stale-family-model"}},
-	}
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
 		JSON: []map[string]any{
@@ -1158,8 +1137,7 @@ func TestVisionEnhancement_GlobalModelPreferredOverPDFParser(t *testing.T) {
 		utility.FileTypePDF,
 		dispatched,
 		map[string]any{"tenant_id": "t1"},
-		setups, "custom-vlm@provider",
-	)
+		visionSettings{modelID: "custom-vlm@provider"}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}
@@ -1200,7 +1178,8 @@ func TestVisionEnhancement_InvalidImageDataSkipped(t *testing.T) {
 		dao.DB,
 		utility.FileTypePDF,
 		dispatched,
-		map[string]any{"tenant_id": "t1"}, nil, "")
+		map[string]any{"tenant_id": "t1"},
+		visionSettings{}, fractionWindow{})
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
 	}

@@ -61,6 +61,21 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
+// A provider that supports rerank must declare its rerank url_suffix. Without it
+// the request is posted to the base URL (".../") instead of "/rerank", which the
+// server answers with a generic 500 — the failure reported in #16033.
+func TestOpenAIAPICompatibleDeclaresRerankSuffix(t *testing.T) {
+	var cfg struct {
+		URLSuffix URLSuffix `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(readProviderConfig(t, "openai-api-compatible.json"), &cfg); err != nil {
+		t.Fatalf("parse openai-api-compatible.json: %v", err)
+	}
+	if strings.TrimSpace(cfg.URLSuffix.Rerank) == "" {
+		t.Fatal("openai-api-compatible.json declares no rerank url_suffix")
+	}
+}
+
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to
@@ -162,7 +177,7 @@ func TestBedrockConfigPreservesEmbeddingMaxTokens(t *testing.T) {
 }
 
 func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
-	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocrv2.json", "paddleocr_local.json")
+	dir, restore := setupProviderTestDir(t, "mineru_local.json", "monkeyocr.json", "monkeyocrv2.json", "paddleocr_local.json")
 	defer restore()
 
 	err := InitProviderManager(dir)
@@ -181,6 +196,20 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if minerU.URLSuffix.DocumentParse != "file_parse" {
 		t.Errorf("MinerU doc_parse suffix=%q", minerU.URLSuffix.DocumentParse)
+	}
+
+	monkeyOCR := pm.FindProvider("MonkeyOCR")
+	if monkeyOCR == nil {
+		t.Fatal("MonkeyOCR provider not found")
+	}
+	if _, ok := monkeyOCR.ModelDriver.(*MonkeyOCRModel); !ok {
+		t.Fatalf("MonkeyOCR ModelDriver=%T, want *models.MonkeyOCRModel", monkeyOCR.ModelDriver)
+	}
+	if monkeyOCR.ModelDriver.Name() != "monkeyocr" {
+		t.Fatalf("MonkeyOCR Name()=%q, want monkeyocr", monkeyOCR.ModelDriver.Name())
+	}
+	if monkeyOCR.URLSuffix.DocumentParse != "file_parse" {
+		t.Errorf("MonkeyOCR doc_parse suffix=%q", monkeyOCR.URLSuffix.DocumentParse)
 	}
 
 	monkeyOCRv2 := pm.FindProvider("MonkeyOCRv2")
@@ -203,6 +232,23 @@ func TestLocalOCRProviderConfigsLoadLocalDrivers(t *testing.T) {
 	}
 	if paddleOCR.URLSuffix.OCR != "layout-parsing" {
 		t.Errorf("PaddleOCR.local OCR suffix=%q", paddleOCR.URLSuffix.OCR)
+	}
+}
+
+func TestModelFactoryCreatesMonkeyOCRDriver(t *testing.T) {
+	driver, err := NewModelFactory().CreateModelDriver("MonkeyOCR", map[string]string{"default": "http://localhost:7861"}, URLSuffix{DocumentParse: "file_parse"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if driver.Name() != "monkeyocr" {
+		t.Fatalf("driver.Name()=%q", driver.Name())
+	}
+	cloned := driver.NewInstance(map[string]string{"default": "http://cloned"})
+	if cloned.Name() != "monkeyocr" {
+		t.Fatalf("NewInstance().Name()=%q", cloned.Name())
+	}
+	if _, ok := driver.(*MonkeyOCRModel); !ok {
+		t.Fatalf("driver=%T, want *MonkeyOCRModel", driver)
 	}
 }
 

@@ -1,12 +1,33 @@
 package chunk
 
 import (
+	"errors"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
+
+func TestRetrievalTestChecksDatasetUsePermission(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+	insertChunkTestKB(t, "kb-1", "owner")
+	if err := db.Model(&entity.Knowledgebase{}).Where("id = ?", "kb-1").
+		Update("permission", string(entity.TenantPermissionMe)).Error; err != nil {
+		t.Fatalf("set dataset private: %v", err)
+	}
+
+	_, err := (&ChunkService{kbDAO: dao.NewKnowledgebaseDAO()}).RetrievalTest(t.Context(), &service.RetrievalTestRequest{
+		Question: "query",
+		Datasets: []string{"kb-1"},
+	}, "outsider")
+	if !permissionresponse.IsPermissionError(err) || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("RetrievalTest() error = %v, want permission denial", err)
+	}
+}
 
 func TestChunkManagementDatasetPermissions(t *testing.T) {
 	for _, tt := range []struct {
@@ -79,7 +100,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 						if err != nil {
 							t.Fatalf("authorized operation failed: %v", err)
 						}
-					} else if err == nil || err.Error() != "user does not have access to this dataset" {
+					} else if !permissionresponse.IsPermissionError(err) {
 						t.Fatalf("unauthorized operation error = %v, want access denied", err)
 					}
 				})

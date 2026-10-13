@@ -835,3 +835,87 @@ func TestTagKwdRoundTripsAsList(t *testing.T) {
 		})
 	}
 }
+
+// TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys covers #20500: parser
+// keys that are not columns (slide_number, __outline__) failed the whole batch.
+func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
+	outline := []map[string]interface{}{{"title": "Intro", "depth": 1}}
+	vector := []float64{0.1, 0.2}
+	rows := []map[string]interface{}{
+		transformChunkFields(map[string]interface{}{
+			"id": "c1", "content_with_weight": "slide text", "docnm_kwd": "deck.pptx",
+			"slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept",
+		}, nil),
+		transformChunkFields(map[string]interface{}{
+			"id": "c2", "content_with_weight": "pdf text", "__outline__": outline,
+			"important_kwd": []string{"a"}, "memory_id": "m1", "chunk_data": map[string]interface{}{"k": "v"},
+		}, nil),
+	}
+	// The table lacks q_1024_vec, important_keywords, memory_id and chunk_data,
+	// but the engine or a mapping declares each one. They must reach the insert.
+	// legacy_col is a table column that no mapping declares.
+	columns := map[string]bool{"id": true, "content": true, "docnm": true, "legacy_col": true}
+
+	if err := (&Engine{mappingFileName: "infinity_mapping.json"}).dropUndeclaredFields("ragflow_t_kb", rows, columns); err != nil {
+		t.Fatalf("dropUndeclaredFields: %v", err)
+	}
+
+	want := []map[string]interface{}{
+		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "q_1024_vec": vector, "legacy_col": "kept"},
+		{
+			"id": "c2", "content": "pdf text", "important_keywords": "a", "important_kwd_empty_count": 0,
+			"memory_id": "m1", "chunk_data": `{"k":"v"}`,
+		},
+	}
+	if !reflect.DeepEqual(rows, want) {
+		t.Fatalf("rows = %#v\nwant %#v", rows, want)
+	}
+}
+
+func TestDropUndeclaredFieldsKeepsEveryMappingColumn(t *testing.T) {
+	path, err := utility.FindConfFileInProject("message_infinity_mapping.json")
+	if err != nil {
+		t.Fatalf("locate message_infinity_mapping.json: %v", err)
+	}
+	data, err := os.ReadFile(*path)
+	if err != nil {
+		t.Fatalf("read %s: %v", *path, err)
+	}
+	var messageColumns map[string]json.RawMessage
+	if err := json.Unmarshal(data, &messageColumns); err != nil {
+		t.Fatalf("parse %s: %v", *path, err)
+	}
+
+	row := map[string]interface{}{}
+	for column := range chunkMappingColumns(t) {
+		row[column] = "v"
+	}
+	for column := range messageColumns {
+		row[column] = "v"
+	}
+	before := len(row)
+
+	if err := (&Engine{mappingFileName: "infinity_mapping.json"}).dropUndeclaredFields("ragflow_t_kb", []map[string]interface{}{row}, map[string]bool{}); err != nil {
+		t.Fatalf("dropUndeclaredFields: %v", err)
+	}
+	if len(row) != before {
+		t.Fatalf("dropped %d mapping columns from a table with no columns", before-len(row))
+	}
+}
+
+func TestDropUndeclaredFieldsFailsWhenMappingIsMissing(t *testing.T) {
+	engine := &Engine{mappingFileName: "no_such_mapping.json"}
+
+	allColumns := []map[string]interface{}{{"id": "c1"}}
+	if err := engine.dropUndeclaredFields("ragflow_t_kb", allColumns, map[string]bool{"id": true}); err != nil {
+		t.Fatalf("a row with only table columns must not read the mapping: %v", err)
+	}
+
+	unknown := []map[string]interface{}{{"id": "c1", "slide_number": 2}}
+	if err := engine.dropUndeclaredFields("ragflow_t_kb", unknown, map[string]bool{"id": true}); err == nil {
+		t.Fatal("expected an error when the mapping file cannot be read")
+	}
+	if _, ok := unknown[0]["slide_number"]; !ok {
+		t.Fatal("a failed mapping read must leave the row unchanged")
+	}
+}

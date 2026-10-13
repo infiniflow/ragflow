@@ -39,15 +39,15 @@ type BotHandler struct {
 // botService is the subset of BotService used by these handlers. It
 // is interface-typed so the test suite can inject a stub.
 type botService interface {
-	ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
+	ChatbotInfo(ctx context.Context, userID, dialogID string) (
 		title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error)
-	AgentbotInputs(ctx context.Context, tenantID, agentID string) (
+	AgentbotInputs(ctx context.Context, userID, agentID string) (
 		title, avatar, prologue, mode string, inputs map[string]any,
 		ec common.ErrorCode, err error)
-	AgentbotCompletion(ctx context.Context, tenantID, agentID string, req service.AgentbotCompletionRequest) (
+	AgentbotCompletion(ctx context.Context, userID, agentID string, req service.AgentbotCompletionRequest) (
 		<-chan canvas.RunEvent, common.ErrorCode, error)
-	AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
-	ChatbotCompletion(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (
+	AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error)
+	ChatbotCompletion(ctx context.Context, userID, dialogID string, req service.ChatbotCompletionRequest) (
 		<-chan service.ChatbotSSEFrame, common.ErrorCode, error)
 }
 
@@ -74,6 +74,9 @@ func (h *BotHandler) ChatbotInfo(c *gin.Context) {
 	title, avatar, prologue, llmID, hasWebSearch, ec, err := h.botService.ChatbotInfo(
 		c.Request.Context(), user.ID, dialogID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}
@@ -220,6 +223,9 @@ func (h *BotHandler) ChatbotCompletion(c *gin.Context) {
 	frames, ec, err := h.botService.ChatbotCompletion(
 		c.Request.Context(), user.ID, dialogID, body)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ResponseWithCodeData(c, ec, nil, err.Error())
 		return
 	}

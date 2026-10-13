@@ -21,7 +21,9 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	agenttool "ragflow/internal/agent/tool"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"gorm.io/gorm"
@@ -42,18 +44,27 @@ func NewMemoryAdapter(svc *service.MemoryService) *MemoryAdapter {
 // the common RetrievalChunk result shape.
 func (a *MemoryAdapter) Search(
 	ctx context.Context,
-	_ *gorm.DB,
+	db *gorm.DB,
 	req agenttool.RetrievalRequest,
 ) ([]agenttool.RetrievalChunk, error) {
 	if a == nil || a.svc == nil {
 		return nil, agenttool.ErrMemoryRetrievalServiceMissing
 	}
-	if strings.TrimSpace(req.TenantID) == "" {
-		return nil, fmt.Errorf("memory retrieval: tenant id is required")
-	}
 	memoryIDs := compactStrings(req.MemoryIDs)
 	if len(memoryIDs) == 0 {
 		return nil, fmt.Errorf("memory retrieval: memory_ids is required")
+	}
+	actorID := strings.TrimSpace(req.TenantID)
+	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
+		if userID, _ := state.Sys["user_id"].(string); strings.TrimSpace(userID) != "" {
+			actorID = strings.TrimSpace(userID)
+		}
+	}
+	if actorID == "" {
+		return nil, fmt.Errorf("memory retrieval: user id is required")
+	}
+	if err := agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs); err != nil {
+		return nil, err
 	}
 	keywordWeight := 0.7
 	if req.KeywordsSimilarityWeight != nil {
@@ -65,7 +76,7 @@ func (a *MemoryAdapter) Search(
 	}
 	messages, _, err := a.svc.SearchMessage(
 		ctx,
-		req.TenantID,
+		actorID,
 		filter,
 		map[string]any{
 			"query":                      req.Query,
