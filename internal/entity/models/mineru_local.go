@@ -119,6 +119,10 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if err != nil {
 		return err
 	}
+	if !strings.HasPrefix(resolvedBaseURL, "http://") && !strings.HasPrefix(resolvedBaseURL, "https://") {
+		resolvedBaseURL = "http://" + resolvedBaseURL
+	}
+
 	u, err := url.Parse(resolvedBaseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)

@@ -133,7 +133,7 @@ func mcpRetrieval(ctx context.Context, ds *dataset.DatasetService, userID string
 			if _, ok := documentMetadata[docID]; ok {
 				continue
 			}
-			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}}, 1, 1)
+			docs, _, err := documents.ListDocumentsByDatasetIDWithOptions(ctx, dao.DocumentListOptions{KbID: id, DocIDs: []string{docID}, DocIDFilterApplied: true}, 1, 1)
 			if err != nil || len(docs) == 0 {
 				continue
 			}
