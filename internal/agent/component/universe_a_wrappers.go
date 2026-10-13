@@ -246,35 +246,27 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 }
 
 func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
-	state, err := runtime.GetStateFromContext(ctx)
-	if err != nil || state == nil {
-		return nil
-	}
-	canvasID, _ := state.Sys["canvas_id"].(string)
-	userID, _ := state.Sys["user_id"].(string)
-	if canvasID == "" && userID == "" {
-		return nil
-	}
-	if canvasID == "" {
-		return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
-	}
-	if userID == "" {
-		return permission.ErrUnauthenticated
-	}
-
-	checker := permission.NewDatabaseChecker(db)
-	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
-	for _, datasetID := range toStringSlice(inputs["dataset_ids"]) {
-		datasetID = strings.TrimSpace(datasetID)
-		if datasetID == "" {
-			continue
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.Sys["user_id"].(string)
+		if strings.TrimSpace(canvasID) == "" && strings.TrimSpace(userID) != "" {
+			return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
 		}
-		dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
-		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
-			return fmt.Errorf("dataset %q: %w", datasetID, err)
+		if strings.TrimSpace(canvasID) != "" && strings.TrimSpace(userID) == "" {
+			return permission.ErrUnauthenticated
 		}
 	}
-	return nil
+	datasetIDs := toStringSlice(inputs["dataset_ids"])
+	memoryIDs := toStringSlice(inputs["memory_ids"])
+	retrievalFrom, _ := inputs["retrieval_from"].(string)
+	switch {
+	case strings.EqualFold(strings.TrimSpace(retrievalFrom), "memory"):
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	case strings.TrimSpace(retrievalFrom) == "" && len(datasetIDs) == 0 && len(memoryIDs) > 0:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	default:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasetIDs)
+	}
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {

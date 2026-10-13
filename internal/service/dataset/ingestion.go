@@ -245,7 +245,31 @@ func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID str
 		pageSize = 30
 	}
 
-	logs, total, err := d.connectorDAO.ListLogsByDatasetID(ctx, dao.DB, datasetID, (page-1)*pageSize, pageSize)
+	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connectors for sync logs: %w", err)
+	}
+	checker := permission.NewDatabaseChecker(dao.DB)
+	subject := permission.Subject{UserID: userID}
+	taskIDs := make([]string, 0)
+	for _, connector := range connectors {
+		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID}
+		scope, scopeErr := checker.Scope(ctx, subject, permission.ScopeQuery{
+			Kind:      permission.ResourceKindSyncTask,
+			Parent:    connectorRef,
+			Operation: permission.OperationRead,
+			Entry:     &connectorRef,
+			EntryOp:   permission.OperationUse,
+		})
+		if scopeErr != nil {
+			code, permissionErr := permissionresponse.Normalize(scopeErr)
+			return nil, code, permissionErr
+		}
+		if scope.Mode == permission.ScopeIDs {
+			taskIDs = append(taskIDs, scope.ResourceIDs...)
+		}
+	}
+	logs, total, err := d.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, datasetID, (page-1)*pageSize, pageSize)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("list dataset connector sync logs: %w", err)
 	}

@@ -24,7 +24,7 @@ import (
 func TestChunkDocUnmarshalTableField(t *testing.T) {
 	src := `{
 		"doc_type_kwd": "table",
-		"table": {"rows": [["Name", "Age"], ["Alice", "30"]], "header_rows": 1, "caption": "People"},
+		"table": {"grid": [[{"text":"Name"},{"text":"Age"}],[{"text":"Alice"},{"text":"30"}]], "header_rows": 1, "caption": "People"},
 		"text": "legacy-html-should-be-ignored"
 	}`
 	var cd ChunkDoc
@@ -40,8 +40,8 @@ func TestChunkDocUnmarshalTableField(t *testing.T) {
 	if cd.TableData.Caption != "People" {
 		t.Fatalf("Caption = %q, want %q", cd.TableData.Caption, "People")
 	}
-	if len(cd.TableData.Rows) != 2 || cd.TableData.Rows[1][0] != "Alice" {
-		t.Fatalf("Rows = %v, unexpected", cd.TableData.Rows)
+	if len(cd.TableData.CellTexts()) != 2 || cd.TableData.CellTexts()[1][0] != "Alice" {
+		t.Fatalf("CellTexts = %v, unexpected", cd.TableData.CellTexts())
 	}
 	// The "table" key must NOT also land in Extra (no double storage).
 	if _, ok := cd.Extra["table"]; ok {
@@ -53,7 +53,7 @@ func TestChunkDocMarshalRoundTripTable(t *testing.T) {
 	cd := ChunkDoc{
 		DocType: "table",
 		TableData: &entity.TableData{
-			Rows:       [][]string{{"Name", "Age"}, {"Alice", "30"}},
+			Grid:       [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}, {{Text: "Alice"}, {Text: "30"}}},
 			HeaderRows: 1,
 		},
 	}
@@ -65,7 +65,7 @@ func TestChunkDocMarshalRoundTripTable(t *testing.T) {
 	if err := json.Unmarshal(b, &back); err != nil {
 		t.Fatalf("Unmarshal error = %v", err)
 	}
-	if back.TableData == nil || len(back.TableData.Rows) != 2 {
+	if back.TableData == nil || len(back.TableData.Grid) != 2 {
 		t.Fatalf("round-trip lost TableData: %v", back.TableData)
 	}
 }

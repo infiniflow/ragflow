@@ -76,8 +76,6 @@ var (
 var (
 	// ErrConnectorNotFound is returned when a connector is not found.
 	ErrConnectorNotFound = errors.New("can't find this Connector")
-	// ErrConnectorNoAuth is returned when the caller cannot access the connector or knowledge base.
-	ErrConnectorNoAuth = errors.New("no authorization")
 	// ErrConnectorNotBoundToKB is returned when the connector is not bound to the kb being rebuilt.
 	ErrConnectorNotBoundToKB = errors.New("connector is not bound to this knowledge base")
 	// ErrConnectorIDRequired is returned when a connector ID is missing.
@@ -93,8 +91,6 @@ var (
 // ConnectorService connector service
 type ConnectorService struct {
 	connectorDAO      *dao.ConnectorDAO
-	knowledgebaseDAO  *dao.KnowledgebaseDAO
-	userTenantDAO     *dao.UserTenantDAO
 	connectorRegistry *syncerconnector.Registry
 }
 
@@ -133,8 +129,6 @@ var getSyncCheckpointDeleter = func() (syncCheckpointDeleter, bool) {
 func NewConnectorService() *ConnectorService {
 	return &ConnectorService{
 		connectorDAO:      dao.NewConnectorDAO(),
-		knowledgebaseDAO:  dao.NewKnowledgebaseDAO(),
-		userTenantDAO:     dao.NewUserTenantDAO(),
 		connectorRegistry: newConnectorRegistry(),
 	}
 }
@@ -271,21 +265,6 @@ type boxOAuthTokenResponse struct {
 	ErrorDesc    string `json:"error_description,omitempty"`
 }
 
-// canAccessConnector Test Authentication
-func (s *ConnectorService) canAccessConnector(ctx context.Context, connector *entity.Connector, userID string) (bool, error) {
-	if connector.TenantID == userID {
-		return true, nil
-	}
-	_, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, userID, connector.TenantID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
-}
-
 // cancelConnectorTasks Stop connector tasks
 func (s *ConnectorService) cancelConnectorTasks(ctx context.Context, connectorID string) error {
 	if err := s.connectorDAO.CancelRunningOrScheduledLogs(ctx, dao.DB, connectorID); err != nil {
@@ -331,10 +310,13 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 	return s.connectorDAO.GetByID(ctx, dao.DB, connector.ID)
 }
 
-// GetConnector returns one connector when the user can access its tenant.
+// GetConnector returns one connector when the user has read permission.
 func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID string) (*entity.Connector, error) {
 	if strings.TrimSpace(connectorID) == "" {
 		return nil, ErrConnectorIDRequired
+	}
+	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRead); err != nil {
+		return nil, err
 	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
@@ -346,25 +328,30 @@ func (s *ConnectorService) GetConnector(ctx context.Context, connectorID, userID
 		return nil, ErrConnectorInternal
 	}
 
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return nil, err
-	}
-	if !canAccess {
-		return nil, ErrConnectorNoAuth
-	}
 	return connector, nil
 }
 
-// ListConnectors list connectors for a user
-func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*ListConnectorsResponse, error) {
+// ListConnectors returns connectors belonging to a tenant the caller can use.
+func (s *ConnectorService) ListConnectors(ctx context.Context, userID, requestedTenantID string) (*ListConnectorsResponse, error) {
 	userID = strings.TrimSpace(userID)
 	if userID == "" {
 		return nil, fmt.Errorf("user_id is required")
 	}
 
-	// Query connectors by tenant ID
-	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, userID)
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		var err error
+		tenantID, err = requireOwnedTenantID(ctx, userID)
+		if errors.Is(err, permission.ErrMembershipNotFound) {
+			return &ListConnectorsResponse{Connectors: []*dao.ConnectorListItem{}}, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+		return nil, err
+	}
+	connectors, err := s.connectorDAO.ListByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
 		return nil, err
 	}
@@ -374,37 +361,27 @@ func (s *ConnectorService) ListConnectors(ctx context.Context, userID string) (*
 	}, nil
 }
 
-// accessible reports whether the user can access the connector's tenant.
-func (s *ConnectorService) accessible(ctx context.Context, connectorID, userID string) (bool, error) {
-	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, ErrConnectorNotFound
-		}
-		return false, err
-	}
-	return s.canAccessConnector(ctx, connector, userID)
-}
-
 // TestConnector validates connector settings without persisting or syncing.
 func (s *ConnectorService) TestConnector(ctx context.Context, connectorID, userID string, config entity.JSONMap) error {
 	var storedConnector *entity.Connector
 	if connectorID != "" {
-		ok, err := s.accessible(ctx, connectorID, userID)
-		if err != nil && !errors.Is(err, ErrConnectorNotFound) {
-			return err
+		permissionErr := checkConnectorPermission(ctx, userID, connectorID, permission.OperationUse)
+		if permissionErr != nil && !errors.Is(permissionErr, permission.ErrResourceNotFound) {
+			return permissionErr
 		}
-		if err == nil && !ok {
-			return ErrConnectorNoAuth
-		}
-		if err == nil {
-			storedConnector, err = s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-			if err != nil {
+		if errors.Is(permissionErr, permission.ErrResourceNotFound) {
+			if config == nil {
 				return ErrConnectorNotFound
 			}
-		}
-		if errors.Is(err, ErrConnectorNotFound) && config == nil {
-			return ErrConnectorNotFound
+		} else {
+			loadedConnector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+			if err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return ErrConnectorNotFound
+				}
+				return err
+			}
+			storedConnector = loadedConnector
 		}
 	}
 
@@ -939,6 +916,10 @@ func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, use
 	if connectorID == "" {
 		return false, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
+	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationDelete); err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return false, code, permissionErr
+	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
@@ -946,14 +927,6 @@ func (s *ConnectorService) DeleteConnector(ctx context.Context, connectorID, use
 			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return false, common.CodeServerError, err
-	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return false, common.CodeServerError, err
-	}
-	if !canAccess {
-		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	if err = s.cancelConnectorTasks(ctx, connector.ID); err != nil {
@@ -979,6 +952,16 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 	if connectorID == "" {
 		return nil, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
+	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationUpdate); err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return nil, code, permissionErr
+	}
+	if req != nil && (req.Reschedule || isConnectorCancelStatus(req.Status) || isConnectorScheduleStatus(req.Status)) {
+		if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
+			code, permissionErr := normalizeConnectorPermissionError(err)
+			return nil, code, permissionErr
+		}
+	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
@@ -986,14 +969,6 @@ func (s *ConnectorService) UpdateConnector(ctx context.Context, connectorID, use
 			return nil, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return nil, common.CodeServerError, err
-	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !canAccess {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	updates := map[string]interface{}{}
@@ -1070,6 +1045,10 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 	if kbID == "" {
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: kb_id")
 	}
+	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return false, code, permissionErr
+	}
 
 	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
 	if err != nil {
@@ -1077,14 +1056,6 @@ func (s *ConnectorService) RebuildConnector(ctx context.Context, connectorID, us
 			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
 		}
 		return false, common.CodeServerError, err
-	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return false, common.CodeServerError, err
-	}
-	if !canAccess {
-		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
 	}
 
 	// The caller-supplied kb is targeted by delete + re-sync below, so it must
@@ -1144,23 +1115,18 @@ func (s *ConnectorService) ResumeFailedSync(ctx context.Context, connectorID, us
 	if req.TaskID == "" {
 		return false, common.CodeArgumentError, fmt.Errorf("required argument is missing: task_id")
 	}
-	// get connector
-	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return false, common.CodeDataError, fmt.Errorf("can't find this Connector")
-		}
-		return false, common.CodeServerError, err
+	if err := checkConnectorPermission(ctx, userID, connectorID, permission.OperationRun); err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return false, code, permissionErr
 	}
-	// check access
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return false, common.CodeServerError, err
+	if err := checkSyncTaskPermission(ctx, userID, connectorID, req.TaskID, permission.OperationRun); err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return false, code, permissionErr
 	}
-	if !canAccess {
-		return false, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, req.KbID, permission.OperationRun); err != nil {
+		code, permissionErr := permissionresponse.NormalizeHidden(err)
+		return false, code, permissionErr
 	}
-
 	// load the checkpoint
 	loader, ok := getSyncCheckpointLoader()
 	if !ok {
@@ -1257,20 +1223,10 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 		return nil, 0, common.CodeDataError, fmt.Errorf("connector_id is required")
 	}
 
-	connector, err := s.connectorDAO.GetByID(ctx, dao.DB, connectorID)
+	taskIDs, err := accessibleSyncTaskIDs(ctx, userID, connectorID, permission.OperationRead)
 	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, 0, common.CodeDataError, fmt.Errorf("can't find this Connector")
-		}
-		return nil, 0, common.CodeServerError, err
-	}
-
-	canAccess, err := s.canAccessConnector(ctx, connector, userID)
-	if err != nil {
-		return nil, 0, common.CodeServerError, err
-	}
-	if !canAccess {
-		return nil, 0, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return nil, 0, code, permissionErr
 	}
 
 	if page < 1 {
@@ -1281,7 +1237,7 @@ func (s *ConnectorService) ListLog(ctx context.Context, connectorID, userID stri
 	}
 	offset := (page - 1) * pageSize
 
-	logs, total, err := s.connectorDAO.ListLogsByConnectorID(ctx, dao.DB, connectorID, offset, pageSize)
+	logs, total, err := s.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, "", offset, pageSize)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch connector logs: %w", err)
 	}
@@ -1299,11 +1255,21 @@ func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID strin
 		return nil, 0, common.CodeDataError, fmt.Errorf("user_id is required")
 	}
 
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+	if datasetID != "" {
+		if err := CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, 0, code, permissionErr
+		}
+	}
+	connectorIDs, err := accessibleConnectorIDs(ctx, userID, permission.OperationRead)
 	if err != nil {
 		return nil, 0, common.CodeServerError, err
 	}
-	tenantIDs = append(tenantIDs, userID)
+	taskIDs, err := accessibleSyncTaskIDsForConnectors(ctx, userID, connectorIDs, permission.OperationRead)
+	if err != nil {
+		code, permissionErr := normalizeConnectorPermissionError(err)
+		return nil, 0, code, permissionErr
+	}
 
 	offset, limit := 0, pageSize
 	if pageSize <= 0 {
@@ -1319,7 +1285,7 @@ func (s *ConnectorService) ListLogs(ctx context.Context, userID, datasetID strin
 		offset = (page - 1) * limit
 	}
 
-	logs, total, err := s.connectorDAO.ListLogs(ctx, dao.DB, tenantIDs, datasetID, offset, limit)
+	logs, total, err := s.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, datasetID, offset, limit)
 	if err != nil {
 		return nil, 0, common.CodeServerError, fmt.Errorf("failed to fetch sync logs: %w", err)
 	}

@@ -1059,14 +1059,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: '快速响应',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: '平衡速度与深度',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: '深度推理',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: '尽力思考',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
       thinkingTip:
@@ -1257,7 +1249,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
       google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
       google_driveMyDriveEmailsTip:
-        '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
+        '可选。将索引这些邮箱的整个 “我的云端硬盘”，并与下方的共享文件夹一并同步，多个邮箱用逗号分隔。留空则仅同步这些文件夹。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
       gmailPrimaryAdminTip:
@@ -2356,6 +2348,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       imageOcr: 'OCR',
       imageOcrTip:
         '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      imageTextSourceRequired: '图片需要文本来源，请保留 OCR 或视觉增强。',
       visionEnhancementPromptTip:
         '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',
@@ -2378,7 +2371,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       communication: '通信',
       developer: '开发者',
       typeCommandORsearch: '输入命令或或搜索...',
-      builtIn: '内置解析模板',
+      builtIn: '内置',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',

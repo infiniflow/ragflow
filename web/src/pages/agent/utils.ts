@@ -282,28 +282,19 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Doc:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Html:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-          };
-          break;
-        case FileType.TextMarkdown:
-          filteredSetup = {
-            ...filteredSetup,
-            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Audio:

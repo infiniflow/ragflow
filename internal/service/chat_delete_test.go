@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -9,6 +10,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 func setupChatDeleteServiceTestDB(t *testing.T) *gorm.DB {
@@ -21,7 +23,7 @@ func setupChatDeleteServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.Chat{}); err != nil {
+	if err := db.AutoMigrate(&entity.Chat{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -62,8 +64,8 @@ func TestChatServiceDeleteChatRejectsNonOwner(t *testing.T) {
 	svc := NewChatService()
 	ctx := t.Context()
 	err := svc.DeleteChat(ctx, "user-1", "chat-1")
-	if err == nil || err.Error() != "no authorization" {
-		t.Fatalf("expected no authorization, got %v", err)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("expected permission denied, got %v", err)
 	}
 
 	chat, getErr := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")

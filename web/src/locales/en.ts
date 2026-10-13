@@ -1164,14 +1164,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Fast responses',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: 'Balanced speed & depth',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: 'Deep reasoning',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
       thinkingTip:
@@ -1689,7 +1681,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional. Comma-separated emails whose entire "My Drive" is indexed, in addition to the shared folders below. Leave empty to sync only those folders.',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
@@ -2779,6 +2771,8 @@ Best for: Documents with flowing, contextually connected content — such as boo
       imageOcr: 'OCR',
       imageOcrTip:
         'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
       visionEnhancementPromptTip:
         'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',

@@ -144,10 +144,13 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
+		searchDetail, err := d.searchService.GetDetail(ctx, userID, searchID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
+			}
+			if permissionresponse.IsPermissionError(err) {
+				return nil, err
 			}
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
 			return nil, fmt.Errorf("invalid search_id")
@@ -156,12 +159,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Invalid search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchTenantID, ok := searchDetail["tenant_id"].(string)
-		if !ok || searchTenantID != userID {
-			common.Warn("Invalid search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("invalid search_id")
-		}
-
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {

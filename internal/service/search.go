@@ -31,7 +31,6 @@ import (
 // SearchService search service
 type SearchService struct {
 	searchDAO     *dao.SearchDAO
-	userTenantDAO *dao.UserTenantDAO
 	datasetDAO    *dao.KnowledgebaseDAO
 	tenantService *TenantService
 }
@@ -40,7 +39,6 @@ type SearchService struct {
 func NewSearchService() *SearchService {
 	return &SearchService{
 		searchDAO:     dao.NewSearchDAO(),
-		userTenantDAO: dao.NewUserTenantDAO(),
 		datasetDAO:    dao.NewKnowledgebaseDAO(),
 		tenantService: NewTenantService(),
 	}
@@ -83,31 +81,13 @@ type SearchShareDetail struct {
 
 // ListSearches list search apps with advanced filtering (equivalent to list_search_app)
 func (s *SearchService) ListSearches(ctx context.Context, userID string, keywords string, page, pageSize int, terms []dao.OrderTerm, ownerIDs []string) (*ListSearchAppsResponse, error) {
-	var searches []*entity.SearchListItem
-	var total int64
-	var err error
-
-	if len(ownerIDs) == 0 {
-		searches, total, err = s.searchDAO.ListByTenantIDs(ctx, dao.DB, nil, userID, page, pageSize, terms, keywords)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		ownerIDs, err = s.filterAccessibleSearchOwnerIDs(ctx, userID, ownerIDs)
-		if err != nil {
-			return nil, err
-		}
-		if len(ownerIDs) == 0 {
-			return &ListSearchAppsResponse{
-				SearchApps: []map[string]interface{}{},
-				Total:      0,
-			}, nil
-		}
-
-		searches, total, err = s.searchDAO.ListByOwnerIDs(ctx, dao.DB, ownerIDs, userID, page, pageSize, terms, keywords)
-		if err != nil {
-			return nil, err
-		}
+	resourceIDs, err := accessibleSearchAppIDs(ctx, userID, permission.OperationRead)
+	if err != nil {
+		return nil, err
+	}
+	searches, total, err := s.searchDAO.ListByResourceIDs(ctx, dao.DB, resourceIDs, ownerIDs, page, pageSize, terms, keywords)
+	if err != nil {
+		return nil, err
 	}
 
 	// Convert to response format
@@ -120,39 +100,6 @@ func (s *SearchService) ListSearches(ctx context.Context, userID string, keyword
 		SearchApps: searchApps,
 		Total:      total,
 	}, nil
-}
-
-func (s *SearchService) filterAccessibleSearchOwnerIDs(ctx context.Context, userID string, ownerIDs []string) ([]string, error) {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, err
-	}
-
-	allowed := map[string]struct{}{userID: {}}
-	for _, tenantID := range tenantIDs {
-		tenantID = strings.TrimSpace(tenantID)
-		if tenantID != "" {
-			allowed[tenantID] = struct{}{}
-		}
-	}
-
-	filtered := make([]string, 0, len(ownerIDs))
-	seen := make(map[string]struct{}, len(ownerIDs))
-	for _, ownerID := range ownerIDs {
-		ownerID = strings.TrimSpace(ownerID)
-		if ownerID == "" {
-			continue
-		}
-		if _, ok := allowed[ownerID]; !ok {
-			continue
-		}
-		if _, ok := seen[ownerID]; ok {
-			continue
-		}
-		seen[ownerID] = struct{}{}
-		filtered = append(filtered, ownerID)
-	}
-	return filtered, nil
 }
 
 // toSearchAppResponse converts search model to response format
@@ -246,34 +193,9 @@ func (s *SearchService) CreateSearch(ctx context.Context, userID string, name st
 }
 
 func (s *SearchService) GetSearchDetail(ctx context.Context, userID string, searchID string) (*entity.Search, error) {
-	// Step 1: Get user tenants (same as Python UserTenantService.query(user_id=current_user.id))
-	tenants, err := s.userTenantDAO.GetByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get user tenants: %w", err)
+	if err := checkSearchAppPermission(ctx, userID, searchID, permission.OperationRead); err != nil {
+		return nil, err
 	}
-
-	// Step 2: Check if user has permission to access this search
-	// Python: for tenant in tenants: if SearchService.query(tenant_id=tenant.tenant_id, id=search_id): break
-	hasPermission := false
-	for _, tenant := range tenants {
-		searches, err := s.searchDAO.QueryByTenantIDAndID(ctx, dao.DB, tenant.TenantID, searchID)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, ctx.Err()
-			}
-			continue // Try next tenant
-		}
-		if len(searches) > 0 {
-			hasPermission = true
-			break
-		}
-	}
-
-	if !hasPermission {
-		return nil, fmt.Errorf("has no permission for this operation")
-	}
-
-	// Step 3: Get search detail (same as Python SearchService.get_detail(search_id))
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("can't find this Search App")
@@ -311,30 +233,14 @@ func (s *SearchService) GetSearchShareDetail(ctx context.Context, userID, search
 
 // DeleteSearch deletes a search app by ID
 func (s *SearchService) DeleteSearch(ctx context.Context, userID string, searchID string) error {
-	// Step 1: Check deletion permission (same as Python SearchService.accessible4deletion)
-	// Python: cls.model.select().where(cls.model.id == search_id, cls.model.created_by == user_id, cls.model.status == StatusEnum.VALID.value).first()
-
-	status, err := s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
-	if err != nil {
-		return fmt.Errorf("failed to check deletion permission: %w", err)
+	if err := checkSearchAppPermission(ctx, userID, searchID, permission.OperationDelete); err != nil {
+		return err
 	}
-
-	if !status {
-		return fmt.Errorf("no authorization")
-	}
-
-	// Step 2: Execute delete (same as Python SearchService.delete_by_id)
-	// Python: cls.model.delete().where(cls.model.id == pid).execute()
-	if err = s.searchDAO.DeleteByID(ctx, dao.DB, userID, searchID); err != nil {
+	if err := s.searchDAO.DeleteByID(ctx, dao.DB, searchID); err != nil {
 		return fmt.Errorf("failed to delete search App %s: %w", searchID, err)
 	}
 
 	return nil
-}
-
-// AccessibleForCompletion check if it is accessible
-func (s *SearchService) AccessibleForCompletion(ctx context.Context, userID string, searchID string) (bool, error) {
-	return s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
 }
 
 type SearchCompletionPlan struct {
@@ -367,16 +273,12 @@ func (s *SearchService) PrepareCompletion(ctx context.Context, userID, searchID 
 		return nil, common.CodeArgumentError, fmt.Errorf("question is required")
 	}
 
-	accessible, err := s.AccessibleForCompletion(ctx, userID, searchID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !accessible {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
-	}
-
-	searchDetail, err := s.GetDetail(ctx, searchID)
+	searchDetail, err := s.GetDetail(ctx, userID, searchID)
 	if err != nil || searchDetail == nil {
+		if permissionresponse.IsPermissionError(err) {
+			code, permissionErr := permissionresponse.NormalizeHidden(err)
+			return nil, code, permissionErr
+		}
 		return nil, common.CodeDataError, fmt.Errorf("cannot find search %s", searchID)
 	}
 	searchConfig := searchConfigMapFromValue(searchDetail["search_config"])
@@ -595,30 +497,19 @@ type UpdateSearchRequest struct {
 }
 
 func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchID string, req *UpdateSearchRequest) (*entity.Search, error) {
-	// Step 1: Check update permission (same as delete - uses accessible4deletion)
-	// Only creator can update. A missing or non-owned search is treated as
-	// unauthorized so the contract returns a clear "no authorization" error.
-
-	accessible, err := s.searchDAO.Accessible4Deletion(ctx, dao.DB, searchID, userID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check deletion permission: %w", err)
-	}
-	if !accessible {
-		return nil, fmt.Errorf("no authorization")
+	if err := checkSearchAppPermission(ctx, userID, searchID, permission.OperationUpdate); err != nil {
+		return nil, err
 	}
 
-	// Step 2: Get existing search
-	// Python: search_app = SearchService.query(tenant_id=current_user.id, id=search_id)[0]
-	search, err := s.searchDAO.GetByTenantIDAndID(ctx, dao.DB, userID, searchID)
+	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("cannot find search %s", searchID)
 	}
 
-	// Step 3: Check for duplicate name. Case-only changes are allowed, matching
-	// the dataset rename rule.
+	// Check for duplicate names within the Search App's tenant.
 	trimmedName := req.Name
 	available, err := common.NameAvailable(search.Name, trimmedName, func(candidate string) (bool, error) {
-		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, userID)
+		existing, err := s.searchDAO.GetByNameAndTenant(ctx, dao.DB, candidate, search.TenantID)
 		if err != nil {
 			return false, err
 		}
@@ -634,8 +525,7 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		return nil, err
 	}
 
-	// Step 4: Merge search_config
-	// Python: req["search_config"] = {**current_config, **new_config}
+	// Merge the provided search configuration into the stored configuration.
 	currentConfig := search.SearchConfig
 	if currentConfig == nil {
 		currentConfig = make(entity.JSONMap)
@@ -650,8 +540,7 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		mergedConfig[k] = v
 	}
 
-	// Step 5: Prepare updates (excluding immutable fields)
-	// Python removes: search_id, tenant_id, created_by, update_time, id
+	// Keep ownership and identity fields immutable.
 	updates := map[string]interface{}{
 		"name":          trimmedName,
 		"search_config": mergedConfig,
@@ -664,14 +553,11 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 		updates["avatar"] = *req.Avatar
 	}
 
-	// Step 6: Execute update
-	// Python: SearchService.update_by_id(search_id, req)
+	// Persist the update and reload the resource.
 	if err = s.searchDAO.UpdateByID(ctx, dao.DB, searchID, updates); err != nil {
 		return nil, fmt.Errorf("failed to update search: %w", err)
 	}
 
-	// Step 7: Fetch updated search
-	// Python: e, updated_search = SearchService.get_by_id(search_id)
 	updatedSearch, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch updated search: %w", err)
@@ -680,8 +566,11 @@ func (s *SearchService) UpdateSearch(ctx context.Context, userID string, searchI
 	return updatedSearch, nil
 }
 
-// GetDetail gets search details by ID including search_config
-func (s *SearchService) GetDetail(ctx context.Context, searchID string) (map[string]interface{}, error) {
+// GetDetail returns Search App configuration to a caller that is executing it.
+func (s *SearchService) GetDetail(ctx context.Context, userID, searchID string) (map[string]interface{}, error) {
+	if err := checkSearchAppPermission(ctx, userID, searchID, permission.OperationRun); err != nil {
+		return nil, err
+	}
 	search, err := s.searchDAO.GetByID(ctx, dao.DB, searchID)
 	if err != nil {
 		return nil, err
