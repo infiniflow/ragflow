@@ -368,8 +368,16 @@ export default {
       uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
+      manualSwitchAfterUploadHint:
+        '可继续上传，上传后可手动切换这些文件的解析配置。',
+      mixedSwitchAfterUploadHint:
+        '可继续上传，部分文件将自动切换至内置解析配置，其余文件上传后可手动切换解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
