@@ -74,7 +74,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 
 	if c.Query("type") == "filter" {
 		ctx := c.Request.Context()
-		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID)
+		data, code, err := h.datasetsService.ListDatasetFilters(ctx, user.ID, c.Query("canvas_id"))
 		if err != nil {
 			common.ErrorWithCode(c, code, err.Error())
 			return
@@ -214,6 +214,7 @@ func (h *DatasetsHandler) ListDatasets(c *gin.Context) {
 		parserID,
 		user.ID,
 		ids,
+		c.Query("canvas_id"),
 	)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
@@ -378,6 +379,7 @@ var listDatasetsAllowedParams = map[string]bool{
 	"id": true, "ids": true, "name": true, "page": true, "page_size": true,
 	"orderby": true, "desc": true, "sort": true, "include_parsing_status": true,
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
+	"canvas_id": true,
 }
 
 var createDatasetAllowedFields = map[string]bool{
@@ -1213,6 +1215,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 
 	resp, err := searchService.SearchDataset(ctx, datasetID, user.ID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}

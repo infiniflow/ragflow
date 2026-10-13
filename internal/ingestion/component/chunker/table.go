@@ -137,6 +137,85 @@ func tableItems(items, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 }
 
 // expandHTMLTableRows turns one table payload into one chunk per data row.
+// tableChunkRows projects a structured TableData to row-major cell texts while
+// preserving one value per logical column. Unlike CellTexts it does NOT drop
+// Covered slots: a slot engulfed by a span is resolved back to the spanning
+// origin's text so each projected row keeps the same column count as the header
+// and stays aligned with it. CellTexts would drop a spanned continuation column
+// and shift the surviving cells under the wrong headers — exactly the mis-match
+// a merged HTML table hits when it is expanded per row.
+//
+// Resolution works from the grid alone. As rows are scanned top-to-bottom a
+// per-column "active rowspan" remembers the text each ancestor rowspan still
+// contributes, and within a row a running colspan remembers the text of a just
+// seen wide origin. This deliberately avoids OriginRow/OriginCol, which are
+// json:"-" and therefore absent after the TableData is serialized to JSON and
+// read back — the path expandHTMLTableRows actually consumes.
+func tableChunkRows(td *entity.TableData) [][]string {
+	if td == nil {
+		return nil
+	}
+	out := make([][]string, 0, len(td.Grid))
+	rowspanText := []string{}
+	rowspanLeft := []int{}
+	for _, row := range td.Grid {
+		texts := make([]string, 0, len(row))
+		colspanLeft := 0
+		colspanText := ""
+		for c, cell := range row {
+			for len(rowspanText) <= c {
+				rowspanText = append(rowspanText, "")
+				rowspanLeft = append(rowspanLeft, 0)
+			}
+			if cell.Covered {
+				if rowspanLeft[c] > 0 {
+					texts = append(texts, rowspanText[c])
+				} else {
+					texts = append(texts, colspanText)
+				}
+			} else {
+				texts = append(texts, cell.Text)
+				// A merged cell that spans rows AND columns must register its
+				// active rowspan across the full [c, c+ColSpan) span, not just
+				// the origin column. Its continuation rows own every covered
+				// column, so each must resolve back to the origin text; had we
+				// only registered the start column, the extra covered columns
+				// would read as blank and the row would lose those fields.
+				// An unset ColSpan (0) normalizes to 1 so a row-only span still
+				// registers its single start column.
+				if cell.RowSpan > 1 {
+					colSpan := cell.ColSpan
+					if colSpan < 1 {
+						colSpan = 1
+					}
+					for cc := c; cc < c+colSpan; cc++ {
+						for len(rowspanText) <= cc {
+							rowspanText = append(rowspanText, "")
+							rowspanLeft = append(rowspanLeft, 0)
+						}
+						rowspanText[cc] = cell.Text
+						rowspanLeft[cc] = cell.RowSpan
+					}
+				}
+				if cell.ColSpan > 1 {
+					colspanLeft = cell.ColSpan
+					colspanText = cell.Text
+				}
+			}
+			if colspanLeft > 0 {
+				colspanLeft--
+			}
+		}
+		for c := range rowspanLeft {
+			if rowspanLeft[c] > 0 {
+				rowspanLeft[c]--
+			}
+		}
+		out = append(out, texts)
+	}
+	return out
+}
+
 // Non-table payloads pass through unchanged. It reads the structured
 // TableData contract that the parser emits on ChunkDoc.TableData; items that
 // do not carry TableData (e.g. pre-upgrade HTML markup or non-table records)
@@ -149,7 +228,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	if td == nil {
 		return []schema.ChunkDoc{item}
 	}
-	rows, headerCount := td.Rows, td.HeaderRows
+	rows, headerCount := tableChunkRows(td), td.HeaderRows
 	if len(rows) <= headerCount {
 		out := item
 		out.Text = tableutil.RenderTableText(td)

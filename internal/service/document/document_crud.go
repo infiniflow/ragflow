@@ -220,7 +220,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDelete); err != nil {
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return 0, permissionErr
 	}
