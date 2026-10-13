@@ -3,14 +3,19 @@ import { countBy } from 'lodash';
 import { z } from 'zod';
 import { isValidIpOrCidr } from './utils';
 
+/** Rejects duplicate field names, ignoring case only for HTTP headers. */
 function validateUniqueKeys(
   items: Array<{ key: string }>,
   ctx: z.RefinementCtx,
+  ignoreCase = false,
 ) {
-  const keyCounts = countBy(items, 'key');
+  const keyCounts = countBy(items, (item) =>
+    ignoreCase ? item.key.toLowerCase() : item.key,
+  );
 
   items.forEach((item, index) => {
-    if (item.key && keyCounts[item.key] > 1) {
+    const key = ignoreCase ? item.key.toLowerCase() : item.key;
+    if (key && keyCounts[key] > 1) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: [index, 'key'],
@@ -44,7 +49,7 @@ const WebhookHeadersSchema = z
         ),
     }),
   )
-  .superRefine(validateUniqueKeys)
+  .superRefine((items, ctx) => validateUniqueKeys(items, ctx, true))
   .optional();
 
 export const BeginFormSchema = z.object({

@@ -109,3 +109,50 @@ test.each(['x.request.id', 'x+request', 'x!request', 'x request'])(
     ).toBe(false);
   },
 );
+
+test('rejects case-insensitive duplicate header names at both fields', () => {
+  const result = BeginFormSchema.safeParse({
+    mode: 'Webhook',
+    schema: {
+      headers: [
+        { key: 'X-Request-ID', type: 'string', required: true },
+        { key: 'x-request-id', type: 'string', required: false },
+      ],
+    },
+  });
+  expect(result.success).toBe(false);
+  if (!result.success) {
+    expect(result.error.issues.map((issue) => issue.path)).toEqual([
+      ['schema', 'headers', 0, 'key'],
+      ['schema', 'headers', 1, 'key'],
+    ]);
+  }
+});
+
+test.each(['query', 'body'])(
+  'keeps %s key uniqueness case-sensitive',
+  (section) => {
+    const result = BeginFormSchema.safeParse({
+      mode: 'Webhook',
+      schema: {
+        [section]: [
+          { key: 'ID', type: 'string', required: true },
+          { key: 'id', type: 'string', required: false },
+        ],
+      },
+    });
+    expect(result.success).toBe(true);
+  },
+);
+
+test('preserves the configured spelling of distinct header names', () => {
+  const headers = [
+    { key: 'X-Request-ID', type: 'string', required: true },
+    { key: 'X-Correlation-ID', type: 'string', required: false },
+  ];
+  const result = BeginFormSchema.parse({
+    mode: 'Webhook',
+    schema: { headers },
+  });
+  expect(result.schema?.headers).toEqual(headers);
+});
