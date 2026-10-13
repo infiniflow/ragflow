@@ -26,6 +26,7 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -58,11 +59,66 @@ func (f fakeLangfuseService) DeleteAPIKey(ctx context.Context, tenantID string) 
 	return f.deleteFn(ctx, tenantID)
 }
 
+// fakeUserTenantFinder satisfies handler.userTenantFinder without a real DB.
+// The default constructor (called with no fields set) returns a single row
+// mapping the test user "tenant-1" to tenant id "tenant-1" so the existing
+// happy-path tests pass without modification. Tests for the resolution
+// failure mode override the findFn field.
+type fakeUserTenantFinder struct {
+	findFn func(ctx context.Context, userID, role string) ([]*entity.UserTenant, error)
+}
+
+func (f fakeUserTenantFinder) GetByUserIDAndRole(_ context.Context, _ *gorm.DB, userID, role string) ([]*entity.UserTenant, error) {
+	if f.findFn != nil {
+		return f.findFn(context.Background(), userID, role)
+	}
+	return []*entity.UserTenant{{UserID: userID, TenantID: "tenant-1", Role: role}}, nil
+}
+
+// stubTenantFinder returns a finder whose resolution matches the supplied
+// tenants (or an empty slice if tenants is nil). Convenience for the
+// failure-path tests below.
+func stubTenantFinder(tenants []*entity.UserTenant, err error) fakeUserTenantFinder {
+	return fakeUserTenantFinder{
+		findFn: func(_ context.Context, userID, role string) ([]*entity.UserTenant, error) {
+			if err != nil {
+				return nil, err
+			}
+			if tenants == nil {
+				return nil, nil
+			}
+			return tenants, nil
+		},
+	}
+}
+
 func serveLangfuse(method, target, body string, h func(c *gin.Context)) *httptest.ResponseRecorder {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	router.Handle(method, target, func(c *gin.Context) {
 		c.Set("user", &entity.User{ID: "tenant-1"})
+		h(c)
+	})
+
+	resp := httptest.NewRecorder()
+	var req *http.Request
+	if body == "" {
+		req = httptest.NewRequest(method, target, nil)
+	} else {
+		req = httptest.NewRequest(method, target, strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+	}
+	router.ServeHTTP(resp, req)
+	return resp
+}
+
+// serveLangfuseAs serves the request as the given user. The user id is what
+// gets passed to userTenantFinder.GetByUserIDAndRole.
+func serveLangfuseAs(method, target, body, userID string, h func(c *gin.Context)) *httptest.ResponseRecorder {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Handle(method, target, func(c *gin.Context) {
+		c.Set("user", &entity.User{ID: userID})
 		h(c)
 	})
 
@@ -94,7 +150,7 @@ func TestLangfuseHandler_SetAPIKey_Success(t *testing.T) {
 			gotTenant, gotSecret, gotPublic, gotHost = tenantID, secretKey, publicKey, host
 			return &entity.TenantLangfuse{TenantID: tenantID, SecretKey: secretKey, PublicKey: publicKey, Host: host}, common.CodeSuccess, nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	body := `{"secret_key":"sk","public_key":"pk","host":"https://a.langfuse.com"}`
 	resp := serveLangfuse(http.MethodPost, "/api/v1/langfuse/api-key", body, h.SetAPIKey)
@@ -120,7 +176,7 @@ func TestLangfuseHandler_SetAPIKey_ServiceError(t *testing.T) {
 		setFn: func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
 			return nil, common.CodeDataError, errors.New("Invalid Langfuse keys")
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	body := `{"secret_key":"sk","public_key":"pk","host":"host"}`
 	resp := serveLangfuse(http.MethodPost, "/api/v1/langfuse/api-key", body, h.SetAPIKey)
@@ -141,7 +197,7 @@ func TestLangfuseHandler_SetAPIKey_BindFailureStopsEarly(t *testing.T) {
 			called = true
 			return nil, common.CodeSuccess, nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodPost, "/api/v1/langfuse/api-key", `{not-json`, h.SetAPIKey)
 
@@ -162,7 +218,7 @@ func TestLangfuseHandler_GetAPIKey_Success(t *testing.T) {
 				ProjectID: "proj-1", ProjectName: "My Project",
 			}, common.CodeSuccess, "success", nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodGet, "/api/v1/langfuse/api-key", "", h.GetAPIKey)
 
@@ -184,7 +240,7 @@ func TestLangfuseHandler_GetAPIKey_NoRecord(t *testing.T) {
 		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 			return nil, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodGet, "/api/v1/langfuse/api-key", "", h.GetAPIKey)
 
@@ -205,7 +261,7 @@ func TestLangfuseHandler_GetAPIKey_Unauthorized(t *testing.T) {
 		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
 			return nil, common.CodeDataError, "Invalid Langfuse keys loaded", errors.New("unauthorized")
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodGet, "/api/v1/langfuse/api-key", "", h.GetAPIKey)
 
@@ -225,7 +281,7 @@ func TestLangfuseHandler_DeleteAPIKey_Success(t *testing.T) {
 			gotTenant = tenantID
 			return true, common.CodeSuccess, "", nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodDelete, "/api/v1/langfuse/api-key", "", h.DeleteAPIKey)
 
@@ -246,7 +302,7 @@ func TestLangfuseHandler_DeleteAPIKey_NoRecord(t *testing.T) {
 		deleteFn: func(ctx context.Context, tenantID string) (bool, common.ErrorCode, string, error) {
 			return false, common.CodeSuccess, "Have not record any Langfuse keys.", nil
 		},
-	}}
+	}, userTenantDAO: fakeUserTenantFinder{}}
 
 	resp := serveLangfuse(http.MethodDelete, "/api/v1/langfuse/api-key", "", h.DeleteAPIKey)
 
@@ -259,5 +315,179 @@ func TestLangfuseHandler_DeleteAPIKey_NoRecord(t *testing.T) {
 	}
 	if payload["data"] != nil {
 		t.Fatalf("expected nil data, got %v", payload["data"])
+	}
+}
+
+// TestLangfuseHandler_TenantResolution_ResolvesUserToTenant pins the
+// bug-fix contract for #20553: the handler must translate user.ID into
+// tenants[0].TenantID before calling the service, and the service must
+// receive that tenant id rather than the user id. The bug prior to this
+// commit scoped every Langfuse row to the configuring user, breaking
+// tenant-level sharing even though entity/DAO column-name said otherwise.
+func TestLangfuseHandler_TenantResolution_ResolvesUserToTenant(t *testing.T) {
+	const userID = "user-A-uuid"
+	const tenantID = "tenant-real"
+
+	var gotTenant string
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		getFn: func(ctx context.Context, got string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+			gotTenant = got
+			return &entity.LangfuseInfoResponse{
+				TenantID: got, Host: "host", SecretKey: "sk", PublicKey: "pk",
+				ProjectID: "proj-1", ProjectName: "My Project",
+			}, common.CodeSuccess, "success", nil
+		},
+	}, userTenantDAO: fakeUserTenantFinder{
+		findFn: func(_ context.Context, u, role string) ([]*entity.UserTenant, error) {
+			if u != userID || role != "owner" {
+				t.Fatalf("finder lookup u=%q role=%q, want %q / %q", u, role, userID, "owner")
+			}
+			return []*entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
+		},
+	}}
+
+	resp := serveLangfuseAs(http.MethodGet, "/api/v1/langfuse/api-key", "", userID, h.GetAPIKey)
+
+	if gotTenant != tenantID {
+		t.Fatalf("service received tenant=%q, want %q (user.ID was %q)", gotTenant, tenantID, userID)
+	}
+	if payload := decode(t, resp); payload["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("payload=%v", payload)
+	}
+}
+
+// TestLangfuseHandler_TenantResolution_NoOwnerReturns400 locks the
+// "user has no owner tenant" branch: the handler must short-circuit with
+// a 400 "Tenant not found" rather than calling the service with a
+// bogus tenant id. The bug prior to this commit would have called the
+// service with the user id and silently scoped the row to the user.
+func TestLangfuseHandler_TenantResolution_NoOwnerReturns400(t *testing.T) {
+	var serviceCalled bool
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+			serviceCalled = true
+			return nil, common.CodeServerError, "", nil
+		},
+	}, userTenantDAO: stubTenantFinder(nil, nil)}
+
+	resp := serveLangfuseAs(http.MethodGet, "/api/v1/langfuse/api-key", "", "user-without-tenant", h.GetAPIKey)
+
+	if serviceCalled {
+		t.Fatal("service should not be called when user has no owner tenant")
+	}
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", resp.Code)
+	}
+	payload := decode(t, resp)
+	if payload["message"] != "Tenant not found" {
+		t.Fatalf("message=%v, want %q", payload["message"], "Tenant not found")
+	}
+}
+
+// TestLangfuseHandler_TenantResolution_MultipleOwnersReturns400 fails closed
+// rather than choosing an arbitrary tenant when the owner invariant is violated.
+func TestLangfuseHandler_TenantResolution_MultipleOwnersReturns400(t *testing.T) {
+	var serviceCalled bool
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		getFn: func(ctx context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+			serviceCalled = true
+			return nil, common.CodeServerError, "", nil
+		},
+	}, userTenantDAO: stubTenantFinder([]*entity.UserTenant{
+		{UserID: "user-1", TenantID: "tenant-1", Role: "owner"},
+		{UserID: "user-1", TenantID: "tenant-2", Role: "owner"},
+	}, nil)}
+
+	resp := serveLangfuseAs(http.MethodGet, "/api/v1/langfuse/api-key", "", "user-1", h.GetAPIKey)
+
+	if serviceCalled {
+		t.Fatal("service should not be called when multiple owner tenants make resolution ambiguous")
+	}
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", resp.Code)
+	}
+	payload := decode(t, resp)
+	if payload["message"] != "Tenant not found" {
+		t.Fatalf("message=%v, want %q", payload["message"], "Tenant not found")
+	}
+}
+
+// TestLangfuseHandler_TenantResolution_DAOErrorReturns400 locks the
+// DB-error branch from the resolver. The handler must short-circuit with
+// a 400 rather than calling the service. The bug prior to this commit
+// would have silently masked the DAO error and called the service.
+func TestLangfuseHandler_TenantResolution_DAOErrorReturns400(t *testing.T) {
+	var serviceCalled bool
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		setFn: func(ctx context.Context, tenantID, secretKey, publicKey, host string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+			serviceCalled = true
+			return nil, common.CodeServerError, errors.New("unreachable")
+		},
+	}, userTenantDAO: stubTenantFinder(nil, errors.New("user_tenant read failed"))}
+
+	body := `{"secret_key":"sk","public_key":"pk","host":"https://a.langfuse.com"}`
+	resp := serveLangfuseAs(http.MethodPost, "/api/v1/langfuse/api-key", body, "user-1", h.SetAPIKey)
+
+	if serviceCalled {
+		t.Fatal("service should not be called when the tenant resolver errors")
+	}
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("status=%d, want 400", resp.Code)
+	}
+}
+
+// TestLangfuseHandler_TenantResolution_MultiUserSameTenant pins the
+// real-world scenario from #20553: user A and user B both belong to
+// tenant T. A configures Langfuse keys, B fetches them. With the fix,
+// both see the same row. With the bug prior to the fix, each user would
+// have stored a row under their own user id and the GET would have
+// returned "Have not record any Langfuse keys" for the second user.
+func TestLangfuseHandler_TenantResolution_MultiUserSameTenant(t *testing.T) {
+	const tenantID = "tenant-shared"
+
+	lookupFn := func(_ context.Context, u, role string) ([]*entity.UserTenant, error) {
+		return []*entity.UserTenant{{UserID: u, TenantID: tenantID, Role: role}}, nil
+	}
+
+	// User A configures the keys.
+	var seenTenantByA string
+	h := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		setFn: func(_ context.Context, tenantID, _, _, _ string) (*entity.TenantLangfuse, common.ErrorCode, error) {
+			seenTenantByA = tenantID
+			return &entity.TenantLangfuse{TenantID: tenantID}, common.CodeSuccess, nil
+		},
+	}, userTenantDAO: fakeUserTenantFinder{findFn: lookupFn}}
+
+	resp := serveLangfuseAs(http.MethodPost, "/api/v1/langfuse/api-key",
+		`{"secret_key":"sk","public_key":"pk","host":"https://a.langfuse.com"}`,
+		"user-A", h.SetAPIKey)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("A: status=%d, want 200", resp.Code)
+	}
+	if seenTenantByA != tenantID {
+		t.Fatalf("A: service received tenant=%q, want %q", seenTenantByA, tenantID)
+	}
+
+	// User B fetches the keys.
+	var seenTenantByB string
+	h2 := &LangfuseHandler{langfuseService: fakeLangfuseService{
+		getFn: func(_ context.Context, tenantID string) (*entity.LangfuseInfoResponse, common.ErrorCode, string, error) {
+			seenTenantByB = tenantID
+			return &entity.LangfuseInfoResponse{
+				TenantID: tenantID, Host: "host", SecretKey: "sk", PublicKey: "pk",
+				ProjectID: "proj-1", ProjectName: "Shared",
+			}, common.CodeSuccess, "success", nil
+		},
+	}, userTenantDAO: fakeUserTenantFinder{findFn: lookupFn}}
+
+	resp = serveLangfuseAs(http.MethodGet, "/api/v1/langfuse/api-key", "", "user-B", h2.GetAPIKey)
+	if resp.Code != http.StatusOK {
+		t.Fatalf("B: status=%d, want 200", resp.Code)
+	}
+	if seenTenantByB != tenantID {
+		t.Fatalf("B: service received tenant=%q, want %q", seenTenantByB, tenantID)
+	}
+	if seenTenantByA != seenTenantByB {
+		t.Fatalf("A and B should resolve to the same tenant, got %q vs %q", seenTenantByA, seenTenantByB)
 	}
 }
