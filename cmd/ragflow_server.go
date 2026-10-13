@@ -537,18 +537,12 @@ func main() {
 			port = *arguments.port
 			apiServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("api_server_%d", port)
-		}
 	case "admin":
 		adminServerConfig := globalConfig.GetAdminServerConfig()
 		port := adminServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
 			adminServerConfig.HTTPPort = port
-		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
 		if serverName == "" {
