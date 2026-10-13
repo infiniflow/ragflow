@@ -39,6 +39,28 @@ const (
 	conversationHistoryOrderColumn = "position"
 )
 
+// historyModel returns the typed row model for a history child table. History
+// inserts must carry it: GORM's create callback calls result.LastInsertId()
+// on every schema-less (Table+map) insert, which MySQL answers with a silent
+// 0 but lib/pq — the Vastbase driver — rejects with "LastInsertId is not
+// supported by this driver", failing writes that actually succeeded. With the
+// model attached GORM sees the composite string primary key and skips the
+// read-back entirely.
+func historyModel(table string) interface{} {
+	switch table {
+	case conversationMessageTable:
+		return &entity.ConversationMessage{}
+	case conversationReferenceTable:
+		return &entity.ConversationReference{}
+	case apiConversationMessageTable:
+		return &entity.API4ConversationMessage{}
+	case apiConversationReferenceTable:
+		return &entity.API4ConversationReference{}
+	default:
+		panic("unknown conversation history table: " + table)
+	}
+}
+
 type conversationHistoryRow struct {
 	ConversationID string `gorm:"column:conversation_id"`
 	Position       int    `gorm:"column:position"`
@@ -182,7 +204,7 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		values := messageValues(fields)
 		values["conversation_id"], values["position"] = conversationID, position
 		// A reserved answer slot cannot overwrite a later question.
-		if err := db.WithContext(ctx).Table(messageTable).Create(values).Error; err != nil {
+		if err := db.WithContext(ctx).Model(historyModel(messageTable)).Create(values).Error; err != nil {
 			return err
 		}
 	}
@@ -195,7 +217,7 @@ func updateConversationHistory(ctx context.Context, db *gorm.DB, messageTable, r
 		if update.Message != nil {
 			row["message_position"] = position
 		}
-		return db.WithContext(ctx).Table(referenceTable).Create(row).Error
+		return db.WithContext(ctx).Model(historyModel(referenceTable)).Create(row).Error
 	}
 	return nil
 }
@@ -335,7 +357,7 @@ func createHistory(ctx context.Context, db *gorm.DB, table, kind, conversationID
 	if len(rows) == 0 {
 		return nil
 	}
-	return db.WithContext(ctx).Table(table).CreateInBatches(rows, 100).Error
+	return db.WithContext(ctx).Model(historyModel(table)).CreateInBatches(rows, 100).Error
 }
 
 // historyRows flattens a message or reference payload into child rows. Its
