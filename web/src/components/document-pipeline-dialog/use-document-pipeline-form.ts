@@ -52,12 +52,18 @@ export function useDocumentPipelineForm({
       z
         .object({
           parse_type: z.nativeEnum(ParseType),
-          parser_id: z.string(),
+          // Optional because it is only populated in BuiltIn mode; in Pipeline
+          // mode the field's input unmounts and RHF reports it as undefined.
+          // The superRefine below enforces it when BuiltIn is selected.
+          parser_id: z.string().optional(),
           pipeline_id: z.string().optional(),
           parser_config: z.record(z.string(), z.any()).optional(),
         })
         .superRefine((data, ctx) => {
-          if (data.parse_type === ParseType.BuiltIn && !data.parser_id.trim()) {
+          if (
+            data.parse_type === ParseType.BuiltIn &&
+            !(data.parser_id ?? '').trim()
+          ) {
             ctx.addIssue({
               path: ['parser_id'],
               message: t('common.pleaseSelect'),
@@ -179,7 +185,7 @@ export function useDocumentPipelineForm({
 
       const isPipeline = data.parse_type === ParseType.Pipeline;
       return {
-        parser_id: isPipeline ? '' : data.parser_id,
+        parser_id: isPipeline ? '' : (data.parser_id ?? ''),
         pipeline_id: isPipeline ? data.pipeline_id : '',
         parser_config: transformedConfig,
         parse_type: data.parse_type,
