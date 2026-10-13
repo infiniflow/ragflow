@@ -111,6 +111,7 @@ export enum LLMFactory {
   ApiRoute = 'API-Route',
   CheaperInference = 'Cheaper Inference',
   Opper = 'Opper',
+  DemonRoute = 'Demon Route',
 }
 
 // Please lowercase the file name
