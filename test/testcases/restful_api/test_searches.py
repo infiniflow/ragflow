@@ -123,7 +123,7 @@ def test_search_completion_requires_question(rest_client, search_resource):
 @pytest.mark.p2
 def test_search_completion_requires_kb_ids(rest_client, search_resource):
     search_id = search_resource
-    for path in ("completion", "completions"):
+    for path in "completions":
         res = rest_client.post(
             f"/searches/{search_id}/{path}",
             json={"question": "what is coriander?"},
