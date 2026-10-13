@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"strings"
 )
 
@@ -723,10 +725,10 @@ type TenantMemberResponse struct {
 }
 
 // ListMembers returns all non-owner members of tenantID.
-// Only the tenant owner (userID == tenantID) may call this.
 func (s *TenantService) ListMembers(ctx context.Context, userID, tenantID string) ([]*TenantMemberResponse, common.ErrorCode, error) {
-	if userID != tenantID {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	rows, err := s.userTenantDAO.GetMembersByTenantID(ctx, dao.DB, tenantID)
 	if err != nil {
@@ -768,10 +770,10 @@ type AddMemberResponse struct {
 }
 
 // AddMember invites a user (by email) to the tenant.
-// Only the tenant owner (userID == tenantID) may call this.
 func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, req *AddMemberRequest) (*AddMemberResponse, common.ErrorCode, error) {
-	if userID != tenantID {
-		return nil, common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantOwner); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
 	}
 	if strings.TrimSpace(req.Email) == "" {
 		return nil, common.CodeArgumentError, fmt.Errorf("email is required")
@@ -828,18 +830,29 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 	}, common.CodeSuccess, nil
 }
 
-// RemoveMember removes a user from the tenant.
-// Either the owner (userID == tenantID) or the member themselves (userID == targetUserID) may call this.
-// The tenant owner (targetUserID == tenantID) cannot be removed.
+// RemoveMember removes a user from the tenant. The owner may remove members,
+// and a member may remove themselves. The tenant owner cannot be removed.
 func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
-	if userID != tenantID && userID != targetUserID {
-		return common.CodeAuthenticationError, fmt.Errorf("no authorization")
+	requirement := permission.TenantOwner
+	if userID == targetUserID {
+		requirement = permission.TenantMember
 	}
-	if targetUserID == tenantID {
-		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
+	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return code, permissionErr
 	}
 	if s.userTenantDAO == nil {
 		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
+	}
+	targetMembership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, targetUserID, tenantID)
+	if err != nil {
+		if dao.IsNotFoundErr(err) {
+			return common.CodeDataError, fmt.Errorf("user is not a tenant member")
+		}
+		return common.CodeServerError, fmt.Errorf("failed to load tenant member: %w", err)
+	}
+	if targetMembership.Role == TenantRoleOwner {
+		return common.CodeArgumentError, fmt.Errorf("cannot remove the tenant owner")
 	}
 	if err := s.userTenantDAO.DeleteByUserAndTenant(ctx, dao.DB, targetUserID, tenantID); err != nil {
 		return common.CodeServerError, fmt.Errorf("failed to remove member: %w", err)

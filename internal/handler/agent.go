@@ -294,8 +294,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Invalid request: "+err.Error())
 		return
 	}
-	req.UserID = user.ID
-	row, code, err := h.agentService.CreateAgent(c.Request.Context(), &req)
+	row, code, err := h.agentService.CreateAgent(c.Request.Context(), user.ID, &req)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return
@@ -308,7 +307,7 @@ func (h *AgentHandler) CreateAgent(c *gin.Context) {
 // @Tags agents
 // @Produce json
 // @Param canvas_id path string true "canvas id"
-// @Success 200 {object} entity.UserCanvas
+// @Success 200 {object} agentDetailResponse
 // @Router /api/v1/agents/{canvas_id} [get]
 func (h *AgentHandler) GetAgent(c *gin.Context) {
 	user, code, msg := GetUser(c)
@@ -338,13 +337,23 @@ func (h *AgentHandler) GetAgent(c *gin.Context) {
 		common.ResponseWithCodeData(c, ec, nil, em)
 		return
 	}
-	common.SuccessWithData(c, &agentDetailResponse{UserCanvas: row, LastPublishTime: lastPublishTime}, "success")
+	tenantID := ""
+	if row != nil {
+		tenantID = row.UserID
+	}
+	common.SuccessWithData(c, &agentDetailResponse{
+		UserCanvas:      row,
+		TenantID:        tenantID,
+		LastPublishTime: lastPublishTime,
+	}, "success")
 }
 
-// agentDetailResponse wraps the canvas row with derived fields that Python's
-// get_agent handler adds to the response.
+// agentDetailResponse adds the canvas owner's tenant scope and publish time.
+// user_canvas stores the owner identity in user_id, so that value is exposed
+// as tenant_id for resource-scoped selectors.
 type agentDetailResponse struct {
 	*entity.UserCanvas
+	TenantID        string `json:"tenant_id"`
 	LastPublishTime *int64 `json:"last_publish_time,omitempty"`
 }
 

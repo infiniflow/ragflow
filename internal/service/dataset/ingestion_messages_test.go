@@ -122,6 +122,7 @@ func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
 	connectors := []entity.Connector{
 		{ID: "connector-1", TenantID: "user-1", Name: "linked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
 		{ID: "connector-2", TenantID: "user-1", Name: "other", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-3", TenantID: "user-2", Name: "inaccessible", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("insert connectors: %v", err)
@@ -132,10 +133,14 @@ func TestListSyncLogsReturnsOnlyCurrentlyLinkedDatasetConnectors(t *testing.T) {
 	if err := db.Create(&entity.Connector2Kb{ID: "connector-2-kb-2", ConnectorID: "connector-2", KbID: "kb-2", AutoParse: "1"}).Error; err != nil {
 		t.Fatalf("link connector to kb-2: %v", err)
 	}
+	if err := db.Create(&entity.Connector2Kb{ID: "connector-3-kb-1", ConnectorID: "connector-3", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("link inaccessible connector to kb-1: %v", err)
+	}
 
 	logs := []entity.SyncLogs{
 		{ID: "sync-kb-1", ConnectorID: "connector-1", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
 		{ID: "sync-kb-2", ConnectorID: "connector-2", KbID: "kb-2", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
+		{ID: "sync-inaccessible", ConnectorID: "connector-3", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
 		// A stale/unlinked row must not appear in the dataset's configured connector logs.
 		{ID: "sync-unlinked", ConnectorID: "connector-2", KbID: "kb-1", TaskType: dao.TaskTypeSync, Status: dao.SyncStatusDone, ErrorMsg: ""},
 	}

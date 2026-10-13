@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	syncerconnector "ragflow/internal/syncer/connector"
 	connectormock "ragflow/internal/syncer/connector/mock"
 )
@@ -132,8 +133,8 @@ func TestConnectorServiceTestConnectorRejectsUnauthorizedConnector(t *testing.T)
 		"source": "mock",
 		"config": entity.JSONMap{"ok": true},
 	})
-	if !errors.Is(err, ErrConnectorNoAuth) {
-		t.Fatalf("error = %v, want ErrConnectorNoAuth", err)
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("error = %v, want permission denial", err)
 	}
 }
 

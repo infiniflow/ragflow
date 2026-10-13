@@ -312,8 +312,10 @@ export const getSandboxProviderSchema = (providerId: string) =>
     adminGetSandboxProviderSchema(providerId),
   );
 
-export const getSandboxConfig = () =>
-  request.get<ResponseData<AdminService.SandboxConfig>>(adminGetSandboxConfig);
+export const getSandboxConfig = (providerType?: string) =>
+  request.get<ResponseData<AdminService.SandboxConfig>>(adminGetSandboxConfig, {
+    params: { provider_type: providerType },
+  });
 
 export const setSandboxConfig = (params: {
   providerType: string;

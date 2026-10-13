@@ -43,9 +43,23 @@ type Subject struct {
 type ResourceKind string
 
 const (
-	ResourceKindDataset      ResourceKind = "dataset"
-	ResourceKindCanvas       ResourceKind = "canvas"
-	ResourceKindAgentSession ResourceKind = "agent_session"
+	ResourceKindDataset       ResourceKind = "dataset"
+	ResourceKindCanvas        ResourceKind = "canvas"
+	ResourceKindAgentSession  ResourceKind = "agent_session"
+	ResourceKindMemory        ResourceKind = "memory"
+	ResourceKindFile          ResourceKind = "file"
+	ResourceKindFolder        ResourceKind = "folder"
+	ResourceKindSearchApp     ResourceKind = "search_app"
+	ResourceKindChat          ResourceKind = "chat"
+	ResourceKindChatSession   ResourceKind = "chat_session"
+	ResourceKindChatChannel   ResourceKind = "chat_channel"
+	ResourceKindConnector     ResourceKind = "connector"
+	ResourceKindSyncTask      ResourceKind = "sync_task"
+	ResourceKindModelProvider ResourceKind = "model_provider"
+	ResourceKindModelInstance ResourceKind = "model_instance"
+	ResourceKindModel         ResourceKind = "model"
+	ResourceKindMCPServer     ResourceKind = "mcp_server"
+	ResourceKindSkillSpace    ResourceKind = "skill_space"
 )
 
 // ResourceRef identifies a persisted resource.
@@ -71,13 +85,14 @@ const (
 type Operation string
 
 const (
-	OperationRead   Operation = "read"
-	OperationCreate Operation = "create"
-	OperationUpdate Operation = "update"
-	OperationDelete Operation = "delete"
-	OperationShare  Operation = "share"
-	OperationRun    Operation = "run"
-	OperationUse    Operation = "use"
+	OperationRead          Operation = "read"
+	OperationCreate        Operation = "create"
+	OperationUpdate        Operation = "update"
+	OperationDelete        Operation = "delete"
+	OperationDeleteContent Operation = "delete_content"
+	OperationShare         Operation = "share"
+	OperationRun           Operation = "run"
+	OperationUse           Operation = "use"
 )
 
 // TenantRequirement describes the tenant role required by a check.
@@ -123,13 +138,17 @@ const (
 // independent facts: the resource tenant, creator, and permission owner need
 // not be the same identity.
 type Resource struct {
-	Ref                 ResourceRef
-	TenantID            string
-	CreatedBy           string
-	OwnerUserID         string
-	Visibility          Visibility
-	TenantRequirement   TenantRequirement
-	OwnerOperations     []Operation
+	Ref               ResourceRef
+	TenantID          string
+	CreatedBy         string
+	OwnerUserID       string
+	Visibility        Visibility
+	TenantRequirement TenantRequirement
+	OwnerOperations   []Operation
+	// TenantOperations overrides OwnerOperations for tenant members when set.
+	TenantOperations []Operation
+	// CreatorOperations grants extra operations to CreatedBy after tenant access is verified.
+	CreatorOperations   []Operation
 	SharedWithUserIDs   []string
 	SharedWithTenantIDs []string
 	Active              bool
@@ -139,9 +158,10 @@ type Resource struct {
 type AccessSource string
 
 const (
-	AccessSourceOwner  AccessSource = "owner"
-	AccessSourceTenant AccessSource = "tenant"
-	AccessSourceShared AccessSource = "shared"
+	AccessSourceOwner   AccessSource = "owner"
+	AccessSourceTenant  AccessSource = "tenant"
+	AccessSourceCreator AccessSource = "creator"
+	AccessSourceShared  AccessSource = "shared"
 )
 
 // Access describes the operations a subject can perform on a resource.
@@ -190,7 +210,7 @@ type ScopeQuery struct {
 
 // Source loads normalized permission facts. GetResources must return the
 // requested resources with their tenant, creator, permission owner, active
-// state, visibility, owner operations, and share recipients. ListResourceRefs
+// state, visibility, operation sets, and share recipients. ListResourceRefs
 // returns all candidate IDs within the query boundary, including candidates
 // that policy will reject; Checker authorizes them before returning a scope.
 type Source interface {
@@ -207,6 +227,10 @@ type policy interface {
 	ResolveAccess(context.Context, Subject, ResourceRef) (Access, error)
 	Scope(context.Context, Subject, ScopeQuery) (Scope, error)
 	FilterResources(context.Context, Subject, []ResourceRef, Operation) ([]ResourceRef, error)
+}
+
+type queryScopePolicy interface {
+	QueryScope(context.Context, Subject, ScopeQuery) (QueryScope, bool, error)
 }
 
 // Checker exposes edition-independent permission methods.
@@ -268,6 +292,31 @@ func (c *Checker) Scope(ctx context.Context, subject Subject, query ScopeQuery) 
 		return Scope{}, ErrSourceUnavailable
 	}
 	return c.policy.Scope(ctx, subject, query)
+}
+
+// QueryScope returns a database-applied authorization predicate for a resource
+// query. Policies may compile the authorization rules into SQL. When they do
+// not, the checker falls back to the existing authorized-ID scope and applies
+// those IDs as an IN predicate.
+func (c *Checker) QueryScope(ctx context.Context, subject Subject, query ScopeQuery) (QueryScope, error) {
+	if c == nil || c.policy == nil {
+		return QueryScope{}, ErrSourceUnavailable
+	}
+	if queryPolicy, ok := c.policy.(queryScopePolicy); ok {
+		queryScope, supported, err := queryPolicy.QueryScope(ctx, subject, query)
+		if err != nil {
+			return QueryScope{}, err
+		}
+		if supported {
+			return queryScope, nil
+		}
+	}
+
+	scope, err := c.policy.Scope(ctx, subject, query)
+	if err != nil {
+		return QueryScope{}, err
+	}
+	return queryScopeForIDs(query.Kind, scope.ResourceIDs), nil
 }
 
 // FilterResources returns only candidate resources that allow operation.

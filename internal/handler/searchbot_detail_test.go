@@ -260,8 +260,8 @@ func TestSearchbotDetailRejectsUnauthorizedSearchAccess(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("failed to unmarshal: %v", err)
 	}
-	if resp["code"] != float64(common.CodeOperatingError) {
-		t.Fatalf("code = %v, want %v", resp["code"], common.CodeOperatingError)
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("code = %v, want %v", resp["code"], common.CodeNotFound)
 	}
 }
 
@@ -290,8 +290,21 @@ func TestSearchbotDetailDoesNotExposeInternalErrorText(t *testing.T) {
 	}).Error; err != nil {
 		t.Fatalf("failed to create api token: %v", err)
 	}
+	if err := dao.DB.Create(&entity.Search{
+		ID:           "search-1",
+		TenantID:     "tenant-1",
+		Name:         "Search App",
+		CreatedBy:    "tenant-1",
+		SearchConfig: entity.JSONMap{},
+		Status:       &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create search: %v", err)
+	}
 	if err := dao.DB.Exec("DROP TABLE user_tenant").Error; err != nil {
 		t.Fatalf("failed to drop user_tenant table: %v", err)
+	}
+	if err := dao.DB.Exec("DROP TABLE search").Error; err != nil {
+		t.Fatalf("failed to drop search table: %v", err)
 	}
 
 	r := newSearchbotDetailRouter()
