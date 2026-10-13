@@ -34,8 +34,8 @@ import (
 )
 
 // setupArtifactGraphDB migrates the minimal schema needed for
-// DatasetArtifactHandler.datasetOwner to resolve a knowledgebase owned by
-// the test user.
+// DatasetArtifactHandler.datasetOwner to resolve and authorize the test
+// user's knowledgebase.
 func setupArtifactGraphDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open("file:"+url.QueryEscape(t.Name())+"?mode=memory&cache=shared"), &gorm.Config{
@@ -44,7 +44,7 @@ func setupArtifactGraphDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 	// The DSN is a shared named in-memory database keyed on the test name, so the
@@ -66,6 +66,15 @@ func setupArtifactGraphDB(t *testing.T) *gorm.DB {
 func insertArtifactGraphKB(t *testing.T, db *gorm.DB, kbID, ownerID string) {
 	t.Helper()
 	status := string(entity.StatusValid)
+	if err := db.Where("user_id = ? AND tenant_id = ?", ownerID, ownerID).FirstOrCreate(&entity.UserTenant{
+		ID:       "ut-artifact-graph-" + ownerID,
+		UserID:   ownerID,
+		TenantID: ownerID,
+		Role:     "owner",
+		Status:   &status,
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
+	}
 	if err := db.Create(&entity.Knowledgebase{
 		ID:         kbID,
 		TenantID:   ownerID,
