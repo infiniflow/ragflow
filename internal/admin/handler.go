@@ -741,7 +741,7 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig(c.Request.Context())
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
 		writeSandboxError(c, err)
 		return

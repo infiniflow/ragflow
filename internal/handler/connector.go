@@ -337,6 +337,10 @@ func (h *ConnectorHandler) CreateConnector(c *gin.Context) {
 
 	connector, err := h.connectorService.CreateConnector(ctx, user.ID, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrConnectorInvalidFreq) {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
