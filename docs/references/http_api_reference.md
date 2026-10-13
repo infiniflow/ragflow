@@ -1365,7 +1365,7 @@ curl --request GET \
 
 - `dataset_id`
   The associated dataset ID.
-- `documents_id`
+- `document_id`
   The ID of the document to download.
 
 #### Response
@@ -6555,11 +6555,6 @@ curl --request GET \
      --header 'Content-Type: application/json'
 ```
 
-##### Path parameters
-
-- `address`: string
-  The host and port of the backend service (e.g., `localhost:9380`).
-
 ---
 
 #### Responses
@@ -7584,8 +7579,8 @@ curl --request GET \
 
 ##### Path parameters
 
-- `"folder_id"`: `string`, *Required*
-  The folder ID.
+- `"workspace_id"`: `string`, *Required*
+  The workspace ID.
 - `"commit_id"`: `string`, *Required*
   The commit ID.
 
