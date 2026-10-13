@@ -15,9 +15,15 @@ import (
 // sys_prompt/tenant_llm_id) ships an Extractor whose prompt configuration is
 // silently ignored at runtime.
 func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
-	dirs := []string{
-		filepath.Join("..", "..", "agent", "templates"),
-		filepath.Join("template"),
+	// The agent templates carry a canvas form (data.form) that mirrors the DSL
+	// params; the ingestion_pipeline_* templates keep their params only in the
+	// DSL component, so only the former must have a matching form.
+	dirs := []struct {
+		path        string
+		requireForm bool
+	}{
+		{filepath.Join("..", "..", "agent", "templates"), true},
+		{filepath.Join("template"), false},
 	}
 	legacyKeys := []string{"field_name", "prompts", "sys_prompt", "tenant_llm_id"}
 	modularKeys := []string{"keywords", "questions", "tags", "summary", "metadata"}
@@ -59,9 +65,9 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 
 	seen := 0
 	for _, dir := range dirs {
-		files, err := filepath.Glob(filepath.Join(dir, "*.json"))
+		files, err := filepath.Glob(filepath.Join(dir.path, "*.json"))
 		if err != nil {
-			t.Fatalf("glob %s: %v", dir, err)
+			t.Fatalf("glob %s: %v", dir.path, err)
 		}
 		for _, f := range files {
 			raw, err := os.ReadFile(f)
@@ -100,8 +106,12 @@ func TestAgentTemplateExtractorsUseModularParams(t *testing.T) {
 				seen++
 				params, _ := obj["params"].(map[string]any)
 
-				if form, ok := nodeForms[cpnID]; ok && !reflect.DeepEqual(form, params) {
-					t.Errorf("%s: Extractor %s params and canvas data.form diverge; both must be updated together", f, cpnID)
+				if form, ok := nodeForms[cpnID]; ok {
+					if !reflect.DeepEqual(form, params) {
+						t.Errorf("%s: Extractor %s params and canvas data.form diverge; both must be updated together", f, cpnID)
+					}
+				} else if dir.requireForm {
+					t.Errorf("%s: Extractor %s has no matching canvas data.form node to compare against params", f, cpnID)
 				}
 				for _, k := range legacyKeys {
 					if _, found := params[k]; found {
