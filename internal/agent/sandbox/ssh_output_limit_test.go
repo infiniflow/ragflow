@@ -253,13 +253,20 @@ func TestSSH_RunRemoteCommand_SharesBudgetAcrossStreams(t *testing.T) {
 }
 
 // TestSSH_RunRemoteCommand_BothStreamsWithinBudgetRetained pins the accepted
-// path for the two-stream case: when stdout and stderr together stay at the
-// budget, both are returned whole and no error is raised.
+// path for the two-stream case at the exact boundary: stdout and stderr land
+// on the budget precisely, so both must be returned whole and no error may be
+// raised. Sitting exactly on the limit is what makes this worth asserting —
+// usage() must reject only when the combined total is strictly greater, so a
+// `>=` there would falsely reject here while staying invisible to any variant
+// whose total lands below the budget.
 func TestSSH_RunRemoteCommand_BothStreamsWithinBudgetRetained(t *testing.T) {
 	const (
-		perStream   = 4 << 10
+		perStream   = 32 << 10
 		budgetBytes = 64 << 10
 	)
+	if 2*perStream != budgetBytes {
+		t.Fatalf("test setup: two streams total %d, want exactly the %d budget", 2*perStream, budgetBytes)
+	}
 	addr, keyPEM := startSSHExecServer(t, perStream, perStream)
 	p, client := dialSSHExecServer(t, addr, keyPEM)
 
