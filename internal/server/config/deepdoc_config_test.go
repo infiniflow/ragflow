@@ -265,3 +265,5 @@ func TestParseIngestorConfigReadsDeepDocCPUCoresYAML(t *testing.T) {
 }
 
 func intPtr(n int) *int { return &n }
+
+func strPtr(s string) *string { return &s }

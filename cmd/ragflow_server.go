@@ -291,60 +291,6 @@ func selectedLogLevel(args *serverArgs, configured string) string {
 	return configured
 }
 
-// resolveIngestorMaxConcurrentWorkers applies the precedence
-// CLI flag > environment variable > config file > default(1) and returns the
-// resolved ingestor worker count (K), validating it against the inclusive
-// range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range or
-// noninteger value at any layer is a fatal startup error.
-func resolveIngestorMaxConcurrentWorkers(args *serverArgs, configured int) (int, error) {
-	val := config.MinIngestorWorkers
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
-		}
-		val = n
-	}
-	if args.ingestorMaxConcurrentWorkers != nil {
-		val = *args.ingestorMaxConcurrentWorkers
-	}
-	if val < config.MinIngestorWorkers || val > config.MaxIngestorWorkers {
-		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
-			val, config.MinIngestorWorkers, config.MaxIngestorWorkers)
-	}
-	return val, nil
-}
-
-// resolveIngestorPageConcurrency applies the precedence
-// CLI flag > environment variable > config file > default(2) and returns the
-// resolved per-document page concurrency (N), validating it against the
-// inclusive range [MinPageConcurrency, MaxPageConcurrency]. An out-of-range or
-// noninteger value at any layer is a fatal startup error.
-func resolveIngestorPageConcurrency(args *serverArgs, configured int) (int, error) {
-	val := 2 // default page concurrency
-	if configured > 0 {
-		val = configured
-	}
-	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
-		n, err := strconv.Atoi(v)
-		if err != nil {
-			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
-		}
-		val = n
-	}
-	if args.ingestorPageConcurrency != nil {
-		val = *args.ingestorPageConcurrency
-	}
-	if val < config.MinPageConcurrency || val > config.MaxPageConcurrency {
-		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
-			val, config.MinPageConcurrency, config.MaxPageConcurrency)
-	}
-	return val, nil
-}
-
 func printHelp(args *serverArgs) {
 	switch {
 	case args.mode == nil || *args.mode == "migrate":
@@ -493,7 +439,20 @@ func main() {
 
 	globalConfig := server.GetConfig()
 
-	// override default port if provided
+	// Resolve the effective log level once (CLI > config/env > default) and
+	// validate the final value: an invalid level from the config file or the
+	// environment must abort startup instead of being silently downgraded by
+	// the logger. The early logger above stays CLI-only because the config is
+	// not loaded yet at that point.
+	resolvedLogLevel, err := globalConfig.ResolveLogLevel(arguments.logLevel)
+	if err != nil {
+		fmt.Printf("Failed to resolve log level: %v\n", err)
+		os.Exit(1)
+	}
+	globalConfig.SetLogLevel(resolvedLogLevel)
+
+	// Resolve the effective server port (CLI > config/env > default) and
+	// validate it.
 	// NOTE: this switch must stay side-effect-free on the LOG (no
 	// registerNativeDeepDoc here): it runs while only the temporary
 	// stdout-only logger exists, so anything it logs is lost from the file.
@@ -501,19 +460,19 @@ func main() {
 	// real file-backed logger is up.
 	switch *arguments.mode {
 	case "api":
-		apiServerConfig := globalConfig.GetAPIServerConfig()
-		port := apiServerConfig.HTTPPort
-		if arguments.port != nil {
-			port = *arguments.port
-			apiServerConfig.HTTPPort = port
+		port, portErr := config.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.port)
+		if portErr != nil {
+			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
+			os.Exit(1)
 		}
+		globalConfig.SetAPIServerHTTPPort(port)
 	case "admin":
-		adminServerConfig := globalConfig.GetAdminServerConfig()
-		port := adminServerConfig.HTTPPort
-		if arguments.port != nil {
-			port = *arguments.port
-			adminServerConfig.HTTPPort = port
+		port, portErr := config.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.port)
+		if portErr != nil {
+			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
+			os.Exit(1)
 		}
+		globalConfig.SetAdminHTTPPort(port)
 	case "ingestor":
 		if serverName == "" {
 			uuid := common.GenerateUUID()
@@ -658,17 +617,16 @@ func main() {
 	}
 }
 
-func setLogger(serverName string, arguments *serverArgs) {
+func setLogger(serverName string) {
 	// log filename
 	logFileName := fmt.Sprintf("%s.log", serverName)
 
 	globalConfig := server.GetConfig()
 	logConfig := globalConfig.GetLogConfig()
 
-	// Reinitialize logger with the configured level and CLI overrides.
-	logLevel := selectedLogLevel(arguments, logConfig.Level)
-
-	globalConfig.SetLogLevel(logLevel)
+	// The effective level was already resolved (CLI > config/env > default)
+	// and validated in main; read it back instead of re-deciding here.
+	logLevel := logConfig.Level
 
 	fileOut := common.FileOutput{
 		Filename:   logFileName,
@@ -795,7 +753,7 @@ func runAdmin(ctx context.Context, serverName string, args *serverArgs) error {
 	common.Info(fmt.Sprintf("RAGFlow admin version: %s", common.GetRAGFlowVersion()))
 
 	// Set log level
-	setLogger(serverName, args)
+	setLogger(serverName)
 
 	// Start HTTP server in a goroutine
 	go func() {
@@ -883,7 +841,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	ingestorCfg := globalConfig.GetIngestorConfig()
 	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
 	// and fail fast on an out-of-range value.
-	workers, err := resolveIngestorMaxConcurrentWorkers(args, ingestorCfg.MaxConcurrentWorkers)
+	workers, err := globalConfig.ResolveIngestorMaxConcurrentWorkers(args.ingestorMaxConcurrentWorkers)
 	if err != nil {
 		return err
 	}
@@ -936,7 +894,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	common.Info(fmt.Sprintf("RAGFlow ingestion service version: %s", common.GetRAGFlowVersion()))
 
 	// Set log level
-	setLogger(serverName, args)
+	setLogger(serverName)
 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
@@ -990,7 +948,7 @@ func runSyncer(ctx context.Context, cancel context.CancelFunc, serverName string
 	common.Info(fmt.Sprintf("RAGFlow file syncer service version: %s", common.GetRAGFlowVersion()))
 
 	// Set log level
-	setLogger(serverName, args)
+	setLogger(serverName)
 
 	// Start heartbeat reporter to admin server
 	if hb := startHeartbeat(
@@ -1405,7 +1363,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	common.Info(fmt.Sprintf("Server starting on port: %d", apiServerConfig.HTTPPort))
 
 	// Set log level
-	setLogger(serverName, arguments)
+	setLogger(serverName)
 
 	// Start server in a goroutine
 	go func() {
@@ -1626,7 +1584,7 @@ func registerNativeDeepDoc(arguments *serverArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := resolveIngestorPageConcurrency(arguments, server.GetConfig().GetIngestorConfig().PageConcurrency)
+	pageConcurrency, err := server.GetConfig().ResolveIngestorPageConcurrency(arguments.ingestorPageConcurrency)
 	if err != nil {
 		return err
 	}

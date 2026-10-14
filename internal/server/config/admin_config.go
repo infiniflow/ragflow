@@ -52,3 +52,11 @@ func (c *Config) ParseAdminConfig(v *viper.Viper) error {
 func (c *Config) GetAdminServerConfig() AdminConfig {
 	return c.admin
 }
+
+// SetAdminHTTPPort stores a resolved admin server port in the global
+// config. GetAdminServerConfig returns a copy, so this setter (not a write
+// into the returned struct) is how a CLI/env override reaches the config
+// the admin server actually binds.
+func (c *Config) SetAdminHTTPPort(port int) {
+	c.admin.HTTPPort = port
+}

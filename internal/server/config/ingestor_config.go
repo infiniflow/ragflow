@@ -212,6 +212,60 @@ func (c *Config) ResolveDeepDocInferenceCPUCores(cli *int) (int, bool, error) {
 	return val, explicit, nil
 }
 
+// ResolveIngestorMaxConcurrentWorkers applies the precedence
+// CLI flag > environment variable > config file > default(1) and returns
+// the resolved ingestor worker count (K), validating it against the
+// inclusive range [MinIngestorWorkers, MaxIngestorWorkers]. An out-of-range
+// or noninteger value at any layer is a fatal startup error.
+func (c *Config) ResolveIngestorMaxConcurrentWorkers(cli *int) (int, error) {
+	val := MinIngestorWorkers
+	if c.ingestor.MaxConcurrentWorkers > 0 {
+		val = c.ingestor.MaxConcurrentWorkers
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorMaxConcurrentWorkers)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorMaxConcurrentWorkers, v, err)
+		}
+		val = n
+	}
+	if cli != nil {
+		val = *cli
+	}
+	if val < MinIngestorWorkers || val > MaxIngestorWorkers {
+		return 0, fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]",
+			val, MinIngestorWorkers, MaxIngestorWorkers)
+	}
+	return val, nil
+}
+
+// ResolveIngestorPageConcurrency applies the precedence
+// CLI flag > environment variable > config file > default(2) and returns
+// the resolved per-document page concurrency (N), validating it against
+// the inclusive range [MinPageConcurrency, MaxPageConcurrency]. An
+// out-of-range or noninteger value at any layer is a fatal startup error.
+func (c *Config) ResolveIngestorPageConcurrency(cli *int) (int, error) {
+	val := 2 // default page concurrency
+	if c.ingestor.PageConcurrency > 0 {
+		val = c.ingestor.PageConcurrency
+	}
+	if v := strings.TrimSpace(os.Getenv(common.EnvIngestorPageConcurrency)); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil {
+			return 0, fmt.Errorf("invalid %s %q: %w", common.EnvIngestorPageConcurrency, v, err)
+		}
+		val = n
+	}
+	if cli != nil {
+		val = *cli
+	}
+	if val < MinPageConcurrency || val > MaxPageConcurrency {
+		return 0, fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]",
+			val, MinPageConcurrency, MaxPageConcurrency)
+	}
+	return val, nil
+}
+
 func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
 }

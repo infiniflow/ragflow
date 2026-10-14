@@ -16,7 +16,18 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
+
+// MinPort / MaxPort are the inclusive bounds for a server HTTP port. They
+// are shared by the API and admin server modes.
+const (
+	MinPort = 1
+	MaxPort = 65535
+)
 
 type AuthenticationConfig struct {
 	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
@@ -114,4 +125,31 @@ func (c *Config) EnableRegister() bool {
 
 func (c *Config) GetAPIServerConfig() APIServerConfig {
 	return c.apiServer
+}
+
+// SetAPIServerHTTPPort stores a resolved API server port in the global
+// config. GetAPIServerConfig returns a copy, so this setter (not a write
+// into the returned struct) is how a CLI/env override reaches the config
+// the API server actually binds.
+func (c *Config) SetAPIServerHTTPPort(port int) {
+	c.apiServer.HTTPPort = port
+}
+
+// ResolvePort resolves the effective HTTP port from the precedence
+// CLI flag > config file (viper, already merged with env) > the built-in
+// default already stored in the parsed config, and validates the final
+// value against [MinPort, MaxPort]. The CLI parser still rejects an
+// out-of-range --port up front; this guard owns the config/env layers,
+// where a non-integer value used to reach viper's GetInt as a silent 0
+// (the server would then listen on a random port).
+func ResolvePort(configured int, cli *int) (int, error) {
+	port := configured
+	if cli != nil {
+		port = *cli
+	}
+	if port < MinPort || port > MaxPort {
+		return 0, fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
+			port, MinPort, MaxPort)
+	}
+	return port, nil
 }

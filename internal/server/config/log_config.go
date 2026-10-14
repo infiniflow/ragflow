@@ -17,6 +17,8 @@
 package config
 
 import (
+	"fmt"
+
 	"github.com/spf13/viper"
 
 	"ragflow/internal/common"
@@ -112,4 +114,28 @@ func (c *Config) GetLogConfig() LogConfig {
 
 func (c *Config) SetLogLevel(level string) {
 	c.log.Level = level
+}
+
+// ResolveLogLevel resolves the effective log level from the precedence
+// CLI flag > config file (viper, already merged with the environment) >
+// default ("warn"), and validates the final value against the supported
+// set. An invalid level from any layer is a fatal startup error rather
+// than a silent downgrade: common.InitLogger falls back to info for
+// unknown levels, which would hide the misconfiguration. The CLI parser
+// still rejects an invalid --log-level up front, so a bad CLI value fails
+// with a message naming the flag; this check owns the config/env layers.
+func (c *Config) ResolveLogLevel(cli *string) (string, error) {
+	level := c.log.Level
+	if cli != nil {
+		level = *cli
+	}
+	if level == "" {
+		level = "warn"
+	}
+	switch level {
+	case "debug", "info", "warn", "error":
+		return level, nil
+	default:
+		return "", fmt.Errorf("invalid log level %q: must be debug, info, warn, or error (check --log-level or the log.level config key)", level)
+	}
 }
