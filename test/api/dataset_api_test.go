@@ -21,50 +21,15 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
 	"image/png"
-	"io"
 	"net/http"
 	"strings"
 	"testing"
 )
-
-func decodeResponseJSON(resp *http.Response) (map[string]interface{}, error) {
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-	var payload map[string]interface{}
-	if err = json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	return payload, nil
-}
-
-func requireStatusCode(t *testing.T, resp *http.Response, expected int) map[string]interface{} {
-	t.Helper()
-	if resp.StatusCode != expected {
-		t.Fatalf("expected status code %d, got %d", expected, resp.StatusCode)
-	}
-	payload, err := decodeResponseJSON(resp)
-	if err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-	return payload
-}
-
-func requireCodeZero(t *testing.T, payload map[string]interface{}) {
-	t.Helper()
-	code, ok := payload["code"].(float64)
-	if !ok || int(code) != 0 {
-		t.Fatalf("expected code 0, got %v, payload: %v", payload["code"], payload)
-	}
-}
 
 func clearDatasets(t *testing.T) {
 	t.Helper()

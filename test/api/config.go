@@ -164,6 +164,31 @@ func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
 	return h
 }
 
+// buildURL resolves path and params against the API base. It is the single
+// place that assembles request URLs, so the logging test helpers print exactly
+// the URL that is sent.
+func (c *ServerTestConfig) buildURL(path string, params map[string]interface{}) (string, error) {
+	u, err := url.Parse(c.apiBase() + "/" + strings.TrimLeft(path, "/"))
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	for k, v := range params {
+		q.Set(k, fmt.Sprint(v))
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
+}
+
+// NoAuth returns a copy of the config that sends no Authorization header,
+// mirroring the Python suite's rest_client_noauth fixture.
+func (c *ServerTestConfig) NoAuth() *ServerTestConfig {
+	clone := *c
+	clone.AuthToken = ""
+	clone.APIKey = ""
+	return &clone
+}
+
 func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
@@ -174,17 +199,12 @@ func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[str
 		bodyReader = bytes.NewReader(b)
 	}
 
-	u, err := url.Parse(c.apiBase() + "/" + strings.TrimLeft(path, "/"))
+	requestURL, err := c.buildURL(path, params)
 	if err != nil {
 		return nil, err
 	}
-	q := u.Query()
-	for k, v := range params {
-		q.Set(k, fmt.Sprint(v))
-	}
-	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest(method, u.String(), bodyReader)
+	req, err := http.NewRequest(method, requestURL, bodyReader)
 	if err != nil {
 		return nil, err
 	}
