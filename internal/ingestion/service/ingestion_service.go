@@ -568,14 +568,46 @@ func (e *Ingestor) failExhaustedTask(hb *Heartbeat, handle common.TaskHandle, ta
 		task.ID, task.DocumentID, task.DatasetID),
 		fmt.Errorf("delivery %d of %d reached", delivered, common.TaskMaxDeliver))
 	e.markTerminalProgress(task)
-	if !e.markFailed(e.ctx, task.ID) {
-		e.nackHandle(hb, handle, task.ID)
+	if !e.markFailedWithRetry(task.ID) {
+		// A Nack is useless here: the broker does not redeliver past its
+		// last delivery, so settle the message and leave a trace instead.
+		common.Error(fmt.Sprintf("task %s left RUNNING: could not mark it FAILED on its last delivery, acking (doc_id=%s kb_id=%s)",
+			task.ID, task.DocumentID, task.DatasetID),
+			errors.New("retries exhausted"))
+		e.ackHandle(hb, handle, task.ID)
 		return
 	}
 	e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf(
 		"Task failed: it was delivered %d times without finishing; the ingestor most likely crashed or ran out of memory while processing this document.",
 		delivered))
 	e.ackHandle(hb, handle, task.ID)
+}
+
+// lastDeliveryRetryDelays spaces the retries of the FAILED write on a task's
+// last delivery, where a transient database error cannot be left to a
+// redelivery.
+var lastDeliveryRetryDelays = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
+
+// markFailedWithRetry marks the task FAILED, retrying after each of
+// lastDeliveryRetryDelays until it succeeds or the ingestor stops. The
+// caller's heartbeat keeps renewing the message lease meanwhile.
+func (e *Ingestor) markFailedWithRetry(taskID string) bool {
+	if e.markFailed(e.ctx, taskID) {
+		return true
+	}
+	for _, delay := range lastDeliveryRetryDelays {
+		timer := time.NewTimer(delay)
+		select {
+		case <-e.ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		if e.markFailed(e.ctx, taskID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Ingestor) ackHandle(hb *Heartbeat, handle common.TaskHandle, taskID string) {
