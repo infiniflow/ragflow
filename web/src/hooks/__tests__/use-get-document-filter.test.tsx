@@ -14,13 +14,17 @@
  *  limitations under the License.
  */
 
-import { documentFilter } from '@/services/knowledge-service';
+import { deleteDocument, documentFilter } from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
-import { useGetDocumentFilter } from '../use-document-request';
+import {
+  useGetDocumentFilter,
+  useRemoveDocument,
+} from '../use-document-request';
 
 jest.mock('@/services/knowledge-service', () => ({
+  deleteDocument: jest.fn(),
   documentFilter: jest.fn(),
 }));
 
@@ -31,6 +35,7 @@ jest.mock('@/routes', () => ({
 }));
 
 const mockDocumentFilter = jest.mocked(documentFilter);
+const mockDeleteDocument = jest.mocked(deleteDocument);
 
 const createTestQueryClient = () =>
   new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -173,5 +178,37 @@ describe('useGetDocumentFilter', () => {
     } finally {
       nowSpy.mockRestore();
     }
+  });
+
+  it('refreshes the counts on the next open after the documents changed', async () => {
+    mockDeleteDocument.mockResolvedValue({ data: { code: 0 } } as never);
+    const { result } = renderHook(
+      () => ({
+        filter: useGetDocumentFilter(),
+        remove: useRemoveDocument(),
+      }),
+      { wrapper },
+    );
+
+    act(() => {
+      result.current.filter.onOpenChange(true);
+    });
+    await waitFor(() => expect(mockDocumentFilter).toHaveBeenCalledTimes(1));
+
+    act(() => {
+      result.current.filter.onOpenChange(false);
+    });
+    await act(async () => {
+      await result.current.remove.removeDocument('doc-1');
+    });
+
+    // The counts are only marked stale: nothing is fetched while the popover
+    // stays closed.
+    expect(mockDocumentFilter).toHaveBeenCalledTimes(1);
+
+    act(() => {
+      result.current.filter.onOpenChange(true);
+    });
+    await waitFor(() => expect(mockDocumentFilter).toHaveBeenCalledTimes(2));
   });
 });
