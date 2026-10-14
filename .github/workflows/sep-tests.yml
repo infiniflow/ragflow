@@ -247,6 +247,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -788,6 +798,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
