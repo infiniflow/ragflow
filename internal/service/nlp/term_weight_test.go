@@ -906,7 +906,7 @@ func TestWeightsDependOnlyOnTheTerm(t *testing.T) {
 	d := NewTermWeightDealer("")
 
 	ratio := func(tks []string, i, j int) float64 {
-		weights := d.Weights(tks, false)
+		weights := d.Weights(tks, false, "")
 		if len(weights) != len(tks) {
 			t.Fatalf("got %d weights for %d terms", len(weights), len(tks))
 		}

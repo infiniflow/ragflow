@@ -1211,8 +1211,8 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 				return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 			},
 			incrementChunkStatsFunc: func(_, _ string, _, _ int64, _ float64) error { return nil },
-			tokenizeFunc:            func(text string) (string, error) { return text, nil },
-			fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+			tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+			fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 			numTokensFunc:           func(text string) int { return len(text) },
 		}
 		return svc, engine

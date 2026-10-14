@@ -474,7 +474,7 @@ func TestQueryBuilder_Question_SynonymSingleQuote(t *testing.T) {
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"cat-o'-nine-tails", "'"},
 	}
-	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3, "")
 	if expr == nil {
 		t.Fatal("Question returned nil expr")
 	}
@@ -518,7 +518,7 @@ func TestQueryBuilder_Question_SynonymQuestionMark(t *testing.T) {
 	qb.synonym.dictionary = map[string][]string{
 		"cat": {"what?cat"},
 	}
-	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3)
+	expr, keywords := qb.Question("black cat sleeping near warm fire", "test", 0.3, "")
 	if expr == nil {
 		t.Fatal("Question returned nil expr")
 	}
