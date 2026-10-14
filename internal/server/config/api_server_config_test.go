@@ -38,7 +38,7 @@ func TestParseAPIServerConfigTrustedProxies(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			v := viper.New()
-			v.Set("ragflow", test.values)
+			v.Set("api", test.values)
 			cfg := &Config{}
 			if err := cfg.ParseAPIServerConfig(v); err != nil {
 				t.Fatalf("ParseAPIServerConfig: %v", err)
@@ -164,29 +164,78 @@ func TestPortSetterRoundTrip(t *testing.T) {
 	}
 }
 
-// TestParseAPIServerConfigReadsEnvOnlyPort pins that a lone RAGFLOW_HTTP_PORT
-// (no `ragflow:` YAML section) still reaches the parsed config. The previous
-// guard `if !v.IsSet("ragflow") { return nil }` checked the PARENT key, which
-// an env var maps to the child key `ragflow.http_port`, so the guard was false
-// and the env override was silently dropped (the server kept binding 9380).
-// viper.Sub doubles the prefix under the `ragflow` section (RAGFLOW_RAGFLOW_HTTP_PORT),
-// so the var operators actually set (and CI sets) never reached the parser;
-// ParseAPIServerConfig now binds RAGFLOW_HTTP_PORT as well and reads the full
-// dotted key from the root viper.
+// TestParseAPIServerConfigReadsEnvOnlyPort pins that a lone RAGFLOW_API_HTTP_PORT
+// (no `api:` YAML section) still reaches the parsed config. The previous guard
+// `if !v.IsSet("ragflow") { return nil }` checked the PARENT key, which an env
+// var maps to the child key, so the guard was false and the env override was
+// silently dropped (the server kept binding 9380). Reading the full dotted key
+// from the root viper (which carries the RAGFLOW prefix/replacer/AutomaticEnv
+// from server.Init) honours the env layer in the env-only case.
+//
+// The section is named `api:`, so viper derives RAGFLOW_API_HTTP_PORT directly.
+// The legacy `ragflow:` section name collided with the RAGFLOW env prefix and
+// made AutomaticEnv resolve the key to a doubled RAGFLOW_RAGFLOW_HTTP_PORT.
 func TestParseAPIServerConfigReadsEnvOnlyPort(t *testing.T) {
 	v := viper.New()
 	v.SetEnvPrefix("RAGFLOW")
 	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 	v.AutomaticEnv()
 
-	t.Setenv("RAGFLOW_HTTP_PORT", "9399")
+	t.Setenv("RAGFLOW_API_HTTP_PORT", "9399")
 
 	c := &Config{}
 	if err := c.ParseAPIServerConfig(v); err != nil {
 		t.Fatalf("ParseAPIServerConfig: %v", err)
 	}
 	if got := c.GetAPIServerConfig().HTTPPort; got != 9399 {
-		t.Fatalf("env-only RAGFLOW_HTTP_PORT = %d, want 9399 (env layer must reach the config)", got)
+		t.Fatalf("env-only RAGFLOW_API_HTTP_PORT = %d, want 9399 (env layer must reach the config)", got)
+	}
+}
+
+// TestParseAPIServerConfigReadsAPISection pins that the `api:` YAML section
+// reaches the parsed config for host / http_port / trusted_proxies. The section
+// was renamed from the legacy `ragflow:` section, whose name collided with the
+// RAGFLOW env prefix.
+func TestParseAPIServerConfigReadsAPISection(t *testing.T) {
+	v := viper.New()
+	v.Set("api", map[string]interface{}{
+		"host":            "0.0.0.0",
+		"http_port":       9443,
+		"trusted_proxies": []string{"10.0.0.0/8"},
+	})
+
+	c := &Config{}
+	if err := c.ParseAPIServerConfig(v); err != nil {
+		t.Fatalf("ParseAPIServerConfig: %v", err)
+	}
+	got := c.GetAPIServerConfig()
+	if got.Host != "0.0.0.0" {
+		t.Fatalf("Host = %q, want %q", got.Host, "0.0.0.0")
+	}
+	if got.HTTPPort != 9443 {
+		t.Fatalf("HTTPPort = %d, want 9443", got.HTTPPort)
+	}
+	if !reflect.DeepEqual(got.TrustedProxies, []string{"10.0.0.0/8"}) {
+		t.Fatalf("TrustedProxies = %#v, want [10.0.0.0/8]", got.TrustedProxies)
+	}
+}
+
+// TestParseAPIServerConfigIgnoresRagflowSection pins the hard rename: the
+// legacy `ragflow:` section (and the doubled RAGFLOW_RAGFLOW_HTTP_PORT env var
+// it produced) is no longer read. A config that still writes `ragflow.http_port`
+// must fall back to the built-in default (9380) rather than silently binding a
+// stale value. The project has not launched yet, so no compatibility shim is
+// kept for the old section name.
+func TestParseAPIServerConfigIgnoresRagflowSection(t *testing.T) {
+	v := viper.New()
+	v.Set("ragflow", map[string]interface{}{"http_port": 9999})
+
+	c := &Config{}
+	if err := c.ParseAPIServerConfig(v); err != nil {
+		t.Fatalf("ParseAPIServerConfig: %v", err)
+	}
+	if got := c.GetAPIServerConfig().HTTPPort; got != 9380 {
+		t.Fatalf("HTTPPort = %d, want 9380 (legacy ragflow: section must be ignored)", got)
 	}
 }
 
