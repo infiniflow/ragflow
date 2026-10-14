@@ -196,14 +196,19 @@ func enforceTitleTokenCap(chunks []map[string]any, prefixes []string, cap int) [
 // the text before grouping and re-prepended to every piece: without that,
 // only the first piece would keep the parent headings and every continuation
 // piece would be a bare body fragment. The grouping budget subtracts the
-// prefix so each piece still fits the cap.
+// prefix so each piece still fits the cap; a prefix that would leave the
+// body less than half the cap disables re-attachment (plain split) instead
+// of multiplying near-empty pieces that each repeat it.
 func splitTitleChunkByCap(chunk map[string]any, prefix string, cap int) []map[string]any {
 	text := toString(chunk["text"])
 	body := text
 	if prefix != "" {
-		if !strings.HasPrefix(text, prefix) || titleTokenCount(prefix) >= cap {
-			// Unexpected shape, or the chain alone would fill the whole
-			// budget: fall back to a plain split (no re-attachment).
+		// Re-attaching the prefix only pays off while the body keeps at
+		// least half the cap: a larger prefix would multiply near-empty
+		// pieces that each repeat it, so fall back to a plain split. The
+		// HasPrefix check is a safety net (the prefix is the text's leading
+		// segment by construction).
+		if !strings.HasPrefix(text, prefix) || titleTokenCount(prefix) > cap/2 {
 			prefix = ""
 		} else {
 			body = text[len(prefix):]

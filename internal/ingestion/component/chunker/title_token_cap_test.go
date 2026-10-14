@@ -583,7 +583,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepHeadingChain(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `, `^## `}})
+	p := newTitleParam(t, "hierarchy", 24, [][]string{{`^# `, `^## `}})
 	two := 2
 	p.Hierarchy = &two
 	inputText := "# H1\n## H2a\n" + body
@@ -604,7 +604,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepHeadingChain(t *testing.T) {
 			t.Errorf("chunk %d lost its heading chain: %q", i, text)
 			continue
 		}
-		if n := titleTokenCount(text); n > 20 {
+		if n := titleTokenCount(text); n > 24 {
 			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
 		}
 		if n := strings.Count(text, "# H1\n"); n != 1 {
@@ -628,7 +628,7 @@ func TestTitleCap_HierarchyPipeline_RootAsHeadingKeepsChain(t *testing.T) {
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `, `^## `}})
+	p := newTitleParam(t, "hierarchy", 40, [][]string{{`^# `, `^## `}})
 	two := 2
 	p.Hierarchy = &two
 	p.RootChunkAsHeading = true
@@ -651,7 +651,7 @@ func TestTitleCap_HierarchyPipeline_RootAsHeadingKeepsChain(t *testing.T) {
 		if !strings.HasPrefix(text, chain) {
 			t.Errorf("chunk %d lost its heading chain: %q", i, text)
 		}
-		if n := titleTokenCount(text); n > 20 {
+		if n := titleTokenCount(text); n > 40 {
 			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
 		}
 	}
@@ -667,7 +667,7 @@ func TestTitleCap_HierarchyPipeline_AncestorBodyKeepsLeadingChain(t *testing.T) 
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	p := newTitleParam(t, "hierarchy", 40, [][]string{{`^# `, `^## `, `^### `}})
+	p := newTitleParam(t, "hierarchy", 60, [][]string{{`^# `, `^## `, `^### `}})
 	three := 3
 	p.Hierarchy = &three
 	inputText := "# A\n前言A。\n## B\n前言B。\n### C\n" + body
@@ -688,7 +688,7 @@ func TestTitleCap_HierarchyPipeline_AncestorBodyKeepsLeadingChain(t *testing.T) 
 			t.Errorf("chunk %d lost its leading chain: %q", i, text)
 			continue
 		}
-		if n := titleTokenCount(text); n > 40 {
+		if n := titleTokenCount(text); n > 60 {
 			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
 		}
 		rebuilt.WriteString(strings.TrimPrefix(text, chain))
@@ -707,7 +707,7 @@ func TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles(t *testing.
 	charTokenizer()
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
-	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `, `^## `}})
+	p := newTitleParam(t, "hierarchy", 24, [][]string{{`^# `, `^## `}})
 	two := 2
 	p.Hierarchy = &two
 	p.IncludeHeadingContent = true
@@ -733,13 +733,50 @@ func TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles(t *testing.
 			t.Errorf("chunk %d lost its heading chain: %q", i, text)
 			continue
 		}
-		if n := titleTokenCount(text); n > 20 {
+		if n := titleTokenCount(text); n > 24 {
 			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
 		}
 		rebuilt.WriteString(strings.TrimPrefix(text, chain))
 	}
 	if got := rebuilt.String(); got != body+"\n" {
 		t.Errorf("chain-stripped pieces not lossless:\n got=%q\nwant=%q", got, body+"\n")
+	}
+}
+
+// TestTitleCap_HierarchyPipeline_NearCapPrefixFallsBack pins the minimum body
+// budget guard: when the repeated prefix would leave the body less than half
+// the cap, re-attachment is disabled (plain split) instead of multiplying
+// near-empty pieces that each repeat an oversized prefix.
+func TestTitleCap_HierarchyPipeline_NearCapPrefixFallsBack(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Join(joinSentences(12), "")
+	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `, `^## `}})
+	two := 2
+	p.Hierarchy = &two
+	inputText := "# H1\n## H2a\n" + body
+	inputs := map[string]any{"output_format": "text", "text": inputText}
+	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
+	if err != nil {
+		t.Fatalf("invokeHierarchy: %v", err)
+	}
+	chunks := got["chunks"].([]map[string]any)
+	if len(chunks) <= 1 {
+		t.Fatalf("expected split, got %d", len(chunks))
+	}
+	// 61 stub-tokens of text at cap 20: a plain split yields 4 pieces; a
+	// prefix re-attachment with a 1-token body budget would yield ~9.
+	if len(chunks) > 5 {
+		t.Errorf("oversized prefix must not multiply pieces: got %d", len(chunks))
+	}
+	for i, ck := range chunks {
+		text := toString(ck["text"])
+		if n := titleTokenCount(text); n > 20 {
+			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
+		}
+		if i > 0 && strings.Contains(text, "# H1") {
+			t.Errorf("chunk %d must stay bare when the prefix is too large: %q", i, text)
+		}
 	}
 }
 
