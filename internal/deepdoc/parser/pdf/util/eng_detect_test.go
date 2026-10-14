@@ -99,23 +99,41 @@ func TestDetectEnglishPageStable(t *testing.T) {
 }
 
 func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
-	// 200 glyphs, A / 你 / A / 你. A fixed stride of len/n == 2 samples only
-	// the A phase and DetectEnglishPage returns true. There is no adjacent
-	// ASCII run on the page, so the vote must stay false.
-	chars := make([]pdf.TextChar, 200)
-	for i := range chars {
-		if i%2 == 0 {
-			chars[i] = pdf.TextChar{Text: "A"}
-			continue
-		}
-		chars[i] = pdf.TextChar{Text: "你"}
+	// 200 glyphs repeating a short mix. A fixed stride of len/n == 2 samples
+	// only A from A/你. The cycling span offset samples only A from A你你A
+	// (indexes 0, 3, 4, 7, ...). Neither page has a 30-character ASCII run,
+	// so the vote must stay false.
+	cycles := []struct {
+		name  string
+		cycle []string
+	}{
+		{name: "alternating", cycle: []string{"A", "你"}},
+		{name: "period four", cycle: []string{"A", "你", "你", "A"}},
 	}
-	sample := DefaultSampleChars(chars, 100)
-	if !strings.Contains(sample, "A") || !strings.Contains(sample, "你") {
-		t.Fatalf("DefaultSampleChars = %q, want both A and 你", sample)
-	}
-	if DetectEnglishPage(chars, nil) {
-		t.Fatal("DetectEnglishPage = true, want false")
+	for _, tc := range cycles {
+		t.Run(tc.name, func(t *testing.T) {
+			chars := make([]pdf.TextChar, 200)
+			for i := range chars {
+				chars[i] = pdf.TextChar{Text: tc.cycle[i%len(tc.cycle)]}
+			}
+			sample := DefaultSampleChars(chars, 100)
+			allA := true
+			for _, r := range sample {
+				if r != 'A' {
+					allA = false
+					break
+				}
+			}
+			if allA {
+				t.Fatalf("DefaultSampleChars = %q, want a sample that is not all A", sample)
+			}
+			if !strings.Contains(sample, "A") || !strings.Contains(sample, "你") {
+				t.Fatalf("DefaultSampleChars = %q, want both A and 你", sample)
+			}
+			if DetectEnglishPage(chars, nil) {
+				t.Fatal("DetectEnglishPage = true, want false")
+			}
+		})
 	}
 }
 

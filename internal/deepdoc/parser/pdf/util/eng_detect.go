@@ -34,21 +34,53 @@ func IsASCIIPrintable(r rune) bool {
 // DefaultSampleChars returns up to n character texts, concatenated.
 // The page is split into that many equal spans, in page order, and one
 // character is taken from each span. The offset inside a span cycles so a
-// periodic mix is not stuck on one phase. The same page always yields the
-// same sample. Python's random.choices is still unseeded and jitters; do
+// periodic mix is not stuck on one phase. That cycle still aliases some
+// longer periods (A你你A lands on A), so a non-ASCII character skipped
+// between two ASCII samples replaces the later one. An ASCII run in the
+// sample is then a run on the page. The same page always yields the same
+// sample. Python's random.choices is still unseeded and jitters; do
 // not chase that difference in the parity harness.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
 	}
 	m := min(n, len(chars))
-	var buf strings.Builder
+	idx := make([]int, m)
 	for i := range m {
 		start := i * len(chars) / m
 		width := (i+1)*len(chars)/m - start
-		buf.WriteString(chars[start+i%width].Text)
+		idx[i] = start + i%width
+	}
+	for k := 1; k < m; k++ {
+		left, right := idx[k-1], idx[k]
+		if right <= left+1 {
+			continue
+		}
+		if breaksASCIIRun(chars[left].Text) || breaksASCIIRun(chars[right].Text) {
+			continue
+		}
+		for j := left + 1; j < right; j++ {
+			if breaksASCIIRun(chars[j].Text) {
+				idx[k] = j
+				break
+			}
+		}
+	}
+	var buf strings.Builder
+	for _, i := range idx {
+		buf.WriteString(chars[i].Text)
 	}
 	return buf.String()
+}
+
+// breaksASCIIRun reports whether s contains a rune outside an English run.
+func breaksASCIIRun(s string) bool {
+	for _, r := range s {
+		if !IsASCIIPrintable(r) {
+			return true
+		}
+	}
+	return false
 }
 
 // FullTextFromChars concatenates all chars text across pages for scan noise detection.
