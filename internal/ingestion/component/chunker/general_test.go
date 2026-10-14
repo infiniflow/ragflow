@@ -76,9 +76,9 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 			"header_rows": 1,
 			"caption":     sheet,
 		},
-		// Mirror what the chunker derives from TableData so text-bound
-		// assertions (e.g. TokenChunker boundary tests) stay valid.
-		"text":         tableutil.RenderTableText(td),
+		// Mirror what the chunker derives from TableData (its HTML rendering)
+		// so text-bound assertions (e.g. TokenChunker boundary tests) stay valid.
+		"text":         tableutil.RenderTableHTML(td),
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
