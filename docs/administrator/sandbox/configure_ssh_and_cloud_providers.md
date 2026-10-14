@@ -67,13 +67,13 @@ ssh-keyscan -p SSH_PORT SSH_HOST > "$ssh_key_file"
 
 Continue the following commands in the same terminal session so that `ssh_key_file` remains available. `mktemp` avoids overwriting another administrator's scan and prevents the command from following a predictable file name prepared by another local user.
 
-Display its fingerprint:
+Display the scanned fingerprints:
 
 ```bash
 ssh-keygen -lf "$ssh_key_file"
 ```
 
-`ssh-keyscan` may return more than one host-key type. Compare every key that you intend to trust with the fingerprints supplied by the server administrator.
+`ssh-keyscan` may return more than one host-key type. Compare every fingerprint shown with the fingerprints supplied by the server administrator. Continue only if every key in the temporary file is verified.
 
 If the same host and port already have an entry, inspect it first:
 
@@ -81,13 +81,13 @@ If the same host and port already have an entry, inspect it first:
 ssh-keygen -F '[SSH_HOST]:SSH_PORT' -f ~/.ssh/known_hosts
 ```
 
-After confirming that the verified new key is a legitimate replacement, remove the old entry before appending the new one:
+After confirming that the verified new keys are legitimate replacements, remove the old entry before appending them:
 
 ```bash
 ssh-keygen -R '[SSH_HOST]:SSH_PORT' -f ~/.ssh/known_hosts
 ```
 
-Add the verified key:
+Add the verified keys:
 
 ```bash
 mkdir -p ~/.ssh

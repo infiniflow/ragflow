@@ -93,7 +93,7 @@ Start Sandbox Executor Manager without restarting the other RAGFlow services:
 docker compose up -d sandbox-executor-manager
 ```
 
-This command works whether RAGFlow itself runs with Docker Compose or from source. It publishes the Executor Manager port as `127.0.0.1:9385` on the Docker host.
+This command works whether RAGFlow itself runs with Docker Compose or from source. By default, it publishes Executor Manager at `127.0.0.1:9385` on the Docker host. `SANDBOX_EXECUTOR_MANAGER_PORT` changes the published host port.
 
 :::caution Use the existing Compose project
 If RAGFlow was started with custom Compose options, use the same options in every command. For example:
@@ -117,7 +117,7 @@ Check its status:
 docker compose ps --all sandbox-executor-manager
 ```
 
-Wait until the service reports `healthy`, then check its health endpoint:
+Wait until the service reports `healthy`, then check its health endpoint. The command below uses the default host port; if you changed `SANDBOX_EXECUTOR_MANAGER_PORT`, use that port instead:
 
 ```bash
 curl -f http://127.0.0.1:9385/healthz

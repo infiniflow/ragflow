@@ -19,7 +19,7 @@ Check the service state:
 docker compose ps --all sandbox-executor-manager
 ```
 
-Check the Manager health endpoint:
+Check the Manager health endpoint. The command below uses the default host port; if you changed `SANDBOX_EXECUTOR_MANAGER_PORT`, use that port instead:
 
 ```bash
 curl -f http://127.0.0.1:9385/healthz
