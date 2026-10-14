@@ -305,7 +305,8 @@ class BaseTitleChunker(ABC):
             if self._is_preview_target():
                 root_indexes = self._preview_record_indexes[0]
                 self._preview_record_indexes = [root_indexes + indexes for indexes in self._preview_record_indexes[1:]]
-                if "section_ids" in self._preview_strategy_data:
+                section_ids = self._preview_strategy_data.get("section_ids")
+                if isinstance(section_ids, list) and len(section_ids) == len(chunks):
                     self._preview_strategy_data["section_ids"] = self._preview_strategy_data["section_ids"][1:]
             return chunks[1:]
 

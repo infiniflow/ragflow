@@ -8,6 +8,7 @@ import { IModalProps } from '@/interfaces/common';
 import { cn } from '@/lib/utils';
 import { useTranslation } from 'react-i18next';
 import { useMemo, useState } from 'react';
+import type { ChangeEvent } from 'react';
 import { Operator } from '../constant';
 import { RunDataflowType } from '../hooks/use-run-dataflow';
 import useGraphStore from '../store';
@@ -29,6 +30,10 @@ const PipelineRunSheet = ({ hideModal, run, loading }: RunSheetProps) => {
     run(values, targetComponentId || undefined);
   };
 
+  const handleTargetChange = (event: ChangeEvent<HTMLSelectElement>) => {
+    setTargetComponentId(event.target.value);
+  };
+
   return (
     <Sheet onOpenChange={hideModal} open modal={false}>
       <SheetContent className={cn('top-20 p-2')}>
@@ -36,13 +41,17 @@ const PipelineRunSheet = ({ hideModal, run, loading }: RunSheetProps) => {
           <SheetTitle>{t('flow.testRun')}</SheetTitle>
           {titleChunkerNodes.length > 0 && (
             <label className="space-y-2 text-sm">
-              <span className="text-text-secondary">Preview target</span>
+              <span className="text-text-secondary">
+                {t('flow.previewTarget', 'Preview target')}
+              </span>
               <select
                 className="h-9 w-full rounded-md border bg-background px-3"
-                onChange={(event) => setTargetComponentId(event.target.value)}
+                onChange={handleTargetChange}
                 value={targetComponentId}
               >
-                <option value="">Run full pipeline</option>
+                <option value="">
+                  {t('flow.runFullPipeline', 'Run full pipeline')}
+                </option>
                 {titleChunkerNodes.map((node) => (
                   <option key={node.id} value={node.id}>
                     {node.data.name || node.id}

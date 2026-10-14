@@ -88,6 +88,34 @@ async def test_preview_disabled_preserves_normal_output_schema():
     assert process.output("chunks")[0]["text"] == "# A\nbody A\n"
 
 
+@pytest.mark.asyncio
+async def test_group_section_ids_align_after_root_chunk_is_trimmed(monkeypatch):
+    monkeypatch.setattr(
+        "rag.flow.chunker.title_chunker.group_chunker.num_tokens_from_string",
+        lambda text: len(text.split()),
+    )
+    body_a = " ".join(["body"] * 40)
+    document = f"# A\n{body_a}\n## B\nbody B"
+
+    baseline_process = FakeProcess(method="group")
+    baseline_chunker = GroupTitleChunker(baseline_process, upstream(document))
+    await baseline_chunker.invoke()
+    assert len(baseline_process.output("chunks")) == 2
+
+    process = FakeProcess(method="group")
+    process._param.root_chunk_as_heading = True
+    chunker = GroupTitleChunker(process, upstream(document))
+
+    await chunker.invoke()
+
+    debug = process._title_chunker_debug
+    assert debug["section_ids"] == [1]
+    assert len(process.output("chunks")) == len(baseline_process.output("chunks")) - 1
+    assert len(debug["chunks"]) == len(process.output("chunks"))
+    assert len(debug["chunks"]) == 1
+    assert debug["chunks"][0]["content"] == process.output("chunks")[0]["text"]
+
+
 def test_repeated_record_reference_keeps_explicit_source_indexes():
     process = FakeProcess(method="hierarchy")
     chunker = HierarchyTitleChunker(process, upstream(""))

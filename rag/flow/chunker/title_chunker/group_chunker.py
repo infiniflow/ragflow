@@ -94,10 +94,11 @@ class GroupTitleChunker(BaseTitleChunker):
 
             last_sid = sec_id
 
+        if self._is_preview_target():
+            self._preview_strategy_data["section_ids"] = group_section_ids
+
         chunks = self.build_chunks_from_record_groups(
             record_groups,
             record_group_indexes if self._is_preview_target() else None,
         )
-        if self._is_preview_target():
-            self._preview_strategy_data["section_ids"] = group_section_ids
         return chunks

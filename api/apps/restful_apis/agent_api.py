@@ -1517,14 +1517,19 @@ async def agent_chat_completion(tenant_id, agent_id=None):
                     release_mode=False,
                 ),
             }
+            try:
+                Pipeline(
+                    dsl_str,
+                    tenant_id=str(tenant_id),
+                    doc_id=CANVAS_DEBUG_DOC_ID,
+                    task_id=task_id,
+                    flow_id=agent_id,
+                    stop_after_component_id=target_component_id,
+                )
+            except ValueError as exc:
+                return get_data_error_result(message=str(exc))
+
             await thread_pool_exec(API4ConversationService.save, **workflow_conv)
-            Pipeline(
-                dsl_str,
-                tenant_id=str(tenant_id),
-                doc_id=CANVAS_DEBUG_DOC_ID,
-                task_id=task_id,
-                flow_id=agent_id,
-            )
             ok, error_message = await thread_pool_exec(
                 queue_dataflow,
                 user_id,
