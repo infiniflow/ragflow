@@ -180,9 +180,9 @@ func (c *PostgreSQLConnector) OpenPrune(ctx context.Context, request PruneReques
 		db.Close()
 		return nil, err
 	}
-	queries := make([]string, 0, len(bases))
+	queries := make([]rdbmsQuery, 0, len(bases))
 	for _, base := range bases {
-		queries = append(queries, c.buildSlimQuery(base.sql))
+		queries = append(queries, rdbmsQuery{name: base.name, sql: c.buildSlimQuery(base.sql)})
 	}
 	return &postgresPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
@@ -472,21 +472,25 @@ func (c *PostgreSQLConnector) buildContent(row map[string]any, columns []string)
 	return strings.Join(parts, "\n\n")
 }
 
-// buildDocumentID derives the stable document id, matching the Python format
-// "postgresql:<database>:<id value>" with an MD5 content fallback.
-func (c *PostgreSQLConnector) buildDocumentID(row map[string]any, orderedColumns []string) string {
+// buildDocumentID namespaces automatic table scans by table. Custom queries
+// use the configured id column (or content hash) within the database namespace.
+func (c *PostgreSQLConnector) buildDocumentID(table string, row map[string]any, orderedColumns []string) string {
+	prefix := "postgresql:" + c.database + ":"
+	if table != "" {
+		prefix = "postgresql-table:" + c.database + ":" + url.QueryEscape(table) + ":"
+	}
 	if c.idColumn != "" {
 		if value, ok := row[c.idColumn]; ok && value != nil {
-			return fmt.Sprintf("postgresql:%s:%s", c.database, fmt.Sprint(value))
+			return prefix + fmt.Sprint(value)
 		}
 	}
 	content := c.buildContent(row, c.contentColumnsForRow(row, orderedColumns))
 	sum := md5.Sum([]byte(content))
-	return fmt.Sprintf("postgresql:%s:%s", c.database, hex.EncodeToString(sum[:]))
+	return prefix + hex.EncodeToString(sum[:])
 }
 
 // rowToSourceDocument converts a database row into the syncer model.
-func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedColumns []string) (SourceDocument, bool) {
+func (c *PostgreSQLConnector) rowToSourceDocument(table string, row map[string]any, orderedColumns []string) (SourceDocument, bool) {
 	contentColumns := c.contentColumnsForRow(row, orderedColumns)
 	content := c.buildContent(row, contentColumns)
 
@@ -518,7 +522,7 @@ func (c *PostgreSQLConnector) rowToSourceDocument(row map[string]any, orderedCol
 		}
 	}
 
-	sourceID := c.buildDocumentID(row, orderedColumns)
+	sourceID := c.buildDocumentID(table, row, orderedColumns)
 	blob := []byte(content)
 	return SourceDocument{
 		SourceID:           sourceID,
@@ -652,7 +656,7 @@ func (s *postgresSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) 
 			// Skip rows that fail to convert (mirrors Python).
 			continue
 		}
-		if doc, ok := s.connector.rowToSourceDocument(row, columns); ok {
+		if doc, ok := s.connector.rowToSourceDocument(s.queryNames[s.queryIndex-1], row, columns); ok {
 			if !s.includeResumed(doc) {
 				continue
 			}
@@ -797,7 +801,7 @@ func isPostgresUnknownColumn(err error) bool {
 type postgresPruneSession struct {
 	connector  *PostgreSQLConnector
 	db         *sql.DB
-	queries    []string
+	queries    []rdbmsQuery
 	queryIndex int
 	rows       *sql.Rows
 	batchSize  int
@@ -830,7 +834,7 @@ func (s *postgresPruneSession) NextBatch(ctx context.Context) (PruneBatch, error
 		if err != nil {
 			continue
 		}
-		documents = append(documents, SlimDocument{SourceID: s.connector.buildDocumentID(row, columns)})
+		documents = append(documents, SlimDocument{SourceID: s.connector.buildDocumentID(s.queries[s.queryIndex-1].name, row, columns)})
 	}
 	return PruneBatch{Documents: documents}, nil
 }
@@ -843,7 +847,7 @@ func (s *postgresPruneSession) Close() error {
 
 // openNextQuery runs the next slim query.
 func (s *postgresPruneSession) openNextQuery(ctx context.Context) error {
-	query := s.queries[s.queryIndex]
+	query := s.queries[s.queryIndex].sql
 	s.queryIndex++
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {

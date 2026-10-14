@@ -26,6 +26,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/url"
 	"regexp"
 	"sort"
 	"strconv"
@@ -166,9 +167,9 @@ func (c *MySQLConnector) OpenPrune(ctx context.Context, request PruneRequest) (P
 		db.Close()
 		return nil, err
 	}
-	queries := make([]string, 0, len(bases))
+	queries := make([]rdbmsQuery, 0, len(bases))
 	for _, base := range bases {
-		queries = append(queries, c.buildSlimQuery(base.sql))
+		queries = append(queries, rdbmsQuery{name: base.name, sql: c.buildSlimQuery(base.sql)})
 	}
 	return &mysqlPruneSession{connector: c, db: db, queries: queries, batchSize: c.batchSize}, nil
 }
@@ -461,21 +462,25 @@ func (c *MySQLConnector) buildContent(row map[string]any, columns []string) stri
 	return strings.Join(parts, "\n\n")
 }
 
-// buildDocumentID derives the stable document id, matching the Python format
-// "mysql:<database>:<id value>" with an MD5 content fallback.
-func (c *MySQLConnector) buildDocumentID(row map[string]any, orderedColumns []string) string {
+// buildDocumentID namespaces automatic table scans by table. Custom queries
+// use the configured id column (or content hash) within the database namespace.
+func (c *MySQLConnector) buildDocumentID(table string, row map[string]any, orderedColumns []string) string {
+	prefix := "mysql:" + c.database + ":"
+	if table != "" {
+		prefix = "mysql-table:" + c.database + ":" + url.QueryEscape(table) + ":"
+	}
 	if c.idColumn != "" {
 		if value, ok := row[c.idColumn]; ok && value != nil {
-			return fmt.Sprintf("mysql:%s:%s", c.database, fmt.Sprint(value))
+			return prefix + fmt.Sprint(value)
 		}
 	}
 	content := c.buildContent(row, c.contentColumnsForRow(row, orderedColumns))
 	sum := md5.Sum([]byte(content))
-	return fmt.Sprintf("mysql:%s:%s", c.database, hex.EncodeToString(sum[:]))
+	return prefix + hex.EncodeToString(sum[:])
 }
 
 // rowToSourceDocument converts a database row into the syncer model.
-func (c *MySQLConnector) rowToSourceDocument(row map[string]any, orderedColumns []string) (SourceDocument, bool) {
+func (c *MySQLConnector) rowToSourceDocument(table string, row map[string]any, orderedColumns []string) (SourceDocument, bool) {
 	contentColumns := c.contentColumnsForRow(row, orderedColumns)
 	content := c.buildContent(row, contentColumns)
 
@@ -507,7 +512,7 @@ func (c *MySQLConnector) rowToSourceDocument(row map[string]any, orderedColumns 
 		}
 	}
 
-	sourceID := c.buildDocumentID(row, orderedColumns)
+	sourceID := c.buildDocumentID(table, row, orderedColumns)
 	blob := []byte(content)
 	return SourceDocument{
 		SourceID:           sourceID,
@@ -641,7 +646,7 @@ func (s *mysqlSyncSession) NextBatch(ctx context.Context) (SyncBatch, error) {
 			// Skip rows that fail to convert (mirrors Python).
 			continue
 		}
-		if doc, ok := s.connector.rowToSourceDocument(row, columns); ok {
+		if doc, ok := s.connector.rowToSourceDocument(s.queryNames[s.queryIndex-1], row, columns); ok {
 			if !s.includeResumed(doc) {
 				continue
 			}
@@ -785,7 +790,7 @@ func isMySQLUnknownColumn(err error) bool {
 type mysqlPruneSession struct {
 	connector  *MySQLConnector
 	db         *sql.DB
-	queries    []string
+	queries    []rdbmsQuery
 	queryIndex int
 	rows       *sql.Rows
 	batchSize  int
@@ -818,7 +823,7 @@ func (s *mysqlPruneSession) NextBatch(ctx context.Context) (PruneBatch, error) {
 		if err != nil {
 			continue
 		}
-		documents = append(documents, SlimDocument{SourceID: s.connector.buildDocumentID(row, columns)})
+		documents = append(documents, SlimDocument{SourceID: s.connector.buildDocumentID(s.queries[s.queryIndex-1].name, row, columns)})
 	}
 	return PruneBatch{Documents: documents}, nil
 }
@@ -831,7 +836,7 @@ func (s *mysqlPruneSession) Close() error {
 
 // openNextQuery runs the next slim query.
 func (s *mysqlPruneSession) openNextQuery(ctx context.Context) error {
-	query := s.queries[s.queryIndex]
+	query := s.queries[s.queryIndex].sql
 	s.queryIndex++
 	rows, err := s.db.QueryContext(ctx, query)
 	if err != nil {

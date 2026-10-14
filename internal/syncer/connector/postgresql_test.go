@@ -185,7 +185,7 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 			sqlmock.NewRows([]string{"table_name"}).AddRow("products").AddRow("orders"),
 		)
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."orders") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
-			sqlmock.NewRows([]string{"id", "name"}).AddRow(2, "Order"),
+			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Order"),
 		)
 		mock.ExpectQuery(regexp.QuoteMeta(`SELECT * FROM (SELECT * FROM "public"."products") AS ragflow_src ORDER BY ragflow_src.id ASC`)).WillReturnRows(
 			sqlmock.NewRows([]string{"id", "name"}).AddRow(1, "Product"),
@@ -209,7 +209,7 @@ func TestPostgreSQLConnectorOpenSyncAllTables(t *testing.T) {
 			ids = append(ids, doc.SourceID)
 		}
 	}
-	if len(ids) != 2 || ids[0] != "postgresql:mydb:2" || ids[1] != "postgresql:mydb:1" {
+	if len(ids) != 2 || ids[0] != "postgresql-table:mydb:orders:1" || ids[1] != "postgresql-table:mydb:products:1" {
 		t.Fatalf("source ids = %v", ids)
 	}
 }
@@ -536,7 +536,7 @@ func TestPostgreSQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 		)
 	})
 
-	anchor := "postgresql:mydb:1"
+	anchor := "postgresql-table:mydb:products:1"
 	session, err := connector.OpenSync(t.Context(), SyncRequest{
 		FromBeginning: true,
 		Resume:        &SyncCheckpoint{Cursor: encodeRDBMSCursor("products", "id", anchor), SourceID: anchor},
@@ -548,7 +548,7 @@ func TestPostgreSQLConnectorOpenSyncResumeMultiTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql:mydb:3" {
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql-table:mydb:products:3" {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 	if _, err = session.NextBatch(context.Background()); !errors.Is(err, io.EOF) {
@@ -748,7 +748,7 @@ func TestPostgreSQLConnectorOpenSyncCheckpointQueryName(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql:mydb:1" {
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql-table:mydb:orders:1" {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 	if batch.Checkpoint == nil {
