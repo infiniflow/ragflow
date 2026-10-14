@@ -764,6 +764,7 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 	}
 	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	var deduped []einotool.BaseTool
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
 		if err != nil {
@@ -773,16 +774,22 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 			return nil, fmt.Errorf("agent tool info: missing name")
 		}
 		if _, exists := toolNames[info.Name]; exists {
-			return nil, fmt.Errorf("duplicate agent tool name %q", info.Name)
+			// DSLs can list the same Retrieval tool twice (agent tools and
+			// canvas nodes both produce entries); identical names are
+			// indistinguishable to the model, so keep the first instead of
+			// failing the whole run.
+			common.Warn("agent: dropping duplicate tool name", zap.String("name", info.Name))
+			continue
 		}
 		toolNames[info.Name] = struct{}{}
+		deduped = append(deduped, tool)
 	}
 	for _, subAgent := range p.SubAgents {
 		name := uniqueAgentToolName(subAgent.Name, toolNames)
 		toolNames[name] = struct{}{}
-		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
+		deduped = append(deduped, &subAgentTool{name: name, spec: subAgent})
 	}
-	return tools, nil
+	return deduped, nil
 }
 
 // indexedToolNameAliases lets the model call an indexed tool by its bare
