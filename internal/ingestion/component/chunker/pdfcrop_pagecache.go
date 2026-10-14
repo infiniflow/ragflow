@@ -22,6 +22,7 @@ package chunker
 import (
 	"container/list"
 	"image"
+	"math"
 	"os"
 	"strconv"
 	"sync"
@@ -177,7 +178,7 @@ func pageCacheLimit() int {
 // with RAGFLOW_PAGE_CACHE_MB.
 func pageCacheBytes() int64 {
 	if v := os.Getenv("RAGFLOW_PAGE_CACHE_MB"); v != "" {
-		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n > 0 && n <= math.MaxInt64>>20 {
 			return n << 20
 		}
 	}

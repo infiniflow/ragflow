@@ -2,6 +2,8 @@ package chunker
 
 import (
 	"image"
+	"math"
+	"strconv"
 	"sync"
 	"testing"
 )
@@ -288,5 +290,13 @@ func TestPageCacheBytes_DefaultAndOverride(t *testing.T) {
 	t.Setenv("RAGFLOW_PAGE_CACHE_MB", "-1") // invalid → fall back to default
 	if got := pageCacheBytes(); got != 1<<30 {
 		t.Fatalf("invalid override should fall back to 1 GiB, got %d", got)
+	}
+	t.Setenv("RAGFLOW_PAGE_CACHE_MB", strconv.FormatInt(math.MaxInt64>>20, 10))
+	if got := pageCacheBytes(); got != math.MaxInt64>>20<<20 {
+		t.Fatalf("largest override = %d, want %d", got, int64(math.MaxInt64>>20<<20))
+	}
+	t.Setenv("RAGFLOW_PAGE_CACHE_MB", strconv.FormatInt(math.MaxInt64>>20+1, 10)) // MiB → bytes overflows int64
+	if got := pageCacheBytes(); got != 1<<30 {
+		t.Fatalf("overflowing override should fall back to 1 GiB, got %d", got)
 	}
 }
