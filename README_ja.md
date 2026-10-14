@@ -219,13 +219,14 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
    cd ragflow
    ```
 
-2. 依存関係を準備します:
+2. Go ビルドがリンクするネイティブ静的ライブラリ（`download_dev_deps.py`）と、バックエンドが実行時に読み込むモデル / トークナイザーリソース（`download_deps.py`）を、依存関係ダウンロードスクリプトで用意します:
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py` は pdfium、pdf_oxide、office_oxide、onnxruntime を `~/ragflow-native-libs` にダウンロードして展開します。`download_deps.py` は cl100k 語彙、DeepDoc モデル、embedding トークナイザーリソースを `ragflow_deps/` にダウンロードします。どちらも Python スクリプトで、`uv run` が宣言された依存関係（`requests`、モデルとトークナイザーのダウンロードには `huggingface-hub`）を自動的にインストールします。同等のリソースを他の方法で用意済みの場合はこの手順をスキップしてください。リポジトリルートから起動する場合、Go サービスは `internal/rag/res/deepdoc` を自動的に見つけます。他のディレクトリから起動する場合は、`DEEPDOC_MODEL_DIR` にその絶対パスを設定してください。
 
 3. サービスをビルドします:
 
@@ -280,7 +281,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
 詳細は[ソースコードからサービスを起動](./docs/develop/launch_ragflow_from_source.md)を参照してください。
 
-> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_deps.py` はネイティブライブラリとモデルを準備し、`requests` と `huggingface-hub` を使用します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
+> **運用上の注意:** Elasticsearch の設定を永続化するには、`/etc/sysctl.conf` に `vm.max_map_count=262144` を追加します。既定の MySQL 構成では、Docker エントリポイントが移行後に Admin、Syncer、Ingestor、API を起動します。オープンソース 1.0 の DeepDoc はレイアウト解析、OCR、表認識に CPU 推論を使用します。Docker 設定変更後の再起動とデータ保持・削除は [Docker ガイド](./docker/README.md)に従ってください。`download_dev_deps.py` はネイティブライブラリを、`download_deps.py` はモデルとトークナイザーリソースを準備します。どちらも `uv run` で実行します。`--migrate` は移行後に終了し、`--admin` は管理サービス、`--ingestor` は取り込みサービス、`--syncer` は外部データソース同期サービス、`--api` は Web UI と SDK 向けの API サービスを起動します。HTTP 200 は API の準備完了を示します。
 
 ## 📚 ドキュメンテーション
 

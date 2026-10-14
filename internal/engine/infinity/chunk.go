@@ -1374,17 +1374,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 			}
 
-			// Filter-only queries (e.g. the management chunk list) are the ones
-			// that can silently span KBs, so echo per-table outcome at debug
-			// level: which table was queried with which filter, and how many
-			// rows came back.
-			if !hasTextMatch && !hasVectorMatch {
-				common.Debug("Infinity filter-only search",
-					zap.String("table", tableName),
-					zap.String("filter", filterStr),
-					zap.Int("rows", len(searchChunks)))
-			}
-
 			// Parse total_hits_count from ExtraInfo
 			var tableTotal int64
 			if df.ExtraInfo != "" {
@@ -1395,6 +1384,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 					}
 				}
 			}
+
+			// Log every query shape at debug level: which table, which filter, whether
+			// a match was applied, and the row/total counts. A query that silently
+			// spans the dataset is only visible here.
+			common.Debug("Infinity search",
+				zap.String("table", tableName),
+				zap.String("filter", filterStr),
+				zap.Bool("hasTextMatch", hasTextMatch),
+				zap.Bool("hasVectorMatch", hasVectorMatch),
+				zap.Int("rows", len(searchChunks)),
+				zap.Int64("total", tableTotal))
 
 			searchResult := &types.SearchResult{
 				Chunks: searchChunks,

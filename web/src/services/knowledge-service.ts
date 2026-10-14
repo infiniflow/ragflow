@@ -37,7 +37,6 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
   getMetaKeys,
   retrievalTestShare,
@@ -63,10 +62,6 @@ const methods = {
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
-  },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
