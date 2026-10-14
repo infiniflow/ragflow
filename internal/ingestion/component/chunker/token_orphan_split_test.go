@@ -15,6 +15,7 @@
 package chunker
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -52,5 +53,56 @@ func TestSplitOversizedTextDoesNotCreateInteriorOrphan(t *testing.T) {
 	}
 	if got := joined.String(); got != text {
 		t.Fatalf("split is not lossless:\n got %q\nwant %q", got, text)
+	}
+}
+
+// TestTokenChunkerJSONOversizeUnitSplitNoOrphan covers the same regression
+// through the JSON ingestion path, where a blank line is folded into the
+// oversized item before it reaches splitOversizedText.
+func TestTokenChunkerJSONOversizeUnitSplitNoOrphan(t *testing.T) {
+	const target = 32
+	text := "Title\n\n" + strings.Repeat("word ", 400)
+
+	chunker, err := NewTokenChunker(map[string]any{
+		"chunk_token_size": float64(target),
+	})
+	if err != nil {
+		t.Fatalf("construct TokenChunker: %v", err)
+	}
+	out, err := chunker.Invoke(context.Background(), nil, map[string]any{
+		"name":          "document.json",
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": text, "doc_type_kwd": "text"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("invoke TokenChunker: %v", err)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok {
+		t.Fatalf("chunks missing or wrong type: %T", out["chunks"])
+	}
+	if len(chunks) < 3 {
+		t.Fatalf("oversized JSON item must produce a title and split body, got %d chunks", len(chunks))
+	}
+
+	var joined strings.Builder
+	for i, chunk := range chunks {
+		piece, ok := chunk["text"].(string)
+		if !ok {
+			t.Fatalf("chunk %d text = %T, want string", i, chunk["text"])
+		}
+		tokens := tokenizeStr(piece)
+		if tokens > target {
+			t.Errorf("chunk %d exceeds token cap: got %d, want <= %d", i, tokens, target)
+		}
+		if i > 0 && i < len(chunks)-1 && tokens < target/2 {
+			t.Errorf("chunk %d is an interior orphan: got %d tokens", i, tokens)
+		}
+		joined.WriteString(piece)
+	}
+	if joined.String() != text {
+		t.Errorf("JSON chunking is not lossless:\n got %q\nwant %q", joined.String(), text)
 	}
 }
