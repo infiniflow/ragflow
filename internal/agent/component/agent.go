@@ -41,6 +41,14 @@ import (
 const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
+// Citation grounding prompt size guards. The grounding prompt embeds
+// every retrieved chunk plus the full answer; beyond these bounds the
+// call regularly outlives provider stream limits and the answer is lost.
+const (
+	citationGroundingMaxChunkChars  = 3000
+	citationGroundingMaxPromptChars = 120_000
+)
+
 // agentPatternless matches `<model>@<provider>` and
 // `<model>@<instance>@<provider>` (the trailing `@<provider>` is
 // always the last segment — the segment just before the last `@`
@@ -169,10 +177,6 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
-	toolAliases, err := indexedToolNameAliases(ctx, tools)
-	if err != nil {
-		return nil, fmt.Errorf("build tools: %w", err)
-	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -189,8 +193,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
-			Tools:       tools,
-			ToolAliases: toolAliases,
+			Tools: tools,
 		},
 		// Python's streaming tool loop consumes the complete provider
 		// response before deciding whether the round contains a tool call.
@@ -473,6 +476,20 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
+	// Oversized grounding prompts reliably stall on slow providers and
+	// burn the per-call budget; a skipped ground is better than a lost
+	// answer. Long chunk bodies are truncated rather than dropped so the
+	// chunk remains citable.
+	total := len(content)
+	for i := range chunks {
+		if len(chunks[i].Content) > citationGroundingMaxChunkChars {
+			chunks[i].Content = chunks[i].Content[:citationGroundingMaxChunkChars]
+		}
+		total += len(chunks[i].Content)
+	}
+	if total > citationGroundingMaxPromptChars {
+		return content, fmt.Errorf("citation grounding skipped: prompt too large (%d chars > %d)", total, citationGroundingMaxPromptChars)
+	}
 	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
@@ -489,24 +506,13 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	var resp *ChatInvokeResponse
 	var err error
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		var leadingWhitespace strings.Builder
-		emitting := false
+		// Grounded deltas are buffered, not streamed: a stream that dies
+		// mid-response must never leave partial grounded text on the wire —
+		// the caller falls back to the original answer on any error.
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if isThink || delta == "" {
-				return nil
-			}
-			if !emitting {
-				leadingWhitespace.WriteString(delta)
-				if strings.TrimSpace(leadingWhitespace.String()) == "" {
-					return nil
-				}
-				delta = leadingWhitespace.String()
-				emitting = true
-			}
-			runtime.EmitAgentMessage(ctx, delta, "")
 			return nil
 		})
 	} else {
@@ -733,53 +739,6 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
 	}
 	return tools, nil
-}
-
-// indexedToolNameAliases lets the model call an indexed tool by its bare
-// name. MCP tools are exposed as <name>_<index> so that equally named tools
-// from different servers stay distinct, but models often call the bare
-// <name> they read in the prompt. Without an alias the eino ToolsNode fails
-// the whole run with "tool ... not found". A bare name is aliased only when
-// it is not itself a tool and exactly one <name>_<digits> tool matches it;
-// ambiguous names stay unresolved.
-func indexedToolNameAliases(ctx context.Context, tools []einotool.BaseTool) (map[string]compose.ToolAliasConfig, error) {
-	names := make(map[string]struct{}, len(tools))
-	candidates := make(map[string][]string)
-	for _, tool := range tools {
-		info, err := tool.Info(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("agent tool info: %w", err)
-		}
-		names[info.Name] = struct{}{}
-		if base, ok := indexedToolBaseName(info.Name); ok {
-			candidates[base] = append(candidates[base], info.Name)
-		}
-	}
-	var aliases map[string]compose.ToolAliasConfig
-	for base, matches := range candidates {
-		if _, exists := names[base]; exists || len(matches) != 1 {
-			continue
-		}
-		if aliases == nil {
-			aliases = make(map[string]compose.ToolAliasConfig)
-		}
-		aliases[matches[0]] = compose.ToolAliasConfig{NameAliases: []string{base}}
-	}
-	return aliases, nil
-}
-
-// indexedToolBaseName splits "<base>_<digits>" and returns base.
-func indexedToolBaseName(name string) (string, bool) {
-	i := strings.LastIndexByte(name, '_')
-	if i <= 0 || i == len(name)-1 {
-		return "", false
-	}
-	for _, r := range name[i+1:] {
-		if r < '0' || r > '9' {
-			return "", false
-		}
-	}
-	return name[:i], true
 }
 
 type subAgentTool struct {
@@ -1079,17 +1038,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			groundingStatus = "no_chunks"
 		} else {
 			grounded, gErr := applyCitationGrounding(ctx, db, p, content, chunks)
-			if gErr == nil && grounded != content {
-				content = grounded
-				groundingStatus = "applied"
-			} else if gErr != nil {
-				// Fatal only when the parent context itself is dead.
-				// A transient model failure in the grounding call must
-				// not discard the agent's completed answer; return it
-				// without citation tags instead.
-				if ctx.Err() != nil {
-					return nil, fmt.Errorf("component: Agent citation grounding stream: %w", gErr)
+			if gErr == nil {
+				if grounded != content {
+					content = grounded
+					groundingStatus = "applied"
+				} else {
+					groundingStatus = "unchanged"
 				}
+			} else {
+				// Grounded deltas are buffered inside applyCitationGrounding,
+				// so a failed call never reached the client — the original
+				// answer is safe to emit.
 				groundingStatus = "error: " + gErr.Error()
 			}
 		}
@@ -1105,10 +1064,17 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
+	contentStreamed := runtime.AgentContentEventsEmittedRun(ctx)
 	switch {
-	case !streamed:
-		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+	case !contentStreamed:
+		// No answer content has reached the client yet. When only thinking
+		// was streamed (e.g., citation grounding held the answer), avoid
+		// re-emitting the thinking delta at the end.
+		if runtime.AgentMessageEventsEmitted(ctx) {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, "")
+		} else {
+			runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
+		}
 	case artifactMD != "":
 		// Python's stream_output_with_tools_async yields the tool-artifact
 		// markdown as a trailing delta after the LLM stream, so the live SSE
@@ -1727,35 +1693,13 @@ func agentToolObject(item map[string]any) (string, map[string]any, bool) {
 
 	rawParams, _ := item["params"].(map[string]any)
 	toolParams := cloneMap(rawParams)
-	if toolParams == nil {
-		toolParams = make(map[string]any)
+	if fn, ok := stringFrom(item, "function_name"); ok && strings.TrimSpace(fn) != "" {
+		if toolParams == nil {
+			toolParams = make(map[string]any)
+		}
+		toolParams["function_name"] = strings.TrimSpace(fn)
 	}
-	toolParams["component_name"] = toolName
-
-	// Some Canvas DSLs store function_name/description inside params rather
-	// than as top-level tool object fields.
-	functionName, _ := stringFrom(item, "function_name")
-	functionName = strings.TrimSpace(functionName)
-	if functionName == "" {
-		functionName, _ = stringFrom(toolParams, "function_name")
-		functionName = strings.TrimSpace(functionName)
-	}
-	if functionName == "" {
-		functionName = toolName
-	}
-	toolParams["function_name"] = functionName
-
-	description, _ := stringFrom(item, "description")
-	description = strings.TrimSpace(description)
-	if description == "" {
-		description, _ = stringFrom(toolParams, "description")
-		description = strings.TrimSpace(description)
-	}
-	if description != "" {
-		toolParams["description"] = description
-	}
-
-	return functionName, toolParams, true
+	return toolName, toolParams, true
 }
 
 func cloneMap(in map[string]any) map[string]any {

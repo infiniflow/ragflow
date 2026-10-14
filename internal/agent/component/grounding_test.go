@@ -25,6 +25,7 @@ package component
 import (
 	"context"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -64,6 +65,19 @@ func (g *groundingStreamingInvoker) Stream(ctx context.Context, db *gorm.DB, req
 		}
 	}
 	return resp, nil
+}
+
+// groundingPartialFailureInvoker streams a visible grounding delta and
+// then returns an error, modelling a mid-stream grounding failure.
+type groundingPartialFailureInvoker struct{}
+
+func (groundingPartialFailureInvoker) Stream(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest, onDelta func(string, bool) error) (*ChatInvokeResponse, error) {
+	_ = onDelta("partial ", false)
+	return nil, errors.New("grounding disconnected")
+}
+
+func (groundingPartialFailureInvoker) Invoke(_ context.Context, _ *gorm.DB, _ ChatInvokeRequest) (*ChatInvokeResponse, error) {
+	return nil, errors.New("grounding disconnected")
 }
 
 func (g *groundingTestInvoker) Invoke(_ context.Context, _ *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
@@ -119,8 +133,10 @@ func TestGrounding_Applied(t *testing.T) {
 	if inv.calls != 1 {
 		t.Errorf("expected 1 chat call, got %d", inv.calls)
 	}
-	if inv.streamCalls != 1 || deltas != 2 || streamed != "grounded answer [ID:0]" {
-		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 2 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
+	// Grounded deltas are buffered: the client sees only the final
+	// emission of the grounded answer, once.
+	if inv.streamCalls != 1 || deltas != 1 || streamed != "grounded answer [ID:0]" {
+		t.Errorf("stream calls=%d, deltas=%d, streamed=%q, want 1 / 1 / grounded answer [ID:0]", inv.streamCalls, deltas, streamed)
 	}
 	// System message should contain the citation prompt + sources block.
 	if got := inv.lastReq.Messages[0].Role; got != schema.System {
@@ -241,6 +257,84 @@ func TestGrounding_EmptyContent(t *testing.T) {
 	}
 	if got, want := out["content"], "original"; got != want {
 		t.Errorf("content=%v, want %v (empty grounding should preserve original)", got, want)
+	}
+}
+
+// TestGrounding_HeldContentEmittedOnce: when cite=true holds answer
+// deltas during the ReAct stream, the grounded final answer still reaches
+// the client and is not duplicated at the end.
+func TestGrounding_HeldContentEmittedOnce(t *testing.T) {
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(&groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"[ID:0] answer"}}})
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{
+			Role:    schema.Assistant,
+			Content: "answer without citations",
+		}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "x"}})
+	ctx := runtime.WithState(t.Context(), state)
+	var contentEvents []string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		if content != "" {
+			contentEvents = append(contentEvents, content)
+		}
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got, want := out["content"], "[ID:0] answer"; got != want {
+		t.Errorf("content=%v, want %v", got, want)
+	}
+	joined := strings.Join(contentEvents, "")
+	if joined != "[ID:0] answer" {
+		t.Errorf("content events=%v, joined=%q, want [ID:0] answer", contentEvents, joined)
+	}
+}
+
+// TestGrounding_PartialStreamFailure_FallsBack: grounding deltas are
+// buffered, so a mid-stream failure leaks nothing to the client — the
+// invocation succeeds with the original answer and an error status.
+func TestGrounding_PartialStreamFailure_FallsBack(t *testing.T) {
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(groundingPartialFailureInvoker{})
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "original"}, nil
+	})
+
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks([]map[string]any{{"id": "0", "content": "x"}})
+	ctx := runtime.WithState(t.Context(), state)
+	var emitted []string
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) {
+		if content != "" {
+			emitted = append(emitted, content)
+		}
+	})
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["content"]; got != "original" {
+		t.Errorf("content=%v, want original answer on grounding failure", got)
+	}
+	got, _ := out["grounding_status"].(string)
+	if !strings.HasPrefix(got, "error:") {
+		t.Errorf("grounding_status=%q, want 'error: ...'", got)
+	}
+	if len(emitted) != 1 || emitted[0] != "original" {
+		t.Errorf("emitted=%v, want exactly one emission of the original answer", emitted)
 	}
 }
 
