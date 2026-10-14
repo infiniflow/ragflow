@@ -139,7 +139,7 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
 	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
 
-	artifact := map[string]interface{}{"id": "artifact", "doc_id": "kb-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9}
+	artifact := map[string]interface{}{"id": "artifact", "doc_id": "kb-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "available_int": 1, "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9}
 	for _, tt := range []struct {
 		name string
 		rows []map[string]interface{}
@@ -165,6 +165,9 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 			var got []string
 			for _, chunk := range result.Chunks {
 				got = append(got, chunk["chunk_id"].(string))
+				if chunk["available_int"] != 1 {
+					t.Fatalf("available_int = %v, want 1", chunk["available_int"])
+				}
 			}
 			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
 				t.Fatalf("chunks=%v total=%d want %v", got, result.Total, tt.want)

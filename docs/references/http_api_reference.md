@@ -2600,6 +2600,7 @@ Success:
         "chunks": [
             {
                 "content": "ragflow content",
+                "available_int": 1,
                 "content_ltks": "ragflow content",
                 "document_id": "5c5999ec7be811ef9cab0242ac120005",
                 "document_keyword": "1.txt",

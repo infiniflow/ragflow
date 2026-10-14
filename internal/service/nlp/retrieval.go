@@ -283,6 +283,10 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 		resultChunk := make(map[string]interface{})
 		resultChunk["chunk_id"] = chunkID
+		resultChunk["available_int"] = 1
+		if v := chunk["available_int"]; v != nil {
+			resultChunk["available_int"] = v
+		}
 		if v, ok := chunk["content_ltks"]; ok {
 			resultChunk["content_ltks"] = v
 		}
@@ -711,7 +715,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
-		"compile_kwd", "scope_kwd",
+		"compile_kwd", "scope_kwd", "available_int",
 		"_score",
 	}
 
@@ -1143,6 +1147,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 		}
 		aggregated := map[string]interface{}{
 			"chunk_id":            momID,
+			"available_int":       parentMap["available_int"],
 			"content_ltks":        contentLTKS,
 			"content_with_weight": parentMap["content_with_weight"],
 			"doc_id":              parentMap["doc_id"],
@@ -1156,6 +1161,9 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 			"vector":              make([]float64, vectorSize),
 			"positions":           parentMap["position_int"],
 			"doc_type_kwd":        docTypeKwd,
+		}
+		if aggregated["available_int"] == nil {
+			aggregated["available_int"] = 1
 		}
 
 		// Get vector from first child if available
