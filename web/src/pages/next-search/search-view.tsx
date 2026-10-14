@@ -290,18 +290,22 @@ export default function SearchingView({
                                 )}
                               </div>
                             )}
-                          <div
-                            className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
-                            onClick={() =>
-                              clickDocumentButton(
-                                chunk.document_id,
-                                chunk as any,
-                              )
-                            }
-                          >
-                            <FileIcon name={chunk.document_keyword}></FileIcon>
-                            {chunk.document_keyword}
-                          </div>
+                          {chunk.document_id !== chunk.dataset_id && (
+                            <div
+                              className="flex gap-2 items-center text-xs text-text-secondary border p-1 rounded-lg w-fit mt-3"
+                              onClick={() =>
+                                clickDocumentButton(
+                                  chunk.document_id,
+                                  chunk as any,
+                                )
+                              }
+                            >
+                              <FileIcon
+                                name={chunk.document_keyword}
+                              ></FileIcon>
+                              {chunk.document_keyword}
+                            </div>
+                          )}
                         </div>
                         {index < chunks.length - 1 && (
                           <div className="w-full border-b border-border-default/80 mt-6 mb-2"></div>

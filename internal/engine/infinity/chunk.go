@@ -3018,13 +3018,13 @@ func calculateScores(chunks []map[string]interface{}, scoreColumn, pagerankField
 	for i := range chunks {
 		score := 0.0
 		if scoreVal, ok := chunks[i][scoreColumn]; ok {
-			if f, ok := utility.ToFloat64(scoreVal); ok {
+			if f, ok := common.ToFloat(scoreVal); ok {
 				score += f
 			}
 		}
 		if pagerankField != "" {
 			if prVal, ok := chunks[i][pagerankField]; ok {
-				if f, ok := utility.ToFloat64(prVal); ok {
+				if f, ok := common.ToFloat(prVal); ok {
 					score += f
 				}
 			}
