@@ -45,6 +45,7 @@ extern int            FPDFDest_GetDestPageIndex(FPDF_DOCUMENT document, FPDF_DES
 */
 import "C"
 import (
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -98,9 +99,11 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		}
 		defer closeAll()
 
-		scale := dpi / 72.0
-		pxW := int(math.Round(pw * scale))
-		pxH := int(math.Round(ph * scale))
+		pxW, pxH, e := renderSize(pw, ph, dpi)
+		if e != nil {
+			err = fmt.Errorf("pdfium: page %d: %w", pageIdx, e)
+			return
+		}
 
 		bitmap := C.FPDFBitmap_Create(C.int(pxW), C.int(pxH), 1) // 1 = RGBA
 		if bitmap == nil {
@@ -113,7 +116,7 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		// (e.g. outside crop box) are white rather than undefined.
 		stride := int(C.FPDFBitmap_GetStride(bitmap))
 		buf := C.FPDFBitmap_GetBuffer(bitmap)
-		pixels := (*[1 << 30]byte)(unsafe.Pointer(buf))[: pxH*stride : pxH*stride]
+		pixels := unsafe.Slice((*byte)(buf), pxH*stride)
 		for i := range pixels {
 			pixels[i] = 255
 		}
@@ -142,6 +145,33 @@ func RenderPage(pdfData []byte, pageIdx int, dpi float64) (out *image.RGBA, err 
 		out = img
 	})
 	return
+}
+
+// maxRenderBytes caps the RGBA bitmap a single RenderPage may allocate. The
+// render holds the pdfium bitmap and its Go RGBA copy at the same time, so a
+// page at the cap costs about 2 GiB; anything larger (wall posters, CAD sheets
+// at 216 DPI) is refused instead of exhausting the process.
+const maxRenderBytes = 1 << 30
+
+// ErrRenderTooLarge is returned when a page rendered at the requested DPI
+// would exceed maxRenderBytes.
+var ErrRenderTooLarge = errors.New("rendered page exceeds the bitmap size limit")
+
+// renderSize returns the pixel dimensions of a pw×ph point page rendered at
+// dpi, or an error when they are not positive or the RGBA bitmap would exceed
+// maxRenderBytes.
+func renderSize(pw, ph, dpi float64) (pxW, pxH int, err error) {
+	scale := dpi / 72.0
+	w := math.Round(pw * scale)
+	h := math.Round(ph * scale)
+	if !(w >= 1 && h >= 1) {
+		return 0, 0, fmt.Errorf("invalid render size %.0fx%.0f px (%.1fx%.1f pt at %.0f DPI)", w, h, pw, ph, dpi)
+	}
+	if w*h*4 > maxRenderBytes {
+		return 0, 0, fmt.Errorf("%w: %.0fx%.0f px (%.1fx%.1f pt at %.0f DPI) needs %.0f MiB, limit %d MiB",
+			ErrRenderTooLarge, w, h, pw, ph, dpi, w*h*4/(1<<20), maxRenderBytes>>20)
+	}
+	return int(w), int(h), nil
 }
 
 // openPage opens a document and page, returning post-rotation dimensions
