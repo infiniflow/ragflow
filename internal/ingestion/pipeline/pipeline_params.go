@@ -173,6 +173,10 @@ func CleanComponentParams(dslJSON []byte, rawConfig map[string]interface{}) map[
 		if s.ComponentName == "GeneralChunker" {
 			keys["delimiters"] = struct{}{}
 		}
+		if isParserComponent(s.CpnID, s.ComponentName) {
+			keys["enable_vision_enhancement"] = struct{}{}
+			keys["vlm"] = struct{}{}
+		}
 		if IsChunkerComponent(s.CpnID) {
 			keys["enable_children"] = struct{}{}
 			// parent_child is the component-scoped home of the parent/child

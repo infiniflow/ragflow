@@ -384,13 +384,19 @@ func TestStructuredOutputPreservesMarkersInJSONStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, value := range []string{"keep </think> as text", "keep ```json as text", "</think>```json"} {
-		content, err := json.Marshal(map[string]any{"text": value})
-		if err != nil {
-			t.Fatal(err)
-		}
-		resp, parsed, err := validator.validateAndRepair(t.Context(), nil, nil, ChatInvokeRequest{}, &ChatInvokeResponse{Content: string(content)}, 0)
-		if err != nil || parsed["text"] != value || resp.Content != string(content) {
-			t.Fatalf("JSON marker value changed: %v, %v, %v", resp, parsed, err)
+		// 保留原始尖括号，避免 JSON 编码器转义后绕过标记处理路径。
+		content := `{"text":"` + value + `"}`
+		for _, wrapper := range []struct{ prefix, suffix string }{
+			{},
+			{"```json\n", "\n```"},
+			{"<think>private</think>", ""},
+			{"<think>private</think>```json\n", "\n```"},
+		} {
+			answer := wrapper.prefix + content + wrapper.suffix
+			resp, parsed, err := validator.validateAndRepair(t.Context(), nil, nil, ChatInvokeRequest{}, &ChatInvokeResponse{Content: answer}, 0)
+			if err != nil || parsed["text"] != value || resp.Content != content {
+				t.Fatalf("JSON marker value changed for %q: %v, %v, %v", answer, resp, parsed, err)
+			}
 		}
 	}
 }

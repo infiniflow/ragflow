@@ -19,13 +19,10 @@ package dao
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/server"
@@ -40,8 +37,6 @@ import (
 )
 
 var DB *gorm.DB
-var modelProviderManager *models.ProviderManager
-var modelProviderManagerMu sync.Mutex
 
 // migrationAwareDialector hands out a namedIndexMigrator instead of the stock
 // one.
@@ -246,6 +241,17 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
+		// Drop the retired raptor and graphrag sections from the dataset parser
+		// configs. It runs after the conversation split because the two steps
+		// share one version marker: this step's version sorts above the split's
+		// v1.0.0-rc1, so marking it earlier would skip a split that has not run.
+		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
+		}
+
+		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
+			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
+		}
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
@@ -295,46 +301,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 // GetDB get database instance
 func GetDB() *gorm.DB {
 	return DB
-}
-
-// GetModelProviderManager get database instance
-func GetModelProviderManager() *models.ProviderManager {
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-
-	modelProviderManagerMu.Lock()
-	defer modelProviderManagerMu.Unlock()
-	if modelProviderManager != nil {
-		return modelProviderManager
-	}
-	if existing := models.GetProviderManager(); existing != nil {
-		modelProviderManager = existing
-		return modelProviderManager
-	}
-	modelConfigDir, err := findModelConfigDir()
-	if err != nil {
-		common.Fatal("Failed to locate model providers", zap.Error(err))
-	}
-	if err = models.InitProviderManager(modelConfigDir); err != nil {
-		common.Fatal("Failed to load model providers", zap.Error(err))
-	}
-	modelProviderManager = models.GetProviderManager()
-	return modelProviderManager
-}
-
-func findModelConfigDir() (string, error) {
-	candidates := []string{
-		"conf/models",
-		filepath.Join("..", "..", "conf", "models"),
-		filepath.Join("..", "..", "..", "conf", "models"),
-	}
-	for _, candidate := range candidates {
-		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
-			return candidate, nil
-		}
-	}
-	return "", fmt.Errorf("conf/models not found")
 }
 
 // autoMigrateSafely runs AutoMigrate and ignores duplicate index errors

@@ -160,7 +160,7 @@ func setupFileCommitTestWithHandler(userID string) (*gin.Engine, *mockFileCommit
 	if err != nil {
 		panic(err)
 	}
-	if err := db.AutoMigrate(&entity.File{}); err != nil {
+	if err := db.AutoMigrate(&entity.File{}, &entity.File2Document{}, &entity.Document{}, &entity.UserTenant{}); err != nil {
 		panic(err)
 	}
 	dao.DB = db

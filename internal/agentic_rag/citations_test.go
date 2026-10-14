@@ -17,6 +17,7 @@
 package agentic_rag
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -118,5 +119,123 @@ func TestInsertCitationMarkersUnresolvableStaysUnmarked(t *testing.T) {
 	// indices either.
 	if got := InsertCitationMarkers(in, nil); got != in {
 		t.Errorf("nil id list rewrote the text: %s", got)
+	}
+}
+
+// CitedIDsFromMarkers maps [ID:n] handles to chunk ids in first-citation order,
+// deduplicated, dropping any handle the registry never published.
+func TestCitedIDsFromMarkers(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+	answer := "fact A [ID:1]\nfact B [ID:0]\nfact C [ID:1]\nbogus [ID:9]"
+
+	got := CitedIDsFromMarkers(answer, r)
+	want := []string{"c2", "c1"}
+	if len(got) != len(want) {
+		t.Fatalf("CitedIDsFromMarkers = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("CitedIDsFromMarkers = %v, want %v (first-citation order, deduped)", got, want)
+		}
+	}
+}
+
+func TestCitedIDsFromMarkersNoSignal(t *testing.T) {
+	if got := CitedIDsFromMarkers("plain [ID:0]", nil); got != nil {
+		t.Errorf("nil registry returned %v, want nil", got)
+	}
+	if got := CitedIDsFromMarkers("no markers here", NewEvidenceRegistry()); got != nil {
+		t.Errorf("marker-free answer returned %v, want nil", got)
+	}
+}
+
+// ResolveCitations compacts run-level handles into the answer's own
+// first-citation order, and drops a handle naming a passage the caller will not
+// publish.
+func TestResolveCitationsCompactsAndDrops(t *testing.T) {
+	r := NewEvidenceRegistry()
+	r.Stamp("c1") // [ID:0]
+	r.Stamp("c2") // [ID:1]
+	r.Stamp("c3") // [ID:2]
+
+	answer := "A [ID:2]\nB [ID:0]\nC [ID:1]"
+	// c2 is not publishable (it did not resolve): its handle must be dropped.
+	marked, cited := ResolveCitations(answer, r, []string{"c3", "c1"})
+	if marked != "A [ID:0]\nB [ID:1]\nC " {
+		t.Fatalf("marked = %q, want the compacted handles", marked)
+	}
+	if len(cited) != 2 || cited[0] != "c3" || cited[1] != "c1" {
+		t.Fatalf("cited = %v, want [c3 c1]", cited)
+	}
+}
+
+func TestResolveCitationsNoSignal(t *testing.T) {
+	answer := "no handles"
+	if got, cited := ResolveCitations(answer, nil, []string{"c1"}); got != answer || cited != nil {
+		t.Errorf("nil registry rewrote the answer: %q %v", got, cited)
+	}
+	if got, cited := ResolveCitations(answer, NewEvidenceRegistry(), nil); got != answer || cited != nil {
+		t.Errorf("empty publishable rewrote the answer: %q %v", got, cited)
+	}
+}
+
+// A reasoning model merges several handles into ONE marker ("[ID:47, ID:115]").
+// That shape matches neither this package's scanner nor the client's marker
+// regex — both stop at the comma — so it survives every citation pass and
+// reaches the UI as literal text. Expanding it is what makes it resolvable.
+func TestExpandCommaCitations(t *testing.T) {
+	if got, want := ExpandCommaCitations("A [ID:47, ID:115] B", 200), "A [ID:47][ID:115] B"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A handle the registry never published is dropped, not left out of range.
+	if got, want := ExpandCommaCitations("A [ID:47, ID:115] B", 100), "A [ID:47] B"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// Three handles, loose spacing around the commas and the colons.
+	if got, want := ExpandCommaCitations("[ID: 1,ID:2 ,  ID:3]", 10), "[ID:1][ID:2][ID:3]"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	// A single handle needs no expansion, and marker-free text is untouched.
+	for _, keep := range []string{"A [ID:47] B", "no handles, just prose"} {
+		if got := ExpandCommaCitations(keep, 200); got != keep {
+			t.Errorf("rewrote %q into %q", keep, got)
+		}
+	}
+	// No registry to bound against: leave the text alone.
+	unbounded := "A [ID:47, ID:115] B"
+	if got := ExpandCommaCitations(unbounded, 0); got != unbounded {
+		t.Errorf("unbounded rewrite: %q", got)
+	}
+}
+
+// The observed failure end to end: the model parked the whole answer inside
+// <think> and grouped its handles, so nothing downstream resolved them. After
+// expansion the handles compact onto the reference payload the client indexes.
+func TestGroupedHandlesResolveAfterExpansion(t *testing.T) {
+	r := NewEvidenceRegistry()
+	for i := 0; i < 120; i++ {
+		r.Stamp(fmt.Sprintf("c%d", i))
+	}
+	answer := "<think>1948: both went Truman [ID:47, ID:115]\n1972: Nixon [ID:47, ID:83]</think>"
+
+	normalized := ExpandCommaCitations(answer, len(r.IDs()))
+	cited := CitedIDsFromMarkers(normalized, r)
+	want := []string{"c47", "c115", "c83"}
+	if len(cited) != len(want) {
+		t.Fatalf("cited = %v, want %v", cited, want)
+	}
+	for i := range want {
+		if cited[i] != want[i] {
+			t.Fatalf("cited = %v, want %v", cited, want)
+		}
+	}
+
+	marked, _ := ResolveCitations(normalized, r, cited)
+	// c47 -> [ID:0], c115 -> [ID:1], c83 -> [ID:2], in first-citation order.
+	wantMarked := "<think>1948: both went Truman [ID:0][ID:1]\n1972: Nixon [ID:0][ID:2]</think>"
+	if marked != wantMarked {
+		t.Fatalf("marked = %q, want %q", marked, wantMarked)
 	}
 }

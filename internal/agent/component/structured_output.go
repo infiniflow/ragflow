@@ -176,8 +176,14 @@ func (s *structuredOutput) validateAndRepair(ctx context.Context, db *gorm.DB, i
 			return nil, nil, fmt.Errorf("structured output received tool calls instead of a final answer")
 		}
 		content := strings.TrimSpace(resp.Content)
-		if !json.Valid([]byte(content)) {
-			content = strings.TrimSpace(cleanFormattedAnswer(content))
+		// 只剥离外层包装，保留 JSON 字符串正文中的思考和围栏标记。
+		if !json.Valid([]byte(content)) && strings.HasPrefix(content, "<think>") {
+			if end := strings.Index(content, "</think>"); end >= 0 {
+				content = strings.TrimSpace(content[end+len("</think>"):])
+			}
+		}
+		if !json.Valid([]byte(content)) && strings.HasPrefix(content, "```json") && strings.HasSuffix(content, "```") {
+			content = strings.TrimSpace(strings.TrimSuffix(strings.TrimPrefix(content, "```json"), "```"))
 		}
 		parsed, err := s.parse(content)
 		if err := ctx.Err(); err != nil {

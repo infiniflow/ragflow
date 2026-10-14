@@ -150,6 +150,13 @@ func (g *GrepChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	if err != nil {
 		return "", fmt.Errorf("grep_chunks: %w", err)
 	}
+	docScope, err := resolveDocumentScope(ctx, args.DocScope)
+	if err != nil {
+		return "", fmt.Errorf("grep_chunks: %w", err)
+	}
+	if docScope != nil && len(docScope) == 0 {
+		return formatGrepResults(ctx, query, nil, re), nil
+	}
 	if len(datasetIDs) == 0 {
 		// Bound scope is empty: short-circuit before touching the backend so the
 		// tool never reads outside the conversation's allowed datasets.
@@ -161,7 +168,7 @@ func (g *GrepChunksTool) invokableRun(ctx context.Context, argumentsInJSON strin
 	req := runtime.GrepRequest{
 		Pattern:      query,
 		DatasetIDs:   datasetIDs,
-		DocScope:     args.DocScope,
+		DocScope:     docScope,
 		Sort:         grepChunksSortFields, // order by doc_id, page_num_int, chunk_order_int
 		SelectFields: grepChunksSelectFields,
 		TenantID:     tenantID,

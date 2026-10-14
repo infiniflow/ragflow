@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -103,6 +104,63 @@ func TestIngestionTaskServiceCreateForDocumentsPublishesTaskMessages(t *testing.
 	}
 	if task.DocumentID != "doc-1" || task.DatasetID != "kb-1" || task.UserID != "user-1" {
 		t.Fatalf("unexpected task: %+v", task)
+	}
+}
+
+func TestIngestionTaskServiceCreateForDocumentsRejectsDatasetMismatch(t *testing.T) {
+	tests := []struct {
+		name, docKB, taskStatus, wantError string
+	}{
+		{"foreign new task", "kb-2", "", gorm.ErrRecordNotFound.Error()},
+		{"foreign created task", "kb-2", common.CREATED, gorm.ErrRecordNotFound.Error()},
+		{"foreign failed task", "kb-2", common.FAILED, gorm.ErrRecordNotFound.Error()},
+		{"foreign stopped task", "kb-2", common.STOPPED, gorm.ErrRecordNotFound.Error()},
+		{"mismatched existing task", "kb-1", common.FAILED, "different dataset"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := setupServiceTestDB(t)
+			pushServiceDB(t, db)
+			insertTestKB(t, "kb-1", "tenant-1", 0, 0, 0)
+			insertTestKB(t, "kb-2", "tenant-2", 1, 0, 0)
+			insertTestDoc(t, "doc-1", tt.docKB, 0, 0)
+			if tt.taskStatus != "" {
+				insertTestIngestionTaskWithStatus(t, "task-1", "user-2", "doc-1", "kb-2", tt.taskStatus)
+			}
+			ctx := t.Context()
+			taskDAO := dao.NewIngestionTaskDAO()
+			before, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("load existing task: %v", err)
+			}
+			publisher := &recordingTaskPublisher{}
+			svc := NewIngestionTaskService()
+			svc.taskPublisher = publisher
+
+			responses, err := svc.CreateForDocuments(ctx, "kb-1", "user-1", []string{"doc-1"})
+			if err != nil {
+				t.Fatalf("expected per-document failure: %v", err)
+			}
+			if len(responses) != 1 {
+				t.Fatalf("responses = %d, want 1", len(responses))
+			}
+			if responses[0].DocumentID != "doc-1" || !strings.Contains(responses[0].Result, tt.wantError) {
+				t.Fatalf("expected dataset rejection, got %+v", responses[0])
+			}
+			if len(publisher.messages) != 0 {
+				t.Fatalf("published rejected document: %+v", publisher.messages)
+			}
+			after, err := taskDAO.GetByDocumentID(ctx, db, "doc-1")
+			if err != nil {
+				t.Fatalf("reload existing task: %v", err)
+			}
+			if !reflect.DeepEqual(before, after) {
+				t.Fatalf("task changed: before=%+v, after=%+v", before, after)
+			}
+			if got := countPipelineLogs(t, db, "doc-1"); got != 0 {
+				t.Fatalf("pipeline logs = %d, want 0", got)
+			}
+		})
 	}
 }
 
@@ -445,7 +503,7 @@ func TestIngestionTaskServiceStartRunningTransitionsCreatedTask(t *testing.T) {
 }
 
 // TestPrepareValidatedRunResetsDocumentProgress verifies validation precedes
-// document initialization and leaves the legacy progress_msg untouched.
+// document initialization while preserving committed counts and progress_msg.
 func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -478,14 +536,14 @@ func TestPrepareValidatedRunResetsDocumentProgress(t *testing.T) {
 	if doc.Progress != 0 {
 		t.Fatalf("progress = %f, want 0", doc.Progress)
 	}
-	if doc.ChunkNum != 0 {
-		t.Fatalf("chunk_num = %d, want 0", doc.ChunkNum)
+	if doc.ChunkNum != 10 {
+		t.Fatalf("chunk_num = %d, want 10", doc.ChunkNum)
 	}
-	if doc.TokenNum != 0 {
-		t.Fatalf("token_num = %d, want 0", doc.TokenNum)
+	if doc.TokenNum != 100 {
+		t.Fatalf("token_num = %d, want 100", doc.TokenNum)
 	}
 	if doc.ProgressMsg == nil || *doc.ProgressMsg != "partial" {
-		t.Fatalf("progress_msg = %v, want the legacy value unchanged", doc.ProgressMsg)
+		t.Fatalf("progress_msg = %v, want partial", doc.ProgressMsg)
 	}
 	if doc.ProcessBeginAt == nil || doc.ProcessBeginAt.IsZero() {
 		t.Fatal("process_begin_at not set")

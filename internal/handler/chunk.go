@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
@@ -168,6 +169,9 @@ func (h *ChunkHandler) Get(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.Get(ctx, req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -256,6 +260,9 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -354,47 +361,6 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 	common.SuccessWithData(c, data, message)
 }
 
-// List retrieves chunks for a document.
-// @Summary List Chunks
-// @Description Retrieve paginated chunks for a document with optional filtering.
-// @Tags chunks
-// @Param request body service.ListChunksRequest true "List chunks parameters"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/list [post]
-func (h *ChunkHandler) List(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	// Bind JSON request
-	var req service.ListChunksRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	// Set default values for optional parameters
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.Size == nil {
-		defaultSize := 30
-		req.Size = &defaultSize
-	}
-
-	ctx := c.Request.Context()
-	resp, err := h.chunkService.List(ctx, &req, user.ID)
-	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, resp, "success")
-}
-
 // SwitchChunks enable or disable a chunk
 func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -447,6 +413,9 @@ func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	if err = h.chunkService.SwitchChunks(ctx, userID, datasetID, documentID, availableInt, chunkIDs); err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 		return
 	}
@@ -526,7 +495,7 @@ func optionalBodyString(rawBody map[string]interface{}, field, typeMessage strin
 // @Tags chunks
 // @Param request body service.UpdateChunkRequest true "update chunk"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/update [post]
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -534,12 +503,20 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// Validate allowed update fields and get IDs from body
+	// Decode the update fields.
+	body, err := io.ReadAll(c.Request.Body)
 	var rawBody map[string]interface{}
-	if err := json.NewDecoder(c.Request.Body).Decode(&rawBody); err != nil {
+	if err == nil {
+		err = json.Unmarshal(body, &rawBody)
+	}
+	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "invalid JSON body: "+err.Error())
 		return
 	}
+	// The same body, undecoded, for the list validator shared with AddChunk.
+	// It parsed above, so it cannot fail here.
+	var rawFields map[string]json.RawMessage
+	_ = json.Unmarshal(body, &rawFields)
 
 	// Get required ID fields
 	datasetID := strings.TrimSpace(c.Param("dataset_id"))
@@ -570,17 +547,12 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		"positions":          true,
 		"image_base64":       true,
 		"image_update_mode":  true,
-		// Accepted but never persisted: the UI always sends tag_kwd, so
-		// dropping it here would 400 every chunk edit. Go's tagger writes
-		// tag_feas; tag_kwd belongs to a Python tag dataset
-		// (rag/app/tag.py::beAdoc), which Go never builds. Left out of the
-		// error text below so it does not read as updatable.
-		"tag_kwd":  true,
-		"tag_feas": true,
+		"tag_kwd":            true,
+		"tag_feas":           true,
 	}
 	for field := range rawBody {
 		if field != "dataset_id" && field != "document_id" && field != "chunk_id" && !allowedFields[field] {
-			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_feas")
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "Update field '"+field+"' is not supported. Updatable fields: content, important_keywords, questions, available, positions, image_base64, image_update_mode, tag_kwd, tag_feas")
 			return
 		}
 	}
@@ -612,6 +584,12 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	if positions, ok := rawBody["positions"].([]interface{}); ok {
 		req.Positions = positions
 	}
+	tagKwd, err := addChunkStringListField(rawFields, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeDataError, nil, err.Error())
+		return
+	}
+	req.TagKwd = tagKwd
 	req.TagFeas = rawBody["tag_feas"]
 	imageBase64, err := optionalBodyString(rawBody, "image_base64", "`image_base64` must be a non-empty string")
 	if err != nil {
@@ -634,6 +612,9 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	ctx := c.Request.Context()
 	err = h.chunkService.UpdateChunk(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		var coded interface {
 			Code() common.ErrorCode
 		}
@@ -689,6 +670,9 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 	ctx := c.Request.Context()
 	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -724,6 +708,9 @@ func addChunkStringListField(rawBody map[string]json.RawMessage, field, listMess
 	raw, ok := rawBody[field]
 	if !ok {
 		return nil, nil
+	}
+	if string(raw) == "null" {
+		return nil, errors.New(listMessage)
 	}
 	var values []interface{}
 	if err := json.Unmarshal(raw, &values); err != nil {
@@ -779,6 +766,11 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
+	tagKwd, err := addChunkStringListField(rawBody, "tag_kwd", "`tag_kwd` is required to be a list", "`tag_kwd` must be a list of strings")
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
+		return
+	}
 	imageBase64, err := addChunkStringPtrField(rawBody, "image_base64")
 	if err != nil {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, err.Error())
@@ -798,6 +790,7 @@ func (h *ChunkHandler) AddChunk(c *gin.Context) {
 		Content:           content,
 		ImportantKeywords: importantKeywords,
 		Questions:         questions,
+		TagKwd:            tagKwd,
 		TagFeas:           tagFeas,
 		ImageBase64:       imageBase64,
 	}

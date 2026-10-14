@@ -153,6 +153,8 @@ func emitOneFromItems(items, chunks []schema.ChunkDoc) map[string]any {
 			Image:        it.Image,
 			Positions:    it.Positions,
 			PDFPositions: it.PDFPositions,
+			Sheet:        it.Sheet,
+			SheetIndex:   it.SheetIndex,
 		}
 		return chunkOutputs([]schema.ChunkDoc{out})
 	}

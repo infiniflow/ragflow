@@ -180,12 +180,23 @@ func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[s
 		return nil, fmt.Errorf("Message: nil canvas state")
 	}
 
-	text := extractMessageText(inputs)
-	if text == "" {
+	// A configured Message template is authoritative. The canvas edge also
+	// carries the upstream output map, whose generic `content` field must not
+	// override an explicit attachment/result selection. An explicit runtime
+	// `text` input remains an override for callers that use the component
+	// dynamically.
+	text, hasRuntimeText := "", false
+	if _, ok := inputs["text"]; ok {
+		text, hasRuntimeText = extractMessageText(inputs), true
+	}
+	if !hasRuntimeText && m.text != "" {
 		text = m.text
 	}
+	if text == "" && !hasRuntimeText {
+		text = extractMessageText(inputs)
+	}
 	if text == "" {
-		text = fallbackMessageText(inputs)
+		text = formalizedContentFallback(inputs)
 	}
 
 	// A direct Agent→Message edge stores a lazy DeferredStream in the Agent
@@ -378,7 +389,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 		return text, false, nil
 	}
 	if _, err := runtime.ResolveTemplate(text, state); err != nil {
-		return "", false, err
+		if !optionalMissingAttachmentRefs(text, state) {
+			return "", false, err
+		}
 	}
 	// Ordinary Message templates are rendered and emitted once by Invoke.
 	// Only templates that actually reference a DeferredStream belong to the
@@ -470,6 +483,23 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	return out.String(), streamed, nil
 }
 
+// Attachment outputs are optional side-channel values. A Message that asks
+// for an attachment must still be able to emit an empty text body when the
+// upstream branch produced no file; ordinary missing references remain hard
+// errors.
+func optionalMissingAttachmentRefs(text string, state *runtime.CanvasState) bool {
+	for _, ref := range runtime.ExtractRefs(text) {
+		value, err := state.GetVar(ref)
+		if err != nil || value != nil {
+			continue
+		}
+		if !strings.HasSuffix(ref, "@attachment") && !strings.HasSuffix(ref, "@attachments") {
+			return false
+		}
+	}
+	return true
+}
+
 // extractMemoryIDs normalises a memory_ids value from inputs /
 // params. Accepts []string and []any[string].
 func extractMemoryIDs(inputs map[string]any) []string {
@@ -495,7 +525,7 @@ func extractMemoryIDsFromAny(v any) []string {
 	return nil
 }
 
-func fallbackMessageText(inputs map[string]any) string {
+func formalizedContentFallback(inputs map[string]any) string {
 	if inputs == nil {
 		return ""
 	}
@@ -503,36 +533,7 @@ func fallbackMessageText(inputs map[string]any) string {
 		return text
 	}
 
-	var only string
-	count := 0
-	for key, value := range inputs {
-		if isMessageInfraInput(key) {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok || strings.TrimSpace(text) == "" {
-			continue
-		}
-		only = text
-		count++
-		if count > 1 {
-			return ""
-		}
-	}
-	if count == 1 {
-		return only
-	}
 	return ""
-}
-
-func isMessageInfraInput(key string) bool {
-	switch key {
-	case "state", "__cpn_id__", "__legacy_noop__", "_created_time", "_elapsed_time",
-		"output_format", "voice", "lang", "auto_play", "memory_save", "memory_ids", "user_id", "stream":
-		return true
-	default:
-		return false
-	}
 }
 
 // stringFromStateSys reads a sys-level state value. Returns ""

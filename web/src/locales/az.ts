@@ -418,7 +418,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): cari parser konfiqurasiyası tərəfindən dəstəklənmir',
       reselectParserAfterUploadHint:
-        'Yükləməyə davam edin, sonra fayl siyahısında bu fayllar üçün təhlil üsulunu yenidən seçin.',
+        'Yükləməyə davam edin; sistem bu faylları avtomatik olaraq dəstəklənən daxili təhlil konfiqurasiyasına keçirəcək.',
       reselectParserToParseHint:
         'Təsirlənən fayllar üçün təhlil üsulunu yenidən seçin, sonra yenidən təhlil edin.',
       addModelAfterUploadHint:
@@ -683,6 +683,7 @@ Nümunə: 1024 ölçülü vektor təsviri olan 1 KB-lıq mesaj ~9 KB yer tutur. 
       reRankModelWaring: 'Yenidən sıralama modeli çox vaxt tələb edir.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Başlanğıc dəyər eyni nəticənin müxtəlif icralarda təkrar əldə olunmasını təmin edən psevdotəsadüfi alqoritmin başlanğıc nöqtəsidir.',
       datasetDescription: 'Verilənlər dəstinizi təsvir edin',
@@ -1196,14 +1197,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       thinkingEnabled: 'Aktivdir',
       thinkingDisabled: 'Deaktiv',
       thinkingLevelNone: 'Sadə',
-      thinkingLevelLow: 'Aşağı',
-      thinkingLevelLowDescription: 'Sürətli cavablar',
-      thinkingLevelMedium: 'Orta',
-      thinkingLevelMediumDescription: 'Sürət və dərinlik arasında tarazlıq',
-      thinkingLevelHigh: 'Yüksək',
-      thinkingLevelHighDescription: 'Dərin mühakimə',
-      thinkingLevelUltra: 'Ən yüksək',
-      thinkingLevelUltraDescription: 'Maksimum idrak səyi',
       thinkingTip:
         'Yalnız rəsmi Qwen, Kimi və GLM model provayderləri üçün düşünmə rejimini idarə edir. Sistemin standart dəyəri uzun çəkən tapşırıqların qarşısını almaq üçün Qwen modelinin düşünmə rejimini söndürür.',
       quote: 'İstinadları göstər',
@@ -2869,7 +2862,7 @@ Nümunə: Virtual host üslubu`,
       dataManipulation: 'Məlumatların işlənməsi',
       flow: 'Axın',
       dialog: 'Dialoq',
-      cite: 'İstinad et',
+      cite: 'İstinadları göstər',
       citeTip: 'citeTip',
       name: 'Ad',
       nameMessage: 'Ad daxil edin',

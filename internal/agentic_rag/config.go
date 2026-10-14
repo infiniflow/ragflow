@@ -17,10 +17,12 @@
 package agentic_rag
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -66,7 +68,7 @@ type toolFactory func(tenantID string, datasetIDs []string) tool.BaseTool
 // toolRegistry maps every supported tool name to its constructor. Keeping this
 // here means adding a new tool is a one-line registration, and the config drives
 // which subset is actually loaded. web_search is NOT in this map and must not
-// appear in a template's tools list: it is injected by Run when the conversation
+// appear in a template's tools list: toolsFor adds it when the conversation
 // has a search provider.
 func toolRegistry() map[string]toolFactory {
 	return map[string]toolFactory{
@@ -80,6 +82,19 @@ func toolRegistry() map[string]toolFactory {
 		// all (see tool_search_semantic_chunks.go).
 		"search_semantic_chunks": func(t string, d []string) tool.BaseTool { return NewSearchSemanticChunksTool(t, d) },
 		"list_chunks":            func(t string, d []string) tool.BaseTool { return NewListChunksTool(t, d) },
+		"search_metadata":        func(t string, d []string) tool.BaseTool { return NewMetadataSearchTool(t, d) },
+		// The compiled-knowledge-graph walk. Registered always; a template that
+		// omits it simply never offers it to the model.
+		"graph_explore": func(t string, d []string) tool.BaseTool { return NewGraphExploreTool(t, d) },
+		// The compiled-navigation-tree router. Registered always; a template that
+		// omits it simply never offers it to the model (same pattern as
+		// graph_explore).
+		"navigate_tree": func(t string, d []string) tool.BaseTool { return NewNavigateTreeTool(t, d) },
+		// The compiled-structure drilldown: given a doc_id (from navigate_tree),
+		// reads that document's compiled entity/relation outline and returns a
+		// query-focused TOC the model feeds to list_chunks. Registered always; a
+		// template that omits it never offers it to the model.
+		"navigate_structure": func(t string, d []string) tool.BaseTool { return NewNavigateStructureTool(t, d) },
 	}
 }
 
@@ -104,19 +119,18 @@ var (
 	cachedPath    string
 )
 
-// LoadConfigFile reads and parses the agent config file. On any error it
-// returns nil so the caller falls back to the embedded defaults.
+// LoadConfigFile reads and parses the agent config file.
 func LoadConfigFile(path string) (*configFile, error) {
 	common.Debug("agentic_rag: load config", zap.String("path", path))
 	data, err := os.ReadFile(path)
 	if err != nil {
-		common.Warn("agentic_rag: cannot read config, using fallback",
+		common.Warn("agentic_rag: cannot read config",
 			zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
 	var f configFile
 	if err := yaml.Unmarshal(data, &f); err != nil {
-		common.Warn("agentic_rag: cannot parse config, using fallback",
+		common.Warn("agentic_rag: cannot parse config",
 			zap.String("path", path), zap.Error(err))
 		return nil, err
 	}
@@ -142,8 +156,7 @@ func GetConfigFile() *configFile {
 
 	f, err := LoadConfigFile(path)
 	if err != nil || f == nil {
-		// Keep the last good config if we have one; otherwise leave nil so the
-		// caller uses fallbackConfig().
+		// Keep the last successfully loaded YAML configuration, if available.
 		if cachedFile != nil {
 			return cachedFile
 		}
@@ -172,6 +185,9 @@ func resolveTemplateFor(id string) (Template, error) {
 	if f := GetConfigFile(); f != nil {
 		for _, t := range f.Templates {
 			if t.ID == id {
+				if strings.TrimSpace(t.Content) == "" {
+					return Template{}, fmt.Errorf("agentic_rag: template %q has no prompt content in %s", id, defaultConfigPath())
+				}
 				return t, nil
 			}
 		}
@@ -193,19 +209,14 @@ func TemplateTemperature(templateID string) *float64 {
 	return &t
 }
 
-// instructionFor resolves the system instruction: prefer the JSON-configured
-// prompt, otherwise the embedded Prompt().
-func instructionFor(t Template) string {
-	if t.Content != "" {
-		return t.Content
-	}
-	return Prompt()
-}
-
-// toolsFor builds the agent tool set from the template's tool list, falling back
+// toolsFor uses explicit tools or builds them from the template, falling back
 // to the full default set when the template lists none. Unknown names are
-// skipped with a warning so a typo doesn't silently drop a tool.
-func toolsFor(t Template, tenantID string, datasetIDs []string) []tool.BaseTool {
+// skipped with a warning. The conversation's web capability is added here so
+// all retrieval tools use the same agent dispatch path.
+func toolsFor(ctx context.Context, t Template, tenantID string, datasetIDs []string, tools []tool.BaseTool) []tool.BaseTool {
+	if len(tools) > 0 {
+		return append(append([]tool.BaseTool(nil), tools...), webSearchTools(ctx)...)
+	}
 	reg := toolRegistry()
 	names := t.Tools
 	if len(names) == 0 {
@@ -224,5 +235,5 @@ func toolsFor(t Template, tenantID string, datasetIDs []string) []tool.BaseTool 
 		}
 		out = append(out, f(tenantID, datasetIDs))
 	}
-	return out
+	return append(out, webSearchTools(ctx)...)
 }

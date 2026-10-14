@@ -150,6 +150,8 @@ export default {
     },
 
     knowledgeDetails: {
+      reselectParserAfterUploadHint:
+        'アップロードを続行すると、これらのファイルは対応する組み込み解析設定に自動的に切り替わります。',
       dataset: 'データセット',
       testing: '検索テスト',
       files: 'ファイル',
@@ -390,6 +392,7 @@ export default {
     },
 
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       imageTableContextWindow: '画像・表コンテキストウィンドウ',
 
       imageTableContextWindowTip:
@@ -990,10 +993,6 @@ export default {
       thinkingDefault: 'システムデフォルト',
       thinkingEnabled: '有効',
       thinkingDisabled: '無効',
-      thinkingLevelLow: '低',
-      thinkingLevelMedium: '中',
-      thinkingLevelHigh: '高',
-      thinkingLevelUltra: '最高',
       thinkingTip:
         'Qwen、Kimi、GLMの公式モデルプロバイダーの思考モードのみを制御します。システムデフォルトでは、処理の長時間化を防ぐためQwenの思考を無効にします。',
       published: '公開済み',
@@ -1876,7 +1875,7 @@ export default {
     },
 
     flow: {
-      cite: '引用',
+      cite: '引用を表示',
       citeTip: '引用に関するヒント',
       name: '名前',
       nameMessage: '名前を入力してください',
