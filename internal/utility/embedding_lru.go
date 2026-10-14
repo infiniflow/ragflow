@@ -18,7 +18,6 @@ package utility
 
 import (
 	"container/list"
-	"strconv"
 	"sync"
 )
 
@@ -47,10 +46,8 @@ func NewEmbeddingLRU(capacity int) *EmbeddingLRU {
 }
 
 // buildKey creates a composite key from question and embedding ID.
-// Length prefixes keep the key unambiguous: question "a::b" with model "c"
-// and question "a" with model "b::c" produce different keys.
 func buildKey(question, embeddingID string) string {
-	return strconv.Itoa(len(question)) + ":" + question + strconv.Itoa(len(embeddingID)) + ":" + embeddingID
+	return question + "||" + embeddingID
 }
 
 // Get retrieves the embedding for the given question and embedding ID.

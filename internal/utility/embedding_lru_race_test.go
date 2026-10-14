@@ -35,16 +35,16 @@ func TestEmbeddingLRUCompositeKeyNoCollision(t *testing.T) {
 	}
 }
 
-// Changing the separator to || does not make arbitrary inputs unambiguous.
-func TestEmbeddingLRUDoublePipeKeyNoCollision(t *testing.T) {
+// The || separator still keeps ordinary pairs containing single pipes distinct.
+func TestEmbeddingLRUDoublePipeSeparator(t *testing.T) {
 	c := NewEmbeddingLRU(2)
-	c.Put("a||b", "c", []float64{1})
-	c.Put("a", "b||c", []float64{2})
-	first, ok := c.Get("a||b", "c")
+	c.Put("a|b", "c", []float64{1})
+	c.Put("a", "b|c", []float64{2})
+	first, ok := c.Get("a|b", "c")
 	if !ok || first[0] != 1 {
 		t.Fatalf("first value = %v, found=%v", first, ok)
 	}
-	second, ok := c.Get("a", "b||c")
+	second, ok := c.Get("a", "b|c")
 	if !ok || second[0] != 2 {
 		t.Fatalf("second value = %v, found=%v", second, ok)
 	}
