@@ -322,6 +322,13 @@ func TestNavServicePageIndexRowsAndCleanup(t *testing.T) {
 		if row["compile_kwd"] != "page_index" {
 			t.Fatalf("compile_kwd = %v, want page_index", row["compile_kwd"])
 		}
+		wantScope := "doc"
+		if row["type_kwd"] == "nav_cluster" {
+			wantScope = "dataset"
+		}
+		if row["scope_kwd"] != wantScope {
+			t.Fatalf("scope_kwd = %v, want %s for %s", row["scope_kwd"], wantScope, row["type_kwd"])
+		}
 		if row["type_kwd"] == "nav_cluster" {
 			row["compile_kwd"] = "dataset_nav"
 		}

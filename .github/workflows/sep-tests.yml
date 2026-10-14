@@ -247,6 +247,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -356,6 +366,15 @@ jobs:
             fi
           else
             echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
+          # Keep Go module/build caches OFF the runner container's writable layer
+          # (defaults /home/alice/{go/pkg/mod,.cache/go-build} ballooned the runner
+          # image to ~15G). RUNNER_WORKSPACE_PREFIX is a host bind mount, so caches
+          # land on the host and are shared/reused across the runners on this host.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
           PKGS=$(go list ./... 2>/dev/null \
@@ -779,6 +798,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -888,6 +917,15 @@ jobs:
             fi
           else
             echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
+          # Keep Go module/build caches OFF the runner container's writable layer
+          # (defaults /home/alice/{go/pkg/mod,.cache/go-build} ballooned the runner
+          # image to ~15G). RUNNER_WORKSPACE_PREFIX is a host bind mount, so caches
+          # land on the host and are shared/reused across the runners on this host.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
           PKGS=$(go list ./... 2>/dev/null \
@@ -1381,6 +1419,12 @@ jobs:
           XDG_CACHE_HOME: ${{ github.workspace }}/.cache
         run: |
           set -euo pipefail
+          # Keep Go build cache off the runner container layer (same as the other
+          # go steps): redirect to the host bind mount when available.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
           ./build.sh --test-native
 
 
@@ -1841,6 +1885,13 @@ jobs:
           # a fully-ready MinIO that this CI stack does not reliably provide
           # (the compose /live probe passes while the S3 API still 502s), so they
           # are exercised elsewhere, not here.
+          # Keep Go module/build caches off the runner container layer (same reason
+          # as the unit-test step): redirect to the host bind mount.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           PKGS=$(go list ./... \
             | grep -v '/test/api' \
             | grep -v '^ragflow/internal/deepdoc' \
@@ -1864,3 +1915,5 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.
           for g in ${PORT_RESERVATION}; do sudo docker network rm "$g" >/dev/null 2>&1 || true; done
+
+

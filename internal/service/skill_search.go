@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/permission"
-	"ragflow/internal/utility"
 	"strings"
 
 	"go.uber.org/zap"
@@ -583,13 +582,13 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 		// Note: SCORE/SIMILARITY may be float32 or float64 depending on Infinity version
 		bm25Score := 0.0
 		if scoreVal, ok := chunk["SCORE"]; ok {
-			if f, ok := utility.ToFloat64(scoreVal); ok {
+			if f, ok := common.ToFloat(scoreVal); ok {
 				bm25Score = f
 			}
 		}
 		vectorScore := 0.0
 		if simVal, ok := chunk["SIMILARITY"]; ok {
-			if f, ok := utility.ToFloat64(simVal); ok {
+			if f, ok := common.ToFloat(simVal); ok {
 				vectorScore = f
 			}
 		}
