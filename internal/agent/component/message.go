@@ -123,8 +123,7 @@ func extractAudioConfig(params map[string]any) (audio.Engine, string, string) {
 
 // extractMessageText reads text / content from params in the v1 / v2
 // order documented on NewMessageComponent. Returns the empty string
-// when neither key is present or the value is not a string-shaped
-// scalar.
+// when neither key is present or content has no string entries.
 func extractMessageText(params map[string]any) string {
 	if v, ok := params["text"].(string); ok {
 		return v
@@ -134,15 +133,15 @@ func extractMessageText(params map[string]any) string {
 		case string:
 			return x
 		case []string:
-			if len(x) > 0 {
-				return x[0]
-			}
+			return strings.Join(x, "")
 		case []any:
-			if len(x) > 0 {
-				if s, ok := x[0].(string); ok {
-					return s
+			content := make([]string, 0, len(x))
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					content = append(content, s)
 				}
 			}
+			return strings.Join(content, "")
 		}
 	}
 	return ""
