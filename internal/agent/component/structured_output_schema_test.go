@@ -384,7 +384,7 @@ func TestStructuredOutputPreservesMarkersInJSONStrings(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, value := range []string{"keep </think> as text", "keep ```json as text", "</think>```json"} {
-		// 保留原始尖括号，避免 JSON 编码器转义后绕过标记处理路径。
+		// Preserve raw angle brackets so JSON escaping cannot bypass marker handling.
 		content := `{"text":"` + value + `"}`
 		for _, wrapper := range []struct{ prefix, suffix string }{
 			{},

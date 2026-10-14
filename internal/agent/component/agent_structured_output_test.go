@@ -2,11 +2,13 @@ package component
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/cloudwego/eino/components/model"
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/compose"
 	"github.com/cloudwego/eino/flow/agent/react"
@@ -121,6 +123,199 @@ func TestAgentStructuredOutputCorrectionDoesNotRepeatRealReActTool(t *testing.T)
 	}
 }
 
+type structuredTranscriptModel struct {
+	turn  int
+	final string
+}
+
+func correctionToolObservations(t *testing.T, req ChatInvokeRequest) []schema.Message {
+	t.Helper()
+	if req.Tools != nil || req.ToolChoice != chat.ToolChoiceNone {
+		t.Fatalf("correction exposes executable tools: %#v", req)
+	}
+	for _, message := range req.Messages {
+		if message.Role == schema.Tool || len(message.ToolCalls) > 0 || message.ToolCallID != "" {
+			t.Fatalf("correction contains protocol tool messages: %#v", message)
+		}
+		if message.Role == schema.User && strings.HasPrefix(message.Content, "ReAct tool observations ") {
+			_, text, _ := strings.Cut(message.Content, "\n")
+			var observations []schema.Message
+			if err := json.Unmarshal([]byte(text), &observations); err != nil {
+				t.Fatal(err)
+			}
+			return observations
+		}
+	}
+	t.Fatal("correction lost tool observations")
+	return nil
+}
+
+func (m *structuredTranscriptModel) WithTools([]*schema.ToolInfo) (model.ToolCallingChatModel, error) {
+	return m, nil
+}
+
+func (m *structuredTranscriptModel) Generate(context.Context, []*schema.Message, ...model.Option) (*schema.Message, error) {
+	return nil, errors.New("unexpected non-streaming model call")
+}
+
+func (m *structuredTranscriptModel) Stream(context.Context, []*schema.Message, ...model.Option) (*schema.StreamReader[*schema.Message], error) {
+	m.turn++
+	if m.turn == 1 {
+		index := 0
+		return schema.StreamReaderFromArray([]*schema.Message{
+			{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index, ID: "count-call", Type: "function",
+				Function: schema.FunctionCall{Name: "count_rows", Arguments: `{"count":`}}}},
+			{Role: schema.Assistant, ToolCalls: []schema.ToolCall{{Index: &index,
+				Function: schema.FunctionCall{Arguments: `7,"source":"inventory"}`}}}},
+		}), nil
+	}
+	return schema.StreamReaderFromArray([]*schema.Message{{Role: schema.Assistant, Content: m.final}}), nil
+}
+
+func TestAgentStructuredOutputCorrectionPreservesStreamedToolContext(t *testing.T) {
+	for _, answer := range []string{`{}`, `{"count":"unknown"}`} {
+		t.Run(answer, func(t *testing.T) {
+			mdl := &structuredTranscriptModel{final: answer}
+			tool := &passthroughTool{name: "count_rows"}
+			withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+				agent, err := react.NewAgent(ctx, &react.AgentConfig{
+					ToolCallingModel:      mdl,
+					ToolsConfig:           compose.ToolsNodeConfig{Tools: []einotool.BaseTool{tool}},
+					MessageModifier:       agentMessageModifier(ctx, p),
+					StreamToolCallChecker: scanAllStreamForToolCall, MaxStep: 4,
+				})
+				if err != nil {
+					return nil, err
+				}
+				opt, future := react.WithMessageFuture()
+				ctx = setArtifactCollector(ctx, future)
+				done := emitAgentModelStreams(ctx, future, true)
+				stream, err := agent.Stream(ctx, buildAgentInputMessages(ctx, p), opt)
+				if err != nil {
+					return nil, err
+				}
+				message, err := schema.ConcatMessageStream(stream)
+				if emitErr := <-done; err == nil {
+					err = emitErr
+				}
+				return message, err
+			})
+			corrections := 0
+			withStubInvoker(t, structuredRepairInvoker(func(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+				corrections++
+				observations := correctionToolObservations(t, req)
+				if len(observations) != 2 || len(observations[0].ToolCalls) != 1 {
+					t.Fatalf("unexpected tool observations: %#v", observations)
+				}
+				call, result := observations[0].ToolCalls[0], observations[1]
+				if call.ID != "count-call" || call.Function.Name != "count_rows" || call.Function.Arguments != `{"count":7,"source":"inventory"}` ||
+					result.Role != schema.Tool || result.ToolCallID != call.ID || result.Content != call.Function.Arguments {
+					t.Fatalf("correction changed tool evidence: %#v", observations)
+				}
+				if corrections == 1 {
+					return &ChatInvokeResponse{Content: `{}`}, nil
+				}
+				return &ChatInvokeResponse{Content: `{"count":7}`}, nil
+			}))
+			c := NewAgentComponent(AgentParam{ModelID: "stub", OutputStructure: agentCountOutputSchema(), MaxRetries: 2})
+			out, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "count inventory rows"})
+			if err != nil || out["content"] != `{"count":7}` || corrections != 2 || mdl.turn != 2 || tool.calls.Load() != 1 {
+				t.Fatalf("out=%#v err=%v corrections=%d model turns=%d tool calls=%d", out, err, corrections, mdl.turn, tool.calls.Load())
+			}
+		})
+	}
+}
+
+func TestAgentStructuredOutputCorrectionPreservesAllToolTextParts(t *testing.T) {
+	call := schema.AssistantMessage("checking inventory", []schema.ToolCall{
+		{ID: "count", Function: schema.FunctionCall{Name: "count_rows", Arguments: `{}`}},
+		{ID: "source", Function: schema.FunctionCall{Name: "get_source", Arguments: `{}`}},
+	})
+	result := &schema.Message{Role: schema.Tool, ToolCallID: "count", UserInputMultiContent: []schema.MessageInputPart{
+		{Type: schema.ChatMessagePartTypeText, Text: `{"count":7}`},
+		{Type: schema.ChatMessagePartTypeText, Text: "inventory snapshot 42"},
+	}, Extra: map[string]any{"runtime_only": make(chan int)}}
+	withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+		modify := agentMessageModifier(ctx, p)
+		modify(ctx, []*schema.Message{schema.UserMessage(p.UserPrompt), call, result})
+		modify(ctx, []*schema.Message{schema.UserMessage(p.UserPrompt), call, result, schema.ToolMessage("warehouse A", "source")})
+		return schema.AssistantMessage(`{}`, nil), nil
+	})
+	withStubInvoker(t, structuredRepairInvoker(func(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+		observations := correctionToolObservations(t, req)
+		if len(observations) != 3 || len(observations[0].ToolCalls) != 2 || len(observations[1].UserInputMultiContent) != 2 ||
+			observations[1].UserInputMultiContent[0].Text != `{"count":7}` || observations[1].UserInputMultiContent[1].Text != "inventory snapshot 42" ||
+			observations[2].ToolCallID != "source" || observations[2].Content != "warehouse A" {
+			t.Fatalf("incomplete or duplicated observations: %#v", observations)
+		}
+		return &ChatInvokeResponse{Content: `{"count":7}`}, nil
+	}))
+	c := NewAgentComponent(AgentParam{ModelID: "stub", OutputStructure: agentCountOutputSchema(), MaxRetries: 1})
+	if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "count"}); err != nil {
+		t.Fatal(err)
+	}
+	if result.Extra["runtime_only"] == nil {
+		t.Fatal("transcript capture mutated the original tool result")
+	}
+}
+
+func TestAgentStructuredOutputCorrectionKeepsChildEvidenceSeparate(t *testing.T) {
+	for _, childStructured := range []bool{false, true} {
+		t.Run(fmt.Sprint(childStructured), func(t *testing.T) {
+			withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+				result := schema.ToolMessage(`{"count":7}`, "parent-call")
+				if p.UserPrompt == "child" {
+					result = schema.ToolMessage(`{"count":99}`, "child-call")
+				}
+				agentMessageModifier(ctx, p)(ctx, []*schema.Message{result})
+				if p.UserPrompt == "child" {
+					return schema.AssistantMessage(`{"count":99}`, nil), nil
+				}
+				child := AgentParam{ModelID: "stub", UserPrompt: "child"}
+				if childStructured {
+					child.OutputStructure = agentCountOutputSchema()
+				}
+				if _, err := NewAgentComponent(child).Invoke(ctx, nil, nil); err != nil {
+					return nil, err
+				}
+				return schema.AssistantMessage(`{}`, nil), nil
+			})
+			withStubInvoker(t, structuredRepairInvoker(func(_ context.Context, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
+				observations := correctionToolObservations(t, req)
+				if len(observations) != 1 || observations[0].ToolCallID != "parent-call" || observations[0].Content != `{"count":7}` {
+					t.Fatalf("child replaced the parent's evidence: %#v", observations)
+				}
+				return &ChatInvokeResponse{Content: `{"count":7}`}, nil
+			}))
+			c := NewAgentComponent(AgentParam{ModelID: "stub", OutputStructure: agentCountOutputSchema(), MaxRetries: 1})
+			if _, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "parent"}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestAgentStructuredOutputTranscriptEncodingFailureDoesNotPublish(t *testing.T) {
+	withAgentRunner(t, func(ctx context.Context, p AgentParam) (*schema.Message, error) {
+		agentMessageModifier(ctx, p)(ctx, []*schema.Message{schema.AssistantMessage("", []schema.ToolCall{
+			{ID: "call", Function: schema.FunctionCall{Name: "count"}, Extra: map[string]any{"invalid": make(chan int)}},
+		})})
+		return schema.AssistantMessage(`{}`, nil), nil
+	})
+	stub := &stubInvoker{}
+	withStubInvoker(t, stub)
+	state := runtime.NewCanvasState("run", "task")
+	var published strings.Builder
+	ctx := runtime.WithState(t.Context(), state)
+	ctx = runtime.WithAgentMessageEmitter(ctx, func(content, _ string) { published.WriteString(content) })
+	c := NewAgentComponent(AgentParam{ModelID: "stub", OutputStructure: agentCountOutputSchema(), MaxRetries: 1})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "count"})
+	var encodingErr *json.UnsupportedTypeError
+	if !errors.As(err, &encodingErr) || out != nil || stub.calls != 0 || published.Len() != 0 || len(state.SnapshotMemory()) != 0 {
+		t.Fatalf("out=%#v err=%v calls=%d published=%q memory=%#v", out, err, stub.calls, published.String(), state.SnapshotMemory())
+	}
+}
+
 func TestAgentStructuredOutputRejectsInvalidSchemaBeforeRunner(t *testing.T) {
 	withAgentRunner(t, func(context.Context, AgentParam) (*schema.Message, error) {
 		t.Fatal("invalid schema must fail before runner")
@@ -219,7 +414,7 @@ func TestAgentStructuredOutputFinalizesOnlyValidatedAnswer(t *testing.T) {
 	for _, valid := range []bool{false, true} {
 		t.Run(fmt.Sprint(valid), func(t *testing.T) {
 			withAgentRunner(t, func(ctx context.Context, _ AgentParam) (*schema.Message, error) {
-				// 子调用的生命周期钩子与增量不能改变父 Agent 的发布状态。
+				// Child lifecycle hooks and deltas must not change the parent's publication state.
 				runtime.ResetAgentMessageEmission(ctx)
 				runtime.EmitAgentMessage(ctx, "unvalidated partial", "")
 				runtime.FinalizeAgentMessage(ctx)

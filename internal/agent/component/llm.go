@@ -53,7 +53,7 @@ type LLMParam struct {
 	ChatTemplateKwargs       map[string]any // optional provider-specific kwargs (e.g. response_format, seed)
 	MaxTokens                *int
 	JSONOutput               bool
-	OutputStructure          any // JSON Schema；通过校验后写入 structured。
+	OutputStructure          any // JSON Schema; validated output is stored in structured.
 
 	// PresencePenalty mirrors Python's `presence_penalty` (range -2.0 to 2.0).
 	// Positive values penalize new tokens based on whether they appear in the
@@ -926,7 +926,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		}
 	}
 
-	// 已验证的 JSON 保持原样，避免清理规则修改字符串中的标记。
+	// Preserve validated JSON so cleanup rules cannot alter markers inside strings.
 	cleaned := resp.Content
 	if structured == nil && p.JSONOutput {
 		cleaned = cleanFormattedAnswer(resp.Content)

@@ -78,7 +78,7 @@ func newStructuredOutput(raw any) (*structuredOutput, error) {
 	}
 	compiler := jsonschema.NewCompiler()
 	compiler.DefaultDraft(jsonschema.Draft2020)
-	// 空协议映射拒绝外部网络和文件引用；标准元 schema 由库内置提供。
+	// An empty scheme map blocks external network and file references; standard meta-schemas are built in.
 	compiler.UseLoader(jsonschema.SchemeURLLoader{})
 	const resource = "urn:ragflow:structured-output"
 	if err := compiler.AddResource(resource, parsed); err != nil {
@@ -123,7 +123,7 @@ func (s *structuredOutput) parse(content string) (map[string]any, error) {
 	return parsed, nil
 }
 
-// 下游组件使用 float64；先精确校验，再拒绝无法无损往返的数值。
+// Downstream components use float64; validate exactly, then reject numbers that cannot round-trip losslessly.
 func structuredOutputRuntimeValue(value any) (any, error) {
 	switch value := value.(type) {
 	case json.Number:
@@ -161,7 +161,7 @@ func (s *structuredOutput) validateAndRepair(ctx context.Context, db *gorm.DB, i
 	if retries < 0 {
 		return nil, nil, fmt.Errorf("structured output correction retries must be nonnegative")
 	}
-	// 纠正只生成文本；独立复制消息，避免修改调用者的历史或再次触发工具。
+	// Correction generates text only; copy messages to preserve caller history and avoid further tool calls.
 	req.Messages = slices.Clone(req.Messages)
 	req.Tools = nil
 	req.ToolChoice = chat.ToolChoiceNone
@@ -176,7 +176,7 @@ func (s *structuredOutput) validateAndRepair(ctx context.Context, db *gorm.DB, i
 			return nil, nil, fmt.Errorf("structured output received tool calls instead of a final answer")
 		}
 		content := strings.TrimSpace(resp.Content)
-		// 只剥离外层包装，保留 JSON 字符串正文中的思考和围栏标记。
+		// Strip outer wrappers only, preserving thinking and fence markers inside JSON strings.
 		if !json.Valid([]byte(content)) && strings.HasPrefix(content, "<think>") {
 			if end := strings.Index(content, "</think>"); end >= 0 {
 				content = strings.TrimSpace(content[end+len("</think>"):])
