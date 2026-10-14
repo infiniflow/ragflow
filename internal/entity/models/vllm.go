@@ -100,12 +100,12 @@ func (v *VllmModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
@@ -134,10 +134,10 @@ func (v *VllmModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, v.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
@@ -191,7 +191,7 @@ func (v *VllmModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -276,7 +276,7 @@ func (v *VllmModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Lis
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, v.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
@@ -397,7 +397,7 @@ func (v *VllmModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for vLLM (e.g., http://127.0.0.1:8000/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), v.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, v.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {

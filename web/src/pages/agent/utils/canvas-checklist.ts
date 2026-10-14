@@ -95,6 +95,13 @@ const OrphanExemptOperators: string[] = [
   Operator.ExitLoop,
 ];
 
+// Tools whose API key is required by the service, on the canvas and inside an
+// agent's tool list alike — an empty key always fails at run time.
+const ApiKeyRequiredOperators: string[] = [
+  Operator.SofyaSearch,
+  Operator.Search1APISearch,
+];
+
 function collectStrings(value: unknown): string[] {
   if (typeof value === 'string') {
     return [value];
@@ -504,6 +511,14 @@ export function collectCanvasIssues({
       });
     }
 
+    if (ApiKeyRequiredOperators.includes(label) && !form?.api_key) {
+      issues.push({
+        ...target,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      });
+    }
+
     if (label === Operator.Retrieval) {
       issues.push(
         ...collectRetrievalBindingIssues(form, target, {
@@ -526,7 +541,11 @@ export function collectCanvasIssues({
       if (Array.isArray(form?.tools)) {
         const toolNode = findToolCanvasNode(edges, nodeMap, node.id);
         for (const tool of form.tools) {
-          if (tool?.component_name !== Operator.Retrieval) {
+          const isRetrieval = tool?.component_name === Operator.Retrieval;
+          const needsApiKey = ApiKeyRequiredOperators.includes(
+            tool?.component_name,
+          );
+          if (!isRetrieval && !needsApiKey) {
             continue;
           }
           // Point at the concrete tool under the concrete agent — the Tool
@@ -541,12 +560,21 @@ export function collectCanvasIssues({
             }`,
             operatorLabel: tool.component_name ?? Operator.Tool,
           };
-          issues.push(
-            ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
-              memoryIds,
-              staleDatasetIds,
-            }),
-          );
+          if (isRetrieval) {
+            issues.push(
+              ...collectRetrievalBindingIssues(tool?.params, toolTarget, {
+                memoryIds,
+                staleDatasetIds,
+              }),
+            );
+          }
+          if (needsApiKey && !tool?.params?.api_key) {
+            issues.push({
+              ...toolTarget,
+              type: CanvasIssueType.MissingRequired,
+              messageKey: 'flow.apiKeyMissing',
+            });
+          }
         }
       }
     }
