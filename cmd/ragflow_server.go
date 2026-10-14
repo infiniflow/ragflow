@@ -459,7 +459,7 @@ func main() {
 	// real file-backed logger is up.
 	switch *arguments.mode {
 	case "api":
-		port, portErr := globalConfig.ResolvePort(arguments.port)
+		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
 			os.Exit(1)
@@ -472,7 +472,7 @@ func main() {
 			serverName = fmt.Sprintf("api_server_%d", port)
 		}
 	case "admin":
-		port, portErr := globalConfig.ResolvePort(arguments.port)
+		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
 			os.Exit(1)

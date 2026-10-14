@@ -82,7 +82,7 @@ func TestResolvePort(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := &Config{}
 			c.SetAPIServerHTTPPort(tc.configured)
-			got, err := c.ResolvePort(tc.cli)
+			got, err := c.ResolvePort(tc.configured, tc.cli)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("ResolvePort(%d, %v) = %d, want error", tc.configured, tc.cli, got)
@@ -96,6 +96,46 @@ func TestResolvePort(t *testing.T) {
 				t.Fatalf("ResolvePort(%d, %v) = %d, want %d", tc.configured, tc.cli, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestResolvePortHonorsServerSpecificConfig pins that ResolvePort validates
+// the port passed to it rather than always reading the API server's port from
+// the receiver. A regression made ResolvePort read c.apiServer.HTTPPort for
+// every caller, so the admin server (whose configured port is 9381) resolved
+// to 9380 and collided with the API server at startup (CI: "address already in
+// use :9380"). With api=9380 and admin=9381 set independently, resolving the
+// admin's configured port must yield 9381, not 9380.
+func TestResolvePortHonorsServerSpecificConfig(t *testing.T) {
+	c := &Config{}
+	c.SetAPIServerHTTPPort(9380)
+	c.SetAdminHTTPPort(9381)
+
+	// Admin path: caller passes the admin-configured port.
+	got, err := c.ResolvePort(c.GetAdminServerConfig().HTTPPort, nil)
+	if err != nil {
+		t.Fatalf("ResolvePort(admin) error = %v, want nil", err)
+	}
+	if got != 9381 {
+		t.Fatalf("ResolvePort(admin configured) = %d, want 9381 (must not read the API port)", got)
+	}
+
+	// API path: caller passes the api-configured port.
+	got, err = c.ResolvePort(c.GetAPIServerConfig().HTTPPort, nil)
+	if err != nil {
+		t.Fatalf("ResolvePort(api) error = %v, want nil", err)
+	}
+	if got != 9380 {
+		t.Fatalf("ResolvePort(api configured) = %d, want 9380", got)
+	}
+
+	// CLI override must still win regardless of which server calls it.
+	got, err = c.ResolvePort(c.GetAdminServerConfig().HTTPPort, intPtr(9400))
+	if err != nil {
+		t.Fatalf("ResolvePort(admin, --port) error = %v, want nil", err)
+	}
+	if got != 9400 {
+		t.Fatalf("ResolvePort(admin, --port) = %d, want 9400 (CLI must override)", got)
 	}
 }
 
