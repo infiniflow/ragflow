@@ -92,6 +92,30 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	}
 }
 
+func TestDatasetsHandlerSearchDatasetBindsDocumentMetadataSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetService{resp: &service.SearchDatasetsResponse{}}
+	h := &DatasetsHandler{searchDatasetService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","reference_metadata":{"include":true,"fields":["year"]}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+	h.SearchDataset(c)
+
+	if fake.req == nil {
+		t.Fatalf("service not called, body=%s", rec.Body.String())
+	}
+	include, fields := fake.req.ToSearchDatasetsRequest("ds-1").DocumentMetadataSelection(nil)
+	if !include || len(fields) != 1 || fields[0] != "year" {
+		t.Fatalf("document metadata selection = %v %v", include, fields)
+	}
+}
+
 func TestDatasetsHandlerSearchDatasetValidatesQuestion(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	h := &DatasetsHandler{}
@@ -194,6 +218,29 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	body := decodeSearchResponse(t, rec)
 	if body["code"] != float64(common.CodeSuccess) {
 		t.Fatalf("code=%v want=%d body=%s", body["code"], common.CodeSuccess, rec.Body.String())
+	}
+}
+
+func TestDatasetsHandlerSearchDatasetsBindsDocumentMetadataSelection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	fake := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{}}
+	h := &DatasetsHandler{searchDatasetsService: fake}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"hello","dataset_ids":["ds-1"],"include_metadata":true,"metadata_fields":["author"],"reference_metadata":{"include":false,"fields":["year"]}}`))
+	req.Header.Set("Content-Type", "application/json")
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = req
+	c.Set("user", &entity.User{ID: "user-1"})
+
+	h.SearchDatasets(c)
+
+	if fake.req == nil {
+		t.Fatalf("service not called, body=%s", rec.Body.String())
+	}
+	include, fields := fake.req.DocumentMetadataSelection(nil)
+	if !include || len(fields) != 1 || fields[0] != "author" {
+		t.Fatalf("document metadata selection = %v %v", include, fields)
 	}
 }
 

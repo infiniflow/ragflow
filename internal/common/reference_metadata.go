@@ -17,9 +17,12 @@
 package common
 
 // ResolveReferenceMetadata resolves metadata include/fields from request and
-// optional config. Request values take precedence over config values.
-// Supports legacy request keys: include_metadata / metadata_fields.
-// Python equivalent: api/utils/reference_metadata_utils.py::resolve_reference_metadata_preferences()
+// optional config. Request values take precedence over config values, and the
+// top-level request keys include_metadata / metadata_fields take precedence over
+// the nested reference_metadata {include, fields}.
+//
+// The returned fields are nil, meaning every field, when the selection is
+// absent, empty or not a list of strings.
 func ResolveReferenceMetadata(requestPayload, configPayload map[string]interface{}) (bool, []string) {
 	resolved := make(map[string]interface{})
 
@@ -39,7 +42,7 @@ func ResolveReferenceMetadata(requestPayload, configPayload map[string]interface
 				resolved[k] = v
 			}
 		}
-		// Legacy keys
+		// Top-level request keys (override reference_metadata)
 		if v, ok := requestPayload["include_metadata"]; ok {
 			resolved["include"] = v
 		}
@@ -50,14 +53,15 @@ func ResolveReferenceMetadata(requestPayload, configPayload map[string]interface
 
 	include, _ := resolved["include"].(bool)
 
-	rawFields, ok := resolved["fields"].([]interface{})
-	if !ok {
-		return include, nil
-	}
 	var fields []string
-	for _, f := range rawFields {
-		if s, ok := f.(string); ok {
-			fields = append(fields, s)
+	switch raw := resolved["fields"].(type) {
+	case []string:
+		fields = append(fields, raw...)
+	case []interface{}:
+		for _, f := range raw {
+			if s, ok := f.(string); ok {
+				fields = append(fields, s)
+			}
 		}
 	}
 	return include, fields

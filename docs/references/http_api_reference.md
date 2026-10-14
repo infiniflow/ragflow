@@ -2486,6 +2486,10 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
+  - `"search_id"`: `string`
+  - `"include_metadata"`: `boolean`
+  - `"metadata_fields"`: `list[string]`
+  - `"reference_metadata"`: `object`
 
 ##### Request example
 
@@ -2584,8 +2588,20 @@ curl --request POST \
       - `"≥"`
       - `"≤"`
     - `"value"`: `string` - The value to compare.
+- `"search_id"`: `string`
+  The ID of a saved search app. Its saved settings override the corresponding request parameters, except the document metadata selection below, where the request keys take precedence key by key over the saved `reference_metadata`.
+- `"include_metadata"`: `boolean`
+  Whether to attach a `document_metadata` object to each returned chunk. Defaults to `false`. Takes precedence over `"reference_metadata.include"`.
+- `"metadata_fields"`: `list[string]`
+  The metadata keys to keep in `document_metadata`. Omit it or use an empty list to keep every key. Takes precedence over `"reference_metadata.fields"`.
+- `"reference_metadata"`: `object`
+  The nested form of the two parameters above:
+  - `"include"`: `boolean` - Whether to attach `document_metadata`.
+  - `"fields"`: `list[string]` - The metadata keys to keep. Omit it or use an empty list to keep every key.
 
 #### Response
+
+When document metadata is requested, each chunk whose document has metadata, restricted to the requested keys, carries a `document_metadata` object, for example `"document_metadata": {"author": "Jane Doe", "year": 2024}`. Other chunks have no `document_metadata` key.
 
 Success:
 

@@ -1,5 +1,7 @@
 package service
 
+import "ragflow/internal/common"
+
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -60,7 +62,43 @@ type SearchDatasetsRequest struct {
 	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+	IncludeMetadata          *bool                  `json:"include_metadata,omitempty"`
+	MetadataFields           []string               `json:"metadata_fields,omitempty"`
+	ReferenceMetadata        *ReferenceMetadata     `json:"reference_metadata,omitempty"`
 	ForceRefresh             bool                   `json:"force_refresh"`
+}
+
+// ReferenceMetadata selects the document metadata attached to retrieved chunks.
+type ReferenceMetadata struct {
+	Include *bool    `json:"include,omitempty"`
+	Fields  []string `json:"fields,omitempty"`
+}
+
+// DocumentMetadataSelection reports whether retrieved chunks get a
+// document_metadata object and which metadata keys it keeps (nil keeps every
+// key). include_metadata and metadata_fields take precedence over
+// reference_metadata, and the request takes precedence key by key over the
+// reference_metadata saved in searchConfig, the config of the request's
+// search_id.
+func (req *SearchDatasetsRequest) DocumentMetadataSelection(searchConfig map[string]interface{}) (bool, []string) {
+	payload := map[string]interface{}{}
+	if ref := req.ReferenceMetadata; ref != nil {
+		nested := map[string]interface{}{}
+		if ref.Include != nil {
+			nested["include"] = *ref.Include
+		}
+		if ref.Fields != nil {
+			nested["fields"] = ref.Fields
+		}
+		payload["reference_metadata"] = nested
+	}
+	if req.IncludeMetadata != nil {
+		payload["include_metadata"] = *req.IncludeMetadata
+	}
+	if req.MetadataFields != nil {
+		payload["metadata_fields"] = req.MetadataFields
+	}
+	return common.ResolveReferenceMetadata(payload, searchConfig)
 }
 
 // SearchDatasetsResponse is the response structure for dataset search results.
@@ -94,6 +132,9 @@ type SearchDatasetRequest struct {
 	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+	IncludeMetadata          *bool                  `json:"include_metadata,omitempty"`
+	MetadataFields           []string               `json:"metadata_fields,omitempty"`
+	ReferenceMetadata        *ReferenceMetadata     `json:"reference_metadata,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -124,6 +165,9 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		VectorSimilarityWeight:   req.VectorSimilarityWeight,
 		IncludeCompiledChunks:    req.IncludeCompiledChunks,
+		IncludeMetadata:          req.IncludeMetadata,
+		MetadataFields:           req.MetadataFields,
+		ReferenceMetadata:        req.ReferenceMetadata,
 	}
 }
 
