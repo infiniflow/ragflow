@@ -132,18 +132,18 @@ func TestParseIngestorConfigToleratesOutOfRangePageConcurrency(t *testing.T) {
 	}
 }
 
-// TestResolveIngestorMaxConcurrentWorkers pins the precedence
+// TestGetIngestorMaxConcurrentWorkers pins the precedence
 // CLI > environment > config file > default(1) and the inclusive [1, 256]
 // range guard on the FINAL value. An out-of-range or non-integer value at
 // any layer is a fatal startup error.
-func TestResolveIngestorMaxConcurrentWorkers(t *testing.T) {
+func TestGetIngestorMaxConcurrentWorkers(t *testing.T) {
 	const envKey = common.EnvIngestorMaxConcurrentWorkers
 
 	cases := []struct {
 		name       string
 		configured int
 		env        string // "" means leave unset
-		cli        *int
+		argValue   *int
 		want       int
 		wantErr    bool
 	}{
@@ -166,11 +166,11 @@ func TestResolveIngestorMaxConcurrentWorkers(t *testing.T) {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
 			c.ingestor.MaxConcurrentWorkers = tc.configured
-			got, err := c.ResolveIngestorMaxConcurrentWorkers(tc.cli)
+			got, err := c.GetIngestorMaxConcurrentWorkers(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
-						tc.configured, tc.env, tc.cli)
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
+						tc.configured, tc.env, tc.argValue)
 				}
 				return
 			}
@@ -178,25 +178,25 @@ func TestResolveIngestorMaxConcurrentWorkers(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
+				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.env, tc.argValue)
 			}
 		})
 	}
 }
 
-// TestResolveIngestorPageConcurrency pins the precedence
+// TestGetIngestorPageConcurrency pins the precedence
 // CLI > environment > config file > default(2) and the inclusive [1, 16]
 // range guard on the FINAL value. An out-of-range or non-integer value at
 // any layer is a fatal startup error.
-func TestResolveIngestorPageConcurrency(t *testing.T) {
+func TestGetIngestorPageConcurrency(t *testing.T) {
 	const envKey = common.EnvIngestorPageConcurrency
 
 	cases := []struct {
 		name       string
 		configured int
 		env        string // "" means leave unset
-		cli        *int
+		argValue   *int
 		want       int
 		wantErr    bool
 	}{
@@ -217,11 +217,11 @@ func TestResolveIngestorPageConcurrency(t *testing.T) {
 				t.Fatalf("ParseIngestorConfig: %v", err)
 			}
 			c.ingestor.PageConcurrency = tc.configured
-			got, err := c.ResolveIngestorPageConcurrency(tc.cli)
+			got, err := c.GetIngestorPageConcurrency(tc.argValue)
 			if tc.wantErr {
 				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
-						tc.configured, tc.env, tc.cli)
+					t.Fatalf("got nil error, want rejection (configured=%d env=%q argValue=%v)",
+						tc.configured, tc.env, tc.argValue)
 				}
 				return
 			}
@@ -229,8 +229,8 @@ func TestResolveIngestorPageConcurrency(t *testing.T) {
 				t.Fatalf("unexpected error %v", err)
 			}
 			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
+				t.Fatalf("got %d, want %d (configured=%d env=%q argValue=%v)",
+					got, tc.want, tc.configured, tc.env, tc.argValue)
 			}
 		})
 	}

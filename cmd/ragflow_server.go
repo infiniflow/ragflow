@@ -849,7 +849,7 @@ func runIngestor(ctx context.Context, cancel context.CancelFunc, serverName stri
 	ingestorCfg := globalConfig.GetIngestorConfig()
 	// Resolve the ingestor worker count (K) from CLI > env > config > default(1)
 	// and fail fast on an out-of-range value.
-	workers, err := globalConfig.ResolveIngestorMaxConcurrentWorkers(args.ingestorMaxConcurrentWorkers)
+	workers, err := globalConfig.GetIngestorMaxConcurrentWorkers(args.ingestorMaxConcurrentWorkers)
 	if err != nil {
 		return err
 	}
@@ -1554,11 +1554,11 @@ func registerNativeDeepDoc(arguments *serverArgs) error {
 	// inferenceTotalCores), so a misconfiguration aborts rather than silently
 	// oversubscribing the box.
 	cfg := server.GetConfig()
-	K, _, errK := cfg.ResolveDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
+	K, _, errK := cfg.GetDeepDocInferenceConcurrency(arguments.deepdocInferenceConcurrency)
 	if errK != nil {
 		common.Fatal("invalid deepdoc inference concurrency", zap.Error(errK))
 	}
-	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(arguments.deepdocInferenceCPUCores)
+	rawN, explicitN, errN := cfg.GetDeepDocInferenceCPUCores(arguments.deepdocInferenceCPUCores)
 	if errN != nil {
 		common.Fatal("invalid deepdoc inference cpu cores", zap.Error(errN))
 	}
@@ -1592,7 +1592,7 @@ func registerNativeDeepDoc(arguments *serverArgs) error {
 	// Resolve the per-document page concurrency (N) from CLI > env > config >
 	// default(2) and register it with the shared page worker pool. Fail fast on
 	// an out-of-range value.
-	pageConcurrency, err := server.GetConfig().ResolveIngestorPageConcurrency(arguments.ingestorPageConcurrency)
+	pageConcurrency, err := server.GetConfig().GetIngestorPageConcurrency(arguments.ingestorPageConcurrency)
 	if err != nil {
 		return err
 	}

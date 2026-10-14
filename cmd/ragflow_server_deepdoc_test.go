@@ -29,7 +29,7 @@ import (
 // TestParseArgsDeepDocInferenceConcurrency pins the contract that the CLI parser
 // rejects a non-positive or non-integer --deepdoc-inference-concurrency up front
 // (both the "--flag=value" and "--flag value" forms), and accepts a positive
-// value. Because the parser guarantees a positive value, ResolveDeepDocInference
+// value. Because the parser guarantees a positive value, GetDeepDocInference
 // Concurrency can trust the parsed pointer and needs no extra >0 guard.
 func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 	cases := []struct {
@@ -224,13 +224,13 @@ func TestRegisterNativeDeepDocDefaultBootsOnSmallMachine(t *testing.T) {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
 	// No CLI override; both config keys unset.
-	K, explicitK, errK := cfg.ResolveDeepDocInferenceConcurrency(nil)
+	K, explicitK, errK := cfg.GetDeepDocInferenceConcurrency(nil)
 	if errK != nil {
-		t.Fatalf("ResolveDeepDocInferenceConcurrency: %v", errK)
+		t.Fatalf("GetDeepDocInferenceConcurrency: %v", errK)
 	}
-	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(nil)
+	rawN, explicitN, errN := cfg.GetDeepDocInferenceCPUCores(nil)
 	if errN != nil {
-		t.Fatalf("ResolveDeepDocInferenceCPUCores: %v", errN)
+		t.Fatalf("GetDeepDocInferenceCPUCores: %v", errN)
 	}
 	if explicitK || explicitN {
 		t.Fatal("default config must report both K and N as not-explicit")
