@@ -310,9 +310,9 @@ func (s *StringTransformComponent) doSplit(_ context.Context, state *runtime.Can
 func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.CanvasState, inputs map[string]any) map[string]any {
 	delimiter := s.param.Delimiters[0]
 
-	// List refs are joined with the first delimiter, as Python's merge did.
-	// They are swapped for markers here and the joined text goes in after
-	// both passes, so list items are never resolved as refs themselves.
+	// List values are joined with the first delimiter, as Python's merge did.
+	// In both passes they are swapped for markers and the joined text goes in
+	// at the end, so list items are never resolved as refs or placeholders.
 	var lists []string
 	script := runtime.VarRefPattern.ReplaceAllStringFunc(s.param.Script, func(match string) string {
 		sub := runtime.VarRefPattern.FindStringSubmatch(match)
@@ -349,9 +349,10 @@ func (s *StringTransformComponent) doMerge(_ context.Context, state *runtime.Can
 		} else {
 			value = ""
 		}
-		text, ok := joinList(value, delimiter)
-		if !ok {
-			text = fmt.Sprintf("%v", value)
+		text := fmt.Sprintf("%v", value)
+		if joined, ok := joinList(value, delimiter); ok {
+			lists = append(lists, joined)
+			text = listMarker(len(lists) - 1)
 		}
 		script = strings.ReplaceAll(script, placeholder, text)
 	}

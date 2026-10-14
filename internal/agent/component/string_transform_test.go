@@ -364,6 +364,17 @@ func TestStringTransform_MergeListItemsAreNotResolved(t *testing.T) {
 	}
 }
 
+// TestStringTransform_MergeListPlaceholderItemsAreNotResolved: a joined
+// {{name}} list is inserted after the placeholder pass, so its items are not
+// replaced by later placeholders.
+func TestStringTransform_MergeListPlaceholderItemsAreNotResolved(t *testing.T) {
+	state := canvas.NewCanvasState("run-15", "task-15")
+	got := runMerge(t, state, ",", "{{a}}/{{b}}", map[string]any{"a": []any{"{{b}}"}, "b": "X"})
+	if got != "{{b}}/X" {
+		t.Errorf("merge: got %q, want %q", got, "{{b}}/X")
+	}
+}
+
 // TestStringTransform_SplitThenMerge: a split result merged with another
 // delimiter.
 func TestStringTransform_SplitThenMerge(t *testing.T) {
