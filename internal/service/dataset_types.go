@@ -1,5 +1,7 @@
 package service
 
+import "ragflow/internal/service/nlp"
+
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
 	EmbeddingID string `json:"embd_id" binding:"required"`
@@ -39,6 +41,7 @@ type EmbeddingCheckResponse struct {
 type SearchDatasetsRequest struct {
 	DatasetIDs               []string               `json:"dataset_ids" binding:"required"`
 	Question                 string                 `json:"question" binding:"required"`
+	RetrievalMode            nlp.RetrievalMode      `json:"retrieval_mode,omitempty"`
 	Page                     *int                   `json:"page,omitempty"`
 	PageSize                 *int                   `json:"page_size,omitempty"`
 	Size                     *int                   `json:"size,omitempty"`
@@ -74,6 +77,7 @@ type SearchDatasetsResponse struct {
 // SearchDatasetRequest is the request structure for searching chunks within one dataset.
 type SearchDatasetRequest struct {
 	Question                 string                 `json:"question"`
+	RetrievalMode            nlp.RetrievalMode      `json:"retrieval_mode,omitempty"`
 	Page                     *int                   `json:"page,omitempty"`
 	PageSize                 *int                   `json:"page_size,omitempty"`
 	Size                     *int                   `json:"size,omitempty"`
@@ -104,6 +108,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 	return &SearchDatasetsRequest{
 		DatasetIDs:               []string{datasetID},
 		Question:                 req.Question,
+		RetrievalMode:            req.RetrievalMode,
 		Page:                     req.Page,
 		PageSize:                 req.PageSize,
 		Size:                     req.Size,

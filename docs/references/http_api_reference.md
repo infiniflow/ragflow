@@ -2469,6 +2469,8 @@ Retrieves chunks from specified datasets.
 - Body:
   - `"question"`: `string`
   - `"dataset_ids"`: `list[string]`
+  - `"retrieval_mode"`: `string`
+  - `"search_id"`: `string`
   - `"document_ids"`: `list[string]`
   - `"page"`: `integer`
   - `"page_size"`: `integer`
@@ -2527,16 +2529,20 @@ curl --request POST \
   The user query or query keywords.
 - `"dataset_ids"`: `list[string]`, *Required*
   The IDs of the datasets to search. At least one dataset ID must be provided.
+- `"retrieval_mode"`: `string`
+  可选值为 `"hybrid"`、`"vector"`、`"keyword"`，省略时使用 `"hybrid"`。该参数决定生成候选的检索路径；显式空值、空字符串、错误类型和未知值均返回参数错误。三种模式共用权限、知识库、文档、可用性和元数据过滤。相同参数也适用于 `/api/v1/datasets/search` 和 `/api/v1/datasets/{dataset_id}/search`。
+- `"search_id"`: `string`
+  使用已保存的搜索配置，访问该配置需要相应权限。模式优先级为：保存配置中显式设置的 `retrieval_mode` > 请求的 `retrieval_mode` > `"hybrid"`。保存配置中的非法模式返回参数错误。
 - `"document_ids"`: `list[string]`
-  Limits the search to specific documents within the datasets specified by `"dataset_ids"`. Ensure that all selected documents use the same embedding model. Defaults to an empty list.
+  限定 `"dataset_ids"` 范围内的文档，默认为空列表。`"hybrid"` 和 `"vector"` 模式要求知识库使用一致的 embedding 模型；`"keyword"` 模式跳过查询 embedding 的模型依赖检查。
 - `"page"`: `integer`
   Specifies the page on which the chunks will be displayed. Defaults to `1`.
 - `"page_size"`
   The maximum number of chunks on each page. Defaults to `30`.
 - `"similarity_threshold"`
-  The minimum similarity score. Defaults to `0.2`.
+  默认为 `0.2`。`"hybrid"` 保持现有相似度过滤行为；`"vector"` 在向量候选阶段应用该门槛，保留显式 `0`，零命中时保持门槛；`"keyword"` 不使用此参数过滤词法得分。
 - `"keywords_similarity_weight"`: `float`
-  The weight of term similarity. Defaults to `0.7`; the vector cosine similarity weight is calculated as `1 - keywords_similarity_weight`.
+  混合检索的词法权重，默认为 `0.7`，向量权重为 `1 - keywords_similarity_weight`。仅在 `"hybrid"` 下参与评分；单路模式按 `retrieval_mode` 使用对应信号。字段类型、范围和与向量权重的冲突仍会校验。
 - `"vector_similarity_weight"`: `float`
   Legacy fallback used when `"keywords_similarity_weight"` is omitted. If both fields are provided, they must sum to `1`.
 - `"top_k"`: `integer`
@@ -2552,11 +2558,9 @@ curl --request POST \
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`
-  The ID of the rerank model.
+  可选重排模型的 ID。重排处理所选模式已召回的候选，要求 `page=1`。单路模式使用归一化后的模型相关性分数和既有业务排序增强，混合模式沿用原有评分方式。
 - `"keyword"`: `boolean`
-  Indicates whether to enable keyword-based matching:
-  - `true`: Enable keyword-based matching.
-  - `false`: Disable keyword-based matching (default).
+  是否调用模型提取关键词并增强查询，默认为 `false`。该选项与 `retrieval_mode` 独立；启用时可能产生模型调用。
 - `"highlight"`: `boolean`
   Specifies whether to enable highlighting of matched terms in the results:
   - `true`: Enable highlighting of matched terms.
@@ -2584,6 +2588,30 @@ curl --request POST \
       - `"≥"`
       - `"≤"`
     - `"value"`: `string` - The value to compare.
+
+##### 检索模式
+
+| 模式 | 候选来源 | 查询 embedding | 未启用重排时的评分 |
+| --- | --- | --- | --- |
+| `hybrid` | 沿用现有混合检索路径 | 沿用现有行为 | 混合权重及现有评分规则 |
+| `vector` | 仅向量候选，保持业务范围过滤 | 需要可用的 embedding 模型 | 向量检索得分 |
+| `keyword` | 仅全文检索候选 | 0 次 | 引擎词法检索得分 |
+
+两种单路模式均跳过混合融合和二次向量评分。`vector` 的候选无需匹配查询词，`keyword` 的候选由全文检索产生。`keyword` 查询经过分词仍无可检索词时返回参数错误。检索错误会返回给调用者；单路模式的空结果保持为空。
+
+单路模式未启用重排时，保留引擎返回的业务排序，`similarity` 报告引擎原始单路得分；引擎额外的业务权重可以使最终顺序与原始得分顺序不同。`keyword` 的 `term_similarity` 为词法得分、`vector_similarity` 为 `0`，`vector` 的 `vector_similarity` 为向量得分、`term_similarity` 为 `0`。单路模式启用重排后，`similarity` 为模型相关性分数加既有业务排序增强，`vector_similarity` 承载模型相关性分数，`term_similarity` 为 `0`。
+
+例如，分别使用以下请求体比较语义召回与技术术语召回：
+
+```json
+{"question":"如何延长手机续航","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"vector"}
+```
+
+```json
+{"question":"ERR_CONNECTION_RESET","dataset_ids":["<DATASET_ID>"],"retrieval_mode":"keyword"}
+```
+
+词法分数与向量分数的量纲取决于引擎，跨模式、跨引擎的分数不可直接当成统一的正确概率。查询增强 `keyword`、`cross_languages`、自动元数据提取和可选重排各自可能调用模型；关键词模式的零调用保证针对查询 embedding。
 
 #### Response
 

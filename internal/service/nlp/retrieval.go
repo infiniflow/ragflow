@@ -49,6 +49,7 @@ func NewRetrievalService(docEngine engine.DocEngine, documentDAO *dao.DocumentDA
 
 // RetrievalRequest request for retrieval search
 type RetrievalRequest struct {
+	Mode                   RetrievalMode
 	Question               string
 	TenantIDs              []string
 	KbIDs                  []string
@@ -92,6 +93,16 @@ type RetrievalResult struct {
 // - Build chunks
 // - Build document aggregation if specified
 func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest) (*RetrievalResult, error) {
+	if req.Mode != "" {
+		if err := req.Mode.Validate(); err != nil {
+			return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+		}
+	}
+	if req.Mode == RetrievalModeVector && req.EmbeddingModel == nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, "vector 检索模式需要可用的 embedding 模型")
+	}
+	vectorOnly := req.Mode == RetrievalModeVector || req.Mode == "" && req.VectorOnly
+	singleMode := req.Mode == RetrievalModeVector || req.Mode == RetrievalModeKeyword
 	common.InfoCtx(ctx, "Retrieval START", zap.String("question", req.Question), zap.Int("page", req.Page), zap.Int("pageSize", req.PageSize))
 	if req.Question == "" {
 		return &RetrievalResult{Chunks: []map[string]interface{}{}, DocAggs: []map[string]interface{}{}, Total: 0}, nil
@@ -112,7 +123,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		// of the query are reliable signals there (the query is a description,
 		// not a term list), so the default 0.3 vector weight would let token
 		// coincidence re-rank a pure-vector result set.
-		if req.VectorOnly {
+		if vectorOnly {
 			req.VectorSimilarityWeight = func() *float64 { v := 1.0; return &v }()
 		} else {
 			req.VectorSimilarityWeight = func() *float64 { v := 0.3; return &v }()
@@ -158,10 +169,11 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		zap.Float64("similarityThreshold", *req.SimilarityThreshold),
 		zap.Float64("vectorSimilarityWeight", *req.VectorSimilarityWeight),
 		zap.String("engine", engineType),
-		zap.Bool("vectorOnly", req.VectorOnly))
+		zap.Bool("vectorOnly", vectorOnly))
 
 	// Execute search via Search()
 	searchReq := &RetrievalSearchRequest{
+		Mode:                   req.Mode,
 		TenantIDs:              req.TenantIDs,
 		Question:               req.Question,
 		KbIDs:                  req.KbIDs,
@@ -211,9 +223,11 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		idxScores = append(idxScores, idxScore{idx: i, score: s})
 	}
 	// Use SliceStable for deterministic ordering when scores are tied
-	sort.SliceStable(idxScores, func(i, j int) bool {
-		return idxScores[i].score > idxScores[j].score
-	})
+	if !singleMode || req.RerankModel != nil {
+		sort.SliceStable(idxScores, func(i, j int) bool {
+			return idxScores[i].score > idxScores[j].score
+		})
+	}
 
 	// When vector_similarity_weight is 0, similarity_threshold is not meaningful for term-only scores
 	postThreshold := *req.SimilarityThreshold
@@ -227,14 +241,15 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	// whole candidate set through the floor and the tool reports "0 hits" for a
 	// corpus that certainly has neighbours. The engine's ranking is the truth
 	// for this leg; keep it.
-	if req.VectorOnly {
+	if vectorOnly {
 		postThreshold = 0.0
 	}
 
 	// Get valid indices where score >= postThreshold
 	validIdx := make([]int, 0)
 	for _, is := range idxScores {
-		if is.score >= postThreshold {
+		// 单路召回保留引擎业务排序，向量门槛已在召回时执行，词法分数使用引擎尺度。
+		if singleMode || is.score >= postThreshold {
 			validIdx = append(validIdx, is.idx)
 		}
 	}
@@ -256,7 +271,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		pageIdx = validIdx[begin:end]
 	}
 	common.InfoCtx(ctx, "Pagination result info", zap.Int("totalValid", len(validIdx)), zap.Int("begin", begin),
-		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold))
+		zap.Int("end", end), zap.Int("chunkCount", len(pageIdx)), zap.Float64("postThreshold", postThreshold), zap.Bool("postThresholdApplied", !singleMode))
 
 	total := int64(len(validIdx))
 
@@ -455,6 +470,35 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 	vtWeight := *req.VectorSimilarityWeight
 	tkWeight := 1.0 - vtWeight
 	qb := GetQueryBuilder()
+	if req.Mode == RetrievalModeVector || req.Mode == RetrievalModeKeyword {
+		if req.RerankModel != nil && searchResult.Total > 0 {
+			for _, chunk := range searchResult.Chunks {
+				id, _ := chunk["id"].(string)
+				if id == "" {
+					id, _ = chunk["_id"].(string)
+				}
+				field := searchResult.Field[id]
+				if field == nil {
+					continue
+				}
+				// 保留引擎原始特征类型，避免字段投影将标签映射转成非 JSON 字符串。
+				for _, key := range []string{common.PAGERANK_FLD, common.TAG_FLD} {
+					if value, ok := chunk[key]; ok {
+						field[key] = value
+					}
+				}
+			}
+			// 单路召回后的重排只使用模型相关性，同时保留既有业务排序特征。
+			sim, _, modelSim, err := RerankByModel(ctx, req.RerankModel, searchResult.Chunks, searchResult.IDs, searchResult.Field,
+				req.Question, 0, 1, "content_ltks", qb, *req.RankFeature)
+			return sim, make([]float64, len(sim)), modelSim, err
+		}
+		sim := engineRecallScores(searchResult)
+		if req.Mode == RetrievalModeKeyword {
+			return sim, sim, make([]float64, len(sim)), nil
+		}
+		return sim, make([]float64, len(sim)), sim, nil
+	}
 	useInfinity := engine.GetEngineType() == "infinity"
 	useOceanBase := engine.IsOceanBaseFamily(s.docEngine.GetType())
 	// Vastbase fusion returns a single fused score per chunk, so the
@@ -508,7 +552,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		return sim, tsim, vsim, nil
 	}
 
-	if req.VectorOnly {
+	if req.Mode == "" && req.VectorOnly {
 		// The engine's kNN search already ranked these chunks by vector
 		// similarity, so the second-pass KNNScores round trip would recompute
 		// exactly the same numbers — one extra search request per query for
@@ -522,28 +566,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		// every similarity would come out 0 — which the caller's threshold then
 		// filters away wholesale (observed as a 0-hit pure-vector search over a
 		// corpus that certainly holds neighbours).
-		scores := make(map[string]float64, len(searchResult.Chunks))
-		for _, chunk := range searchResult.Chunks {
-			id, _ := chunk["id"].(string)
-			if id == "" {
-				if alt, ok := chunk["_id"].(string); ok {
-					id = alt
-				}
-			}
-			if id == "" {
-				continue
-			}
-			for _, key := range []string{"_score", "SCORE", "SIMILARITY"} {
-				if score, ok := chunk[key].(float64); ok {
-					scores[id] = score
-					break
-				}
-			}
-		}
-		sim := make([]float64, len(searchResult.IDs))
-		for i, id := range searchResult.IDs {
-			sim[i] = scores[id]
-		}
+		sim := engineRecallScores(searchResult)
 		return sim, make([]float64, len(sim)), sim, nil
 	}
 
@@ -580,8 +603,33 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 	return sim, tsim, vsim, nil
 }
 
+func engineRecallScores(result *RetrievalSearchResult) []float64 {
+	scores := make(map[string]float64, len(result.Chunks))
+	for _, chunk := range result.Chunks {
+		id, _ := chunk["id"].(string)
+		if id == "" {
+			id, _ = chunk["_id"].(string)
+		}
+		if id == "" {
+			continue
+		}
+		for _, key := range []string{"_score", "SCORE", "SIMILARITY"} {
+			if score, ok := chunk[key].(float64); ok {
+				scores[id] = score
+				break
+			}
+		}
+	}
+	sim := make([]float64, len(result.IDs))
+	for i, id := range result.IDs {
+		sim[i] = scores[id]
+	}
+	return sim
+}
+
 // RetrievalSearchRequest is the request struct for RetrievalService.Search()
 type RetrievalSearchRequest struct {
+	Mode                RetrievalMode
 	Question            string
 	TenantIDs           []string
 	KbIDs               []string
@@ -675,6 +723,15 @@ type RetrievalSearchResult struct {
 //
 // Hybrid search path retries with lower thresholds if no results found.
 func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchRequest) (*RetrievalSearchResult, error) {
+	if req.Mode != "" {
+		if err := req.Mode.Validate(); err != nil {
+			return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+		}
+	}
+	if req.Mode == RetrievalModeVector && req.EmbeddingModel == nil {
+		return nil, common.NewCodedError(common.CodeArgumentError, "vector 检索模式需要可用的 embedding 模型")
+	}
+	vectorOnly := req.Mode == RetrievalModeVector || req.Mode == "" && req.VectorOnly
 	if req.Highlight == nil {
 		req.Highlight = func() *bool { v := false; return &v }()
 	}
@@ -713,6 +770,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
 		"_score",
 	}
+	if req.Mode == RetrievalModeVector || req.Mode == RetrievalModeKeyword {
+		src = append(src, common.PAGERANK_FLD, common.TAG_FLD)
+	}
 
 	kwds := make(map[string]struct{})
 
@@ -746,13 +806,24 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// Non-empty question
 
 		// Compute keywords via QueryBuilder
-		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3))
+		var matchText *types.MatchTextExpr
+		var keywords []string
+		if req.Mode != RetrievalModeVector {
+			lexicalMinMatch := minMatch(req.VectorSimilarityWeight, 0.3)
+			if req.Mode == RetrievalModeKeyword {
+				lexicalMinMatch = 0.3
+			}
+			matchText, keywords = GetQueryBuilder().Question(req.Question, "", lexicalMinMatch)
+		}
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 		}
 
 		// Check if EmbeddingModel is available
-		if req.EmbeddingModel == nil {
+		if req.Mode == RetrievalModeKeyword || req.EmbeddingModel == nil {
+			if req.Mode == RetrievalModeKeyword && matchText == nil {
+				return nil, common.NewCodedError(common.CodeArgumentError, "keyword 检索模式的查询没有可检索词")
+			}
 			// Keyword-only search
 			searchRequestWithRank := *searchRequest
 			searchRequestWithRank.MatchExprs = []interface{}{matchText}
@@ -766,7 +837,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		} else {
 			// Compute question vector via GetVector
 			similarityForGetVector := req.SimilarityThreshold
-			if similarityForGetVector <= 0 {
+			if similarityForGetVector <= 0 && req.Mode != RetrievalModeVector {
 				similarityForGetVector = 0.1
 			}
 			matchDense, err := s.GetVector(ctx, req.Question, req.EmbeddingModel, knnTopK, numCandidates, similarityForGetVector)
@@ -782,7 +853,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			// expression means no weighted-sum step over a leg that does not
 			// exist.
 			var fusionExpr *types.FusionExpr
-			if !req.VectorOnly {
+			if !vectorOnly {
 				fusionExpr = buildRetrievalFusionExpr(s.docEngine.GetType(), knnTopK, req.VectorSimilarityWeight)
 			}
 
@@ -794,7 +865,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 			}
 
 			searchRequest.SelectFields = searchSrc
-			if req.VectorOnly || matchText == nil {
+			if vectorOnly || matchText == nil {
 				// Dense leg alone. The engine then builds a kNN query whose
 				// filter is the scope conditions only — no BM25 clause, so the
 				// result set is not restricted to chunks that contain the
@@ -810,9 +881,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 				return nil, fmt.Errorf("search failed: %w", err)
 			}
 			// If result is empty, retry with relaxed conditions
-			if engineResult.Total == 0 {
+			if engineResult.Total == 0 && req.Mode != RetrievalModeVector {
 				_, hasDocIDFilter := filters["doc_id"]
-				if req.VectorOnly || matchText == nil {
+				if vectorOnly || matchText == nil {
 					if *req.AllowDenseFallback {
 						common.Debug("Retrieval dense-only fallback after empty initial search")
 						matchDense = cloneDenseExpr(denseTemplate)
@@ -852,7 +923,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1))
 					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
-					if req.VectorOnly || matchText == nil {
+					if vectorOnly || matchText == nil {
 						searchRequest.MatchExprs = []interface{}{matchDense}
 					} else {
 						searchRequest.MatchExprs = []interface{}{matchText, matchDense, fusionExpr}

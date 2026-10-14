@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"math"
 	"net/http"
 	"net/http/httptest"
@@ -16,6 +17,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	"ragflow/internal/service"
+	"ragflow/internal/service/nlp"
 )
 
 type fakeSearchDatasetService struct {
@@ -307,4 +309,77 @@ func decodeSearchResponse(t *testing.T, rec *httptest.ResponseRecorder) map[stri
 		t.Fatalf("unmarshal response: %v body=%s", err, rec.Body.String())
 	}
 	return body
+}
+
+func TestDatasetsHandlerRetrievalModes(t *testing.T) {
+	for _, path := range []string{"/api/v1/retrieval", "/api/v1/datasets/search", "/api/v1/datasets/ds-1/search"} {
+		for _, value := range []string{`"hybrid"`, `"vector"`, `"keyword"`, `null`, `""`, `"unknown"`, `42`, `true`, `{}`, `[]`} {
+			t.Run(path+"/"+value, func(t *testing.T) {
+				gin.SetMode(gin.TestMode)
+				multiple := &fakeSearchDatasetsService{resp: &service.SearchDatasetsResponse{}}
+				single := &fakeSearchDatasetService{resp: &service.SearchDatasetsResponse{}}
+				h := &DatasetsHandler{searchDatasetsService: multiple, searchDatasetService: single}
+				rec := httptest.NewRecorder()
+				c, _ := gin.CreateTestContext(rec)
+				c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"question":"检索","dataset_ids":["ds-1"],"retrieval_mode":`+value+`}`))
+				c.Request.Header.Set("Content-Type", "application/json")
+				c.Set("user", &entity.User{ID: "user-1"})
+				if path == "/api/v1/datasets/ds-1/search" {
+					c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+					h.SearchDataset(c)
+				} else {
+					h.SearchDatasets(c)
+				}
+				body := decodeSearchResponse(t, rec)
+				valid := value == `"hybrid"` || value == `"vector"` || value == `"keyword"`
+				if !valid {
+					if body["code"] != float64(common.CodeArgumentError) || multiple.req != nil || single.req != nil {
+						t.Fatalf("非法模式应在服务调用前返回参数错误：%v", body)
+					}
+					return
+				}
+				if body["code"] != float64(common.CodeSuccess) {
+					t.Fatalf("合法模式失败：%v", body)
+				}
+				var got nlp.RetrievalMode
+				if single.req != nil {
+					got = single.req.RetrievalMode
+				} else if multiple.req != nil {
+					got = multiple.req.RetrievalMode
+				}
+				if string(got) != strings.Trim(value, `"`) {
+					t.Fatalf("模式传递=%q，期望=%s", got, value)
+				}
+			})
+		}
+	}
+}
+
+func TestDatasetsHandlerSearchUsesServiceArgumentErrorCode(t *testing.T) {
+	for _, single := range []bool{false, true} {
+		t.Run(map[bool]string{false: "多知识库", true: "单知识库"}[single], func(t *testing.T) {
+			gin.SetMode(gin.TestMode)
+			message := "search_config.retrieval_mode 必须是 hybrid、vector 或 keyword"
+			err := fmt.Errorf("检索失败：%w", common.NewCodedError(common.CodeArgumentError, message))
+			h := &DatasetsHandler{
+				searchDatasetsService: &fakeSearchDatasetsService{err: err},
+				searchDatasetService:  &fakeSearchDatasetService{err: err},
+			}
+			rec := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(rec)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/retrieval", strings.NewReader(`{"question":"检索","dataset_ids":["ds-1"],"retrieval_mode":"keyword"}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set("user", &entity.User{ID: "user-1"})
+			if single {
+				c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+				h.SearchDataset(c)
+			} else {
+				h.SearchDatasets(c)
+			}
+			body := decodeSearchResponse(t, rec)
+			if body["code"] != float64(common.CodeArgumentError) || body["message"] != message {
+				t.Fatalf("参数错误分类或原始信息丢失：%v", body)
+			}
+		})
+	}
 }
