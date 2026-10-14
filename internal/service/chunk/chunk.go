@@ -203,6 +203,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Determine meta_data_filter
 	var chatID string
 	var chatModelForFilter *models.ChatModel
+	// Filled by the search_id block below, then used to resolve retrieval
+	// parameters.
+	var searchConfig map[string]interface{}
 	filter := req.Filter
 	tenantRerankID := req.TenantRerankID
 	rerankID := req.RerankID
@@ -220,7 +223,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if err != nil {
 			return nil, fmt.Errorf("failed to get search app %s: %w", *req.SearchID, err)
 		}
-		if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+		if cfg, ok := searchConfigMap(searchDetail["search_config"]); ok && cfg != nil {
+			searchConfig = cfg
 			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
 				rerankCandidatesCount = 100
 				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
@@ -393,6 +397,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		}
 	}
 
+	// Resolved here because search_config is only known after the search_id
+	// block above.
+	similarityThreshold, vectorSimilarityWeight, topK := resolveSearchbotRetrievalParams(req, searchConfig)
+
 	retrievalReq := &nlp.RetrievalRequest{
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,
@@ -401,9 +409,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
 		RerankCandidatesCount:  &rerankCandidatesCount,
-		KNNTopK:                req.TopK,
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		KNNTopK:                &topK,
+		SimilarityThreshold:    &similarityThreshold,
+		VectorSimilarityWeight: &vectorSimilarityWeight,
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
@@ -439,6 +447,49 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// Endpoint defaults for the searchbot retrieval_test path, used when neither
+// the request nor the saved search_config provides a value.
+const (
+	searchbotDefaultSimilarityThreshold    = 0.0
+	searchbotDefaultVectorSimilarityWeight = 0.3
+	searchbotDefaultTopK                   = 1024
+)
+
+// resolveSearchbotRetrievalParams resolves similarity_threshold,
+// vector_similarity_weight and top_k from the request, falling back to the
+// search app's saved search_config and then to the endpoint defaults. A nil
+// pointer means the field was omitted, so an explicit zero is kept — it is how
+// a caller disables the threshold floor or selects a zero vector weight.
+// searchConfig may be nil.
+//
+// vector_similarity_weight also derives from keywords_similarity_weight
+// (vector = 1 - keywords) when the config carries only the keyword form.
+func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchConfig map[string]interface{}) (similarityThreshold, vectorSimilarityWeight float64, topK int) {
+	similarityThreshold = searchbotDefaultSimilarityThreshold
+	if req.SimilarityThreshold != nil {
+		similarityThreshold = *req.SimilarityThreshold
+	} else if configured, ok := common.ToFloat(searchConfig["similarity_threshold"]); ok {
+		similarityThreshold = configured
+	}
+
+	vectorSimilarityWeight = searchbotDefaultVectorSimilarityWeight
+	if req.VectorSimilarityWeight != nil {
+		vectorSimilarityWeight = *req.VectorSimilarityWeight
+	} else if configured, ok := common.ToFloat(searchConfig["vector_similarity_weight"]); ok {
+		vectorSimilarityWeight = configured
+	} else if keywords, ok := common.ToFloat(searchConfig["keywords_similarity_weight"]); ok {
+		vectorSimilarityWeight = 1 - keywords
+	}
+
+	topK = searchbotDefaultTopK
+	if req.TopK != nil {
+		topK = *req.TopK
+	} else if configured, ok := common.GetInt(searchConfig["top_k"]); ok {
+		topK = configured
+	}
+	return similarityThreshold, vectorSimilarityWeight, topK
 }
 
 // knowledgebaseEmbeddingKey groups datasets by their resolved base embedding
@@ -544,10 +595,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk not found")
 	}
 
-	// Return the stored row with only the tokenized/vector runtime fields
-	// dropped, mirroring Python's _strip_chunk_runtime_fields. The frontend
-	// normalizes both this shape and the renamed one (mapChunkToLegacy), so
-	// returning the row verbatim is what Python does and costs no UI change.
+	// Return the stored row without tokenized/vector runtime fields.
 	result := make(map[string]interface{}, len(chunk))
 	for k, v := range chunk {
 		if isChunkRuntimeField(k) {
@@ -558,9 +606,8 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	return &service.GetChunkResponse{Chunk: result}, nil
 }
 
-// isChunkRuntimeField reports the fields Python's _strip_chunk_runtime_fields
-// removes before returning a chunk: the regex (_vec$|_sm_|_tks|_ltks) — _vec is
-// anchored at the end, the other three are substring matches.
+// isChunkRuntimeField identifies internal fields omitted from chunk responses.
+// The _vec suffix is anchored at the end; token field names use substring matches.
 func isChunkRuntimeField(name string) bool {
 	return strings.HasSuffix(name, "_vec") ||
 		strings.Contains(name, "_sm_") ||
@@ -847,7 +894,6 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"to_entity_kwd",
 			"toc_kwd",
 			"doc_type_kwd",
-			"available_int",
 		},
 		Filter: map[string]interface{}{
 			"doc_id":   req.DocID,
@@ -874,7 +920,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
 		skipFields := map[string]bool{
-			"_id": true, "authors": true, "_score": true, "SCORE": true,
+			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
 		}
 		for k, v := range chunk {

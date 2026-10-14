@@ -1,6 +1,10 @@
 package service
 
-import "ragflow/internal/common"
+import (
+	"fmt"
+
+	"ragflow/internal/common"
+)
 
 // CheckEmbeddingRequest is the request structure for checking embedding compatibility.
 type CheckEmbeddingRequest struct {
@@ -66,6 +70,8 @@ type SearchDatasetsRequest struct {
 	MetadataFields           []string               `json:"metadata_fields,omitempty"`
 	ReferenceMetadata        *ReferenceMetadata     `json:"reference_metadata,omitempty"`
 	ForceRefresh             bool                   `json:"force_refresh"`
+
+	KnowledgeCompilationScope string `json:"knowledge_compilation_scope,omitempty"`
 }
 
 // ReferenceMetadata selects the document metadata attached to retrieved chunks.
@@ -135,6 +141,8 @@ type SearchDatasetRequest struct {
 	IncludeMetadata          *bool                  `json:"include_metadata,omitempty"`
 	MetadataFields           []string               `json:"metadata_fields,omitempty"`
 	ReferenceMetadata        *ReferenceMetadata     `json:"reference_metadata,omitempty"`
+
+	KnowledgeCompilationScope string `json:"knowledge_compilation_scope,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -168,7 +176,17 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		IncludeMetadata:          req.IncludeMetadata,
 		MetadataFields:           req.MetadataFields,
 		ReferenceMetadata:        req.ReferenceMetadata,
+
+		KnowledgeCompilationScope: req.KnowledgeCompilationScope,
 	}
+}
+
+// ValidateKnowledgeCompilationScope checks the supported search scopes.
+func ValidateKnowledgeCompilationScope(scope string) error {
+	if scope != "" && scope != "dataset" && scope != "document" && scope != "all" {
+		return fmt.Errorf("knowledge_compilation_scope must be dataset, document, or all")
+	}
+	return nil
 }
 
 // MetadataConfigField mirrors one field in the dataset metadata config API.

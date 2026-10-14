@@ -338,6 +338,9 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 		}
 		if ck, _ := cm["compile_kwd"].(string); ck != "" {
 			seenCompiled = true
+			if cm["scope_kwd"] != "doc" {
+				t.Fatalf("Invoke(%s): scope_kwd = %v, want doc", variant, cm["scope_kwd"])
+			}
 			if _, ok := cm["q_8_vec"]; !ok {
 				t.Fatalf("Invoke(%s): compiled chunk missing vector: %v", variant, cm)
 			}
