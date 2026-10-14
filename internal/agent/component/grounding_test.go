@@ -25,6 +25,7 @@ package component
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -335,6 +336,44 @@ func TestGrounding_PartialStreamFailure_FallsBack(t *testing.T) {
 	}
 	if len(emitted) != 1 || emitted[0] != "original" {
 		t.Errorf("emitted=%v, want exactly one emission of the original answer", emitted)
+	}
+}
+
+// TestGrounding_BatchedChunks: a chunk set larger than one batch budget
+// is grounded through multiple sequential calls, each feeding its output
+// to the next.
+func TestGrounding_BatchedChunks(t *testing.T) {
+	inv := &groundingStreamingInvoker{groundingTestInvoker: groundingTestInvoker{responses: []string{"batch1", "batch2", "batch3"}}}
+	prev := getDefaultChatInvoker()
+	SetDefaultChatInvoker(inv)
+	defer SetDefaultChatInvoker(prev)
+
+	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
+		return &schema.Message{Role: schema.Assistant, Content: "original"}, nil
+	})
+
+	// 30 chunks x 3000 chars exceeds the 40k batch budget => >=3 batches.
+	var chunks []map[string]any
+	for i := 0; i < 30; i++ {
+		chunks = append(chunks, map[string]any{"id": fmt.Sprintf("%d", i), "content": strings.Repeat("x", 3100)})
+	}
+	state := canvas.NewCanvasState("r1", "t1")
+	state.SetRetrievalChunks(chunks)
+	ctx := runtime.WithState(t.Context(), state)
+
+	c := NewAgentComponent(AgentParam{ModelID: "stub", Cite: true})
+	out, err := c.Invoke(ctx, nil, map[string]any{"user_prompt": "q"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if inv.calls < 2 {
+		t.Fatalf("expected multiple grounding calls, got %d", inv.calls)
+	}
+	if got := out["content"]; got != "batch3" {
+		t.Errorf("content=%v, want last batch output 'batch3'", got)
+	}
+	if got := out["grounding_status"]; got != "applied" {
+		t.Errorf("grounding_status=%v, want 'applied'", got)
 	}
 }
 

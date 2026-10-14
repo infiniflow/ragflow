@@ -42,11 +42,14 @@ const maxSubAgentDepth = 8
 const defaultAgentDeferredTimeout = 10 * time.Minute
 
 // Citation grounding prompt size guards. The grounding prompt embeds
-// every retrieved chunk plus the full answer; beyond these bounds the
-// call regularly outlives provider stream limits and the answer is lost.
+// retrieved chunks plus the full answer; a single oversized call
+// regularly outlives provider stream limits and the answer is lost.
+// Chunk bodies are truncated, chunks are grounded in batches capped
+// by characters and count; beyond the batch cap the tail stays uncited.
 const (
-	citationGroundingMaxChunkChars  = 3000
-	citationGroundingMaxPromptChars = 120_000
+	citationGroundingMaxChunkChars = 3000
+	citationGroundingBatchChars    = 40_000
+	citationGroundingMaxBatches    = 4
 )
 
 // agentPatternless matches `<model>@<provider>` and
@@ -463,9 +466,14 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 // the model to insert [ID:N] tags into the assistant's final
 // content.
 //
-// Streams grounded deltas when the invoker supports streaming. Returns the
-// original content when no chunks are available or the call fails before
-// emitting anything.
+// Chunk bodies are truncated and the chunk set is split into batches;
+// each batch is grounded by a separate sequential call whose output
+// feeds the next one. On a batch failure the last successful version
+// is returned, so a single provider timeout loses only the remaining
+// batches, never the answer itself. Grounded deltas are buffered
+// rather than streamed, so a failed call never reached the client.
+//
+// Returns the grounded content and the first batch error, if any.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -476,21 +484,61 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	if strings.TrimSpace(content) == "" {
 		return content, nil
 	}
-	// Oversized grounding prompts reliably stall on slow providers and
-	// burn the per-call budget; a skipped ground is better than a lost
-	// answer. Long chunk bodies are truncated rather than dropped so the
-	// chunk remains citable.
-	total := len(content)
 	for i := range chunks {
 		if len(chunks[i].Content) > citationGroundingMaxChunkChars {
 			chunks[i].Content = chunks[i].Content[:citationGroundingMaxChunkChars]
 		}
-		total += len(chunks[i].Content)
 	}
-	if total > citationGroundingMaxPromptChars {
-		return content, fmt.Errorf("citation grounding skipped: prompt too large (%d chars > %d)", total, citationGroundingMaxPromptChars)
+	batches := citationBatches(chunks, citationGroundingBatchChars)
+	if len(batches) > citationGroundingMaxBatches {
+		batches = batches[:citationGroundingMaxBatches]
 	}
-	systemPrompt, _ := prompts.CitationPlusPrompt(chunks)
+	grounded := content
+	var firstErr error
+	for i, batch := range batches {
+		out, err := citationGroundingCall(ctx, db, p, grounded, batch, i > 0)
+		if err != nil {
+			if firstErr == nil {
+				firstErr = fmt.Errorf("citation grounding batch %d/%d: %w", i+1, len(batches), err)
+			}
+			break
+		}
+		if trimmed := strings.TrimSpace(out); trimmed != "" {
+			grounded = out
+		}
+	}
+	return grounded, firstErr
+}
+
+// citationBatches packs chunks into batches whose combined content
+// stays under budget characters.
+func citationBatches(chunks []prompts.CitationSource, budget int) [][]prompts.CitationSource {
+	var batches [][]prompts.CitationSource
+	var cur []prompts.CitationSource
+	size := 0
+	for _, c := range chunks {
+		if len(cur) > 0 && size+len(c.Content) > budget {
+			batches = append(batches, cur)
+			cur, size = nil, 0
+		}
+		cur = append(cur, c)
+		size += len(c.Content)
+	}
+	if len(cur) > 0 {
+		batches = append(batches, cur)
+	}
+	return batches
+}
+
+// citationGroundingCall makes one buffered grounding invocation over a
+// single batch of chunks.
+func citationGroundingCall(ctx context.Context, db *gorm.DB, p AgentParam, content string, batch []prompts.CitationSource, keepExisting bool) (string, error) {
+	systemPrompt, _ := prompts.CitationPlusPrompt(batch)
+	if keepExisting {
+		// Later batches see text already tagged by earlier ones; without
+		// this instruction models tend to strip prior [ID:] citations.
+		systemPrompt += "\nThe text already contains [ID:<ID>] citation tags; keep every existing tag unchanged.\n"
+	}
 	inv := getDefaultChatInvoker()
 	req := ChatInvokeRequest{
 		Driver:    p.Driver,
@@ -506,9 +554,6 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	var resp *ChatInvokeResponse
 	var err error
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
-		// Grounded deltas are buffered, not streamed: a stream that dies
-		// mid-response must never leave partial grounded text on the wire —
-		// the caller falls back to the original answer on any error.
 		resp, err = streamer.Stream(ctx, db, req, func(delta string, isThink bool) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
@@ -519,16 +564,10 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		resp, err = inv.Invoke(ctx, db, req)
 	}
 	if err != nil {
-		// Grounding is best-effort. Return the original content
-		// so the message still flows; the caller can decide
-		// whether to surface the error.
-		return content, err
+		return "", err
 	}
 	if resp == nil {
-		return content, fmt.Errorf("citation grounding returned no response")
-	}
-	if strings.TrimSpace(resp.Content) == "" {
-		return content, nil
+		return "", fmt.Errorf("citation grounding returned no response")
 	}
 	return resp.Content, nil
 }
