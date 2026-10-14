@@ -80,7 +80,9 @@ func TestResolvePort(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := ResolvePort(tc.configured, tc.cli)
+			c := &Config{}
+			c.SetAPIServerHTTPPort(tc.configured)
+			got, err := c.ResolvePort(tc.cli)
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("ResolvePort(%d, %v) = %d, want error", tc.configured, tc.cli, got)

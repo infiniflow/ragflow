@@ -72,7 +72,6 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	_ "ragflow/internal/ingestion/wire"
 	"ragflow/internal/server"
-	"ragflow/internal/server/config"
 	"ragflow/internal/utility"
 )
 
@@ -460,19 +459,28 @@ func main() {
 	// real file-backed logger is up.
 	switch *arguments.mode {
 	case "api":
-		port, portErr := config.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.port)
+		port, portErr := globalConfig.ResolvePort(arguments.port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve API server port: %v\n", portErr)
 			os.Exit(1)
 		}
 		globalConfig.SetAPIServerHTTPPort(port)
+		// Disambiguate the log file per bound port when no explicit --name
+		// is given (e.g. two API servers on the same host on different
+		// ports). Restored after the precedence refactor dropped it.
+		if arguments.name == nil {
+			serverName = fmt.Sprintf("api_server_%d", port)
+		}
 	case "admin":
-		port, portErr := config.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.port)
+		port, portErr := globalConfig.ResolvePort(arguments.port)
 		if portErr != nil {
 			fmt.Printf("Failed to resolve admin server port: %v\n", portErr)
 			os.Exit(1)
 		}
 		globalConfig.SetAdminHTTPPort(port)
+		if arguments.name == nil {
+			serverName = fmt.Sprintf("admin_server_%d", port)
+		}
 	case "ingestor":
 		if serverName == "" {
 			uuid := common.GenerateUUID()

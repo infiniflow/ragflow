@@ -62,41 +62,40 @@ func (c *Config) ParseLogConfig(v *viper.Viper) error {
 	c.log.MaxAge = common.DefaultLogMaxAgeDays
 	c.log.Compress = boolPtr(common.DefaultLogCompress)
 
-	if !v.IsSet("log") {
-		return nil
-	}
-	sub := v.Sub("log")
-	if sub == nil {
-		return nil
-	}
-
-	if sub.IsSet("level") {
-		c.log.Level = sub.GetString("level")
-	}
-
-	if sub.IsSet("format") {
-		c.log.Format = sub.GetString("format")
+	// Read each log.* key from the ROOT viper (which carries the
+	// prefix/replacer/AutomaticEnv configured in server.Init) rather than
+	// from v.Sub("log"). viper's Sub returns nil for an env-only key, so a
+	// lone RAGFLOW_LOG_LEVEL (no `log:` YAML section) would otherwise be
+	// silently dropped. Reading from the root honours the env override in
+	// both the config-file and env-only cases, and env wins over the file
+	// (AutomaticEnv precedence).
+	if v.IsSet("log.level") {
+		c.log.Level = v.GetString("log.level")
 	}
 
-	if sub.IsSet("path") {
-		c.log.Path = sub.GetString("path")
+	if v.IsSet("log.format") {
+		c.log.Format = v.GetString("log.format")
 	}
 
-	if sub.IsSet("max_size") {
-		c.log.MaxSize = sub.GetInt("max_size")
+	if v.IsSet("log.path") {
+		c.log.Path = v.GetString("log.path")
 	}
 
-	if sub.IsSet("max_backups") {
-		c.log.MaxBackups = sub.GetInt("max_backups")
+	if v.IsSet("log.max_size") {
+		c.log.MaxSize = v.GetInt("log.max_size")
 	}
 
-	if sub.IsSet("max_age") {
-		c.log.MaxAge = sub.GetInt("max_age")
+	if v.IsSet("log.max_backups") {
+		c.log.MaxBackups = v.GetInt("log.max_backups")
 	}
 
-	if sub.IsSet("compress") {
-		v := sub.GetBool("compress")
-		c.log.Compress = &v
+	if v.IsSet("log.max_age") {
+		c.log.MaxAge = v.GetInt("log.max_age")
+	}
+
+	if v.IsSet("log.compress") {
+		compress := v.GetBool("log.compress")
+		c.log.Compress = &compress
 	}
 
 	return nil

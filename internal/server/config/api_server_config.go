@@ -137,13 +137,13 @@ func (c *Config) SetAPIServerHTTPPort(port int) {
 
 // ResolvePort resolves the effective HTTP port from the precedence
 // CLI flag > config file (viper, already merged with env) > the built-in
-// default already stored in the parsed config, and validates the final
-// value against [MinPort, MaxPort]. The CLI parser still rejects an
-// out-of-range --port up front; this guard owns the config/env layers,
-// where a non-integer value used to reach viper's GetInt as a silent 0
-// (the server would then listen on a random port).
-func ResolvePort(configured int, cli *int) (int, error) {
-	port := configured
+// default already stored in the parsed config (c.apiServer.HTTPPort), and
+// validates the final value against [MinPort, MaxPort]. The CLI parser still
+// rejects an out-of-range --port up front; this guard owns the config/env
+// layers, where a non-integer value used to reach viper's GetInt as a silent
+// 0 (the server would then listen on a random port).
+func (c *Config) ResolvePort(cli *int) (int, error) {
+	port := c.apiServer.HTTPPort
 	if cli != nil {
 		port = *cli
 	}
