@@ -900,18 +900,18 @@ jobs:
           fi
 
       - name: Run ragflow_deps regression guards
-        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
-        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened) and (b) the
-        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Local, needs no API keys or model downloads; guards (a) the native
+        # archive / ONNX Runtime extraction logic the in-process (Go) DeepDoc
+        # backend build depends on (notably the version-bump path), and (b) the
+        # tokenizer-asset chain: the downloader's manifest, the three runtime
         # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
-        # Go counters silently degrade to the calibrated cl100k estimate. Run them
-        # in isolation so the test/testcases conftest (which requires
+        # Go counters silently degrade to the calibrated cl100k estimate. Run the
+        # pytest in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
+          uv run pytest tools/scripts/test_download_dev_deps.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |

@@ -35,6 +35,7 @@ import (
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -116,7 +117,7 @@ func maybeDispatchImage(
 		text, err = extractImageText(ctx, img)
 	}
 	release()
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups, fractionWindow{})
+	parsed := dispatchParse(ctx, fileType, filename, binary, setups, progress.Window{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}

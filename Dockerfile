@@ -194,10 +194,6 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
-# build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
-# ORT version pin from this file; without it the --go build fails with
-# "could not parse the ONNX Runtime version from one of the pinned locations".
-COPY ragflow_deps/download_deps.py ./ragflow_deps/
 COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT

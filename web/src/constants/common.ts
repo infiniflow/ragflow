@@ -187,6 +187,20 @@ export const AudioExtensions = [
   'amr',
 ];
 
+export const VideoExtensions = [
+  'mp4',
+  'avi',
+  'mov',
+  'mkv',
+  'wmv',
+  'flv',
+  'mpeg',
+  'mpg',
+  'asf',
+  'rm',
+  'rmvb',
+];
+
 // Without FileViewer
 export const ExceptiveType = [
   'xlsx',

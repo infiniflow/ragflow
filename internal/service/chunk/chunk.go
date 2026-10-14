@@ -827,9 +827,14 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"content_with_weight",
 			"img_id",
 			"position_int",
-			"docnm",
-			"important_keywords",
-			"questions",
+			// Call for the ES field names: Elasticsearch does not translate
+			// SelectFields (see elasticsearch/chunk.go), while Infinity's
+			// convertSelectFields maps these names onto its own docnm /
+			// important_keywords / questions columns. Asking for the Python-style
+			// aliases here returned no document name at all on ES.
+			"docnm_kwd",
+			"important_kwd",
+			"question_kwd",
 			"entities_kwd",
 			"entity_kwd",
 			"entity_type_kwd",
