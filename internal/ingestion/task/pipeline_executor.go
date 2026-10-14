@@ -302,12 +302,10 @@ func (s *PipelineExecutor) processOutput(ctx context.Context, pipelineOutput map
 		}
 	}
 
-	// Per-document compiled knowledge products (those emitted by the
-	// KnowledgeCompiler component and stamped with `compile_kwd`) are persisted
-	// as available_int=0: invisible to the normal retriever until the dataset-level
-	// post-processing consumer (§11) merges them into available_int=1 products.
-	// Ordinary source chunks stay available_int=1 (the index default) unless the
-	// document itself is disabled (status=0).
+	// Per-document wiki products are staged as available_int=0 until the
+	// dataset-level consumer merges them into available_int=1 products.
+	// Final per-document structures and ordinary source chunks are written with
+	// available_int=1 unless the document itself is disabled (status=0).
 	markCompiledProductsHidden(chunks)
 	// Reload status immediately before write: LoadFromIngestionTask copied a
 	// snapshot that may be stale if BatchUpdateDocumentStatus ran mid-pipeline.
