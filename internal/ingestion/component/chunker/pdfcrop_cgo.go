@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"image"
 	"os"
 	"runtime"
@@ -167,6 +168,16 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		go func(chunkIdx int) {
 			defer wg.Done()
 			defer func() { <-sem }()
+			// A panic in a native render or in the crop of one chunk must
+			// cost that chunk its preview, not the ingestor process: the
+			// task-level recover does not cover goroutines started here.
+			defer func() {
+				if r := recover(); r != nil {
+					common.Error("cropImageChunks: crop panicked, skipping chunk preview",
+						fmt.Errorf("panic: %v", r),
+						zap.Int("chunk", chunkIdx), zap.Stack("stack"))
+				}
+			}()
 			if ctx.Err() != nil {
 				return
 			}
@@ -193,6 +204,15 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 
 			single := make(map[int]image.Image, len(positions))
 			acquired := make([]int, 0, len(positions))
+			// Release the page bitmaps once cropping is done, or on a panic,
+			// so a held page never stays pinned in the cache.
+			releasePages := func() {
+				for _, pn := range acquired {
+					cache.Release(pn)
+				}
+				acquired = nil
+			}
+			defer releasePages()
 			for _, pos := range positions {
 				for _, pn := range pos.PageNumbers {
 					if _, ok := single[pn]; ok {
@@ -215,12 +235,9 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 			} else {
 				img = util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
 			}
-			// Release the page bitmaps now that cropping is done. They are no
-			// longer needed and may be evicted under the LRU cap; the image
-			// below is encoded from single and does not depend on the pages.
-			for _, pn := range acquired {
-				cache.Release(pn)
-			}
+			// The pages are no longer needed and may be evicted; the image
+			// below is encoded from single and does not depend on them.
+			releasePages()
 			if img == "" {
 				return
 			}
