@@ -459,21 +459,23 @@ const (
 
 // resolveSearchbotRetrievalParams resolves similarity_threshold,
 // vector_similarity_weight and top_k from the request, falling back to the
-// search app's saved search_config and then to the endpoint defaults. A zero
-// request value counts as "not provided"; searchConfig may be nil.
+// search app's saved search_config and then to the endpoint defaults. A nil
+// pointer means the field was omitted, so an explicit zero is kept — it is how
+// a caller disables the threshold floor or selects a zero vector weight.
+// searchConfig may be nil.
 //
 // vector_similarity_weight also derives from keywords_similarity_weight
 // (vector = 1 - keywords) when the config carries only the keyword form.
 func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchConfig map[string]interface{}) (similarityThreshold, vectorSimilarityWeight float64, topK int) {
 	similarityThreshold = searchbotDefaultSimilarityThreshold
-	if req.SimilarityThreshold != nil && *req.SimilarityThreshold != 0 {
+	if req.SimilarityThreshold != nil {
 		similarityThreshold = *req.SimilarityThreshold
 	} else if configured, ok := common.ToFloat(searchConfig["similarity_threshold"]); ok {
 		similarityThreshold = configured
 	}
 
 	vectorSimilarityWeight = searchbotDefaultVectorSimilarityWeight
-	if req.VectorSimilarityWeight != nil && *req.VectorSimilarityWeight != 0 {
+	if req.VectorSimilarityWeight != nil {
 		vectorSimilarityWeight = *req.VectorSimilarityWeight
 	} else if configured, ok := common.ToFloat(searchConfig["vector_similarity_weight"]); ok {
 		vectorSimilarityWeight = configured
@@ -482,7 +484,7 @@ func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchCo
 	}
 
 	topK = searchbotDefaultTopK
-	if req.TopK != nil && *req.TopK != 0 {
+	if req.TopK != nil {
 		topK = *req.TopK
 	} else if configured, ok := common.GetInt(searchConfig["top_k"]); ok {
 		topK = configured

@@ -97,9 +97,10 @@ func TestResolveSearchbotRetrievalParams_KeywordsWeightConfig(t *testing.T) {
 	}
 }
 
-// TestResolveSearchbotRetrievalParams_ZeroDefersToConfig: a zero request value
-// counts as "not provided" and defers to the saved config.
-func TestResolveSearchbotRetrievalParams_ZeroDefersToConfig(t *testing.T) {
+// TestResolveSearchbotRetrievalParams_ExplicitZeroWins: an explicit zero
+// overrides the saved config — it is how a caller disables the threshold floor
+// or selects a zero vector weight. Only a nil pointer means "omitted".
+func TestResolveSearchbotRetrievalParams_ExplicitZeroWins(t *testing.T) {
 	req := &service.RetrievalTestRequest{
 		SimilarityThreshold:    floatPtr(0),
 		VectorSimilarityWeight: floatPtr(0),
@@ -111,14 +112,14 @@ func TestResolveSearchbotRetrievalParams_ZeroDefersToConfig(t *testing.T) {
 		"top_k":                    300,
 	}
 	threshold, weight, topK := resolveSearchbotRetrievalParams(req, searchConfig)
-	if threshold != 0.15 {
-		t.Errorf("similarityThreshold = %v, want 0.15 from search_config", threshold)
+	if threshold != 0 {
+		t.Errorf("similarityThreshold = %v, want the explicit 0", threshold)
 	}
-	if weight != 0.6 {
-		t.Errorf("vectorSimilarityWeight = %v, want 0.6 from search_config", weight)
+	if weight != 0 {
+		t.Errorf("vectorSimilarityWeight = %v, want the explicit 0", weight)
 	}
-	if topK != 300 {
-		t.Errorf("topK = %d, want 300 from search_config", topK)
+	if topK != 0 {
+		t.Errorf("topK = %d, want the explicit 0", topK)
 	}
 }
 
