@@ -4514,6 +4514,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 type keepFileCleanupDocEngine struct {
 	fakeChatDocEngine
 	deleteChunksError     error
+	deleteChunksFailOnce  bool
 	deleteMetadataError   error
 	deleteChunksCalls     int
 	deleteChunksCondition map[string]interface{}
@@ -4528,6 +4529,9 @@ func (e *keepFileCleanupDocEngine) DeleteChunks(_ context.Context, condition map
 	e.deleteChunksCondition = condition
 	e.deleteChunksIndexName = indexName
 	e.deleteChunksDatasetID = datasetID
+	if e.deleteChunksFailOnce && e.deleteChunksCalls > 1 {
+		return 1, nil
+	}
 	return 1, e.deleteChunksError
 }
 
@@ -4661,6 +4665,9 @@ func TestRemoveDocumentKeepFileKeepsRowOnEngineFailure(t *testing.T) {
 	if kb.DocNum != 1 {
 		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
 	}
+	if got := svc.docEngine.(*keepFileCleanupDocEngine).deleteChunksCalls; got != 2 {
+		t.Fatalf("failed cleanup calls=%d, want bounded retry of 2", got)
+	}
 }
 
 func TestRemoveDocumentKeepFileKeepsRowOnMetadataFailure(t *testing.T) {
@@ -4680,5 +4687,25 @@ func TestRemoveDocumentKeepFileKeepsRowOnMetadataFailure(t *testing.T) {
 	}
 	if engine.deleteMetadataCalls != 1 {
 		t.Fatalf("metadata calls=%d", engine.deleteMetadataCalls)
+	}
+}
+
+func TestRemoveDocumentKeepFileRetriesEngineFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteChunksError: fmt.Errorf("partial delete"), deleteChunksFailOnce: true}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = nil
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
+		t.Fatalf("retry: %v", err)
+	}
+	if engine.deleteChunksCalls != 2 {
+		t.Fatalf("calls=%d, want 2", engine.deleteChunksCalls)
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err == nil {
+		t.Fatal("document row should be removed after cleanup succeeds")
 	}
 }

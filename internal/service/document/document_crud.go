@@ -407,6 +407,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	if delErr != nil && deleteCtx.Err() == nil {
+		_, delErr = s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	}
 	cancel()
 	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
