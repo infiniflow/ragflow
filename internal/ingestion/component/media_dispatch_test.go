@@ -19,20 +19,108 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/json"
+	"errors"
 	"image"
+	"image/png"
+	"io"
+	"os"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
+	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
+
+type pictureOCRAnalyzer struct {
+	deepdoctype.DocAnalyzer
+	empty bool
+}
+
+func (*pictureOCRAnalyzer) Health() bool { return true }
+
+func (a *pictureOCRAnalyzer) OCRDetect(ctx context.Context, img image.Image) ([]deepdoctype.OCRBox, error) {
+	if a.empty {
+		return nil, nil
+	}
+	return []deepdoctype.OCRBox{{X0: 1, Y0: 1, X1: 9, Y1: 1, X2: 9, Y2: 9, X3: 1, Y3: 9}}, nil
+}
+
+func (*pictureOCRAnalyzer) OCRRecognize(ctx context.Context, img image.Image) ([]deepdoctype.OCRText, error) {
+	return []deepdoctype.OCRText{{Text: "OCR text"}}, nil
+}
+
+func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
+	templateData, err := os.ReadFile("../pipeline/template/ingestion_pipeline_picture.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var template struct {
+		DSL struct {
+			Components map[string]struct {
+				Obj struct{ Params map[string]any }
+			}
+		}
+	}
+	if err := json.Unmarshal(templateData, &template); err != nil {
+		t.Fatal(err)
+	}
+	params := template.DSL.Components["Parser:ViewsCaptureLight"].Obj.Params
+	original := deepdoctype.NativeDocAnalyzerFactory
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{}, true }
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	data := picturePNG(t)
+	for _, tc := range []struct {
+		name    string
+		method  string
+		enabled bool
+		tenant  string
+		want    string
+	}{
+		{"disabled", "ocr", false, "", "OCR text"},
+		{"enabled", "ocr", true, "t1", "OCR text\ncaptured"},
+		{"unavailable", "ocr", true, "", "OCR text"},
+		{"default", "", false, "", "OCR text"},
+		{"vlm-only", "custom-vlm", false, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			originalResolver := resolveTenantModelByType
+			resolveTenantModelByType = func(context.Context, *gorm.DB, string, entity.ModelType) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+				return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+			}
+			t.Cleanup(func() { resolveTenantModelByType = originalResolver })
+			params["image"].(map[string]any)["parse_method"] = tc.method
+			component, err := NewParserComponent(params)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pc := component.(*ParserComponent)
+			pc.enableVisionEnhancement = tc.enabled
+			result, err := pc.Invoke(t.Context(), nil, map[string]any{"name": "photo.png", "file_type": "image", "binary": data, "tenant_id": tc.tenant})
+			if err != nil {
+				t.Fatal(err)
+			}
+			items, _ := result["json"].([]map[string]any)
+			if len(items) != 1 || items[0]["text"] != tc.want {
+				t.Fatalf("items = %+v, want text %q", items, tc.want)
+			}
+			if items[0]["image"] == "" || items[0]["doc_type_kwd"] != "image" {
+				t.Fatalf("missing image attachment: %+v", items)
+			}
+		})
+	}
+}
 
 // imagePromptCaptureDriver embeds ModelDriver so it satisfies the interface
 // without listing every method; only ChatWithMessages is overridden to record
@@ -41,11 +129,13 @@ type imagePromptCaptureDriver struct {
 	modelModule.ModelDriver
 	mu       sync.Mutex
 	captured []modelModule.Message
+	ctxErr   error
 }
 
 func (d *imagePromptCaptureDriver) ChatWithMessages(ctx context.Context, modelName string, messages []modelModule.Message, apiConfig *modelModule.APIConfig, chatModelConfig *modelModule.ChatConfig, usage *common.ModelUsage) (*modelModule.ChatResponse, error) {
 	d.mu.Lock()
 	d.captured = append(d.captured, messages...)
+	d.ctxErr = ctx.Err()
 	d.mu.Unlock()
 	ans := "captured"
 	return &modelModule.ChatResponse{Answer: &ans}, nil
@@ -104,9 +194,10 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -155,9 +246,10 @@ func TestMaybeDispatchImage_DefaultPromptUsesDatasetLanguage(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1", "lang": "Japanese"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -197,9 +289,10 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -222,7 +315,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 		t.Errorf("image = %q, want a data URI (data:<mime>;base64,<b64>)", img)
 	}
 	if txt, _ := item["text"].(string); txt == "" {
-		t.Errorf("text field empty; want non-empty combined OCR+VLM text")
+		t.Errorf("text field empty; want non-empty VLM description")
 	}
 }
 
@@ -248,9 +341,10 @@ func TestMaybeDispatchImage_HardcodesJSONOutput(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -439,9 +533,10 @@ func TestMaybeDispatchImage_UsesConfiguredVLMModel(t *testing.T) {
 		dao.DB,
 		utility.FileTypeVISUAL,
 		"test.png",
-		[]byte("not-a-real-image"),
+		picturePNG(t),
 		map[string]any{"tenant_id": "t1"},
 		setups,
+		true,
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchImage: %v", err)
@@ -515,14 +610,10 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 	}
 }
 
-// TestImageDecoders_RegisteredFormats validates that image decoders for WebP, BMP,
-// TIFF, PNG, JPEG, and GIF are registered by media_dispatch.go and can decode
-// their respective binary payloads via image.Decode without importing the decoder
-// packages directly in the test file.
+// TestImageDecoders_RegisteredFormats checks that the component package can
+// decode WebP, BMP, TIFF, PNG, JPEG, and GIF payloads.
 func TestImageDecoders_RegisteredFormats(t *testing.T) {
-	// Fixed binary fixtures for image formats decoded via decoders registered in
-	// media_dispatch.go (neither standard library nor x/image decoders are imported
-	// in this test file).
+	// Fixed binary fixtures for supported image formats.
 	const (
 		webpB64 = "UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAD8D+JaQAA3AA/ua1AAA="
 		bmpB64  = "Qk1GAAAAAAAAADYAAAAoAAAAAgAAAAIAAAABACAAAAAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD/AP8AAP//AAAAAA=="
@@ -564,92 +655,124 @@ func TestImageDecoders_RegisteredFormats(t *testing.T) {
 	}
 }
 
-// TestVLMGateShouldSkip verifies the rune vs word count threshold
-// for skipping VLM description. Specifically:
-//   - Zero-allocation rune counting via utf8.RuneCountInString correctly handles multi-byte UTF-8.
-//   - Whitespace trimming matches Python txt.strip(): surrounding whitespace is trimmed before counting.
-//   - CJK text is measured in unicode runes: 12 CJK characters occupy 36 bytes (>32 bytes)
-//     but only 12 runes (<=32 runes), so VLM must NOT be skipped.
-//   - CJK text >32 runes (e.g. 33 runes) skips VLM.
-//   - CJK exact boundary text (32 runes) triggers VLM.
-//   - English text >32 words skips VLM.
-//   - English short text (<=32 words and <=32 chars) triggers VLM.
-//   - English text with <=32 words but >32 chars skips VLM.
-func TestVLMGateShouldSkip(t *testing.T) {
-	tests := []struct {
-		name     string
-		lang     string
-		ocrText  string
-		wantSkip bool
-	}{
-		{
-			name:     "empty text does not skip",
-			lang:     "Chinese",
-			ocrText:  "",
-			wantSkip: false,
-		},
-		{
-			name:     "whitespace only text does not skip",
-			lang:     "Chinese",
-			ocrText:  "   \n\t  ",
-			wantSkip: false,
-		},
-		{
-			name:     "CJK substantial text (>32 runes, >32 bytes) skips VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 33), // 33 runes, 99 bytes
-			wantSkip: true,
-		},
-		{
-			name:     "CJK short text with >32 bytes but <=32 runes triggers VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 12), // 12 runes, 36 bytes (>32 bytes)
-			wantSkip: false,
-		},
-		{
-			name:     "CJK exact boundary text (32 runes, 96 bytes) triggers VLM",
-			lang:     "Chinese",
-			ocrText:  strings.Repeat("中", 32), // 32 runes, 96 bytes (32 is not > 32)
-			wantSkip: false,
-		},
-		{
-			name:     "CJK exact boundary text with whitespace padding trims to <=32 runes and triggers VLM",
-			lang:     "Chinese",
-			ocrText:  "  " + strings.Repeat("中", 32) + "  ", // 32 runes after trim
-			wantSkip: false,
-		},
-		{
-			name:     "CJK substantial text with whitespace padding trims to >32 runes and skips VLM",
-			lang:     "Chinese",
-			ocrText:  "  " + strings.Repeat("中", 33) + "  ", // 33 runes after trim
-			wantSkip: true,
-		},
-		{
-			name:     "English substantial text (>32 words) skips VLM",
-			lang:     "English",
-			ocrText:  strings.Repeat("word ", 33), // 33 words
-			wantSkip: true,
-		},
-		{
-			name:     "English short text (<=32 words and <=32 chars) triggers VLM",
-			lang:     "English",
-			ocrText:  "hello world", // 2 words, 11 chars
-			wantSkip: false,
-		},
-		{
-			name:     "English text with <=32 words but >32 chars skips VLM",
-			lang:     "English",
-			ocrText:  "abcdefghijklmnopqrstuvwxyz01234567", // 1 word, 34 chars (>32 chars)
-			wantSkip: true,
-		},
+func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	for _, available := range []bool{false, true} {
+		deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) { return &pictureOCRAnalyzer{empty: true}, available }
+		for _, method := range []string{"ocr", ""} {
+			setups := defaultSetups()
+			setups["image"]["parse_method"] = method
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, setups, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" || len(result.Warnings) == 0 {
+				t.Fatalf("method %q, available %v: result = %+v, handled = %v", method, available, result, handled)
+			}
+		}
 	}
+}
 
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := vlmGateShouldSkip(tc.ocrText, tc.lang)
-			if got != tc.wantSkip {
-				t.Errorf("vlmGateShouldSkip(%q, %q) = %v, want %v", tc.ocrText, tc.lang, got, tc.wantSkip)
+type unhealthyPictureOCRAnalyzer struct {
+	deepdoctype.DocAnalyzer
+}
+
+func (*unhealthyPictureOCRAnalyzer) Health() bool { return false }
+
+func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	// OCR methods are unimplemented: calling them would panic.
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		return &unhealthyPictureOCRAnalyzer{}, true
+	}
+	result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", picturePNG(t), nil, defaultSetups(), false)
+	if err != nil || result.Err != nil {
+		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
+	}
+	if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" {
+		t.Fatalf("unhealthy OCR should retain an image without text: result = %+v, handled = %v", result, handled)
+	}
+	if !strings.Contains(strings.Join(result.Warnings, "\n"), "image OCR unavailable: local OCR analyzer is unavailable") {
+		t.Fatalf("missing unhealthy OCR warning: %v", result.Warnings)
+	}
+}
+
+func TestMaybeDispatchImageRejectsUndecodableBytes(t *testing.T) {
+	for _, method := range []string{"ocr", "custom-vlm"} {
+		setups := defaultSetups()
+		setups["image"]["parse_method"] = method
+		_, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", []byte("bad image"), nil, setups, false)
+		if err == nil || !strings.Contains(err.Error(), "decode") {
+			t.Fatalf("method %q: error = %v, want decode error", method, err)
+		}
+	}
+}
+
+func TestMaybeDispatchImageReleasesAdmissionAfterPanic(t *testing.T) {
+	original := deepdoctype.NativeDocAnalyzerFactory
+	t.Cleanup(func() { deepdoctype.NativeDocAnalyzerFactory = original })
+	deepdoctype.NativeDocAnalyzerFactory = func() (deepdoctype.DocAnalyzer, bool) {
+		panic("OCR analyzer panic")
+	}
+	data := picturePNG(t)
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("expected OCR analyzer panic")
+			}
+		}()
+		_, _, _ = maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "photo.png", data, nil, defaultSetups(), false)
+	}()
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	for range deepdocpdf.DeepDocConcurrency() {
+		release, err := parser.AcquireImageMedia(ctx)
+		if err != nil {
+			t.Fatalf("image admission leaked after panic: %v", err)
+		}
+		defer release()
+	}
+}
+
+func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
+	const magic = "picture-dispatch-raster-test"
+	image.RegisterFormat(magic, magic,
+		func(io.Reader) (image.Image, error) { return nil, errors.New("raster decoding requested") },
+		func(io.Reader) (image.Config, error) { return image.Config{Width: 12, Height: 12}, nil })
+	original := resolveModelConfig
+	t.Cleanup(func() { resolveModelConfig = original })
+	resolveModelConfig = func(context.Context, *gorm.DB, string, entity.ModelType, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
+		return &imagePromptCaptureDriver{}, "vision", &modelModule.APIConfig{}, 0, nil
+	}
+	for _, method := range []string{"custom-vlm", "ocr"} {
+		t.Run(method, func(t *testing.T) {
+			setups := defaultSetups()
+			setups["image"]["parse_method"] = method
+			result, handled, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL,
+				"photo.png", []byte(magic), map[string]any{"tenant_id": "t1"}, setups, true)
+			if method == "ocr" {
+				if err == nil || !strings.Contains(err.Error(), "raster decoding requested") {
+					t.Fatalf("error = %v, want raster decode error", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "captured" || result.JSON[0]["image"] == "" {
+				t.Fatalf("VLM result = %+v, handled = %v", result, handled)
 			}
 		})
 	}
+}
+
+func picturePNG(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	if err := png.Encode(&data, image.NewRGBA(image.Rect(0, 0, 12, 12))); err != nil {
+		t.Fatal(err)
+	}
+	return data.Bytes()
 }

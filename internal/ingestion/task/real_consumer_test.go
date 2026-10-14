@@ -110,7 +110,7 @@ func TestRealProducerConsumer(t *testing.T) {
 
 	// Mirrors Start():142-143 — UpdateStatusIfCurrent
 	ingestionTaskDAO := dao.NewIngestionTaskDAO()
-	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, common.CREATED, common.RUNNING)
+	_, err = ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, taskMsg.TaskID, []string{common.CREATED}, common.RUNNING)
 	if err != nil {
 		t.Fatalf("UpdateStatusIfCurrent: %v", err)
 	}
@@ -168,7 +168,7 @@ func TestRealProducerConsumer(t *testing.T) {
 	t.Log("Consumer: PipelineExecutor.Execute() - OK")
 
 	// Mirrors executeTask — mark as completed
-	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, common.RUNNING, common.COMPLETED); err != nil {
+	if _, err := ingestionTaskDAO.UpdateStatusIfCurrent(context.Background(), db, task.ID, []string{common.RUNNING}, common.COMPLETED); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 

@@ -60,11 +60,11 @@ func (d *DatasetService) CheckEmbedding(ctx context.Context, userID, datasetID s
 		return nil, common.CodeServerError, errors.New("doc engine not initialized")
 	}
 
-	driver, modelName, apiConfig, maxTokens, err := service.NewModelProviderService().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
+	target, err := service.NewModelSolver().ResolveModelConfig(ctx, kb.TenantID, entity.ModelTypeEmbedding, embeddingID)
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
-	embeddingModel := models.NewEmbeddingModel(driver, &modelName, apiConfig, maxTokens)
+	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
 	checkNum := defaultEmbeddingCheckNum
 	if req.CheckNum != nil {
@@ -281,7 +281,7 @@ func (d *DatasetService) sampleRandomChunksWithVectors(ctx context.Context, tena
 }
 
 func (d *DatasetService) verifyEmbeddingAvailability(ctx context.Context, embdID string, tenantID string) (bool, string) {
-	_, _, _, _, err := service.NewModelProviderService().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
+	_, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return false, err.Error()
 	}

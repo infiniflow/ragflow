@@ -714,10 +714,106 @@ func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 }
 
 func (p *wikiPipeline) runPlan() (wikiPlan, error) {
+	if p.wikiMode() == "entity" {
+		return p.runEntityPlan()
+	}
 	if p.wikiMode() == "topic" && p.deps.Embed != nil {
 		return p.runTopicPlan()
 	}
 	return p.runLegacyPlan()
+}
+
+// runEntityPlan builds one page for every reduced entity or concept. Entity
+// mode already has a canonical identity from MAP/REDUCE, so a PLAN LLM call
+// would only repeat fields that the compiler can derive deterministically.
+func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
+	if err := p.ctx.Err(); err != nil {
+		return wikiPlan{}, err
+	}
+
+	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced)}
+	plan.Pages = assembleWikiPlanRelatedPages(plan.Pages, p.reduced.Relations)
+	plan.Pages = normalizeWikiPlanPages(plan.Pages, p.reduced)
+	plan.Pages = normalizeWikiPlanPageLinks(plan.Pages)
+	reconciled, err := p.reconcilePlan(plan)
+	if err != nil {
+		return wikiPlan{}, err
+	}
+	reconciled.Pages = normalizeWikiPlanPageLinks(reconciled.Pages)
+	return reconciled, nil
+}
+
+// buildWikiEntityPlanPages projects MAP/REDUCE identities into deterministic
+// page metadata. Topic assignment uses source-chunk overlap with MAP topics;
+// the page itself remains one-to-one with the extracted entity or concept.
+func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
+	pages := make([]wikiPlanPage, 0, len(reduced.Entities)+len(reduced.Concepts))
+	for _, entity := range reduced.Entities {
+		name := strings.TrimSpace(entity.Name)
+		if name == "" {
+			continue
+		}
+		pages = append(pages, wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        entityPageSlug(name, entity.Type),
+			Title:       name,
+			PageType:    "entity",
+			Topic:       selectWikiIdentityTopic(name, "entity", sourceChunkIDsForWikiIdentity(name, entity.SourceChunkIDs, reduced.Claims), reduced.Topics),
+			EntityNames: uniqueStrings(append([]string{name}, entity.Aliases...)),
+			Priority:    len(pages) + 1,
+		})
+	}
+	for _, concept := range reduced.Concepts {
+		term := strings.TrimSpace(concept.Term)
+		if term == "" {
+			continue
+		}
+		pages = append(pages, wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        "concept/" + slugify(term),
+			Title:       term,
+			PageType:    "concept",
+			Topic:       selectWikiIdentityTopic(term, "concept", sourceChunkIDsForWikiIdentity(term, concept.SourceChunkIDs, reduced.Claims), reduced.Topics),
+			EntityNames: []string{term},
+			Priority:    len(pages) + 1,
+		})
+	}
+	return pages
+}
+
+func sourceChunkIDsForWikiIdentity(name string, sourceChunkIDs []string, claims []wikiClaim) []string {
+	ids := append([]string(nil), sourceChunkIDs...)
+	for _, claim := range claims {
+		if normKey(claim.Subject) == normKey(name) {
+			ids = append(ids, claim.SourceChunkIDs...)
+		}
+	}
+	return uniqueStrings(ids)
+}
+
+func selectWikiIdentityTopic(name, pageType string, sourceChunkIDs []string, topics []wikiTopic) string {
+	identityChunks := normalizedStringSet(sourceChunkIDs)
+	bestPath := ""
+	bestOverlap := 0
+	for _, topic := range topics {
+		path := common.NormalizeWikiTopicPath(topic.Path)
+		if path == "" || (pageType != "topic" && normKey(common.WikiTopicLeaf(path)) == normKey(name)) {
+			continue
+		}
+		overlap := normalizedOverlapCount(identityChunks, topic.SourceChunkIDs)
+		if overlap == 0 || overlap < bestOverlap {
+			continue
+		}
+		if overlap == bestOverlap && bestPath != "" && normKey(path) >= normKey(bestPath) {
+			continue
+		}
+		bestPath = path
+		bestOverlap = overlap
+	}
+	if bestPath == "" {
+		return common.GeneralWikiTopic
+	}
+	return bestPath
 }
 
 func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {

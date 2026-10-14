@@ -1,5 +1,4 @@
 import { Modal } from '@/components/ui/modal/modal';
-import { useSetModalState } from '@/hooks/common-hooks';
 import {
   UseRowSelectionType,
   useSelectedIds,
@@ -22,7 +21,6 @@ import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useParams } from 'react-router';
 import { toast } from 'sonner';
-import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import { DocumentType } from './constant';
 import { buildParserGapModalContent } from './parser-gap-content';
 import { useParserGapValidation } from './use-parser-gap-validation';
@@ -45,20 +43,7 @@ export function useBulkOperateDataset({
   const { runDocumentByIds } = useRunDocument();
   const { setDocumentStatus } = useSetDocumentStatus();
   const { removeDocument } = useRemoveDocument();
-  const { visible, showModal, hideModal } = useSetModalState();
   const { findDocumentParseGaps } = useParserGapValidation();
-  const { knowledgeBase } = useKnowledgeBaseContext();
-
-  const chunkNum = useMemo(() => {
-    if (!documents.length) {
-      return 0;
-    }
-    return documents
-      .filter((item) => selectedRowKeys.includes(item.id) && item.id)
-      ?.reduce((acc, cur) => {
-        return acc + cur.chunk_count;
-      }, 0);
-  }, [documents, selectedRowKeys]);
 
   const runDocument = useCallback(
     async (run: number, option?: { delete: boolean; apply_kb: boolean }) => {
@@ -90,11 +75,10 @@ export function useBulkOperateDataset({
           if (validIds.length === 0) {
             Modal.error({
               title: t('knowledgeDetails.parseBlockedTitle'),
-              content: buildParserGapModalContent(
-                t,
-                gaps,
-                'knowledgeDetails.reselectParserToParseHint',
-              ),
+              content: buildParserGapModalContent(t, gaps, {
+                missingModel: 'knowledgeDetails.addModelToParseHint',
+                unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+              }),
               showCancel: false,
               okText: t('common.cancel'),
               closable: false,
@@ -106,11 +90,10 @@ export function useBulkOperateDataset({
             title: t('knowledgeDetails.parseBlockedPartialTitle'),
             content: (
               <div className="space-y-2">
-                {buildParserGapModalContent(
-                  t,
-                  gaps,
-                  'knowledgeDetails.reselectParserToParseHint',
-                )}
+                {buildParserGapModalContent(t, gaps, {
+                  missingModel: 'knowledgeDetails.addModelToParseHint',
+                  unsupportedType: 'knowledgeDetails.reselectParserToParseHint',
+                })}
                 <p>
                   {t('knowledgeDetails.parseValidFilesNote', {
                     count: validIds.length,
@@ -134,16 +117,8 @@ export function useBulkOperateDataset({
         run,
         option,
       });
-      hideModal();
     },
-    [
-      documents,
-      runDocumentByIds,
-      selectedRowKeys,
-      hideModal,
-      t,
-      findDocumentParseGaps,
-    ],
+    [documents, runDocumentByIds, selectedRowKeys, t, findDocumentParseGaps],
   );
 
   const handleRunClick = useCallback(
@@ -152,19 +127,6 @@ export function useBulkOperateDataset({
     },
     [runDocument],
   );
-
-  // The confirmation only offers real choices when the selection has existing
-  // chunks to drop or auto-metadata to re-apply; otherwise run straight away.
-  const needsRunConfirm =
-    chunkNum > 0 || Boolean(knowledgeBase?.parser_config?.enable_metadata);
-
-  const handleRunMenuClick = useCallback(() => {
-    if (needsRunConfirm) {
-      showModal();
-      return;
-    }
-    handleRunClick();
-  }, [needsRunConfirm, showModal, handleRunClick]);
 
   const handleCancelClick = useCallback(() => {
     runDocument(2);
@@ -205,6 +167,18 @@ export function useBulkOperateDataset({
 
   const list = [
     {
+      id: 'run',
+      label: t('knowledgeDetails.run'),
+      icon: <LucidePlayCircle />,
+      onClick: handleRunClick,
+    },
+    {
+      id: 'cancel',
+      label: t('knowledgeDetails.cancel'),
+      icon: <LucideCircleX />,
+      onClick: handleCancelClick,
+    },
+    {
       id: 'enabled',
       label: t('knowledgeDetails.enabled'),
       icon: <LucideToggleRight />,
@@ -216,18 +190,7 @@ export function useBulkOperateDataset({
       icon: <LucideToggleLeft />,
       onClick: handleDisableClick,
     },
-    {
-      id: 'run',
-      label: t('knowledgeDetails.run'),
-      icon: <LucidePlayCircle />,
-      onClick: handleRunMenuClick,
-    },
-    {
-      id: 'cancel',
-      label: t('knowledgeDetails.cancel'),
-      icon: <LucideCircleX />,
-      onClick: handleCancelClick,
-    },
+
     {
       id: 'batch-metadata',
       label: t('knowledgeDetails.metadata.metadata'),
@@ -246,5 +209,5 @@ export function useBulkOperateDataset({
     },
   ];
 
-  return { chunkNum, list, visible, hideModal, showModal, handleRunClick };
+  return { list, handleRunClick };
 }

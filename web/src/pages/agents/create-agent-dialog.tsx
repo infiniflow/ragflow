@@ -10,7 +10,10 @@ import { BrainCircuit, Route } from 'lucide-react';
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { CreateAgentForm, CreateAgentFormProps } from './create-agent-form';
-import { countUnboundRetrieval } from './template-retrieval-binding';
+import {
+  collectUnboundRetrievalBindings,
+  countUnboundModel,
+} from './template-retrieval-binding';
 
 type CreateAgentDialogProps = CreateAgentFormProps & {
   canvasCategory?: AgentCategory;
@@ -27,7 +30,12 @@ export function CreateAgentDialog({
   const { t } = useTranslation();
 
   const retrievalBindings = useMemo(
-    () => (template ? countUnboundRetrieval(template.dsl) : undefined),
+    () =>
+      template ? collectUnboundRetrievalBindings(template.dsl) : undefined,
+    [template],
+  );
+  const modelBindings = useMemo(
+    () => (template ? countUnboundModel(template.dsl) : undefined),
     [template],
   );
 
@@ -60,6 +68,7 @@ export function CreateAgentDialog({
           loading={loading}
           showTypeCards={!canvasCategory}
           retrievalBindings={retrievalBindings}
+          modelBindings={modelBindings}
         ></CreateAgentForm>
       </DialogContent>
     </Dialog>

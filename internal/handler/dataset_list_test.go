@@ -21,6 +21,7 @@ import (
 const (
 	listDatasetsTestKBID       = "123e4567e89b12d3a456426614174000"
 	listDatasetsTestKBIDDashed = "123e4567-e89b-12d3-a456-426614174000"
+	listDatasetsMissingKBID    = "223e4567e89b12d3a456426614174000"
 )
 
 func setupListDatasetsTestDB(t *testing.T) *gorm.DB {
@@ -106,6 +107,24 @@ func TestDatasetsHandlerListDatasetsFiltersByIDs(t *testing.T) {
 
 	body := getListDatasets(t, newListDatasetsTestRouter(),
 		fmt.Sprintf("ids=%s&page_size=1", listDatasetsTestKBIDDashed))
+
+	if body.Code != int(common.CodeSuccess) {
+		t.Fatalf("code=%d message=%q", body.Code, body.Message)
+	}
+	if body.TotalDatasets != 1 || len(body.Data) != 1 {
+		t.Fatalf("expected exactly one dataset, got total=%d len=%d", body.TotalDatasets, len(body.Data))
+	}
+	if body.Data[0]["id"] != listDatasetsTestKBID {
+		t.Fatalf("expected dataset id %q, got %#v", listDatasetsTestKBID, body.Data[0]["id"])
+	}
+}
+
+func TestDatasetsHandlerListDatasetsFiltersMissingIDs(t *testing.T) {
+	setupListDatasetsTestDB(t)
+	insertListDatasetsTestKB(t, listDatasetsTestKBID, "user-1", "Alpha")
+
+	body := getListDatasets(t, newListDatasetsTestRouter(),
+		fmt.Sprintf("ids=%s,%s&page_size=2", listDatasetsTestKBID, listDatasetsMissingKBID))
 
 	if body.Code != int(common.CodeSuccess) {
 		t.Fatalf("code=%d message=%q", body.Code, body.Message)

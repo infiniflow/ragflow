@@ -106,7 +106,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		return nil, common.CodeDataError, errors.New("mutually exclusive")
 	}
 
-	if req.ParserID != nil || req.PipelineID != nil || req.ParseType != nil {
+	if req.PipelineID != nil || req.ParseType != nil {
 		isBuiltin, isPipeline, modeErr := service.ValidateParseTypeMode(req.ParseType, req.ParserID, req.PipelineID)
 		if modeErr != nil {
 			return nil, common.CodeDataError, modeErr
@@ -139,8 +139,16 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 	}
 
 	if req.ParserConfig != nil {
-		if err = validateDatasetParserConfigSize(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
+		dropped, err := ValidateParserConfig(req.ParserConfig)
+		if len(dropped) > 0 {
+			common.Warn("dropping unscoped (flat) parser_config keys; keys must be component-scoped (contain ':')",
+				zap.Strings("keys", dropped),
+				zap.String("dataset_id", datasetID),
+				zap.String("tenant_id", tenantID),
+			)
+		}
+		if err != nil {
+			return nil, common.CodeArgumentError, err
 		}
 		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return nil, common.CodeDataError, err
@@ -156,9 +164,6 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 		if d.docEngine == nil {
 			return nil, common.CodeServerError, errors.New("document engine is not initialized")
-		}
-		if !d.docEngine.SupportsPageRank() {
-			return nil, common.CodeDataError, errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
 		}
 	}
 
@@ -223,9 +228,9 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				return errors.New(message)
 			}
 			if effectiveEmbdID != "" && tenantEmbdID == "" {
-				resolvedID, err := service.NewModelProviderService().ResolveModelID(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
+				target, err := service.NewModelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, effectiveEmbdID)
 				if err == nil {
-					tenantEmbdID = resolvedID
+					tenantEmbdID = target.ModelID
 				}
 			}
 			updates["embd_id"] = effectiveEmbdID
@@ -247,18 +252,20 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 			}
 			if dslJSON != nil {
 				parserConfig := pipelinepkg.BuildParserConfig(dslJSON, map[string]interface{}(req.ParserConfig))
-				updates["parser_config"] = preserveDatasetParserConfigMetadata(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
+				updates["parser_config"] = preserveDatasetParserConfigState(parserConfig, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
-		if pagerankRequested {
+		if pagerankRequested && requestedPagerank != lockedKB.Pagerank {
+			if !d.docEngine.SupportsPageRank() {
+				txCode = common.CodeDataError
+				return errors.New("'pagerank' can only be set when doc_engine is elasticsearch")
+			}
 			pagerankUpdate = &datasetPagerankUpdate{
 				value:     requestedPagerank,
 				index:     fmt.Sprintf("ragflow_%s", lockedKB.TenantID),
 				datasetID: lockedKB.ID,
 			}
-			if requestedPagerank != lockedKB.Pagerank {
-				updates["pagerank"] = requestedPagerank
-			}
+			updates["pagerank"] = requestedPagerank
 		}
 		if parserIDProvided && parserID != lockedKB.ParserID {
 			if _, ok := updates["parser_config"]; !ok {
@@ -266,7 +273,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 					common.Warn("failed to resolve component params defaults on parser_id switch",
 						zap.String("parserID", parserID), zap.Error(cpErr))
 				} else if resolved != nil {
-					updates["parser_config"] = preserveDatasetParserConfigMetadata(resolved, lockedKB.ParserConfig, req.ParserConfig)
+					updates["parser_config"] = preserveDatasetParserConfigState(resolved, lockedKB.ParserConfig, req.ParserConfig)
 				}
 			}
 		}
@@ -277,7 +284,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 		}
 
 		pipelineChanged := pipelineID != nil && (lockedKB.PipelineID == nil || *pipelineID != *lockedKB.PipelineID)
-		if pipelineChanged {
+		if _, ok := updates["parser_config"]; pipelineChanged && !ok {
 			cfgParserID := lockedKB.ParserID
 			if parserIDProvided {
 				cfgParserID = parserID
@@ -286,7 +293,7 @@ func (d *DatasetService) UpdateDataset(ctx context.Context, datasetID, tenantID 
 				common.Warn("failed to resolve component params defaults on pipeline change",
 					zap.String("parserID", cfgParserID), zap.Error(cpErr))
 			} else if cpDefaults != nil {
-				updates["parser_config"] = preserveDatasetParserConfigMetadata(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
+				updates["parser_config"] = preserveDatasetParserConfigState(cpDefaults, lockedKB.ParserConfig, req.ParserConfig)
 			}
 		}
 

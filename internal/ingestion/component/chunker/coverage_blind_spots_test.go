@@ -160,14 +160,13 @@ func TestGeneralChunkerKeepsHeaderOnlySheetsSeparate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewGeneralChunker: %v", err)
 	}
+	segOne := spreadsheetSegmentItem("Sheet1", []string{"Name"}, nil, 1, 1)
+	segTwo := spreadsheetSegmentItem("Sheet2", []string{"Amount"}, nil, 2, 1)
 	out, err := chunker.Invoke(t.Context(), nil, map[string]any{
 		"name":          "empty-sheets.xlsx",
 		"file_type":     "xlsx",
 		"output_format": "json",
-		"json": []map[string]any{
-			{"text": "Name", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 1, "table_id": "sheet-1"},
-			{"text": "Amount", "doc_type_kwd": "table", "ck_type": "table_header", "sheet_index": 2, "table_id": "sheet-2"},
-		},
+		"json":          []map[string]any{segOne, segTwo},
 	})
 	if err != nil {
 		t.Fatalf("GeneralChunker.Invoke: %v", err)
@@ -176,7 +175,7 @@ func TestGeneralChunkerKeepsHeaderOnlySheetsSeparate(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("chunks = %#v, want one header-only chunk per sheet", chunks)
 	}
-	if chunks[0]["text"] != "Name" || chunks[1]["text"] != "Amount" {
+	if chunks[0]["text"] != segOne["text"] || chunks[1]["text"] != segTwo["text"] {
 		t.Fatalf("header-only chunks = %#v", chunks)
 	}
 }

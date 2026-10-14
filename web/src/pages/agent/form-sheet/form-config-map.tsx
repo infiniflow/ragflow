@@ -195,6 +195,11 @@ export const FormConfigMap = {
   [Operator.TitleChunker]: {
     component: TitleChunkerForm,
   },
+  [Operator.ManualChunker]: {
+    component: (props: INextOperatorForm) => (
+      <TitleChunkerForm {...props} pinMethodGroup />
+    ),
+  },
   [Operator.Extractor]: {
     component: ExtractorForm,
   },

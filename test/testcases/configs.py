@@ -19,7 +19,6 @@ from pathlib import Path
 
 import pytest
 
-
 _DOCKER_ENV = Path(__file__).resolve().parents[2] / "docker" / ".env"
 
 
@@ -46,8 +45,6 @@ SDK_UNAUTHORIZED_ERROR_MESSAGE = "Invalid access token" if IS_GO_PROXY else "<Un
 
 
 def _default_host_address() -> str:
-    if API_PROXY_SCHEME == "go":
-        return f"http://127.0.0.1:{_config_value('GO_HTTP_PORT', '9384')}"
     return "http://127.0.0.1:9380"
 
 

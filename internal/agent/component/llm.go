@@ -31,7 +31,6 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/tokenizer"
 
 	"go.uber.org/zap"
 )
@@ -54,7 +53,7 @@ type LLMParam struct {
 	ChatTemplateKwargs       map[string]any // optional provider-specific kwargs (e.g. response_format, seed)
 	MaxTokens                *int
 	JSONOutput               bool
-	OutputStructure          map[string]any // when set, LLM is asked for JSON matching this schema (best-effort keys); outputs["structured"] populated
+	OutputStructure          any // JSON Schema；通过校验后写入 structured。
 
 	// PresencePenalty mirrors Python's `presence_penalty` (range -2.0 to 2.0).
 	// Positive values penalize new tokens based on whether they appear in the
@@ -114,7 +113,7 @@ type LLMInput struct {
 	ChatTemplateKwargs       map[string]any
 	MaxTokens                *int
 	JSONOutput               bool
-	OutputStructure          map[string]any
+	OutputStructure          any
 	Driver                   string
 	APIKey                   string
 	Thinking                 string // "enabled" | "disabled" | ""
@@ -245,7 +244,7 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromMessage(out),
 	}
 	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
 		resp.ToolCalls = calls
@@ -253,17 +252,28 @@ func (e *einoChatInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvok
 	return resp, nil
 }
 
-// usageFromCM copies a ChatModel's LastUsage split into the chat.Response Usage,
-// and mirrors its total into Tokens for the callers that still read the legacy
-// single counter.
-func usageFromCM(cm *models.ChatModel) *chat.Usage {
-	if cm == nil || cm.LastUsage == nil {
+// usageFromMessage copies the call's own token split - which the model attaches to the
+// message it returns (ResponseMeta.Usage) - into the chat.Response Usage. The split
+// travels with the call instead of being read back off the shared ChatModel, where a
+// concurrent call could have replaced it before the read.
+func usageFromMessage(msg *schema.Message) *chat.Usage {
+	if msg == nil || msg.ResponseMeta == nil {
+		return nil
+	}
+	return usageFromEinoUsage(msg.ResponseMeta.Usage)
+}
+
+// usageFromEinoUsage converts eino's own usage metadata into the chat.Response Usage.
+// A nil usage yields a nil Response.Usage, which is the honest answer for a call whose
+// provider reported none - better than a value left behind by another call.
+func usageFromEinoUsage(u *schema.TokenUsage) *chat.Usage {
+	if u == nil {
 		return nil
 	}
 	return &chat.Usage{
-		PromptTokens:     cm.LastUsage.PromptTokens,
-		CompletionTokens: cm.LastUsage.CompletionTokens,
-		TotalTokens:      cm.LastUsage.TotalTokens,
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		TotalTokens:      u.TotalTokens,
 	}
 }
 
@@ -410,6 +420,11 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 
 	var content, reasoning strings.Builder
 	pendingCalls := map[int]*schema.ToolCall{}
+	// A streamed call reports its usage on the last message that carries it
+	// (stream_options.include_usage), so keep the newest one and read it out below.
+	// It is this call's own split: the model no longer parks it on a field shared by
+	// every call on the ChatModel.
+	var streamUsage *schema.TokenUsage
 	for {
 		chunk, recvErr := sr.Recv()
 		if recvErr == io.EOF {
@@ -420,6 +435,9 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 		}
 		if chunk == nil {
 			continue
+		}
+		if chunk.ResponseMeta != nil && chunk.ResponseMeta.Usage != nil {
+			streamUsage = chunk.ResponseMeta.Usage
 		}
 		// Streaming tool-call deltas are merged before any content handling so a
 		// chunk that carries both is processed exactly once.
@@ -469,7 +487,7 @@ func streamEinoChat(ctx context.Context, wrapper *models.EinoChatModel, msgs []*
 		Thinking: reasoning.String(),
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromEinoUsage(streamUsage),
 	}
 	if len(pendingCalls) > 0 {
 		// Preserve provider-given index order (Python's final_tool_calls.values()
@@ -553,7 +571,7 @@ func (c *resolvedModelInvoker) modelFor(req ChatInvokeRequest) string {
 // Invoke satisfies ChatInvoker.
 func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req ChatInvokeRequest) (*ChatInvokeResponse, error) {
 	modelName := c.modelFor(req)
-	wrapper, cm, err := c.resolvedChatWrapper(modelName, req)
+	wrapper, _, err := c.resolvedChatWrapper(modelName, req)
 	if err != nil {
 		return nil, err
 	}
@@ -566,7 +584,7 @@ func (c *resolvedModelInvoker) Invoke(ctx context.Context, db *gorm.DB, req Chat
 		Thinking: out.ReasoningContent,
 		Model:    modelName,
 		Stopped:  true,
-		Usage:    usageFromCM(cm),
+		Usage:    usageFromMessage(out),
 	}
 	if calls := nativeToolCalls(out.ToolCalls); len(calls) > 0 {
 		resp.ToolCalls = calls
@@ -653,32 +671,41 @@ func (c *LLMComponent) Name() string { return "LLM" }
 // Invoke runs the LLM and returns the output map.
 func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	structured, err := newStructuredOutput(p.OutputStructure)
+	if err != nil {
+		return nil, err
+	}
+	if structured != nil && p.MaxRetries < 0 {
+		return nil, &ParamError{Field: "max_retries", Reason: "must be non-negative for structured output"}
+	}
 
 	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
 	// before invoking. Without this, a tenant_model.id or a composite model
 	// reference selected in the agent canvas is passed verbatim to the LLM
 	// driver, causing 400s for custom-added models.
-	var err error
 	originalModelID := p.ModelID
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: resolve model: %w", err)
 	}
 	// Resolve the model's context window (content_length) for message
-	// fitting. 0 means the model is unknown → fitMessages falls back to
+	// fitting. 0 means the model is unknown → chat.FitMessages falls back to
 	// 8192, matching Python's chat_mdl.max_length = model_config.get("max_tokens") or 8192.
 	// tenantID scopes composite-reference resolution to the tenant's own rows
 	// so a per-model "max_tokens" override in tenant_model.extra is honored.
 	tenantID := ""
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if tid, ok := state.Sys["tenant_id"].(string); ok {
 			tenantID = tid
 		}
 	}
 	contentLength := dao.ResolveModelContentLength(ctx, db, tenantID, originalModelID, p.Driver, p.ModelID)
 	if contentLength <= 0 {
-		// A 0 makes fitMessages fall back to the 8192 default budget, which can
-		// silently discard most of a large-context prompt, so surface the
+		// A 0 makes chat.FitMessages fall back to the 8192 default budget, which
+		// can silently discard most of a large-context prompt, so surface the
 		// resolution failure for diagnosis.
 		common.Warn("llm: content_length not resolved, falling back to 8192",
 			zap.String("model_ref", originalModelID),
@@ -696,7 +723,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// state is absent (e.g. tests that call Invoke directly without
 	// going through the canvas scheduler), the prompts pass through
 	// unchanged — backward compatible.
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		// ResolveTemplate returns the partial output (with "" in place
 		// of unresolved refs) even on error — we accept the partial
 		// output and log the error for diagnostics. This matches
@@ -734,7 +761,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	var sysFileTexts []string
 	var sysFileImgs []string
 	hasSysFilesPlaceholder := strings.Contains(p.SystemPrompt, "{sys.files}") || strings.Contains(p.UserPrompt, "{sys.files}")
-	if state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx); err == nil && state != nil {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if err := rejectUnsupportedImages(ctx, db, state, originalModelID, p.ModelID); err != nil {
 			return nil, err
 		}
@@ -753,7 +780,10 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		sysFileTexts = nil
 	}
 
-	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
+	if structured != nil {
+		p.SystemPrompt += structured.prompt()
+	}
+	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite && structured == nil)
 	// Inject sys.files text content into the last user message.
 	if len(sysFileTexts) > 0 {
 		joined := strings.Join(sysFileTexts, "\n\n")
@@ -793,7 +823,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// empty,
 	// this is a no-op.
 	if p.MessageHistoryWindowSize > 0 {
-		if state, _, sErr := runtime.GetStateFromContext[*runtime.CanvasState](ctx); sErr == nil && state != nil {
+		if state, sErr := runtime.GetStateFromContext(ctx); sErr == nil && state != nil {
 			msgs = prependHistory(msgs, state.SnapshotPriorHistory(), p.MessageHistoryWindowSize)
 		}
 	}
@@ -805,10 +835,13 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 	// generation length only.
 	{
 		// The system prompt is already embedded as the first message
-		// in msgs by buildMessagesWithImages; pass "" so fitMessages
+		// in msgs by buildMessagesWithImages; pass "" so chat.FitMessages
 		// does not duplicate it.
 		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
+			if structured != nil {
+				return nil, fmt.Errorf("component: LLM structured output: %s", fitErr)
+			}
 			return map[string]any{"content": fitErr}, nil
 		}
 		msgs = fitted
@@ -855,7 +888,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -867,18 +900,22 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
 		Thinking:         p.Thinking,
-	})
+	}
+	resp, err := inv.Invoke(ctx, db, req)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
+	var parsedStructure map[string]any
+	if structured != nil {
+		resp, parsedStructure, err = structured.validateAndRepair(ctx, db, unwrapChatInvoker(inv), req, resp, p.MaxRetries)
+		if err != nil {
+			return nil, fmt.Errorf("component: LLM structured output: %w", err)
+		}
+	}
 
-	// Strip think blocks + JSON fences from the response.
-	// Mirrors Python's clean_formated_answer() exactly
-	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
-	// Python only cleans for structured output — keep raw content for
-	// regular responses (llm.py:483: self.set_output("content", ans)).
+	// 已验证的 JSON 保持原样，避免清理规则修改字符串中的标记。
 	cleaned := resp.Content
-	if p.OutputStructure != nil || p.JSONOutput {
+	if structured == nil && p.JSONOutput {
 		cleaned = cleanFormattedAnswer(resp.Content)
 	}
 
@@ -889,50 +926,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		"stopped":  resp.Stopped,
 		"tokens":   resp.Tokens,
 	}
-	if p.JSONOutput {
+	if structured != nil {
+		out["structured"] = parsedStructure
+	}
+	if p.JSONOutput && structured != nil {
+		out["json"] = parsedStructure
+	} else if p.JSONOutput {
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(resp.Content), &parsed); err == nil {
 			out["json"] = parsed
 		} else {
 			// Surface a non-fatal warning — caller can still read "content".
 			common.Warn("component: LLM: json_output=true but content is not valid JSON", zap.Error(err))
-		}
-	}
-	if p.OutputStructure != nil {
-		// Best-effort parse: if the first response isn't valid JSON
-		// (or doesn't contain the expected top-level keys), retry once
-		// with a re-prompt. OutputStructure is treated as a key-set
-		// hint; deep schema validation (types, nested objects) is
-		// deferred to a future phase.
-		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
-		if !ok {
-			retryResp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
-				Driver:           p.Driver,
-				ModelName:        p.ModelID,
-				APIKey:           p.APIKey,
-				BaseURL:          p.BaseURL,
-				Messages:         buildStructuredRetryMessages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite, p.OutputStructure, resp.Content),
-				Temperature:      p.Temperature,
-				TopP:             p.TopP,
-				PresencePenalty:  p.PresencePenalty,
-				FrequencyPenalty: p.FrequencyPenalty,
-				MaxTokens:        p.MaxTokens,
-				Thinking:         p.Thinking,
-			})
-			if err == nil {
-				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
-				if ok {
-					resp = retryResp
-				}
-			}
-		}
-		if ok {
-			out["structured"] = parsed
-			// Also update content to the validated response so
-			// downstream consumers reading "content" get the JSON text.
-			out["content"] = cleanFormattedAnswer(resp.Content)
-		} else {
-			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
 	out["thinking"] = resp.Thinking
@@ -1013,7 +1018,7 @@ func (c *LLMComponent) Inputs() map[string]string {
 		"frequency_penalty": "Frequency penalty (-2.0 to 2.0). Positive values discourage repetition. Optional.",
 		"visual_files":      "List of image URIs (data:image/... base64) attached to the user message as multi-modal content.",
 		"cite":              "When true (default), the citation-instruction prompt is appended to the system message.",
-		"output_structure":  "Optional map of expected top-level keys. LLM is asked to produce JSON containing these keys; one retry on failure. Populates outputs[\"structured\"].",
+		"output_structure":  "JSON Schema for an object result; outputs.structured is the canvas configuration. Invalid output fails after max_retries corrections.",
 		"max_tokens":        "Maximum tokens to generate. Optional.",
 		"json_output":       "If true, attempt to JSON-parse \"content\" into \"json\" output key.",
 		"driver":            "Provider driver name (openai, anthropic, …). Defaults to \"dummy\".",
@@ -1025,11 +1030,12 @@ func (c *LLMComponent) Inputs() map[string]string {
 // Outputs returns output metadata.
 func (c *LLMComponent) Outputs() map[string]string {
 	return map[string]string{
-		"content": "Assistant text response",
-		"model":   "Model identifier echoed back (sanity check)",
-		"stopped": "True if the model finished naturally",
-		"tokens":  "Reported token count (0 when not reported by the driver)",
-		"json":    "When json_output=true and content parses as a JSON object, the parsed map",
+		"content":    "Assistant text response",
+		"model":      "Model identifier echoed back (sanity check)",
+		"stopped":    "True if the model finished naturally",
+		"tokens":     "Reported token count (0 when not reported by the driver)",
+		"json":       "When json_output=true and content parses as a JSON object, the parsed map",
+		"structured": "JSON object validated against the configured schema",
 	}
 }
 
@@ -1050,49 +1056,6 @@ func buildMessages(system, user string) []schema.Message {
 // citation-instruction text appended. When system is empty, returns
 // the prompt as-is. Two newlines separate the user's system prompt
 // from the citation block so the LLM can parse them distinctly.
-// matchOutputStructure parses the LLM response and returns the
-// parsed map iff it is a JSON object that contains every top-level
-// key in expected. Inner-type validation is deferred — a future
-// phase will use a JSON-schema validator.
-func matchOutputStructure(content string, expected map[string]any) (map[string]any, bool) {
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return nil, false
-	}
-	for k := range expected {
-		if _, ok := parsed[k]; !ok {
-			return nil, false
-		}
-	}
-	return parsed, true
-}
-
-// buildStructuredRetryMessages rebuilds the message list with a
-// follow-up user turn that surfaces the LLM's first response and
-// asks for valid JSON matching the expected top-level keys. The
-// retry uses the same chat invoker on the next call; the message
-// list returned here is what gets sent on the retry.
-func buildStructuredRetryMessages(system, user string, images []string, cite bool, expected map[string]any, prevContent string) []schema.Message {
-	msgs := buildMessagesWithImages(system, user, images, cite)
-	keys := make([]string, 0, len(expected))
-	for k := range expected {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	keysList := strings.Join(keys, ", ")
-	retryUser := "Your previous response was not valid JSON matching the requested schema.\n\n" +
-		"Previous response:\n" + prevContent + "\n\n" +
-		"Please re-generate the response as a single valid JSON object containing all of these top-level keys: " + keysList + ".\n" +
-		"Output ONLY the JSON object — no prose, no markdown code fences."
-	if len(msgs) > 0 {
-		msgs[len(msgs)-1] = schema.Message{
-			Role:    schema.User,
-			Content: retryUser,
-		}
-	}
-	return msgs
-}
-
 func injectCitationPrompt(system string) string {
 	prompt := prompts.CitationPrompt()
 	if system == "" {
@@ -1304,8 +1267,11 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	if v, ok := boolFrom(inputs, "json_output"); ok {
 		p.JSONOutput = v
 	}
-	if v, ok := mapFrom(inputs, "output_structure"); ok {
+	if v, ok := structuredOutputFrom(inputs); ok {
 		p.OutputStructure = v
+	}
+	if v, ok := intFrom(inputs, "max_retries"); ok {
+		p.MaxRetries = v
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
@@ -1367,157 +1333,6 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	return p
 }
 
-// effectiveContextLength returns maxLength if positive, otherwise 8192.
-// Mirrors Python's LLM.effective_context_length in PR #16413 — prevents
-// zero/negative context windows from silently trimming all prompt content.
-func effectiveContextLength(maxLength int) int {
-	if maxLength > 0 {
-		return maxLength
-	}
-	return 8192
-}
-
-// contextFitBudget returns 97% of the effective context length as the
-// token budget for message_fit_in. Mirrors Python's LLM.context_fit_budget
-// in PR #16413.
-func contextFitBudget(maxLength int) int {
-	return int(float64(effectiveContextLength(maxLength)) * 0.97)
-}
-
-// validateFittedMessages checks that the fitted message list is non-empty
-// and the last message is a non-empty user turn (content or multi-modal
-// parts). Returns an error string on failure, empty string on success.
-// Python requires len >= 2 because the system prompt is always injected
-// upstream; Go allows len >= 1 because the system message may be embedded
-// inside msgs (from buildMessagesWithImages) or absent entirely.
-func validateFittedMessages(msgFit []schema.Message) string {
-	if len(msgFit) == 0 {
-		return "**ERROR**: message_fit_in produced insufficient messages for LLM"
-	}
-	last := msgFit[len(msgFit)-1]
-	if last.Role != schema.User {
-		return "**ERROR**: LLM last message is not a user turn after prompt fitting; check model content_length context setting"
-	}
-	if strings.TrimSpace(last.Content) == "" && len(last.UserInputMultiContent) == 0 {
-		return "**ERROR**: LLM user message is empty after prompt fitting; check model content_length context setting"
-	}
-	return ""
-}
-
-// FitMessages exposes message_fit_in semantics (LLM.fit_messages, PR #16413)
-// for packages that compose final-answer prompts outside the agent loop.
-func FitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	return fitMessages(systemPrompt, msgs, maxLength)
-}
-
-// fitMessages calls message_fit_in semantics on the given messages and
-// validates that the result ends with a non-empty user turn. Returns the
-// fitted messages and an error string (empty on success).
-// Mirrors Python's LLM.fit_messages in PR #16413.
-func fitMessages(systemPrompt string, msgs []schema.Message, maxLength int) ([]schema.Message, string) {
-	// Deep-copy msgs (mirrors Python's deepcopy) to avoid mutating caller's slice.
-	copied := make([]schema.Message, len(msgs))
-	for i, m := range msgs {
-		cloned := slices.Clone(m.UserInputMultiContent)
-		for j, p := range cloned {
-			if p.Image != nil {
-				imgCopy := *p.Image
-				if p.Image.URL != nil {
-					u := *p.Image.URL
-					imgCopy.URL = &u
-				}
-				cloned[j].Image = &imgCopy
-			}
-		}
-		copied[i] = schema.Message{
-			Role:                  m.Role,
-			Content:               m.Content,
-			UserInputMultiContent: cloned,
-		}
-	}
-
-	// Convert to tokenizer.Message. Track where each entry's text lives
-	// (plain Content or a multi-modal text part) so the fitted text can be
-	// written back to the right field. Entries with no text at all
-	// (image-only turns) carry an empty Content for fitting and survive
-	// fitting when kept.
-	type fitSource struct {
-		copiedIdx     int  // index into copied; -1 for the synthetic system prompt
-		multiIdx      int  // -1 means the text lives in Content
-		textInContent bool // the original message carried text in Content
-	}
-	all := make([]tokenizer.Message, 0, 1+len(copied))
-	sources := make([]fitSource, 0, 1+len(copied))
-
-	if systemPrompt != "" {
-		all = append(all, tokenizer.Message{Role: "system", Content: systemPrompt})
-		sources = append(sources, fitSource{copiedIdx: -1, multiIdx: 0})
-	}
-
-	for i := range copied {
-		text := copied[i].Content
-		multiIdx := -1
-		hadText := text != ""
-		if !hadText {
-			// Fold every non-empty text part into the token budget: only the
-			// first text part is written back, so leaving later parts out
-			// would let text exceed the fitted budget after reconstruction.
-			var textParts []string
-			for j, p := range copied[i].UserInputMultiContent {
-				if p.Type == schema.ChatMessagePartTypeText && p.Text != "" {
-					textParts = append(textParts, p.Text)
-					if multiIdx < 0 {
-						multiIdx = j
-					}
-				}
-			}
-			if len(textParts) > 0 {
-				text = strings.Join(textParts, "\n\n")
-				hadText = true
-			}
-		}
-		all = append(all, tokenizer.Message{Role: string(copied[i].Role), Content: text})
-		sources = append(sources, fitSource{copiedIdx: i, multiIdx: multiIdx, textInContent: copied[i].Content != ""})
-	}
-
-	// Use 97% of effective context as the token budget.
-	budget := contextFitBudget(maxLength)
-	kept, keptIdx, _ := tokenizer.Fit(all, budget)
-
-	// Convert back to []schema.Message. tokenizer.Fit reports exactly which
-	// entries are kept (keptIdx); dropped entries are simply absent, so no
-	// empty-content sentinel is needed and image-only turns are preserved.
-	result := make([]schema.Message, 0, len(kept))
-	for j, i := range keptIdx {
-		src := sources[i]
-		if src.copiedIdx < 0 {
-			result = append(result, schema.Message{Role: schema.System, Content: kept[j].Content})
-			continue
-		}
-		m := copied[src.copiedIdx]
-		if src.multiIdx >= 0 && src.multiIdx < len(m.UserInputMultiContent) {
-			m.UserInputMultiContent[src.multiIdx].Text = kept[j].Content
-			// Drop any additional text parts: their content was folded into
-			// the first part before fitting, so keeping them would re-introduce
-			// text outside the token budget.
-			keptParts := m.UserInputMultiContent[:0]
-			for k, part := range m.UserInputMultiContent {
-				if part.Type == schema.ChatMessagePartTypeText && k != src.multiIdx {
-					continue
-				}
-				keptParts = append(keptParts, part)
-			}
-			m.UserInputMultiContent = keptParts
-		} else if src.textInContent {
-			// Always write the fitted text back (even when trimmed to empty):
-			// leaving the original would send untrimmed content past the budget.
-			m.Content = kept[j].Content
-		}
-		result = append(result, m)
-	}
-	return result, validateFittedMessages(result)
-}
-
 // stringFrom extracts a string from inputs[name], accepting both string and
 // fmt.Stringer-able values.
 func stringFrom(inputs map[string]any, name string) (string, bool) {
@@ -1533,9 +1348,7 @@ func stringFrom(inputs map[string]any, name string) (string, bool) {
 
 // mapFrom extracts a map[string]any from inputs[name]. Accepts the
 // canonical map[string]any shape (the shape produced by
-// json.Unmarshal into a map). For OutputStructure we only need the
-// top-level shape — schema-validation against the inner types is
-// deferred to a future phase.
+// json.Unmarshal into a map).
 func mapFrom(inputs map[string]any, name string) (map[string]any, bool) {
 	v, ok := inputs[name]
 	if !ok {
@@ -1625,8 +1438,12 @@ func init() {
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
-		if v, ok := mapFrom(params, "output_structure"); ok {
+		if v, ok := structuredOutputFrom(params); ok {
 			p.OutputStructure = v
+			p.MaxRetries = 3
+		}
+		if v, ok := intFrom(params, "max_retries"); ok {
+			p.MaxRetries = v
 		}
 		if v, ok := floatFrom(params, "presence_penalty"); ok {
 			f := v

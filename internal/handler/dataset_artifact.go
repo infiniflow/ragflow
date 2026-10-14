@@ -255,13 +255,25 @@ func (h *DatasetArtifactHandler) GetArtifactAlteration(c *gin.Context) {
 }
 
 // GetArtifactGraph handles GET /artifacts/graph — wiki entity/relation graph.
+// keywords seeds the graph with BM25 matches; top_n/topN controls the entity cap.
 func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	_, tenantID, _ := h.datasetOwner(c, c.Param("dataset_id"))
 	if tenantID == "" {
 		return
 	}
 	datasetID := c.Param("dataset_id")
-	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID)
+	keywords := strings.TrimSpace(c.Query("keywords"))
+	topNValue := c.Query("top_n")
+	if topNValue == "" {
+		topNValue = c.Query("topN")
+	}
+	var topN *int
+	if topNValue != "" {
+		if value, parseErr := strconv.Atoi(topNValue); parseErr == nil {
+			topN = &value
+		}
+	}
+	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID, keywords, topN)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return

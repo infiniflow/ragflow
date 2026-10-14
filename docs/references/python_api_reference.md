@@ -1136,9 +1136,7 @@ RAGFlow.retrieve(
   rerank_id: str | None = None,
   keyword: bool = False,
   cross_languages: list[str] | None = None,
-  metadata_condition: dict | None = None,
-  use_kg: bool = False,
-  toc_enhance: bool = False)
+  metadata_condition: dict | None = None)
 ```
 
 Retrieves chunks from specified datasets.
@@ -1195,14 +1193,6 @@ The languages that should be translated into, in order to achieve keywords retri
 ##### metadata_condition: `dict`
 
 filter condition for `meta_fields`.
-
-##### use_kg: `bool`
-
-Whether to enable graph-assisted retrieval for multi-hop queries. Defaults to `False`.
-
-##### toc_enhance: `bool`
-
-Whether to use extracted table-of-contents information during retrieval. Defaults to `False`.
 
 #### Returns
 
@@ -1652,102 +1642,6 @@ assistant = rag_object.list_chats(name="Miss R")
 assistant = assistant[0]
 assistant.delete_sessions(ids=["id_1","id_2"])
 assistant.delete_sessions(delete_all=True)
-```
-
----
-
-### Converse with chat assistant
-
-```python
-Session.ask(question: str = "", stream: bool = False, **kwargs) -> Optional[Message, iter[Message]]
-```
-
-Asks a specified chat assistant a question to start an AI-powered conversation.
-
-:::tip NOTE
-In streaming mode, not all responses include a reference, as this depends on the system's judgment.
-:::
-
-#### Parameters
-
-##### question: `string`, *Required*
-
-The question to start an AI-powered conversation. Default to `""`
-
-##### stream: `bool`
-
-Indicates whether to output responses in a streaming way:
-
-- `True`: Enable streaming (default).
-- `False`: Disable streaming.
-
-##### **kwargs
-
-The parameters in prompt(system).
-
-#### Returns
-
-- A `Message` object containing the response to the question if `stream` is set to `False`.
-- An iterator containing multiple `message` objects (`iter[Message]`) if `stream` is set to `True`
-
-The following shows the attributes of a `Message` object:
-
-##### id: `string`
-
-The auto-generated message ID.
-
-##### content: `string`
-
-The content of the message. Defaults to `"Hi! I am your assistant, can I help you?"`.
-
-##### reference: `list[Chunk]`
-
-A list of `Chunk` objects representing references to the message, each containing the following attributes:
-
-- `id` `string`
-  The chunk ID.
-- `content` `string`
-  The content of the chunk.
-- `img_id` `string`
-  The ID of the snapshot of the chunk. Applicable only when the source of the chunk is an image, PPT, PPTX, or PDF file.
-- `document_id` `string`
-  The ID of the referenced document.
-- `document_name` `string`
-  The name of the referenced document.
-- `document_metadata` `dict`
-  Optional document metadata, returned only when `extra_body.reference_metadata.include` is `true`.
-- `position` `list[str]`
-  The location information of the chunk within the referenced document.
-- `dataset_id` `string`
-  The ID of the dataset to which the referenced document belongs.
-- `similarity` `float`
-  A composite similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity. It is the weighted sum of `vector_similarity` and `term_similarity`.
-- `vector_similarity` `float`
-  A vector similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between vector embeddings.
-- `term_similarity` `float`
-  A keyword similarity score of the chunk ranging from `0` to `1`, with a higher value indicating greater similarity between keywords.
-
-#### Examples
-
-```python
-from ragflow_sdk import RAGFlow
-
-rag_object = RAGFlow(api_key="<YOUR_API_KEY>", base_url="http://<YOUR_BASE_URL>:9380")
-assistant = rag_object.list_chats(name="Miss R")
-assistant = assistant[0]
-session = assistant.create_session()
-
-print("\n==================== Miss R =====================\n")
-print("Hello. What can I do for you?")
-
-while True:
-    question = input("\n==================== User =====================\n> ")
-    print("\n==================== Miss R =====================\n")
-
-    cont = ""
-    for ans in session.ask(question, stream=True):
-        print(ans.content[len(cont):], end='', flush=True)
-        cont = ans.content
 ```
 
 ---
@@ -2359,9 +2253,9 @@ Configurations to update. Available configurations:
 
 - `memory_size`: `int`, *Optional*
 
-  Defaults to `5*1024*1024` Bytes. Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default limit holds ~500 such messages.
+  Defaults to `5 MiB` (`5242880` bytes). Accounts for each message's content + its embedding vector (≈ Content + Dimensions × 8 Bytes). Example: A 1 KiB message with a 1024-dimension embedding uses approximately 9 KiB. The 5 MiB default limit holds approximately 500 such messages.
 
-  - Maximum 10 * 1024 * 1024 Bytes
+  - Maximum `5 MiB` (`5242880` bytes)
 
 - `forgetting_policy`: `enum<string>`, *Optional*
 

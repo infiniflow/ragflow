@@ -203,7 +203,7 @@ func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
 	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
 	svc := NewAskService(ret, nil, 0, 0)
 
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature":         0.6,
 			"temperature_enabled": true,
@@ -246,7 +246,7 @@ func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
 	svc := NewAskService(ret, nil, 0, 0)
 
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature":         0.6,
 			"temperature_enabled": false,
@@ -280,7 +280,7 @@ func TestAskService_TemperatureMissingUsesLLMSettingDefaults(t *testing.T) {
 
 	// Flag enabled but value absent (and a completely absent flag) must
 	// substitute the Python LLM_SETTING_DEFAULTS, matching resolve_llm_setting.
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature_enabled": true,
 		},

@@ -139,7 +139,12 @@ const FloatingChatWidgetMarkdown = ({
 
   const getReferenceInfo = useCallback(
     (chunkIndex: number) => {
-      const chunkItem = reference?.chunks?.[chunkIndex];
+      let chunkItem = reference?.chunks?.[chunkIndex];
+      if (!chunkItem) {
+        chunkItem = reference?.chunks?.find(
+          (x: any) => x?.chunk_id === chunkIndex,
+        ) as IReferenceChunk;
+      }
       if (!chunkItem) return null;
       const docAggsArray = Array.isArray(reference?.doc_aggs)
         ? reference.doc_aggs
@@ -199,12 +204,14 @@ const FloatingChatWidgetMarkdown = ({
               <TooltipTrigger asChild>
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="w-24 h-24 object-contain rounded m-1 cursor-pointer"
                 />
               </TooltipTrigger>
               <TooltipContent side="left">
                 <Image
                   id={imageId}
+                  documentId={documentId}
                   className="max-w-[80vw] max-h-[60vh] rounded"
                 />
               </TooltipContent>
@@ -268,7 +275,7 @@ const FloatingChatWidgetMarkdown = ({
   const renderReference = useCallback(
     (text: string) => {
       return reactStringReplace(text, currentReg, (match, i) => {
-        const chunkIndex = getChunkIndex(match);
+        const chunkIndex = getChunkIndex(match) as number;
         const info = getReferenceInfo(chunkIndex);
 
         if (!info) {
@@ -292,6 +299,7 @@ const FloatingChatWidgetMarkdown = ({
             <Image
               key={`img-${i}`}
               id={imageId}
+              documentId={documentId}
               className="block object-contain max-w-full max-h-48 rounded my-2 cursor-pointer"
               onClick={handleDocumentButtonClick(
                 documentId,

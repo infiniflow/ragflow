@@ -18,7 +18,6 @@ package sandbox
 
 import (
 	"context"
-	"ragflow/internal/common"
 	"strings"
 	"testing"
 	"time"
@@ -59,8 +58,8 @@ func TestTenkiProvider_Defaults(t *testing.T) {
 	if p.image != "" {
 		t.Errorf("image = %q, want empty (SDK default image)", p.image)
 	}
-	if p.sandboxTimeout != tenkiDefaultSandboxTimeout {
-		t.Errorf("sandboxTimeout = %v, want %v", p.sandboxTimeout, tenkiDefaultSandboxTimeout)
+	if p.timeout != tenkiDefaultTimeout || p.maxLifetime != tenkiDefaultMaxLifetime {
+		t.Errorf("timeouts = execution:%v lifetime:%v, want execution:%v lifetime:%v", p.timeout, p.maxLifetime, tenkiDefaultTimeout, tenkiDefaultMaxLifetime)
 	}
 	if p.allowOutbound {
 		t.Errorf("allowOutbound = true, want false by default (network is opt-in)")
@@ -75,11 +74,48 @@ func TestTenkiProvider_EnvOverride(t *testing.T) {
 	if p.image != "custom-image" {
 		t.Errorf("image = %q, want %q", p.image, "custom-image")
 	}
-	if p.sandboxTimeout != 120*time.Second {
-		t.Errorf("sandboxTimeout = %v, want 120s", p.sandboxTimeout)
+	if p.timeout != 120*time.Second {
+		t.Errorf("timeout = %v, want 120s", p.timeout)
 	}
 	if !p.allowOutbound {
 		t.Errorf("allowOutbound = false, want true when TENKI_ALLOW_OUTBOUND=true")
+	}
+}
+
+func TestTenkiProvider_ConfigUsesCanonicalKeysAndLimits(t *testing.T) {
+	p := newTenkiProviderFromConfig(map[string]any{
+		"api_key":            "tk_test",
+		"base_url":           "https://example.test",
+		"timeout":            "45",
+		"max_lifetime":       "600",
+		"cpu_cores":          4,
+		"memory_mb":          4096,
+		"disk_size_gb":       10,
+		"max_output_bytes":   2048,
+		"max_artifacts":      3,
+		"max_artifact_bytes": 4096,
+	})
+	if p.apiKey != "tk_test" || p.baseURL != "https://example.test" {
+		t.Fatalf("canonical config was not loaded: api_key=%q base_url=%q", p.apiKey, p.baseURL)
+	}
+	if p.timeout != 45*time.Second || p.maxLifetime != 10*time.Minute {
+		t.Fatalf("timeouts = execution:%v lifetime:%v", p.timeout, p.maxLifetime)
+	}
+	if p.cpuCores != 4 || p.memoryMB != 4096 || p.diskSizeGB != 10 ||
+		p.maxOutputBytes != 2048 || p.maxArtifacts != 3 || p.maxArtifactBytes != 4096 {
+		t.Fatalf("resource limits were not loaded: %+v", p)
+	}
+	if legacy := newTenkiProviderFromConfig(map[string]any{"API_KEY": "legacy", "TIMEOUT": 7}); legacy.apiKey != "" || legacy.timeout != tenkiDefaultTimeout {
+		t.Fatalf("uppercase compatibility keys must not be accepted: %+v", legacy)
+	}
+}
+
+func TestTenkiProvider_OutputCapCountsRawBytes(t *testing.T) {
+	if err := validateTenkiOutputSize("é", "x", 2); err == nil {
+		t.Fatal("expected UTF-8 output to be rejected by byte cap")
+	}
+	if err := validateTenkiOutputSize("ok", "x", 3); err != nil {
+		t.Fatalf("unexpected output-cap error: %v", err)
 	}
 }
 
@@ -162,7 +198,7 @@ func TestTenkiProvider_ExecuteCode_RejectsBadInputs(t *testing.T) {
 			name: "timeout too small",
 			fn: func() error {
 				_, err := p.ExecuteCode(t.Context(),
-					&SandboxInstance{InstanceID: "x"}, "x", "python", 0, nil)
+					&SandboxInstance{InstanceID: "x"}, "x", "python", -1, nil)
 				return err
 			},
 			want: "timeout",
@@ -234,42 +270,6 @@ func TestTenkiProvider_BuildTenkiExecutionResult(t *testing.T) {
 	}
 	if v, _ := res.Metadata["language"].(string); v != "python" {
 		t.Errorf("Metadata[language] = %v, want python", res.Metadata["language"])
-	}
-}
-
-// TestTenkiProvider_FullE2E_SkipWithoutKey is the integration test
-// path. The body is skipped unless TENKI_API_KEY is set, but the test
-// always runs (so missing-secrets shows up in CI logs). When enabled,
-// it creates a real sandbox, runs Python, and destroys it.
-func TestTenkiProvider_FullE2E_SkipWithoutKey(t *testing.T) {
-	apiKey := common.GetEnv(common.EnvTenkiAPIKey)
-	if apiKey == "" {
-		t.Skip("TENKI_API_KEY not set — skipping full E2E test (real network call)")
-	}
-	p := newTenkiProviderFromEnv()
-	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Minute)
-	defer cancel()
-	if err := p.Initialize(ctx); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	inst, err := p.CreateInstance(ctx, "python")
-	if err != nil {
-		t.Fatalf("CreateInstance: %v", err)
-	}
-	defer func() {
-		cleanupCtx, cleanupCancel := context.WithTimeout(t.Context(), 30*time.Second)
-		defer cleanupCancel()
-		if err := p.DestroyInstance(cleanupCtx, inst); err != nil {
-			t.Errorf("DestroyInstance: %v", err)
-		}
-	}()
-
-	result, err := p.ExecuteCode(ctx, inst, "def main(): return 1+1", "python", 30, nil)
-	if err != nil {
-		t.Fatalf("ExecuteCode: %v", err)
-	}
-	if result.ExitCode != 0 {
-		t.Errorf("ExitCode = %d, want 0; stderr=%q", result.ExitCode, result.Stderr)
 	}
 }
 

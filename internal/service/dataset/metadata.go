@@ -173,20 +173,40 @@ func (d *DatasetService) UpdateMetadataConfig(ctx context.Context, datasetID, te
 }
 
 // modularMetadataConfig reads the modular dataset-level metadata object
-// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. Missing
-// or malformed config yields a disabled, empty result.
+// ({"enabled", "metadata", "built_in_metadata"}) from parser_config. The
+// dataset-level flat "metadata" key is authoritative when present; the
+// component-scoped copy under an Extractor node is used as a fallback (the
+// stored form after scoping). Configs without either (e.g. minimal fixtures)
+// yield a disabled, empty result.
 func modularMetadataConfig(parserConfig map[string]any) (bool, bool, []any, []any) {
 	if parserConfig == nil {
 		return false, false, []any{}, []any{}
 	}
-	metaObj, ok := parserConfig["metadata"].(map[string]any)
-	if !ok {
-		return false, false, []any{}, []any{}
+	if metaObj, ok := parserConfig["metadata"].(map[string]any); ok {
+		enabled, _ := metaObj["enabled"].(bool)
+		metadata := anyOrEmptyList(metaObj["metadata"])
+		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn
 	}
-	enabled, _ := metaObj["enabled"].(bool)
-	metadata := anyOrEmptyList(metaObj["metadata"])
-	builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
-	return true, enabled, metadata, builtIn
+	for cpnID, raw := range parserConfig {
+		lower := strings.ToLower(cpnID)
+		if !strings.HasPrefix(lower, "extractor:") && !strings.HasPrefix(lower, "extractor_") {
+			continue
+		}
+		params, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		metaObj, ok := params["metadata"].(map[string]any)
+		if !ok {
+			continue
+		}
+		enabled, _ := metaObj["enabled"].(bool)
+		metadata := anyOrEmptyList(metaObj["metadata"])
+		builtIn := anyOrEmptyList(metaObj["built_in_metadata"])
+		return true, enabled, metadata, builtIn
+	}
+	return false, false, []any{}, []any{}
 }
 
 func anyOrEmptyList(value any) []any {

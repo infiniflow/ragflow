@@ -54,12 +54,12 @@ func NewTermWeightDealer(resPath string) *TermWeightDealer {
 
 	// Load named entity dictionary
 	if resPath == "" {
-		resPath = "rag/res"
+		resPath = "internal/rag/res"
 	}
 
 	nerPath := filepath.Join(resPath, "ner.json")
 	if data, err := os.ReadFile(nerPath); err == nil {
-		if err := json.Unmarshal(data, &d.ne); err != nil {
+		if err = json.Unmarshal(data, &d.ne); err != nil {
 			common.Warn("Failed to load ner.json", zap.Error(err))
 		}
 	} else {

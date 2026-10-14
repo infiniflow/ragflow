@@ -14,30 +14,16 @@
 //  limitations under the License.
 //
 
-// aliyun.go is the Go port of
-// `agent/sandbox/providers/aliyun_codeinterpreter.py`.
-//
-// The Python provider uses the high-level `agentrun-sdk` Python
-// package, which exposes a `Sandbox` class with `create()` /
-// `connect()` / `context.execute()` / `delete_by_id()` methods.
-// The Go SDK at v5.8.4 is the OpenAPI stub — it has lifecycle
-// operations (CreateCodeInterpreter / DeleteCodeInterpreter /
-// ListCodeInterpreters / GetCodeInterpreter) but does NOT expose
-// the execute endpoint.
-//
-// This implementation uses the Go SDK for instance lifecycle and
-// the raw agentrun REST API for the execute call. The execute
-// endpoint URL and payload shape are reverse-engineered from the
-// Python SDK's `agentrun.sandbox.SandboxContext.execute` behavior;
-// see §17.6.1 of docs/develop/agent-go-port-design.md for the SDK gap analysis and the
-// rationale for this hybrid. When the Go SDK catches up and adds
-// an execute method, the raw-HTTP call below is the only thing
-// that needs to be swapped.
+// Aliyun uses the installed Go SDK for sandbox lifecycle and the
+// Python SDK's AgentRun RAM signature for the data-plane execute endpoint.
 
 package sandbox
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -51,25 +37,14 @@ import (
 	"github.com/alibabacloud-go/agentrun-20250910/v5/client"
 	agentrun "github.com/alibabacloud-go/agentrun-20250910/v5/client"
 	openapiutil "github.com/alibabacloud-go/darabonba-openapi/v2/utils"
+	"github.com/alibabacloud-go/tea/tea"
 )
 
 // aliyunDefaultRegion is the canonical region baked into the Python
 // side. Operators override via AGENTRUN_REGION.
 const aliyunDefaultRegion = "cn-hangzhou"
 
-// aliyunExecuteEndpoint is the raw REST endpoint the agentrun
-// Python SDK hits when calling `sandbox.context.execute(code=...)`.
-// Reverse-engineered from the Python SDK's HTTP transport. The
-// pattern is: a code interpreter instance is created with
-// CreateCodeInterpreter, and execution happens via
-//
-//	POST https://{region}agentrun.{aliyunDomain}/2025-09-10/code-interpreter/{id}/execute
-//
-// The exact hostname and path prefix are subject to change in newer
-// SDK versions; if the SDK is updated, refresh this constant. The
-// SDK also exposes the same surface via `Sandbox.execute` in
-// future Go SDK releases.
-const aliyunExecutePath = "/2025-09-10/code-interpreter/%s/execute"
+const aliyunExecutePath = "/sandboxes/%s/contexts/execute"
 
 // AliyunCodeInterpreterProvider is the Go port of
 // `agent/sandbox/providers/aliyun_codeinterpreter.py::AliyunCodeInterpreterProvider`.
@@ -82,9 +57,8 @@ type AliyunCodeInterpreterProvider struct {
 	timeout         int // seconds, hard cap 30
 	executeHost     string
 
-	sdk     *client.Client
-	helper  *HTTPClient
-	execCtx context.Context
+	sdk    *client.Client
+	helper *HTTPClient
 
 	initialized bool
 }
@@ -100,33 +74,33 @@ func newAliyunProviderFromEnv() *AliyunCodeInterpreterProvider {
 // env vars, mirroring the admin-panel settings JSON shape.
 func aliyunConfigFromEnv() map[string]any {
 	return map[string]any{
-		"ACCESS_KEY_ID":     common.GetEnv(common.EnvAgentRunAccessKeyID),
-		"ACCESS_KEY_SECRET": common.GetEnv(common.EnvAgentRunAccessKeySecret),
-		"ACCOUNT_ID":        common.GetEnv(common.EnvAgentRunAccountID),
-		"REGION":            common.GetEnv(common.EnvAgentRunRegion),
-		"TEMPLATE_NAME":     common.GetEnv(common.EnvAgentRunTemplateName),
-		"EXECUTE_HOST":      common.GetEnv(common.EnvAgentRunExecuteHost),
-		"TIMEOUT":           common.GetEnv(common.EnvAgentRunTimeout),
+		"access_key_id":     common.GetEnv(common.EnvAgentRunAccessKeyID),
+		"access_key_secret": common.GetEnv(common.EnvAgentRunAccessKeySecret),
+		"account_id":        common.GetEnv(common.EnvAgentRunAccountID),
+		"region":            common.GetEnv(common.EnvAgentRunRegion),
+		"template_name":     common.GetEnv(common.EnvAgentRunTemplateName),
+		"execute_host":      common.GetEnv(common.EnvAgentRunExecuteHost),
+		"timeout":           common.GetEnv(common.EnvAgentRunTimeout),
 	}
 }
 
 // newAliyunProviderFromConfig builds the provider from a JSON
 // config map (as stored in the system_settings table for the
-// aliyun_codeinterpreter provider). The config keys mirror the
-// env-var names without the AGENTRUN_ prefix.
+// aliyun_codeinterpreter provider). Config keys use the lowercase
+// Python schema names.
 func newAliyunProviderFromConfig(cfg map[string]any) *AliyunCodeInterpreterProvider {
 	p := &AliyunCodeInterpreterProvider{
-		accessKeyID:     configString(cfg, "ACCESS_KEY_ID"),
-		accessKeySecret: configString(cfg, "ACCESS_KEY_SECRET"),
-		accountID:       configString(cfg, "ACCOUNT_ID"),
-		region:          configString(cfg, "REGION"),
-		templateName:    configString(cfg, "TEMPLATE_NAME"),
-		executeHost:     configString(cfg, "EXECUTE_HOST"),
+		accessKeyID:     configString(cfg, "access_key_id"),
+		accessKeySecret: configString(cfg, "access_key_secret"),
+		accountID:       configString(cfg, "account_id"),
+		region:          configString(cfg, "region"),
+		templateName:    configString(cfg, "template_name"),
+		executeHost:     configString(cfg, "execute_host"),
 	}
 	if p.region == "" {
 		p.region = aliyunDefaultRegion
 	}
-	p.timeout = configInt(cfg, "TIMEOUT", 30)
+	p.timeout = configInt(cfg, "timeout", 30)
 	// Hard cap matches the Python side.
 	if p.timeout > 30 {
 		p.timeout = 30
@@ -139,10 +113,17 @@ func (p *AliyunCodeInterpreterProvider) ProviderType() ProviderType {
 	return ProviderAliyun
 }
 
-// Initialize constructs the agentrun SDK client and probes the
-// service via ListCodeInterpreters. The Go SDK does all the auth
-// and credential work for us.
+// Initialize constructs the signed control-plane client without creating resources.
 func (p *AliyunCodeInterpreterProvider) Initialize(ctx context.Context) error {
+	if p.timeout < 1 {
+		return errors.New("aliyun: timeout must be at least 1 second")
+	}
+	endpointURL, err := normalizeAliyunEndpoint(p.executeHost)
+	if err != nil {
+		return err
+	}
+	p.executeHost = endpointURL
+
 	if p.accessKeyID == "" || p.accessKeySecret == "" {
 		return errors.New("aliyun: AGENTRUN_ACCESS_KEY_ID and AGENTRUN_ACCESS_KEY_SECRET are required")
 	}
@@ -150,20 +131,22 @@ func (p *AliyunCodeInterpreterProvider) Initialize(ctx context.Context) error {
 		return errors.New("aliyun: AGENTRUN_ACCOUNT_ID is required")
 	}
 
+	endpoint, protocol := stringPtr("agentrun."+p.region+".aliyuncs.com"), stringPtr("https")
+	if p.executeHost != "" {
+		u, _ := url.Parse(p.executeHost)
+		endpoint = &u.Host
+	}
+	requestTimeout := p.timeout * 1000
 	cfg := &openapiutil.Config{
 		AccessKeyId:     &p.accessKeyID,
 		AccessKeySecret: &p.accessKeySecret,
 		Type:            stringPtr("access_key"),
 		RegionId:        &p.region,
-		Endpoint:        stringPtr(p.executeHost), // empty → SDK resolves via endpoint rules
-		// User-Agent, SDK metadata, etc. are filled in by the SDK.
+		Endpoint:        endpoint,
+		Protocol:        protocol,
+		ReadTimeout:     &requestTimeout,
+		ConnectTimeout:  &requestTimeout,
 	}
-	if p.executeHost != "" {
-		// explicit host override → pass through
-		cfg.Endpoint = &p.executeHost
-	}
-	// The SDK wants the user agent to identify us; harmless if
-	// omitted but useful in agentrun access logs.
 	ua := "ragflow-go-agent"
 	cfg.UserAgent = &ua
 
@@ -174,18 +157,8 @@ func (p *AliyunCodeInterpreterProvider) Initialize(ctx context.Context) error {
 	p.sdk = sdk
 	p.helper = NewHTTPClient(HTTPConfig{
 		Timeout:     time.Duration(p.timeout) * time.Second,
-		MaxAttempts: 2, // aliyun already retries internally; we only retry on transport errors
+		MaxAttempts: 1,
 	})
-	p.execCtx = ctx
-
-	// Probe via ListCodeInterpreters — same call Python uses for
-	// health_check. We accept any non-error response (empty list
-	// is valid for new accounts).
-	listReq := &client.ListCodeInterpretersRequest{}
-	if _, err := sdk.ListCodeInterpreters(listReq); err != nil {
-		return fmt.Errorf("aliyun: health probe (ListCodeInterpreters): %w", err)
-	}
-
 	p.initialized = true
 	return nil
 }
@@ -195,8 +168,7 @@ func (p *AliyunCodeInterpreterProvider) SupportedLanguages() []string {
 	return []string{"python", "javascript"}
 }
 
-// CreateInstance calls CreateCodeInterpreter via the SDK and returns
-// the CodeInterpreterId as the instance handle.
+// CreateInstance creates a sandbox from the configured or default template.
 func (p *AliyunCodeInterpreterProvider) CreateInstance(ctx context.Context, template string) (*SandboxInstance, error) {
 	if !p.initialized {
 		return nil, fmt.Errorf("aliyun: provider not initialized")
@@ -208,38 +180,35 @@ func (p *AliyunCodeInterpreterProvider) CreateInstance(ctx context.Context, temp
 
 	templateName := p.templateName
 	if templateName == "" {
-		// Match the Python side: try `ragflow-{language}-default`,
-		// create it if it doesn't exist.
 		templateName = fmt.Sprintf("ragflow-%s-default", lang)
+		if _, err := p.sdk.GetTemplate(&templateName); err != nil {
+			var sdkErr *tea.SDKError
+			if !errors.As(err, &sdkErr) || sdkErr.StatusCode == nil || *sdkErr.StatusCode != http.StatusNotFound {
+				return nil, fmt.Errorf("aliyun: GetTemplate: %w", err)
+			}
+			input := &client.CreateTemplateInput{
+				TemplateName: &templateName,
+				TemplateType: stringPtr("CodeInterpreter"),
+			}
+			if _, createErr := p.sdk.CreateTemplate(&client.CreateTemplateRequest{Body: input}); createErr != nil {
+				return nil, fmt.Errorf("aliyun: CreateTemplate(%s): %w", templateName, createErr)
+			}
+		}
 	}
-
-	// NOTE: Go SDK v5.8.4's CreateCodeInterpreterInput does not
-	// expose a TemplateName field. The Python SDK creates the
-	// template via the high-level `Template.create()` API and
-	// then references it from `Sandbox.create(template_name=...)`.
-	// Until the Go SDK exposes a template API or the
-	// CreateCodeInterpreterInput grows a TemplateName field, the
-	// configured templateName is recorded in metadata only — the
-	// create call falls back to aliyun's default template.
-	_ = templateName
 
 	timeout := int32(p.timeout)
-	input := &client.CreateCodeInterpreterInput{
-		CodeInterpreterName:       stringPtr("ragflow-" + lang + "-" + time.Now().UTC().Format("20060102T150405Z")),
-		SessionIdleTimeoutSeconds: &timeout,
+	input := &client.CreateSandboxInput{
+		TemplateName:                &templateName,
+		SandboxIdleTimeoutInSeconds: &timeout,
 	}
-	req := &client.CreateCodeInterpreterRequest{
-		Body: input,
-	}
-
-	resp, err := p.sdk.CreateCodeInterpreterWithOptions(req, nil, nil)
+	resp, err := p.sdk.CreateSandbox(&client.CreateSandboxRequest{Body: input})
 	if err != nil {
-		return nil, fmt.Errorf("aliyun: CreateCodeInterpreter: %w", err)
+		return nil, fmt.Errorf("aliyun: CreateSandbox: %w", err)
 	}
-	if resp == nil || resp.Body == nil || resp.Body.Data == nil || resp.Body.Data.CodeInterpreterId == nil {
-		return nil, fmt.Errorf("aliyun: CreateCodeInterpreter returned empty response")
+	if resp == nil || resp.Body == nil || resp.Body.Data == nil || resp.Body.Data.SandboxId == nil {
+		return nil, fmt.Errorf("aliyun: CreateSandbox returned empty response")
 	}
-	id := *resp.Body.Data.CodeInterpreterId
+	id := *resp.Body.Data.SandboxId
 
 	return &SandboxInstance{
 		InstanceID: id,
@@ -250,7 +219,7 @@ func (p *AliyunCodeInterpreterProvider) CreateInstance(ctx context.Context, temp
 			"region":        p.region,
 			"account_id":    p.accountID,
 			"template_name": templateName,
-			"created_at":    time.Now().UTC().Format(time.RFC3339),
+			"created_at":    derefString(resp.Body.Data.CreatedAt),
 		},
 	}, nil
 }
@@ -348,8 +317,8 @@ func (p *AliyunCodeInterpreterProvider) ExecuteCode(
 			}
 		}
 	}
-	stdout := strings.Join(stdoutParts, "")
-	stderr := strings.Join(stderrParts, "")
+	stdout := strings.Join(stdoutParts, "\n")
+	stderr := strings.Join(stderrParts, "\n")
 
 	// Strip the `__RAGFLOW_RESULT__:` marker from stdout, surface
 	// the user's main() return value as a structured result.
@@ -370,82 +339,74 @@ func (p *AliyunCodeInterpreterProvider) ExecuteCode(
 	}, nil
 }
 
-// callExecute POSTs to the execute endpoint. Auth uses the same
-// access-key pair the SDK uses; the execute endpoint is the same
-// REST API the SDK's `sandbox.context.execute` would hit, just
-// without the SDK's higher-level helpers.
-func (p *AliyunCodeInterpreterProvider) callExecute(ctx context.Context, codeInterpreterID, code, language string, timeoutSec int) ([]byte, error) {
+func (p *AliyunCodeInterpreterProvider) callExecute(ctx context.Context, sandboxID, code, language string, timeoutSec int) ([]byte, error) {
 	endpoint := p.executeHost
 	if endpoint == "" {
-		// Default hostname. The aliyun agentrun service uses a
-		// regional endpoint; the SDK resolves this from the access
-		// key's account, but for raw HTTP we apply a sane default.
-		// Operators that need a non-default region can set
-		// AGENTRUN_EXECUTE_HOST explicitly.
-		endpoint = fmt.Sprintf("https://agentrun.%s.aliyuncs.com", p.region)
+		endpoint = fmt.Sprintf("https://%s.agentrun-data.%s.aliyuncs.com", p.accountID, p.region)
+	}
+	endpoint, err := normalizeAliyunEndpoint(endpoint)
+	if err != nil {
+		return nil, err
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("aliyun: parse execute endpoint: %w", err)
 	}
-	u.Path = fmt.Sprintf(aliyunExecutePath, codeInterpreterID)
-	endpoint = u.String()
-
-	payload := map[string]any{
-		"code":     code,
-		"language": language,
-		"timeout":  timeoutSec,
-	}
-	body, err := json.Marshal(payload)
+	u.Path = fmt.Sprintf(aliyunExecutePath, sandboxID)
+	u.RawQuery = ""
+	body, err := json.Marshal(map[string]any{"code": code, "language": language, "timeout": timeoutSec})
 	if err != nil {
-		return nil, fmt.Errorf("aliyun: marshal execute payload: %w", err)
+		return nil, err
 	}
-
-	// The agentrun REST API uses the same AccessKey auth as the
-	// SDK. We sign with the aliyun-pop-2017-11-11 SDK signer would
-	// be cleaner, but for a single endpoint with the same creds
-	// we can use the SDK's HTTP signer indirectly by calling
-	// CreateCodeInterpreter (which we did) and reading the
-	// signature pattern. For now, we use a minimal auth header
-	// that works for both v1 and v2 token patterns: the SDK's
-	// internal signer is invoked by the SDK's request; for raw
-	// HTTP we fall back to the AccessKey pair in headers. The
-	// exact header set is documented in
-	// https://help.aliyun.com/document_detail/145957.html and may
-	// need to be extended when this code path sees real traffic.
-	headers := map[string]string{
-		"x-ragflow-account-id": p.accountID,
-		"x-ragflow-region":     p.region,
-	}
-
-	resp, err := p.helper.Do(ctx, http.MethodPost, endpoint, string(body), "application/json", headers)
+	resp, err := p.helper.Do(ctx, http.MethodPost, u.String(), string(body), "application/json", p.aliyunSignedHeaders(u, time.Now().UTC()))
 	if err != nil {
-		return nil, fmt.Errorf("aliyun: POST execute: %w", err)
+		return nil, fmt.Errorf("aliyun: execute request: %w", err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
-		// drain for connection reuse
-		var b strings.Builder
-		_, _ = io.Copy(&b, resp.Body)
-		return nil, fmt.Errorf("aliyun: POST execute returned %d: %s", resp.StatusCode, b.String())
+		return nil, fmt.Errorf("aliyun: execute returned HTTP %d", resp.StatusCode)
 	}
-
-	var out []byte
-	buf := make([]byte, 1024)
-	for {
-		n, err := resp.Body.Read(buf)
-		if n > 0 {
-			out = append(out, buf[:n]...)
-		}
-		if err != nil {
-			break
-		}
-	}
-	return out, nil
+	return io.ReadAll(resp.Body)
 }
 
-// DestroyInstance calls DeleteCodeInterpreter via the SDK.
+// aliyunSignedHeaders matches agentrun-sdk's AGENTRUN4-HMAC-SHA256 signer.
+// Only the fixed execute endpoint is signed; it has no query parameters.
+func (p *AliyunCodeInterpreterProvider) aliyunSignedHeaders(u *url.URL, now time.Time) map[string]string {
+	timestamp, date := now.UTC().Format("2006-01-02T15:04:05Z"), now.UTC().Format("20060102")
+	const signed = "content-type;host;x-acs-content-sha256;x-acs-date"
+	const algorithm = "AGENTRUN4-HMAC-SHA256"
+	canonicalHeaders := "content-type:application/json\nhost:" + u.Host + "\nx-acs-content-sha256:UNSIGNED-PAYLOAD\nx-acs-date:" + timestamp + "\n"
+	canonical := "POST\n" + u.Path + "\n\n" + canonicalHeaders + "\n" + signed + "\nUNSIGNED-PAYLOAD"
+	digest := sha256.Sum256([]byte(canonical))
+	key := []byte("aliyun_v4" + p.accessKeySecret)
+	for _, part := range []string{date, p.region, "agentrun", "aliyun_v4_request", algorithm + "\n" + hex.EncodeToString(digest[:])} {
+		mac := hmac.New(sha256.New, key)
+		_, _ = mac.Write([]byte(part))
+		key = mac.Sum(nil)
+	}
+	scope := date + "/" + p.region + "/agentrun/aliyun_v4_request"
+	return map[string]string{
+		"x-acs-date":             timestamp,
+		"x-acs-content-sha256":   "UNSIGNED-PAYLOAD",
+		"Agentrun-Authorization": algorithm + " Credential=" + p.accessKeyID + "/" + scope + ",SignedHeaders=" + signed + ",Signature=" + hex.EncodeToString(key),
+	}
+}
+
+func normalizeAliyunEndpoint(endpoint string) (string, error) {
+	if endpoint == "" {
+		return "", nil
+	}
+	if !strings.Contains(endpoint, "://") {
+		endpoint = "https://" + endpoint
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" || u.User != nil {
+		return "", errors.New("aliyun: execute_host must be an HTTPS URL without user credentials")
+	}
+	return u.String(), nil
+}
+
+// DestroyInstance calls DeleteSandbox via the SDK.
 func (p *AliyunCodeInterpreterProvider) DestroyInstance(ctx context.Context, inst *SandboxInstance) error {
 	if !p.initialized {
 		return fmt.Errorf("aliyun: provider not initialized")
@@ -454,24 +415,19 @@ func (p *AliyunCodeInterpreterProvider) DestroyInstance(ctx context.Context, ins
 		return fmt.Errorf("aliyun: instance id required")
 	}
 	id := inst.InstanceID
-	if _, err := p.sdk.DeleteCodeInterpreterWithOptions(&id, nil, nil); err != nil {
-		return fmt.Errorf("aliyun: DeleteCodeInterpreter(%s): %w", id, err)
+	if _, err := p.sdk.DeleteSandbox(&id); err != nil {
+		return fmt.Errorf("aliyun: DeleteSandbox(%s): %w", id, err)
 	}
 	return nil
 }
 
-// HealthCheck calls ListCodeInterpreters. We use the SDK call so
-// the response goes through the same auth / retry path the create
-// call uses.
+// HealthCheck verifies access to the template catalog.
 func (p *AliyunCodeInterpreterProvider) HealthCheck(ctx context.Context) error {
-	if p.sdk == nil {
+	if !p.initialized {
 		return errors.New("aliyun: provider not initialized")
 	}
-	_, err := p.sdk.ListCodeInterpreters(&client.ListCodeInterpretersRequest{})
-	if err != nil {
-		return fmt.Errorf("aliyun: ListCodeInterpreters: %w", err)
-	}
-	return nil
+	_, err := p.sdk.ListTemplates(&client.ListTemplatesRequest{})
+	return err
 }
 
 func stringPtr(s string) *string { return &s }

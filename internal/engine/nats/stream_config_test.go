@@ -104,10 +104,10 @@ func TestPublishTaskDeliversRepeatedTaskIDs(t *testing.T) {
 }
 
 // TestInitMigratesLegacyStreamConfig: a stream created by an older deployment
-// (no Duplicates, 1MB MaxBytes) must be migrated in place by Init instead of
-// being left stale behind an "already exists" error. The server-side config is
-// the merge base: fields the helper does not own (Subjects, Retention) must
-// survive the update.
+// (1MB MaxBytes, server-default Duplicates) must be migrated in place by Init
+// instead of being left stale behind an "already exists" error. The server-side
+// config is the merge base: fields the wanted config does not own (Subjects,
+// Retention, Duplicates) must survive the update.
 func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	host, port := newEmbeddedNatsServer(t)
 
@@ -144,9 +144,6 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	if legacyInfo.Config.MaxBytes != int64(1024*1024) {
 		t.Fatalf("precondition: legacy MaxBytes = %d, want 1MB", legacyInfo.Config.MaxBytes)
 	}
-	if legacyInfo.Config.Duplicates == 10*time.Minute {
-		t.Fatalf("precondition: legacy Duplicates already migrated (%v)", legacyInfo.Config.Duplicates)
-	}
 	if legacyInfo.Config.Discard != jetstream.DiscardOld {
 		t.Fatalf("precondition: legacy Discard = %v, want DiscardOld", legacyInfo.Config.Discard)
 	}
@@ -160,11 +157,15 @@ func TestInitMigratesLegacyStreamConfig(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stream info after migration: %v", err)
 	}
-	if got := info.Config.MaxBytes; got != int64(1024*1024*64) {
-		t.Fatalf("MaxBytes after migration = %d, want %d", got, int64(1024*1024*64))
+	if got := info.Config.MaxBytes; got != int64(1024*1024*1024) {
+		t.Fatalf("MaxBytes after migration = %d, want %d", got, int64(1024*1024*1024))
 	}
-	if got := info.Config.Duplicates; got != 10*time.Minute {
-		t.Fatalf("Duplicates after migration = %v, want 10m", got)
+	// Duplicates is deliberately NOT part of the wanted config (RAGFLOW_TASKS
+	// publishes without a MsgID, so its dedup window never applies), which makes it
+	// a non-owned field like Retention/Subjects below: migration must leave the
+	// legacy value exactly as it was.
+	if got := info.Config.Duplicates; got != legacyInfo.Config.Duplicates {
+		t.Fatalf("Duplicates after migration = %v, want the legacy %v (must not be reset)", got, legacyInfo.Config.Duplicates)
 	}
 	if got := info.Config.Discard; got != jetstream.DiscardNew {
 		t.Fatalf("Discard after migration = %v, want DiscardNew", got)

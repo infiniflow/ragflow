@@ -24,6 +24,7 @@ import { useWatchFormChange } from '../../hooks/use-watch-form-change';
 import { INextOperatorForm } from '../../interface';
 import { buildOutputList } from '../../utils/build-output-list';
 import { Output } from '../components/output';
+import { AudioFormFields } from './audio-form-fields';
 import { OutputFormatFormField } from './common-form-fields';
 import { EmailFormFields } from './email-form-fields';
 import { ImageFormFields } from './image-form-fields';
@@ -35,8 +36,8 @@ import {
   HtmlFormFields,
   TextMarkdownFormFields,
 } from './text-html-form-fields';
-import { buildInitialParserSetup } from './utils';
-import { AudioFormFields, VideoFormFields } from './video-form-fields';
+import { buildInitialParserSetup, normalizeParserFormValues } from './utils';
+import { VisionEnhancementFormFields } from './vision-form-fields';
 import { WordFormFields } from './word-form-fields';
 
 export { FormSchema } from './schema';
@@ -50,7 +51,6 @@ const FileFormatWidgetMap = {
   [FileType.PowerPoint]: PptFormFields,
   [FileType.Doc]: WordFormFields,
   [FileType.Docx]: WordFormFields,
-  [FileType.Video]: VideoFormFields,
   [FileType.Audio]: AudioFormFields,
   [FileType.Email]: EmailFormFields,
   [FileType.Image]: ImageFormFields,
@@ -152,7 +152,13 @@ const ParserForm = ({
   // Show the saved values as-is: an empty llm_id means the user cleared the
   // model, and the backend falls back to the tenant default at parse time.
   // Prefilling it here would make a cleared model reappear and be written back.
-  const defaultValues = useFormValues(initialParserValues, node);
+  const formValues = useFormValues(initialParserValues, node);
+  // Lifts any legacy per-setup vision options onto the shared top-level
+  // fields; already-normalized values pass through unchanged.
+  const defaultValues = useMemo(
+    () => normalizeParserFormValues(formValues),
+    [formValues],
+  );
 
   const form = useForm<z.infer<typeof FormSchema>>({
     defaultValues,
@@ -196,6 +202,7 @@ const ParserForm = ({
   return (
     <Form {...form}>
       <form className="space-y-5 px-5">
+        <VisionEnhancementFormFields />
         {fields.map((field, index) => {
           return (
             <ParserItem

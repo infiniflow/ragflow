@@ -100,7 +100,7 @@
     "jszip": "^3.10.1",
     "lexical": "^0.45.0",
     "lodash": "^4.18.1",
-    "lucide-react": "^1.7.0",
+    "lucide-react": "^1.48.0",
     "mermaid": "^11.16.1",
     "next-themes": "^0.4.6",
     "openai-speech-stream-player": "^1.0.8",
@@ -203,5 +203,11 @@
   },
   "engines": {
     "node": ">=18.20.4"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.27.2": true,
+    "@swc/core@1.15.7": true,
+    "less@4.5.1": true
   }
 }

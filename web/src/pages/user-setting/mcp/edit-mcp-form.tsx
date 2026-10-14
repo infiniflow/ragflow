@@ -28,7 +28,7 @@ import {
   FormMessage,
 } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { RAGFlowSelect } from '@/components/ui/select';
+import { SelectWithSearch } from '@/components/originui/select-with-search';
 import { IModalProps } from '@/interfaces/common';
 import { buildOptions } from '@/utils/form';
 import { loader } from '@monaco-editor/react';
@@ -145,9 +145,8 @@ export function EditMcpForm({
             <FormItem>
               <FormLabel required>{t('mcp.serverType')}</FormLabel>
               <FormControl>
-                <RAGFlowSelect
+                <SelectWithSearch
                   {...field}
-                  autoComplete="off"
                   options={ServerTypeOptions}
                   onChange={(value) => {
                     field.onChange(value);

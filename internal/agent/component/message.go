@@ -172,7 +172,7 @@ func (m *MessageComponent) Name() string { return m.name }
 // same node can be reused with different templates at run time when
 // the orchestrator wants to override the DSL-declared value.
 func (m *MessageComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("Message: %w", err)
 	}
@@ -377,6 +377,9 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 	if len(matches) == 0 {
 		return text, false, nil
 	}
+	if _, err := runtime.ResolveTemplate(text, state); err != nil {
+		return "", false, err
+	}
 	// Ordinary Message templates are rendered and emitted once by Invoke.
 	// Only templates that actually reference a DeferredStream belong to the
 	// incremental presentation path below.  Emitting literals/normal variable
@@ -440,10 +443,10 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
 		if err != nil {
-			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %w", err)
+			return "", true, &runtime.DeferredStreamError{Err: err}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
-			return "", true, fmt.Errorf("Message: consume deferred Agent stream: %s", resultErr)
+			return "", true, &runtime.DeferredStreamError{Text: resultErr}
 		}
 		finalText := visible.String()
 		if result != nil {

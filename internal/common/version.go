@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -95,6 +96,20 @@ func IsOlderReleaseThan(codeVersion, targetVersion string) (older, comparable bo
 		return false, false
 	}
 	return semver.Compare(code, target) < 0, true
+}
+
+// DevModeEnabled reports whether this process runs in development mode, which
+// relaxes the guard that refuses to start when the code is older than the
+// database. Development builds routinely carry a marker for a release that has
+// not been tagged yet — the migration that splits conversation history records
+// v1.0.0-rc1.dev1 while the branch still reports v0.27.x — so the guard would
+// otherwise block the very deployment that wrote the marker.
+//
+// It is off unless the variable is explicitly set to a true value, so a
+// production deployment keeps the guard even when the variable is absent.
+func DevModeEnabled() bool {
+	enabled, err := strconv.ParseBool(strings.TrimSpace(os.Getenv(EnvRAGFlowDevMode)))
+	return err == nil && enabled
 }
 
 // releaseVersion normalizes a version string to the "vMAJOR.MINOR.PATCH" form

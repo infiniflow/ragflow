@@ -63,6 +63,33 @@ func TestShouldSkipMigration(t *testing.T) {
 	}
 }
 
+func TestCompareMigrationVersionDevPrerelease(t *testing.T) {
+	cases := []struct {
+		name    string
+		current string
+		target  string
+		want    int
+	}{
+		{name: "dev build is newer than the previous release line", current: "v1.0.0-rc1.dev1", target: "v0.27.2", want: 1},
+		{name: "dev build is older than the release it leads to", current: "v1.0.0-rc1.dev1", target: "v1.0.0-rc1", want: -1},
+		{name: "release is newer than its dev build", current: "v1.0.0-rc1", target: "v1.0.0-rc1.dev1", want: 1},
+		{name: "dev builds order by number", current: "v1.0.0-rc1.dev1", target: "v1.0.0-rc1.dev2", want: -1},
+		{name: "equal dev builds", current: "v1.0.0-rc1.dev1", target: "v1.0.0-rc1.dev1", want: 0},
+		{name: "dev build is older than the next release candidate", current: "v1.0.0-rc1.dev1", target: "v1.0.0-rc2", want: -1},
+		{name: "dev build is older than the final release", current: "v1.0.0-rc1.dev1", target: "v1.0.0", want: -1},
+		{name: "release candidates still order lexically", current: "v1.0.0-rc1", target: "v1.0.0-rc2", want: -1},
+		{name: "dev builds of different bases follow their base", current: "v1.0.0-rc1.dev9", target: "v1.0.0-rc2.dev1", want: -1},
+		{name: "patch releases stay comparable", current: "v0.27.1", target: "v0.27.2", want: -1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compareMigrationVersion(tc.current, tc.target); got != tc.want {
+				t.Fatalf("compareMigrationVersion(%q, %q) = %d, want %d", tc.current, tc.target, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetAndSetDatabaseMigrationVersion(t *testing.T) {
 	db := setupMigrationVersionTestDB(t, true)
 	ctx := t.Context()

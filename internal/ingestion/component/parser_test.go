@@ -152,6 +152,34 @@ func TestParserComponentInvokeOutputsResolvedFileType(t *testing.T) {
 	}
 }
 
+// TestParserComponentInvoke_LanguageFromGlobals covers the production run
+// shape: File emits no lang, the pipeline seeds the dataset language into
+// CanvasState.Globals, and the Parser must pull it into the local inputs so
+// the language consumers (vision enhancement, media dispatch) see it. The
+// inputs-map value stays the fallback when no CanvasState is attached.
+func TestParserComponentInvoke_LanguageFromGlobals(t *testing.T) {
+	component := &ParserComponent{setups: defaultSetups()}
+
+	ctx := runtime.WithState(t.Context(), &runtime.CanvasState{
+		Globals: map[string]any{"lang": "Chinese"},
+	})
+	out, err := component.Invoke(ctx, nil, map[string]any{"binary": "hello", "name": "notes.txt"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["lang"]; got != "Chinese" {
+		t.Errorf("out[lang] = %v, want Chinese", got)
+	}
+
+	out, err = component.Invoke(t.Context(), nil, map[string]any{"binary": "hello", "name": "notes.txt", "lang": "Japanese"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if got := out["lang"]; got != "Japanese" {
+		t.Errorf("out[lang] = %v, want Japanese", got)
+	}
+}
+
 func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 	component, err := NewParserComponent(map[string]any{
 		"pdf":         map[string]any{"output_format": "markdown"},
@@ -173,6 +201,51 @@ func TestNewParserComponentNormalizesOutputFormatToJSON(t *testing.T) {
 	}
 	if _, ok := parserComponent.setups["allowed_output_format"]; ok {
 		t.Error("allowed_output_format must not be treated as a parser setup")
+	}
+}
+
+// A canvas saved by the Python frontend stores the Parser params in the
+// nested shape {outputs, setups: {pdf: {...}}}; the Go component reads the
+// flat shape with file families as top-level keys. The nested group must be
+// lifted instead of being treated as a bogus "setups" file family.
+func TestNewParserComponentFlattensNestedSetups(t *testing.T) {
+	component, err := NewParserComponent(map[string]any{
+		"outputs": map[string]any{"html": map[string]any{"type": "string"}},
+		"setups": map[string]any{
+			"pdf":         map[string]any{"parse_method": "vision"},
+			"spreadsheet": map[string]any{"html4excel": true},
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent: %v", err)
+	}
+
+	parserComponent := component.(*ParserComponent)
+	if _, ok := parserComponent.setups["setups"]; ok {
+		t.Error("legacy nested \"setups\" key must not become a parser setup family")
+	}
+	if got := parserComponent.setups["pdf"]["parse_method"]; got != "vision" {
+		t.Errorf("pdf parse_method = %v, want vision (nested setups not flattened)", got)
+	}
+	if got := parserComponent.setups["spreadsheet"]["html4excel"]; got != true {
+		t.Errorf("spreadsheet html4excel = %v, want true (nested setups not flattened)", got)
+	}
+
+	// When both shapes carry the same family, the top-level (Go-native, flat)
+	// entry wins.
+	mixed, err := NewParserComponent(map[string]any{
+		"pdf":    map[string]any{"lang": "English"},
+		"setups": map[string]any{"pdf": map[string]any{"parse_method": "vision"}},
+	})
+	if err != nil {
+		t.Fatalf("NewParserComponent(mixed): %v", err)
+	}
+	mixedPC := mixed.(*ParserComponent)
+	if got := mixedPC.setups["pdf"]["parse_method"]; got != "vision" {
+		t.Errorf("mixed: pdf parse_method = %v, want vision", got)
+	}
+	if got := mixedPC.setups["pdf"]["lang"]; got != "English" {
+		t.Errorf("mixed: pdf lang = %v, want English", got)
 	}
 }
 

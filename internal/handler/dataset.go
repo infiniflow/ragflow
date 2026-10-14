@@ -242,11 +242,20 @@ func (h *DatasetsHandler) CreateDataset(c *gin.Context) {
 		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "Extra inputs are not permitted: ext")
 		return
 	}
+	for field := range raw {
+		if !createDatasetAllowedFields[field] {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, fmt.Sprintf("Extra inputs are not permitted: %s", field))
+			return
+		}
+	}
 
 	var req service.CreateDatasetRequest
 	if err := json.Unmarshal(bodyBytes, &req); err != nil {
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
+	}
+	if req.ParserConfig == nil && req.PipelineID == nil {
+		req.ParserConfig = map[string]interface{}{}
 	}
 	// Mirror Python's pydantic required validation.
 	if req.Name == "" || (len(bodyBytes) > 0 && jsonNullValue(bodyBytes, "name")) {
@@ -367,6 +376,12 @@ var listDatasetsAllowedParams = map[string]bool{
 	"keywords": true, "owner_ids": true, "parser_id": true, "type": true,
 }
 
+var createDatasetAllowedFields = map[string]bool{
+	"name": true, "embedding_model": true, "parser_config": true,
+	"language": true, "permission": true, "parser_id": true,
+	"pipeline_id": true, "parse_type": true,
+}
+
 // updateDatasetAllowedFields mirrors the field set of Python's UpdateDatasetReq
 // (CreateDatasetReq fields + dataset_id/pagerank/language/connectors).
 var updateDatasetAllowedFields = map[string]bool{
@@ -429,12 +444,6 @@ func (h *DatasetsHandler) UpdateDataset(c *gin.Context) {
 				if _, ok := config["ext"]; ok {
 					common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.ext is not supported; send parser configuration fields directly")
 					return
-				}
-				if raptor, ok := config["raptor"].(map[string]interface{}); ok {
-					if _, ok := raptor["ext"]; ok {
-						common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "parser_config.raptor.ext is not supported; send RAPTOR configuration fields directly")
-						return
-					}
 				}
 			}
 		}
@@ -594,6 +603,56 @@ func (h *DatasetsHandler) GetIngestionLog(c *gin.Context) {
 	common.SuccessWithData(c, result, "success")
 }
 
+// ListIngestionMessages handles GET
+// /api/v1/datasets/:dataset_id/ingestions/:log_id/messages.
+func (h *DatasetsHandler) ListIngestionMessages(c *gin.Context) {
+	user, errorCode, errorMessage := GetUser(c)
+	if errorCode != common.CodeSuccess {
+		common.ErrorWithCode(c, errorCode, errorMessage)
+		return
+	}
+
+	limit := 0
+	if rawLimit := c.Query("limit"); rawLimit != "" {
+		parsed, err := strconv.Atoi(rawLimit)
+		if err != nil || parsed <= 0 {
+			common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "limit must be a positive integer")
+			return
+		}
+		limit = parsed
+	}
+	afterID, ok := ingestionEventCursor(c, "after_id")
+	if !ok {
+		return
+	}
+	beforeID, ok := ingestionEventCursor(c, "before_id")
+	if !ok {
+		return
+	}
+
+	result, code, err := h.datasetsService.ListIngestionMessages(
+		c.Request.Context(), c.Param("dataset_id"), user.ID, c.Param("log_id"), limit, afterID, beforeID,
+	)
+	if err != nil {
+		common.ErrorWithCode(c, code, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+func ingestionEventCursor(c *gin.Context, name string) (*int, bool) {
+	raw := c.Query(name)
+	if raw == "" {
+		return nil, true
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, name+" must be a positive integer")
+		return nil, false
+	}
+	return &value, true
+}
+
 // DeleteDatasets handles DELETE /api/v1/datasets.
 func (h *DatasetsHandler) DeleteDatasets(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -710,7 +769,7 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		KbIDs:        []string{datasetID},
 		Offset:       0,
 		Limit:        1,
-		SelectFields: []string{"content_with_weight", "knowledge_graph_kwd"},
+		SelectFields: []string{"content_with_weight", "type_kwd", "knowledge_graph_kwd"},
 		Filter: map[string]interface{}{
 			"kb_id":               []string{datasetID},
 			"knowledge_graph_kwd": []string{"graph"},
@@ -726,7 +785,10 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 	}
 
 	chunk := searchResult.Chunks[0]
-	graphType := firstStringValue(chunk["knowledge_graph_kwd"])
+	graphType := firstStringValue(chunk["type_kwd"])
+	if graphType == "" {
+		graphType = firstStringValue(chunk["knowledge_graph_kwd"])
+	}
 	contentWithWeight, _ := chunk["content_with_weight"].(string)
 	if strings.TrimSpace(contentWithWeight) == "" {
 		common.SuccessWithData(c, result, "success")
@@ -751,81 +813,6 @@ func (h *DatasetsHandler) GetKnowledgeGraph(c *gin.Context) {
 		result["graph"] = graphData
 	} else {
 		result[graphType] = graphData
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-// ListTags handles GET /api/v1/datasets/:dataset_id/tags.
-// @Summary List dataset tags
-// @Description List tags for a dataset
-// @Tags datasets
-// @Produce json
-// @Security ApiKeyAuth
-// @Param dataset_id path string true "Dataset ID"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/datasets/{dataset_id}/tags [get]
-func (h *DatasetsHandler) ListTags(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	result, code, err := h.datasetsService.ListTags(ctx, datasetID, user.ID)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, result, "success")
-}
-
-type renameTagRequest struct {
-	FromTag string `json:"from_tag"`
-	ToTag   string `json:"to_tag"`
-}
-
-func (h *DatasetsHandler) RenameTag(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-
-	var payload map[string]interface{}
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
-		return
-	}
-	fromTagValue, hasFrom := payload["from_tag"]
-	toTagValue, hasTo := payload["to_tag"]
-	if !hasFrom || !hasTo {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "Lack of from_tag or to_tag in request body")
-		return
-	}
-	fromTag, okFrom := fromTagValue.(string)
-	toTag, okTo := toTagValue.(string)
-	if !okFrom || !okTo {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must be strings")
-		return
-	}
-	req := renameTagRequest{FromTag: fromTag, ToTag: toTag}
-	if strings.TrimSpace(req.FromTag) == "" || strings.TrimSpace(req.ToTag) == "" {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "from_tag and to_tag must not be empty")
-		return
-	}
-
-	ctx := c.Request.Context()
-
-	result, code, err := h.datasetsService.RenameTag(ctx, datasetID, user.ID, req.FromTag, req.ToTag)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
 	}
 
 	common.SuccessWithData(c, result, "success")
@@ -871,75 +858,6 @@ func (h *DatasetsHandler) DeleteKnowledgeGraph(c *gin.Context) {
 	}, indexName, datasetID); err != nil {
 		jsonInternalError(c, err)
 		return
-	}
-
-	common.SuccessWithData(c, true, "success")
-}
-
-// RemoveTags handles DELETE /api/v1/datasets/:dataset_id/tags.
-// @Summary Remove Tags
-// @Description Remove tags from a dataset
-// @Tags datasets
-// @Security ApiKeyAuth
-// @Param dataset_id path string true "Dataset ID"
-// @Param request body object{tags []string} true "tags to remove"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/datasets/{dataset_id}/tags [delete]
-func (h *DatasetsHandler) RemoveTags(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	datasetID := strings.TrimSpace(c.Param("dataset_id"))
-	if datasetID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "dataset_id is required")
-		return
-	}
-
-	ctx := c.Request.Context()
-	datasetInstance, code, err := h.datasetsService.GetDataset(ctx, datasetID, user.ID)
-	if err != nil {
-		common.ErrorWithCode(c, code, err.Error())
-		return
-	}
-
-	tenantID, _ := datasetInstance["tenant_id"].(string)
-	if tenantID == "" {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, "tenant_id is required")
-		return
-	}
-
-	var req struct {
-		Tags []string `json:"tags" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
-		return
-	}
-
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
-	docEngine := engine.Get()
-	if docEngine == nil {
-		common.ResponseWithCodeData(c, common.CodeServerError, nil, "Document engine is not initialized")
-		return
-	}
-
-	for _, tag := range req.Tags {
-		condition := map[string]interface{}{
-			"tag_kwd": tag,
-			"kb_id":   datasetID,
-		}
-		newValue := map[string]interface{}{
-			"remove": map[string]interface{}{
-				"tag_kwd": tag,
-			},
-		}
-		if err := docEngine.UpdateChunks(c.Request.Context(), condition, newValue, indexName, datasetID); err != nil {
-			common.ResponseWithCodeData(c, common.CodeServerError, nil, "Failed to remove tag: "+err.Error())
-			return
-		}
 	}
 
 	common.SuccessWithData(c, true, "success")
@@ -1284,10 +1202,20 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		return err
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
 	return validateSearchParams(req.Page, req.PageSize, req.Size, req.KNNTopK, req.TopK, req.KNNNumCandidates, req.SimilarityThreshold, req.VectorSimilarityWeight)
 }
 

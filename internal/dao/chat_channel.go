@@ -17,32 +17,42 @@ func (dao *ChatChannelDAO) Create(ctx context.Context, db *gorm.DB, channel *ent
 	return db.WithContext(ctx).Create(channel).Error
 }
 
-func (dao *ChatChannelDAO) GetByIDOnly(ctx context.Context, db *gorm.DB, id string) (*entity.ChatChannel, error) {
+// GetByID returns the chat channel with the given id, ignoring tenant isolation.
+// Callers must enforce tenant authorization themselves (see service.accessible).
+func (dao *ChatChannelDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.ChatChannel, error) {
 	var channel entity.ChatChannel
-	err := db.WithContext(ctx).Where("id = ?", id).First(&channel).Error
-	if err != nil {
+	if err := db.WithContext(ctx).Take(&channel, "id = ?", id).Error; err != nil {
 		return nil, err
 	}
-	return &channel, err
+	return &channel, nil
 }
 
-func (dao *ChatChannelDAO) GetByID(ctx context.Context, db *gorm.DB, id string, tenantID string) (*entity.ChatChannel, error) {
-	var channel entity.ChatChannel
-	err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&channel).Error
-	if err != nil {
-		return nil, err
-	}
-	return &channel, err
-}
-
-// UpdateByID Update a single record by ID
+// UpdateByID updates the channel with the given id, but only when its tenant_id
+// matches the expected value. A tenant mismatch is treated as not-found so the
+// operation is a no-op rather than a cross-tenant write.
 func (dao *ChatChannelDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, tenantID string, updates map[string]any) error {
-	return db.WithContext(ctx).Model(&entity.ChatChannel{}).Where("id = ? AND tenant_id = ?", id, tenantID).Updates(updates).Error
+	var channel entity.ChatChannel
+	if err := db.WithContext(ctx).Where("id = ?", id).First(&channel).Error; err != nil {
+		return err
+	}
+	if channel.TenantID != tenantID {
+		return gorm.ErrRecordNotFound
+	}
+	return db.WithContext(ctx).Model(&entity.ChatChannel{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// DeleteByID Delete a single record by ID
+// DeleteByID deletes the channel with the given id, but only when its tenant_id
+// matches the expected value. A tenant mismatch is treated as not-found so the
+// operation is a no-op rather than a cross-tenant delete.
 func (dao *ChatChannelDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string, tenantID string) error {
-	return db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).Delete(&entity.ChatChannel{}).Error
+	var channel entity.ChatChannel
+	if err := db.WithContext(ctx).Where("id = ?", id).First(&channel).Error; err != nil {
+		return err
+	}
+	if channel.TenantID != tenantID {
+		return gorm.ErrRecordNotFound
+	}
+	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.ChatChannel{}).Error
 }
 
 // ListByTenantID List a single record by TenantID

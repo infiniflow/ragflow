@@ -134,8 +134,8 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
-	if got, _ := json.Marshal(items[0]); !strings.Contains(string(got), "a | b") {
-		t.Fatalf("item = %s, want row text", string(got))
+	if got, want := items[0]["text"], "<table><tr><th >a</th><th >b</th></tr></table>"; got != want {
+		t.Fatalf("text = %q, want %q", got, want)
 	}
 }
 

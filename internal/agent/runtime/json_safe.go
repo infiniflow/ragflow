@@ -53,6 +53,9 @@ func cleanForJSON(v any) any {
 	if v == nil {
 		return nil
 	}
+	if _, ok := v.(json.Marshaler); ok {
+		return v
+	}
 	switch val := v.(type) {
 	case map[string]any:
 		return cleanMap(val)
@@ -96,6 +99,9 @@ func cleanForJSON(v any) any {
 			}
 			return cleaned
 		case reflect.Slice, reflect.Array:
+			if rv.Kind() == reflect.Slice && rv.Type().Elem().Kind() == reflect.Uint8 {
+				return v
+			}
 			length := rv.Len()
 			cleaned := make([]any, length)
 			for i := 0; i < length; i++ {

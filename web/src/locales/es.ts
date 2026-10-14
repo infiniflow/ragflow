@@ -108,10 +108,12 @@ export default {
         '¡Último paso! Después del éxito, deja el resto al AI de RAGFlow. Por favor, tenga en cuenta que los cambios realizados aquí no se guardan automáticamente. Si ajusta la configuración predeterminada aquí, como el peso de similitud de palabras clave, asegúrese de actualizar la configuración relacionada de manera sincronizada en la configuración del asistente de chat o en la configuración del operador de recuperación.',
       similarityThreshold: 'Umbral de similitud',
       similarityThresholdTip:
-        'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores. Si la similitud entre la consulta y el fragmento es menor que este umbral, el fragmento será filtrado. Por defecto, el umbral se establece en 20. Eso significa que solo se recuperarán los fragmentos con una puntuación de similitud híbrida de 20 o más.',
+        'Durante la recuperación, RAGFlow utiliza una combinación de similitud ponderada de palabras clave y similitud coseno vectorial ponderada o, cuando se selecciona un modelo de reordenamiento, una combinación de similitud ponderada de palabras clave y puntuación ponderada de reordenamiento. Este parámetro establece el umbral de similitud entre la consulta del usuario y los fragmentos. Los fragmentos con una puntuación de similitud inferior a este umbral se excluirán de los resultados. De forma predeterminada, el umbral se establece en 20. Esto significa que solo se recuperarán los fragmentos con una puntuación de similitud híbrida de 20 o superior. Si el peso de similitud vectorial se establece en 0, este umbral no se aplica.',
       vectorSimilarityWeight: 'Peso de similitud de palabras clave',
       vectorSimilarityWeightTip:
-        'Usamos una puntuación de similitud híbrida para evaluar la distancia entre dos líneas de texto. Se pondera la similitud de palabras clave y la similitud coseno de vectores o la puntuación de reordenamiento (0~1). La suma de ambos pesos es 1.0.',
+        'Establece el peso de la similitud vectorial en la puntuación de similitud combinada, ya sea con la similitud coseno vectorial o con la puntuación de reordenamiento. La suma de ambos pesos debe ser igual a 1.0.',
+      keywordSimilarityWeightTip:
+        'Establece el peso de la similitud de palabras clave en la puntuación de similitud combinada. La suma de los pesos vectorial y de palabras clave debe ser igual a 1.0.',
       testText: 'Texto de prueba',
       testTextPlaceholder: '¡Por favor ingresa tu pregunta',
       testingLabel: 'Prueba',
@@ -156,7 +158,7 @@ export default {
       cancel: 'Cancelar',
       rerankModel: 'Modelo de reordenamiento',
       rerankPlaceholder: 'Por favor selecciona',
-      rerankTip: `Opcional. Si se deja vacío, RAGFlow utilizará una combinación de similitud ponderada de palabras clave y similitud ponderada del coseno vectorial; si se selecciona un modelo de reordenamiento, una puntuación ponderada de reordenamiento reemplazará la similitud ponderada del coseno vectorial. Tenga en cuenta que usar un modelo de reordenamiento aumentará significativamente el tiempo de respuesta del sistema. Si desea usar un modelo de reordenamiento, asegúrese de usar un reranker SaaS; si prefiere un modelo de reordenamiento desplegado localmente, asegúrese de iniciar RAGFlow con docker-compose-gpu.yml.`,
+      rerankTip: `Opcional. Si se deja vacío, RAGFlow utilizará una combinación de similitud ponderada de palabras clave y similitud ponderada del coseno vectorial; si se selecciona un modelo de reordenamiento, una puntuación ponderada de reordenamiento reemplazará la similitud ponderada del coseno vectorial. Tenga en cuenta que usar un modelo de reordenamiento aumentará significativamente el tiempo de respuesta del sistema.`,
       topK: 'Top-K',
       topKTip: `Utilizado junto con el Rerank model, esta configuración define el número de fragmentos de texto que se enviarán al modelo reranking especificado.`,
       delimiter: `Delimitadores para segmentación de texto`,

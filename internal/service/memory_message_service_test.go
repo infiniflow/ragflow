@@ -260,7 +260,7 @@ func TestBuildMemoryTaskRecordsShape(t *testing.T) {
 }
 
 // TestGenerateRawMessageID_Unique: two calls produce different
-// values. (Wall-clock based today; the Redis-backed counter will
+// values. (Wall-clock based today; the Kvrocks-backed counter will
 // be added when the project's Redis client lands.)
 func TestGenerateRawMessageID_Unique(t *testing.T) {
 	ctx := t.Context()

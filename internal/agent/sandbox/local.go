@@ -89,6 +89,24 @@ const localDefaultNoFile = 64
 const localDefaultPythonBin = "python3"
 const localDefaultNodeBin = "node"
 
+// localOutputCapture keeps the bytes needed for a valid result while
+// accepting all writes so a noisy child can finish rather than block.
+type localOutputCapture struct {
+	buffer bytes.Buffer
+	limit  int
+	total  int
+}
+
+func (c *localOutputCapture) Write(p []byte) (int, error) {
+	n := len(p)
+	c.total += n
+	if c.limit > 0 {
+		p = p[:min(len(p), max(0, c.limit-c.buffer.Len()))]
+	}
+	_, err := c.buffer.Write(p)
+	return n, err
+}
+
 // LocalProvider is the Go port of
 // `agent/sandbox/providers/local.py::LocalProvider`.
 type LocalProvider struct {
@@ -117,30 +135,29 @@ func newLocalProviderFromEnv() *LocalProvider {
 // vars, mirroring the admin-panel settings JSON shape.
 func localConfigFromEnv() map[string]any {
 	return map[string]any{
-		"PYTHON_BIN":         common.GetEnv(common.EnvLocalPythonBin),
-		"NODE_BIN":           common.GetEnv(common.EnvLocalNodeBin),
-		"WORK_DIR":           common.GetEnv(common.EnvLocalWorkDir),
-		"TIMEOUT":            common.GetEnv(common.EnvLocalTimeout),
-		"MAX_MEMORY_MB":      common.GetEnv(common.EnvLocalMaxMemoryMB),
-		"MAX_OUTPUT_BYTES":   common.GetEnv(common.EnvLocalMaxOutputBytes),
-		"MAX_ARTIFACTS":      common.GetEnv(common.EnvLocalMaxArtifacts),
-		"MAX_ARTIFACT_BYTES": common.GetEnv(common.EnvLocalMaxArtifactBytes),
+		"python_bin":         common.GetEnv(common.EnvLocalPythonBin),
+		"node_bin":           common.GetEnv(common.EnvLocalNodeBin),
+		"work_dir":           common.GetEnv(common.EnvLocalWorkDir),
+		"timeout":            common.GetEnv(common.EnvLocalTimeout),
+		"max_memory_mb":      common.GetEnv(common.EnvLocalMaxMemoryMB),
+		"max_output_bytes":   common.GetEnv(common.EnvLocalMaxOutputBytes),
+		"max_artifacts":      common.GetEnv(common.EnvLocalMaxArtifacts),
+		"max_artifact_bytes": common.GetEnv(common.EnvLocalMaxArtifactBytes),
 	}
 }
 
 // newLocalProviderFromConfig builds the provider from a JSON
-// config map. Config keys mirror the env-var names without the
-// LOCAL_ prefix.
+// config map. Config keys use the lowercase Python schema names.
 func newLocalProviderFromConfig(cfg map[string]any) *LocalProvider {
 	p := &LocalProvider{
-		pythonBin:        configString(cfg, "PYTHON_BIN"),
-		nodeBin:          configString(cfg, "NODE_BIN"),
-		workDir:          configString(cfg, "WORK_DIR"),
-		timeout:          configInt(cfg, "TIMEOUT", localDefaultTimeout),
-		maxMemoryMB:      configInt(cfg, "MAX_MEMORY_MB", localDefaultMaxMemoryMB),
-		maxOutputBytes:   configInt(cfg, "MAX_OUTPUT_BYTES", localDefaultMaxOutputBytes),
-		maxArtifacts:     configInt(cfg, "MAX_ARTIFACTS", localDefaultMaxArtifacts),
-		maxArtifactBytes: configInt(cfg, "MAX_ARTIFACT_BYTES", localDefaultMaxArtifactBytes),
+		pythonBin:        configString(cfg, "python_bin"),
+		nodeBin:          configString(cfg, "node_bin"),
+		workDir:          configString(cfg, "work_dir"),
+		timeout:          configInt(cfg, "timeout", localDefaultTimeout),
+		maxMemoryMB:      configInt(cfg, "max_memory_mb", localDefaultMaxMemoryMB),
+		maxOutputBytes:   configInt(cfg, "max_output_bytes", localDefaultMaxOutputBytes),
+		maxArtifacts:     configInt(cfg, "max_artifacts", localDefaultMaxArtifacts),
+		maxArtifactBytes: configInt(cfg, "max_artifact_bytes", localDefaultMaxArtifactBytes),
 		instances:        map[string]string{},
 	}
 	if p.pythonBin == "" {
@@ -321,12 +338,9 @@ func (p *LocalProvider) ExecuteCode(
 		// side-channel — out of scope for a "local" provider.
 	}
 
-	var stdout, stderr bytes.Buffer
 	maxOut := p.maxOutputBytes
-	if maxOut > 0 {
-		stdout = bytes.Buffer{}
-		stderr = bytes.Buffer{}
-	}
+	stdout := localOutputCapture{limit: maxOut}
+	stderr := localOutputCapture{limit: maxOut}
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 
@@ -365,14 +379,14 @@ func (p *LocalProvider) ExecuteCode(
 	// Validate output size: if stdout+stderr exceed the cap,
 	// surface as a runtime error (matches the Python provider).
 	if maxOut > 0 {
-		combined := stdout.Len() + stderr.Len()
+		combined := stdout.total + stderr.total
 		if combined > maxOut {
 			return nil, fmt.Errorf("local: output exceeds %d bytes (got %d)", maxOut, combined)
 		}
 	}
 
 	// Extract the structured result from stdout.
-	cleanedStdout, structured := ExtractStructuredResult(stdout.String())
+	cleanedStdout, structured := ExtractStructuredResult(stdout.buffer.String())
 
 	// Collect artifacts under <instance_dir>/artifacts/. Matches
 	// the Python provider's _collect_artifacts behavior
@@ -396,7 +410,7 @@ func (p *LocalProvider) ExecuteCode(
 	}
 	return &ExecutionResult{
 		Stdout:        cleanedStdout,
-		Stderr:        stderr.String(),
+		Stderr:        stderr.buffer.String(),
 		ExitCode:      exitCode,
 		ExecutionTime: time.Since(start).Seconds(),
 		Metadata:      metadata,

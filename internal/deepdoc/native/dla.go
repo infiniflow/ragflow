@@ -58,8 +58,7 @@ var (
 func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error) {
 	blob, sf := dlaPreprocess(img)
 	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "layout.ort"), "images",
-		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0",
-		[]int64{1, dlaMaxBoxes, 6})
+		[]int64{1, 3, dlaInputSize, dlaInputSize}, "output0")
 	if err != nil {
 		return DLAResult{}, err
 	}
@@ -67,6 +66,9 @@ func RunDLA(ctx context.Context, modelDir string, img *Image) (DLAResult, error)
 
 	out, err := sess.Run(ctx, blob)
 	if err != nil {
+		return DLAResult{}, err
+	}
+	if err := checkOutputLength("dla", len(out), dlaMaxBoxes*6); err != nil {
 		return DLAResult{}, err
 	}
 	res := dlaPostprocess(out, sf)

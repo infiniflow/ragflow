@@ -99,7 +99,7 @@ func buildUserFillUpInterruptInfo(ctx context.Context, params map[string]any) ma
 	if tips == "" {
 		return info
 	}
-	state, _, err := GetStateFromContext[*CanvasState](ctx)
+	state, err := GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return info
 	}
@@ -152,7 +152,7 @@ func UserFillUpNodeBody(cpnID string, params map[string]any) func(ctx context.Co
 		// returns an interrupt error or panics on engine misuse. Keep
 		// the guard so test runs without a runner surface a clear
 		// message rather than a panic.
-		return nil, fmt.Errorf("canvas: UserFillUp %q: interrupt did not halt execution", cpnID)
+		return nil, fmt.Errorf("agent: UserFillUp %q: interrupt did not halt execution", cpnID)
 	}
 	return body
 }
@@ -169,6 +169,12 @@ func buildUserFillUpResumeOutput(cpnID string, inputSpec map[string]any, data an
 	}
 	if len(fields) == 1 {
 		for name := range fields {
+			if values, ok := data.(map[string]any); ok {
+				if value, exists := values[name]; exists {
+					out[name] = value
+					return out
+				}
+			}
 			out[name] = data
 		}
 		return out

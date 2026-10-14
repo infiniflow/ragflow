@@ -213,7 +213,7 @@ Supplementary details (beyond the diagram):
 
 - `OpenSync`'s `WindowEnd` is fixed when the task starts; a re-run reuses the same window from the checkpoint state.
 - Batch checkpoints are only saved after the batch job returns successfully; a failed batch is reprocessed on the next run.
-- Per-document failures first go through document-level retries with `ItemRetryCount = 3`; task-level transient errors then go through task rescheduling with `maxTransientTaskRetries = 3`.
+- Per-document failures first go through document-level retries with `ItemRetryCount = 3`; task-level execution errors are then retried — whitelisted transient errors 3 times, other errors 2 times.
 - A failed claim `Ack`s the current message and re-publishes the wake-up after 3 seconds if the task is still scheduled.
 - Connector/KB lock contention calls `RescheduleClaimed` and re-publishes the wake-up after 3 seconds.
 - `Ack` only confirms the current NATS message has been handled; it does not mean the task succeeded.
@@ -476,10 +476,10 @@ Requirements when implementing checkpoints:
 - If only `SourceID` is saved, the next run must be able to re-enumerate and skip data before that ID.
 - Do not commit checkpoints inside the connector; checkpoints are only saved by the runner after a batch succeeds.
 
-Transient-error retries work on two layers:
+Retries work on two layers:
 
 - Document level: `SyncRunner.processDocumentWithRetry` retries per-document failures matching `service.IsRetryable(err)` with exponential backoff.
-- Task level: `TaskWorker` retries tasks for transient sync errors such as timeout, 429, 5xx, and connection reset, up to `maxTransientTaskRetries` times.
+- Task level: `TaskWorker` retries every task execution error (user or system cancellation excluded). Whitelisted transient errors (timeout, 429, 5xx, connection reset, ...) are retried 3 times; all other errors are retried 2 times. When the retry budget is exhausted, the task is marked FAIL and its error message states how many retries were made and the last error.
 
 > [!WARNING]
 > Checkpoints are only saved by the runner after a batch job succeeds. Connectors must not persist "how far sync has progressed" themselves in `NextBatch` or `Fetch`; otherwise failed re-runs diverge from the runner's commit point.
@@ -492,7 +492,7 @@ Task-execution validation:
 
 - `TaskCoordinator.Execute` calls `connector.Validate(ctx)` at the start of every task.
 - This validates the saved configuration.
-- Failure leads to task failure or a transient-error retry.
+- Failure leads to a task-level retry (transient errors 3 times, others 2 times), then task failure.
 
 Test-connection validation:
 

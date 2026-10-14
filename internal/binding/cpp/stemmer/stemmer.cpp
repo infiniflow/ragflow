@@ -69,13 +69,22 @@ StemFunc STEM_FUNCTION[STEM_LANG_EOS] = {
 };
 
 Stemmer::Stemmer() {
-    // stemLang_ = STEM_LANG_UNKNOWN;
+    language_ = STEM_LANG_UNKNOWN;
     stem_function_ = 0;
 }
 
 Stemmer::~Stemmer() { DeInit(); }
 
 bool Stemmer::Init(Language language) {
+    if (language <= STEM_LANG_UNKNOWN || language >= STEM_LANG_EOS) {
+        return false;
+    }
+    if (stem_function_ && language_ == language) {
+        return true;
+    }
+
+    DeInit();
+
     // create stemming function structure
     stem_function_ = static_cast<void *>(new StemFunc);
     if (stem_function_ == 0) {
@@ -83,16 +92,10 @@ bool Stemmer::Init(Language language) {
     }
 
     // set stemming functions
-    if (language > 0 && language < STEM_LANG_EOS) {
-        static_cast<StemFunc *>(stem_function_)->create = STEM_FUNCTION[language].create;
-        static_cast<StemFunc *>(stem_function_)->close = STEM_FUNCTION[language].close;
-        static_cast<StemFunc *>(stem_function_)->stem = STEM_FUNCTION[language].stem;
-        static_cast<StemFunc *>(stem_function_)->env = STEM_FUNCTION[language].env;
-    } else {
-        delete static_cast<StemFunc *>(stem_function_);
-        stem_function_ = 0;
-        return false;
-    }
+    static_cast<StemFunc *>(stem_function_)->create = STEM_FUNCTION[language].create;
+    static_cast<StemFunc *>(stem_function_)->close = STEM_FUNCTION[language].close;
+    static_cast<StemFunc *>(stem_function_)->stem = STEM_FUNCTION[language].stem;
+    static_cast<StemFunc *>(stem_function_)->env = STEM_FUNCTION[language].env;
 
     // create env
     static_cast<StemFunc *>(stem_function_)->env = static_cast<StemFunc *>(stem_function_)->create();
@@ -101,6 +104,7 @@ bool Stemmer::Init(Language language) {
         return false;
     }
 
+    language_ = language;
     return true;
 }
 ////////////
@@ -123,6 +127,7 @@ void Stemmer::DeInit(void) {
         delete static_cast<StemFunc *>(stem_function_);
         stem_function_ = 0;
     }
+    language_ = STEM_LANG_UNKNOWN;
 }
 
 bool Stemmer::Stem(const std::string &term, std::string &resultWord) {

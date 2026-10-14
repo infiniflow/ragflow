@@ -272,18 +272,6 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: Build server binary (with native libs / ORT)
-        # The production Dockerfile does `COPY bin bin`, so the binary must be
-        # built (and ORT statically linked from the runner image at
-        # /opt/ragflow-native-libs) before the docker build. This makes ORT's
-        # presence in the released image an explicit, visible precondition
-        # instead of relying on a pre-populated bin/ from elsewhere.
-        env:
-          CGO_ENABLED: '1'
-        run: |
-          set -euo pipefail
-          ./build.sh --cpp
-          ./build.sh --go
 
       - name: Build and push image
         run: |
@@ -298,7 +286,3 @@ jobs:
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
 
-      - name: Build and push ragflow-cli
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: |
-          cd admin/client && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}

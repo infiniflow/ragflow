@@ -22,7 +22,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"mime/multipart"
 	"mime/quotedprintable"
@@ -32,9 +31,11 @@ import (
 	"time"
 
 	"github.com/AkmalOt/gomsg"
+	"go.uber.org/zap"
 	"golang.org/x/net/html"
 	"golang.org/x/text/transform"
 
+	"ragflow/internal/common"
 	"ragflow/internal/utility"
 )
 
@@ -101,8 +102,8 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 				if r := recover(); r != nil {
 					// Log so a genuine bug (e.g. a nil deref in parseMSG)
 					// is not silently masked as a "decode panicked" error.
-					log.Printf("email: .msg decode panicked for %q; skipping: %v", filename, r)
 					err = fmt.Errorf("email: .msg decode panicked: %v", r)
+					common.Error("email: .msg decode panicked, skipping", err, zap.String("file", filename))
 				}
 			}()
 			msg, err = parseMSG(data, p.fields)
@@ -836,7 +837,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 			// a native CGO backend) panicked. Skip just this attachment so one
 			// bad file can't fail the whole email — mirrors the .msg
 			// parseMSG recover.
-			log.Printf("email: attachment %q re-parse panicked; skipping", fn)
+			common.Warn("email: attachment re-parse panicked, skipping", zap.String("file", fn))
 		}
 		if panicked || res.Err != nil {
 			continue

@@ -328,7 +328,7 @@ func (s *BotService) ChatbotCompletion(
 	// async_iframe_completion saves `user_id=kwargs.get("user_id", "")`).
 	// The Go BotHandler routes pass `user.ID` through the
 	// "tenantID" parameter (the Go User struct collapses user and
-	// tenant into one identifier — see project CLAUDE.md), so
+	// tenant into one identifier — see project AGENTS.md), so
 	// writing `tenantID` here actually stores the requester's
 	// user-id (== tenant-id) in the python user-id slot. The
 	// session-tenant check on the read path compares against the
@@ -396,11 +396,8 @@ func (s *BotService) ChatbotCompletion(
 	// a sanitised error before any SSE byte is written when the
 	// service is unwired (test boot path) or the dialog has no LLM
 	// configured — see WriteChatbotFrame's sanitization contract.
-	// NewBotService wires both dependencies; the nil checks only
-	// guard a hand-rolled zero-value BotService against panicking.
-	if s.llmService == nil {
-		return nil, common.CodeServerError, errors.New("bot: llm service not wired")
-	}
+	// NewBotService wires the pipeline; the nil check only guards a
+	// hand-rolled zero-value BotService against panicking.
 	if s.pipeline == nil {
 		return nil, common.CodeServerError, errors.New("bot: chat pipeline not wired")
 	}

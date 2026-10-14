@@ -22,7 +22,6 @@ import { useOwnerTenantId } from '../../../context';
 import { DescriptionField } from '../../components/description-field';
 import { FormWrapper } from '../../components/form-wrapper';
 import {
-  DocumentIdsFormField,
   MemoryDatasetForm,
   RetrievalPartialSchema,
   useHideKnowledgeGraphField,
@@ -38,9 +37,11 @@ export const FormSchema = z.object({
 const RetrievalForm = () => {
   const defaultValues = omit(useValues(), 'top_k');
 
+  const ownerTenantId = useOwnerTenantId();
   const { formSchema, datasetsFetched } = useStaleDatasetFormSchema(
     FormSchema,
     defaultValues?.dataset_ids,
+    { ownerTenantId },
   );
 
   const form = useForm({
@@ -55,19 +56,15 @@ const RetrievalForm = () => {
 
   useRevalidateStaleDatasetIds(form, datasetsFetched);
 
-  const ownerTenantId = useOwnerTenantId();
-
   return (
     <Form {...form}>
       <FormWrapper>
         <DescriptionField></DescriptionField>
-        <DocumentIdsFormField></DocumentIdsFormField>
         <MemoryDatasetForm></MemoryDatasetForm>
         <Collapse defaultOpen title={<div>{t('flow.advancedSettings')}</div>}>
           <FormContainer>
             <SimilaritySliderFormField
               similarityWeightName="keywords_similarity_weight"
-              similarityWeightType="keyword"
               isTooltipShown
             ></SimilaritySliderFormField>
             <RerankCandidatesCountFormField></RerankCandidatesCountFormField>

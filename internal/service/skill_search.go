@@ -222,7 +222,7 @@ func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, doc
 	}
 
 	// Check if index exists before searching
-	indexName := getSkillIndexName(req.TenantID, req.SpaceID)
+	indexName := SkillIndexName(req.TenantID, req.SpaceID)
 	common.Debug("Searching skills", zap.String("indexName", indexName), zap.String("query", req.Query))
 
 	indexExists, err := docEngine.ChunkStoreExists(ctx, indexName, "skill")
@@ -667,22 +667,15 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 		return nil, fmt.Errorf("embedding model ID not configured")
 	}
 
-	embeddingModel, err := s.modelProvider.GetEmbeddingModel(ctx, tenantID, embdID)
+	target, err := s.modelProvider.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, embdID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get embedding model: %w", err)
 	}
+	embeddingModel := models.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 
-	// Truncate text to prevent exceeding model's max input length
-	maxLen := embeddingModel.MaxTokens
-	if maxLen <= 0 {
-		maxLen = defaultMaxLength
-	}
-	truncatedText := truncate(text, maxLen-10)
-
-	var response []models.EmbeddingData
 	// Query: true — getEmbedding is used only by the skill search legs
 	// (vectorSearch / hybridSearch) to embed the user's query.
-	response, err = embeddingModel.ModelDriver.Embed(ctx, embeddingModel.ModelName, models.EmbedRequest{Texts: []string{truncatedText}, Query: true}, embeddingModel.APIConfig, nil, nil)
+	response, err := embeddingModel.Embed(ctx, models.EmbedRequest{Texts: []string{text}, Query: true}, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encode query: %w", err)
 	}
@@ -694,7 +687,8 @@ func (s *SkillSearchService) getEmbedding(ctx context.Context, text, embdID, ten
 }
 
 // Helper functions
-func getSkillIndexName(tenantID, spaceID string) string {
+// SkillIndexName returns the index used by a tenant's skill space.
+func SkillIndexName(tenantID, spaceID string) string {
 	spaceID = normalizeSpaceID(spaceID)
 	spaceID = strings.ToLower(spaceID)
 	replacer := strings.NewReplacer("-", "_", "/", "_", "\\", "_", " ", "_", ".", "_", ":", "_")

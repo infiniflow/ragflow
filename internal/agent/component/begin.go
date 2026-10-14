@@ -70,7 +70,7 @@ func (b *BeginComponent) Name() string { return b.name }
 // outputs unchanged. The input map is shallow-copied to avoid aliasing
 // surprises across concurrent goroutines that share an inputs map.
 func (b *BeginComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("begin: %w", err)
 	}

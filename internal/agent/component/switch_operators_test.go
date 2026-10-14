@@ -90,13 +90,9 @@ func TestSwitch_Operators_NotEmpty(t *testing.T) {
 	if matched := runOp(t, "{{sys.body}}", "not empty", nil, map[string]any{"body": ""}); matched {
 		t.Errorf("not empty on '' should NOT match")
 	}
-	// When a var ref fails to resolve, leftValue returns the raw
-	// template literal (e.g. "{{sys.absent}}") so that == / != can
-	// still operate and a misconfigured ref doesn't crash the run.
-	// The raw literal is non-empty, so `not empty` evaluates to
-	// true. This is documented in leftValue's comment.
-	if matched := runOp(t, "{{sys.absent}}", "not empty", nil, map[string]any{}); !matched {
-		t.Errorf("not empty on unresolved var ref (raw literal) should match (raw is non-empty)")
+	// A missing sys value resolves to nil for unary emptiness checks.
+	if matched := runOp(t, "{{sys.absent}}", "not empty", nil, map[string]any{}); matched {
+		t.Errorf("not empty on missing var should not match")
 	}
 }
 
@@ -134,5 +130,101 @@ func TestSwitch_Operators_EqualFolded(t *testing.T) {
 	}
 	if matched := runOp(t, "HELLO", "==", "hello", nil); !matched {
 		t.Errorf("== should be case-insensitive: 'HELLO' == 'hello' should match")
+	}
+}
+
+func TestSwitch_OperatorMatrix(t *testing.T) {
+	tests := []struct {
+		name      string
+		left      any
+		op        string
+		right     any
+		wantMatch bool
+	}{
+		{name: "empty", left: "", op: "empty", wantMatch: true},
+		{name: "not empty", left: "hello", op: "not empty", wantMatch: true},
+		{name: "equals", left: "hello", op: "==", right: "hello", wantMatch: true},
+		{name: "not equals", left: "hello", op: "!=", right: "world", wantMatch: true},
+		{name: "contains", left: "hello world", op: "contains", right: "world", wantMatch: true},
+		{name: "not contains", left: "hello world", op: "not contains", right: "absent", wantMatch: true},
+		{name: "starts with", left: "hello world", op: "start with", right: "hello", wantMatch: true},
+		{name: "ends with", left: "hello world", op: "end with", right: "world", wantMatch: true},
+		{name: "greater than", left: 6, op: ">", right: 5, wantMatch: true},
+		{name: "greater or equal", left: 5, op: ">=", right: 5, wantMatch: true},
+		{name: "less than", left: 4, op: "<", right: 5, wantMatch: true},
+		{name: "less or equal", left: 5, op: "<=", right: 5, wantMatch: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			state := canvas.NewCanvasState("operator-matrix", tc.name)
+			state.Sys["left"] = tc.left
+			if matched := runOp(t, "{{sys.left}}", tc.op, tc.right, state.Sys); matched != tc.wantMatch {
+				t.Fatalf("matching case = %v, want %v", matched, tc.wantMatch)
+			}
+
+			rejectLeft, rejectRight := tc.left, tc.right
+			switch tc.op {
+			case "empty":
+				rejectLeft = "hello"
+			case "not empty":
+				rejectLeft = ""
+			case "==":
+				rejectRight = "world"
+			case "!=":
+				rejectRight = "hello"
+			case "contains":
+				rejectRight = "absent"
+			case "not contains":
+				rejectRight = "world"
+			case "start with":
+				rejectRight = "world"
+			case "end with":
+				rejectRight = "hello"
+			case ">", ">=":
+				rejectLeft = 4
+			case "<", "<=":
+				rejectLeft = 6
+			}
+			state.Sys["left"] = rejectLeft
+			if matched := runOp(t, "{{sys.left}}", tc.op, rejectRight, state.Sys); matched {
+				t.Fatalf("non-matching case = %v, want false", matched)
+			}
+		})
+	}
+}
+
+func TestSwitch_EmptyValueTypes(t *testing.T) {
+	tests := []struct {
+		name  string
+		value any
+		want  bool
+	}{
+		{name: "nil", value: nil, want: true},
+		{name: "empty string", value: "", want: true},
+		{name: "whitespace", value: " ", want: false},
+		{name: "zero", value: 0, want: false},
+		{name: "false", value: false, want: false},
+		{name: "empty array", value: []any{}, want: true},
+		{name: "non-empty array", value: []any{"x"}, want: false},
+		{name: "empty object", value: map[string]any{}, want: true},
+		{name: "non-empty object", value: map[string]any{"x": 1}, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := isEmptyValue(tc.value); got != tc.want {
+				t.Fatalf("isEmptyValue(%#v) = %v, want %v", tc.value, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestSwitch_EmptyResolvedNil(t *testing.T) {
+	state := canvas.NewCanvasState("empty-nil", "empty-nil")
+	state.SetVar("begin", "a", nil)
+	matched, err := evaluateClause(map[string]any{"left": "{{begin@a}}", "op": "empty"}, state)
+	if err != nil || !matched {
+		t.Fatalf("empty resolved nil = %v, %v; want true, nil", matched, err)
 	}
 }

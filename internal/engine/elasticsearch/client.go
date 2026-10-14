@@ -47,9 +47,13 @@ func NewEngine(ctx context.Context, esConfig config.ElasticsearchConfig) (*Engin
 		Username:  esConfig.Username,
 		Password:  esConfig.Password,
 		Transport: &http.Transport{
-			MaxIdleConnsPerHost:   10,
+			MaxIdleConns:          1000,
+			MaxIdleConnsPerHost:   300,
+			MaxConnsPerHost:       500,
+			IdleConnTimeout:       60 * time.Second,
 			ResponseHeaderTimeout: 30 * time.Second,
 			TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
+			ForceAttemptHTTP2:     true,
 		},
 	})
 	if err != nil {

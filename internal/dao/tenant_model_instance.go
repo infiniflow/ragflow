@@ -103,7 +103,7 @@ func (dao *TenantModelInstanceDAO) GetByProviderIDAndInstanceName(ctx context.Co
 // GetByID get tenant model instance by primary key (id)
 func (dao *TenantModelInstanceDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelInstance, error) {
 	var instance entity.TenantModelInstance
-	err := db.WithContext(ctx).Where("id = ?", id).First(&instance).Error
+	err := db.WithContext(ctx).Take(&instance, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

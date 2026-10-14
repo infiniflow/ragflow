@@ -48,7 +48,7 @@ func NewMCPServerDAO() *MCPServerDAO {
 // GetByID returns an MCP server by ID.
 func (dao *MCPServerDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.MCPServer, error) {
 	var server entity.MCPServer
-	if err := db.WithContext(ctx).Where("id = ?", id).First(&server).Error; err != nil {
+	if err := db.WithContext(ctx).Take(&server, "id = ?", id).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

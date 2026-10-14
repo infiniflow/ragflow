@@ -106,11 +106,12 @@ func (dao *ChatDAO) ListByTenantIDs(ctx context.Context, db *gorm.DB, tenantIDs 
 	return chats, total, nil
 }
 
-// ListByOwnerIDs list chats by owner IDs with filtering (manual pagination)
-func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, terms []OrderTerm, keywords string) ([]*entity.ChatListItem, int64, error) {
+// ListByOwnerIDs list chats by owner IDs with pagination and filtering
+func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []string, userID string, page, pageSize int, terms []OrderTerm, keywords string) ([]*entity.ChatListItem, int64, error) {
 	var chats []*entity.ChatListItem
+	var total int64
 
-	// Build query with join to user table
+	// Build query with join to user table for nickname and avatar
 	query := db.WithContext(ctx).Model(&entity.Chat{}).
 		Select(`
 			dialog.*,
@@ -135,12 +136,22 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 	// codeql[go/sql-injection] False positive: chatOrderClause
 	query = query.Order(chatOrderClause(terms))
 
-	// Get all matching records
-	if err := query.Scan(&chats).Error; err != nil {
+	// Count total
+	if err := query.Count(&total).Error; err != nil {
 		return nil, 0, err
 	}
 
-	total := int64(len(chats))
+	// Apply pagination
+	if page > 0 && pageSize > 0 {
+		offset := (page - 1) * pageSize
+		if err := query.Offset(offset).Limit(pageSize).Scan(&chats).Error; err != nil {
+			return nil, 0, err
+		}
+	} else {
+		if err := query.Scan(&chats).Error; err != nil {
+			return nil, 0, err
+		}
+	}
 
 	return chats, total, nil
 }
@@ -148,7 +159,7 @@ func (dao *ChatDAO) ListByOwnerIDs(ctx context.Context, db *gorm.DB, ownerIDs []
 // GetByID gets chat by ID
 func (dao *ChatDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Chat, error) {
 	var chat entity.Chat
-	err := db.WithContext(ctx).Where("id = ?", id).First(&chat).Error
+	err := db.WithContext(ctx).Take(&chat, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

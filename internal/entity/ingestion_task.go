@@ -45,12 +45,14 @@ func (IngestionTask) TableName() string {
 }
 
 type IngestionTaskLog struct {
-	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
-	Phase      int     `gorm:"column:phase" json:"phase"`
-	Component  string  `gorm:"column:component;size:64;index" json:"component"`
-	Message    string  `gorm:"column:message;type:text" json:"message"`
+	ID            int     `gorm:"column:id;primaryKey;autoIncrement;index:idx_ingestion_task_log_pipeline_id,priority:2" json:"id"`
+	TaskID        string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32;index:idx_ingestion_task_log_pipeline_id,priority:1" json:"pipeline_log_id,omitempty"`
+	Checkpoint    JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
+	Phase         int     `gorm:"column:phase" json:"phase"`
+	EventType     int     `gorm:"column:event_type;not null;default:4" json:"event_type"`
+	Component     string  `gorm:"column:component;size:64;index" json:"component"`
+	Message       string  `gorm:"column:message;type:text" json:"message"`
 	BaseModel
 }
 

@@ -33,6 +33,24 @@ type AuthHandler struct {
 	userService userTokenResolver
 }
 
+// ResolveMCPUser applies the same API-key/JWT resolution used by the public
+// MCP route, for the standalone native MCP transport.
+func (h *AuthHandler) ResolveMCPUser(ctx context.Context, authorization string) (*entity.User, error) {
+	if authorization == "" {
+		return nil, fmt.Errorf("missing authorization header")
+	}
+	if u, code, err := h.userService.GetUserByToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return u, nil
+	}
+	if u, code, err := h.userService.GetUserByAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return u, nil
+	}
+	if u, code, err := h.userService.GetUserByBetaAPIToken(ctx, authorization); err == nil && code == common.CodeSuccess {
+		return u, nil
+	}
+	return nil, fmt.Errorf("invalid authorization")
+}
+
 // userTokenResolver is the subset of UserService the auth
 // middleware actually depends on. We keep it as a small interface
 // so the test suite can swap in a stub without spinning up the

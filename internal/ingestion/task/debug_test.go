@@ -28,9 +28,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zaptest/observer"
-	"gorm.io/gorm"
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -75,7 +73,6 @@ func TestNewDebugTaskContext_InjectsDebugID(t *testing.T) {
 func TestExecute_DebugViaEntry(t *testing.T) {
 	taskCtx := NewDebugTaskContext("t1", "canvas-1", "doc.pdf", []byte("page one\fpage two\fpage three"))
 
-	logCalled := false
 	insertCalled := false
 
 	exec, err := NewPipelineExecutor(taskCtx, "canvas-1", 0)
@@ -96,10 +93,6 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 				},
 			}, dsl, nil
 		}).
-		WithLogCreateFunc(func(ctx context.Context, db *gorm.DB, log *entity.PipelineOperationLog) error {
-			logCalled = true
-			return nil
-		}).
 		WithInsertFunc(func(ctx context.Context, chunks []map[string]any, baseName, datasetID string) ([]string, error) {
 			insertCalled = true
 			return nil, nil
@@ -114,9 +107,6 @@ func TestExecute_DebugViaEntry(t *testing.T) {
 	}
 	if len(result.Chunks) != 4 {
 		t.Errorf("len(result.Chunks) = %d, want 4", len(result.Chunks))
-	}
-	if logCalled {
-		t.Error("pipeline log should NOT be created in a debug (kb_id == \"\") run")
 	}
 	if insertCalled {
 		t.Error("chunk insert should NOT be called in a debug (kb_id == \"\") run")

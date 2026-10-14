@@ -253,6 +253,9 @@ func (o *OSSStorage) Remove(ctx context.Context, bucket, fnm string, tenantID ..
 		Key:    aws.String(fnm),
 	})
 	if err != nil {
+		if isS3NotFound(err) {
+			return nil
+		}
 		common.Error("Failed to remove object", err, zap.String("bucket", bucket), zap.String("key", fnm))
 		return err
 	}
@@ -276,6 +279,18 @@ func (o *OSSStorage) ObjExist(ctx context.Context, bucket, fnm string, tenantID 
 	}
 
 	return true
+}
+
+func (o *OSSStorage) ObjectExists(ctx context.Context, bucket, fnm string) (bool, error) {
+	bucket, fnm = o.resolveBucketAndPath(bucket, fnm)
+	_, err := o.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(bucket), Key: aws.String(fnm)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3NotFound(err) {
+		return false, nil
+	}
+	return false, err
 }
 
 func (o *OSSStorage) ListObjects(ctx context.Context, bucket string, tenantID ...string) ([]string, error) {
@@ -344,12 +359,27 @@ func (o *OSSStorage) BucketExists(ctx context.Context, bucket string) bool {
 	return true
 }
 
+func (o *OSSStorage) BucketExistsWithError(ctx context.Context, bucket string) (bool, error) {
+	if o.bucket != "" {
+		bucket = o.bucket
+	}
+	_, err := o.client.HeadBucket(ctx, &s3.HeadBucketInput{Bucket: aws.String(bucket)})
+	if err == nil {
+		return true, nil
+	}
+	if isS3BucketNotFound(err) {
+		return false, nil
+	}
+	return false, err
+}
+
 // RemoveBucket removes a bucket and all its objects
 func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
-	actualBucket := bucket
 	if o.bucket != "" {
-		actualBucket = o.bucket
+		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
 	}
+
+	actualBucket := bucket
 
 	// Check if bucket exists
 	if !o.BucketExists(ctx, actualBucket) {
@@ -394,6 +424,18 @@ func (o *OSSStorage) RemoveBucket(ctx context.Context, bucket string) error {
 	}
 
 	return nil
+}
+
+// RemoveEmptyBucket removes a physical bucket only when it is empty.
+func (o *OSSStorage) RemoveEmptyBucket(ctx context.Context, bucket string) error {
+	if o.bucket != "" {
+		return fmt.Errorf("cannot remove logical OSS bucket %s: shared bucket mode does not isolate objects by logical bucket", bucket)
+	}
+	_, err := o.client.DeleteBucket(ctx, &s3.DeleteBucketInput{Bucket: aws.String(bucket)})
+	if isS3NotFound(err) {
+		return nil
+	}
+	return err
 }
 
 // Copy copies an object from source to destination

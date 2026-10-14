@@ -5,11 +5,6 @@ import {
   transformFormConfigToApi,
 } from '@/utils/pipeline-operator';
 
-let mockIsGoBackend = true;
-jest.mock('@/utils/backend-runtime', () => ({
-  getBackendLanguage: () => (mockIsGoBackend ? 'go' : 'python'),
-}));
-
 const extractorNode = {
   id: 'Extractor:AutoExtractDefault',
   data: { form: {} },
@@ -49,13 +44,139 @@ describe('GeneralChunker operator bridge', () => {
     expect(api.image_context_size).toBe(3);
     expect(api).not.toHaveProperty('delimiter_mode');
   });
+
+  it('keeps an empty delimiter list empty (no legacy re-seed)', () => {
+    // The general chunker never had the 'token_size' tab, so an empty saved
+    // list is always a deliberate choice (pure token-size chunking).
+    const form = transformApiConfigToForm('GeneralChunker', {
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+  });
 });
 
-describe('buildOperatorNode dataset-level metadata precedence', () => {
+describe('TokenChunker delimiter seeding on load', () => {
+  it('keeps an empty list saved by the current form empty', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('keeps an empty list in one mode empty', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'one',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([]);
+    expect(form.delimiter_mode).toBe('one');
+  });
+
+  it('re-seeds the default row for legacy token_size nodes', () => {
+    // Nodes saved under the removed 'token_size' tab persisted an empty list;
+    // seed the default '\n' row so the merged 'delimiter' tab is not blank.
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'token_size',
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([{ value: '\n' }]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('re-seeds the default row when the mode is absent (older DSLs)', () => {
+    const form = transformApiConfigToForm('TokenChunker', {
+      chunk_token_size: 512,
+      delimiters: [],
+      overlapped_percent: 0,
+    });
+    expect(form.delimiters).toEqual([{ value: '\n' }]);
+    expect(form.delimiter_mode).toBe('delimiter');
+  });
+
+  it('derives enable_children from a non-empty children list', () => {
+    // Configs saved before the enable_children toggle existed carry children
+    // delimiters without the flag.
+    const form = transformApiConfigToForm('TokenChunker', {
+      delimiter_mode: 'delimiter',
+      chunk_token_size: 512,
+      delimiters: ['\n'],
+      children_delimiters: ['|'],
+      overlapped_percent: 0,
+    });
+    expect(form.enable_children).toBe(true);
+    expect(form.children_delimiters).toEqual([{ value: '|' }]);
+  });
+});
+
+describe('Parser nested setups compatibility', () => {
   beforeEach(() => {
     mockIsGoBackend = true;
   });
 
+  it('lifts a legacy nested "setups" object into file families', () => {
+    const form = transformApiConfigToForm('Parser', {
+      setups: {
+        pdf: { parse_method: 'vision', pages: [[1, 3]] },
+      },
+    });
+    expect(form.setups).toHaveLength(1);
+    expect(form.setups[0].fileFormat).toBe('pdf');
+    expect(form.setups[0].parse_method).toBe('vision');
+    expect(form.setups[0].pages).toEqual([{ from: 1, to: 3 }]);
+  });
+
+  it('keeps flat file families unchanged', () => {
+    const form = transformApiConfigToForm('Parser', {
+      pdf: { parse_method: 'deepdoc' },
+    });
+    expect(form.setups).toHaveLength(1);
+    expect(form.setups[0].fileFormat).toBe('pdf');
+    expect(form.setups[0].parse_method).toBe('deepdoc');
+  });
+
+  it('skips non-family keys such as outputs', () => {
+    const form = transformApiConfigToForm('Parser', {
+      outputs: { html: { type: 'string' } },
+      pdf: { parse_method: 'deepdoc' },
+    });
+    const families = form.setups.map((s: any) => s.fileFormat);
+    expect(families).toEqual(['pdf']);
+  });
+
+  it('does not surface "setups" as a file family in buildOperatorNode', () => {
+    const node = buildOperatorNode(
+      {
+        id: 'Parser:HipSignsRhyme',
+        data: {
+          form: { setups: [{ fileFormat: 'pdf', parse_method: 'naive' }] },
+        },
+      } as any,
+      {
+        'Parser:HipSignsRhyme': {
+          setups: { pdf: { parse_method: 'vision' } },
+        },
+      },
+    );
+
+    const form = (node.data as Record<string, any>).form;
+    const families = form.setups.map((s: any) => s.fileFormat);
+    expect(families).not.toContain('setups');
+    const pdf = form.setups.find((s: any) => s.fileFormat === 'pdf');
+    expect(pdf?.parse_method).toBe('vision');
+  });
+});
+
+describe('buildOperatorNode dataset-level metadata precedence', () => {
   it('seeds the extractor metadata toggle from the dataset-level object', () => {
     const node = buildOperatorNode(extractorNode, {
       'Extractor:AutoExtractDefault': {

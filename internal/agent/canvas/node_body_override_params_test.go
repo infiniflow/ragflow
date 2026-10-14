@@ -66,7 +66,7 @@ func TestBuildNodeBody_OverrideParams(t *testing.T) {
 	ctx := WithComponentFactory(t.Context(), factory)
 	ctx = withOverrideParams(ctx, override)
 
-	body, err := buildNodeBody(ctx, "cpn-parser", "Parser", baseParams)
+	body, err := buildNodeBody(ctx, "cpn-parser", "Parser", "", baseParams)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}
@@ -109,7 +109,7 @@ func TestBuildNodeBody_OverrideParamsNilIsNoOp(t *testing.T) {
 	baseParams := map[string]any{"name": "x"}
 
 	ctx := WithComponentFactory(t.Context(), factory)
-	body, err := buildNodeBody(ctx, "cpn", "Parser", baseParams)
+	body, err := buildNodeBody(ctx, "cpn", "Parser", "", baseParams)
 	if err != nil {
 		t.Fatalf("buildNodeBody: %v", err)
 	}

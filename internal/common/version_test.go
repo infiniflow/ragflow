@@ -21,6 +21,34 @@ import (
 	"testing"
 )
 
+func TestDevModeEnabled(t *testing.T) {
+	cases := []struct {
+		value string
+		set   bool
+		want  bool
+	}{
+		{value: "", set: false, want: false},
+		{value: "", set: true, want: false},
+		{value: "false", set: true, want: false},
+		{value: "0", set: true, want: false},
+		{value: "nonsense", set: true, want: false},
+		{value: "true", set: true, want: true},
+		{value: "True", set: true, want: true},
+		{value: "1", set: true, want: true},
+		{value: " true ", set: true, want: true},
+	}
+	for _, tc := range cases {
+		t.Run(fmt.Sprintf("%q/set=%v", tc.value, tc.set), func(t *testing.T) {
+			if tc.set {
+				t.Setenv(EnvRAGFlowDevMode, tc.value)
+			}
+			if got := DevModeEnabled(); got != tc.want {
+				t.Fatalf("DevModeEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGetRAGFlowVersion(t *testing.T) {
 	version := GetRAGFlowVersion()
 	fmt.Printf("RAGFlow Version: %s\n", version)

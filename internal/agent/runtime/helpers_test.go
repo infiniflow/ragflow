@@ -387,3 +387,66 @@ func TestTrackElapsed_NilMapFromFn(t *testing.T) {
 		t.Error("missing _elapsed_time after nil-map input")
 	}
 }
+
+// TestReportComponentFraction_NoopWithoutBinding verifies a component can
+// report fractions unconditionally: with no run-level callback bound the
+// report is dropped, keeping headless runs observer-independent.
+func TestReportComponentFraction_NoopWithoutBinding(t *testing.T) {
+	ReportComponentFraction(context.Background(), 0.5)
+	ReportComponentFraction(nil, 0.5)
+
+	// A run callback that was never bound to a component must not fire either.
+	ctx := WithProgressFractionCallback(context.Background(), func(string, float64) {
+		t.Fatal("callback fired without BindComponentFraction")
+	})
+	ReportComponentFraction(ctx, 0.5)
+}
+
+// TestBindComponentFraction_AttributesReports verifies the framework binding
+// supplies the component id: the run-level callback receives (cpnID, frac)
+// while the component itself only reports a bare fraction.
+func TestBindComponentFraction_AttributesReports(t *testing.T) {
+	var mu sync.Mutex
+	var got []struct {
+		component string
+		fraction  float64
+	}
+	ctx := WithProgressFractionCallback(context.Background(), func(component string, fraction float64) {
+		mu.Lock()
+		defer mu.Unlock()
+		got = append(got, struct {
+			component string
+			fraction  float64
+		}{component, fraction})
+	})
+
+	ctxA := BindComponentFraction(ctx, "Parser:aaa")
+	ctxB := BindComponentFraction(ctx, "Parser:bbb")
+	ReportComponentFraction(ctxA, 0.25)
+	ReportComponentFraction(ctxB, 0.75)
+	ReportComponentFraction(ctxA, 0.5)
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 3 {
+		t.Fatalf("callback calls = %d, want 3", len(got))
+	}
+	want := []struct {
+		component string
+		fraction  float64
+	}{{"Parser:aaa", 0.25}, {"Parser:bbb", 0.75}, {"Parser:aaa", 0.5}}
+	for i, w := range want {
+		if got[i] != w {
+			t.Fatalf("call %d = %+v, want %+v", i, got[i], w)
+		}
+	}
+}
+
+// TestBindComponentFraction_NoCallbackReturnsSameContext verifies the binding
+// is free when no run-level sink is attached.
+func TestBindComponentFraction_NoCallbackReturnsSameContext(t *testing.T) {
+	ctx := context.Background()
+	if bound := BindComponentFraction(ctx, "Parser:aaa"); bound != ctx {
+		t.Fatal("BindComponentFraction allocated a context without a run-level callback")
+	}
+}

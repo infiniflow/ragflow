@@ -158,6 +158,66 @@ func (s *MetadataService) SearchMetadataByKBs(ctx context.Context, kbIDs []strin
 	}, nil
 }
 
+// MetadataForDocIDs returns doc_id → its metadata fields, reading ONLY the given documents
+// (the doc-scoped query runtime.MetadataResolver.MetadataForDocIDs needs).
+//
+// Best effort: a dataset whose tenant lookup or index read fails contributes nothing and
+// the failure is returned, but the documents another dataset answered for are still
+// returned. The caller has already resolved the document ids, so a missing context block
+// must not turn a successful selection into an error.
+func (s *MetadataService) MetadataForDocIDs(ctx context.Context, kbIDs, docIDs []string) (map[string]map[string]any, error) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(docIDs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string]map[string]any, len(docIDs))
+	var firstErr error
+	for _, kbID := range kbIDs {
+		tenantID, err := s.GetTenantIDByKBID(ctx, kbID)
+		if err != nil || tenantID == "" {
+			if err != nil && firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		res, err := s.SearchMetadata(ctx, kbID, tenantID, docIDs, len(docIDs))
+		if err != nil {
+			if firstErr == nil {
+				firstErr = err
+			}
+			continue
+		}
+		for docID, meta := range ConvertSearchResultToDocMeta(res.MetadataRecords) {
+			if _, exists := out[docID]; !exists {
+				out[docID] = meta
+			}
+		}
+	}
+	return out, firstErr
+}
+
+// DeclaredMetadataFields implements runtime.DeclaredMetadataResolver: it reads the metadata
+// fields each dataset DECLARES in its parser_config — the {key, type, description, enum}
+// definitions the metadata config API writes for extraction.
+//
+// One row read per dataset and no index scan, so it is cheap enough to run per
+// metadata_search call. An unknown dataset is skipped rather than failing the read, and a
+// dataset that declares nothing contributes nothing: the caller always has the metadata
+// index as its other half.
+func (s *MetadataService) DeclaredMetadataFields(ctx context.Context, kbIDs []string) ([]common.MetadataFieldDef, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	var out []common.MetadataFieldDef
+	for _, kbID := range kbIDs {
+		kb, err := s.kbDAO.GetByID(ctx, dao.DB, kbID)
+		if err != nil || kb == nil {
+			continue
+		}
+		out = append(out, common.DeclaredMetadataFieldsFromParserConfig(kb.ParserConfig)...)
+	}
+	return out, nil
+}
+
 // GetFlattedMetaByKBs returns flattened metadata in the format:
 // {field_name: {value: [doc_ids]}}
 func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []string) (common.MetaData, error) {
@@ -265,6 +325,25 @@ func (s *MetadataService) GetFlattedMetaByKBs(ctx context.Context, kbIDs []strin
 	}
 
 	return flattedMeta, nil
+}
+
+// FilterDocIDsByMetaPushdown runs ONLY the metadata-index push-down, which is the first
+// half of the agentic metadata_search pipeline (the caller falls back to
+// GetFlattedMetaByKBs + ApplyMetaFilter when the push-down is not viable).
+//
+// ok=false means the push-down is not viable or errored; ok=true with an empty slice is
+// the definitive "no document matches". That split is the engine's own contract
+// (engine.DocEngine.FilterDocIdsByMetaPushdown returns nil for "not viable"), surfaced
+// here so the caller does not have to reach into the engine itself.
+func (s *MetadataService) FilterDocIDsByMetaPushdown(ctx context.Context, kbIDs []string, filters []map[string]any, logic string) ([]string, bool) {
+	if s == nil || s.docEngine == nil || len(kbIDs) == 0 || len(filters) == 0 {
+		return nil, false
+	}
+	docIDs := s.docEngine.FilterDocIdsByMetaPushdown(ctx, dao.DB, kbIDs, filters, logic)
+	if docIDs == nil {
+		return nil, false
+	}
+	return docIDs, true
 }
 
 // CollectDocIDsByKB collects unique (kb_id, doc_id) pairs from chunks.

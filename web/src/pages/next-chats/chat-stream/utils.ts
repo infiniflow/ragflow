@@ -2,41 +2,7 @@ import { MessageType } from '@/constants/chat';
 import { IAnswer, IMessage } from '@/interfaces/database/chat';
 import { buildMessageUuid } from '@/utils/chat';
 import { omit } from 'lodash';
-import { CompletionChunk } from '@/services/chat-completion-stream';
 import { PrologueMessageIdPrefix } from './constants';
-
-/**
- * Accumulates a streamed answer chunk onto the previously accumulated text.
- * Ported verbatim from the legacy `setAnswer` reducer in
- * `useSendMessageWithSse` (src/hooks/logic-hooks.ts) to preserve behaviour:
- * the final chunk is skipped only when earlier chunks exist (single-shot
- * answers arrive with `final: true` only), a chunk that already contains the
- * previous text replaces it instead of being appended, and think markers are
- * injected inline.
- */
-export function mergeAnswerChunk(
-  previousAnswer: string,
-  chunk: CompletionChunk,
-): string {
-  const currentAnswer = chunk.final && previousAnswer ? '' : chunk.answer || '';
-
-  let nextAnswer: string;
-  if (previousAnswer && currentAnswer.startsWith(previousAnswer)) {
-    nextAnswer = currentAnswer;
-  } else {
-    nextAnswer = previousAnswer + currentAnswer;
-  }
-
-  if (chunk.start_to_think === true) {
-    nextAnswer = nextAnswer + '<think>';
-  }
-
-  if (chunk.end_to_think === true) {
-    nextAnswer = nextAnswer + '</think>';
-  }
-
-  return nextAnswer;
-}
 
 /** Builds the assistant message that replaces the trailing placeholder. */
 export function buildAssistantMessageFromAnswer(answer: IAnswer): IMessage {

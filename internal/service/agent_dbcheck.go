@@ -44,7 +44,7 @@ type TestDBConnectionRequest struct {
 	Password string      `json:"password"`
 }
 
-// AllowAnyHostForTest mirrors utility.AllowAnyHostForTest: a test-only
+// AllowAnyHostForTest mirrors common.AllowAnyHostForTest: a test-only
 // override that disables the SSRF guard in AssertHostIsSafe. Production
 // code MUST leave this at false. Tests that need to talk to a local
 // httptest server or stub-resolved DB host flip it on and reset it

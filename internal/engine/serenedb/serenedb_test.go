@@ -71,6 +71,14 @@ func TestBuildFiltersArrayUsesListContains(t *testing.T) {
 	mustContain(t, got[0], "list_contains(tag_kwd, 'b')")
 }
 
+func TestBuildFiltersKnowledgeGraphCompatibility(t *testing.T) {
+	got := buildFilters(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}})
+	want := "(type_kwd IN ('entity', 'relation') OR knowledge_graph_kwd IN ('entity', 'relation'))"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("graph filter = %v, want %q", got, want)
+	}
+}
+
 func TestBuildFiltersScalarAndIn(t *testing.T) {
 	scalar := buildFilters(map[string]interface{}{"doc_id": "d1"})
 	if len(scalar) != 1 || scalar[0] != "doc_id = 'd1'" {
@@ -115,6 +123,24 @@ func TestL2NormalizeUnitLength(t *testing.T) {
 	}
 	if got := l2Normalize([]float64{0, 0}); !reflect.DeepEqual(got, []float64{0, 0}) {
 		t.Errorf("zero vector should pass through, got %v", got)
+	}
+}
+
+func TestPrepareChunkRowKeepsHiddenParentFields(t *testing.T) {
+	cols, values := prepareChunkRow(map[string]interface{}{
+		"id":                  "parent-1",
+		"doc_id":              "doc-1",
+		"content_with_weight": "parent text",
+		"mom_id":              "parent-1",
+		"available_int":       0,
+	}, "kb-1")
+
+	row := make(map[string]interface{}, len(cols))
+	for i, col := range cols {
+		row[col] = values[i]
+	}
+	if row["mom_id"] != "parent-1" || row["available_int"] != 0 || row["kb_id"] != "kb-1" {
+		t.Fatalf("parent row = %#v, want hidden and dataset-scoped", row)
 	}
 }
 
@@ -260,22 +286,26 @@ func TestResolveOutputFields(t *testing.T) {
 
 func TestSearchFiltersScoping(t *testing.T) {
 	// KbIDs become an IN predicate over the shared tenant table.
-	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true)
+	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true, false)
 	joined := strings.Join(scored, " AND ")
 	mustContain(t, joined, "kb_id IN ('kb1', 'kb2')")
 	mustContain(t, joined, "available_int = 1")
 	// No KbIDs and no match expr -> no predicates.
-	if got := searchFilters(map[string]interface{}{}, nil, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, nil, false, false); len(got) != 0 {
 		t.Errorf("expected no filters, got %v", got)
 	}
 	// A scored query with no available_int/status defaults available_int=1.
-	one := searchFilters(map[string]interface{}{}, nil, true)
+	one := searchFilters(map[string]interface{}{}, nil, true, false)
 	if len(one) != 1 || one[0] != "available_int = 1" {
 		t.Errorf("scored default = %v", one)
 	}
 	// Blank dataset ids are dropped, so no empty IN () is emitted.
-	if got := searchFilters(map[string]interface{}{}, []string{""}, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, []string{""}, false, false); len(got) != 0 {
 		t.Errorf("blank kb ids should yield no filter, got %v", got)
+	}
+	// Management listing explicitly opts into disabled parent chunks.
+	if got := searchFilters(map[string]interface{}{}, nil, true, true); len(got) != 0 {
+		t.Errorf("include unavailable filters = %v, want no availability default", got)
 	}
 }
 

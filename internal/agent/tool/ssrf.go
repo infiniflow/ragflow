@@ -23,8 +23,6 @@ import (
 	"net/url"
 	"ragflow/internal/common"
 	"strings"
-
-	"ragflow/internal/utility"
 )
 
 // ErrSSRFBlocked is returned when a tool is asked to fetch a URL whose
@@ -90,14 +88,18 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 		if ip := net.ParseIP(host); ip != nil {
 			return host, ip, nil
 		}
-		ips, lerr := net.LookupIP(host)
+		addrs, lerr := common.LookupHost(host)
 		if lerr != nil {
 			return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 		}
-		if len(ips) == 0 {
+		if len(addrs) == 0 {
 			return "", nil, fmt.Errorf("ssrf: %s has no A/AAAA records", host)
 		}
-		return host, ips[0], nil
+		ip := net.ParseIP(addrs[0])
+		if ip == nil {
+			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addrs[0], host)
+		}
+		return host, ip, nil
 	}
 
 	// Short-circuit the well-known host aliases that DNS lookups may
@@ -112,19 +114,23 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 
 	// If the host is a literal IP, no DNS lookup is needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return host, ip, nil
 	}
 
-	ips, lerr := net.LookupIP(host)
+	addrs, lerr := common.LookupHost(host)
 	if lerr != nil {
 		return "", nil, fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 	}
 	var firstSafe net.IP
-	for _, ip := range ips {
-		if isPrivateOrLoopback(ip) {
+	for _, addr := range addrs {
+		ip := net.ParseIP(addr)
+		if ip == nil {
+			return "", nil, fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
+		}
+		if isNonGlobalIP(ip) {
 			return "", nil, fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == nil {
@@ -137,29 +143,18 @@ func ResolveAndValidate(rawURL string) (originalHost string, pinnedIP net.IP, er
 	return host, firstSafe, nil
 }
 
-// isPrivateOrLoopback reports whether ip is in any of the ranges we
-// refuse to fetch from. It is deliberately conservative — link-local
-// (169.254.0.0/16, fe80::/10) is rejected because that is where cloud
-// metadata services live; multicast and the unspecified address are
-// also rejected.
-func isPrivateOrLoopback(ip net.IP) bool {
+// isNonGlobalIP applies the same special-use address policy as the shared
+// host guard without repeating its range list or performing another DNS lookup.
+func isNonGlobalIP(ip net.IP) bool {
 	if ip == nil {
 		return true
 	}
-	if ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() ||
-		ip.IsPrivate() || ip.IsMulticast() || ip.IsUnspecified() {
-		return true
-	}
-	return false
+	_, err := common.AssertHostSafe(ip.String())
+	return err != nil
 }
 
 func allowAnyHost() bool {
-	switch strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvAllowAnyHost))) {
-	case "1", "true", "yes", "on":
-		return true
-	default:
-		return false
-	}
+	return common.AllowAnyHostForTest
 }
 
 // ValidateDBHost parses host (literal IP or DNS name), verifies it
@@ -182,12 +177,12 @@ func ValidateDBHost(host string) (string, error) {
 		return "", fmt.Errorf("%w: empty host", ErrSSRFBlocked)
 	}
 
-	// Mirror ResolveAndValidate's bypass for dev/test runs.
+	// Mirror ResolveAndValidate's test-only bypass.
 	if allowAnyHost() {
 		if ip := net.ParseIP(host); ip != nil {
 			return ip.String(), nil
 		}
-		addrs, lerr := utility.LookupHost(host)
+		addrs, lerr := common.LookupHost(host)
 		if lerr != nil {
 			return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 		}
@@ -209,16 +204,16 @@ func ValidateDBHost(host string) (string, error) {
 
 	// Literal IP — no DNS lookup needed.
 	if ip := net.ParseIP(host); ip != nil {
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: literal %s", ErrSSRFBlocked, host)
 		}
 		return ip.String(), nil
 	}
 
-	// Resolve via utility.LookupHost so tests can stub DNS without
+	// Resolve via common.LookupHost so tests can stub DNS without
 	// touching real network — matches the stubbing pattern used by
 	// the utility package (see internal/utility/ssrf.go LookupHost).
-	addrs, lerr := utility.LookupHost(host)
+	addrs, lerr := common.LookupHost(host)
 	if lerr != nil {
 		return "", fmt.Errorf("ssrf: resolve %s: %w", host, lerr)
 	}
@@ -231,7 +226,7 @@ func ValidateDBHost(host string) (string, error) {
 		if ip == nil {
 			return "", fmt.Errorf("ssrf: could not parse resolved address %q for %s", addr, host)
 		}
-		if isPrivateOrLoopback(ip) {
+		if isNonGlobalIP(ip) {
 			return "", fmt.Errorf("%w: %s -> %s", ErrSSRFBlocked, host, ip)
 		}
 		if firstSafe == "" {

@@ -196,7 +196,8 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 		t.Fatalf("create scheduled ingestion task: %v", err)
 	}
 
-	documents, total, err := NewDocumentDAO().ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
 		KbID:    "kb-1",
 		OrderBy: "create_time",
 		Desc:    true,
@@ -220,6 +221,176 @@ func TestDocumentListIncludesScheduledIngestionStatus(t *testing.T) {
 	}
 	if got := listed["ingestion_status"]; got != "SCHEDULED" {
 		t.Fatalf("ingestion_status = %v, want %q", got, "SCHEDULED")
+	}
+
+	opts := DocumentListOptions{KbID: "kb-1", RunStatuses: []string{common.SCHEDULED}, OrderBy: "ingestion_status", Limit: 10}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, opts)
+	if err != nil || total != 1 || len(documents) != 1 {
+		t.Fatalf("filter scheduled documents: got %d (total %d), err %v", len(documents), total, err)
+	}
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, opts)
+	if err != nil || len(ids) != 1 || ids[0] != "doc-scheduled" {
+		t.Fatalf("filter scheduled document IDs: got %v, err %v", ids, err)
+	}
+	filters, total, err := dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-1"})
+	if err != nil || total != 1 {
+		t.Fatalf("get scheduled filter count: total %d, err %v", total, err)
+	}
+	if got := filters["ingestion_status"].(map[string]int64)[common.SCHEDULED]; got != 1 {
+		t.Fatalf("scheduled filter count = %d, want 1", got)
+	}
+	if db.Migrator().HasColumn(&entity.Document{}, "run") {
+		t.Fatal("document list query added the legacy run column")
+	}
+}
+
+func TestDocumentListFallsBackToReadOnlyLegacyRun(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	if err := db.AutoMigrate(
+		&entity.User{},
+		&entity.UserCanvas{},
+		&entity.File{},
+		&entity.File2Document{},
+		&entity.IngestionTask{},
+	); err != nil {
+		t.Fatalf("migrate document-list dependencies: %v", err)
+	}
+	if err := db.Exec("ALTER TABLE document ADD COLUMN run TEXT").Error; err != nil {
+		t.Fatalf("add legacy run fixture column: %v", err)
+	}
+
+	tests := []struct {
+		id, run, task, want string
+		hasTask             bool
+	}{
+		{id: "unstart", run: "0", want: "UNSTART"},
+		{id: "empty", want: "UNSTART"},
+		{id: "running", run: "1", want: common.RUNNING},
+		{id: "stopped", run: "2", want: common.STOPPED},
+		{id: "completed", run: "3", want: common.COMPLETED},
+		{id: "failed", run: "4", want: common.FAILED},
+		{id: "scheduled", run: "5", want: common.SCHEDULED},
+		{id: "unknown", run: "9", want: "UNSTART"},
+		{id: "task-wins", run: "3", task: common.RUNNING, hasTask: true, want: common.RUNNING},
+		{id: "empty-task-wins", run: "3", hasTask: true, want: "UNSTART"},
+	}
+
+	create := func(value interface{}) {
+		t.Helper()
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("create %T: %v", value, err)
+		}
+	}
+	fileID := "file-legacy"
+	create(&entity.File{ID: fileID, ParentID: "parent-1", TenantID: "tenant-1", CreatedBy: "user-1", Name: "legacy.pdf", Type: "document"})
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		create(&entity.Document{ID: documentID, KbID: "kb-legacy", ParserConfig: entity.JSONMap{}})
+		if err := db.Table("document").Where("id = ?", documentID).UpdateColumn("run", test.run).Error; err != nil {
+			t.Fatalf("set legacy run for %s: %v", documentID, err)
+		}
+		create(&entity.File2Document{ID: "link-" + test.id, FileID: sp(fileID), DocumentID: sp(documentID)})
+		if test.hasTask {
+			create(&entity.IngestionTask{ID: "task-" + test.id, DocumentID: documentID, Status: test.task})
+		}
+	}
+
+	dao := NewDocumentDAO()
+	documents, total, err := dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+		KbID: "kb-legacy", Limit: len(tests),
+	})
+	if err != nil {
+		t.Fatalf("list legacy documents: %v", err)
+	}
+	if total != int64(len(tests)) || len(documents) != len(tests) {
+		t.Fatalf("listed %d documents (total %d), want %d", len(documents), total, len(tests))
+	}
+
+	statusByID := make(map[string]string, len(documents))
+	for _, document := range documents {
+		if document.IngestionStatus != nil {
+			statusByID[document.ID] = *document.IngestionStatus
+		}
+	}
+	for _, test := range tests {
+		documentID := "doc-" + test.id
+		if got := statusByID[documentID]; got != test.want {
+			t.Errorf("status for %s = %q, want %q", documentID, got, test.want)
+		}
+	}
+
+	completedOpts := DocumentListOptions{KbID: "kb-legacy", RunStatuses: []string{common.COMPLETED}, Limit: len(tests)}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil || total != 1 || len(documents) != 1 || documents[0].ID != "doc-completed" {
+		t.Fatalf("filter completed documents: got %v (total %d), err %v", documents, total, err)
+	}
+	ids, err := dao.ListIDsByKBIDWithOptions(t.Context(), db, completedOpts)
+	if err != nil || len(ids) != 1 || ids[0] != "doc-completed" {
+		t.Fatalf("filter completed document IDs: got %v, err %v", ids, err)
+	}
+	filters, filterTotal, err := dao.GetFilterByKBID(t.Context(), db, completedOpts)
+	if err != nil || filterTotal != 1 || filters["ingestion_status"].(map[string]int64)[common.COMPLETED] != 1 {
+		t.Fatalf("filter completed count: got %v (total %d), err %v", filters, filterTotal, err)
+	}
+
+	mixedOpts := DocumentListOptions{KbID: "kb-legacy", RunStatuses: []string{"UNSTART", common.COMPLETED}, Limit: len(tests)}
+	documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, mixedOpts)
+	if err != nil || total != 5 || len(documents) != 5 {
+		t.Fatalf("filter mixed statuses: got %d (total %d), err %v", len(documents), total, err)
+	}
+	wantMixed := map[string]bool{
+		"doc-unstart": true, "doc-empty": true, "doc-completed": true, "doc-unknown": true, "doc-empty-task-wins": true,
+	}
+	for _, document := range documents {
+		delete(wantMixed, document.ID)
+	}
+	if len(wantMixed) != 0 {
+		t.Fatalf("mixed status filter missed documents: %v", wantMixed)
+	}
+	ids, err = dao.ListIDsByKBIDWithOptions(t.Context(), db, mixedOpts)
+	if err != nil || len(ids) != 5 {
+		t.Fatalf("filter mixed document IDs: got %v, err %v", ids, err)
+	}
+
+	filters, filterTotal, err = dao.GetFilterByKBID(t.Context(), db, DocumentListOptions{KbID: "kb-legacy"})
+	if err != nil || filterTotal != int64(len(tests)) {
+		t.Fatalf("get legacy filter counts: total %d, err %v", filterTotal, err)
+	}
+	counts := filters["ingestion_status"].(map[string]int64)
+	wantCounts := map[string]int64{"UNSTART": 4, common.RUNNING: 2, common.STOPPED: 1, common.COMPLETED: 1, common.FAILED: 1, common.SCHEDULED: 1}
+	for status, want := range wantCounts {
+		if got := counts[status]; got != want {
+			t.Errorf("filter count for %s = %d, want %d", status, got, want)
+		}
+	}
+
+	wantAscending := []string{common.COMPLETED, common.FAILED, common.RUNNING, common.RUNNING, common.SCHEDULED, common.STOPPED, "UNSTART", "UNSTART", "UNSTART", "UNSTART"}
+	for _, desc := range []bool{false, true} {
+		documents, total, err = dao.ListByKBIDWithOptions(t.Context(), db, DocumentListOptions{
+			KbID: "kb-legacy", OrderBy: "ingestion_status", Desc: desc, Limit: len(tests),
+		})
+		if err != nil || total != int64(len(tests)) || len(documents) != len(tests) {
+			t.Fatalf("sort legacy statuses (desc=%t): got %d (total %d), err %v", desc, len(documents), total, err)
+		}
+		for i, document := range documents {
+			want := wantAscending[i]
+			if desc {
+				want = wantAscending[len(wantAscending)-1-i]
+			}
+			if document.IngestionStatus == nil || *document.IngestionStatus != want {
+				t.Errorf("sorted status %d (desc=%t) = %v, want %s", i, desc, document.IngestionStatus, want)
+			}
+		}
+	}
+
+	for _, test := range tests {
+		var stored string
+		if err := db.Table("document").Select("run").Where("id = ?", "doc-"+test.id).Scan(&stored).Error; err != nil {
+			t.Fatalf("read legacy run for %s: %v", test.id, err)
+		}
+		if stored != test.run {
+			t.Fatalf("legacy run for %s changed from %q to %q", test.id, test.run, stored)
+		}
 	}
 }
 
@@ -452,3 +623,74 @@ func TestDocumentDAOGetParsingStatusByKBID(t *testing.T) {
 }
 
 func sp(s string) *string { return &s }
+
+func TestDocumentListParserConfigsByKBIDs(t *testing.T) {
+	db := setupDocumentTestDB(t)
+	dao := NewDocumentDAO()
+	ctx := t.Context()
+
+	// Empty kbIDs returns nil, nil
+	res, err := dao.ListParserConfigsByKBIDs(ctx, db, nil)
+	if err != nil || res != nil {
+		t.Fatalf("expected nil, nil for empty kbIDs, got res=%v, err=%v", res, err)
+	}
+
+	// Doc 1: no tag_file_id (should be filtered out by SQL query)
+	db.Create(&entity.Document{
+		ID:           "doc-no-tag",
+		KbID:         "kb-1",
+		ParserConfig: entity.JSONMap{"pages": []any{1, 5}},
+	})
+	// Doc 2: empty parser_config
+	db.Create(&entity.Document{
+		ID:           "doc-empty-config",
+		KbID:         "kb-1",
+		ParserConfig: entity.JSONMap{},
+	})
+	// Doc 3: has tag_file_id
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-1",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-1"},
+		},
+	})
+	// Doc 4: identical parser_config in kb-1 (should collapse via DISTINCT)
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-1-dup",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-1"},
+		},
+	})
+	// Doc 5: distinct tag in kb-1
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-2",
+		KbID: "kb-1",
+		ParserConfig: entity.JSONMap{
+			"tags": map[string]any{"tag_file_id": "file-2"},
+		},
+	})
+	// Doc 6: tag in kb-2
+	db.Create(&entity.Document{
+		ID:   "doc-with-tag-kb2",
+		KbID: "kb-2",
+		ParserConfig: entity.JSONMap{
+			"Extractor:Auto": map[string]any{
+				"tags": map[string]any{"tag_file_id": "file-3"},
+			},
+		},
+	})
+
+	res, err = dao.ListParserConfigsByKBIDs(ctx, db, []string{"kb-1", "kb-2"})
+	if err != nil {
+		t.Fatalf("ListParserConfigsByKBIDs failed: %v", err)
+	}
+
+	if len(res["kb-1"]) != 2 {
+		t.Fatalf("expected 2 distinct configs for kb-1, got %d: %v", len(res["kb-1"]), res["kb-1"])
+	}
+	if len(res["kb-2"]) != 1 {
+		t.Fatalf("expected 1 config for kb-2, got %d: %v", len(res["kb-2"]), res["kb-2"])
+	}
+}

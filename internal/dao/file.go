@@ -19,11 +19,12 @@ package dao
 import (
 	"context"
 	"fmt"
-	"log"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/utility"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -475,12 +476,12 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 
 	if len(existing) > 0 {
 		if len(existing) > 1 {
-			log.Printf("[WARN] Found %d duplicate '%s' folders under root %s, keeping only the first",
-				len(existing), DatasetFolderName, rootID)
+			common.Warn("Found duplicate folders under root, keeping only the first",
+				zap.Int("duplicates", len(existing)), zap.String("name", DatasetFolderName), zap.String("root_id", rootID))
 			keepID := existing[0].ID
 			for _, dup := range existing[1:] {
 				if err := reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate folder %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate folder", err, zap.String("folder_id", dup.ID))
 				}
 			}
 		}
@@ -534,12 +535,12 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 
 	if len(existingFiles) > 0 {
 		if len(existingFiles) > 1 {
-			log.Printf("[WARN] Found %d duplicate entries named '%s' under parent %s, keeping only the first",
-				len(existingFiles), name, parentID)
+			common.Warn("Found duplicate entries under parent, keeping only the first",
+				zap.Int("duplicates", len(existingFiles)), zap.String("name", name), zap.String("parent_id", parentID))
 			keepID := existingFiles[0].ID
 			for _, dup := range existingFiles[1:] {
 				if err = reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate file entry %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate file entry", err, zap.String("entry_id", dup.ID))
 				}
 			}
 		}

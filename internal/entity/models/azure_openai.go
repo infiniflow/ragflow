@@ -39,7 +39,7 @@ func NewAzureOpenAIModel(baseURL map[string]string, urlSuffix URLSuffix) *AzureO
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 			// Azure OpenAI authenticates with the non-standard "api-key"
 			// header instead of "Authorization: Bearer".
 			authHeader: func(cfg *APIConfig) (string, string) {
@@ -110,7 +110,7 @@ func (a *AzureOpenAIModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 // ChatStreamlyWithSender sends messages and streams the response via the

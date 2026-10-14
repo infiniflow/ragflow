@@ -60,22 +60,19 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 		return nil, fmt.Errorf("datasetnav: embedding model service not initialized")
 	}
 	name := e.embdModelName
+	var model *modelModule.EmbeddingModel
 	if name == "" {
-		// Resolve the tenant's default embedding model composite reference
-		// ("<model>@<instance>@<provider>") — NOT the tenant id. Passing the
-		// tenant id as the model ref makes ResolveModelConfig parse it as a
-		// "model@provider" key, which fails with "provider name missing in model
-		// name: <tenant_id>". Mirrors knowledge_compiler_wiring.go's chat-model
-		// default resolution.
-		ref, err := e.modelSvc.GetTenantDefaultModelRef(ctx, tenantID, entity.ModelTypeEmbedding)
+		target, err := e.modelSvc.modelSolver().ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeEmbedding)
 		if err != nil {
 			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
 		}
-		name = ref
-	}
-	model, err := e.modelSvc.GetEmbeddingModel(ctx, tenantID, name)
-	if err != nil {
-		return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
+	} else {
+		target, err := e.modelSvc.modelSolver().ResolveModelConfig(ctx, tenantID, entity.ModelTypeEmbedding, name)
+		if err != nil {
+			return nil, fmt.Errorf("datasetnav: resolve embedding model for tenant %s: %w", tenantID, err)
+		}
+		model = modelModule.NewEmbeddingModel(target.Driver, &target.ModelName, target.APIConfig, target.MaxTokens)
 	}
 	nonEmpty := make([]string, 0, len(texts))
 	for _, t := range texts {
@@ -86,7 +83,8 @@ func (e *NavEmbedder) encode(ctx context.Context, tenantID string, texts []strin
 	if len(nonEmpty) == 0 {
 		return nil, nil
 	}
-	embeds, err := model.ModelDriver.Embed(ctx, model.ModelName, modelModule.EmbedRequest{Texts: nonEmpty, Query: query}, model.APIConfig, nil, nil)
+	request := modelModule.EmbedRequest{Texts: nonEmpty, Query: query}
+	embeds, err := model.Embed(ctx, request, nil, nil)
 	if err != nil {
 		return nil, err
 	}

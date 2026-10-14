@@ -439,7 +439,7 @@ func (s *SkillSpaceService) asyncDeleteSpace(ctx context.Context, spaceID, folde
 
 	// Step 1: Delete the search index
 	if docEngine != nil {
-		indexName := getSkillIndexName(tenantID, spaceID)
+		indexName := SkillIndexName(tenantID, spaceID)
 		common.Info("Async deleting space index", zap.String("index", indexName), zap.String("spaceID", spaceID))
 		deleteCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		if err := docEngine.DropChunkStore(deleteCtx, indexName, "skill"); err != nil {

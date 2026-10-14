@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/xuri/excelize/v2"
 
@@ -467,7 +468,7 @@ func TestLlmtagChunk_ColdStartFallback(t *testing.T) {
 
 func TestParseCSVQuoteAwareReader(t *testing.T) {
 	text := "\"RAGFlow, the guide\",RAG\nplain line,LLM"
-	result := parseCSVQuoteAwareReader(strings.NewReader(text))
+	result := parseCSVQuoteAwareReader(strings.NewReader(text), ',')
 	if len(result) != 2 {
 		t.Fatalf("expected 2 examples, got %d", len(result))
 	}
@@ -482,6 +483,54 @@ func TestParseCSVQuoteAwareReader(t *testing.T) {
 	}
 	if len(result[1].Tags) != 1 || result[1].Tags[0] != "LLM" {
 		t.Errorf("tags[1] = %v", result[1].Tags)
+	}
+}
+
+// A quoted field may span physical lines; Python's single csv.reader keeps it
+// in one record (infiniflow/ragflow#16881 fixes the same for qa.csv).
+func TestParseCSVQuoteAwareReaderMultilineField(t *testing.T) {
+	text := "\"who is\nRAGFlow?\",RAG\nplain line,LLM"
+	result := parseCSVQuoteAwareReader(strings.NewReader(text), ',')
+	if len(result) != 2 {
+		t.Fatalf("expected 2 examples, got %d (%+v)", len(result), result)
+	}
+	if result[0].Content != "who is\nRAGFlow?" {
+		t.Errorf("content[0] = %q", result[0].Content)
+	}
+	if len(result[0].Tags) != 1 || result[0].Tags[0] != "RAG" {
+		t.Errorf("tags[0] = %v", result[0].Tags)
+	}
+	if result[1].Content != "plain line" {
+		t.Errorf("content[1] = %q", result[1].Content)
+	}
+}
+
+// When a multi-line record is not a (content, tags) pair, the raw span - quotes
+// and embedded newline included - becomes body text, like Python's raw join.
+func TestParseCSVQuoteAwareReaderMultilineBody(t *testing.T) {
+	text := "\"body start\nbody end\"\nquestion,RAG"
+	result := parseCSVQuoteAwareReader(strings.NewReader(text), ',')
+	if len(result) != 1 {
+		t.Fatalf("expected 1 example, got %d (%+v)", len(result), result)
+	}
+	if result[0].Content != "\"body start\nbody end\"\nquestion" {
+		t.Errorf("content[0] = %q", result[0].Content)
+	}
+	if len(result[0].Tags) != 1 || result[0].Tags[0] != "RAG" {
+		t.Errorf("tags[0] = %v", result[0].Tags)
+	}
+}
+
+// Blank lines are not reported by encoding/csv, but Python feeds them to the
+// reader as empty records; they must still separate accumulated body text.
+func TestParseCSVQuoteAwareReaderBlankLine(t *testing.T) {
+	text := "first,RAG\n\nsecond,LLM"
+	result := parseCSVQuoteAwareReader(strings.NewReader(text), ',')
+	if len(result) != 2 {
+		t.Fatalf("expected 2 examples, got %d (%+v)", len(result), result)
+	}
+	if result[0].Content != "first" || result[1].Content != "second" {
+		t.Errorf("contents = %q, %q", result[0].Content, result[1].Content)
 	}
 }
 
@@ -542,6 +591,25 @@ func TestParseTagSourceByFilename(t *testing.T) {
 	}
 	if _, err := parseTagSourceByFilename(txtData, "tags.json"); err == nil {
 		t.Error("unsupported extension: expected an error")
+	}
+}
+
+// rag/app/tag.py's .csv path switches to TAB as soon as the file contains one,
+// while the tags column stays comma-separated.
+func TestParseTagSourceByFilename_TabSeparatedCSV(t *testing.T) {
+	data := []byte("Document Title\tTag1,Tag2\nAnother Document\tTag3\n")
+	got, err := parseTagSourceByFilename(data, "tags.csv")
+	if err != nil {
+		t.Fatalf("csv: unexpected error: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("csv: expected 2 examples, got %d (%+v)", len(got), got)
+	}
+	if got[0].Content != "Document Title" || len(got[0].Tags) != 2 || got[0].Tags[0] != "Tag1" || got[0].Tags[1] != "Tag2" {
+		t.Errorf("csv[0] = %+v", got[0])
+	}
+	if got[1].Content != "Another Document" || len(got[1].Tags) != 1 || got[1].Tags[0] != "Tag3" {
+		t.Errorf("csv[1] = %+v", got[1])
 	}
 }
 
@@ -791,93 +859,24 @@ func TestOrderedTagWeights_MarshalJSON(t *testing.T) {
 	}
 }
 
-func TestContainsCJK(t *testing.T) {
-	tests := []struct {
-		input string
-		want  bool
-	}{
-		{"Hello world", false},
-		{"Hello 世界", true},
-		{"这是一段中文", true},
-		{"12345!@#$", false},
-		{"\u3400\u3401", true}, // CJK Extension A
-	}
-	for _, tt := range tests {
-		if got := containsCJK(tt.input); got != tt.want {
-			t.Errorf("containsCJK(%q) = %v, want %v", tt.input, got, tt.want)
-		}
-	}
-}
-
-func TestContainsCJK_LanguageAutoDetection(t *testing.T) {
-	tests := []struct {
-		name  string
-		input string
-		want  bool
-	}{
-		{"pure english text", "This is pure English text without any Asian characters.", false},
-		{"pure ascii numbers and symbols", "1234567890 !@#$%^&*()_+=-~`[]{}\\|;':\",.<>/?", false},
-		{"simplified chinese characters", "这是简体中文字符串", true},
-		{"traditional chinese characters", "這是繁體中文詞彙", true},
-		{"mixed english and chinese", "RAGFlow 智能知识库问答系统 version 2.0", true},
-		{"single CJK character boundary low", "\u4e00", true},  // U+4E00: '一'
-		{"single CJK character boundary high", "\u9fa5", true}, // U+9FA5
-		{"CJK Extension A boundary low", "\u3400", true},       // U+3400
-		{"CJK Extension A boundary high", "\u4dbf", true},      // U+4DBF
-		{"non-CJK unicode characters (latin accents)", "Café, résumé, naïve, señor", false},
-		{"greek unicode characters", "αβγδε", false},
-		{"cyrillic unicode characters", "Привет мир", false},
-		{"empty string", "", false},
-		{"whitespace only", "   \t\r\n   ", false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := containsCJK(tt.input)
-			if got != tt.want {
-				t.Errorf("containsCJK(%q) = %v, want %v", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestPopulateTagKwd_LLMTagChunk(t *testing.T) {
+func TestLLMTagChunkWritesOnlyTagFeas(t *testing.T) {
 	capt := pushCapturingTagChat(t)
 	chunk := map[string]any{"text": "some content"}
 	allTags := map[string]float64{"RAG": 0.5, "vector database": 0.5}
 
 	llmTagChunk(t.Context(), nil, capt, chunk, allTags, nil, nil, "test@test", "test@test", "test_driver", "test_model", "test_key", "", 3, nil)
 
-	tagKwd, ok := chunk["tag_kwd"].([]string)
-	if !ok {
-		t.Fatalf("expected chunk['tag_kwd'] to be []string, got %T (%v)", chunk["tag_kwd"], chunk["tag_kwd"])
+	feas, ok := chunk[common.TAG_FLD].(OrderedTagWeights)
+	if !ok || len(feas) != 2 {
+		t.Fatalf("expected 2 tag_feas weights, got %T (%v)", chunk[common.TAG_FLD], chunk[common.TAG_FLD])
 	}
-	if len(tagKwd) != 2 {
-		t.Fatalf("expected 2 tags in tag_kwd, got %d: %v", len(tagKwd), tagKwd)
+	if _, ok := feas["RAG"]; !ok {
+		t.Fatalf("expected tag_feas to contain RAG, got %v", feas)
 	}
-	// Verify strict score-descending order: RAG (8) > vector database (6)
-	if tagKwd[0] != "RAG" || tagKwd[1] != "vector database" {
-		t.Fatalf("expected tag_kwd to be ordered descending by score ['RAG', 'vector database'], got: %v", tagKwd)
-	}
-	if chunk[common.TAG_FLD] == nil {
-		t.Fatal("expected tag_feas to be populated")
-	}
-}
-
-func TestSortedTagWeightsKeys(t *testing.T) {
-	weights := map[string]int{
-		"Low":     3,
-		"Highest": 9,
-		"Medium":  6,
-		"Another": 6,
-	}
-	got := sortedTagWeightsKeys(weights)
-	expected := []string{"Highest", "Another", "Medium", "Low"}
-	if len(got) != len(expected) {
-		t.Fatalf("length mismatch: got %d, want %d", len(got), len(expected))
-	}
-	if got[0] != "Highest" || got[3] != "Low" {
-		t.Fatalf("sortedTagWeightsKeys order mismatch: %v", got)
+	// The tagged dataset writes only tag_feas; tag_kwd belongs to the tag
+	// source, so it must not be written onto the chunk (Python apply_tags).
+	if _, ok := chunk["tag_kwd"]; ok {
+		t.Fatalf("tag_kwd must not be written onto the tagged chunk, got %v", chunk["tag_kwd"])
 	}
 }
 
@@ -900,7 +899,7 @@ func TestCleanTitle_PreservesVersionNumbers(t *testing.T) {
 	}
 }
 
-func TestMatchAndTagChunk_TagKwdPopulated(t *testing.T) {
+func TestMatchAndTagChunkWritesOnlyTagFeas(t *testing.T) {
 	tokenizer.SetEngineType("infinity")
 	t.Cleanup(func() { tokenizer.SetEngineType("") })
 	tok := tokenizer.New("English")
@@ -928,31 +927,20 @@ func TestMatchAndTagChunk_TagKwdPopulated(t *testing.T) {
 		t.Fatalf("expected chunk[%q] to be non-empty OrderedTagWeights, got %T (%v)", common.TAG_FLD, chunk[common.TAG_FLD], chunk[common.TAG_FLD])
 	}
 
-	// Verify chunk["tag_kwd"] is populated as []string
-	kwds, ok := chunk["tag_kwd"].([]string)
-	if !ok || len(kwds) == 0 {
-		t.Fatalf("expected chunk['tag_kwd'] to be non-empty []string, got %T (%v)", chunk["tag_kwd"], chunk["tag_kwd"])
+	// The tagged dataset writes only tag_feas; tag_kwd belongs to the tag
+	// source, so it must not be written onto the chunk (Python apply_tags).
+	if _, ok := chunk["tag_kwd"]; ok {
+		t.Fatalf("tag_kwd must not be written onto the tagged chunk, got %v", chunk["tag_kwd"])
 	}
 
-	// Verify lengths match
-	if len(kwds) != len(feas) {
-		t.Fatalf("tag_kwd length (%d) != tag_feas length (%d)", len(kwds), len(feas))
+	// The returned TaggedChunk still carries the tag list for LLM cold-start
+	// examples, and every returned tag must have a matching weight.
+	if len(res.Tags) == 0 {
+		t.Fatal("expected res.Tags to be non-empty")
 	}
-
-	// Verify every tag in tag_kwd is present in tag_feas
-	for _, k := range kwds {
-		if _, exists := feas[k]; !exists {
-			t.Errorf("tag %q in tag_kwd not found in tag_feas %v", k, feas)
-		}
-	}
-
-	// Verify res.Tags matches chunk["tag_kwd"]
-	if len(res.Tags) != len(kwds) {
-		t.Fatalf("res.Tags length (%d) != chunk['tag_kwd'] length (%d)", len(res.Tags), len(kwds))
-	}
-	for i, tag := range res.Tags {
-		if tag != kwds[i] {
-			t.Errorf("res.Tags[%d] = %q, want %q", i, tag, kwds[i])
+	for _, tag := range res.Tags {
+		if _, exists := feas[tag]; !exists {
+			t.Errorf("tag %q in res.Tags not found in tag_feas %v", tag, feas)
 		}
 	}
 }
@@ -1593,5 +1581,76 @@ func TestMatchAndTagChunk_RankDecayGradientScores(t *testing.T) {
 	}
 	if dbScore <= cloudScore {
 		t.Errorf("expected secondary Database (%d) > peripheral CloudInfra (%d)", dbScore, cloudScore)
+	}
+}
+
+func TestTagSourceFileRowCacheExpiresAndCopies(t *testing.T) {
+	c := &tagSourceFileRowCache{items: make(map[string]tagSourceFileRow, 4)}
+	now := time.Now()
+	loc := "bucket/key.xlsx"
+	in := &entity.File{ID: "f1", Name: "tags.xlsx", Location: &loc}
+
+	stored := c.store("k", in, now)
+	if stored == in {
+		t.Fatal("store must hand back a copy, not the caller's row")
+	}
+	stored.Name = "mutated.xlsx" // mutating the returned row must not poison the cache
+	if got, ok := c.load("k", now.Add(time.Second)); !ok || got.Name != "tags.xlsx" {
+		t.Fatalf("cache hit lost the original row: got %+v ok=%v", got, ok)
+	}
+	if _, ok := c.load("k", now.Add(tagSourceFileRowTTL+time.Second)); ok {
+		t.Fatal("row must expire after tagSourceFileRowTTL")
+	}
+	if _, ok := c.load("missing", now); ok {
+		t.Fatal("unknown key must miss")
+	}
+}
+
+func TestTagSourceFileRowCacheEvictsOldest(t *testing.T) {
+	c := &tagSourceFileRowCache{items: make(map[string]tagSourceFileRow, tagSourceFileRowCacheMax)}
+	now := time.Now()
+	for i := 0; i < tagSourceFileRowCacheMax; i++ {
+		c.store(fmt.Sprintf("k%03d", i), &entity.File{ID: fmt.Sprintf("k%03d", i)}, now)
+	}
+	if len(c.items) != tagSourceFileRowCacheMax {
+		t.Fatalf("expected a full cache, got %d entries", len(c.items))
+	}
+	// One more insert must drop the oldest key instead of growing unbounded.
+	c.store("newest", &entity.File{ID: "newest"}, now)
+	if len(c.items) != tagSourceFileRowCacheMax {
+		t.Fatalf("expected the cache to stay bounded, got %d entries", len(c.items))
+	}
+	if _, ok := c.load("k000", now); ok {
+		t.Fatal("the oldest row should have been evicted")
+	}
+	if got, ok := c.load("newest", now); !ok || got.ID != "newest" {
+		t.Fatalf("the newest row should survive, got %+v ok=%v", got, ok)
+	}
+}
+
+// roundInt must match Python's round(), which is round-half-to-even:
+// round(0.5) == 0, round(1.5) == 2, round(2.5) == 2, round(3.5) == 4. The old
+// int(f+0.5) form rounded halves away from zero and returned 3 for 2.5.
+func TestRoundIntIsHalfToEvenLikePython(t *testing.T) {
+	cases := []struct {
+		in   float64
+		want int
+	}{
+		{0.4, 0},
+		{0.5, 0},
+		{0.6, 1},
+		{1.5, 2},
+		{2.5, 2},
+		{3.5, 4},
+		{4.5, 4},
+		{-0.5, 0},
+		{-1.5, -2},
+		{-2.5, -2},
+		{9.0, 9},
+	}
+	for _, c := range cases {
+		if got := roundInt(c.in); got != c.want {
+			t.Errorf("roundInt(%v) = %d, want %d", c.in, got, c.want)
+		}
 	}
 }

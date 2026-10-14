@@ -21,6 +21,10 @@ Based on the provided document or chat history, add citations to the input text 
 6. **Direct attributions**: What someone said, did, or believes
 7. **Predictions/forecasts**: Future projections, trend analyses
 8. **Controversial claims**: Disputed facts, minority opinions
+9. **List/enumeration answers**: When the answer lists several things (people, places, dates,
+   events), cite EACH element with the passage that states it — one citation per element, never
+   one citation for the whole list. If you cannot cite an element, say which one you cannot;
+   never write that "some of the list" is supported.
 
 ## What Should NOT Be Cited:
 - Common knowledge (e.g., "The sun rises in the east")

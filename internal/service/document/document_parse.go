@@ -8,11 +8,14 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	"ragflow/internal/ingestion/knowledge_compile"
+	ingestionpipeline "ragflow/internal/ingestion/pipeline"
 	"ragflow/internal/storage"
 
 	"gorm.io/gorm"
@@ -28,6 +31,10 @@ var documentParseLocks = struct {
 	sync.Mutex
 	locks map[string]*documentParseLock
 }{locks: make(map[string]*documentParseLock)}
+
+const (
+	cleanupBatchTimeout = 30 * time.Second
+)
 
 func lockDocumentParse(docID string) func() {
 	documentParseLocks.Lock()
@@ -49,6 +56,20 @@ func lockDocumentParse(docID string) func() {
 		}
 		documentParseLocks.Unlock()
 	}
+}
+
+// purgeTaskStateForCleanup removes the per-chunk cache state for a task before
+// its row is deleted. The bounded context makes Redis outages and hung clients
+// observable to the caller instead of allowing a destructive task/document
+// delete to proceed with stale cache state.
+func (s *DocumentService) purgeTaskStateForCleanup(ctx context.Context, taskID string) error {
+	purgeTaskState := s.purgeTaskState
+	if purgeTaskState == nil {
+		purgeTaskState = ingestionpipeline.PurgeTaskState
+	}
+	batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+	defer cancel()
+	return purgeTaskState(batchCtx, taskID)
 }
 
 // StartParseDocuments starts parsing a document via the DSL ingestion
@@ -124,7 +145,18 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 		if task.Status == common.RUNNING || task.Status == common.STOPPING {
 			return fmt.Errorf("document %s ingestion task is %s; stop it and wait for a terminal state before re-parsing", doc.ID, task.Status)
 		}
+		if task.Status == common.CREATED || task.Status == common.SCHEDULED {
+			if err := s.ingestionTaskSvc.SupersedeUnstartedTask(ctx, task.ID); err != nil {
+				return fmt.Errorf("supersede queued ingestion task for document %s: %w", doc.ID, err)
+			}
+			task.Status = common.STOPPED
+		}
 		taskExisted = true
+	}
+	if task != nil {
+		if err := s.purgeTaskStateForCleanup(ctx, task.ID); err != nil {
+			return fmt.Errorf("purge task state for document %s: %w", doc.ID, err)
+		}
 	}
 
 	// Delete terminal, CREATED, and SCHEDULED ingestion tasks atomically, leaving
@@ -138,15 +170,6 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if taskExisted && deleted == 0 {
 		return fmt.Errorf("document %s ingestion task started running; stop it before re-parsing", doc.ID)
 	}
-	// The deleted CREATED/SCHEDULED task (if any) owned an open
-	// pipeline-operation-log row that no worker will ever close. Drop that
-	// run's row only: a concurrent re-parse may already own a newer one.
-	if deleted > 0 && task != nil && task.PipelineLogID != nil {
-		if err := s.pipelineLogDAO.DeleteOpenLogByID(ctx, dao.DB, *task.PipelineLogID); err != nil {
-			common.Error(fmt.Sprintf("clear open pipeline log for document %s", doc.ID), err)
-		}
-	}
-
 	if err := s.clearDocumentAndKBCountersForRerun(doc.ID, doc.KbID); err != nil {
 		return err
 	}
@@ -163,8 +186,27 @@ func (s *DocumentService) clearDocumentParseResults(ctx context.Context, doc *en
 	if !exists {
 		return nil
 	}
+	variants, taskTypes, err := s.documentKnowledgeCompileTypes(ctx, tenantID, doc.KbID, doc.ID)
+	if err != nil {
+		return fmt.Errorf("resolve generated products for document %s: %w", doc.ID, err)
+	}
+	if err := s.deleteDocumentGeneratedChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
+		return fmt.Errorf("delete generated products for document %s: %w", doc.ID, err)
+	}
+	if err := s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID); err != nil {
+		return fmt.Errorf("delete chunk images for document %s: %w", doc.ID, err)
+	}
 	if err = s.deleteSourceChunks(ctx, tenantID, doc.KbID, doc.ID); err != nil {
 		return err
+	}
+	if len(variants) == 0 {
+		common.Warn(fmt.Sprintf("skip document cleanup event for %s: existing knowledge products have no routing metadata", doc.ID))
+		return nil
+	}
+	publishCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if err := knowledge_compile.PublishDeleted(publishCtx, tenantID, doc.KbID, doc.ID, variants, taskTypes); err != nil {
+		return fmt.Errorf("publish document cleanup for %s: %w", doc.ID, err)
 	}
 	return nil
 }
@@ -223,10 +265,6 @@ func (s *DocumentService) clearKBChunkNumWhenRerun(doc *entity.Document) error {
 }
 
 func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID string, docIDs []string) ([]*service.ParseDocumentResponse, error) {
-	// create document parse id
-	// save to task table
-	// send to message queue
-
 	// deduplicate the document id
 	uniqueDocIDs := common.Deduplicate(docIDs)
 	if uniqueDocIDs == nil || len(uniqueDocIDs) == 0 {
@@ -263,26 +301,6 @@ func (s *DocumentService) ParseDocuments(ctx context.Context, datasetID, userID 
 			})
 			continue
 		}
-
-		// create task for each document
-		//task := &entity.IngestionTask{
-		//	ID:         utility.GenerateToken(),
-		//	DocumentID: docID,
-		//	UserID:     userID,
-		//}
-
-		// save the task to database
-		//err = s.ingestionTaskDAO.Create(task)
-		//if err != nil {
-		//	errorMessage := err.Error()
-		//	responses = append(responses, &service.ParseDocumentResponse{
-		//		DocumentID: docID,
-		//		Result:     &errorMessage,
-		//	})
-		//	continue
-		//}
-
-		// Send task to message queue
 
 	}
 
@@ -411,10 +429,8 @@ func (s *DocumentService) CancelDocParse(ctx context.Context, doc *entity.Docume
 }
 
 func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *entity.Document, tenantID string, parserID *string, pipelineID *string) error {
-	progressMsg := ""
 	updates := map[string]interface{}{
-		"progress":     0,
-		"progress_msg": progressMsg,
+		"progress": 0,
 	}
 	if parserID != nil {
 		updates["parser_id"] = *parserID
@@ -448,38 +464,59 @@ func (s *DocumentService) resetDocumentForReparse(ctx context.Context, doc *enti
 }
 
 func (s *DocumentService) deleteChunkImages(ctx context.Context, doc *entity.Document, indexName string) {
-	if s.docEngine == nil {
+	if doc == nil {
 		return
+	}
+	_ = s.deleteDocumentChunkImages(ctx, indexName, doc.KbID, doc.ID)
+}
+
+// deleteDocumentChunkImages removes source chunk image objects in bounded
+// search batches. Repeating the operation is safe because deleting an absent
+// object is a no-op.
+func (s *DocumentService) deleteDocumentChunkImages(ctx context.Context, indexName, datasetID, documentID string) error {
+	if s.docEngine == nil {
+		return nil
 	}
 	storageImpl := storage.GetStorageFactory().GetStorage()
 	if storageImpl == nil {
-		return
+		return nil
 	}
 
 	const pageSize = 1000
 	for offset := 0; ; offset += pageSize {
-		result, err := s.docEngine.Search(ctx, &enginetypes.SearchRequest{
+		batchCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
+		result, err := s.docEngine.Search(batchCtx, &enginetypes.SearchRequest{
 			IndexNames:   []string{indexName},
-			KbIDs:        []string{doc.KbID},
+			KbIDs:        []string{datasetID},
 			Offset:       offset,
 			Limit:        pageSize,
-			SelectFields: []string{"id", "img_id"},
-			Filter:       map[string]interface{}{"doc_id": doc.ID},
-			MatchExprs:   nil,
-			OrderBy:      nil,
-			RankFeature:  nil,
+			SelectFields: []string{"id", "img_id", "compile_kwd"},
+			Filter:       map[string]interface{}{"doc_id": documentID},
 		})
-		if err != nil || result == nil || len(result.Chunks) == 0 {
-			return
+		if err != nil {
+			cancel()
+			return err
+		}
+		if result == nil || len(result.Chunks) == 0 {
+			cancel()
+			return nil
 		}
 		for _, chunk := range result.Chunks {
-			imageKey, ok := chunkImageStorageKey(doc.KbID, chunk)
-			if !ok {
+			if strings.TrimSpace(documentStoreString(chunk["compile_kwd"])) != "" {
 				continue
 			}
-			if storageImpl.ObjExist(ctx, doc.KbID, imageKey) {
-				_ = storageImpl.Remove(ctx, doc.KbID, imageKey)
+			imageKey, ok := chunkImageStorageKey(datasetID, chunk)
+			if !ok || !storageImpl.ObjExist(batchCtx, datasetID, imageKey) {
+				continue
 			}
+			if err := storageImpl.Remove(batchCtx, datasetID, imageKey); err != nil {
+				cancel()
+				return err
+			}
+		}
+		cancel()
+		if int64(offset+len(result.Chunks)) >= result.Total {
+			return nil
 		}
 	}
 }
@@ -551,11 +588,14 @@ func (s *DocumentService) updateDocumentStatusOnly(ctx context.Context, doc *ent
 	}
 
 	if s.docEngine != nil {
-		if err := s.updateSourceChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
+		if err := s.updateDocumentChunkAvailability(ctx, kb.TenantID, doc.KbID, doc.ID, status); err != nil {
 			return err
 		}
 	}
-	s.markDocumentWikiDirty(ctx, kb.TenantID, doc.KbID, doc.ID)
+	// A status transition changes document availability, not its parsed
+	// content. The status event handles dataset-level retraction/re-enable;
+	// scheduling a delayed Wiki recompilation here creates duplicate events
+	// and a visible 20-second oscillation.
 	s.publishKnowledgeCompileStatusChange(ctx, kb.TenantID, doc.KbID, doc.ID, status)
 	return nil
 }

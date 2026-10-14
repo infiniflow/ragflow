@@ -160,7 +160,8 @@ func mustDecodeBase64(t *testing.T, encoded string) []byte {
 }
 
 // TestCSVParser_DeepDocParseMethod asserts the CSV parser accepts the
-// default "deepdoc" parse_method and emits row IR.
+// default "deepdoc" parse_method and emits the segmented HTML table wire
+// shape.
 func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	p := NewCSVParser()
 	p.ConfigureFromSetup(map[string]any{"parse_method": "deepdoc"})
@@ -173,11 +174,11 @@ func TestCSVParser_DeepDocParseMethod(t *testing.T) {
 	if got, want := res.OutputFormat, "json"; got != want {
 		t.Fatalf("OutputFormat = %q, want %q", got, want)
 	}
-	if len(res.JSON) < 2 {
-		t.Fatalf("JSON items = %d, want at least header and one data row", len(res.JSON))
+	if len(res.JSON) != 1 {
+		t.Fatalf("JSON items = %d, want one HTML table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table_header" || res.JSON[1]["ck_type"] != "table_row" {
-		t.Fatalf("JSON items = %#v, want header and row", res.JSON)
+	if res.JSON[0]["ck_type"] != "table" {
+		t.Fatalf("JSON item = %#v, want a table item", res.JSON[0])
 	}
 }
 

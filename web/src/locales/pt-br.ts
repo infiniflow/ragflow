@@ -116,10 +116,12 @@ export default {
         'Realize um teste de recuperação para verificar se o RAGFlow pode recuperar o conteúdo pretendido para o LLM. Por favor, note que as alterações feitas aqui não são salvas automaticamente. Se você ajustar as configurações padrão aqui, como o peso de similaridade de palavras-chave, certifique-se de atualizar as configurações relacionadas de forma sincronizada nas configurações do assistente de chat ou nas configurações do operador de recuperação.',
       similarityThreshold: 'Limite de similaridade',
       similarityThresholdTip:
-        'O RAGFlow emprega uma combinação de similaridade de palavras-chave ponderada e similaridade de cosseno vetorial ponderada, ou uma combinação de similaridade de palavras-chave ponderada e pontuação de reranking ponderada durante a recuperação. Este parâmetro define o limite para similaridades entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo deste limite será excluído dos resultados. Por padrão, o limite é definido como 20. Isso significa que apenas os trechos com uma pontuação de similaridade híbrida de 20 ou mais serão recuperados.',
+        'Durante a recuperação, o RAGFlow usa uma combinação de similaridade ponderada de palavras-chave e similaridade de cosseno vetorial ponderada ou, quando um modelo de reranking é selecionado, uma combinação de similaridade ponderada de palavras-chave e pontuação de reranking ponderada. Este parâmetro define o limite de similaridade entre a consulta do usuário e os fragmentos. Qualquer fragmento com uma pontuação de similaridade abaixo desse limite será excluído dos resultados. Por padrão, o limite é definido como 20. Isso significa que apenas os fragmentos com uma pontuação de similaridade híbrida igual ou superior a 20 serão recuperados. Se o peso da similaridade vetorial for definido como 0, esse limite não se aplica.',
       vectorSimilarityWeight: 'Peso da similaridade de palavras-chave',
       vectorSimilarityWeightTip:
-        'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
+        'Define o peso da similaridade vetorial na pontuação de similaridade combinada, usada com a similaridade de cosseno vetorial ou com a pontuação de reranking. O total dos dois pesos deve ser igual a 1.0.',
+      keywordSimilarityWeightTip:
+        'Define o peso da similaridade de palavras-chave na pontuação de similaridade combinada. A soma dos pesos vetorial e de palavras-chave deve ser igual a 1.0.',
       testText: 'Texto de teste',
       testTextPlaceholder: 'Insira sua pergunta aqui!',
       testingLabel: 'Testando',
@@ -166,7 +168,7 @@ export default {
       rerankModel: 'Modelo de reranking',
       rerankPlaceholder: 'Por favor, selecione',
       rerankTip:
-        'Opcional. Se deixar em branco, o RAGFlow usará uma combinação de similaridade ponderada por palavra-chave e similaridade ponderada do cosseno vetorial; se um modelo de rerank for selecionado, uma pontuação ponderada de reranking substituirá a similaridade ponderada do cosseno vetorial. Esteja ciente de que usar um modelo de rerank aumentará significativamente o tempo de resposta do sistema. Se desejar usar um modelo de rerank, certifique-se de usar um reranker SaaS; se preferir um modelo de rerank implantado localmente, certifique-se de iniciar o RAGFlow com docker-compose-gpu.yml.',
+        'Opcional. Se deixar em branco, o RAGFlow usará uma combinação de similaridade ponderada por palavra-chave e similaridade ponderada do cosseno vetorial; se um modelo de rerank for selecionado, uma pontuação ponderada de reranking substituirá a similaridade ponderada do cosseno vetorial. Esteja ciente de que usar um modelo de rerank aumentará significativamente o tempo de resposta do sistema.',
       topK: 'Top-K',
       topKTip:
         'Usado em conjunto com o Rerank model, essa configuração define o número de trechos de texto a serem enviados ao modelo reranking especificado.',

@@ -6,8 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/service"
 )
 
 // escapeSQLLikePattern escapes the SQL LIKE wildcards ('%', '_') and
@@ -43,14 +45,21 @@ func (s *DocumentService) ListDocuments(ctx context.Context, page, pageSize int)
 			return nil, 0, fmt.Errorf("failed to get ingestion tasks for documents: %w", err)
 		}
 	}
+	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, taskMap)
+	if err != nil {
+		common.Warn(fmt.Sprintf("failed to get latest ingestion events for documents: %v", err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
+	}
 
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
 		var task *entity.IngestionTask
+		var latestEvent *service.IngestionEventItem
 		if taskMap != nil && doc != nil {
 			task = taskMap[doc.ID]
+			latestEvent = latestEventsByDocument[doc.ID]
 		}
-		responses[i] = s.toResponseWithTask(doc, task)
+		responses[i] = s.toResponseWithTask(doc, task, latestEvent)
 	}
 
 	return responses, total, nil
@@ -61,23 +70,14 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 		return map[string]string{}, nil
 	}
 
-	tenantIDs := []string{userID}
-	if userID != "" {
-		ids, err := dao.NewUserTenantDAO().GetTenantIDsByUserID(ctx, dao.DB, userID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to fetch user tenants: %w", err)
-		}
-		tenantIDs = append(tenantIDs, ids...)
-	}
-
-	documents, err := s.documentDAO.GetByIDsAndTenantIDs(ctx, dao.DB, docIDs, tenantIDs)
+	documents, err := s.documentDAO.GetByIDs(ctx, dao.DB, docIDs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch document thumbnails: %w", err)
 	}
 
 	result := make(map[string]string, len(documents))
 	for _, document := range documents {
-		if document == nil {
+		if document == nil || !s.kbDAO.Accessible(ctx, dao.DB, document.KbID, userID) {
 			continue
 		}
 
@@ -86,11 +86,7 @@ func (s *DocumentService) GetThumbnails(ctx context.Context, userID string, docI
 			if strings.HasPrefix(*document.Thumbnail, imgBase64Prefix) {
 				thumbnail = *document.Thumbnail
 			} else {
-				thumbnail = fmt.Sprintf(
-					"/api/v1/documents/images/%s-%s",
-					document.KbID,
-					*document.Thumbnail,
-				)
+				thumbnail = fmt.Sprintf("/api/v1/documents/%s/thumbnail", document.ID)
 			}
 		}
 
@@ -210,14 +206,21 @@ func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, 
 			return nil, 0, fmt.Errorf("failed to get ingestion tasks for documents: %w", err)
 		}
 	}
+	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, taskMap)
+	if err != nil {
+		common.Warn(fmt.Sprintf("failed to get latest ingestion events for documents: %v", err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
+	}
 
 	responses := make([]*DocumentResponse, len(documents))
 	for i, doc := range documents {
 		var task *entity.IngestionTask
+		var latestEvent *service.IngestionEventItem
 		if taskMap != nil && doc != nil {
 			task = taskMap[doc.ID]
+			latestEvent = latestEventsByDocument[doc.ID]
 		}
-		responses[i] = s.toResponseWithTask(doc, task)
+		responses[i] = s.toResponseWithTask(doc, task, latestEvent)
 	}
 
 	return responses, total, nil
@@ -226,16 +229,72 @@ func (s *DocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, 
 // toResponse convert model.Document to DocumentResponse
 func (s *DocumentService) toResponse(ctx context.Context, doc *entity.Document) (*DocumentResponse, error) {
 	if s.ingestionTaskDAO == nil || doc == nil || doc.ID == "" {
-		return s.toResponseWithTask(doc, nil), nil
+		return s.toResponseWithTask(doc, nil, nil), nil
 	}
 	task, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, doc.ID)
 	if err != nil {
 		return nil, fmt.Errorf("get ingestion task for document %s: %w", doc.ID, err)
 	}
-	return s.toResponseWithTask(doc, task), nil
+	latestEventsByDocument, err := s.latestIngestionEventsByDocument(ctx, map[string]*entity.IngestionTask{doc.ID: task})
+	if err != nil {
+		common.Warn(fmt.Sprintf("get latest ingestion event for document %s: %v", doc.ID, err))
+		latestEventsByDocument = make(map[string]*service.IngestionEventItem)
+	}
+	return s.toResponseWithTask(doc, task, latestEventsByDocument[doc.ID]), nil
 }
 
-func (s *DocumentService) toResponseWithTask(doc *entity.Document, task *entity.IngestionTask) *DocumentResponse {
+func (s *DocumentService) latestIngestionEventsByDocument(ctx context.Context, tasksByDocument map[string]*entity.IngestionTask) (map[string]*service.IngestionEventItem, error) {
+	result := make(map[string]*service.IngestionEventItem)
+	if len(tasksByDocument) == 0 {
+		return result, nil
+	}
+	runIDs := make([]string, 0, len(tasksByDocument))
+	for _, task := range tasksByDocument {
+		if task != nil && task.PipelineLogID != nil && *task.PipelineLogID != "" {
+			runIDs = append(runIDs, *task.PipelineLogID)
+		}
+	}
+	if len(runIDs) == 0 {
+		return result, nil
+	}
+	latestByRun, err := s.LatestIngestionEventsByPipelineLogIDs(ctx, runIDs)
+	if err != nil {
+		return nil, err
+	}
+	for documentID, task := range tasksByDocument {
+		if task == nil || task.PipelineLogID == nil {
+			continue
+		}
+		event := latestByRun[*task.PipelineLogID]
+		if event == nil {
+			continue
+		}
+		result[documentID] = event
+	}
+	return result, nil
+}
+
+// LatestIngestionEventsByPipelineLogIDs projects one real latest event for
+// every supplied run in a single batch query. Document list mappers receive
+// this data from their caller and never perform per-row event lookups.
+func (s *DocumentService) LatestIngestionEventsByPipelineLogIDs(ctx context.Context, pipelineLogIDs []string) (map[string]*service.IngestionEventItem, error) {
+	eventDAO := s.ingestionTaskLogDAO
+	if eventDAO == nil {
+		eventDAO = dao.NewIngestionTaskLogDAO()
+	}
+	latestByRun, err := eventDAO.LatestEventsByPipelineLogIDs(ctx, dao.DB, pipelineLogIDs)
+	if err != nil {
+		return nil, err
+	}
+	items := make(map[string]*service.IngestionEventItem, len(latestByRun))
+	for runID, event := range latestByRun {
+		item := service.IngestionEventItemFromLog(event)
+		items[runID] = &item
+	}
+	return items, nil
+}
+
+func (s *DocumentService) toResponseWithTask(doc *entity.Document, task *entity.IngestionTask, latestEvent *service.IngestionEventItem) *DocumentResponse {
 	if doc == nil {
 		return nil
 	}
@@ -265,26 +324,27 @@ func (s *DocumentService) toResponseWithTask(doc *entity.Document, task *entity.
 		ingestionStatus = task.Status
 	}
 	return &DocumentResponse{
-		ID:              doc.ID,
-		Name:            doc.Name,
-		KbID:            doc.KbID,
-		ParserID:        doc.ParserID,
-		PipelineID:      doc.PipelineID,
-		Type:            doc.Type,
-		SourceType:      doc.SourceType,
-		CreatedBy:       doc.CreatedBy,
-		Location:        doc.Location,
-		Size:            doc.Size,
-		TokenNum:        doc.TokenNum,
-		ChunkNum:        doc.ChunkNum,
-		Progress:        doc.Progress,
-		ProgressMsg:     doc.ProgressMsg,
-		ProcessBeginAt:  doc.ProcessBeginAt,
-		ProcessDuration: doc.ProcessDuration,
-		Suffix:          doc.Suffix,
-		IngestionStatus: ingestionStatus,
-		Status:          doc.Status,
-		CreatedAt:       createdAt,
-		UpdatedAt:       updatedAt,
+		ID:                   doc.ID,
+		Name:                 doc.Name,
+		KbID:                 doc.KbID,
+		ParserID:             doc.ParserID,
+		PipelineID:           doc.PipelineID,
+		Type:                 doc.Type,
+		SourceType:           doc.SourceType,
+		CreatedBy:            doc.CreatedBy,
+		Location:             doc.Location,
+		Size:                 doc.Size,
+		TokenNum:             doc.TokenNum,
+		ChunkNum:             doc.ChunkNum,
+		Progress:             doc.Progress,
+		ProgressMsg:          doc.ProgressMsg,
+		LatestIngestionEvent: latestEvent,
+		ProcessBeginAt:       doc.ProcessBeginAt,
+		ProcessDuration:      doc.ProcessDuration,
+		Suffix:               doc.Suffix,
+		IngestionStatus:      ingestionStatus,
+		Status:               doc.Status,
+		CreatedAt:            createdAt,
+		UpdatedAt:            updatedAt,
 	}
 }

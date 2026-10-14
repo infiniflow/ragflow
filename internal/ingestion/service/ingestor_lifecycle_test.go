@@ -438,6 +438,9 @@ func TestStartSchedulesCreatedTasks(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
+	if err := db.AutoMigrate(&entity.PipelineOperationLog{}); err != nil {
+		t.Fatalf("migrate pipeline operation log: %v", err)
+	}
 
 	_, _, _, taskID := testutil.SeedTestData(t, db)
 	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).

@@ -25,11 +25,12 @@ import (
 	"time"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-)
 
-const datasetLogDocumentID = "graph_raptor_x"
+	"gorm.io/gorm"
+)
 
 var allDatasetTaskTypes = []string{
 	kccommon.TaskTypeWiki,
@@ -105,6 +106,11 @@ func taskTypesForEntry(entry BacklogEntry) []string {
 	if taskTypes := taskTypesForVariants(entry.Variants); len(taskTypes) > 0 {
 		return taskTypes
 	}
+	if EventType(entry.EventType) == EventTypeDeleted || EventType(entry.EventType) == EventTypeDisabled {
+		// Retraction events must be scoped to the artifact types that existed on
+		// the document. Empty metadata means there is no safe type to log.
+		return nil
+	}
 	// An event with no routing metadata must remain visible in every possible
 	// dataset log. Returning the fallback per entry prevents an unknown entry
 	// from disappearing when other entries in the same batch are typed.
@@ -138,11 +144,13 @@ func taskTypesForEntries(entries []BacklogEntry) []string {
 		}
 	}
 	if len(seen) == 0 {
-		// Legacy events did not carry routing metadata. A deletion can affect any
-		// dataset artifact, so expose one log per supported category rather than
-		// incorrectly labeling the event as Wiki.
-		for _, taskType := range allDatasetTaskTypes {
-			seen[taskType] = struct{}{}
+		for _, entry := range entries {
+			if EventType(entry.EventType) != EventTypeDeleted && EventType(entry.EventType) != EventTypeDisabled {
+				for _, taskType := range allDatasetTaskTypes {
+					seen[taskType] = struct{}{}
+				}
+				break
+			}
 		}
 	}
 	return sortedTaskTypes(seen)
@@ -170,44 +178,57 @@ func startDatasetCompileLog(ctx context.Context, tenantID, datasetID, claimToken
 		}
 	}
 	if len(groups) == 0 {
-		for _, taskType := range allDatasetTaskTypes {
-			groups[taskType] = entries
+		for _, entry := range entries {
+			if EventType(entry.EventType) != EventTypeDeleted && EventType(entry.EventType) != EventTypeDisabled {
+				for _, taskType := range allDatasetTaskTypes {
+					groups[taskType] = entries
+				}
+				break
+			}
 		}
 	}
-	for _, taskType := range sortedTaskTypesFromGroups(groups) {
-		entryData := make([]any, 0, len(groups[taskType]))
-		for _, entry := range groups[taskType] {
-			entryData = append(entryData, map[string]any{
-				"doc_id":     entry.DocID,
-				"event_type": entry.EventType,
-				"variants":   entry.Variants,
-				"task_type":  taskType,
-			})
+	return kcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, taskType := range sortedTaskTypesFromGroups(groups) {
+			entryData := make([]any, 0, len(groups[taskType]))
+			for _, entry := range groups[taskType] {
+				entryData = append(entryData, map[string]any{
+					"doc_id":     entry.DocID,
+					"event_type": entry.EventType,
+					"variants":   entry.Variants,
+					"task_type":  taskType,
+				})
+			}
+			log := entity.PipelineOperationLog{
+				ID:              datasetCompileLogID(claimToken, taskType),
+				DocumentID:      entity.DatasetLogDocumentID,
+				TenantID:        tenantID,
+				KbID:            datasetID,
+				ParserID:        "knowledge_compile",
+				DocumentName:    taskType,
+				DocumentSuffix:  "",
+				DocumentType:    "dataset",
+				SourceFrom:      "knowledgebase",
+				Progress:        0,
+				ProcessBeginAt:  &now,
+				DSL:             entity.JSONMap{"entries": entryData, "task_type": taskType},
+				TaskType:        taskType,
+				OperationStatus: common.RUNNING,
+				Status:          &status,
+			}
+			result := tx.WithContext(ctx).Where("id = ?", log.ID).FirstOrCreate(&log)
+			if result.Error != nil {
+				return result.Error
+			}
+			if result.RowsAffected == 0 {
+				continue
+			}
+			message := fmt.Sprintf("Created automatic %s dataset task for %d document event(s)", taskType, len(groups[taskType]))
+			if err := createDatasetLogEvent(ctx, tx, log.ID, dao.EventTypeMessage, message); err != nil {
+				return err
+			}
 		}
-		message := timestampProgressMessage(fmt.Sprintf("Created automatic %s dataset task for %d document event(s)", taskType, len(groups[taskType])))
-		log := entity.PipelineOperationLog{
-			ID:              datasetCompileLogID(claimToken, taskType),
-			DocumentID:      datasetLogDocumentID,
-			TenantID:        tenantID,
-			KbID:            datasetID,
-			ParserID:        "knowledge_compile",
-			DocumentName:    taskType,
-			DocumentSuffix:  "",
-			DocumentType:    "dataset",
-			SourceFrom:      "knowledgebase",
-			Progress:        0,
-			ProgressMsg:     &message,
-			ProcessBeginAt:  &now,
-			DSL:             entity.JSONMap{"entries": entryData, "task_type": taskType},
-			TaskType:        taskType,
-			OperationStatus: common.RUNNING,
-			Status:          &status,
-		}
-		if err := kcDB.WithContext(ctx).Where("id = ?", log.ID).FirstOrCreate(&log).Error; err != nil {
-			return err
-		}
-	}
-	return nil
+		return nil
+	})
 }
 
 func updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, progress float64, message string) error {
@@ -223,25 +244,7 @@ func updateDatasetCompileLog(ctx context.Context, claimToken string, taskTypes [
 }
 
 func updateDatasetCompileLogForType(ctx context.Context, logID string, progress float64, message string) error {
-	var log entity.PipelineOperationLog
-	if err := kcDB.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
-		return err
-	}
-	progressMessage := ""
-	if log.ProgressMsg != nil {
-		progressMessage = *log.ProgressMsg
-	}
-	progressMessage = appendProgressMessage(progressMessage, timestampProgressMessage(message))
-	duration := log.ProcessDuration
-	if log.ProcessBeginAt != nil {
-		duration = max(0, time.Since(*log.ProcessBeginAt).Seconds())
-	}
-	return kcDB.WithContext(ctx).Model(&entity.PipelineOperationLog{}).Where("id = ?", logID).Updates(map[string]any{
-		"progress":         progress,
-		"progress_msg":     progressMessage,
-		"process_duration": duration,
-		"operation_status": common.RUNNING,
-	}).Error
+	return recordDatasetCompileLogEvent(ctx, logID, progress, common.RUNNING, dao.EventTypeMessage, message)
 }
 
 func finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes []string, operationStatus, message string, progress float64) error {
@@ -250,29 +253,45 @@ func finishDatasetCompileLog(ctx context.Context, claimToken string, taskTypes [
 	}
 	for _, taskType := range taskTypes {
 		logID := datasetCompileLogID(claimToken, taskType)
-		var log entity.PipelineOperationLog
-		if err := kcDB.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
-			return err
-		}
-		progressMessage := ""
-		if log.ProgressMsg != nil {
-			progressMessage = *log.ProgressMsg
-		}
-		progressMessage = appendProgressMessage(progressMessage, timestampProgressMessage(message))
-		duration := log.ProcessDuration
-		if log.ProcessBeginAt != nil {
-			duration = max(0, time.Since(*log.ProcessBeginAt).Seconds())
-		}
-		if err := kcDB.WithContext(ctx).Model(&entity.PipelineOperationLog{}).Where("id = ?", logID).Updates(map[string]any{
-			"progress":         progress,
-			"progress_msg":     progressMessage,
-			"process_duration": duration,
-			"operation_status": datasetLogOperationStatus(operationStatus),
-		}).Error; err != nil {
+		if err := recordDatasetCompileLogEvent(ctx, logID, progress, datasetLogOperationStatus(operationStatus), dao.EventTypeTerminal, message); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func recordDatasetCompileLogEvent(ctx context.Context, logID string, progress float64, operationStatus string, eventType int, message string) error {
+	return kcDB.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var log entity.PipelineOperationLog
+		if err := tx.WithContext(ctx).Where("id = ?", logID).First(&log).Error; err != nil {
+			return err
+		}
+		duration := log.ProcessDuration
+		if log.ProcessBeginAt != nil {
+			duration = max(0, time.Since(*log.ProcessBeginAt).Seconds())
+		}
+		if err := tx.WithContext(ctx).Model(&entity.PipelineOperationLog{}).Where("id = ?", logID).Updates(map[string]any{
+			"progress":         progress,
+			"process_duration": duration,
+			"operation_status": operationStatus,
+		}).Error; err != nil {
+			return err
+		}
+		return createDatasetLogEvent(ctx, tx, logID, eventType, message)
+	})
+}
+
+func createDatasetLogEvent(ctx context.Context, db *gorm.DB, logID string, eventType int, message string) error {
+	// Dataset compilation has no ingestion_task row, so its immutable pipeline
+	// log ID also serves as the event's stable task identity.
+	pipelineLogID := logID
+	return dao.NewIngestionTaskLogDAO().Create(ctx, db, &entity.IngestionTaskLog{
+		TaskID:        logID,
+		PipelineLogID: &pipelineLogID,
+		Checkpoint:    entity.JSONMap{},
+		EventType:     eventType,
+		Message:       message,
+	})
 }
 
 func sortedTaskTypesFromGroups(groups map[string][]BacklogEntry) []string {

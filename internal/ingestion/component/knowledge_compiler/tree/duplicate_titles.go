@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strconv"
 	"strings"
 
+	"go.uber.org/zap"
+
+	rfcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
@@ -65,7 +67,7 @@ func rewriteDuplicateTreeNames(ctx context.Context, deps common.Deps, llmID stri
 			continue
 		}
 		if err := rewriteTitleGroup(ctx, deps, llmID, title, products, idxs); err != nil {
-			log.Printf("tree: duplicate title rewrite failed for title=%q (keeping titles): %v", title, err)
+			rfcommon.Warn("tree: duplicate title rewrite failed, keeping titles", zap.String("title", title), zap.Error(err))
 		}
 	}
 

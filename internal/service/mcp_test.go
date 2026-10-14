@@ -20,11 +20,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/utility"
 )
 
 func TestIsValidMCPServerType(t *testing.T) {
@@ -138,66 +144,231 @@ func TestImportServersValidationErrors(t *testing.T) {
 	}
 }
 
-func TestNewExportMCPServerResponseMatchesPythonDownloadShape(t *testing.T) {
-	response := newExportMCPServerResponse(&entity.MCPServer{
-		Name:       "weather",
-		URL:        "https://example.com/mcp",
-		ServerType: mcpServerTypeStreamableHTTP,
-		Variables: entity.JSONMap{
-			"authorization_token": "secret-token",
-			"tools": map[string]interface{}{
-				"forecast": map[string]interface{}{"name": "forecast"},
-			},
-		},
-	})
-
-	payload, err := json.Marshal(response)
-	if err != nil {
-		t.Fatalf("marshal response: %v", err)
+func TestJSONMapStringValuesRendersScalarVariables(t *testing.T) {
+	values := entity.JSONMap{
+		"text":    "value",
+		"count":   float64(123),
+		"ratio":   float64(1.5),
+		"enabled": true,
+		"missing": nil,
+		"object":  map[string]interface{}{"key": "value"},
 	}
 
-	var decoded map[string]map[string]map[string]interface{}
-	if err := json.Unmarshal(payload, &decoded); err != nil {
-		t.Fatalf("unmarshal response: %v", err)
+	got := jsonMapStringValues(values)
+	for key, want := range map[string]string{
+		"text":    "value",
+		"count":   "123",
+		"ratio":   "1.5",
+		"enabled": "True",
+		"missing": "None",
+	} {
+		if got[key] != want {
+			t.Errorf("jsonMapStringValues[%q]=%q, want %q", key, got[key], want)
+		}
 	}
-
-	server := decoded["mcpServers"]["weather"]
-	if server["type"] != mcpServerTypeStreamableHTTP {
-		t.Fatalf("type = %v, want %s", server["type"], mcpServerTypeStreamableHTTP)
+	if _, ok := got["object"]; ok {
+		t.Errorf("compound variable should not be rendered as a header value: %#v", got["object"])
 	}
-	if server["url"] != "https://example.com/mcp" {
-		t.Fatalf("url = %v", server["url"])
-	}
-	if server["name"] != "weather" {
-		t.Fatalf("name = %v", server["name"])
-	}
-	if server["authorization_token"] != "secret-token" {
-		t.Fatalf("authorization_token = %v", server["authorization_token"])
-	}
-	tools, ok := server["tools"].(map[string]interface{})
-	if !ok || tools["forecast"] == nil {
-		t.Fatalf("tools = %#v, want forecast tool", server["tools"])
+	if headerValues := jsonMapHeaderValues(values); len(headerValues) != 1 || headerValues["text"] != "value" {
+		t.Errorf("jsonMapHeaderValues = %#v, want string headers only", headerValues)
 	}
 }
 
-func TestNewExportMCPServerResponseDefaultsMissingVariablesLikePython(t *testing.T) {
-	response := newExportMCPServerResponse(&entity.MCPServer{
-		Name:       "empty-vars",
-		URL:        "https://example.com/mcp",
-		ServerType: mcpServerTypeSSE,
-	})
+func TestImportServersPreservesExplicitHeadersAndVariables(t *testing.T) {
+	for _, tc := range []struct {
+		name             string
+		headers          map[string]interface{}
+		wantHeaderValues map[string]string
+	}{
+		{
+			name: "custom headers",
+			headers: map[string]interface{}{
+				"User-Agent": "ragflow",
+				"X-Token":    "Bearer ${authorization_token}",
+				"X-Count":    "count=$count",
+			},
+			wantHeaderValues: map[string]string{
+				"User-Agent": "ragflow",
+				"X-Token":    "Bearer secret-token",
+				"X-Count":    "count=123",
+			},
+		},
+		{
+			name:             "explicit empty headers",
+			headers:          map[string]interface{}{},
+			wantHeaderValues: map[string]string{},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testDB := setupServiceTestDB(t)
+			if err := testDB.AutoMigrate(&entity.MCPServer{}); err != nil {
+				t.Fatalf("migrate mcp server: %v", err)
+			}
+			pushServiceDB(t, testDB)
 
-	server := response.MCPServers["empty-vars"]
-	if server.AuthorizationToken != "" {
-		t.Fatalf("authorization_token = %#v, want empty string", server.AuthorizationToken)
+			srv, captured := newMCPDiscoveryTestServer(t)
+			defer srv.Close()
+			withMCPDiscoveryOverrides(t, srv)
+
+			results, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+				"parallel": {
+					"type":                mcpServerTypeStreamableHTTP,
+					"url":                 srv.URL,
+					"authorization_token": "secret-token",
+					"count":               float64(123),
+					"headers":             tc.headers,
+				},
+			}, 2)
+			if err != nil {
+				t.Fatalf("ImportServers: %v", err)
+			}
+			if len(results) != 1 || !results[0].Success {
+				t.Fatalf("ImportServers results = %#v", results)
+			}
+
+			for _, headers := range captured() {
+				if got := headers.Get("Authorization"); got != "" {
+					t.Errorf("unexpected generated Authorization header %q", got)
+				}
+				for key, want := range tc.wantHeaderValues {
+					if got := headers.Get(key); got != want {
+						t.Errorf("%s=%q, want %q", key, got, want)
+					}
+				}
+			}
+
+			var stored entity.MCPServer
+			if err := testDB.Where("name = ?", "parallel").First(&stored).Error; err != nil {
+				t.Fatalf("load imported server: %v", err)
+			}
+			if len(stored.Headers) != len(tc.headers) {
+				t.Fatalf("stored headers = %#v, want %#v", stored.Headers, tc.headers)
+			}
+			for key, want := range tc.headers {
+				if got := stored.Headers[key]; got != want {
+					t.Errorf("stored headers[%q]=%#v, want %#v", key, got, want)
+				}
+			}
+			if got, ok := stored.Variables["authorization_token"].(string); !ok || got != "secret-token" {
+				t.Errorf("stored authorization_token = %#v, want original token", stored.Variables["authorization_token"])
+			}
+			if got, ok := stored.Variables["count"].(float64); !ok || got != 123 {
+				t.Errorf("stored count = %#v, want float64(123)", stored.Variables["count"])
+			}
+
+			// Export the saved record, decode the wire JSON, and import that
+			// configuration again. This is the round-trip that must not grow
+			// an implicit authentication header when headers is present.
+			exported, err := json.Marshal(newExportMCPServerResponse(&stored))
+			if err != nil {
+				t.Fatalf("marshal export: %v", err)
+			}
+			var envelope struct {
+				MCPServers map[string]map[string]interface{} `json:"mcpServers"`
+			}
+			if err := json.Unmarshal(exported, &envelope); err != nil {
+				t.Fatalf("decode export: %v", err)
+			}
+			reimportConfig := envelope.MCPServers["parallel"]
+			if reimportConfig == nil {
+				t.Fatalf("export did not contain parallel config: %s", exported)
+			}
+			capturedBefore := len(captured())
+			reimported, err := NewMCPService().ImportServers(t.Context(), "tenant-1", map[string]map[string]interface{}{
+				"parallel": reimportConfig,
+			}, 2)
+			if err != nil {
+				t.Fatalf("reimport exported config: %v", err)
+			}
+			if len(reimported) != 1 || !reimported[0].Success {
+				t.Fatalf("reimport results = %#v", reimported)
+			}
+			for _, headers := range captured()[capturedBefore:] {
+				if got := headers.Get("Authorization"); got != "" {
+					t.Errorf("reimport generated Authorization header %q", got)
+				}
+				for key, want := range tc.wantHeaderValues {
+					if got := headers.Get(key); got != want {
+						t.Errorf("reimport %s=%q, want %q", key, got, want)
+					}
+				}
+			}
+			var roundTripped entity.MCPServer
+			if err := testDB.Where("name = ?", "parallel_0").First(&roundTripped).Error; err != nil {
+				t.Fatalf("load reimported server: %v", err)
+			}
+			if len(roundTripped.Headers) != len(tc.headers) {
+				t.Fatalf("reimported headers = %#v, want %#v", roundTripped.Headers, tc.headers)
+			}
+		})
 	}
-	tools, ok := server.Tools.(map[string]interface{})
-	if !ok {
-		t.Fatalf("tools type = %T, want map[string]interface{}", server.Tools)
+}
+
+func newMCPDiscoveryTestServer(t *testing.T) (*httptest.Server, func() []http.Header) {
+	t.Helper()
+	var mu sync.Mutex
+	var captured []http.Header
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		captured = append(captured, r.Header.Clone())
+		mu.Unlock()
+
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read MCP request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		var req struct {
+			ID     interface{} `json:"id"`
+			Method string      `json:"method"`
+		}
+		if err := json.Unmarshal(body, &req); err != nil {
+			t.Errorf("decode MCP request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		switch req.Method {
+		case "initialize":
+			w.Header().Set("Mcp-Session-Id", "test-session")
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"capabilities":{}}}`, req.ID)
+		case "notifications/initialized":
+			w.WriteHeader(http.StatusAccepted)
+		case "tools/list":
+			_, _ = fmt.Fprintf(w, `{"jsonrpc":"2.0","id":%v,"result":{"tools":[{"name":"search"}]}}`, req.ID)
+		default:
+			t.Errorf("unexpected MCP method %q", req.Method)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	return server, func() []http.Header {
+		mu.Lock()
+		defer mu.Unlock()
+		out := make([]http.Header, len(captured))
+		copy(out, captured)
+		return out
 	}
-	if len(tools) != 0 {
-		t.Fatalf("tools = %#v, want empty map", tools)
+}
+
+func withMCPDiscoveryOverrides(t *testing.T, server *httptest.Server) {
+	t.Helper()
+	originalAssert := common.AssertURLSafe
+	originalPinned := utility.PinnedHTTPClient
+	common.AssertURLSafe = func(string) (string, string, error) {
+		return "mcp.test", "127.0.0.1", nil
 	}
+	utility.PinnedHTTPClient = func(string, string, time.Duration) *http.Client {
+		return server.Client()
+	}
+	t.Cleanup(func() {
+		common.AssertURLSafe = originalAssert
+		utility.PinnedHTTPClient = originalPinned
+	})
 }
 
 func TestPaginateMCPServersNegativeValuesMatchPythonSlice(t *testing.T) {

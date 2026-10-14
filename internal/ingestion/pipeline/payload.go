@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strings"
 )
 
 // ExtractPayload extracts the terminal component's output from a pipeline run
@@ -42,13 +43,22 @@ func ExtractPayload(dsl string, out map[string]any) (map[string]any, error) {
 	}
 	payload, ok := out[terminalIDs[0]].(map[string]any)
 	if !ok {
+		if state, stateOK := out["state"].(map[string]any); stateOK {
+			payload, ok = state[terminalIDs[0]].(map[string]any)
+		} else if state, stateOK := out["state"].(map[string]map[string]any); stateOK {
+			payload, ok = state[terminalIDs[0]]
+		}
+	}
+	if !ok {
 		return nil, fmt.Errorf("run output missing terminal payload %q", terminalIDs[0])
 	}
 	return payload, nil
 }
 
-// TerminalComponentIDs walks a raw DSL JSON and returns the sorted ids of
-// components that have no downstream connections (terminals / sinks).
+// TerminalComponentIDs walks the execution graph from its entry component(s)
+// and returns the sorted ids of reachable components that have no downstream
+// connections (terminals / sinks). Disconnected canvas components are not part
+// of a run and therefore must not affect terminal selection.
 func TerminalComponentIDs(raw []byte) ([]string, error) {
 	var tpl map[string]any
 	if err := json.Unmarshal(raw, &tpl); err != nil {
@@ -62,12 +72,50 @@ func TerminalComponentIDs(raw []byte) ([]string, error) {
 	if !ok {
 		return nil, fmt.Errorf("canvas dsl missing components map")
 	}
-	terminals := make([]string, 0, len(components))
+	roots := make([]string, 0, 2)
 	for id, rawComp := range components {
 		comp, ok := rawComp.(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("component %q has invalid type %T", id, rawComp)
 		}
+		if componentName(comp) == "file" || componentName(comp) == "begin" {
+			roots = append(roots, id)
+		}
+	}
+	// Minimal/raw DSLs used by older callers may omit component metadata. Keep
+	// their historical sink scan rather than inventing an entry point.
+	if len(roots) == 0 {
+		roots = make([]string, 0, len(components))
+		for id := range components {
+			roots = append(roots, id)
+		}
+	}
+
+	reachable := make(map[string]bool, len(components))
+	queue := append([]string(nil), roots...)
+	for len(queue) > 0 {
+		id := queue[0]
+		queue = queue[1:]
+		if reachable[id] {
+			continue
+		}
+		if _, ok := components[id]; !ok {
+			continue
+		}
+		reachable[id] = true
+		comp := components[id].(map[string]any)
+		if downstream, ok := comp["downstream"].([]any); ok {
+			for _, rawChild := range downstream {
+				if child, ok := rawChild.(string); ok {
+					queue = append(queue, child)
+				}
+			}
+		}
+	}
+
+	terminals := make([]string, 0, len(reachable))
+	for id := range reachable {
+		comp := components[id].(map[string]any)
 		switch downstream := comp["downstream"].(type) {
 		case nil:
 			terminals = append(terminals, id)
@@ -81,4 +129,16 @@ func TerminalComponentIDs(raw []byte) ([]string, error) {
 	}
 	sort.Strings(terminals)
 	return terminals, nil
+}
+
+func componentName(comp map[string]any) string {
+	if obj, ok := comp["obj"].(map[string]any); ok {
+		if name, ok := obj["component_name"].(string); ok {
+			return strings.ToLower(name)
+		}
+	}
+	if name, ok := comp["name"].(string); ok {
+		return strings.ToLower(name)
+	}
+	return ""
 }

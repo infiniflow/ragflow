@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"strings"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
@@ -96,6 +97,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
+	attachPDFPageProgress(ctx, p)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
@@ -110,6 +112,24 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		res.File["parse_method"] = parseMethod
 	}
 	return res
+}
+
+// attachPDFPageProgress wires the DeepDOC page callback so a long PDF
+// parse reports in-flight completion instead of staying silent until
+// the component exits. Only the local DeepDOC backend fires it; remote
+// engines (MinerU, PaddleOCR, Docling, …) never call the callback and
+// the fraction stays at zero.
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer) {
+	pdfParser, ok := p.(*parser.PDFParser)
+	if !ok {
+		return
+	}
+	pdfParser.OnPageDone = func(done, total int) {
+		if total <= 0 {
+			return
+		}
+		runtime.ReportComponentFraction(ctx, float64(done)/float64(total))
+	}
 }
 
 // fileTypeFromInputs derives the parser-library extension form

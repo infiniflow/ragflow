@@ -113,6 +113,9 @@ func (c *ConfluenceConnector) Validate(ctx context.Context) error {
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return fmt.Errorf("Confluence wiki_base must use HTTP or HTTPS")
 	}
+	if err := validateConnectorURL(c.wikiBase); err != nil {
+		return err
+	}
 	if c.accessToken == "" {
 		return fmt.Errorf("Confluence access token is required")
 	}
@@ -419,17 +422,19 @@ func (c *ConfluenceConnector) do(ctx context.Context, method, rawURL string) ([]
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, method, resolved, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
+	headers := map[string]string{"Accept": "application/json"}
 	if c.isCloud || c.username != "" {
-		req.SetBasicAuth(c.username, c.accessToken)
+		headers["Authorization"] = "Basic " + basicAuthHeader(c.username, c.accessToken)
 	} else {
-		req.Header.Set("Authorization", "Bearer "+c.accessToken)
+		headers["Authorization"] = "Bearer " + c.accessToken
 	}
-	res, err := c.client.Do(req)
+	res, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:  method,
+		RawURL:  resolved,
+		Headers: headers,
+		Timeout: confluenceRequestTimeout,
+		Base:    c.client,
+	})
 	if err != nil {
 		return nil, err
 	}

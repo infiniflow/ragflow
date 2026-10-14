@@ -126,3 +126,18 @@ func TestResolveGraphBucket_UsesRawStructureMetadata(t *testing.T) {
 		t.Fatalf("scope = %#v, want template-scoped raw-row filter", scope)
 	}
 }
+
+func TestBuildDocumentGraphTemplateShells_PreservesTemplateMetadata(t *testing.T) {
+	templates := buildDocumentGraphTemplateShells([]string{"tree-1"}, map[string]map[string]interface{}{
+		"tree-1": {"template_name": "Tree", "kind": "tree"},
+	})
+	if len(templates) != 1 {
+		t.Fatalf("got %d templates, want 1", len(templates))
+	}
+	if templates[0].TemplateID != "tree-1" || templates[0].TemplateName != "Tree" || templates[0].Kind != "tree" {
+		t.Fatalf("template = %#v, want metadata for tree-1", templates[0])
+	}
+	if templates[0].Entities == nil || templates[0].Relations == nil {
+		t.Fatal("empty template collections must be non-nil")
+	}
+}

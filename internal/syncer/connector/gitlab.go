@@ -19,6 +19,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,8 +28,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"ragflow/internal/utility"
 )
 
 const (
@@ -298,19 +297,18 @@ func (c *GitlabConnector) getJSON(ctx context.Context, apiURL string, out any) (
 	if c.doJSON != nil {
 		return c.doJSON(ctx, apiURL, out)
 	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers:  map[string]string{"Accept": "application/json", "PRIVATE-TOKEN": c.token},
+		Timeout:  gitlabRequestTimeout,
+	})
 	if err != nil {
-		return nil, err
-	}
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, gitlabRequestTimeout)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("PRIVATE-TOKEN", c.token)
-	resp, err := client.Do(req)
-	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, unsafe.Err
+		}
 		return nil, fmt.Errorf("failed to fetch GitLab API: %w", err)
 	}
 	defer resp.Body.Close()
@@ -329,18 +327,18 @@ func (c *GitlabConnector) getRaw(ctx context.Context, apiURL string) ([]byte, er
 	if c.doRaw != nil {
 		return c.doRaw(ctx, apiURL)
 	}
-	hostname, resolvedIP, err := utility.AssertURLSafe(apiURL)
+	resp, err := connectorRequest(ctx, connectorRequestOptions{
+		Method:   http.MethodGet,
+		RawURL:   apiURL,
+		Validate: assertConnectorURLSafeHTTPS,
+		Headers:  map[string]string{"PRIVATE-TOKEN": c.token},
+		Timeout:  gitlabRequestTimeout,
+	})
 	if err != nil {
-		return nil, err
-	}
-	client := utility.PinnedHTTPClient(hostname, resolvedIP, gitlabRequestTimeout)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Set("PRIVATE-TOKEN", c.token)
-	resp, err := client.Do(req)
-	if err != nil {
+		var unsafe *connectorUnsafeURLError
+		if errors.As(err, &unsafe) {
+			return nil, unsafe.Err
+		}
 		return nil, fmt.Errorf("failed to fetch GitLab raw file: %w", err)
 	}
 	defer resp.Body.Close()
