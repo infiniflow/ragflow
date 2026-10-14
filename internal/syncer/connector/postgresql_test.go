@@ -318,7 +318,7 @@ func TestPostgreSQLConnectorOpenSyncMixedCaseTable(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NextBatch failed: %v", err)
 	}
-	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql:mydb:1" {
+	if len(batch.Documents) != 1 || batch.Documents[0].SourceID != "postgresql-table:mydb:MixedCase:1" {
 		t.Fatalf("documents = %+v", batch.Documents)
 	}
 }
