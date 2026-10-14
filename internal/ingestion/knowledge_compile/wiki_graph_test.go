@@ -113,6 +113,11 @@ func TestProjectWikiGraphRowsCrossBatchEdgeSurvives(t *testing.T) {
 	if findRelation(rows, "entity/alpha", "entity/beta") == nil {
 		t.Fatalf("cross-page edge entity/alpha -> entity/beta not materialized")
 	}
+	for _, row := range rows {
+		if row["scope_kwd"] != "dataset" {
+			t.Fatalf("scope_kwd = %v, want dataset for wiki graph row", row["scope_kwd"])
+		}
+	}
 }
 
 // TestProjectWikiGraphRowsDropAfterReprojection verifies a page removed from the

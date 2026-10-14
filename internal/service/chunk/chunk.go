@@ -544,10 +544,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk not found")
 	}
 
-	// Return the stored row with only the tokenized/vector runtime fields
-	// dropped, mirroring Python's _strip_chunk_runtime_fields. The frontend
-	// normalizes both this shape and the renamed one (mapChunkToLegacy), so
-	// returning the row verbatim is what Python does and costs no UI change.
+	// Return the stored row without tokenized/vector runtime fields.
 	result := make(map[string]interface{}, len(chunk))
 	for k, v := range chunk {
 		if isChunkRuntimeField(k) {
@@ -558,9 +555,8 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 	return &service.GetChunkResponse{Chunk: result}, nil
 }
 
-// isChunkRuntimeField reports the fields Python's _strip_chunk_runtime_fields
-// removes before returning a chunk: the regex (_vec$|_sm_|_tks|_ltks) — _vec is
-// anchored at the end, the other three are substring matches.
+// isChunkRuntimeField identifies internal fields omitted from chunk responses.
+// The _vec suffix is anchored at the end; token field names use substring matches.
 func isChunkRuntimeField(name string) bool {
 	return strings.HasSuffix(name, "_vec") ||
 		strings.Contains(name, "_sm_") ||
@@ -847,7 +843,6 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"to_entity_kwd",
 			"toc_kwd",
 			"doc_type_kwd",
-			"available_int",
 		},
 		Filter: map[string]interface{}{
 			"doc_id":   req.DocID,
@@ -874,7 +869,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
 		skipFields := map[string]bool{
-			"_id": true, "authors": true, "_score": true, "SCORE": true,
+			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
 		}
 		for k, v := range chunk {
