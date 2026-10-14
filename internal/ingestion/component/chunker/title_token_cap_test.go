@@ -698,6 +698,51 @@ func TestTitleCap_HierarchyPipeline_AncestorBodyKeepsLeadingChain(t *testing.T) 
 	}
 }
 
+// TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles pins the
+// include_heading_content=true branch: the leading segment is the ancestor
+// titles only (bodies are not folded in), and a cap split of the leaf chunk
+// must still re-prepend it to every piece. The parent's own chunk is emitted
+// unchanged.
+func TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles(t *testing.T) {
+	charTokenizer()
+	defer restoreTokenizer()
+	body := strings.Join(joinSentences(12), "")
+	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `, `^## `}})
+	two := 2
+	p.Hierarchy = &two
+	p.IncludeHeadingContent = true
+	inputText := "# H1\n短。\n## H2a\n" + body
+	inputs := map[string]any{"output_format": "text", "text": inputText}
+	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
+	if err != nil {
+		t.Fatalf("invokeHierarchy: %v", err)
+	}
+	chunks := got["chunks"].([]map[string]any)
+	if len(chunks) <= 2 {
+		t.Fatalf("expected parent chunk + split leaf pieces, got %d", len(chunks))
+	}
+	// The parent's own chunk is within cap and emitted as-is.
+	if got := toString(chunks[0]["text"]); got != "# H1\n短。\n" {
+		t.Errorf("parent chunk = %q, want %q", got, "# H1\n短。\n")
+	}
+	const chain = "# H1\n## H2a\n"
+	var rebuilt strings.Builder
+	for i := 1; i < len(chunks); i++ {
+		text := toString(chunks[i]["text"])
+		if !strings.HasPrefix(text, chain) {
+			t.Errorf("chunk %d lost its heading chain: %q", i, text)
+			continue
+		}
+		if n := titleTokenCount(text); n > 20 {
+			t.Errorf("chunk %d exceeds cap: tokens=%d text=%q", i, n, text)
+		}
+		rebuilt.WriteString(strings.TrimPrefix(text, chain))
+	}
+	if got := rebuilt.String(); got != body+"\n" {
+		t.Errorf("chain-stripped pieces not lossless:\n got=%q\nwant=%q", got, body+"\n")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Schema validation
 // ---------------------------------------------------------------------------
