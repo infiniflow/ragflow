@@ -56,6 +56,9 @@ export function useGraphEntitySearch(
       ? selectedNodeId
       : '';
 
+  // Picking an option behaves like an Enter search: refetch the server-side
+  // keyword subgraph for that entity (fresh graph + entity count) and keep the
+  // node highlighted, in addition to the chunk navigation.
   const handleSelectEntity = useCallback(
     (name: string) => {
       if (!name) {
@@ -65,6 +68,8 @@ export function useGraphEntitySearch(
         return;
       }
       setSelectedNodeId(name);
+      setGraphKeywords(name);
+      setSearchKeyword('');
       const entity = (selectedTemplate?.entities ?? []).find(
         (item) => getEntityDisplayName(item) === name,
       );
@@ -82,9 +87,8 @@ export function useGraphEntitySearch(
   const handleNoMatchEnter = useCallback(
     (keywords: string) => {
       // Enter on a keyword that exactly names an entity must behave like
-      // picking it from the dropdown: highlight that node and its neighbors
-      // and dim the rest. Only unmatched text falls back to the server-side
-      // keyword subgraph, which renders fully bright.
+      // picking it from the dropdown. Only unmatched text falls back to the
+      // raw keyword subgraph with no highlighted node.
       const entityName = findEntityDisplayNameByKeyword(
         selectedTemplate?.entities ?? [],
         keywords,
@@ -136,7 +140,13 @@ export function useGraphEntitySearch(
     isGraphKind,
     entityOptions,
     searchKeyword,
-    graphSelectValue: selectedEntityName || graphKeywords,
+    // Mirror the fetch driver (debouncedSearchKeyword || graphKeywords): the
+    // two keyword inputs swap whenever the result kind flips isGraphKind, so
+    // when the expandable-input channel drove the current subgraph, show its
+    // keyword — not a stale graph keyword left behind by an earlier failed
+    // Enter search.
+    graphSelectValue:
+      selectedEntityName || debouncedSearchKeyword || graphKeywords,
     highlightNodeId: selectedEntityName || null,
     handleSelectEntity,
     handleNoMatchEnter,

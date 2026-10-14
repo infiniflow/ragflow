@@ -26,28 +26,14 @@
             },
             "Parser:HipSignsRhyme": {
                 "downstream": [
-                    "TokenChunker:SixApplesFall"
+                    "GeneralChunker:SixApplesFall"
                 ],
                 "obj": {
                     "component_name": "Parser",
                     "params": {
-                        "outputs": {
-                            "html": {
-                                "type": "string",
-                                "value": ""
-                            },
-                            "json": {
-                                "type": "Array<object>",
-                                "value": []
-                            },
-                            "markdown": {
-                                "type": "string",
-                                "value": ""
-                            },
-                            "text": {
-                                "type": "string",
-                                "value": ""
-                            }
+                        "enable_vision_enhancement": false,
+                        "vlm": {
+                            "llm_id": ""
                         },
                         "doc": {
                             "output_format": "json",
@@ -112,7 +98,7 @@
                         },
                         "spreadsheet": {
                             "flatten_media_to_text": false,
-                            "output_format": "html",
+                            "output_format": "json",
                             "parse_method": "DeepDOC",
                             "preprocess": [
                                 "main_content"
@@ -152,20 +138,20 @@
                     "File"
                 ]
             },
-            "TokenChunker:SixApplesFall": {
+            "GeneralChunker:SixApplesFall": {
                 "downstream": [
                     "Extractor:AutoExtractDefault"
                 ],
                 "obj": {
-                    "component_name": "TokenChunker",
+                    "component_name": "GeneralChunker",
                     "params": {
                         "children_delimiters": [],
                         "chunk_token_size": 512,
-                        "delimiter_mode": "delimiter",
                         "delimiters": [
                             "\n",
                             "!",
                             "?",
+                            ";",
                             "。",
                             "；",
                             "！",
@@ -206,7 +192,7 @@
             },
             "Extractor:AutoExtractDefault": {
                 "upstream": [
-                    "TokenChunker:SixApplesFall"
+                    "GeneralChunker:SixApplesFall"
                 ],
                 "downstream": [
                     "Tokenizer:LegalReadersDecide"
@@ -250,15 +236,15 @@
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__Parser:HipSignsRhymestart-TokenChunker:SixApplesFallend",
+                    "id": "xy-edge__Parser:HipSignsRhymestart-GeneralChunker:SixApplesFallend",
                     "source": "Parser:HipSignsRhyme",
                     "sourceHandle": "start",
-                    "target": "TokenChunker:SixApplesFall",
+                    "target": "GeneralChunker:SixApplesFall",
                     "targetHandle": "end"
                 },
                 {
-                    "id": "xy-edge__TokenChunker:SixApplesFallstart-Extractor:AutoExtractDefaultend",
-                    "source": "TokenChunker:SixApplesFall",
+                    "id": "xy-edge__GeneralChunker:SixApplesFallstart-Extractor:AutoExtractDefaultend",
+                    "source": "GeneralChunker:SixApplesFall",
                     "sourceHandle": "start",
                     "target": "Extractor:AutoExtractDefault",
                     "targetHandle": "end"
@@ -279,7 +265,7 @@
                     },
                     "id": "File",
                     "measured": {
-                        "height": 50,
+                        "height": 49,
                         "width": 200
                     },
                     "position": {
@@ -293,23 +279,9 @@
                 {
                     "data": {
                         "form": {
-                            "outputs": {
-                                "html": {
-                                    "type": "string",
-                                    "value": ""
-                                },
-                                "json": {
-                                    "type": "Array<object>",
-                                    "value": []
-                                },
-                                "markdown": {
-                                    "type": "string",
-                                    "value": ""
-                                },
-                                "text": {
-                                    "type": "string",
-                                    "value": ""
-                                }
+                            "enable_vision_enhancement": false,
+                            "vlm": {
+                                "llm_id": ""
                             },
                             "setups": [
                                 {
@@ -325,7 +297,7 @@
                                 {
                                     "fileFormat": "spreadsheet",
                                     "flatten_media_to_text": false,
-                                    "output_format": "html",
+                                    "output_format": "json",
                                     "parse_method": "DeepDOC",
                                     "preprocess": [
                                         "main_content"
@@ -379,12 +351,12 @@
                     "dragging": false,
                     "id": "Parser:HipSignsRhyme",
                     "measured": {
-                        "height": 57,
+                        "height": 121,
                         "width": 200
                     },
                     "position": {
                         "x": 316.99524094206413,
-                        "y": 195.39629819663406
+                        "y": 164
                     },
                     "selected": true,
                     "sourcePosition": "right",
@@ -396,7 +368,6 @@
                         "form": {
                             "children_delimiters": [],
                             "chunk_token_size": 512,
-                            "delimiter_mode": "delimiter",
                             "delimiters": [
                                 {
                                     "value": "\n"
@@ -406,6 +377,9 @@
                                 },
                                 {
                                     "value": "?"
+                                },
+                                {
+                                    "value": ";"
                                 },
                                 {
                                     "value": "。"
@@ -429,17 +403,17 @@
                             },
                             "overlapped_percent": 0
                         },
-                        "label": "TokenChunker",
-                        "name": "Token Chunker"
+                        "label": "GeneralChunker",
+                        "name": "General Chunker"
                     },
-                    "id": "TokenChunker:SixApplesFall",
+                    "id": "GeneralChunker:SixApplesFall",
                     "measured": {
-                        "height": 74,
+                        "height": 73,
                         "width": 200
                     },
                     "position": {
                         "x": 616.9952409420641,
-                        "y": 195.39629819663406
+                        "y": 188
                     },
                     "selected": false,
                     "sourcePosition": "right",
@@ -462,12 +436,12 @@
                     },
                     "id": "Tokenizer:LegalReadersDecide",
                     "measured": {
-                        "height": 114,
+                        "height": 113,
                         "width": 200
                     },
                     "position": {
-                        "x": 916.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 1216.9952409420641,
+                        "y": 168
                     },
                     "sourcePosition": "right",
                     "targetPosition": "left",
@@ -476,9 +450,13 @@
                 {
                     "id": "Extractor:AutoExtractDefault",
                     "type": "contextNode",
+                    "measured": {
+                        "height": 59,
+                        "width": 200
+                    },
                     "position": {
-                        "x": 796.9952409420641,
-                        "y": 195.39629819663406
+                        "x": 916.9952409420641,
+                        "y": 195
                     },
                     "data": {
                         "label": "Extractor",

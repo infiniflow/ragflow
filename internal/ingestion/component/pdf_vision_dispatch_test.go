@@ -106,8 +106,29 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OutputFormat != "markdown" || result.Markdown != "hello" {
+	if result.OutputFormat != "markdown" || result.Markdown != "hello" || result.JSON != nil {
 		t.Fatalf("result=%+v", result)
+	}
+
+	resultMD, err := dispatchMonkeyOCRv2PDF(context.Background(), nil, "sample.pdf", []byte("pdf"), "", schema.ParserSetup{"monkeyocrv2_server_url": server.URL, "output_format": "markdown"}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resultMD.OutputFormat != "markdown" || resultMD.Markdown != "hello" {
+		t.Fatalf("resultMD=%+v", resultMD)
+	}
+}
+
+func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
+	result := buildMarkdownOCRDispatchResult("# Heading")
+	if result.OutputFormat != "markdown" {
+		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
+	}
+	if result.Markdown != "# Heading" {
+		t.Fatalf("Markdown = %q, want original OCR markdown", result.Markdown)
+	}
+	if result.JSON != nil {
+		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
 	}
 }
 
@@ -160,14 +181,10 @@ func (d *paddleOCRFakeDriver) OCRFile(_ context.Context, _ *string, _ []byte, _ 
 	return &modelModule.OCRFileResponse{Text: &d.text}, nil
 }
 
-// TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown guards against the
-// format-mismatch bug: PaddleOCR backends always return markdown text via
-// OCRFile.Text, so the dispatch result MUST be labelled OutputFormat
-// "markdown" regardless of what setup["output_format"] says (the pdf default
-// is "json"). If the setup value leaked into OutputFormat, buildParserOutputs
-// would emit a nil "json" payload and the downstream TokenChunker would
-// consume an empty JSONResult -> "completed with 0 chunks".
-func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
+// TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization verifies
+// that PaddleOCR dispatch returns backend Markdown for the shared Parser
+// output normalizer, regardless of the normalized component setup format.
+func TestDispatchPaddleOCRPdfPreservesMarkdownForCentralNormalization(t *testing.T) {
 	orig := resolvePaddleOCRModelForDispatch
 	t.Cleanup(func() { resolvePaddleOCRModelForDispatch = orig })
 
@@ -177,8 +194,7 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 		return &paddleOCRFakeDriver{text: md}, "ocr-model", &modelModule.APIConfig{BaseURL: &baseURL}, nil
 	}
 
-	// The real run had output_format=json in the pdf setup; the payload must
-	// still be labelled markdown because that is what the backend produced.
+	// 1. output_format="json": preserve Markdown for central normalization.
 	res, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "json"}, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf: %v", err)
@@ -186,20 +202,41 @@ func TestDispatchPaddleOCRPdfLabelsPayloadAsMarkdown(t *testing.T) {
 	if res.OutputFormat != "markdown" {
 		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
 	}
+	if res.JSON != nil {
+		t.Fatalf("res.JSON = %#v, want nil before central normalization", res.JSON)
+	}
 	if res.Markdown != md {
 		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
 	}
 
-	// Default setup (no output_format key) must behave identically.
-	res, err = dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
+	// 2. output_format="markdown": the backend payload is unchanged.
+	resMD, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", schema.ParserSetup{"output_format": "markdown"}, "some-uuid")
+	if err != nil {
+		t.Fatalf("dispatchPaddleOCRPdf (markdown): %v", err)
+	}
+	if resMD.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resMD.OutputFormat)
+	}
+	if resMD.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resMD.Markdown, md)
+	}
+	if resMD.JSON != nil {
+		t.Errorf("resMD.JSON = %#v, want nil before central normalization", resMD.JSON)
+	}
+
+	// 3. Default setup (no output_format key) follows the same central path.
+	resDef, err := dispatchPaddleOCRPdf(t.Context(), dao.DB, "test.pdf", []byte("%PDF-1.4"), "tenant", nil, "some-uuid")
 	if err != nil {
 		t.Fatalf("dispatchPaddleOCRPdf (default setup): %v", err)
 	}
-	if res.OutputFormat != "markdown" {
-		t.Errorf("OutputFormat = %q, want markdown", res.OutputFormat)
+	if resDef.OutputFormat != "markdown" {
+		t.Errorf("OutputFormat = %q, want markdown", resDef.OutputFormat)
 	}
-	if res.Markdown != md {
-		t.Errorf("Markdown = %q, want %q", res.Markdown, md)
+	if resDef.JSON != nil {
+		t.Fatalf("resDef.JSON = %#v, want nil before central normalization", resDef.JSON)
+	}
+	if resDef.Markdown != md {
+		t.Errorf("Markdown = %q, want %q", resDef.Markdown, md)
 	}
 }
 
@@ -226,71 +263,83 @@ func TestDispatchPaddleOCRPdfEmptyTextFails(t *testing.T) {
 	}
 }
 
-// TestIsNamedPDFParseMethodWhitelistAligned verifies that the runtime
-// "named parse_method" classifier agrees with (*ParserComponent).Check()'s
-// PDF whitelist (parser.go:200-203):
-//
-//	deepdoc, plain_text, mineru, docling,
-//	opendataloader, tcadp parser, paddleocr, somark
-//
-// Diff 2.10: a parse_method that Check() rejects must NOT be treated as a
-// recognized named method by isNamedPDFParseMethod — otherwise it silently
-// falls through to the CustomVLM vision path instead of failing fast at
-// construction (and Python would have rejected it outright).
-func TestIsNamedPDFParseMethodWhitelistAligned(t *testing.T) {
-	// Values that MUST be recognized (subset of the Check() whitelist,
-	// case-insensitive).
-	named := []string{
-		"deepdoc", "plain_text", "mineru", "monkeyocrv2", "docling",
-		"opendataloader", "tcadp parser", "paddleocr", "somark",
-		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
-		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
+func TestMinerUExtractJSONItemsKeepsImageAndPositions(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	list, err := zw.Create("content_list.json")
+	if err != nil {
+		t.Fatal(err)
 	}
-	for _, v := range named {
-		if !isNamedPDFParseMethod(v) {
-			t.Errorf("isNamedPDFParseMethod(%q) = false, want true (in Check() whitelist)", v)
-		}
+	_, _ = list.Write([]byte(`[
+		{"type":"text","text":"Hello","page_idx":0,"bbox":[10,20,110,40]},
+		{"type":"image","img_path":"images/figure.png","image_caption":["A figure"],"page_idx":1,"bbox":[1,2,3,4]},
+		{"type":"header","text":"skip me","page_idx":0,"bbox":[0,0,1,1]}
+	]`))
+	img, err := zw.Create("images/figure.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = img.Write([]byte("png-data"))
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
 	}
 
-	// Values that MUST NOT be recognized. These either duplicate the
-	// whitelist with non-canonical spelling ("plain text"/"plaintext")
-	// or are bare-family abbreviations ("tcadp") that Check() does not
-	// accept, so they should be funneled to the CustomVLM path (or fail
-	// construction) rather than masquerading as a named method.
-	notNamed := []string{
-		"plain text", "plaintext", "tcadp",
-		"CustomVLM", "some_vlm", "gpt-4o",
-		"", "  ",
+	items, err := mineruExtractJSONItems(buf.Bytes())
+	if err != nil {
+		t.Fatalf("mineruExtractJSONItems: %v", err)
 	}
-	for _, v := range notNamed {
-		if isNamedPDFParseMethod(v) {
-			t.Errorf("isNamedPDFParseMethod(%q) = true, want false (not in Check() whitelist)", v)
-		}
+	if len(items) != 2 {
+		t.Fatalf("len(items)=%d, want 2 (header dropped)", len(items))
+	}
+	if items[0]["text"] != "Hello" || items[0]["doc_type_kwd"] != "text" {
+		t.Fatalf("text item = %#v", items[0])
+	}
+	pos, ok := items[0]["_pdf_positions"].([][]any)
+	if !ok || len(pos) != 1 {
+		t.Fatalf("text positions = %#v", items[0]["_pdf_positions"])
+	}
+	if page, _ := pos[0][0].(int); page != 1 {
+		t.Fatalf("text page = %#v, want 1-based page 1", pos[0])
+	}
+	if left, _ := pos[0][1].(float64); left != 10 {
+		t.Fatalf("bbox left = %#v, want 10 (x0)", pos[0])
+	}
+	if right, _ := pos[0][2].(float64); right != 110 {
+		t.Fatalf("bbox right = %#v, want 110 (x1)", pos[0])
+	}
+
+	imageItem := items[1]
+	if imageItem["doc_type_kwd"] != "image" {
+		t.Fatalf("image doc_type = %#v", imageItem["doc_type_kwd"])
+	}
+	if imageItem["text"] != "A figure" {
+		t.Fatalf("image text = %#v", imageItem["text"])
+	}
+	uri, _ := imageItem["image"].(string)
+	if !strings.HasPrefix(uri, "data:image/png;base64,") {
+		t.Fatalf("image data URI = %q", uri)
+	}
+	imgPos, _ := imageItem["_pdf_positions"].([][]any)
+	if len(imgPos) != 1 {
+		t.Fatalf("image positions = %#v", imageItem["_pdf_positions"])
+	}
+	if page, _ := imgPos[0][0].(int); page != 2 {
+		t.Fatalf("image page = %#v, want 1-based page 2", imgPos[0])
 	}
 }
 
-// TestIsNamedPDFParseMethodLayoutSuffixes verifies that "@"-suffixed
-// layout_recognizer spellings are NOT treated as named parse methods. They
-// are layout_recognizer selectors (resolved separately at
-// pdf_vision_dispatch.go:62-68), and Check() rejects them as parse_method,
-// so they must fall through to the CustomVLM/VLM path — consistent with the
-// (*ParserComponent).Check() whitelist (parser.go:200-203).
-func TestIsNamedPDFParseMethodLayoutSuffixes(t *testing.T) {
-	suffixed := []string{
-		"foo@mineru", "@mineru",
-		"foo@monkeyocrv2", "@monkeyocrv2",
-		"foo@paddleocr", "@paddleocr",
-		"foo@somark", "@somark",
-		"foo@opendataloader", "@opendataloader",
-	}
-	for _, v := range suffixed {
-		if isNamedPDFParseMethod(v) {
-			t.Errorf("isNamedPDFParseMethod(%q) = true, want false (layout_recognizer selector, not a named parse_method)", v)
-		}
+func TestDispatchMinerUPDFRequiresBaseURL(t *testing.T) {
+	t.Setenv("MINERU_APISERVER", "")
+	orig := resolveMinerUModelForDispatch
+	t.Cleanup(func() { resolveMinerUModelForDispatch = orig })
+
+	empty := ""
+	resolveMinerUModelForDispatch = func(context.Context, *gorm.DB, string, string) (modelModule.ModelDriver, string, *modelModule.APIConfig, error) {
+		return &mineruTestDriver{}, "mineru-model", &modelModule.APIConfig{BaseURL: &empty}, nil
 	}
 
-	// An unknown suffix is also not a named method.
-	if isNamedPDFParseMethod("foo@unknown") {
-		t.Errorf("isNamedPDFParseMethod(%q) = true, want false", "foo@unknown")
+	_, err := dispatchMinerUPDF(t.Context(), dao.DB, "sample.pdf", []byte("%PDF-1.4"), "tenant", nil, "")
+	if err == nil || !strings.Contains(err.Error(), "base URL") {
+		t.Fatalf("dispatchMinerUPDF empty URL error = %v", err)
 	}
 }

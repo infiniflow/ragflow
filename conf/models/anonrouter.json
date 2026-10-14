@@ -1,0 +1,550 @@
+{
+  "name": "AnonRouter",
+  "url": {
+    "default": "https://api.anonrouter.ai/v1"
+  },
+  "url_suffix": {
+    "chat": "chat/completions",
+    "models": "models"
+  },
+  "class": "anonrouter",
+  "models": [
+    {
+      "name": "anthropic/claude-fable-5",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-haiku-4-5",
+      "context_length": 200000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-5",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3",
+      "context_length": 163840,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3-0324",
+      "context_length": 163840,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.1",
+      "context_length": 163840,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v3.2",
+      "context_length": 163840,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash",
+      "context_length": 1048576,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash-0731",
+      "context_length": 1048576,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-flash-vision-exp",
+      "context_length": 1048576,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1048576,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro-0813",
+      "context_length": 1048576,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-2.5-flash",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-2.5-pro",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3-flash-preview",
+      "context_length": 256000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.1-flash-lite",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.1-pro-preview",
+      "context_length": 1000000,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.5-flash",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.5-flash-lite",
+      "context_length": 1000000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.6-flash",
+      "context_length": 1000000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.7-flash",
+      "context_length": 1000000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.8-flash",
+      "context_length": 1000000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemma-4-26b-a4b-it",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "inclusionai/ling-3.0-flash-fin",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.5",
+      "context_length": 256000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.6",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k2.7-code",
+      "context_length": 262144,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshotai/kimi-k3",
+      "context_length": 262144,
+      "max_output": 32768,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "nvidia/nemotron-3-nano-30b-a3b",
+      "context_length": 262144,
+      "max_output": 228000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-4o",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-4o-mini",
+      "context_length": 128000,
+      "max_output": 16384,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2",
+      "context_length": 256000,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.2-codex",
+      "context_length": 256000,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.3-codex",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-mini",
+      "context_length": 400000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.4-pro",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.5",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.5-pro",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-5.6-terra",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-astra",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-120b",
+      "context_length": 131072,
+      "max_output": 32768,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-oss-20b",
+      "context_length": 131072,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "tencent/hy3",
+      "context_length": 262144,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "xiaomi/mimo-v2.5-pro",
+      "context_length": 1048576,
+      "max_output": 16384,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    }
+  ]
+}

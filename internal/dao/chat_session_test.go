@@ -38,7 +38,7 @@ func setupChatSessionDAOTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.ChatSession{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{}, &entity.ChatSession{}, &entity.ConversationMessage{}, &entity.ConversationReference{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -62,7 +62,7 @@ func createAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, userID
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -85,7 +85,7 @@ func createNamedAgentSessionForDAOTest(t *testing.T, db *gorm.DB, id, agentID, u
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewAPI4ConversationDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create session %s: %v", id, err)
 	}
 }
@@ -107,7 +107,7 @@ func createChatSessionForDAOTest(t *testing.T, db *gorm.DB, id, chatID, name str
 			UpdateDate: &updateDate,
 		},
 	}
-	if err := db.Create(session).Error; err != nil {
+	if err := NewChatSessionDAO().Create(t.Context(), db, session); err != nil {
 		t.Fatalf("failed to create chat session %s: %v", id, err)
 	}
 }
@@ -235,6 +235,7 @@ func TestChatSessionDAOListAgentSessionsSearchesIDNameAndMessage(t *testing.T) {
 	createNamedAgentSessionForDAOTest(t, db, "release-session-id", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary"}]`), 1000)
 	createNamedAgentSessionForDAOTest(t, db, "session-title", "agent-1", "user-1", "Release Notes", json.RawMessage(`[{"content":"ordinary"}]`), 2000)
 	createNamedAgentSessionForDAOTest(t, db, "session-message", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"release details"}]`), 3000)
+	createNamedAgentSessionForDAOTest(t, db, "session-metadata", "agent-1", "user-1", "plain", json.RawMessage(`[{"content":"ordinary","feedback":"release","attachment":"release"}]`), 3500)
 	createNamedAgentSessionForDAOTest(t, db, "other-agent-release", "agent-2", "user-1", "Release Notes", json.RawMessage(`[{"content":"release details"}]`), 4000)
 
 	ctx := t.Context()

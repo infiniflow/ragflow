@@ -3,8 +3,6 @@
 package tool
 
 import (
-	"log/slog"
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -16,14 +14,29 @@ import (
 // no generation, no CGO/DeepDoc dependency.  Use PY_OCR_SUFFIX to override
 // the Python variant.
 func TestBatchCompareWithPython(t *testing.T) {
-	level := slog.LevelInfo
-	if common.GetEnv(common.EnvBatchLogLevel) == "debug" {
-		level = slog.LevelDebug
+	prevLogger, prevSugar := common.Logger, common.Sugar
+	var prevLevel string
+	if common.Logger != nil {
+		prevLevel = common.GetLogLevel()
 	}
-	if common.GetEnv(common.EnvBatchLogLevel) == "warn" {
-		level = slog.LevelWarn
+	t.Cleanup(func() {
+		common.Logger = prevLogger
+		common.Sugar = prevSugar
+		if prevLogger != nil {
+			_ = common.SetLogLevel(prevLevel)
+		}
+	})
+
+	level := "info"
+	switch common.GetEnv(common.EnvBatchLogLevel) {
+	case "debug":
+		level = "debug"
+	case "warn":
+		level = "warn"
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level})))
+	if err := common.InitLogger(level, common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
 
 	goVariant := "ocr"
 	pyVariant := common.GetEnv(common.EnvPYOCRSuffix)

@@ -258,7 +258,7 @@ func wikiCompiledRows(output map[string]any) []map[string]any {
 		if !ok {
 			continue
 		}
-		compileKWD := strings.TrimSpace(anyString(row["compile_kwd"]))
+		compileKWD := enginetypes.CompilationRowType(row)
 		if compileKWD != "wiki_page" && compileKWD != "wiki_section" {
 			continue
 		}
@@ -291,7 +291,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 		SelectFields: []string{"id", "compile_kwd", "slug_kwd", "parent_id"},
 		Filter: map[string]any{
 			"doc_id":        []string{request.DocumentID},
-			"compile_kwd":   []string{"wiki_page", "wiki_section"},
+			"type_kwd":      []string{"wiki_page", "wiki_section"},
 			"available_int": 0,
 		},
 	})
@@ -316,7 +316,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	affectedPageIDs := make(map[string]struct{})
 	if existing != nil && !fullReplace {
 		for _, row := range existing.Chunks {
-			if anyString(row["compile_kwd"]) != "wiki_page" {
+			if enginetypes.CompilationRowType(row) != "wiki_page" {
 				continue
 			}
 			if _, ok := affected[anyString(row["slug_kwd"])]; ok {
@@ -326,7 +326,7 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	}
 	if existing != nil && fullReplace {
 		for _, row := range existing.Chunks {
-			if anyString(row["compile_kwd"]) == "wiki_page" {
+			if enginetypes.CompilationRowType(row) == "wiki_page" {
 				removedSlugs = append(removedSlugs, anyString(row["slug_kwd"]))
 			}
 		}
@@ -363,13 +363,13 @@ func replaceDirtyWikiProducts(ctx context.Context, request knowledge_compile.Wik
 	if len(rows) == 0 && (existing == nil || len(existing.Chunks) == 0) {
 		return nil
 	}
-	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"})
+	return knowledge_compile.PublishCompleted(ctx, request.TenantID, request.DatasetID, request.DocumentID, []string{"wiki"}, []string{kc.TaskTypeWiki})
 }
 
 func clearWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, request knowledge_compile.WikiDirtyRequest) error {
 	_, err := docEngine.DeleteChunks(ctx, map[string]any{
 		"kb_id":          request.DatasetID,
-		"compile_kwd":    "wiki_map_active",
+		"type_kwd":       "wiki_map_active",
 		"available_int":  0,
 		"source_doc_ids": []string{request.DocumentID},
 	}, fmt.Sprintf("ragflow_%s", request.TenantID), request.DatasetID)
@@ -404,7 +404,12 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 	if len(states) == 0 {
 		return nil
 	}
-	store, ok := knowledge_compile.NewWikiMapVersionStore(docEngine).(kc.WikiMapActiveStateStore)
+	// Every state comes from one document's compile, so they share a tenant and
+	// dataset: the resolver only runs when the Infinity chunk table is missing.
+	store, ok := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(
+		docEngine,
+		wikiMapVectorSizeResolver(states[0].TenantID, states[0].DatasetID),
+	).(kc.WikiMapActiveStateStore)
 	if !ok {
 		return fmt.Errorf("Wiki dirty compile: active MAP store is unavailable")
 	}
@@ -414,6 +419,51 @@ func putWikiActiveStates(ctx context.Context, docEngine engine.DocEngine, states
 		}
 	}
 	return nil
+}
+
+// wikiMapVectorSizeResolver resolves, lazily, the vector size a missing Infinity
+// chunk table needs. The document-level compile path holds no embedder, so it
+// binds the dataset's — kb.tenant_embd_id, else kb.embd_id — like a compile task.
+func wikiMapVectorSizeResolver(tenantID, datasetID string) func(context.Context) (int, error) {
+	modelFactory := service.NewModelFactory()
+	return func(ctx context.Context) (int, error) {
+		kb, err := dao.NewKnowledgebaseDAO().GetByID(ctx, dao.DB, datasetID)
+		if err != nil {
+			return 0, fmt.Errorf("Wiki MAP chunk store: load dataset %s: %w", datasetID, err)
+		}
+		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: datasetEmbeddingID(kb)}
+		return embedderVectorSize(ctx, embedder)
+	}
+}
+
+// datasetEmbeddingID mirrors Python's embedding binding for a compile task:
+// kb.tenant_embd_id wins, else kb.embd_id, and an empty id leaves the embedder to
+// its tenant-default fallback (rag/svr/task_executor.py:1454-1487).
+func datasetEmbeddingID(kb *entity.Knowledgebase) string {
+	if kb == nil {
+		return ""
+	}
+	if kb.TenantEmbdID != nil && strings.TrimSpace(*kb.TenantEmbdID) != "" {
+		return *kb.TenantEmbdID
+	}
+	return kb.EmbdID
+}
+
+// embedderVectorSize reports the vector size a missing Infinity chunk table must
+// be created with: an unset dimension is measured with a one-input probe (the
+// signal Python sizes the table with in create_idx, task_executor.py:737-740).
+func embedderVectorSize(ctx context.Context, embed kc.Embedder) (int, error) {
+	if dimension := embed.Dimensions(); dimension > 0 {
+		return dimension, nil
+	}
+	vectors, err := embed.Encode(ctx, []string{"ok"})
+	if err != nil {
+		return 0, err
+	}
+	if len(vectors) == 0 || len(vectors[0]) == 0 {
+		return 0, fmt.Errorf("embedding returned an empty vector")
+	}
+	return len(vectors[0]), nil
 }
 
 func copyStringAnyMap(source map[string]any) map[string]any {
@@ -497,57 +547,56 @@ func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
 // tenant + model ids (captured in the closure), mirroring how the Tokenizer
 // component resolves its embedder.
 func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
-	svc := service.NewModelProviderService()
-	return func(tenantID, llmID, embeddingModel string) (kc.Deps, error) {
+	modelFactory := service.NewModelFactory()
+	return func(ctx context.Context, tenantID, llmID, embeddingModel string) (kc.Deps, error) {
+		modelCtx, cancelModelLookup := context.WithTimeout(ctx, 30*time.Second)
+		defer cancelModelLookup()
 		if strings.TrimSpace(llmID) == "" {
 			// No explicit chat model was supplied (e.g. the dataset-level deduper
 			// is seeded with a global default that may be empty). Resolve the
 			// tenant's default chat model so cross-document LLM merging can
 			// actually run instead of failing / falling back to a no-op. Use the
-			// composite "<model>@<instance>@<provider>" reference (not the bare
-			// model name) so later Chat/ResolveModelConfig round-trips can locate
-			// the provider.
-			defaultRef, derr := svc.GetTenantDefaultModelRef(context.Background(), tenantID, entity.ModelTypeChat)
-			if derr != nil || strings.TrimSpace(defaultRef) == "" {
+			// tenant model ID so later model resolution can use the same persisted
+			// tenant model directly.
+			defaultInfo, derr := modelFactory.ResolveDefaultInfo(modelCtx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeChat)
+			if derr != nil || defaultInfo == nil || strings.TrimSpace(defaultInfo.ID) == "" {
 				return kc.Deps{}, fmt.Errorf("knowledge_compiler: llm_id is empty and no tenant default chat model available: %w", derr)
 			}
-			llmID = defaultRef
+			llmID = defaultInfo.ID
 			// Keep the fall-through path below for ModelContextLen resolution so
 			// both explicit and default model refs share one context-window path.
 		}
 		// Resolve the chat model's context window so RAPTOR can truncate each
 		// cluster's texts to fit the LLM context (mirrors Python self._llm_model.max_length).
-		// This uses content_length (PR #17839) — the total context window — not
-		// max_output. max_output is only the generation cap; using it as the
-		// budget source would collapse per-chunk input quotas.
+		// ContextLength is the total context window; MaxTokens is only the
+		// generation cap and must not be used as the input budget.
 		llmMax := kc.DefaultLLMContextLength
-		// Bound the model-config lookup so a stalled provider/instance DB read
-		// cannot block document ingestion indefinitely.
-		contextLengthCtx, cancelContextLength := context.WithTimeout(context.Background(), 30*time.Second)
-		ml, contextLengthErr := svc.ResolveModelContextLength(contextLengthCtx, tenantID, llmID)
-		cancelContextLength()
-		if contextLengthErr == nil && ml > 0 {
-			llmMax = ml
+		// Bound the model-config lookup and inherit cancellation from the task.
+		modelInfo, contextLengthErr := modelFactory.ResolveInfo(modelCtx, service.ModelAccess{TenantID: tenantID}, entity.ModelTypeChat, llmID)
+		if contextLengthErr == nil && modelInfo != nil && modelInfo.ContextLength > 0 {
+			llmMax = modelInfo.ContextLength
 		}
 		// Resolve the model's generation cap (max_output). Cross-document merge
 		// judging packs many pairs into one LLM call; the batch must be bounded by
 		// BOTH the input window and this output cap, so a large candidate set
-		// never overflows max_output and yields a truncated/non-JSON reply. This
-		// uses max_tokens (the generation cap), NOT content_length — see
-		// ResolveModelContextLength's comment.
+		// never overflows max_output and yields a truncated/non-JSON reply. The
+		// legacy persisted max_tokens value is the context window; use the
+		// separate MaxOutput metadata for the API generation cap.
 		llmMaxOutput := 0
-		modelConfigCtx, cancelModelConfig := context.WithTimeout(context.Background(), 30*time.Second)
-		_, _, _, mo, modelConfigErr := svc.ResolveModelConfig(modelConfigCtx, tenantID, entity.ModelTypeChat, llmID)
-		cancelModelConfig()
-		if modelConfigErr == nil && mo > 0 {
-			llmMaxOutput = mo
+		if contextLengthErr == nil && modelInfo != nil && modelInfo.MaxOutput > 0 {
+			llmMaxOutput = modelInfo.MaxOutput
 		}
 
+		embedder := &kcEmbedder{factory: modelFactory, tenantID: tenantID, embdID: embeddingModel}
+		mapStore := knowledge_compile.NewWikiMapVersionStoreWithVectorSizeResolver(engine.Get(), func(ctx context.Context) (int, error) {
+			return embedderVectorSize(ctx, embedder)
+		})
+
 		return kc.Deps{
-			Chat:            &kcChatInvoker{svc: svc, tenantID: tenantID, llmID: llmID, maxTokens: llmMaxOutput},
-			Embed:           &kcEmbedder{svc: svc, tenantID: tenantID, embdID: embeddingModel},
+			Chat:            &kcChatInvoker{factory: modelFactory, tenantID: tenantID, llmID: llmID},
+			Embed:           embedder,
 			WikiPages:       &kcWikiPageStore{docEngine: engine.Get()},
-			WikiMapVersions: knowledge_compile.NewWikiMapVersionStore(engine.Get()),
+			WikiMapVersions: mapStore,
 			// HistoricalKNN / Redis are optional (wiki historical dedup,
 			// datasetnav lock). They are wired separately when the
 			// surrounding pipeline supplies the backing services.
@@ -557,19 +606,21 @@ func newKnowledgeCompilerDepsResolver() kc.DepsResolver {
 	}
 }
 
-// kcChatInvoker adapts service.ModelProviderService.Chat to the
-// knowledge_compiler ChatInvoker seam.
+// kcChatInvoker adapts a factory-created ChatModel to the knowledge compiler.
 type kcChatInvoker struct {
-	svc       *service.ModelProviderService
-	tenantID  string
-	llmID     string
-	maxTokens int
+	factory  *service.ModelFactory
+	tenantID string
+	llmID    string
 }
 
 func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatResponse, error) {
 	llmID := c.llmID
 	if req.LLMID != "" {
 		llmID = req.LLMID
+	}
+	chatModel, err := c.factory.NewChatModel(ctx, service.ModelAccess{TenantID: c.tenantID}, llmID)
+	if err != nil {
+		return nil, err
 	}
 	msgs := []models.Message{
 		{Role: "system", Content: req.SystemPrompt},
@@ -578,18 +629,25 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// Python's knowledge compilation pins per-call-site temperatures
 	// (extraction 0.1, merge judging 0.0); nil leaves the driver default.
 	var config *models.ChatConfig
-	if req.Temperature != nil || req.MaxTokens != nil || c.maxTokens > 0 {
+	// Build a provider config only for per-call overrides. In particular, do not
+	// inject the model's configured max_output as max_tokens: knowledge
+	// compilation call sites that need an output cap must set MaxTokens
+	// explicitly, while the model driver remains responsible for its default.
+	if req.Temperature != nil || req.MaxTokens != nil || req.DisableThinking {
 		config = &models.ChatConfig{}
 		if req.Temperature != nil {
 			config.Temperature = req.Temperature
 		}
-		// Normal knowledge-compilation calls use the generation cap resolved
-		// from the selected model's max_output configuration. Specialized
-		// variants may still provide a smaller per-call cap.
 		if req.MaxTokens != nil {
 			config.MaxTokens = req.MaxTokens
-		} else if c.maxTokens > 0 {
-			config.MaxTokens = &c.maxTokens
+		}
+		// Reasoning models (MiniMax-M1/M3, kimi, qwen) spend the completion
+		// budget on visible COT before the structured reply; compilation should
+		// run with thinking off. MiniMaxModel maps Thinking=false to
+		// `thinking: {"type": "disabled"}` in the request body.
+		if req.DisableThinking {
+			off := false
+			config.Thinking = &off
 		}
 	}
 	// Retry transient transport/provider failures (HTTP timeout, reset,
@@ -598,6 +656,7 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 	// is never cached, so each attempt issues a fresh request. Permanent
 	// configuration/model errors (auth, unknown model) are not retried.
 	var resp *models.ChatResponse
+	failureReporter := kc.RetryFailureReporter{}
 	attempt := 0
 	call := func() error {
 		attempt++
@@ -606,18 +665,26 @@ func (c *kcChatInvoker) Chat(ctx context.Context, req kc.ChatRequest) (*kc.ChatR
 		// providers legitimately need several minutes to return a response.
 		attemptCtx, cancel := context.WithTimeout(ctx, kcChatAttemptTimeout)
 		defer cancel()
-		r, err := c.svc.Chat(attemptCtx, c.tenantID, llmID, msgs, config)
+		r, err := chatModel.ChatWithMessages(attemptCtx, msgs, config, nil)
 		if err != nil {
 			if !req.DisableRetry {
-				message := fmt.Sprintf("[ERROR] LLM call failed (attempt %d/%d): %s", attempt, kcChatRetryMax+1, kc.CompactError(err))
-				if appcommon.IsTransientError(err) && attempt <= kcChatRetryMax {
-					message += "; retrying with exponential backoff"
+				final := !appcommon.IsTransientError(err) || attempt > kcChatRetryMax
+				delay := kcChatRetryDelay
+				if final {
+					delay = 0
 				}
-				runtime.ReportProgressMessage(ctx, "Compiler", message)
+				if message, ok := failureReporter.FailureMessage(attempt, kcChatRetryMax+1, delay, err, final); ok {
+					runtime.ReportProgressMessage(ctx, "Compiler", message)
+				}
 			}
 			return err
 		}
 		resp = r
+		if !req.DisableRetry {
+			if message, ok := failureReporter.RecoveryMessage(attempt); ok {
+				runtime.ReportProgressMessage(ctx, "Compiler", message)
+			}
+		}
 		return nil
 	}
 	if req.DisableRetry {
@@ -647,11 +714,10 @@ const kcChatAttemptTimeout = 20 * time.Minute
 // kcChatRetryDelay is the initial exponential-backoff delay between retries.
 const kcChatRetryDelay = 2 * time.Second
 
-// kcEmbedder adapts service.ModelProviderService.GetEmbeddingModel to the
-// knowledge_compiler Embedder seam. Vectors are returned as []float32 to match
-// the component's product schema.
+// kcEmbedder adapts model resolution to the knowledge_compiler Embedder seam.
+// Vectors are returned as []float32 to match the component's product schema.
 type kcEmbedder struct {
-	svc      *service.ModelProviderService
+	factory  *service.ModelFactory
 	tenantID string
 	embdID   string
 	dim      atomic.Int64
@@ -688,8 +754,10 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 			if jobErr := ctx.Err(); jobErr != nil {
 				return jobErr
 			}
-			var embeds []models.EmbeddingData
-			embeds, jobErr := mdl.ModelDriver.Embed(ctx, mdl.ModelName, models.EmbedRequest{Texts: batchTexts}, mdl.APIConfig, config, nil)
+			// Embed inside the model's window: compile products include the summaries
+			// and entity descriptions that feed the nav index, and an over-window input
+			// is a hard 400/20015 that fails the whole batch instead of being trimmed.
+			embeds, jobErr := mdl.Embed(ctx, models.EmbedRequest{Texts: batchTexts}, config, nil)
 			if jobErr != nil {
 				return fmt.Errorf("knowledge_compiler: embed: %w", jobErr)
 			}
@@ -730,23 +798,23 @@ func (e *kcEmbedder) Encode(ctx context.Context, texts []string) ([][]float32, e
 // loudly instead of silently producing empty vectors.
 func (e *kcEmbedder) resolveModel(ctx context.Context) (*models.EmbeddingModel, error) {
 	if embdID := strings.TrimSpace(e.embdID); embdID != "" {
-		mdl, err := e.svc.GetEmbeddingModel(ctx, e.tenantID, embdID)
+		embeddingModel, err := e.factory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: e.tenantID}, embdID)
 		if err != nil {
 			return nil, fmt.Errorf("knowledge_compiler: resolve embedding model: %w", err)
 		}
-		if mdl == nil || mdl.ModelDriver == nil {
+		if embeddingModel == nil {
 			return nil, fmt.Errorf("knowledge_compiler: embedding model %q is unavailable", embdID)
 		}
-		return mdl, nil
+		return embeddingModel, nil
 	}
-	driver, name, apiConfig, _, err := e.svc.GetTenantDefaultModelByType(ctx, e.tenantID, entity.ModelTypeEmbedding)
+	embeddingModel, err := e.factory.NewDefaultEmbeddingModel(ctx, service.ModelAccess{TenantID: e.tenantID})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required and no tenant default embedding model is set: %w", err)
 	}
-	if driver == nil || name == "" {
+	if embeddingModel == nil {
 		return nil, fmt.Errorf("knowledge_compiler: embedding_model is required (tenant default embedding model unavailable)")
 	}
-	return &models.EmbeddingModel{ModelDriver: driver, ModelName: &name, APIConfig: apiConfig}, nil
+	return embeddingModel, nil
 }
 
 func (e *kcEmbedder) Dimensions() int { return int(e.dim.Load()) }
@@ -777,13 +845,10 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
-		// compile_kwd="wiki_page" is the schema-backed discriminator for wiki
-		// pages (sections carry compile_kwd="wiki_section"); there is no
-		// "kc_kind" column in the chunk schema, so filtering on it would return
-		// empty on Infinity.
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
+		// Select pages, not sections, by their role within the Wiki compilation.
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
+			"type_kwd": "wiki_page",
 		},
 		MatchExprs: []interface{}{&enginetypes.MatchDenseExpr{
 			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
@@ -800,7 +865,11 @@ func (s *kcWikiPageStore) FindSimilarPages(ctx context.Context, tenantID, datase
 	}
 	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
-		out = append(out, wikiPageCandidateFromRow(row))
+		candidate, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, row)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, candidate)
 	}
 	return out, nil
 }
@@ -813,17 +882,20 @@ func (s *kcWikiPageStore) GetPageBySlug(ctx context.Context, tenantID, datasetID
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        1,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "plan_group_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd": "wiki_page",
-			"slug_kwd":    slug,
+			"type_kwd": "wiki_page",
+			"slug_kwd": slug,
 		},
 	}
 	res, err := s.docEngine.Search(ctx, req)
 	if err != nil || res == nil || len(res.Chunks) == 0 {
 		return nil, err
 	}
-	page := wikiPageCandidateFromRow(res.Chunks[0])
+	page, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, res.Chunks[0])
+	if err != nil {
+		return nil, err
+	}
 	return &page, nil
 }
 
@@ -835,9 +907,9 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        []string{datasetID},
 		Limit:        k,
-		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "kc_content_md_raw", "_score"},
+		SelectFields: []string{"id", "slug_kwd", "title_kwd", "page_type_kwd", "compile_kwd", "type_kwd", "entity_type_kwd", "topic_kwd", "summary_with_weight", "content_with_weight", "entity_names_kwd", "related_kb_pages_kwd", "outlinks_kwd", "source_chunk_ids", "_score"},
 		Filter: map[string]interface{}{
-			"compile_kwd":      "wiki_page",
+			"type_kwd":         "wiki_page",
 			"source_chunk_ids": chunkIDs,
 		},
 	}
@@ -847,7 +919,10 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 	}
 	out := make([]kc.WikiPageCandidate, 0, len(res.Chunks))
 	for _, row := range res.Chunks {
-		candidate := wikiPageCandidateFromRow(row)
+		candidate, err := s.loadPageCandidate(ctx, req.IndexNames[0], req.KbIDs, row)
+		if err != nil {
+			return nil, err
+		}
 		if candidate.Score == 0 {
 			candidate.Score = 0.68
 		}
@@ -856,17 +931,34 @@ func (s *kcWikiPageStore) FindPagesBySourceChunks(ctx context.Context, tenantID,
 	return out, nil
 }
 
+func (s *kcWikiPageStore) loadPageCandidate(ctx context.Context, indexName string, datasetIDs []string, row map[string]interface{}) (kc.WikiPageCandidate, error) {
+	page := wikiPageCandidateFromRow(row)
+	if enginetypes.WikiPageContent(row) != "" {
+		return page, nil
+	}
+	raw, err := s.docEngine.GetChunk(ctx, indexName, page.ID, datasetIDs)
+	if err != nil {
+		return kc.WikiPageCandidate{}, err
+	}
+	stored, _ := raw.(map[string]interface{})
+	content := strings.TrimSpace(enginetypes.WikiPageContent(stored))
+	page.ContentMD = content
+	page.ContentMDRaw = content
+	return page, nil
+}
+
 func wikiPageCandidateFromRow(row map[string]interface{}) kc.WikiPageCandidate {
+	content := strings.TrimSpace(enginetypes.WikiPageContent(row))
 	return kc.WikiPageCandidate{
 		ID:             strings.TrimSpace(anyString(row["id"])),
 		Slug:           strings.TrimSpace(anyString(row["slug_kwd"])),
 		Title:          strings.TrimSpace(anyString(row["title_kwd"])),
-		PageType:       strings.TrimSpace(anyString(row["page_type_kwd"])),
+		PageType:       enginetypes.WikiPageCategory(row),
 		Topic:          strings.TrimSpace(anyString(row["topic_kwd"])),
 		PlanGroup:      strings.TrimSpace(anyString(row["plan_group_kwd"])),
 		Summary:        strings.TrimSpace(anyString(row["summary_with_weight"])),
-		ContentMD:      strings.TrimSpace(anyString(row["content_with_weight"])),
-		ContentMDRaw:   strings.TrimSpace(anyString(row["kc_content_md_raw"])),
+		ContentMD:      content,
+		ContentMDRaw:   content,
 		EntityNames:    anyStrings(row["entity_names_kwd"]),
 		RelatedKBPages: anyStrings(row["related_kb_pages_kwd"]),
 		Outlinks:       anyStrings(row["outlinks_kwd"]),

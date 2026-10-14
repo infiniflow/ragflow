@@ -37,7 +37,7 @@ import {
 } from '@/components/ui/tooltip';
 import { CircleStop, Globe, Paperclip, Send, Upload, X } from 'lucide-react';
 import * as React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import storage from '@/utils/authorization-util';
@@ -152,26 +152,14 @@ export function NextMessageInput({
     };
   }, [isResizing]);
 
+  // Level 5 is not a deeper step on the same ladder: the backend hands it to
+  // the agentic RAG agent, which runs its own retrieval instead of the
+  // pipeline's.
   const thinkingOptions = [
     {
-      label: t('chat.thinkingLevelUltra'),
-      value: '4',
-      description: t('chat.thinkingLevelUltraDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelHigh'),
-      value: '3',
-      description: t('chat.thinkingLevelHighDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelMedium'),
-      value: '2',
-      description: t('chat.thinkingLevelMediumDescription'),
-    },
-    {
-      label: t('chat.thinkingLevelLow'),
-      value: '1',
-      description: t('chat.thinkingLevelLowDescription'),
+      label: t('chat.thinkingLevelAgentic'),
+      value: '5',
+      description: t('chat.thinkingLevelAgenticDescription'),
     },
     { label: t('chat.thinkingLevelNone'), value: '0' },
   ];

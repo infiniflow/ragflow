@@ -28,6 +28,14 @@ type IngestionTask struct {
 	// frontend does not have to count DSL nodes itself. Written once the
 	// pipeline compiles the canvas (see pipeline.Run).
 	ComponentTotal int `gorm:"column:component_total;default:0" json:"component_total"`
+	// PipelineLogID is the id of the pipeline_operation_log row the task's
+	// current run owns. The service opens that row when the run is queued and
+	// binds it here, so the running advance and the terminal write update
+	// exactly this row instead of adopting whichever row happens to be open for
+	// the document. A superseded run keeps the id of its (deleted) row, so its
+	// late terminal write cannot touch the replacement run's row. nil for runs
+	// that never opened one.
+	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32" json:"-"`
 	BaseModel
 }
 
@@ -37,12 +45,14 @@ func (IngestionTask) TableName() string {
 }
 
 type IngestionTaskLog struct {
-	ID         int     `gorm:"column:id;primaryKey;autoIncrement" json:"id"`
-	TaskID     string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
-	Checkpoint JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
-	Phase      int     `gorm:"column:phase" json:"phase"`
-	Component  string  `gorm:"column:component;size:64;index" json:"component"`
-	Message    string  `gorm:"column:message;type:text" json:"message"`
+	ID            int     `gorm:"column:id;primaryKey;autoIncrement;index:idx_ingestion_task_log_pipeline_id,priority:2" json:"id"`
+	TaskID        string  `gorm:"column:task_id;size:32;not null;index" json:"task_id"`
+	PipelineLogID *string `gorm:"column:pipeline_log_id;size:32;index:idx_ingestion_task_log_pipeline_id,priority:1" json:"pipeline_log_id,omitempty"`
+	Checkpoint    JSONMap `gorm:"column:checkpoint;type:longtext;not null" json:"checkpoint"`
+	Phase         int     `gorm:"column:phase" json:"phase"`
+	EventType     int     `gorm:"column:event_type;not null;default:4" json:"event_type"`
+	Component     string  `gorm:"column:component;size:64;index" json:"component"`
+	Message       string  `gorm:"column:message;type:text" json:"message"`
 	BaseModel
 }
 

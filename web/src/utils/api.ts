@@ -224,6 +224,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   getPipelineDetail: (datasetId: string, logId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}`,
+  listIngestionMessages: (datasetId: string, logId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/ingestions/${logId}/messages`,
   fetchPipelineDatasetLogs: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/ingestions`,
   listPipelines: `${restAPIv1}/pipelines?type=builtin`,
@@ -236,7 +238,6 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/compilation/status`,
   unbindPipelineTask: (datasetId: string, indexType: string, wipe?: boolean) =>
     `${restAPIv1}/datasets/${datasetId}/${indexType.toLowerCase()}${wipe === false ? '?wipe=false' : ''}`,
-  pipelineRerun: `${restAPIv1}/agents/rerun`,
   getMetaData: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/metadata/summary`,
   updateDocumentsMetadata: (datasetId: string) =>
@@ -261,6 +262,8 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   documentStructureGraph: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
+  documentStructureClaims: (datasetId: string, documentId: string) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
   retrievalTest: `${restAPIv1}/datasets/search`,
 
   // document
@@ -286,7 +289,6 @@ export default {
   webCrawl: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
   documentInfoUpload: `${restAPIv1}/documents/upload`,
-  setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
 
@@ -331,9 +333,9 @@ export default {
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
-  getSystemTokenList: `${restAPIv1}/system/tokens`,
-  createSystemToken: `${restAPIv1}/system/tokens`,
-  removeSystemToken: `${restAPIv1}/system/tokens`,
+  getSystemTokenList: `${restAPIv1}/system/keys`,
+  createSystemToken: `${restAPIv1}/system/keys`,
+  removeSystemToken: `${restAPIv1}/system/keys`,
   getSystemConfig: `${restAPIv1}/system/config`,
   setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 

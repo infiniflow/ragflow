@@ -1,3 +1,4 @@
+import { FileType, FileTypeSuffixMap } from '@/constants/file';
 import {
   DSL,
   DSLComponents,
@@ -8,8 +9,8 @@ import {
   ICategorizeItemResult,
   RAGFlowNodeType,
 } from '@/interfaces/database/agent';
-import { pickByBackend } from '@/utils/backend-variant';
 import { buildSelectOptions } from '@/utils/component-util';
+import { parseDelimiterListForDisplay } from '@/utils/delimiter-preview';
 import { buildOptions, removeUselessFieldsFromValues } from '@/utils/form';
 import { Edge, Node, XYPosition } from '@xyflow/react';
 import { humanId } from 'human-id';
@@ -27,8 +28,6 @@ import isObject from 'lodash/isObject';
 import {
   AgentDialogueMode,
   CategorizeAnchorPointPositions,
-  FileType,
-  FileTypeSuffixMap,
   InputMode,
   NoCopyOperatorsList,
   NoDebugOperatorsList,
@@ -42,6 +41,7 @@ import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { ParserFormSchemaType } from './form/parser-form';
+import { normalizeParserFormValues } from './form/parser-form/utils';
 import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
 import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
@@ -205,7 +205,10 @@ function transformObjectArrayToPureArray(
 }
 
 export function transformParserParams(params: ParserFormSchemaType) {
-  const setups = params.setups.reduce<
+  // Save global vision options from the normalized form alongside the
+  // per-family setups, including nodes whose form has not been opened.
+  const normalizedParams = normalizeParserFormValues(params);
+  const setups = normalizedParams.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur, index) => {
     if (cur.fileFormat) {
@@ -228,15 +231,10 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-            ...pickByBackend({
-              go: { pages: cur.pages?.map((x) => [x.from, x.to]) ?? [] },
-              python: {},
-            }),
+            pages: cur.pages?.map((x) => [x.from, x.to]) ?? [],
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -249,8 +247,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -274,9 +270,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,
-            parse_method: cur.parse_method,
-            lang: cur.lang,
-            system_prompt: cur.system_prompt,
+            ocr_enabled: cur.ocr_enabled,
           };
           break;
         case FileType.Email:
@@ -288,38 +282,24 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Doc:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Html:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
-        case FileType.TextMarkdown:
-          filteredSetup = {
-            ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
-          };
-          break;
-        case FileType.Video:
         case FileType.Audio:
+          // Audio keeps its own per-setup model: it is an ASR model, not the
+          // shared vision one.
           filteredSetup = {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
@@ -337,34 +317,109 @@ export function transformParserParams(params: ParserFormSchemaType) {
     return pre;
   }, {});
 
-  // The Go backend expects the setups map flattened into top-level params,
-  // while the Python backend reads them from the nested `setups` object.
-  return pickByBackend({
-    go: { ...omit(params, ['setups']), ...setups },
-    python: { ...params, setups },
-  });
+  // Flatten the setups map into the top-level params.
+  return { ...omit(normalizedParams, ['setups']), ...setups };
+}
+
+// Decides whether an empty delimiter list should be re-seeded with the
+// default '\n' row. Only legacy nodes need it: nodes saved under the removed
+// 'token_size' tab always persisted an empty list (older DSLs may not even
+// carry a mode). Nodes written by the current form have an explicit
+// 'delimiter'/'one' mode, so an empty list there is a deliberate choice —
+// pure token-size chunking, which both backends support — and must survive.
+export function shouldSeedDefaultDelimiter(
+  delimiterMode: string | undefined,
+  delimiters: unknown,
+): boolean {
+  return (
+    isEmpty(delimiters) &&
+    delimiterMode !== 'delimiter' &&
+    delimiterMode !== 'one'
+  );
+}
+
+// Migrates legacy token chunker values to the current form shape. Idempotent,
+// so every boundary (form defaults, canvas save, dataset load) can apply it:
+// - 'token_size' (removed tab) or an absent mode falls back to 'delimiter';
+// - only legacy nodes get the empty delimiter list re-seeded (the general
+//   chunker never had the legacy tab, so callers pass seedLegacyDelimiter:
+//   false — an empty list there is always a deliberate choice);
+// - enable_children predates the toggle: derive it from the children list.
+export function normalizeTokenChunkerFormValues<T extends Record<string, any>>(
+  values: T,
+  { seedLegacyDelimiter = true } = {},
+) {
+  return {
+    ...values,
+    delimiter_mode: values.delimiter_mode === 'one' ? 'one' : 'delimiter',
+    delimiters:
+      seedLegacyDelimiter &&
+      shouldSeedDefaultDelimiter(values.delimiter_mode, values.delimiters)
+        ? [{ value: '\n' }]
+        : (values.delimiters ?? []),
+    enable_children:
+      values.enable_children ??
+      (Array.isArray(values.children_delimiters) &&
+        values.children_delimiters.length > 0),
+    children_delimiters: values.children_delimiters ?? [],
+  };
 }
 
 export function transformTokenChunkerParams(
   params: TokenChunkerFormSchemaType,
+  { seedLegacyDelimiter = true } = {},
 ) {
-  const { image_table_context_window, ...rest } = params;
+  const { image_table_context_window, ...rest } =
+    normalizeTokenChunkerFormValues(params, { seedLegacyDelimiter });
   const imageTableContextWindow = Number(image_table_context_window || 0);
   return {
     ...rest,
     // Keep the configured values in 'one' mode too: the chunker ignores them
     // while merging everything into a single chunk, but zeroing them here
     // wiped the user's settings on every save (they reloaded as 0 / ["\n"]).
-    overlapped_percent: Number(params.overlapped_percent) / 100,
-    delimiters: transformObjectArrayToPureArray(params.delimiters, 'value'),
+    overlapped_percent: Number(rest.overlapped_percent) / 100,
+    delimiters: transformObjectArrayToPureArray(rest.delimiters, 'value'),
     table_context_size: imageTableContextWindow,
     image_context_size: imageTableContextWindow,
 
     // Unset children delimiters if this option is not enabled
-    children_delimiters: params.enable_children
-      ? transformObjectArrayToPureArray(params.children_delimiters, 'value')
+    children_delimiters: rest.enable_children
+      ? transformObjectArrayToPureArray(rest.children_delimiters, 'value')
       : [],
   };
+}
+
+// The Go chunker treats a bare entry as a soft split point (the split pieces
+// are still merged up to the chunk token size). The shared chunker form shows
+// the matching tip.
+export function getChunkerDelimiterTipKey() {
+  return 'flow.delimitersTip';
+}
+
+export function getChunkerDelimiterPreview(values: (string | undefined)[]) {
+  return parseDelimiterListForDisplay(values, { keepBare: true });
+}
+
+// The child split activates every non-empty entry on both backends, so the
+// child preview never drops bare rows.
+export function getChunkerChildrenDelimiterPreview(
+  values: (string | undefined)[],
+) {
+  return parseDelimiterListForDisplay(values, { keepBare: true });
+}
+
+export function transformGeneralChunkerParams(
+  params: TokenChunkerFormSchemaType,
+) {
+  // The general chunker never had the legacy 'token_size' tab, so an empty
+  // delimiter list is always a deliberate choice — skip the legacy re-seed.
+  const result = omit(
+    transformTokenChunkerParams(params, { seedLegacyDelimiter: false }),
+    ['delimiter_mode'],
+  );
+  result.table_context_size = Number(params.table_context_size || 0);
+  result.image_context_size = Number(params.image_context_size || 0);
+  return result;
 }
 
 export function transformTitleChunkerParams(
@@ -390,6 +445,10 @@ export function transformTitleChunkerParams(
       'groupRules',
       'hierarchyHierarchy',
       'hierarchyGroup',
+      // Legacy pre-split rules field. The active rules have already been
+      // resolved (with `rules` as fallback) into `levels` above; keep the
+      // serialized params identical to the template's obj.params shape.
+      'rules',
     ]),
     method: params.method,
     hierarchy: Number(hierarchyValue || 0),
@@ -399,10 +458,11 @@ export function transformTitleChunkerParams(
   };
 }
 
-// LLM setting keys the Go extractor DSL keeps besides the nested groups.
-// Mirrors LlmSettingSchema (components/llm-setting-items/next) — duplicated
-// here as a plain list so this module doesn't import the form components.
-const ExtractorLlmSettingKeys = [
+// LLM setting keys LLM-backed pipeline operators (Extractor, Compiler) keep in
+// their DSL params. Mirrors LlmSettingSchema (components/llm-setting-items/next)
+// — duplicated here as a plain list so this module doesn't import the form
+// components.
+export const LlmSettingParamKeys = [
   'llm_id',
   'temperature',
   'top_p',
@@ -418,20 +478,12 @@ const ExtractorLlmSettingKeys = [
   'maxTokensEnabled',
 ];
 
-// The Python extractor only reads the legacy flat fields.
-function transformExtractorParamsPython(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  const raw = params as Record<string, any>;
-  return { ...params, prompts: [{ content: raw.prompts, role: 'user' }] };
-}
-
 // An unopened legacy node can still flow through here with flat keys
 // (auto_keywords, keywords_sys_prompt, enable_metadata + metadata[],
 // the transitional "metadata_config", ...). Accept them as read
 // fallbacks — flat "metadata" is an array, which distinguishes it from
 // the group object — but never re-emit them.
-function transformExtractorParamsGo(
+export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
   const raw = params as Record<string, any>;
@@ -472,21 +524,40 @@ function transformExtractorParamsGo(
   const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
   const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
 
+  // The enabled switch is authoritative when the form carries it; an unopened
+  // legacy node (flat keys only) derives it from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const isKeywordsEnabled =
+    params.keywords?.enabled !== undefined
+      ? Boolean(params.keywords.enabled)
+      : keywordsTopN > 0;
+  const isQuestionsEnabled =
+    params.questions?.enabled !== undefined
+      ? Boolean(params.questions.enabled)
+      : questionsTopN > 0;
+  const isTagsEnabled =
+    params.tags?.enabled !== undefined
+      ? Boolean(params.tags.enabled)
+      : tagsTopN > 0;
+
   // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
   // nested per-feature groups, so emit exactly that whitelist along with
   // the LLM settings the form defines — no legacy flat mirrors, no
   // display-only fields like outputs.
   return {
-    ...pick(params, ExtractorLlmSettingKeys),
+    ...pick(params, LlmSettingParamKeys),
     keywords: {
+      enabled: isKeywordsEnabled,
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
     },
     questions: {
+      enabled: isQuestionsEnabled,
       top_n: questionsTopN,
       system_prompt: questionsSysPrompt,
     },
     tags: {
+      enabled: isTagsEnabled,
       top_n: tagsTopN,
       tag_file_id: tagFileId,
     },
@@ -502,13 +573,15 @@ function transformExtractorParamsGo(
   };
 }
 
-export function transformExtractorParams(
-  params: ExtractorFormSchemaType,
+// The Compiler reads the compilation template group plus the same LLM runtime
+// settings as the Extractor; display-only fields like outputs are dropped.
+export function transformCompilationParams(
+  params: Record<string, any>,
 ): Record<string, any> {
-  return pickByBackend({
-    go: transformExtractorParamsGo,
-    python: transformExtractorParamsPython,
-  })(params);
+  return {
+    compilation_template_group_id: params?.compilation_template_group_id,
+    ...pick(params, LlmSettingParamKeys),
+  };
 }
 
 function transformDataOperationsParams(params: DataOperationsFormSchemaType) {
@@ -640,8 +713,20 @@ export const buildDslComponentsByGraph = (
           params = transformTokenChunkerParams(params);
           break;
 
+        case Operator.GeneralChunker:
+          params = transformGeneralChunkerParams(params);
+          break;
+
         case Operator.TitleChunker:
           params = transformTitleChunkerParams(params);
+          break;
+        case Operator.ManualChunker:
+          // These fields are UI-only for the manual chunker and are not read
+          // by the backend ManualChunker component (manual.go pins method=group,
+          // ignores the token cap).
+          params = transformTitleChunkerParams(
+            omit(params, ['include_heading_content', 'chunk_token_cap']) as any,
+          );
           break;
         case Operator.Extractor:
           params = transformExtractorParams(params);
@@ -699,7 +784,9 @@ export const buildDslGlobalVariables = (
 
 // TODO: This is caused by `useSendMessageBySSE`; it is recommended to sort out the logic.
 export const receiveMessageError = (res: any) =>
-  res && res?.response.status !== 200;
+  res &&
+  (res?.response.status !== 200 ||
+    (typeof res?.data?.code === 'number' && res.data.code !== 0));
 
 // Replace the id in the object with text
 export const replaceIdWithText = (
@@ -950,21 +1037,6 @@ export function isEmptyMessageContent(content?: unknown): boolean {
     content.length === 0 ||
     content.some((item) => typeof item !== 'string' || item.trim() === '')
   );
-}
-
-/**
- * Returns the display names of Message nodes whose content is empty, so the
- * save flow can warn about them up front instead of surfacing the runtime
- * error only when the user runs the agent.
- */
-export function getEmptyMessageNodeNames(nodes: RAGFlowNodeType[]): string[] {
-  return nodes
-    .filter(
-      (node) =>
-        node.data?.label === Operator.Message &&
-        isEmptyMessageContent(node.data?.form?.content),
-    )
-    .map((node) => node.data?.name ?? node.id);
 }
 
 /**

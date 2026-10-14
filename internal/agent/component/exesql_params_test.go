@@ -44,11 +44,32 @@ func TestValidateDynamicEntriesExeSQL(t *testing.T) {
 		t.Fatalf("valid trino ExeSQL DSL rejected: %v", err)
 	}
 
+	// Templates ship an ExeSQL scaffold with every connection field blank
+	// (agent/templates/text2sql_data_expert.json); it must stay creatable
+	// and savable until the user configures the connection.
+	templateScaffold := dslWithComponents(componentDSL("ExeSQL", map[string]any{
+		"db_type":     "mysql",
+		"database":    "",
+		"username":    "",
+		"host":        "",
+		"password":    "",
+		"port":        3306,
+		"max_records": 1024,
+	}))
+	if err := ValidateDynamicEntries(templateScaffold); err != nil {
+		t.Fatalf("unconfigured ExeSQL scaffold rejected: %v", err)
+	}
+
 	tests := []struct {
 		name      string
 		component map[string]any
 		want      string
 	}{
+		{
+			"scaffold with only host filled",
+			componentDSL("ExeSQL", map[string]any{"db_type": "mysql", "database": "", "username": "", "host": "10.0.0.5", "password": ""}),
+			"[ExeSQL] Database name does not support empty value",
+		},
 		{
 			"unsupported db_type",
 			componentDSL("ExeSQL", map[string]any{"db_type": "oracle", "database": "d", "username": "u", "host": "h", "password": "p"}),

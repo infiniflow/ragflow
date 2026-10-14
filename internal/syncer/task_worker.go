@@ -19,7 +19,6 @@ package syncer
 import (
 	"context"
 	"errors"
-	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/service"
@@ -151,28 +150,18 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			ackEnvelope(envelope)
 			return
 		}
-		if isTransientSyncError(err) {
-			attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), maxTransientTaskRetries)
-			if transientErr != nil {
-				if err = w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
-					common.Warn("syncer task reschedule failed after transient failure handling error", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
-				}
-				nackEnvelope(envelope)
-				return
-			}
-			logTransientSyncRetry(taskContext, attempts, failed, err)
-			if !failed {
-				w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
-			}
-			ackEnvelope(envelope)
-			return
-		}
-		if failErr := w.taskDAO.FailTask(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(fmt.Errorf("sync task failed: %w", err)), 1); failErr != nil {
+		maxRetries := maxTaskRetries(err)
+		attempts, failed, transientErr := w.taskDAO.HandleTransientFailure(ctx, taskContext.Task.ID, taskContext.Connector.ID, syncTaskErrorMessage(err), taskErrorClass(err), maxRetries)
+		if transientErr != nil {
 			if err = w.rescheduleClaimed(context.WithoutCancel(ctx), taskContext.Task.ID); err != nil {
-				common.Warn("syncer task reschedule failed after terminal failure handling error", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
+				common.Warn("syncer task reschedule failed after failure handling error", zap.String("task_id", taskContext.Task.ID), zap.Error(err))
 			}
 			nackEnvelope(envelope)
 			return
+		}
+		logSyncRetry(taskContext, attempts, failed, maxRetries, err)
+		if !failed {
+			w.scheduleRetry(ctx, taskContext.Task.ID, transientRetryDelay(attempts))
 		}
 		ackEnvelope(envelope)
 		return
@@ -235,7 +224,8 @@ func syncTaskErrorMessage(err error) string {
 	return err.Error()
 }
 
-// transientRetryDelay return retry delay
+// transientRetryDelay returns the exponential backoff before the next task
+// retry: 10s, 20s, 40s, ... capped at 320s.
 func transientRetryDelay(attempts int64) time.Duration {
 	if attempts < 1 {
 		attempts = 1
@@ -245,13 +235,13 @@ func transientRetryDelay(attempts int64) time.Duration {
 	if shift > 5 {
 		shift = 5
 	}
-	return time.Duration(1<<shift) * 30 * time.Second
+	return time.Duration(1<<shift) * 10 * time.Second
 }
 
-func logTransientSyncRetry(taskContext dao.SyncTaskContext, attempts int64, failed bool, err error) {
-	message := "sync task transient retry scheduled"
+func logSyncRetry(taskContext dao.SyncTaskContext, attempts int64, failed bool, maxRetries int64, err error) {
+	message := "sync task retry scheduled"
 	if failed {
-		message = "sync task failed after transient retries"
+		message = "sync task failed after retries"
 	}
 	common.Warn(
 		message,
@@ -260,7 +250,7 @@ func logTransientSyncRetry(taskContext dao.SyncTaskContext, attempts int64, fail
 		zap.String("kb_id", taskContext.Knowledgebase.ID),
 		zap.String("source", taskContext.Connector.Source),
 		zap.Int64("attempts", attempts),
-		zap.Int64("max_retries", maxTransientTaskRetries),
+		zap.Int64("max_retries", maxRetries),
 		zap.Error(err),
 	)
 }

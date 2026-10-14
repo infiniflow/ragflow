@@ -17,9 +17,9 @@
 // BotService is the shared service layer for the public
 // chatbot/agentbot endpoints (api/v1/chatbots/...,
 // api/v1/agentbots/...) plus the agent attachment download. It is
-// intentionally a thin aggregator — it sequences DAO lookups, the
-// tenant/status authorisation guard, and delegates the heavy work
-// (LLM call, canvas run) to the existing services.
+// intentionally a thin aggregator — it sequences permission checks and DAO
+// lookups, and delegates the heavy work (LLM call, canvas run) to the existing
+// services.
 package service
 
 import (
@@ -27,15 +27,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"hash/fnv"
-	"sync"
 
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/agent/dsl"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
 
 // BotService coordinates chatbot + agentbot reads and the matching
@@ -49,49 +48,41 @@ type BotService struct {
 	canvasDAO           *dao.UserCanvasDAO
 	api4ConversationDAO *dao.API4ConversationDAO
 	agentService        *AgentService
-	llmService          *LLMService
 	pipeline            *ChatPipelineService
-	// persistLocks serialises persistChatbotTurn's read-modify-write
-	// on a single api_4_conversation row. ChatbotCompletion fetches
-	// the session before streaming starts, so without this lock two
-	// concurrent requests on the same session_id would each append
-	// their turn to the same stale base and the last Update would
-	// silently drop the other exchange. Striped to a fixed size so
-	// the lock set does not grow with the number of sessions.
-	persistLocks [64]sync.Mutex
 }
 
 // NewBotService wires a fresh BotService. agentSvc is required for
-// AgentbotCompletion; llmSvc is required for ChatbotCompletion (in
-// step 6). Both are nullable in unit tests.
-func NewBotService(agentSvc *AgentService, llmSvc *LLMService) *BotService {
+// AgentbotCompletion and is nullable in unit tests.
+func NewBotService(agentSvc *AgentService) *BotService {
 	return &BotService{
 		chatDAO:             dao.NewChatSessionDAO(),
 		canvasDAO:           dao.NewUserCanvasDAO(),
 		api4ConversationDAO: dao.NewAPI4ConversationDAO(),
 		agentService:        agentSvc,
-		llmService:          llmSvc,
 		pipeline:            NewChatPipelineService(),
 	}
 }
 
 // ChatbotInfo returns the public metadata of a chatbot dialog.
-//
-// Mirrors the python `bot_api.py::chatbot_info` handler. The
-// authorisation check is: dialog must exist, the requester must own
-// it (TenantID match), and Status must equal common.StatusDialogValid
-// (the python StatusEnum.VALID.value).
-func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
+func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
+	if err = checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
+		ec, err = normalizeChatPermissionError(err)
+		return "", "", "", "", false, ec, err
+	}
+
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
-		return "", "", "", "", false, common.CodeDataError, err
+		if dao.IsNotFoundErr(err) {
+			ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+			return "", "", "", "", false, ec, err
+		}
+		return "", "", "", "", false, common.CodeServerError, err
 	}
-	if dialog == nil || dialog.TenantID != tenantID ||
-		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
-		return "", "", "", "", false, common.CodeDataError,
-			errors.New("authentication error: no access to this chatbot")
+	if dialog == nil {
+		ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+		return "", "", "", "", false, ec, err
 	}
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's
@@ -110,11 +101,11 @@ func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string)
 // Mirrors the python `bot_api.py::agentbot_inputs` handler. The
 // authorisation check is the same IDOR guard the production
 // AgentService uses (canvas must be visible to the requesting user).
-func (s *BotService) AgentbotInputs(ctx context.Context, tenantID, agentID string) (
+func (s *BotService) AgentbotInputs(ctx context.Context, userID, agentID string) (
 	title, avatar, prologue, mode string, inputs map[string]any,
 	ec common.ErrorCode, err error,
 ) {
-	cv, err := s.loadCanvas(ctx, tenantID, agentID)
+	cv, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRead)
 	if err != nil {
 		return "", "", "", "", nil, common.CodeDataError, err
 	}
@@ -149,12 +140,17 @@ func (s *BotService) AgentbotInputs(ctx context.Context, tenantID, agentID strin
 // is the cheap fast-fail that costs a single DAO roundtrip
 // instead of a full canvas compile.
 func (s *BotService) AgentbotCompletion(
-	ctx context.Context, tenantID, agentID string, req AgentbotCompletionRequest,
+	ctx context.Context, userID, agentID string, req AgentbotCompletionRequest,
 ) (<-chan canvas.RunEvent, common.ErrorCode, error) {
+	question, err := ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		return nil, common.CodeArgumentError, err
+	}
+	req.Question = question
 	if s.agentService == nil {
 		return nil, common.CodeServerError, fmt.Errorf("bot: agent service not wired")
 	}
-	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
+	if _, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRun); err != nil {
 		return nil, common.CodeDataError, err
 	}
 	// Compose the canvas user input the same way Python's
@@ -167,8 +163,14 @@ func (s *BotService) AgentbotCompletion(
 	// into a string field. Files remain a separate RunAgent argument
 	// so they can populate sys.files.
 	userInput := agentbotUserInput(req)
-	ch, err := s.agentService.RunAgent(ctx, tenantID, agentID,
-		req.SessionID, "", userInput, req.Files)
+	var ch <-chan canvas.RunEvent
+	if req.Release != nil && *req.Release {
+		ch, err = s.agentService.runReleasedAgent(ctx, userID, agentID,
+			req.SessionID, userInput, req.Files)
+	} else {
+		ch, err = s.agentService.RunAgent(ctx, userID, agentID,
+			req.SessionID, "", userInput, req.Files)
+	}
 	if err != nil {
 		return nil, common.CodeDataError, err
 	}
@@ -178,11 +180,11 @@ func (s *BotService) AgentbotCompletion(
 // AgentbotLogs returns the stored execution timeline for an agentbot run.
 // Access is scoped to the caller's accessible tenants, matching the Python
 // agent_bot_logs endpoint.
-func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
-	if _, err := s.loadCanvas(ctx, tenantID, agentID); err != nil {
+func (s *BotService) AgentbotLogs(ctx context.Context, userID, agentID, messageID string) (map[string]any, common.ErrorCode, error) {
+	if _, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRead); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	payload, err := redis.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
+	payload, err := kvrocks.Get().Get(ctx, fmt.Sprintf("%s-%s-logs", agentID, messageID))
 	if err != nil {
 		return nil, common.CodeServerError, errors.New("failed to read agent logs")
 	}
@@ -202,9 +204,10 @@ func (s *BotService) AgentbotLogs(ctx context.Context, tenantID, agentID, messag
 // accepts; the URL-bound agent_id is the authoritative canvas id
 // (matches python bot_api.py:159).
 type AgentbotCompletionRequest struct {
-	SessionID string `json:"session_id"`
-	UserID    string `json:"user_id"`
-	Stream    bool   `json:"stream"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	UserID    string                   `json:"user_id"`
+	Stream    bool                     `json:"stream"`
 	// Query is the free-text chat question. The shared/embedded chat
 	// page sends `query` (the Python completion reads it before
 	// `question`).
@@ -214,21 +217,15 @@ type AgentbotCompletionRequest struct {
 	UserInput map[string]any           `json:"inputs"`
 	Question  string                   `json:"question"`
 	Files     []map[string]interface{} `json:"files"`
+	Release   *bool                    `json:"release,omitempty"`
 }
 
-// agentbotUserInput derives the single user-input value RunAgent
-// expects from an AgentbotCompletionRequest. Mirrors the Python
-// `query = kwargs.get("query", "") or kwargs.get("question", "")`
-// precedence in canvas_service.completion, and the in-app chat
-// handler's form-input fallback (handler/agent.go
-// extractUserInputFromFormInputs): when neither query field is set,
-// the begin-form `inputs` map supplies the value — a single field
-// lifts its `value` entry, multiple fields collapse to a
-// name→value map.
+// agentbotUserInput uses the resolved question, falling back to Begin form inputs.
+// A single form field lifts its value; multiple fields collapse to a name/value map.
 func agentbotUserInput(req AgentbotCompletionRequest) any {
-	query := req.Query
+	query := req.Question
 	if query == "" {
-		query = req.Question
+		query = req.Query
 	}
 	if query != "" {
 		return query
@@ -265,17 +262,21 @@ func agentbotUserInput(req AgentbotCompletionRequest) any {
 // `async_iframe_completion` body shape (session_id, question,
 // tts (unused) and a freeform dict).
 type ChatbotCompletionRequest struct {
-	SessionID string         `json:"session_id"`
-	Question  string         `json:"question"`
-	Stream    bool           `json:"stream"`
-	Inputs    map[string]any `json:"inputs"`
+	Query     string                   `json:"query,omitempty"`
+	Messages  []map[string]interface{} `json:"messages,omitempty"`
+	SessionID string                   `json:"session_id"`
+	Question  string                   `json:"question"`
+	Stream    bool                     `json:"stream"`
+	Inputs    map[string]any           `json:"inputs"`
 	// Quote controls citation generation. Nil means "absent" —
 	// python bot_api.py defaults it to False for chatbot
 	// completions, so the service layer mirrors that.
 	Quote *bool `json:"quote"`
-	// Reasoning / Internet arrive as bool OR 0/1 number depending
-	// on the widget; the service layer normalises them before
-	// handing them to the chat pipeline.
+	// Reasoning / Internet arrive as bool OR 0/1 number depending on the
+	// widget. Internet is normalised by normalizeInternetFlag before reaching
+	// the pipeline (chat_pipeline.go); Reasoning is passed through verbatim as
+	// the 0..4 agentic-RAG level so medium/high/ultra levels are not collapsed
+	// to a bool — resolveReasoningLevel reads it directly.
 	Reasoning any `json:"reasoning"`
 	Internet  any `json:"internet"`
 	// DocIDs is an optional comma-separated document filter,
@@ -283,33 +284,22 @@ type ChatbotCompletionRequest struct {
 	DocIDs string `json:"doc_ids"`
 }
 
-// persistLock returns the striped mutex guarding one session row's
-// read-modify-write in persistChatbotTurn. The modulo runs on the
-// unsigned hash — converting to int first would go negative on
-// 32-bit architectures and panic with an out-of-bounds index.
-func (s *BotService) persistLock(sessionID string) *sync.Mutex {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(sessionID))
-	return &s.persistLocks[h.Sum32()%uint32(len(s.persistLocks))]
-}
-
-// loadCanvas is the IDOR guard for agentbot reads. It mirrors the
-// private loadCanvasForUser helper on AgentService without taking a
-// dependency on the agentService pointer (so BotService can be
-// tested with a nil agentService).
-func (s *BotService) loadCanvas(ctx context.Context, tenantID, agentID string) (*entity.UserCanvas, error) {
+// loadCanvas authorizes a bot operation before loading its canvas. Keeping this
+// guard here prevents public bot endpoints from depending on AgentService.
+func (s *BotService) loadCanvas(ctx context.Context, userID, agentID string, operation permission.Operation) (*entity.UserCanvas, error) {
 	if agentID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	if tenantID == "" {
+	if userID == "" {
 		return nil, dao.ErrUserCanvasNotFound
 	}
-	userTenantDAO := dao.NewUserTenantDAO()
-	tenants, err := userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, tenantID)
-	if err != nil {
-		return nil, fmt.Errorf("bot: tenants for user %s: %w", tenantID, err)
+	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, operation); err != nil {
+		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
+			return nil, dao.ErrUserCanvasNotFound
+		}
+		return nil, fmt.Errorf("bot: check canvas %s permission: %w", agentID, err)
 	}
-	return s.canvasDAO.GetByIDForUser(ctx, dao.DB, agentID, tenantID, tenants)
+	return s.canvasDAO.GetByID(ctx, dao.DB, agentID)
 }
 
 // canvasDSLMap projects a UserCanvas.DSL JSONMap into a

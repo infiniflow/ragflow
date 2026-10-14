@@ -367,6 +367,27 @@ func TestSearchAfterPaginateLimitLargerThanBatchSize(t *testing.T) {
 	}
 }
 
+func TestBuildBoolQueryFromConditionUsesLegacyGraphFallback(t *testing.T) {
+	got := buildBoolQueryFromCondition(map[string]interface{}{"knowledge_graph_kwd": "entity"}, nil, false, false)
+	outer, ok := got["bool"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("missing bool wrapper: %v", got)
+	}
+	filters, ok := outer["filter"].([]interface{})
+	if !ok || len(filters) != 1 {
+		t.Fatalf("graph filter = %#v, want one compatibility clause", outer["filter"])
+	}
+	encoded, err := json.Marshal(filters[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, field := range []string{"type_kwd", "knowledge_graph_kwd"} {
+		if !strings.Contains(string(encoded), "\""+field+"\":\"entity\"") {
+			t.Errorf("graph filter %s does not match %s: %s", field, field, encoded)
+		}
+	}
+}
+
 // TestBuildBoolQueryFromConditionIDFilter is the regression for the
 // "id filter encoded as a nested array inside bool.should" bug.
 //
@@ -434,6 +455,15 @@ func TestBuildBoolQueryFromConditionIDFilter(t *testing.T) {
 
 	check("int_value", map[string]interface{}{
 		"id": 42,
+	}, []string{"id", "_id"})
+
+	// A typed []string must be handled too: callers built from typed helpers
+	// (e.g. list_chunks' ChunkScope) pass []string, and the generic loop below
+	// skips the "id" key — without this branch the query carries NO id filter
+	// and a scoped read silently fetches the whole document (an 11-chunk
+	// window returned 3.8MB instead of ~17KB).
+	check("string_slice_value", map[string]interface{}{
+		"id": []string{"a", "b", "c"},
 	}, []string{"id", "_id"})
 }
 
@@ -518,7 +548,7 @@ func TestBuildQueryStringQueryMinimumShouldMatchHalfUp(t *testing.T) {
 		query := buildQueryStringQuery(&types.MatchTextExpr{
 			MatchingText: "hello",
 			ExtraOptions: map[string]interface{}{"minimum_should_match": tc.fraction},
-		}, 0.5, false, false)
+		}, false, false)
 		got := query["query_string"].(map[string]interface{})["minimum_should_match"].(string)
 		if got != tc.want {
 			t.Errorf("buildQueryStringQuery minimum_should_match for %g = %q, want %q", tc.fraction, got, tc.want)

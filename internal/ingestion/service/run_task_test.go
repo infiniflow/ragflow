@@ -11,15 +11,14 @@ import (
 	"ragflow/internal/ingestion/testutil"
 )
 
-// TestRunTask_ContextCancelledBeforeCheckpoint: a cancelled context makes
-// runTask return true (terminal: durably recorded cancel) immediately, without
-// bumping the checkpoint or calling runDocumentTask. The task status is
-// transitioned to STOPPED so it does not stay RUNNING forever.
+// TestRunTask_ContextCancelledBeforePipeline makes a cancelled context settle
+// the task as STOPPED without entering the pipeline.
 func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	db := testutil.SetupTestDB(t)
 	cleanup := testutil.ReplaceDBForTest(t, db)
 	defer cleanup()
 	_, _, _, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
+	runID := "run-" + taskID
 
 	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
 	var runDocCalled bool
@@ -32,7 +31,7 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	cancel()
 
 	terminal := ingestor.runTask(ctx, &entity.IngestionTask{
-		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1",
+		ID: taskID, DocumentID: "doc-1", DatasetID: "kb-1", PipelineLogID: &runID,
 	})
 
 	if !terminal {
@@ -42,13 +41,14 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 		t.Fatal("expected runDocumentTask to be skipped on cancelled ctx")
 	}
 	testCtx := t.Context()
-	// Checkpoint must not have been bumped — no log row should exist.
-	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByTaskID(testCtx, db, taskID)
+	// Cancellation is terminal for the bound run even when it happens before
+	// pipeline execution begins.
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(testCtx, db, "run-"+taskID)
 	if err != nil {
 		t.Fatalf("list logs: %v", err)
 	}
-	if len(logs) != 0 {
-		t.Fatalf("expected 0 checkpoint rows (ctx cancelled before checkpoint), got %d", len(logs))
+	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message != "Task stopped by user." {
+		t.Fatalf("terminal events = %+v, want one stopped event", logs)
 	}
 	// Task must be STOPPED, not left in RUNNING.
 	task, err := dao.NewIngestionTaskDAO().GetByID(testCtx, db, taskID)
@@ -57,53 +57,6 @@ func TestRunTask_ContextCancelledBeforeCheckpoint(t *testing.T) {
 	}
 	if task.Status != common.STOPPED {
 		t.Fatalf("task status = %s, want STOPPED", task.Status)
-	}
-}
-
-// TestRunTask_CheckpointFailureMarksFailed: a corrupted run_count value is
-// skipped by IncrementRunCount (it scans past unparseable rows). The task
-// proceeds normally and completes.
-func TestRunTask_CorruptedRunCountSkipped(t *testing.T) {
-	db := testutil.SetupTestDB(t)
-	cleanup := testutil.ReplaceDBForTest(t, db)
-	defer cleanup()
-	_, _, docID, taskID := testutil.SeedTestData(t, db, testutil.WithPipelineID("flow-1"))
-
-	// Seed a bad checkpoint: run_count is a string, not a number.
-	if err := db.Create(&entity.IngestionTaskLog{
-		TaskID: taskID,
-		Checkpoint: entity.JSONMap{
-			"run_count": "not-a-number",
-		},
-	}).Error; err != nil {
-		t.Fatalf("insert bad log: %v", err)
-	}
-
-	ingestor := newUnitIngestor("test", 1, []string{"pdf"})
-	var runDocCalled bool
-	ingestor.runDocumentTask = func(ctx context.Context, _ *entity.IngestionTask) error {
-		runDocCalled = true
-		return nil
-	}
-
-	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
-		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
-	})
-
-	if !terminal {
-		t.Fatal("expected true (terminal: completed despite corrupted run_count)")
-	}
-	if !runDocCalled {
-		t.Fatal("expected runDocumentTask to be called (bad run_count is skipped, not fatal)")
-	}
-
-	ctx := t.Context()
-	task, err := dao.NewIngestionTaskDAO().GetByID(ctx, db, taskID)
-	if err != nil {
-		t.Fatalf("load task: %v", err)
-	}
-	if task.Status != common.COMPLETED {
-		t.Fatalf("task status = %s, want COMPLETED", task.Status)
 	}
 }
 
@@ -120,8 +73,10 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 		return errors.New("boom")
 	}
 
+	runID := "run-" + taskID
 	terminal := ingestor.runTask(t.Context(), &entity.IngestionTask{
 		ID: taskID, DocumentID: docID, DatasetID: "kb-1", Status: common.RUNNING,
+		PipelineLogID: &runID,
 	})
 
 	if !terminal {
@@ -135,6 +90,13 @@ func TestRunTask_RunDocumentTaskFailureMarksFailed(t *testing.T) {
 	}
 	if task.Status != common.FAILED {
 		t.Fatalf("task status = %s, want FAILED", task.Status)
+	}
+	logs, err := dao.NewIngestionTaskLogDAO().ListLogsByPipelineLogID(ctx, db, runID)
+	if err != nil {
+		t.Fatalf("list terminal events: %v", err)
+	}
+	if len(logs) != 1 || logs[0].EventType != dao.EventTypeTerminal || logs[0].Message == "" {
+		t.Fatalf("terminal events = %+v, want one terminal event", logs)
 	}
 }
 

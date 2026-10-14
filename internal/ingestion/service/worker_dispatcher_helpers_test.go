@@ -50,8 +50,22 @@ func seedBurstTasks(t *testing.T, db *gorm.DB, n int) []string {
 		}).Error; err != nil {
 			t.Fatalf("create document %s: %v", docID, err)
 		}
+		runCount := 1
+		runID := "burst-run-" + fmt.Sprint(i)
+		if err := db.Create(&entity.PipelineOperationLog{
+			ID:              runID,
+			DocumentID:      docID,
+			RunCount:        &runCount,
+			TenantID:        tenantID,
+			KbID:            kbID,
+			ParserID:        "naive",
+			TaskType:        string(entity.PipelineTaskTypeParse),
+			OperationStatus: string(entity.TaskStatusUnstart),
+		}).Error; err != nil {
+			t.Fatalf("create pipeline log %s: %v", runID, err)
+		}
 		if err := db.Create(&entity.IngestionTask{
-			ID: taskID, UserID: "u1", DocumentID: docID, DatasetID: kbID, Status: common.CREATED,
+			ID: taskID, UserID: "u1", DocumentID: docID, DatasetID: kbID, Status: common.CREATED, PipelineLogID: &runID,
 		}).Error; err != nil {
 			t.Fatalf("create ingestion task %s: %v", taskID, err)
 		}

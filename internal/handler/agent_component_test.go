@@ -265,9 +265,9 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 		ID: "c1",
 		DSL: map[string]any{
 			"components": map[string]any{
-				"answer": map[string]any{
+				"message": map[string]any{
 					"obj": map[string]any{
-						"component_name": "Answer",
+						"component_name": "Message",
 						// no params.inputs
 					},
 				},
@@ -276,10 +276,10 @@ func TestGetComponentInputForm_NoInputForm(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/answer/input-form", "")
+	c, w := componentCtx(t, "GET", "/api/v1/agents/c1/components/message/input-form", "")
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
-		{Key: "component_id", Value: "answer"},
+		{Key: "component_id", Value: "message"},
 	}
 	h.GetComponentInputForm(c)
 
@@ -331,13 +331,15 @@ func TestDebugComponent_HappyPath_Begin(t *testing.T) {
 type sysEchoComponent struct{}
 
 func (s *sysEchoComponent) Invoke(ctx context.Context, _ *gorm.DB, _ map[string]any) (map[string]any, error) {
-	state, _, err := agentruntime.GetStateFromContext[*agentruntime.CanvasState](ctx)
+	state, err := agentruntime.GetStateFromContext(ctx)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{
 		"query":     state.Sys["query"],
 		"tenant_id": state.Sys["tenant_id"],
+		"canvas_id": state.Sys["canvas_id"],
+		"user_id":   state.Sys["user_id"],
 	}, nil
 }
 
@@ -366,7 +368,7 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	h := &AgentHandler{loader: &fakeCanvasLoader{canvas: cv}}
 
-	body := `{"params":{"sys.query":{"value":"hello sys"}}}`
+	body := `{"params":{"sys.query":{"value":"hello sys"},"sys.user_id":{"value":"attacker"},"sys.canvas_id":{"value":"other-canvas"}}}`
 	c, w := componentCtx(t, "POST", "/api/v1/agents/c1/components/probe/debug", body)
 	c.Params = gin.Params{
 		{Key: "canvas_id", Value: "c1"},
@@ -386,6 +388,12 @@ func TestDebugComponent_SeedsSysInputsIntoCanvasState(t *testing.T) {
 	}
 	if env.Data["query"] != "hello sys" {
 		t.Fatalf("data.query = %v, want 'hello sys'", env.Data["query"])
+	}
+	if env.Data["user_id"] != "u-1" {
+		t.Errorf("data.user_id = %v, want authenticated caller u-1", env.Data["user_id"])
+	}
+	if env.Data["canvas_id"] != "c1" {
+		t.Errorf("data.canvas_id = %v, want loaded canvas c1", env.Data["canvas_id"])
 	}
 }
 

@@ -30,7 +30,6 @@ type immutableDocumentFields struct {
 	tokenNum            *int64
 	tokenNumRequestName string
 	progress            *float64
-	run                 *string
 	progressMsg         *string
 }
 
@@ -43,9 +42,6 @@ func validateImmutableDocumentFields(doc *entity.Document, fields immutableDocum
 	}
 	if fields.progress != nil && !documentProgressEqual(*fields.progress, doc.Progress) {
 		return errors.New("can't change `progress`")
-	}
-	if fields.run != nil && !optionalStringEqual(fields.run, doc.Run) {
-		return errors.New("can't change `run`")
 	}
 	if fields.progressMsg != nil && !optionalStringEqual(fields.progressMsg, doc.ProgressMsg) {
 		return errors.New("can't change `progress_msg`")

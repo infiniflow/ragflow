@@ -52,13 +52,6 @@ func NewUserCanvasVersionDAO() *UserCanvasVersionDAO {
 	return &UserCanvasVersionDAO{}
 }
 
-// Create inserts a new version row. The caller assigns ID, UserCanvasID,
-// Title, Description, DSL. CreateTime/UpdateTime are stamped by the
-// BaseModel BeforeCreate hook.
-func (dao *UserCanvasVersionDAO) Create(ctx context.Context, db *gorm.DB, v *entity.UserCanvasVersion) error {
-	return db.WithContext(ctx).Create(v).Error
-}
-
 // GetByID fetches a single version by primary key. Returns
 // ErrUserCanvasVersionNotFound when the row is absent so callers can map
 // to a 404 instead of inspecting gorm.ErrRecordNotFound directly.
@@ -144,24 +137,11 @@ func (dao *UserCanvasVersionDAO) GetLatestReleaseTimes(ctx context.Context, db *
 	return result, nil
 }
 
-// Delete removes a single version by id. No-op when the row is absent.
-func (dao *UserCanvasVersionDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvasVersion{}).Error
-}
-
 // DeleteTx is the transactional variant of Delete. Used by
 // service.AgentService.DeleteVersion so the version-row removal and the
 // (future) parent-canvas stat update land in one atomic write.
 func (dao *UserCanvasVersionDAO) DeleteTx(ctx context.Context, tx *gorm.DB, id string) error {
 	return tx.WithContext(ctx).Where("id = ?", id).Delete(&entity.UserCanvasVersion{}).Error
-}
-
-// DeleteByCanvasID removes every version of the given canvas. Called from
-// the service layer when the parent canvas is deleted to enforce the
-// §2.9 cascade rule. Returns the number of rows actually deleted.
-func (dao *UserCanvasVersionDAO) DeleteByCanvasID(ctx context.Context, db *gorm.DB, canvasID string) (int64, error) {
-	res := db.WithContext(ctx).Where("user_canvas_id = ?", canvasID).Delete(&entity.UserCanvasVersion{})
-	return res.RowsAffected, res.Error
 }
 
 // DeleteByCanvasIDTx is the transactional variant of DeleteByCanvasID.
@@ -172,34 +152,13 @@ func (dao *UserCanvasVersionDAO) DeleteByCanvasIDTx(ctx context.Context, tx *gor
 	return res.RowsAffected, res.Error
 }
 
-// CreateTx is the transactional variant of Create.
+// CreateTx inserts a version using the caller's transaction.
 func (dao *UserCanvasVersionDAO) CreateTx(ctx context.Context, tx *gorm.DB, v *entity.UserCanvasVersion) error {
 	return tx.WithContext(ctx).Create(v).Error
 }
 
-// SaveOrReplaceLatest inserts a new version or refreshes the latest matching
-// draft in place. If the latest matching version is released and the current
-// save is a draft, it creates a new draft to preserve the released snapshot.
-func (dao *UserCanvasVersionDAO) SaveOrReplaceLatest(ctx context.Context, db *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error) {
-	if opts.KeepUnpublished <= 0 {
-		opts.KeepUnpublished = 20
-	}
-	var saved *entity.UserCanvasVersion
-	if err := db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		row, err := dao.SaveOrReplaceLatestTx(ctx, tx, opts)
-		if err != nil {
-			return err
-		}
-		saved = row
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	return saved, nil
-}
-
 // SaveOrReplaceLatestTx inserts or refreshes a version using the caller's
-// transaction. Its write semantics match SaveOrReplaceLatest exactly.
+// transaction.
 func (dao *UserCanvasVersionDAO) SaveOrReplaceLatestTx(ctx context.Context, tx *gorm.DB, opts SaveOrReplaceLatestVersionOptions) (*entity.UserCanvasVersion, error) {
 	if opts.KeepUnpublished <= 0 {
 		opts.KeepUnpublished = 20

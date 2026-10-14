@@ -54,7 +54,7 @@ export function Auth() {
           name="security.basic_auth.password"
           label={t('flow.webhook.password')}
         >
-          <Input></Input>
+          <Input type="password" autoComplete="new-password"></Input>
         </RAGFlowFormItem>
       </>
     ),

@@ -38,7 +38,7 @@ func (dao *TenantModelProviderDAO) Create(ctx context.Context, db *gorm.DB, prov
 // GetByID get tenant model provider by primary key (id)
 func (dao *TenantModelProviderDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.TenantModelProvider, error) {
 	var provider entity.TenantModelProvider
-	err := db.WithContext(ctx).Where("id = ?", id).First(&provider).Error
+	err := db.WithContext(ctx).Take(&provider, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}

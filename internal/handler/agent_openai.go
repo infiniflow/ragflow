@@ -29,7 +29,6 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 // openAICompatUsage mirrors the usage object emitted by the Python
@@ -107,7 +106,8 @@ type openAICompatCompletion struct {
 func (h *AgentHandler) handleOpenAICompat(c *gin.Context, user *entity.User, req *agentChatCompletionsRequest) {
 	question := extractLastUserContent(req.Messages)
 	if req.SessionID == "" {
-		req.SessionID = utility.GenerateToken()
+		req.SessionID = common.GenerateToken()
+		c.Request = c.Request.WithContext(service.WithAgentSessionID(c.Request.Context(), req.SessionID))
 	}
 
 	runContext := service.WithOpenAICompatMessages(c.Request.Context(), req.Messages)
@@ -341,7 +341,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	if errors.As(err, &codedErr) {
 		code, message = codedErr.Code, codedErr.Message
 	}
-	status, errorType := openAICompatErrorResponse(code, err)
+	status, errorType := openAICompatErrorResponse(code)
 	c.JSON(status, gin.H{
 		"error": gin.H{
 			"message": message,
@@ -350,11 +350,7 @@ func writeOpenAICompatError(c *gin.Context, err error) {
 	})
 }
 
-func openAICompatErrorResponse(code common.ErrorCode, err error) (int, string) {
-	if errors.Is(err, service.ErrAgentSessionBusy) {
-		return http.StatusConflict, "invalid_request_error"
-	}
-
+func openAICompatErrorResponse(code common.ErrorCode) (int, string) {
 	switch code {
 	case common.CodeArgumentError, common.CodeDataError, common.CodeBadRequest, common.CodeParamError:
 		return http.StatusBadRequest, "invalid_request_error"

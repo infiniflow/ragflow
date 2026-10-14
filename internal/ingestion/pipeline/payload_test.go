@@ -50,6 +50,20 @@ func TestExtractPayload(t *testing.T) {
 			want:   map[string]any{"text": "hi"},
 		},
 		{
+			name:   "terminal payload in state snapshot",
+			dsl:    `{"components":{"begin":{"downstream":["c1"]},"c1":{"downstream":null}}}`,
+			output: map[string]any{"state": map[string]any{"c1": map[string]any{"text": "from state"}}},
+			wantOK: true,
+			want:   map[string]any{"text": "from state"},
+		},
+		{
+			name:   "terminal payload in typed state snapshot",
+			dsl:    `{"components":{"begin":{"downstream":["c1"]},"c1":{"downstream":null}}}`,
+			output: map[string]any{"state": map[string]map[string]any{"c1": {"text": "from typed state"}}},
+			wantOK: true,
+			want:   map[string]any{"text": "from typed state"},
+		},
+		{
 			name:    "zero terminals → error",
 			dsl:     `{"components":{}}`,
 			output:  map[string]any{},
@@ -130,27 +144,27 @@ func TestTerminalComponentIDs(t *testing.T) {
 	}{
 		{
 			name: "single terminal",
-			raw:  []byte(`{"components":{"c1":{"downstream":null}}}`),
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["c1"]},"c1":{"downstream":null}}}`),
 			want: []string{"c1"},
 		},
 		{
 			name: "multiple terminals sorted",
-			raw:  []byte(`{"components":{"c2":{"downstream":null},"c1":{"downstream":null}}}`),
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["c2","c1"]},"c2":{"downstream":null},"c1":{"downstream":null}}}`),
 			want: []string{"c1", "c2"},
 		},
 		{
 			name: "non-terminal with downstream connections excluded",
-			raw:  []byte(`{"components":{"c1":{"downstream":["c2"]},"c2":{"downstream":null}}}`),
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["c1"]},"c1":{"downstream":["c2"]},"c2":{"downstream":null}}}`),
 			want: []string{"c2"},
 		},
 		{
 			name: "empty downstream array counts as terminal",
-			raw:  []byte(`{"components":{"c1":{"downstream":[]}}}`),
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["c1"]},"c1":{"downstream":[]}}}`),
 			want: []string{"c1"},
 		},
 		{
 			name: "nested dsl template unwrapped",
-			raw:  []byte(`{"dsl":{"components":{"c1":{"downstream":null}}}}`),
+			raw:  []byte(`{"dsl":{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["c1"]},"c1":{"downstream":null}}}}`),
 			want: []string{"c1"},
 		},
 		{
@@ -159,9 +173,19 @@ func TestTerminalComponentIDs(t *testing.T) {
 			wantErr: "missing components map",
 		},
 		{
-			name: "no terminals",
-			raw:  []byte(`{"components":{}}`),
+			name: "no terminals in reachable cycle",
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["a"]},"a":{"downstream":["b"]},"b":{"downstream":["a"]}}}`),
 			want: []string{},
+		},
+		{
+			name: "disconnected leaf is ignored",
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["connected"]},"connected":{"downstream":null},"TitleChunker:isolated":{"obj":{"component_name":"TitleChunker"},"downstream":null}}}`),
+			want: []string{"connected"},
+		},
+		{
+			name: "disconnected subgraph is ignored",
+			raw:  []byte(`{"components":{"begin":{"obj":{"component_name":"Begin"},"downstream":["connected"]},"connected":{"downstream":null},"Parser:isolated":{"obj":{"component_name":"Parser"},"downstream":["Compiler:isolated"]},"Compiler:isolated":{"downstream":null}}}`),
+			want: []string{"connected"},
 		},
 		{
 			name:    "invalid JSON",

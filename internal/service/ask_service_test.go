@@ -203,7 +203,7 @@ func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
 	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
 	svc := NewAskService(ret, nil, 0, 0)
 
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature":         0.6,
 			"temperature_enabled": true,
@@ -225,6 +225,17 @@ func TestAskService_TemperatureFromLLMSetting(t *testing.T) {
 	}
 }
 
+func TestAskService_DisablesThinkingForSummary(t *testing.T) {
+	ret := &fakeRetriever{result: &RetrievalTestResponse{
+		Chunks: []map[string]interface{}{{"id": "c1", "content_with_weight": "chunk", "docnm_kwd": "Doc", "kb_id": "kb1", "doc_id": "d1"}},
+	}}
+	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
+	collect(NewAskService(ret, nil, 0, 0).Stream(t.Context(), llm, "user1", "test", []string{"kb1"}))
+	if llm.gotConfig == nil || llm.gotConfig.Thinking == nil || *llm.gotConfig.Thinking {
+		t.Fatalf("summary must explicitly disable thinking, got %+v", llm.gotConfig)
+	}
+}
+
 func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 	ret := &fakeRetriever{result: &RetrievalTestResponse{
 		Chunks: []map[string]interface{}{
@@ -235,7 +246,7 @@ func TestAskService_TemperatureDisabledUsesDefault(t *testing.T) {
 	llm := &capturingStreamLLM{fakeStreamLLM: fakeStreamLLM{chunks: []string{"answer"}}}
 	svc := NewAskService(ret, nil, 0, 0)
 
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature":         0.6,
 			"temperature_enabled": false,
@@ -269,7 +280,7 @@ func TestAskService_TemperatureMissingUsesLLMSettingDefaults(t *testing.T) {
 
 	// Flag enabled but value absent (and a completely absent flag) must
 	// substitute the Python LLM_SETTING_DEFAULTS, matching resolve_llm_setting.
-	opts := askOptionsFromSearchConfig("s1", map[string]interface{}{
+	opts := BuildAskStreamOptions("s1", map[string]interface{}{
 		"llm_setting": map[string]interface{}{
 			"temperature_enabled": true,
 		},

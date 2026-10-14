@@ -44,11 +44,8 @@ type TSRResult struct {
 // RunTSR runs table-structure recognition on a cropped table image.
 func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error) {
 	blob, sf := tsrPreprocess(img)
-	// 0 → all cores, matching deepdoc's Python onnxruntime for bit-stable
-	// parity (no contour extraction in the TSR Run path).
-	sess, release, err := getModelSession(filepath.Join(modelDir, "tsr.ort"), "images",
-		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0",
-		[]int64{1, 11, tsrCandidates}, 0)
+	sess, release, err := getModelSession(ctx, filepath.Join(modelDir, "tsr.ort"), "images",
+		[]int64{1, 3, tsrInputSize, tsrInputSize}, "output0")
 	if err != nil {
 		return TSRResult{}, err
 	}
@@ -56,6 +53,9 @@ func RunTSR(ctx context.Context, modelDir string, img *Image) (TSRResult, error)
 
 	out, err := sess.Run(ctx, blob)
 	if err != nil {
+		return TSRResult{}, err
+	}
+	if err := checkOutputLength("tsr", len(out), 11*tsrCandidates); err != nil {
 		return TSRResult{}, err
 	}
 	res := tsrPostprocess(out, sf)
@@ -265,22 +265,35 @@ var tsrClassMap = map[string]int{
 	"table column header": 3, "table projected row header": 4, "table spanning cell": 5,
 }
 
+// ClampBoxes returns a copy of the boxes with every coordinate clamped into
+// the source image bounds [0, W] x [0, H] (mirrors tsr_adapter.py). The
+// in-process DocAnalyzer backend consumes these boxes directly instead of
+// serialising through Wire(), so the clamp must live on the result itself.
+// The receiver's boxes are never mutated: Wire() and the analyzer share one
+// result and both need the raw postprocess values intact.
+func (r TSRResult) ClampBoxes() []TSRBox {
+	w, h := float32(r.W), float32(r.H)
+	out := make([]TSRBox, len(r.Boxes))
+	for i, b := range r.Boxes {
+		b.X0 = minf(maxf(b.X0, 0), w)
+		b.X1 = minf(maxf(b.X1, 0), w)
+		b.Top = minf(maxf(b.Top, 0), h)
+		b.Bottom = minf(maxf(b.Bottom, 0), h)
+		out[i] = b
+	}
+	return out
+}
+
 // Wire emits the Go DocAnalyzer TSR format:
 // {"bboxes": [[x0,y0,x1,y1,score,class_id], ...]}.
 func (r TSRResult) Wire() string {
 	rows := make([][]float32, 0, len(r.Boxes))
-	w, h := float32(r.W), float32(r.H)
-	for _, b := range r.Boxes {
+	for _, b := range r.ClampBoxes() {
 		cls, ok := tsrClassMap[b.Label]
 		if !ok {
 			continue
 		}
-		// Clamp into image bounds (mirrors tsr_adapter.py).
-		x0 := minf(maxf(b.X0, 0), w)
-		x1 := minf(maxf(b.X1, 0), w)
-		top := minf(maxf(b.Top, 0), h)
-		bot := minf(maxf(b.Bottom, 0), h)
-		rows = append(rows, []float32{x0, top, x1, bot, b.Score, float32(cls)})
+		rows = append(rows, []float32{b.X0, b.Top, b.X1, b.Bottom, b.Score, float32(cls)})
 	}
 	out, _ := json.Marshal(map[string]any{"bboxes": rows})
 	return string(out)

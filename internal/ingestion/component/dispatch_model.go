@@ -45,16 +45,8 @@ var resolveTenantModelByType = defaultResolveTenantModelByType
 // per-call model-selection tests can inject a fake without a live MySQL.
 var resolveModelConfig = defaultResolveModelConfig
 
-// configuredMediaModelID extracts a per-call model reference from a parser setup.
-// Image parsing stores the VLM model reference in parse_method when it is not
-// "ocr" (mirroring Python rag/flow/parser/parser.py:_image). Other media
-// families use vlm.llm_id, matching the frontend parser form.
-func configuredMediaModelID(setup schema.ParserSetup, family string) string {
-	if family == "image" {
-		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
-			return ref
-		}
-	}
+// configuredAudioModelID reads the audio setup's ASR model reference.
+func configuredAudioModelID(setup schema.ParserSetup) string {
 	if vlm, ok := setup["vlm"].(map[string]any); ok {
 		if ref, _ := vlm["llm_id"].(string); ref != "" {
 			return ref
@@ -111,11 +103,10 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 	providerDAO := dao.NewTenantModelProviderDAO()
 	provider, err := providerDAO.GetByTenantIDAndProviderName(ctx, db, tenantID, providerName)
 	if err != nil {
-		// Some OCR providers are registered under sibling names: the cloud
-		// "PaddleOCR" provider and the local "PaddleOCR.local" provider expose
-		// the same OCR capability. Tolerate the alternate spelling before
-		// giving up so a tenant configured with either name resolves.
-		for _, alias := range paddleOCRProviderAliases() {
+		// Some OCR capabilities are registered under sibling provider names
+		// (cloud vs. local). Tolerate the alternate spelling before giving up
+		// so a tenant configured with either name resolves.
+		for _, alias := range ocrProviderAliases(providerName) {
 			if alias == providerName {
 				continue
 			}
@@ -149,12 +140,21 @@ func defaultResolveTenantOCRModelByProvider(ctx context.Context, db *gorm.DB, te
 	return nil, "", nil, 0, fmt.Errorf("tenant %s has no active %s OCR model", tenantID, providerName)
 }
 
-// paddleOCRProviderAliases returns the registered provider names that expose
-// PaddleOCR OCR models: the cloud "PaddleOCR" provider and the local
-// "PaddleOCR.local" provider. Both carry OCR-typed models and route through
-// the PaddleOCR PDF dispatch regardless of which spelling a tenant configured.
-func paddleOCRProviderAliases() []string {
-	return []string{"PaddleOCR", "PaddleOCR.local"}
+// ocrProviderAliases returns the registered provider names that expose the
+// same OCR capability as providerName: the cloud "PaddleOCR" provider and
+// the local "PaddleOCR.local" provider are interchangeable, and so are the
+// local "MinerU" provider and the remote "MinerU.Net" provider. The PDF
+// dispatch resolves a tenant's OCR model regardless of which spelling was
+// configured.
+func ocrProviderAliases(providerName string) []string {
+	switch providerName {
+	case "PaddleOCR", "PaddleOCR.local":
+		return []string{"PaddleOCR", "PaddleOCR.local"}
+	case "MinerU", "MinerU.Net":
+		return []string{"MinerU", "MinerU.Net"}
+	default:
+		return []string{providerName}
+	}
 }
 
 func tenantModelIDByType(tenant *entity.Tenant, modelType entity.ModelType) string {
@@ -239,9 +239,13 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
-	maxTokens := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil && mi.MaxOutput != nil {
-		maxTokens = *mi.MaxOutput
+	contextLength := 0
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil {
+		if mi.ContextLength != nil {
+			contextLength = *mi.ContextLength
+		} else if mi.MaxTokens != nil {
+			contextLength = *mi.MaxTokens
+		}
 	}
 	if strings.TrimSpace(modelObj.Extra) != "" {
 		var tenantExtra tenantModelExtra
@@ -249,11 +253,11 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 			return nil, "", nil, 0, err
 		}
 		if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-			maxTokens = *tenantExtra.MaxTokens
+			contextLength = *tenantExtra.MaxTokens
 		}
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	return driver, modelObj.ModelName, apiConfig, maxTokens, nil
+	return driver, modelObj.ModelName, apiConfig, contextLength, nil
 }
 
 func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, tenantID string, modelType entity.ModelType, modelName string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
@@ -297,9 +301,13 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		if err != nil {
 			return nil, "", nil, 0, err
 		}
-		maxTokens := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil && mi.MaxOutput != nil {
-			maxTokens = *mi.MaxOutput
+		contextLength := 0
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
+			if mi.ContextLength != nil {
+				contextLength = *mi.ContextLength
+			} else if mi.MaxTokens != nil {
+				contextLength = *mi.MaxTokens
+			}
 		}
 		if modelObj != nil && strings.TrimSpace(modelObj.Extra) != "" {
 			var tenantExtra tenantModelExtra
@@ -307,20 +315,16 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 				return nil, "", nil, 0, err
 			}
 			if tenantExtra.MaxTokens != nil && *tenantExtra.MaxTokens > 0 {
-				maxTokens = *tenantExtra.MaxTokens
+				contextLength = *tenantExtra.MaxTokens
 			}
 		}
 		apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-		return driver, modelObj.ModelName, apiConfig, maxTokens, nil
+		return driver, modelObj.ModelName, apiConfig, contextLength, nil
 	case !errorsIsRecordNotFound(modelErr):
 		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
-	targetFactoryName := providerName
-	if region == "intl" && strings.EqualFold(providerName, "siliconflow") {
-		targetFactoryName = "siliconflow_intl"
-	}
-	targetProvider := dao.GetModelProviderManager().FindProvider(targetFactoryName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
 	if targetProvider == nil {
 		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}
@@ -339,11 +343,13 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		return nil, "", nil, 0, err
 	}
 	apiConfig := &modelModule.APIConfig{ApiKey: &apiKey, Region: &region, BaseURL: &baseURL}
-	maxTokens := 0
-	if llmInfo.MaxOutput != nil {
-		maxTokens = *llmInfo.MaxOutput
+	contextLength := 0
+	if llmInfo.ContextLength != nil {
+		contextLength = *llmInfo.ContextLength
+	} else if llmInfo.MaxTokens != nil {
+		contextLength = *llmInfo.MaxTokens
 	}
-	return driver, llmInfo.Name, apiConfig, maxTokens, nil
+	return driver, llmInfo.Name, apiConfig, contextLength, nil
 }
 
 func parseCompositeModelName(compositeName string) (modelName, instanceName, providerName string, err error) {

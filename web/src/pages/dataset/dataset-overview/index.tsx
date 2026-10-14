@@ -11,15 +11,17 @@ import {
 
 import WhatIsThis from '@/components/what-is-this';
 import { RunningStatusMap, RunningStatusOld } from '@/constants/knowledge';
-import { useFetchDocumentList } from '@/hooks/use-document-request';
-import { FC, useEffect, useMemo, useState } from 'react';
+import { FC, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useParams, useSearchParams } from 'react-router';
 import { RunningStatus } from '../dataset/constant';
 import { LogTabs } from './dataset-common';
+import DataSourceLogsTable from './data-source-logs-table';
 import { DatasetFilter } from './dataset-filter';
 import { useFetchFileLogList, useFetchOverviewTotal } from './hook';
 import { DocumentLog, IFileLogItem } from './interface';
 import FileLogsTable from './overview-table';
+import { buildDatasetOverviewStats } from './utils';
 
 interface StatCardProps {
   title: string;
@@ -116,56 +118,11 @@ const CardFooterProcess: FC<CardFooterProcessProps> = ({
 
 const FileLogsPage: FC = () => {
   const { t } = useTranslation();
-
-  const [topAllData, setTopAllData] = useState({
-    totalFiles: {
-      value: 0,
-      precent: 0,
-    },
-    downloads: {
-      value: 0,
-      success: 0,
-      failed: 0,
-    },
-    processing: {
-      value: 0,
-      success: 0,
-      failed: 0,
-    },
-  });
+  const [searchParams] = useSearchParams();
+  const { id } = useParams();
+  const datasetId = searchParams.get('id') || id || '';
   const { data: topData } = useFetchOverviewTotal();
-  const {
-    pagination: { total: fileTotal },
-  } = useFetchDocumentList(false);
-
-  useEffect(() => {
-    setTopAllData((prev) => {
-      return {
-        ...prev,
-        downloads: {
-          ...prev.downloads,
-          success: topData?.downloaded || 0,
-        },
-        processing: {
-          value: topData?.processing || 0,
-          success: topData?.finished || 0,
-          failed: topData?.failed || 0,
-        },
-      };
-    });
-  }, [topData]);
-
-  useEffect(() => {
-    setTopAllData((prev) => {
-      return {
-        ...prev,
-        totalFiles: {
-          value: fileTotal || 0,
-          precent: 0,
-        },
-      };
-    });
-  }, [fileTotal]);
+  const overviewStats = buildDatasetOverviewStats(topData);
 
   const {
     data: tableOriginData,
@@ -185,14 +142,16 @@ const FileLogsPage: FC = () => {
       {
         field: 'operation_status',
         label: t('knowledgeDetails.status'),
-        list: Object.values(RunningStatusOld).map((value) => {
-          // const value = key as RunningStatus;
-          return {
-            id: value,
-            // label: RunningStatusMap[value].label,
-            label: RunningStatusMap[value],
-          };
-        }),
+        list: Object.values(RunningStatusOld)
+          .filter((value) => value !== RunningStatusOld.UNSTART)
+          .map((value) => {
+            // const value = key as RunningStatus;
+            return {
+              id: value,
+              // label: RunningStatusMap[value].label,
+              label: RunningStatusMap[value],
+            };
+          }),
       },
       // {
       //   field: 'types',
@@ -213,7 +172,7 @@ const FileLogsPage: FC = () => {
       return filterCollection;
     }
     if (active === LogTabs.DATASET_LOGS) {
-      const list = filterCollection.filter((item, index) => index === 0);
+      const list = filterCollection.filter((_, index) => index === 0);
       return list;
     }
     return [];
@@ -256,13 +215,13 @@ const FileLogsPage: FC = () => {
     <Card
       className="
       p-5 min-w-[880px] mr-5 mb-5 bg-transparent shadow-none
-      flex flex-col overflow-y-auto scrollbar-auto"
+      flex flex-col min-h-0"
     >
       {/* Stats Cards */}
       <div className="grid grid-cols-3 md:grid-cols-3 gap-7 mb-6">
         <StatCard
           title={t('datasetOverview.totalFiles')}
-          value={topAllData.totalFiles.value}
+          value={overviewStats.totalFiles}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/total-files-icon" width={40} />
@@ -272,10 +231,7 @@ const FileLogsPage: FC = () => {
           }
         >
           <div className="text-xs">
-            <span className="text-accent-primary">
-              {topAllData.totalFiles.precent > 0 ? '+' : ''}
-              {topAllData.totalFiles.precent}%{' '}
-            </span>
+            <span className="text-accent-primary">0% </span>
             <span className="font-normal text-text-secondary">
               {t('knowledgeConfiguration.lastWeek')}
             </span>
@@ -283,7 +239,7 @@ const FileLogsPage: FC = () => {
         </StatCard>
         <StatCard
           title={t('datasetOverview.downloading')}
-          value={topAllData.downloads.value}
+          value={overviewStats.downloads.value}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/data-icon" width={40} />
@@ -294,15 +250,15 @@ const FileLogsPage: FC = () => {
           tooltip={t('datasetOverview.downloadTip')}
         >
           <CardFooterProcess
-            success={topAllData.downloads.success}
+            success={overviewStats.downloads.success}
             successTip={t('datasetOverview.downloadSuccessTip')}
-            failed={topAllData.downloads.failed}
+            failed={overviewStats.downloads.failed}
             failedTip={t('datasetOverview.downloadFailedTip')}
           />
         </StatCard>
         <StatCard
           title={t('datasetOverview.processing')}
-          value={topAllData.processing.value}
+          value={overviewStats.processing.value}
           icon={
             isDark ? (
               <SvgIcon name="data-flow/processing-icon" width={40} />
@@ -313,9 +269,9 @@ const FileLogsPage: FC = () => {
           tooltip={t('datasetOverview.processingTip')}
         >
           <CardFooterProcess
-            success={topAllData.processing.success}
+            success={overviewStats.processing.success}
             successTip={t('datasetOverview.processingSuccessTip')}
-            failed={topAllData.processing.failed}
+            failed={overviewStats.processing.failed}
             failedTip={t('datasetOverview.processingFailedTip')}
           />
         </StatCard>
@@ -333,13 +289,17 @@ const FileLogsPage: FC = () => {
       />
 
       {/* Table */}
-      <FileLogsTable
-        data={tableList}
-        pagination={pagination}
-        setPagination={handlePaginationChange}
-        pageCount={10}
-        active={active}
-      />
+      {active === LogTabs.DATASOURCE_LOGS ? (
+        <DataSourceLogsTable datasetId={datasetId} />
+      ) : (
+        <FileLogsTable
+          data={tableList}
+          pagination={pagination}
+          setPagination={handlePaginationChange}
+          pageCount={10}
+          active={active}
+        />
+      )}
     </Card>
   );
 };

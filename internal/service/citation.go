@@ -20,6 +20,7 @@ import (
 	"context"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -60,7 +61,8 @@ var badCitationPatterns = []*regexp.Regexp{
 //  4. Compute cosine similarity between each sentence and each chunk vector.
 //  5. Threshold descent (0.63 → 0.3, ×0.8 per round): find chunks where
 //     similarity > max*0.99.  Up to 4 chunks per sentence.
-//  6. Rebuild answer text with [ID:n] markers inserted after cited sentences.
+//  6. Rebuild answer text with [ID:n] markers inserted after cited sentences,
+//     where n is the cited chunk's position in chunks (see applyCitations).
 //
 // Returns the decorated answer and the set of cited chunk indices.
 func InsertCitations(ctx context.Context, answer string, chunks []SourcedChunk, embedder Embedder, chunkVectors [][]float64) (string, []int) {
@@ -152,6 +154,11 @@ func sentenceSplit(text string) []string {
 
 // applyCitations rebuilds the answer text with [ID:n] markers inserted after
 // each cited sentence position.
+//
+// n is the cited chunk's POSITION in chunks, not its chunk id: the caller returns
+// that same list as the reference, and the client resolves a marker by indexing it
+// with the number the marker carries. A chunk id (opaque text, only digits parse)
+// would come back as a dead marker on both consumers.
 func applyCitations(answer string, sentences []string, sentenceIdx []int, cites map[int][]int, chunks []SourcedChunk) (string, []int) {
 	blocks := strings.Split(answer, "```")
 	var rawPieces []string
@@ -180,7 +187,7 @@ func applyCitations(answer string, sentences []string, sentenceIdx []int, cites 
 			for _, ci := range chunkIdxs {
 				if ci < len(chunks) && !seenChunks[ci] {
 					seenChunks[ci] = true
-					markers = append(markers, " [ID:"+chunks[ci].ID+"]")
+					markers = append(markers, " [ID:"+strconv.Itoa(ci)+"]")
 					citedIndices = append(citedIndices, ci)
 				}
 			}
@@ -367,3 +374,60 @@ func RepairBadCitationFormats(answer string) string {
 	}
 	return working
 }
+
+// slotCitationPattern matches slot-table citations that leak into the final
+// answer. The compose prompt's Research Summary renders the slot draft
+// ("- slot 0 [entity]: ..."), and models occasionally cite those internal
+// lines with the citation format instead of the evidence blocks:
+// "[ID:Slot 0]", "[ID: slot 0]", "[Slot 0]". Such markers index the internal
+// slot table — no chunk the user can open — so they must be rewritten into
+// citations of the chunk the slot was filled from, or dropped.
+var slotCitationPattern = regexp.MustCompile(`(?i)\[\s*(?:ID\s*[:： ]*\s*)?slot\s*([0-9]+)\s*\]`)
+
+// rangeCitationPattern matches range-merged citations: "[ID:1-3]", "[ID: 1 - 3]",
+// "[ID:1~3]". Models sometimes compress consecutive individual citations
+// ([ID:1][ID:2][ID:3]) into such a range on their own — no code path produces
+// it, and no chunk resolves through it, so it must be normalized defensively.
+var rangeCitationPattern = regexp.MustCompile(`(?i)\[\s*ID\s*[:： ]*\s*([0-9]+)\s*[-–—~～]\s*([0-9]+)\s*\]`)
+
+// Keep an unfinished citation until its closing delimiter arrives. Retaining
+// the trailing word also preserves the word boundaries used by refN markers.
+var citationStreamTailPattern = regexp.MustCompile(`(?i)[\[(【][\s*idslot:：0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}–—~～-]*$|#{1,2}(?:[0-9]+\$?)?$|\bref\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]*$|\w+$`)
+
+func stripCitations(text string) string {
+	text = cleanCitationMarkers(text)
+	text = canonicalIDMarkerPattern.ReplaceAllString(text, "")
+	text = slotCitationPattern.ReplaceAllString(text, "")
+	text = rangeCitationPattern.ReplaceAllString(text, "")
+	for _, pattern := range badCitationPatterns {
+		text = pattern.ReplaceAllString(text, "")
+	}
+	return text
+}
+
+type citationStreamFilter struct {
+	pending string
+}
+
+func (f *citationStreamFilter) write(delta string) string {
+	f.pending += delta
+	end := len(f.pending)
+	if tail := citationStreamTailPattern.FindStringIndex(f.pending); tail != nil {
+		end = tail[0]
+	}
+	text := stripCitations(f.pending[:end])
+	f.pending = f.pending[end:]
+	return text
+}
+
+func (f *citationStreamFilter) flush() string {
+	text := stripCitations(f.pending)
+	f.pending = ""
+	return text
+}
+
+// canonicalIDMarkerPattern matches a citation marker that carries the literal
+// "ID:" prefix — the form the citation rules prescribe, and the only one that can
+// be removed from the answer without risking ordinary text like "[2024]".
+var canonicalIDMarkerPattern = regexp.MustCompile(
+	`(?i)\[\s*ID\s*[:： ]*\s*[0-9\x{0660}-\x{0669}\x{06F0}-\x{06F9}]+\s*\]`)

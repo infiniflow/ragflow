@@ -71,6 +71,14 @@ func TestBuildFiltersArrayUsesListContains(t *testing.T) {
 	mustContain(t, got[0], "list_contains(tag_kwd, 'b')")
 }
 
+func TestBuildFiltersKnowledgeGraphCompatibility(t *testing.T) {
+	got := buildFilters(map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}})
+	want := "(type_kwd IN ('entity', 'relation') OR knowledge_graph_kwd IN ('entity', 'relation'))"
+	if len(got) != 1 || got[0] != want {
+		t.Fatalf("graph filter = %v, want %q", got, want)
+	}
+}
+
 func TestBuildFiltersScalarAndIn(t *testing.T) {
 	scalar := buildFilters(map[string]interface{}{"doc_id": "d1"})
 	if len(scalar) != 1 || scalar[0] != "doc_id = 'd1'" {
@@ -115,6 +123,24 @@ func TestL2NormalizeUnitLength(t *testing.T) {
 	}
 	if got := l2Normalize([]float64{0, 0}); !reflect.DeepEqual(got, []float64{0, 0}) {
 		t.Errorf("zero vector should pass through, got %v", got)
+	}
+}
+
+func TestPrepareChunkRowKeepsHiddenParentFields(t *testing.T) {
+	cols, values := prepareChunkRow(map[string]interface{}{
+		"id":                  "parent-1",
+		"doc_id":              "doc-1",
+		"content_with_weight": "parent text",
+		"mom_id":              "parent-1",
+		"available_int":       0,
+	}, "kb-1")
+
+	row := make(map[string]interface{}, len(cols))
+	for i, col := range cols {
+		row[col] = values[i]
+	}
+	if row["mom_id"] != "parent-1" || row["available_int"] != 0 || row["kb_id"] != "kb-1" {
+		t.Fatalf("parent row = %#v, want hidden and dataset-scoped", row)
 	}
 }
 
@@ -179,10 +205,19 @@ func TestBuildFulltextSQLSingleColumn(t *testing.T) {
 	mustNotContain(t, sql, "title_tks @@")
 }
 
-func TestBuildVectorSQLThresholdInWhere(t *testing.T) {
-	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2}
+// The similarity threshold must NOT reach the WHERE clause: there it compiles to
+// a radius search instead of a top-k lookup (173,001 ms vs 136 ms at k=1024 on
+// 111.8M chunks). Elasticsearch applies it as a post-filter, OpenSearch drops
+// it, and RAGFlow re-applies it against the hybrid score afterwards.
+//
+// hasVecThreshold must be SET here. Without it the fixture describes a request
+// that supplied no threshold at all, so the assertion holds trivially and the
+// test would still pass if buildVectorSQL started emitting the radius predicate
+// for a threshold that WAS given - the only case it is meant to guard.
+func TestBuildVectorSQLThresholdNotInWhere(t *testing.T) {
+	pm := parsedMatch{vectorData: []float64{3, 4}, vecThreshold: 0.2, hasVecThreshold: true}
 	sql := buildVectorSQL("t", "id", "TRUE", pm, 10, 5)
-	mustContain(t, sql, "-(q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2]) >= 0.2")
+	mustNotContain(t, sql, ">= 0.2")
 	mustContain(t, sql, "ORDER BY q_2_vec_n <#> ARRAY[0.6,0.8]::FLOAT[2] LIMIT 10 OFFSET 5")
 }
 
@@ -199,6 +234,43 @@ func TestBuildFusionSQLShape(t *testing.T) {
 	mustContain(t, sql, "ORDER BY _score DESC")
 	mustContain(t, sql, "content_ltks @@ 'q'")
 	mustContain(t, sql, "t.id, t.content_ltks") // output fields prefixed with t.
+}
+
+func TestBuildFusionSQLThresholdFiltersAfterLimit(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+		vecThreshold: 0.2, hasVecThreshold: true,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	// Applied to the already-limited candidates, so the IVF scan still returns top-k...
+	mustContain(t, sql, "LIMIT 200) c WHERE sim >= 0.2")
+	// ...and never as a radius predicate on the scan itself.
+	mustNotContain(t, sql, "AS sim\n    FROM idx_t WHERE TRUE AND")
+}
+
+func TestBuildFusionSQLNoThresholdStillExcludesNulls(t *testing.T) {
+	pm := parsedMatch{
+		textQuery: "q", vectorData: []float64{3, 4},
+		textTopN: 200, vectorTopN: 200, vectorWeight: 0.95,
+	}
+	sql := buildFusionSQL("t", "id", []string{"id"}, "TRUE", pm, 0, 30)
+	mustNotContain(t, sql, "WHERE sim >=")
+	// COALESCE(v.sim, 0) would otherwise score a vectorless row as zero.
+	mustContain(t, sql, "WHERE sim IS NOT NULL")
+}
+
+func TestDropNullSimRemovesVectorlessRows(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "a", vecSimColumn: 0.9},
+		{"id": "b", vecSimColumn: nil},
+		{"id": "c"},
+		{"id": "d", vecSimColumn: -0.4},
+	}
+	got := dropNullSim(rows)
+	if len(got) != 2 || got[0]["id"] != "a" || got[1]["id"] != "d" {
+		t.Errorf("dropNullSim = %v, want the two rows carrying a similarity", got)
+	}
 }
 
 func TestBuildUpsert(t *testing.T) {
@@ -260,22 +332,26 @@ func TestResolveOutputFields(t *testing.T) {
 
 func TestSearchFiltersScoping(t *testing.T) {
 	// KbIDs become an IN predicate over the shared tenant table.
-	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true)
+	scored := searchFilters(map[string]interface{}{}, []string{"kb1", "kb2"}, true, false)
 	joined := strings.Join(scored, " AND ")
 	mustContain(t, joined, "kb_id IN ('kb1', 'kb2')")
 	mustContain(t, joined, "available_int = 1")
 	// No KbIDs and no match expr -> no predicates.
-	if got := searchFilters(map[string]interface{}{}, nil, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, nil, false, false); len(got) != 0 {
 		t.Errorf("expected no filters, got %v", got)
 	}
 	// A scored query with no available_int/status defaults available_int=1.
-	one := searchFilters(map[string]interface{}{}, nil, true)
+	one := searchFilters(map[string]interface{}{}, nil, true, false)
 	if len(one) != 1 || one[0] != "available_int = 1" {
 		t.Errorf("scored default = %v", one)
 	}
 	// Blank dataset ids are dropped, so no empty IN () is emitted.
-	if got := searchFilters(map[string]interface{}{}, []string{""}, false); len(got) != 0 {
+	if got := searchFilters(map[string]interface{}{}, []string{""}, false, false); len(got) != 0 {
 		t.Errorf("blank kb ids should yield no filter, got %v", got)
+	}
+	// Management listing explicitly opts into disabled parent chunks.
+	if got := searchFilters(map[string]interface{}{}, nil, true, true); len(got) != 0 {
+		t.Errorf("include unavailable filters = %v, want no availability default", got)
 	}
 }
 

@@ -18,9 +18,7 @@
 //
 // Wraps a single MCP-server-discovered tool (utility/mcpclient.Tool) as
 // an eino BaseTool so it can be invoked from inside the Agent's
-// ReAct loop. The MCP tool list is fetched via utility/mcpclient
-// (which currently only implements tools/list discovery; tools/call
-// invocation is the next step on the MCP client).
+// ReAct loop. Discovery and invocation use the utility MCP client.
 package tool
 
 import (
@@ -50,11 +48,14 @@ import (
 // a URL (legacy callers) fall back to the "not yet wired"
 // sentinel so existing call sites don't break.
 type MCPToolAdapter struct {
-	mcpTool    mcpclient.Tool
-	serverURL  string
-	headers    map[string]string
-	timeout    time.Duration
-	httpClient *http.Client
+	mcpTool     mcpclient.Tool
+	visibleName string
+	serverType  string
+	variables   map[string]string
+	serverURL   string
+	headers     map[string]string
+	timeout     time.Duration
+	httpClient  *http.Client
 }
 
 // NewMCPToolAdapter constructs a wrapper for a single MCP tool.
@@ -91,8 +92,18 @@ func NewMCPToolAdapterFull(t mcpclient.Tool, serverURL string, headers map[strin
 	}
 }
 
+// NewMCPToolAdapterWithOptions preserves the server transport and header variables.
+func NewMCPToolAdapterWithOptions(t mcpclient.Tool, opts mcpclient.CallOptions) *MCPToolAdapter {
+	return &MCPToolAdapter{mcpTool: t, serverURL: opts.URL, serverType: opts.ServerType, headers: opts.Headers, variables: opts.Variables, timeout: opts.Timeout, httpClient: opts.HTTPClient}
+}
+
 // Name returns the underlying MCP tool name.
-func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
+func (m *MCPToolAdapter) Name() string {
+	if m.visibleName != "" {
+		return m.visibleName
+	}
+	return m.mcpTool.Name
+}
 
 // Info returns eino-compatible tool metadata. The MCP client stores the
 // full inputSchema object ({"type":"object","properties":{...},"required":
@@ -105,7 +116,7 @@ func (m *MCPToolAdapter) Name() string { return m.mcpTool.Name }
 // nil so callers emit an empty object schema instead of an invalid schema.
 func (m *MCPToolAdapter) Info(_ context.Context) (*schema.ToolInfo, error) {
 	info := &schema.ToolInfo{
-		Name: m.mcpTool.Name,
+		Name: m.Name(),
 		Desc: m.mcpTool.Description,
 	}
 	if len(m.mcpTool.InputSchema) == 0 {
@@ -138,7 +149,8 @@ func (m *MCPToolAdapter) InvokableRun(ctx context.Context, argumentsInJSON strin
 	}
 	res, err := mcpclient.CallTool(ctx, mcpclient.CallOptions{
 		URL:        m.serverURL,
-		ServerType: mcpclient.TransportStreamableHTTP,
+		ServerType: m.serverType,
+		Variables:  m.variables,
 		Headers:    m.headers,
 		ToolName:   m.mcpTool.Name,
 		Arguments:  argsJSON,
@@ -198,3 +210,6 @@ func marshalArguments(argumentsInJSON string) (json.RawMessage, error) {
 	}
 	return json.RawMessage(argumentsInJSON), nil
 }
+
+// SetVisibleName disambiguates the model-facing name while retaining wire name.
+func (m *MCPToolAdapter) SetVisibleName(name string) { m.visibleName = name }

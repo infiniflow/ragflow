@@ -75,6 +75,16 @@ export function useAgentToolInitialValues() {
           return pick(initialValues, 'operation', 'arguments', 'timeout', 'use_credentials');
         case Operator.SofyaSearch:
           return pick(initialValues, 'api_key', 'search_depth', 'top_n');
+        case Operator.Search1APISearch:
+          return pick(
+            initialValues,
+            'api_key',
+            'channel',
+            'search_service',
+            'top_n',
+          );
+        case Operator.Search1APICrawl:
+          return { api_key: '' };
 
         default:
           return initialValues;

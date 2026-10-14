@@ -23,7 +23,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"ragflow/internal/utility"
 	"regexp"
 	"strings"
 	"sync"
@@ -433,7 +432,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	}
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{Timeout: 15 * time.Second}
+	client := tavilyDeepResearchHTTPClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("tavily call: %w", err)
@@ -464,7 +463,7 @@ func (dr *DeepResearcher) tavilyRetrieve(ctx context.Context, apiKey, query stri
 	chunks := make([]map[string]interface{}, 0, len(apiResp.Results))
 	aggs := make([]interface{}, 0, len(apiResp.Results))
 	for _, r := range apiResp.Results {
-		id := utility.GenerateToken()
+		id := common.GenerateToken()
 		chunks = append(chunks, map[string]interface{}{
 			"chunk_id":            id,
 			"content_ltks":        tokenizeText(r.Content),
@@ -668,17 +667,11 @@ func (dr *DeepResearcher) chatOnce(
 	if dr.ChatModel == nil || dr.ChatModel.ModelDriver == nil {
 		return "", fmt.Errorf("DeepResearcher: no chat model configured")
 	}
-	modelName := ""
-	if dr.ChatModel.ModelName != nil {
-		modelName = *dr.ChatModel.ModelName
-	}
 	msgs := []modelModule.Message{
 		modelModule.Message{Role: "system", Content: systemPrompt},
 		modelModule.Message{Role: "user", Content: userPrompt},
 	}
-	resp, err := dr.ChatModel.ModelDriver.ChatWithMessages(
-		ctx, modelName, msgs, dr.ChatModel.APIConfig, cfg, nil,
-	)
+	resp, err := dr.ChatModel.ChatWithMessages(ctx, msgs, cfg, nil)
 	if err != nil {
 		return "", err
 	}

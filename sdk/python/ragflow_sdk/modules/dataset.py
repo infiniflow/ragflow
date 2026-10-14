@@ -119,17 +119,10 @@ class DataSet(Base):
         finished = []
         while pending:
             for doc_id in list(pending):
-
-                def fetch_doc(doc_id: str) -> Document | None:
-                    try:
-                        docs = self.list_documents(id=doc_id)
-                        return docs[0] if docs else None
-                    except Exception:
-                        return None
-
-                doc = fetch_doc(doc_id)
-                if doc is None:
-                    continue
+                docs = self.list_documents(id=doc_id)
+                if not docs:
+                    raise RuntimeError(f"Document {doc_id} not found while waiting for parsing to finish")
+                doc = docs[0]
                 if isinstance(doc.run, str) and doc.run.upper() in terminal_states:
                     finished.append((doc_id, doc.run, doc.chunk_count, doc.token_count))
                     pending.discard(doc_id)
@@ -149,7 +142,7 @@ class DataSet(Base):
     def parse_documents(self, document_ids):
         try:
             self.async_parse_documents(document_ids)
-            self._get_documents_status(document_ids)
+            return self._get_documents_status(document_ids)
         except KeyboardInterrupt:
             self.async_cancel_parse_documents(document_ids)
 

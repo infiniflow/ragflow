@@ -59,3 +59,32 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 		t.Fatalf("converted request did not preserve include_knowledge_compilation: %#v", converted)
 	}
 }
+
+func TestSelectMetadataFilteredDocIDs(t *testing.T) {
+	tests := []struct {
+		name                 string
+		current              []string
+		filtered             []string
+		hasMetadataCondition bool
+		filterReturnedEmpty  bool
+		want                 []string
+	}{
+		{name: "metadata filter narrows explicit document ids", current: []string{"doc-1"}, filtered: []string{"doc-1"}, want: []string{"doc-1"}},
+		{name: "metadata filter cannot widen explicit document ids", current: []string{"doc-1"}, filtered: []string{}, want: []string{}},
+		{name: "empty generated filter keeps explicit document ids", current: []string{"doc-1"}, filtered: nil, filterReturnedEmpty: true, want: []string{"doc-1"}},
+		{name: "metadata condition uses definitive empty result", current: []string{"doc-1"}, filtered: nil, hasMetadataCondition: true, filterReturnedEmpty: true, want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := selectMetadataFilteredDocIDs(tt.current, tt.filtered, tt.hasMetadataCondition, tt.filterReturnedEmpty)
+			if len(got) != len(tt.want) {
+				t.Fatalf("got %v, want %v", got, tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("got %v, want %v", got, tt.want)
+				}
+			}
+		})
+	}
+}

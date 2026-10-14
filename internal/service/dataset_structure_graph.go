@@ -16,17 +16,15 @@ import (
 	"sort"
 	"strings"
 
-	"gorm.io/gorm"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 )
 
-// Structure-graph sampling constants (mirror structure_graph_common.py).
+// Structure-graph query constants.
 const (
-	graphFullThreshold     = 1024 // below this combined count, return all rows
-	graphTopEntities       = 256  // seed set A size for large buckets
-	graphKeywordCandidates = 16   // keyword/KNN candidate rows
+	graphKeywordCandidates = 16   // keyword candidate rows
 	graphExpansionCap      = 4096 // hub-node expansion cap
 )
 
@@ -34,7 +32,8 @@ var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "menti
 var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
-	"from_entity_kwd", "to_entity_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -54,7 +53,9 @@ type DocumentStructureGraphTemplate struct {
 
 // DocumentStructureGraphResponse mirrors Python's {"templates": [...]}.
 type DocumentStructureGraphResponse struct {
-	Templates []DocumentStructureGraphTemplate `json:"templates"`
+	TotalEntities    int                              `json:"total_entities"`
+	ReturnedEntities int                              `json:"returned_entities"`
+	Templates        []DocumentStructureGraphTemplate `json:"templates"`
 }
 
 // graphRowSearch runs one raw-row search over the tenant's document index.
@@ -289,14 +290,13 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
 }
 
-// dedupEntities order-preserving by (lowercased name, type).
+// dedupEntities preserves the first entity for each lowercased name.
 func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
 	var out []StructureGraphNode
 	seen := map[string]bool{}
 	for _, e := range entities {
 		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
-		typ := strings.ToLower(strings.TrimSpace(graphStr(e["type"])))
-		key := name + "\x00" + typ
+		key := name
 		if name == "" || seen[key] {
 			continue
 		}
@@ -337,6 +337,9 @@ func sortedUnique(in []string) []string {
 }
 
 // normalizeRelationEndpoints aligns relation endpoints to returned entity ids.
+// Matching ignores case and internal whitespace, so an endpoint that differs
+// from the entity name only by the space character (e.g. U+0020 vs U+3000) is
+// still aligned instead of being dropped by the exact-name lookup downstream.
 func normalizeRelationEndpoints(entities []StructureGraphNode, relations []StructureGraphRelation) []StructureGraphRelation {
 	if len(entities) == 0 || len(relations) == 0 {
 		return relations
@@ -353,7 +356,7 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 			if !ok || strings.TrimSpace(v) == "" {
 				continue
 			}
-			key := strings.ToLower(strings.TrimSpace(v))
+			key := normalizeEndpointKey(v)
 			if cur, exists := lookup[key]; exists && cur != respID {
 				ambiguous[key] = true
 				continue
@@ -372,7 +375,7 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 		}
 		for _, f := range []string{"from", "to"} {
 			if v, ok := item[f].(string); ok {
-				if mapped, found := lookup[strings.ToLower(strings.TrimSpace(v))]; found {
+				if mapped, found := lookup[normalizeEndpointKey(v)]; found {
 					item[f] = mapped
 				}
 			}
@@ -380,6 +383,13 @@ func normalizeRelationEndpoints(entities []StructureGraphNode, relations []Struc
 		normalized = append(normalized, item)
 	}
 	return normalized
+}
+
+// normalizeEndpointKey is the case- and whitespace-insensitive match key for
+// entity names / relation endpoints: any run of Unicode spaces (including
+// U+3000) folds to one ASCII space. Mirrors the compiler's normalizedEntityName.
+func normalizeEndpointKey(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
 // rowHasEnabledSource mirrors _row_has_enabled_source.
@@ -456,128 +466,142 @@ func graphStr(v interface{}) string {
 	return fmt.Sprintf("%v", v)
 }
 
-// buildBucket mirrors sgc.build_bucket: small buckets whole, large sampled.
+// buildBucket returns every entity/relation row in the bucket, emitted in source
+// (reading) order. The graph is returned whole — no sampling — so a page_index
+// or tree keeps every title and include edge it needs to nest correctly.
 func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, datasetID string, scope map[string]interface{}, excludedDocIDs map[string]bool) ([]StructureGraphNode, []StructureGraphRelation, error) {
 	excludedDocIDs = excludedDocIDsOrEmpty(excludedDocIDs)
 	bothCond := copyFilter(scope)
 	bothCond["knowledge_graph_kwd"] = []string{"entity", "relation"}
+
+	// Count, then fetch the whole bucket in one request at the exact limit. That
+	// lets the engine walk the result set in a single cursor pass (search_after
+	// past index.max_result_window) instead of re-skipping from the start on
+	// every offset page. Asc("id") is the stable cursor search_after needs.
 	_, total, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id"}, bothCond, nil, 0, 1, nil)
 	if err != nil {
 		return nil, nil, err
 	}
-	if total < graphFullThreshold {
-		fieldMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, nil, 0, int(total), nil)
+	fieldMap := map[string]map[string]interface{}{}
+	if total > 0 {
+		orderBy := (&types.OrderByExpr{}).Asc("id")
+		fieldMap, _, err = graphRowSearch(ctx, tenantID, datasetID, graphAllFields, bothCond, orderBy, 0, int(total), nil)
 		if err != nil {
 			return nil, nil, err
 		}
-		// Initialize as empty (non-nil) slices so a bucket with entities but no
-		// relations serializes "relations": [] instead of null — the frontend
-		// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
-		// relations without a null guard (mirror Python, which always returns []).
-		entities := make([]StructureGraphNode, 0)
-		relations := make([]StructureGraphRelation, 0)
-		for _, row := range fieldMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			kg := firstStringValue(row["knowledge_graph_kwd"])
-			if kg == "relation" {
-				if edge := projectRelation(row); edge != nil {
-					relations = append(relations, edge)
-				}
-			} else {
-				if node := projectEntity(row); node != nil {
-					entities = append(entities, node)
-				}
-			}
-		}
-		entities = dedupEntities(entities)
-		return entities, normalizeRelationEndpoints(entities, relations), nil
 	}
 
-	// Large bucket: sample. A = top entities by mention_count_int desc.
-	orderBy := (&types.OrderByExpr{}).Desc("mention_count_int")
-	var setA []StructureGraphNode
-	entityOffset := 0
-	var entityTotal int64 = -1
-	for len(setA) < graphTopEntities && (entityTotal == -1 || int64(entityOffset) < entityTotal) {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"entity"}
-		entAMap, entTotal, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, orderBy, entityOffset, graphTopEntities, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		entityTotal = entTotal
-		if len(entAMap) == 0 {
-			break
-		}
-		for _, row := range entAMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			if n := projectEntity(row); n != nil {
-				setA = append(setA, n)
-			}
-		}
-		entityOffset += len(entAMap)
+	// fieldMap is keyed by id (the engine returns rows in a map), so ranging it
+	// would discard the requested Asc("id") order. Walk the ids in sorted order
+	// to fix a deterministic base: the stable source-position sort below then
+	// orders by reading position, and equal/absent positions keep THIS id order
+	// instead of map iteration order.
+	ids := make([]string, 0, len(fieldMap))
+	for id := range fieldMap {
+		ids = append(ids, id)
 	}
-	if len(setA) > graphTopEntities {
-		setA = setA[:graphTopEntities]
-	}
-	var aNames []string
-	for _, e := range setA {
-		if n := strings.TrimSpace(graphStr(e["name"])); n != "" {
-			aNames = append(aNames, n)
+	sort.Strings(ids)
+	rows := make([]map[string]interface{}, 0, len(fieldMap))
+	for _, id := range ids {
+		row := fieldMap[id]
+		if !rowHasEnabledSource(row, excludedDocIDs) {
+			continue
 		}
+		rows = append(rows, row)
 	}
-	var aNameTerms []string
-	for _, name := range aNames {
-		aNameTerms = append(aNameTerms, endpointTerms(name)...)
+	sourceOrder, err := s.structureSourceOrder(ctx, tenantID, datasetID, rows)
+	if err != nil {
+		// Ordering is cosmetic; never fail the graph read on the auxiliary lookup.
+		common.Error("structure graph: source-order lookup failed", err)
+		sourceOrder = nil
 	}
-	aNameTerms = sortedUnique(aNameTerms)
+	sort.SliceStable(rows, func(i, j int) bool {
+		oi, oki := structureRowSourceOrder(rows[i], sourceOrder)
+		oj, okj := structureRowSourceOrder(rows[j], sourceOrder)
+		if oki != okj {
+			return oki
+		}
+		if oki && oi != oj {
+			return oi < oj
+		}
+		return false
+	})
 
-	relations := make([]StructureGraphRelation, 0)
-	targetNamesLower := map[string]bool{}
-	if len(aNameTerms) > 0 {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"relation"}
-		cond["from_entity_kwd"] = aNameTerms
-		relMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphRelationFields, cond, nil, 0, graphExpansionCap, nil)
-		if err != nil {
-			return nil, nil, err
+	// Initialize as empty (non-nil) slices so a bucket with entities but no
+	// relations serializes "relations": [] instead of null — the frontend
+	// adapters (adaptKnowledgeGraphToForceGraph et al.) call .filter() on
+	// relations without a null guard (mirror Python, which always returns []).
+	entities := make([]StructureGraphNode, 0, len(rows))
+	relations := make([]StructureGraphRelation, 0, len(rows))
+	for _, row := range rows {
+		kg := firstStringValue(row["type_kwd"])
+		if kg == "" {
+			kg = firstStringValue(row["knowledge_graph_kwd"])
 		}
-		for _, row := range relMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
+		if kg == "relation" {
 			if edge := projectRelation(row); edge != nil {
 				relations = append(relations, edge)
-				if tgt := strings.ToLower(strings.TrimSpace(graphStr(edge["to"]))); tgt != "" {
-					targetNamesLower[tgt] = true
-				}
+			}
+		} else {
+			if node := projectEntity(row); node != nil {
+				entities = append(entities, node)
 			}
 		}
 	}
-	var setT []StructureGraphNode
-	if len(targetNamesLower) > 0 {
-		cond := copyFilter(scope)
-		cond["knowledge_graph_kwd"] = []string{"entity"}
-		cond["name_kwd"] = sortedKeys(targetNamesLower)
-		tgtMap, _, err := graphRowSearch(ctx, tenantID, datasetID, graphEntityFields, cond, nil, 0, graphExpansionCap, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		for _, row := range tgtMap {
-			if !rowHasEnabledSource(row, excludedDocIDs) {
-				continue
-			}
-			if n := projectEntity(row); n != nil {
-				setT = append(setT, n)
+	entities = dedupEntities(entities)
+	relations = normalizeRelationEndpoints(entities, relations)
+	return entities, relations, nil
+}
+
+// structureSourceOrder maps each referenced source chunk id to its reading order
+// (chunk_order_int), so buildBucket can emit rows in source order. Unresolvable
+// ids are absent from the returned map (nil when the bucket references none).
+func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenantID, datasetID string, rows []map[string]interface{}) (map[string]int, error) {
+	ids := make([]string, 0)
+	seen := map[string]bool{}
+	for _, row := range rows {
+		for _, id := range graphSourceChunkIDs(nil, row) {
+			if id != "" && !seen[id] {
+				seen[id] = true
+				ids = append(ids, id)
 			}
 		}
 	}
-	entities := dedupEntities(append(setA, setT...))
-	return entities, normalizeRelationEndpoints(entities, relations), nil
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	// One fetch at the exact id count; Asc("id") keeps the engine's cursor
+	// pagination (search_after) available past index.max_result_window.
+	page, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "chunk_order_int"},
+		map[string]interface{}{"id": ids}, (&types.OrderByExpr{}).Asc("id"), 0, len(ids), nil)
+	if err != nil {
+		return nil, err
+	}
+	order := make(map[string]int, len(page))
+	for id, row := range page {
+		// intValue cannot distinguish an absent field from 0, so gate on
+		// presence: chunk 0 is a valid reading order.
+		if raw, ok := row["chunk_order_int"]; ok && raw != nil {
+			order[id] = intValue(raw)
+		}
+	}
+	return order, nil
+}
+
+// structureRowSourceOrder is a row's source position: the smallest
+// chunk_order_int among its source_chunk_ids (false when none resolve).
+func structureRowSourceOrder(row map[string]interface{}, order map[string]int) (int, bool) {
+	best, found := 0, false
+	for _, id := range graphSourceChunkIDs(nil, row) {
+		v, ok := order[id]
+		if !ok {
+			continue
+		}
+		if !found || v < best {
+			best, found = v, true
+		}
+	}
+	return best, found
 }
 
 func copyFilter(in map[string]interface{}) map[string]interface{} {
@@ -617,6 +641,19 @@ func compilationTemplateKind(kind string) string {
 		return "raptor"
 	}
 	return k
+}
+
+// templateDisplayKind prefers the compilation template's own kind for the
+// response, falling back to the kind keywords stored on the entity rows. The
+// stored row keyword canonicalizes to "graph" (CanonicalCompilationKind)
+// while the normal-mode bucket answers the template kind ("knowledge_graph"),
+// which is the dialect the frontend renderer keys off — a keyword no-match
+// shell built with the row kind flips the UI to "unsupported representation".
+func templateDisplayKind(rowKind, templateKind string) string {
+	if templateKind != "" {
+		return templateKind
+	}
+	return rowKind
 }
 
 // ErrInvalidStructureKind is returned when the request kind does not resolve to a
@@ -659,7 +696,7 @@ func resolveDatasetStructureKind(kind string) string {
 		return "knowledge_graph"
 	case "mindmap", "mind_map":
 		// Align with Python _DATASET_STRUCTURE_KIND_ALIASES: resolve the
-		// user-facing "mindmap" to the stored compilation_template_kind_kwd value
+		// user-facing "mindmap" to the canonical compilation kind
 		// "mind_map" (the template kind, which is what read/delete paths match on).
 		return "mind_map"
 	case "timeline":
@@ -682,65 +719,6 @@ func structureKindForBucket(kind string) string {
 	return strings.ReplaceAll(k, "-", "_")
 }
 
-// loadDocumentTemplateMeta resolves the doc's configured template group into
-// configured_ids + template_meta maps, mirroring the Python resolution.
-func (s *DatasetArtifactService) loadDocumentTemplateMeta(ctx context.Context, tenantID, documentID string) ([]string, map[string]map[string]interface{}, error) {
-	empty := map[string]map[string]interface{}{}
-	doc, err := dao.NewDocumentDAO().GetByID(ctx, dao.DB, documentID)
-	if err != nil || doc == nil {
-		return nil, empty, err
-	}
-	groupID := ""
-	if doc.ParserConfig != nil {
-		if gid, ok := doc.ParserConfig["compilation_template_group_id"].(string); ok && gid != "" {
-			groupID = gid
-		} else if ext, ok := doc.ParserConfig["ext"].(map[string]interface{}); ok {
-			if gid, ok := ext["compilation_template_group_id"].(string); ok && gid != "" {
-				groupID = gid
-			}
-		}
-	}
-	if groupID == "" {
-		return nil, empty, nil
-	}
-	group, err := NewCompilationTemplateGroupService().GetSaved(ctx, tenantID, groupID)
-	if err != nil {
-		return nil, empty, err
-	}
-	configuredIDs := []string{}
-	meta := map[string]map[string]interface{}{}
-	seen := map[string]bool{}
-	if group != nil {
-		for _, t := range group.Templates {
-			tid := t.ID
-			if tid == "" || seen[tid] {
-				continue
-			}
-			rawKind := ""
-			if t.Config != nil {
-				if k, ok := t.Config["kind"].(string); ok {
-					rawKind = k
-				}
-			}
-			if rawKind == "" {
-				rawKind = t.Kind
-			}
-			kindNorm := compilationTemplateKind(rawKind)
-			if kindNorm == "wiki" {
-				continue
-			}
-			seen[tid] = true
-			configuredIDs = append(configuredIDs, tid)
-			meta[tid] = map[string]interface{}{
-				"template_id":   tid,
-				"template_name": t.Name,
-				"kind":          rawKind,
-			}
-		}
-	}
-	return configuredIDs, meta, nil
-}
-
 // DocumentStructureGraphInput is the parsed request for GetDocumentGraph.
 type DocumentStructureGraphInput struct {
 	TenantID   string
@@ -753,20 +731,31 @@ type DocumentStructureGraphInput struct {
 // GetDocumentGraph returns the per-template structure graph of a document,
 // mirroring Python get_document_structure_graph (normal + keywords modes).
 func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in DocumentStructureGraphInput) (*DocumentStructureGraphResponse, error) {
-	configuredIDs, templateMeta, err := s.loadDocumentTemplateMeta(ctx, in.TenantID, in.DocumentID)
+	templateIDs := []string{}
+	templateMeta := map[string]map[string]interface{}{}
+
+	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
+	entityCountFilter := map[string]interface{}{
+		"doc_id":              []string{in.DocumentID},
+		"knowledge_graph_kwd": []string{"entity"},
+	}
+	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
 	if err != nil {
 		return nil, err
 	}
+	resp.TotalEntities = int(entityTotal)
 
-	resp := &DocumentStructureGraphResponse{Templates: []DocumentStructureGraphTemplate{}}
-
-	// keywords mode: name matching/KNN → matched entities' subgraph.
+	// keywords mode: name/BM25 matching → matched entities' subgraph.
 	if in.Keywords != "" {
 		bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, in.DocumentID, in.Keywords, templateMeta, nil)
 		if err != nil {
 			return nil, err
 		}
 		if bucketMeta == nil || (len(entities) == 0 && len(relations) == 0) {
+			if err := s.discoverDocumentGraphTemplateMeta(ctx, in.TenantID, in.DatasetID, in.DocumentID, &templateIDs, templateMeta); err != nil {
+				return nil, err
+			}
+			resp.Templates = buildDocumentGraphTemplateShells(templateIDs, templateMeta)
 			return resp, nil
 		}
 		resp.Templates = append(resp.Templates, DocumentStructureGraphTemplate{
@@ -776,6 +765,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			Entities:     entities,
 			Relations:    relations,
 		})
+		resp.ReturnedEntities = len(entities)
 		return resp, nil
 	}
 
@@ -801,15 +791,13 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 			break
 		}
 	}
-
 	bucketMetas := map[string]map[string]interface{}{}
 	bucketScopes := map[string]map[string]interface{}{}
 	templateDAO := dao.NewCompilationTemplateDAO()
 	for _, row := range metaRows {
-		// Pipeline-produced rows may contain a template id even when the
-		// document parser config does not contain the corresponding template
-		// group. Resolve that id directly so template_name is the user-visible
-		// name instead of the opaque id.
+		// Resolve template metadata from the persisted graph row. The template
+		// name is loaded only as display metadata; the row remains authoritative
+		// for whether the template exists in this document.
 		templateID := rowTemplateID(row)
 		if templateID != "" {
 			if _, known := templateMeta[templateID]; !known {
@@ -825,12 +813,14 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 		meta, scope := resolveGraphBucket(row, templateMeta, in.DocumentID)
 		bid := graphStr(meta["template_id"])
+		if bid != "" && !containsStr(templateIDs, bid) {
+			templateIDs = append(templateIDs, bid)
+		}
 		if _, ok := bucketMetas[bid]; !ok {
 			bucketMetas[bid] = meta
 			bucketScopes[bid] = scope
 		}
 	}
-
 	grouped := map[string]DocumentStructureGraphTemplate{}
 	for bid, meta := range bucketMetas {
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, bucketScopes[bid], nil)
@@ -849,12 +839,9 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 	}
 
-	// RAPTOR summary graph blob (compile_kwd = raptor_graph).
-	s.appendRaptorBlob(ctx, in.TenantID, in.DatasetID, in.DocumentID, grouped)
-
-	// Order: configured templates first, then discovered.
+	// Order: discovered templates first, then any buckets not seen in the scan.
 	orderedIDs := []string{}
-	for _, tid := range configuredIDs {
+	for _, tid := range templateIDs {
 		if _, ok := grouped[tid]; ok && !containsStr(orderedIDs, tid) {
 			orderedIDs = append(orderedIDs, tid)
 		}
@@ -867,6 +854,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 	for _, bid := range orderedIDs {
 		if g, ok := grouped[bid]; ok && (len(g.Entities) > 0 || len(g.Relations) > 0) {
 			resp.Templates = append(resp.Templates, g)
+			resp.ReturnedEntities += len(g.Entities)
 		}
 	}
 	return resp, nil
@@ -881,18 +869,101 @@ func containsStr(list []string, v string) bool {
 	return false
 }
 
+func buildDocumentGraphTemplateShells(templateIDs []string, templateMeta map[string]map[string]interface{}) []DocumentStructureGraphTemplate {
+	templates := make([]DocumentStructureGraphTemplate, 0, len(templateIDs))
+	for _, templateID := range templateIDs {
+		meta := templateMeta[templateID]
+		if meta == nil {
+			continue
+		}
+		templateName := graphStr(meta["template_name"])
+		if templateName == "" {
+			templateName = templateID
+		}
+		templates = append(templates, DocumentStructureGraphTemplate{
+			TemplateID:   templateID,
+			TemplateName: templateName,
+			Kind:         graphStr(meta["kind"]),
+			Entities:     []StructureGraphNode{},
+			Relations:    []StructureGraphRelation{},
+		})
+	}
+	return templates
+}
+
+func (s *DatasetArtifactService) discoverDocumentGraphTemplateMeta(ctx context.Context, tenantID, datasetID, documentID string, templateIDs *[]string, templateMeta map[string]map[string]interface{}) error {
+	if templateIDs == nil || templateMeta == nil {
+		return nil
+	}
+	seen := make(map[string]bool, len(*templateIDs))
+	for _, templateID := range *templateIDs {
+		seen[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	fields := []string{"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd"}
+	filter := map[string]interface{}{
+		"doc_id":              []string{documentID},
+		"knowledge_graph_kwd": []string{"entity", "relation"},
+	}
+	for offset := 0; ; offset += 1000 {
+		rows, total, err := graphRowSearch(ctx, tenantID, datasetID, fields, filter, nil, offset, 1000, nil)
+		if err != nil {
+			return err
+		}
+		for _, row := range rows {
+			templateID := rowTemplateID(row)
+			kind := types.CompilationKind(row)
+			if kind == "" {
+				kind = firstStringValue(row["compile_kwd"])
+			}
+			if templateID == "" {
+				compileKind := firstStringValue(row["compile_kwd"])
+				if compileKind == "" {
+					continue
+				}
+				templateID = "legacy:" + compileKind
+			}
+			if seen[templateID] {
+				continue
+			}
+
+			templateName := templateID
+			if !strings.HasPrefix(templateID, "legacy:") {
+				if template, loadErr := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); loadErr == nil && template != nil {
+					templateName = template.Name
+					kind = templateDisplayKind(kind, template.Kind)
+				}
+			} else {
+				templateName = "Legacy (" + strings.TrimPrefix(templateID, "legacy:") + ")"
+			}
+			if templateName == "" {
+				templateName = templateID
+			}
+			templateMeta[templateID] = map[string]interface{}{
+				"template_id":   templateID,
+				"template_name": templateName,
+				"kind":          kind,
+			}
+			*templateIDs = append(*templateIDs, templateID)
+			seen[templateID] = true
+		}
+		if int64(offset+1000) >= total || len(rows) == 0 {
+			break
+		}
+	}
+	return nil
+}
+
 // DatasetStructureGraphInput is the parsed request for the dataset-scope
-// structure graph endpoint (GET/DELETE /datasets/:id/artifacts/structure).
+// structure graph endpoint (GET /datasets/:id/artifacts/structure).
 // Kind is REQUIRED (mirrors Python dataset_api.py:715): missing or invalid →
-// 400 ARGUMENT_ERROR. Wipe applies to DELETE: true deletes the dataset rows,
-// false only cancels the task (rows are left for the next rebuild to clean).
+// 400 ARGUMENT_ERROR.
 type DatasetStructureGraphInput struct {
 	TenantID  string
 	DatasetID string
 	Kind      string
 	// Keywords selects the matching entity subgraph when non-empty.
 	Keywords string
-	Wipe     bool
 }
 
 // DatasetStructureGraphResponse mirrors Python get_dataset_structure's
@@ -906,18 +977,8 @@ type DatasetStructureGraphResponse struct {
 	Templates         []DocumentStructureGraphTemplate `json:"templates"`
 }
 
-// GetDatasetStructure returns the dataset-scope structure graph for a resolved
-// kind, mirroring Python get_dataset_structure (dataset_api_service.py). Discovery
-// scans knowledge_graph_kwd=["entity"] dataset rows (scope_kwd="dataset") and
-// matches the resolved kind against the stamped compilation_template_kind_kwd —
-// NOT compile_kwd (compile_kwd holds the autotype "hypergraph"/"list"/"mindmap",
-// which is never the kind discriminator; Python _discover_scope_templates matches
-// _resolve_dataset_structure_kind against compilation_template_kind_kwd the same
-// way). It collects distinct template ids, then reads each template's dataset
-// entity/relation rows via buildBucket. It does NOT read kg_build_meta (write/
-// delete-side only). When Keywords is set, it returns the keyword-matched
-// entity subgraph using the same BM25/KNN and relation expansion path as the
-// document-level endpoint.
+// GetDatasetStructure returns dataset-scope entity/relation graphs for the
+// requested compilation kind, optionally narrowed by keyword matching.
 func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (*DatasetStructureGraphResponse, error) {
 	resolved := resolveDatasetStructureKind(in.Kind)
 	if resolved == "" {
@@ -928,31 +989,27 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	}
 	resp := &DatasetStructureGraphResponse{Kind: resolved, Templates: []DocumentStructureGraphTemplate{}}
 
-	// Discover distinct template ids whose stamped template kind resolves to the
-	// requested kind, scanning dataset-scope entity rows only. scope_kwd="dataset"
-	// is required here (unlike the legacy doc_graph fallback) because dataset rows
-	// are the only ones carrying compilation_template_kind_kwd we can trust for the
-	// dataset-scope kind match.
+	// Discover templates from dataset entity rows of the requested kind.
 	templateIDs := map[string]struct{}{}
 	// "id" must be projected: graphRowSearch keys its result map by the row id,
 	// and Infinity only returns fields listed in SelectFields (it does not
 	// synthesize id), so omitting it silently drops every row (review Major).
 	// The resolved kind is pushed into the filter so the engine applies the
 	// predicate instead of scanning all entity rows and discarding them in Go.
-	metaFields := []string{"id", "compilation_template_kind_kwd", "compilation_template_ids"}
+	metaFields := []string{"id", "compile_kwd", "compilation_template_kind_kwd", "compilation_template_ids"}
 	entityCountFilter := map[string]interface{}{
-		"knowledge_graph_kwd":           []string{"entity"},
-		"scope_kwd":                     []string{"dataset"},
-		"compilation_template_kind_kwd": []string{resolved},
+		"knowledge_graph_kwd": []string{"entity"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
 	}
 	_, entityTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, entityCountFilter, nil, 0, 1, nil)
 	if err != nil {
 		return nil, err
 	}
 	relationCountFilter := map[string]interface{}{
-		"knowledge_graph_kwd":           []string{"relation"},
-		"scope_kwd":                     []string{"dataset"},
-		"compilation_template_kind_kwd": []string{resolved},
+		"knowledge_graph_kwd": []string{"relation"},
+		"scope_kwd":           []string{"dataset"},
+		"compile_kwd":         []string{types.CanonicalCompilationKind(resolved)},
 	}
 	_, relationTotal, err := graphRowSearch(ctx, in.TenantID, in.DatasetID, []string{"id"}, relationCountFilter, nil, 0, 1, nil)
 	if err != nil {
@@ -966,7 +1023,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 			return nil, err
 		}
 		for _, row := range rows {
-			tkind := firstStringValue(row["compilation_template_kind_kwd"])
+			tkind := types.CompilationKind(row)
 			if tkind == "" || resolveDatasetStructureKind(tkind) != resolved {
 				continue
 			}
@@ -1001,10 +1058,10 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 				}
 			}
 			bucketMeta, entities, relations, err := s.keywordSubgraph(ctx, in.TenantID, in.DatasetID, "", keywords, templateMeta, map[string]interface{}{
-				"scope_kwd":                     []string{"dataset"},
-				"compilation_template_ids":      []string{tid},
-				"compilation_template_kind_kwd": []string{resolved},
-				"knowledge_graph_kwd":           []string{"entity"},
+				"scope_kwd":                []string{"dataset"},
+				"compilation_template_ids": []string{tid},
+				"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
+				"knowledge_graph_kwd":      []string{"entity"},
 			})
 			if err != nil {
 				return nil, err
@@ -1028,9 +1085,9 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	// Read each template's dataset entity/relation rows.
 	for tid := range templateIDs {
 		scope := map[string]interface{}{
-			"scope_kwd":                     []string{"dataset"},
-			"compilation_template_ids":      []string{tid},
-			"compilation_template_kind_kwd": []string{resolved},
+			"scope_kwd":                []string{"dataset"},
+			"compilation_template_ids": []string{tid},
+			"compile_kwd":              []string{types.CanonicalCompilationKind(resolved)},
 		}
 		entities, relations, err := s.buildBucket(ctx, in.TenantID, in.DatasetID, scope, nil)
 		if err != nil {
@@ -1053,100 +1110,10 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 	return resp, nil
 }
 
-// DeleteDatasetStructure handles DELETE /datasets/:id/artifacts/structure?kind=&wipe=.
-// It validates kind like GET. wipe=false cancels the kind's task (via the task-id
-// field) without deleting rows; wipe=true deletes the kind's kg_build_meta marker
-// + dataset entity/relation rows (document-scope rows are never touched).
-func (s *DatasetArtifactService) DeleteDatasetStructure(ctx context.Context, in DatasetStructureGraphInput) (int, error) {
-	resolved := resolveDatasetStructureKind(in.Kind)
-	if resolved == "" {
-		return 0, fmt.Errorf("%w: %q", ErrInvalidStructureKind, in.Kind)
-	}
-	if !in.Wipe {
-		// Cancel the task without deleting rows. Task cancellation is task-id
-		// granular (mirrors Python delete_index REDIS set "{task_id}-cancel"); the
-		// actual row cleanup happens on the next rebuild. Rows are preserved.
-		return s.cancelDatasetStructureTask(ctx, in.TenantID, in.DatasetID, resolved)
-	}
-	if !datasetStructureSupported() {
-		return 0, errDatasetStructureUnsupported()
-	}
-	docEngine := engine.Get()
-	if docEngine == nil {
-		return 0, fmt.Errorf("document engine is not initialized")
-	}
-	indexName := fmt.Sprintf("ragflow_%s", in.TenantID)
-	cond := map[string]interface{}{
-		"kb_id":                         in.DatasetID,
-		"scope_kwd":                     "dataset",
-		"compilation_template_kind_kwd": resolved,
-		"knowledge_graph_kwd":           []string{"entity", "relation", "kg_build_meta"},
-	}
-	n, err := docEngine.DeleteChunks(ctx, cond, indexName, in.DatasetID)
-	if err != nil {
-		return 0, err
-	}
-	return int(n), nil
-}
-
-// cancelDatasetStructureTask cancels the running dataset-structure task for a
-// resolved kind by clearing both its per-index task-id and finish-at fields.
-// This mirrors Python delete_index (dataset_api_service.py), which clears
-// {task_id_field: "", task_finish_at_field: None} so the task state is fully
-// reset (a stale finish-at would otherwise leave the kind looking "done" after
-// cancel). The row cleanup itself is driven by the next rebuild; Go executes the
-// merge synchronously inside the ingestor (no independent task/marker), so there
-// is no Redis "{task_id}-cancel" marker to publish here.
-func (s *DatasetArtifactService) cancelDatasetStructureTask(ctx context.Context, tenantID, datasetID, resolvedKind string) (int, error) {
-	field := datasetStructureTaskIDField(resolvedKind)
-	if field == "" {
-		return 0, nil
-	}
-	updates := map[string]interface{}{
-		field: "",
-		// gorm.Updates ignores nil values, so use an explicit NULL expression to
-		// actually clear the finish-at timestamp (mirrors Python None).
-		datasetStructureTaskFinishAtField(field): gorm.Expr("NULL"),
-	}
-	if err := dao.NewKnowledgebaseDAO().UpdateByID(ctx, dao.DB, datasetID, updates); err != nil {
-		return 0, err
-	}
-	return 0, nil
-}
-
-// datasetStructureTaskFinishAtField maps a task-id field to its sibling finish-at
-// field, mirroring Python f"{task_id_field.replace('_task_id', '_task_finish_at')}".
-func datasetStructureTaskFinishAtField(taskIDField string) string {
-	return strings.Replace(taskIDField, "_task_id", "_task_finish_at", 1)
-}
-
-// datasetStructureTaskIDField maps a resolved dataset-structure kind to its kb
-// task-id field name. It mirrors Python _INDEX_TYPE_TO_TASK_ID_FIELD: each
-// dataset-merge kind carries its own "<index_type>_task_id" field (structure_graph,
-// structure_mindmap, timeline, session_graph, session_essence), NOT the legacy
-// doc-level graphrag_task_id/mindmap_task_id. Empty means "no task-id field".
-func datasetStructureTaskIDField(resolvedKind string) string {
-	switch resolvedKind {
-	case "knowledge_graph":
-		// "graph" is already normalized to "knowledge_graph" by
-		// resolveDatasetStructureKind, so no separate "graph" case is needed.
-		return "structure_graph_task_id"
-	case "mindmap", "mind_map":
-		return "structure_mindmap_task_id"
-	case "timeline":
-		return "timeline_task_id"
-	case "session_graph":
-		return "session_graph_task_id"
-	case "session_essence":
-		return "session_essence_task_id"
-	}
-	return ""
-}
-
 // resolveGraphBucket mirrors Python _resolve_bucket.
 func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[string]interface{}, documentID string) (map[string]interface{}, map[string]interface{}) {
 	compileKwd := firstStringValue(row["compile_kwd"])
-	kindVal := firstStringValue(row["compilation_template_kind_kwd"])
+	kindVal := types.CompilationKind(row)
 	if kindVal == "" {
 		kindVal = compileKwd
 	}
@@ -1176,23 +1143,27 @@ func resolveGraphBucket(row map[string]interface{}, templateMeta map[string]map[
 		if bucketKind == "" {
 			bucketKind = kindVal
 		}
-		return map[string]interface{}{
+		bucket := map[string]interface{}{
 			"template_id":   tid,
 			"template_name": bucketName,
 			"kind":          bucketKind,
-		}, graphBucketScope(documentID, map[string]interface{}{
+		}
+		scope := graphBucketScope(documentID, map[string]interface{}{
 			"compilation_template_ids": []string{tid},
 		})
+		return bucket, scope
 	}
 	bucketID := "legacy:" + compileKwd
-	return map[string]interface{}{
+	legacyBucket := map[string]interface{}{
 		"template_id":   bucketID,
 		"template_name": "Legacy (" + compileKwd + ")",
 		"kind":          kindVal,
-	}, graphBucketScope(documentID, map[string]interface{}{
+	}
+	legacyScope := graphBucketScope(documentID, map[string]interface{}{
 		"compile_kwd": []string{compileKwd},
 		"must_not":    map[string]interface{}{"exists": "compilation_template_ids"},
 	})
+	return legacyBucket, legacyScope
 }
 
 func graphBucketScope(documentID string, scope map[string]interface{}) map[string]interface{} {
@@ -1224,33 +1195,6 @@ func rowTemplateID(row map[string]interface{}) string {
 		}
 	}
 	return ""
-}
-
-func (s *DatasetArtifactService) appendRaptorBlob(ctx context.Context, tenantID, datasetID, documentID string, grouped map[string]DocumentStructureGraphTemplate) {
-	rows, _, err := graphRowSearch(ctx, tenantID, datasetID, []string{"id", "content_with_weight", "compile_kwd"},
-		map[string]interface{}{"doc_id": []string{documentID}, "compile_kwd": []string{"raptor_graph"}}, nil, 0, 16, nil)
-	if err != nil {
-		return
-	}
-	for _, row := range rows {
-		payload := graphLoadPayload(row)
-		if payload == nil {
-			continue
-		}
-		rEntities, _ := payload["entities"].([]interface{})
-		rRelations, _ := payload["relations"].([]interface{})
-		if len(rEntities) == 0 && len(rRelations) == 0 {
-			continue
-		}
-		rb, ok := grouped["raptor"]
-		if !ok {
-			rb = DocumentStructureGraphTemplate{TemplateID: "raptor", TemplateName: "RAPTOR Summary", Kind: "raptor"}
-			grouped["raptor"] = rb
-		}
-		rb.Entities = append(rb.Entities, toNodeSlice(rEntities)...)
-		rb.Relations = append(rb.Relations, toRelationSlice(rRelations)...)
-		grouped["raptor"] = rb
-	}
 }
 
 func toNodeSlice(in []interface{}) []StructureGraphNode {
@@ -1296,13 +1240,38 @@ func nameMatchesQuery(node StructureGraphNode, query string) bool {
 	return true
 }
 
-// keywordSubgraph mirrors sgc.keyword_subgraph (BM25 + KNN fallback + ancestor walk).
+// keywordSubgraph mirrors sgc.keyword_subgraph (lexical lookup and ancestor
+// walk).
 func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, datasetID, documentID, keywords string, templateMeta map[string]map[string]interface{}, baseEntityCond map[string]interface{}) (map[string]interface{}, []StructureGraphNode, []StructureGraphRelation, error) {
 	if baseEntityCond == nil {
 		baseEntityCond = map[string]interface{}{
 			"doc_id":              []string{documentID},
 			"knowledge_graph_kwd": []string{"entity"},
 		}
+	}
+	if templateMeta == nil {
+		templateMeta = map[string]map[string]interface{}{}
+	}
+	templateMetaLoaded := make(map[string]bool, len(templateMeta))
+	for templateID := range templateMeta {
+		templateMetaLoaded[templateID] = true
+	}
+	templateDAO := dao.NewCompilationTemplateDAO()
+	resolveBucket := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
+		templateID := rowTemplateID(row)
+		if templateID != "" && !templateMetaLoaded[templateID] {
+			// Resolve the display metadata from the persisted template id so
+			// keyword searches expose the user-visible name instead of the id.
+			templateMetaLoaded[templateID] = true
+			if template, err := templateDAO.GetTemplate(ctx, dao.DB, tenantID, templateID); err == nil && template != nil {
+				templateMeta[templateID] = map[string]interface{}{
+					"template_id":   templateID,
+					"template_name": template.Name,
+					"kind":          template.Kind,
+				}
+			}
+		}
+		return resolveGraphBucket(row, templateMeta, documentID)
 	}
 	topFields := append(append([]string{}, graphEntityFields...), "compilation_template_ids", "compile_kwd", "compilation_template_kind_kwd")
 
@@ -1337,9 +1306,17 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		row  map[string]interface{}
 		node StructureGraphNode
 	}) {
-		key := firstStringValue(candidate.row["id"])
-		if key == "" {
-			key = strings.ToLower(strings.TrimSpace(graphStr(candidate.node["name"]))) + "\x00" + strings.ToLower(strings.TrimSpace(graphStr(candidate.node["type"])))
+		name := strings.ToLower(strings.Join(strings.Fields(graphStr(candidate.node["name"])), " "))
+		template := rowTemplateID(candidate.row)
+		if template == "" {
+			template = types.CompilationKind(candidate.row)
+		}
+		if template == "" {
+			template = firstStringValue(candidate.row["compile_kwd"])
+		}
+		key := template + "\x00" + name
+		if name == "" {
+			key = firstStringValue(candidate.row["id"])
 		}
 		if key != "" {
 			if candidateSeen[key] {
@@ -1396,32 +1373,12 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		candidates = detailCandidates
 	}
 
-	// Semantic fallback via KNN.
-	if len(candidates) == 0 {
-		vec, err := embedQuery(ctx, tenantID, datasetID, keywords)
-		if err != nil || len(vec) == 0 {
-			return nil, nil, nil, nil
-		}
-		denseExpr := &types.MatchDenseExpr{
-			VectorColumnName:  fmt.Sprintf("q_%d_vec", len(vec)),
-			EmbeddingData:     vec,
-			EmbeddingDataType: "float",
-			DistanceType:      "cosine",
-			TopN:              graphKeywordCandidates,
-			ExtraOptions:      map[string]interface{}{"similarity": 0.3},
-		}
-		topMap, _, err := graphRowSearch(ctx, tenantID, datasetID, topFields, baseEntityCond, nil, 0, graphKeywordCandidates, []interface{}{denseExpr})
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		candidates = validTop(topMap)
-	}
 	if len(candidates) == 0 {
 		return nil, nil, nil, nil
 	}
 
 	scopeForTemplate := func(row map[string]interface{}) (map[string]interface{}, map[string]interface{}) {
-		return resolveGraphBucket(row, templateMeta, documentID)
+		return resolveBucket(row)
 	}
 	bucketMeta, scope := scopeForTemplate(candidates[0].row)
 	bucketID := graphStr(bucketMeta["template_id"])
@@ -1570,20 +1527,4 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 		relations = filtered
 	}
 	return bucketMeta, entities, normalizeRelationEndpoints(entities, relations), nil
-}
-
-// embedQuery embeds a query via the nav embedder (best-effort). The embedder
-// resolves the tenant's embedding model on demand; an empty result (or error) is
-// treated as "no semantic candidates", matching Python's fallback behavior.
-func embedQuery(ctx context.Context, tenantID, datasetID, query string) ([]float64, error) {
-	embedder := NewNavEmbedder(NewModelProviderService(), "")
-	vecs, err := embedder.Encode(ctx, tenantID, []string{query})
-	if err != nil || len(vecs) == 0 || len(vecs[0]) == 0 {
-		return nil, fmt.Errorf("embed query failed")
-	}
-	f := make([]float64, len(vecs[0]))
-	for i, v := range vecs[0] {
-		f[i] = float64(v)
-	}
-	return f, nil
 }

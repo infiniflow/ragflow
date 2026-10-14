@@ -1,9 +1,14 @@
 package component
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 )
+
+// ErrCompilationTemplateRequired identifies a Compiler component without a
+// selected compilation template or template group.
+var ErrCompilationTemplateRequired = errors.New("Compilation Template Group does not support empty value")
 
 // ValidateDynamicEntries rejects blank values in repeatable Agent parameters.
 func ValidateDynamicEntries(dsl map[string]any) error {
@@ -76,7 +81,7 @@ func validateDynamicParams(component string, params map[string]any) error {
 			return fmt.Errorf("[%s] tools does not support empty entries", component)
 		}
 	case "invoke":
-		if err := validateRows(component, params, "variables", []string{"key", "ref", "value"}); err != nil {
+		if err := validateInvokeVariables(component, params); err != nil {
 			return err
 		}
 	case "loop":
@@ -95,6 +100,10 @@ func validateDynamicParams(component string, params map[string]any) error {
 	case "exesql":
 		if err := validateExeSQLParams(params); err != nil {
 			return fmt.Errorf("[%s] %w", component, err)
+		}
+	case "compiler":
+		if !isNonBlankString(params["compilation_template_id"]) && !isNonBlankString(params["compilation_template_group_id"]) {
+			return fmt.Errorf("[%s] %w", component, ErrCompilationTemplateRequired)
 		}
 	}
 	return nil
@@ -154,6 +163,41 @@ func validateRows(component string, params map[string]any, field string, require
 		}
 	}
 	return nil
+}
+
+// validateInvokeVariables requires every Invoke variables row to carry a
+// nonblank key plus one value source: an upstream reference (ref) or a
+// literal (value). The two sources are alternatives — a reference row has
+// no literal and a literal row has no reference — so a row with neither
+// is still rejected. Omitted and null variables carry no rows to check;
+// any other non-array value is malformed and rejected.
+func validateInvokeVariables(component string, params map[string]any) error {
+	raw, present := params["variables"]
+	if !present || raw == nil {
+		return nil
+	}
+	rows, ok := raw.([]any)
+	if !ok {
+		return fmt.Errorf("[%s] variables must be an array", component)
+	}
+	for i, raw := range rows {
+		row, ok := raw.(map[string]any)
+		if !ok || !isNonBlankString(row["key"]) || !invokeRowHasSource(row) {
+			return fmt.Errorf("[%s] variables[%d] is incomplete", component, i)
+		}
+	}
+	return nil
+}
+
+// invokeRowHasSource reports whether an Invoke variables row supplies a
+// reference or a literal. Non-string literals (numbers, booleans) count;
+// nil does not.
+func invokeRowHasSource(row map[string]any) bool {
+	if isNonBlankString(row["ref"]) {
+		return true
+	}
+	value := row["value"]
+	return value != nil && !isBlank(value)
 }
 
 func validateVariableAggregatorGroups(component string, params map[string]any) error {

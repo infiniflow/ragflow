@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
-from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, IS_GO_PROXY, SESSION_WITH_CHAT_NAME_LIMIT
+from test.testcases.configs import INVALID_API_TOKEN, INVALID_ID_32, SESSION_WITH_CHAT_NAME_LIMIT
 from test.testcases.restful_api.helpers.assertions import assert_auth_error
 from test.testcases.restful_api.helpers.client import RestClient
 from test.testcases.utils import is_sorted
@@ -145,8 +145,8 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     invalid_chat_res = rest_client.post("/chats/invalid_chat_assistant_id/sessions", json={"name": "valid_name"})
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
-    assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["code"] == 404, invalid_chat_payload
+    assert invalid_chat_payload["message"] == "Resource not found", invalid_chat_payload
 
     for scenario_name, payload in (
         ("valid", {"name": "valid_name"}),
@@ -193,8 +193,8 @@ def test_session_create_validation_and_deleted_chat_contract(rest_client, create
     create_after_delete = rest_client.post(f"/chats/{chat_id}/sessions", json={"name": "after_delete"})
     assert create_after_delete.status_code == 200
     create_after_delete_payload = create_after_delete.json()
-    assert create_after_delete_payload["code"] == 109, create_after_delete_payload
-    assert create_after_delete_payload["message"].lower().strip().rstrip(".") == "no authorization", create_after_delete_payload
+    assert create_after_delete_payload["code"] == 404, create_after_delete_payload
+    assert create_after_delete_payload["message"] == "Resource not found", create_after_delete_payload
 
 
 @pytest.mark.p2
@@ -233,8 +233,8 @@ def test_session_delete_requires_auth_and_invalid_target_contract(rest_client, c
     invalid_chat_res = rest_client.delete("/chats/invalid_chat_assistant_id/sessions", json={"ids": [session_id]})
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
-    assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["code"] == 404, invalid_chat_payload
+    assert invalid_chat_payload["message"] == "Resource not found", invalid_chat_payload
 
 
 @pytest.mark.p3
@@ -393,8 +393,8 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     invalid_chat_res = rest_client.get(f"/chats/{INVALID_ID_32}/sessions")
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
-    assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["code"] == 404, invalid_chat_payload
+    assert invalid_chat_payload["message"] == "Resource not found", invalid_chat_payload
 
     delete_chat_res = rest_client.delete("/chats", json={"ids": [chat_id]})
     assert delete_chat_res.status_code == 200
@@ -404,8 +404,8 @@ def test_session_list_filter_and_deleted_chat_contract(rest_client, create_chat)
     deleted_list_res = rest_client.get(f"/chats/{chat_id}/sessions", params={"page_size": 30})
     assert deleted_list_res.status_code == 200
     deleted_list_payload = deleted_list_res.json()
-    assert deleted_list_payload["code"] == 109, deleted_list_payload
-    assert deleted_list_payload["message"].lower().strip().rstrip(".") == "no authorization", deleted_list_payload
+    assert deleted_list_payload["code"] == 404, deleted_list_payload
+    assert deleted_list_payload["message"] == "Resource not found", deleted_list_payload
 
 
 @pytest.mark.p2
@@ -423,7 +423,7 @@ def test_session_list_page_and_sort_contract(rest_client, create_chat):
         ("page negative", {"page": -1, "page_size": 2}, 0, 2, ""),
         ("page alpha", {"page": "a", "page_size": 2}, 0, 2, ""),
         ("page_size none", {"page_size": None}, 0, 5, ""),
-        ("page_size zero", {"page_size": 0}, 0, 0 if IS_GO_PROXY else 5, ""),
+        ("page_size zero", {"page_size": 0}, 0, 0, ""),
         ("page_size one", {"page_size": 1}, 0, 1, ""),
         ("page_size six", {"page_size": 6}, 0, 5, ""),
         ("page_size negative", {"page_size": -1}, 0, 5, ""),
@@ -497,8 +497,8 @@ def test_session_update_requires_auth_and_invalid_target_contract(rest_client, c
     invalid_chat_res = rest_client.patch(f"/chats/{INVALID_ID_32}/sessions/{session_id}", json={"name": "x"})
     assert invalid_chat_res.status_code == 200
     invalid_chat_payload = invalid_chat_res.json()
-    assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert invalid_chat_payload["message"].lower().strip().rstrip(".") == "no authorization", invalid_chat_payload
+    assert invalid_chat_payload["code"] == 404, invalid_chat_payload
+    assert invalid_chat_payload["message"] == "Resource not found", invalid_chat_payload
 
     empty_session_res = rest_client.patch(f"/chats/{chat_id}/sessions/", json={"name": "x"})
     assert empty_session_res.status_code == 200
@@ -551,8 +551,8 @@ def test_session_update_name_and_param_contract(rest_client, create_chat):
     update_after_delete_res = rest_client.patch(f"/chats/{chat_id}/sessions/{session_id}", json={"name": "after_delete"})
     assert update_after_delete_res.status_code == 200
     update_after_delete_payload = update_after_delete_res.json()
-    assert update_after_delete_payload["code"] == 109, update_after_delete_payload
-    assert update_after_delete_payload["message"].lower().strip().rstrip(".") == "no authorization", update_after_delete_payload
+    assert update_after_delete_payload["code"] == 404, update_after_delete_payload
+    assert update_after_delete_payload["message"] == "Resource not found", update_after_delete_payload
 
 
 @pytest.mark.p2
@@ -587,7 +587,7 @@ def test_chat_recommendation_requires_question(rest_client):
     assert res.status_code == 200
     payload = res.json()
     assert payload["code"] == 101, payload
-    expected_message = "question is required" if IS_GO_PROXY else "required argument are missing: question"
+    expected_message = "question is required"
     assert expected_message in payload["message"], payload
 
 
@@ -601,16 +601,8 @@ def test_related_questions_compatibility_requires_auth(rest_client_noauth):
     )
     assert res.status_code == 200
     payload = res.json()
-    if IS_GO_PROXY:
-        assert payload["code"] == 102, payload
-        assert payload["message"] == "Authorization is not valid!", payload
-    else:
-        assert payload["code"] == 102, payload
-        assert payload["message"].strip() in {
-            "Authorization is not valid!",
-            'Authentication error: API key is invalid!"',
-            "Authentication error: API key is invalid!",
-        }, payload
+    assert payload["code"] == 102, payload
+    assert payload["message"] == "Authorization is not valid!", payload
 
 
 @pytest.mark.p2
@@ -759,5 +751,5 @@ def test_chat_completion_validation_errors(rest_client, create_chat):
     )
     assert invalid_chat.status_code == 200
     invalid_chat_payload = invalid_chat.json()
-    assert invalid_chat_payload["code"] == 109, invalid_chat_payload
-    assert "no authorization" in invalid_chat_payload["message"].lower(), invalid_chat_payload
+    assert invalid_chat_payload["code"] == 404, invalid_chat_payload
+    assert invalid_chat_payload["message"] == "Resource not found", invalid_chat_payload

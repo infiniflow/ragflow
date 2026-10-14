@@ -33,13 +33,18 @@ import (
 
 // realNumTokens / realTrimToTokenLimit are the production tokenizer functions.
 // They are referenced through package-level vars (numTokens /
-// trimToTokenLimit) so tests can swap in a deterministic stub.
+// trimToTokenLimit, and encodeTokens / decodeTokens for the raw token-id
+// API the O(L) hard-split walk drives on) so tests can swap in a
+// deterministic stub.
 var (
 	realNumTokens        = tokenizer.NumTokensFromString
 	realTrimToTokenLimit = tokenizer.TrimContentToTokenLimit
 
 	numTokens        = realNumTokens
 	trimToTokenLimit = realTrimToTokenLimit
+
+	encodeTokens = tokenizer.EncodeCL100KTokens
+	decodeTokens = tokenizer.DecodeCL100KTokens
 )
 
 // titleTokenCount counts tokens for text. tokenizer.NumTokensFromString now

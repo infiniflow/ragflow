@@ -17,9 +17,10 @@
 package common
 
 import (
-	"log/slog"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ParseISO8601 parses a date string trying multiple ISO 8601 / RFC3339
@@ -76,7 +77,7 @@ func ParseISO8601(dateString string) (time.Time, error) {
 func FormatISO8601ToYMDHMS(timeStr string) string {
 	dt, err := ParseISO8601(timeStr)
 	if err != nil {
-		slog.Error("FormatISO8601ToYMDHMS parse error", "input", timeStr, "error", err)
+		Error("FormatISO8601ToYMDHMS parse error", err, zap.String("input", timeStr))
 		return timeStr
 	}
 	return dt.Format("2006-01-02 15:04:05")

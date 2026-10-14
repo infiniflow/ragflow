@@ -64,11 +64,11 @@ func TestProjectRelation_FallsBackToKwdColumns(t *testing.T) {
 	}
 }
 
-// TestDedupEntities_OrderPreserving verifies dedup by (lowercased name, type).
+// TestDedupEntities_OrderPreserving verifies dedup by lowercased name.
 func TestDedupEntities_OrderPreserving(t *testing.T) {
 	in := []StructureGraphNode{
 		{"name": "A", "type": "x"},
-		{"name": "a", "type": "x"}, // dup (case-insensitive)
+		{"name": "a", "type": "other"}, // dup despite case and type differences
 		{"name": "B", "type": "y"},
 		{"name": ""}, // dropped (empty name)
 	}
@@ -124,5 +124,64 @@ func TestResolveGraphBucket_UsesRawStructureMetadata(t *testing.T) {
 	}
 	if got := scope["compilation_template_ids"].([]string); len(got) != 1 || got[0] != "tree-1" {
 		t.Fatalf("scope = %#v, want template-scoped raw-row filter", scope)
+	}
+}
+
+func TestBuildDocumentGraphTemplateShells_PreservesTemplateMetadata(t *testing.T) {
+	templates := buildDocumentGraphTemplateShells([]string{"tree-1"}, map[string]map[string]interface{}{
+		"tree-1": {"template_name": "Tree", "kind": "tree"},
+	})
+	if len(templates) != 1 {
+		t.Fatalf("got %d templates, want 1", len(templates))
+	}
+	if templates[0].TemplateID != "tree-1" || templates[0].TemplateName != "Tree" || templates[0].Kind != "tree" {
+		t.Fatalf("template = %#v, want metadata for tree-1", templates[0])
+	}
+	if templates[0].Entities == nil || templates[0].Relations == nil {
+		t.Fatal("empty template collections must be non-nil")
+	}
+}
+
+// TestTemplateDisplayKind_PrefersTemplateRow locks the shells-path kind rule:
+// the template row's kind wins over the canonical stored keyword ("graph"),
+// so keyword no-match shells answer in the same dialect as the normal-mode
+// bucket ("knowledge_graph") and the frontend keeps recognizing the template.
+func TestTemplateDisplayKind_PrefersTemplateRow(t *testing.T) {
+	if got := templateDisplayKind("graph", "knowledge_graph"); got != "knowledge_graph" {
+		t.Errorf("templateDisplayKind(graph, knowledge_graph) = %q, want knowledge_graph", got)
+	}
+	if got := templateDisplayKind("graph", ""); got != "graph" {
+		t.Errorf("templateDisplayKind(graph, \"\") = %q, want row-kind fallback graph", got)
+	}
+}
+
+// TestStructureRowSourceOrder_MinChunkOrder verifies a row's source position is
+// the smallest chunk_order_int among its source_chunk_ids, and that a row with
+// no resolvable chunks reports ok=false (so it sorts to the end).
+func TestStructureRowSourceOrder_MinChunkOrder(t *testing.T) {
+	order := map[string]int{"c1": 5, "c2": 2, "c3": 9}
+	row := map[string]interface{}{"source_chunk_ids": []interface{}{"c1", "c2", "c3"}}
+	got, ok := structureRowSourceOrder(row, order)
+	if !ok || got != 2 {
+		t.Fatalf("structureRowSourceOrder = (%d,%v), want (2,true)", got, ok)
+	}
+	if _, ok := structureRowSourceOrder(map[string]interface{}{"source_chunk_ids": []string{"zz"}}, order); ok {
+		t.Fatal("expected ok=false when no source chunk resolves")
+	}
+}
+
+// TestNormalizeRelationEndpoints_WhitespaceInsensitive verifies an endpoint that
+// differs from the entity name only by the space character (half-width U+0020
+// vs ideographic U+3000) is still aligned to the entity, so the exact-name map
+// lookup downstream (frontend tree building) matches it.
+func TestNormalizeRelationEndpoints_WhitespaceInsensitive(t *testing.T) {
+	entities := []StructureGraphNode{{"name": "第一章 文忠公", "type": "title"}}
+	relations := []StructureGraphRelation{{"from": "第一章\u3000文忠公", "to": "某句", "type": "include"}}
+	out := normalizeRelationEndpoints(entities, relations)
+	if out[0]["from"] != "第一章 文忠公" {
+		t.Errorf("from = %q, want the entity name 第一章 文忠公", out[0]["from"])
+	}
+	if out[0]["to"] != "某句" {
+		t.Errorf("to = %q, want unchanged when no entity matches", out[0]["to"])
 	}
 }

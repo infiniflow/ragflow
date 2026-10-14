@@ -28,13 +28,40 @@ export const normalizeCitationDigits = (text: string) => {
   });
 };
 
-export const parseCitationIndex = (value: string) => {
+export type CitationKey = number | string;
+
+export const parseCitationIndex = (value: string): CitationKey => {
   const normalized = normalizeCitationDigits(value);
-  const markerMatch = normalized.match(/\[(?:ID:)?(\d+)\]/);
-  if (markerMatch) return Number(markerMatch[1]);
+  const markerMatch = normalized.match(
+    /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/,
+  );
+  if (markerMatch) {
+    const captured = markerMatch[1];
+    return /^\d+$/.test(captured) ? Number(captured) : captured;
+  }
   if (/^\d+$/.test(normalized)) return Number(normalized);
+  if (/^[0-9a-fA-F]+$/.test(normalized)) return normalized;
   return Number.NaN;
 };
-
 export const citationMarkerReg =
-  /\[(?:ID:)?([0-9\u0660-\u0669\u06F0-\u06F9]+)\]/g;
+  /\[(?:ID:)?([0-9a-fA-F\u0660-\u0669\u06F0-\u06F9]+)\]/g;
+
+// Map each unique citation marker ([n] or [ID:<chunkId>]) to its stable
+// 0-based display position by first occurrence. The chip renders position + 1
+// and the chunk is looked up positionally via Object.values(chunks)[position].
+// Works for both plain chat (numeric markers) and agents ([ID:<chunkId>]).
+export const buildCitationDisplayMap = (
+  content: string,
+): Map<CitationKey, number> => {
+  const map = new Map<CitationKey, number>();
+  const reg = new RegExp(citationMarkerReg.source, citationMarkerReg.flags);
+  let match: RegExpExecArray | null;
+  while ((match = reg.exec(content ?? '')) !== null) {
+    const key = parseCitationIndex(match[0]);
+    if (Number.isNaN(key)) continue;
+    if (!map.has(key)) {
+      map.set(key, map.size);
+    }
+  }
+  return map;
+};

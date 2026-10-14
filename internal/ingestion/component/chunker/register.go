@@ -90,10 +90,24 @@ func (d *imageUploadDecorator) Invoke(ctx context.Context, db *gorm.DB, inputs m
 
 	// Compute and write the deterministic chunk id (component.ChunkID) for
 	// every chunk. This happens here — before any upload — so uploadChunkImage
-	// can read ck["id"] without deriving it itself. Downstream, the persist
-	// stage reuses the same formula as a fallback when ck["id"] is absent.
+	// can read ck["id"] without deriving it itself. The id formula itself
+	// lives in canonicalChunkID (common.go); this loop only re-derives it as
+	// a fallback for chunks whose id was not already stamped upstream.
+	//
+	// A chunk id may already be stamped (e.g. by the streamed crop-upload
+	// path, which keys MinIO by the canonical id). Reuse it so the id is
+	// computed exactly once; both routes normalize the text through
+	// canonicalChunkText, so the crop-time key and this id are identical
+	// and cannot diverge. For chunks that bypassed crop, fall back to
+	// deriving it here from the already-finalized text.
 	for _, ck := range chunks {
-		text, _ := ck["text"].(string)
+		if id, ok := ck["id"]; ok && id != "" {
+			continue
+		}
+		text, err := requireChunkText(ck)
+		if err != nil {
+			return nil, err
+		}
 		ck["id"] = common.ChunkID(docID, text)
 	}
 
@@ -121,6 +135,7 @@ var ChunkerInputs = map[string]string{
 	"content":       "Alias for \"text\".",
 	"chunks":        "Optional upstream chunk list (structured JSON form).",
 	"name":          "Source document name. Not required on the payload: when absent it is read from the workflow-wide globals bag (CanvasState.Globals) via globals.GlobalOrInput.",
+	"file_type":     "Canonical parser routing extension used by GeneralChunker.",
 	"_created_time": "Optional upstream timestamp (RFC3339Nano, s).",
 	"_elapsed_time": "Optional upstream elapsed time (s).",
 }

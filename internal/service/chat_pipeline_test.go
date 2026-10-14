@@ -18,12 +18,18 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"testing"
 
+	"github.com/glebarez/sqlite"
+	"gorm.io/gorm"
+
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
@@ -97,6 +103,38 @@ func TestAsyncChat_EmptyMessages(t *testing.T) {
 	_, err := s.AsyncChat(t.Context(), "user-1", dialForTest(""), nil, false, nil)
 	if err == nil {
 		t.Fatal("expected error for empty messages, got nil")
+	}
+}
+
+// TestBuildChatConfig_GenerationConfigReachesModel pins that the dialog's LLM
+// setting and per-request overrides (temperature, top_p, max_tokens, thinking,
+// stop) reach the model driver, and that request-level overrides win.
+func TestBuildChatConfig_GenerationConfigReachesModel(t *testing.T) {
+	chat := dialForTest("llm-1")
+	chat.LLMSetting = entity.JSONMap{
+		"temperature": 0.7,
+		"top_p":       0.9,
+		"max_tokens":  512,
+		"thinking":    true,
+		"stop":        []interface{}{"\n", "END"},
+	}
+	// Request-level overrides win over dialog values.
+	cfg := BuildChatConfig(chat, map[string]interface{}{"temperature": 0.3})
+
+	if cfg.Temperature == nil || *cfg.Temperature != 0.3 {
+		t.Fatalf("Temperature: want request override 0.3, got %v", cfg.Temperature)
+	}
+	if cfg.TopP == nil || *cfg.TopP != 0.9 {
+		t.Fatalf("TopP: want dialog 0.9, got %v", cfg.TopP)
+	}
+	if cfg.MaxTokens == nil || *cfg.MaxTokens != 512 {
+		t.Fatalf("MaxTokens: want 512, got %v", cfg.MaxTokens)
+	}
+	if cfg.Thinking == nil || !*cfg.Thinking {
+		t.Fatalf("Thinking: want true, got %v", cfg.Thinking)
+	}
+	if cfg.Stop == nil || len(*cfg.Stop) != 2 {
+		t.Fatalf("Stop: want [\"\\n\", \"END\"], got %v", cfg.Stop)
 	}
 }
 
@@ -197,8 +235,8 @@ func TestDecorateAnswer_InvalidKeySuffix(t *testing.T) {
 }
 
 // TestDecorateAnswer_LeavesCanonicalMarkers covers P0: the decorator
-// passes canonical [ID:N] markers through unchanged when there are
-// no chunks to cite (so insertCitations is skipped).
+// passes canonical [ID:N] markers through unchanged when quoting is enabled
+// and there are no chunks to cite (so insertCitations is skipped).
 func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
@@ -210,7 +248,7 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -224,14 +262,14 @@ func TestDecorateAnswer_LeavesCanonicalMarkers(t *testing.T) {
 }
 
 // TestDecorateAnswer_RepairNotRunWhenNoQuote covers P0.10: when
-// quote=false, the citation-repair branch is gated off and the
-// answer is preserved verbatim.
+// quote=false, citation markers are removed without rewriting ordinary
+// bracketed numbers.
 func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 	s := &ChatPipelineService{}
 	timer, _ := newTimerAndPrompt()
 	result := s.decorateAnswer(
 		t.Context(),
-		"see (ID: 12) for details",
+		"<think>Checking[ID:0]##0$$</think>see (ID: 12)[ID:0]##1$$ in [2024] for details",
 		map[string]interface{}{"chunks": []interface{}{}, "doc_aggs": []interface{}{}},
 		"system prompt",
 		[]string{"q"},
@@ -245,8 +283,8 @@ func TestDecorateAnswer_RepairNotRunWhenNoQuote(t *testing.T) {
 		nil,
 		false,
 	)
-	if result.Answer != "see (ID: 12) for details" {
-		t.Errorf("quote=false must not repair, got %q", result.Answer)
+	if result.Answer != "<think>Checking</think>see  in [2024] for details" {
+		t.Errorf("quote=false citation cleanup = %q", result.Answer)
 	}
 }
 
@@ -287,6 +325,47 @@ func TestDecorateAnswer_RepairRunsWhenQuote(t *testing.T) {
 	)
 	if !strings.Contains(result.Answer, "[ID:12]") {
 		t.Errorf("quote=true must repair to [ID:12], got %q", result.Answer)
+	}
+}
+
+// TestDecorateAnswer_CitesThinkBlock ensures citations emitted inside the
+// hidden thinking block still determine the returned reference documents.
+func TestDecorateAnswer_CitesThinkBlock(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kbinfos := map[string]interface{}{
+		"chunks": []map[string]interface{}{
+			{
+				"chunk_id":            "c1",
+				"content_with_weight": "hello world",
+				"doc_id":              "d1",
+			},
+		},
+		"doc_aggs": []interface{}{
+			map[string]interface{}{"doc_id": "d1", "doc_name": "doc.txt"},
+		},
+	}
+	result := s.decorateAnswer(
+		t.Context(),
+		"<think>Supported by [ID:0].</think>visible answer",
+		kbinfos,
+		"system prompt",
+		[]string{"q"},
+		0,
+		timer,
+		nil, 0.0, true,
+		nil,
+		"",
+		nil,
+		"",
+		nil,
+		true,
+	)
+	if result.Reference == nil {
+		t.Fatal("a think-block citation must carry a reference")
+	}
+	if aggs, _ := result.Reference["doc_aggs"].([]interface{}); len(aggs) != 1 || aggs[0].(map[string]interface{})["doc_id"] != "d1" {
+		t.Fatalf("reference doc_aggs = %#v, want the cited document", result.Reference["doc_aggs"])
 	}
 }
 
@@ -449,7 +528,7 @@ func TestFallbackToLatestUser(t *testing.T) {
 func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 	hits, err := HydrateChunkVectors(t.Context(),
 		map[string]interface{}{"chunks": []interface{}{}},
-		nil, nil, nil,
+		nil, nil, 0, nil,
 	)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
@@ -462,12 +541,55 @@ func TestHydrateChunkVectors_NoChunksNoop(t *testing.T) {
 // TestHydrateChunkVectors_NilKbinfosNoop pins the no-op behavior of
 // the hydration helper on nil kbinfos.
 func TestHydrateChunkVectors_NilKbinfosNoop(t *testing.T) {
-	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, nil)
+	hits, err := HydrateChunkVectors(t.Context(), nil, nil, nil, 0, nil)
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)
 	}
 	if hits != 0 {
 		t.Errorf("expected 0 hits, got %d", hits)
+	}
+}
+
+// TestVectorSignalHelpers pins the Python parity that a zero vector is NOT
+// hydrated content: dialog_service.py:93-95 skips a chunk only when
+// `any(x for x in v)`, so a placeholder of zeros must still be queued for the
+// engine fetch. Without that, the agentic path — whose evidence chunks carry no
+// `vector` key at all — left every chunk at zero similarity, and
+// insertCitations could never cite anything, so agentic answers came back with
+// no references while naive answers (real vectors inline) had them.
+func TestVectorSignalHelpers(t *testing.T) {
+	// No vector key at all: the agentic evidence shape.
+	agentic := map[string]interface{}{"chunk_id": "c1"}
+	if vectorHasSignal(chunkVector(agentic)) {
+		t.Fatal("chunk without a vector must not count as hydrated")
+	}
+	// Zero placeholder: the naive ES shape for an unselected embedding.
+	zero := map[string]interface{}{"vector": make([]float64, 4)}
+	if vectorHasSignal(chunkVector(zero)) {
+		t.Fatal("zero placeholder must not count as hydrated")
+	}
+	if got := firstChunkVectorDim([]map[string]interface{}{agentic, zero}); got != 4 {
+		t.Fatalf("firstChunkVectorDim = %d, want 4 (the placeholder length names the field)", got)
+	}
+	// Real vector in the []interface{} shape a JSON round-trip produces.
+	real := map[string]interface{}{"vector": []interface{}{0.0, 1.0, 0.0, 0.0}}
+	if !vectorHasSignal(chunkVector(real)) {
+		t.Fatal("non-zero vector must count as hydrated")
+	}
+	if got := firstChunkVectorDim([]map[string]interface{}{real}); got != 4 {
+		t.Fatalf("firstChunkVectorDim = %d, want 4", got)
+	}
+}
+
+// TestGetChunkValueFallsBackOnAbsenceOnly pins Python's get_value semantics
+// (`d.get(k1, d.get(k2))`, rag/prompts/generator.py:37-38): the fallback fires
+// on key ABSENCE only, so a key present with a nil value wins over k2.
+func TestGetChunkValueFallsBackOnAbsenceOnly(t *testing.T) {
+	if got := getChunkValue(map[string]interface{}{"content": nil, "content_with_weight": "body"}, "content", "content_with_weight"); got != nil {
+		t.Fatalf("got %v, want nil (a present key wins even when nil)", got)
+	}
+	if got := getChunkValue(map[string]interface{}{"content_with_weight": "body"}, "content", "content_with_weight"); got != "body" {
+		t.Fatalf("got %v, want body", got)
 	}
 }
 
@@ -527,7 +649,7 @@ func TestBuildSQLReference_Scalar(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "",
 		[]map[string]interface{}{{"count": 42.0}},
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "42" {
 		t.Errorf("buildSQLReference scalar answer = %q, want %q", ans, "42")
@@ -554,7 +676,7 @@ func TestBuildSQLReference_MultiRowTable(t *testing.T) {
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "select id, name from t",
 		rows,
-		"sys", "elasticsearch", nil, nil,
+		"sys", "elasticsearch", nil, nil, true,
 	)
 	// No source columns → empty chunks/doc_aggs.
 	if chunks, _ := ref["chunks"].([]map[string]interface{}); len(chunks) != 0 {
@@ -646,13 +768,13 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	}
 	result := s.decorateAnswer(
 		t.Context(),
-		"x",
+		"x [ID:0]",
 		kb,
 		"system prompt",
 		[]string{"q"},
 		0,
 		timer,
-		nil, 0.0, false,
+		nil, 0.0, true,
 		nil,
 		"",
 		nil,
@@ -667,6 +789,30 @@ func TestDecorateAnswer_VectorStrippedFromReference(t *testing.T) {
 	chunk := chunks[0]
 	if _, has := chunk["vector"]; has {
 		t.Errorf("vector field should be stripped from reference chunks, got %+v", chunk)
+	}
+}
+
+// TestDecorateAnswer_QuoteDisabledKeepsChunks pins the cite=false shape of the
+// reference: the retrieved evidence still ships, but doc_aggs does not — with
+// the citation markers stripped there is nothing left to open those cards from.
+func TestDecorateAnswer_QuoteDisabledKeepsChunks(t *testing.T) {
+	s := &ChatPipelineService{}
+	timer, _ := newTimerAndPrompt()
+	kb := map[string]interface{}{
+		"chunks":   []map[string]interface{}{{"chunk_id": "c1", "content_with_weight": "Evidence", "doc_id": "d1"}},
+		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Source"}},
+	}
+	result := s.decorateAnswer(t.Context(), "Answer", kb, "", nil, 0, timer,
+		nil, 0, false, nil, "", nil, "", nil, true)
+	if _, has := result.Reference["doc_aggs"]; has {
+		t.Fatalf("disabled citations must drop doc_aggs: %#v", result.Reference)
+	}
+	chunks, ok := result.Reference["chunks"].([]map[string]interface{})
+	if !ok || len(chunks) != 1 || chunks[0]["id"] != "c1" {
+		t.Fatalf("disabled citations must still ship the evidence chunks: %#v", result.Reference["chunks"])
+	}
+	if result.Answer != "Answer" {
+		t.Fatalf("answer changed: %q", result.Answer)
 	}
 }
 
@@ -784,35 +930,6 @@ func TestShouldUseWebSearch_RequiresTavilyAndTruthyInternet(t *testing.T) {
 }
 
 // --- P5 SQL retrieval parity helpers (Python use_sql alignment) ---
-
-// TestRemoveRedundantSpaces mirrors common.string_utils.remove_redundant_spaces.
-func TestRemoveRedundantSpaces(t *testing.T) {
-	cases := []struct {
-		name string
-		in   string
-		want string
-	}{
-		// Both passes run sequentially — pass 1 strips space after `(`,
-		// pass 2 strips space before `)`, so both go.
-		{"pass1+pass2 on ( world )", "hello ( world )", "hello (world)"},
-		// Pass 2 strips space before `!`.
-		{"pass2: space before !", "world !", "world!"},
-		// Comma is not a boundary in pass 2 (it's in the negated set
-		// along with `<` and `(`), so no change.
-		{"comma not a boundary", "a , b", "a , b"},
-		{"no match", "foo bar", "foo bar"},
-		{"empty", "", ""},
-		{"digit not a boundary", "abc 123", "abc 123"},
-		{"left paren kept (no following space)", "(abc)", "(abc)"},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := removeRedundantSpaces(tc.in); got != tc.want {
-				t.Errorf("removeRedundantSpaces(%q) = %q, want %q", tc.in, got, tc.want)
-			}
-		})
-	}
-}
 
 // TestStripISOTimestamps verifies the dialog_service.py:1309 cleanup.
 // The pattern `T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+Z)?\|` strips the
@@ -1116,6 +1233,9 @@ func TestExpectedDocNameColumn(t *testing.T) {
 	if got := expectedDocNameColumn("seekdb"); got != "docnm_kwd" {
 		t.Errorf("seekdb = %q, want docnm_kwd", got)
 	}
+	if got := expectedDocNameColumn("vastbase"); got != "docnm_kwd" {
+		t.Errorf("vastbase = %q, want docnm_kwd", got)
+	}
 	if got := expectedDocNameColumn("elasticsearch"); got != "docnm_kwd" {
 		t.Errorf("elasticsearch = %q, want docnm_kwd", got)
 	}
@@ -1283,7 +1403,7 @@ func TestBuildSQLReference_EmptyRows(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "", "", nil,
-		"", "", nil, nil,
+		"", "", nil, nil, true,
 	)
 	if ans != "No results." {
 		t.Errorf("ans = %q, want %q", ans, "No results.")
@@ -1305,7 +1425,7 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	if !strings.Contains(ans, "Source|") {
 		t.Errorf("expected Source column in answer, got:\n%s", ans)
@@ -1326,6 +1446,17 @@ func TestBuildSQLReference_NonAggregateWithSourceColumns(t *testing.T) {
 		if cm["dataset_id"] != "kb_a" {
 			t.Errorf("chunks[%d].dataset_id = %v, want kb_a", i, cm["dataset_id"])
 		}
+	}
+
+	ans, ref = s.buildSQLReference(
+		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
+		rows, "", "elasticsearch", kbs, nil, false,
+	)
+	if strings.Contains(ans, "Source|") || strings.Contains(ans, "##0$$") {
+		t.Errorf("quote=false leaked SQL citations in answer:\n%s", ans)
+	}
+	if len(ref) != 0 {
+		t.Errorf("quote=false reference = %#v, want empty", ref)
 	}
 }
 
@@ -1353,7 +1484,7 @@ func TestBuildSQLReference_AggregateMissingSourceColumnsSecondaryFetch(t *testin
 	ans, ref := s.buildSQLReference(
 		t.Context(), sqlEngine, "t",
 		"select count(*) from t where x = 1",
-		rows, "", "elasticsearch", kbs, nil,
+		rows, "", "elasticsearch", kbs, nil, true,
 	)
 	// Multi-cell aggregate → renders as a table, not a scalar.
 	if !strings.Contains(ans, "|42|") {
@@ -1376,7 +1507,7 @@ func TestBuildSQLReference_NonAggregateMissingSourceEmptyRefs(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, ref := s.buildSQLReference(
 		t.Context(), nil, "t", "select title from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if !strings.Contains(ans, "T1") || !strings.Contains(ans, "T2") {
 		t.Errorf("expected table data in answer, got:\n%s", ans)
@@ -1404,7 +1535,7 @@ func TestBuildSQLReference_DisplayNameTranslation(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, title from t",
-		rows, "", "elasticsearch", nil, fieldMap,
+		rows, "", "elasticsearch", nil, fieldMap, true,
 	)
 	if !strings.Contains(ans, "|My Title|") {
 		t.Errorf("expected translated column name, got:\n%s", ans)
@@ -1423,7 +1554,7 @@ func TestBuildSQLReference_ISOTimestampStripped(t *testing.T) {
 	s := &ChatPipelineService{}
 	ans, _ := s.buildSQLReference(
 		t.Context(), nil, "t", "select doc_id, docnm_kwd, created_at from t",
-		rows, "", "elasticsearch", nil, nil,
+		rows, "", "elasticsearch", nil, nil, true,
 	)
 	if strings.Contains(ans, "T13:24:55") {
 		t.Errorf("expected ISO timestamp stripped, got:\n%s", ans)
@@ -1541,17 +1672,6 @@ func TestClampChatConfigMaxTokensRejectsExhaustedCapacity(t *testing.T) {
 	}
 }
 
-// stubHarness installs a fake harnessRetriever returning the given answer and
-// restores the previous one when the test ends.
-func stubHarness(t *testing.T, answer string) {
-	t.Helper()
-	prev := harnessRetriever
-	t.Cleanup(func() { harnessRetriever = prev })
-	harnessRetriever = func(ctx context.Context, req HarnessRequest) (HarnessResult, error) {
-		return HarnessResult{Answer: answer}, nil
-	}
-}
-
 // collectSink records every delta with its isThink flag.
 func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	return func(delta string, isThink bool) {
@@ -1560,126 +1680,519 @@ func collectSink(got *[]string, thinks *[]bool) func(string, bool) {
 	}
 }
 
-// TestRetrieveViaHarnessEmitsToolLoopLines covers the Python
-// rag/llm/chat_model.py "[Tool loop]" lines that think_log forwarded from the
-// "rag.llm.chat_model" namespace.
-func TestRetrieveViaHarnessEmitsToolLoopLines(t *testing.T) {
-	stubHarness(t, "the final cited answer")
+func TestAsyncChatEmptyResponseQuoteDisabled(t *testing.T) {
+	db := setupChatPipelineVisionTestDB(t)
+	seedChatPipelineVisionTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	if err := db.AutoMigrate(&entity.Knowledgebase{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "tenant-1", Name: "Knowledge"}).Error; err != nil {
+		t.Fatal(err)
+	}
 
-	var got []string
-	var thinks []bool
-	s := &ChatPipelineService{}
-	_, answer, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks))
+	chat := dialForTest("glm-4-flash@ZHIPU-AI")
+	chat.KBIDs = entity.JSONSlice{"kb-1"}
+	chat.PromptConfig["system"] = "Answer using {knowledge}"
+	chat.PromptConfig["empty_response"] = "Nothing found."
+	results, err := NewChatPipelineService().AsyncChat(t.Context(), "user-1", chat,
+		[]map[string]interface{}{{"role": "user", "content": "Question"}}, true,
+		map[string]interface{}{"quote": false})
 	if err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	if answer != "the final cited answer" {
-		t.Fatalf("answer = %q", answer)
+		t.Fatal(err)
 	}
 
-	joined := strings.Join(got, "")
-	for _, want := range []string{
-		"[Tool loop] Deciding what to do next (step 1); available tools: rag",
-		"[Tool loop] Step 1: running rag...",
-		// A non-empty answer is the terminal case in Python.
-		"[Tool loop] The rag tool produced the final answer, done.",
+	var final AsyncChatResult
+	for result := range results {
+		if result.Final {
+			final = result
+		}
+	}
+	if !final.Final || final.Answer != "Nothing found." {
+		t.Fatalf("final=%+v, want empty-response result", final)
+	}
+	if final.Reference == nil || len(final.Reference) != 0 {
+		t.Fatalf("quote=false reference = %#v, want explicit empty object", final.Reference)
+	}
+}
+
+// TestThinkEventWireKeys pins the JSON keys of a fully populated step: they ARE
+// the client contract (the SSE `think_event` field), so renaming or dropping a tag
+// breaks every client while neither the compiler nor any Go caller notices.
+//
+// It is also the only assertion on this struct's shape, which is why a producer
+// ALIASES this type instead of carrying a second copy bridged field by field —
+// that copy compiled for as long as it stayed a subset, and silently dropped
+// any field added on the other side.
+func TestThinkEventWireKeys(t *testing.T) {
+	// Every field populated: with `omitempty` on all but Kind and Summary, that is
+	// what makes the whole key set appear.
+	full := ThinkEvent{
+		Kind:       "tool_result",
+		Stage:      "Function tool",
+		Tool:       "retrieve",
+		Args:       `{"query":"q"}`,
+		Status:     "ok",
+		Reason:     "no_doc",
+		Cause:      "the knowledge base returned no searchable hits",
+		Results:    3,
+		Documents:  2,
+		Sources:    []string{"c1", "c2"},
+		DurationMS: 12,
+		Summary:    "The retrieve tool returned 3 results from 2 documents.",
+	}
+	want := []string{
+		"args", "cause", "documents", "duration_ms", "kind", "reason",
+		"results", "sources", "stage", "status", "summary", "tool",
+	}
+	if got := thinkEventWireKeys(t, full); strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("wire keys = %v, want %v", got, want)
+	}
+
+	// A stage step carries only Kind, Stage and Summary; everything else is
+	// omitted rather than sent as a zero — a client must treat each optional field
+	// as absent-when-zero, not as present-and-empty.
+	got := thinkEventWireKeys(t, ThinkEvent{Kind: "stage", Stage: "RAGAgent", Summary: "x"})
+	if strings.Join(got, ",") != "kind,stage,summary" {
+		t.Errorf("stage step keys = %v, want kind,stage,summary", got)
+	}
+}
+
+// thinkEventWireKeys marshals one event and returns its sorted JSON key set.
+func thinkEventWireKeys(t *testing.T, ev ThinkEvent) []string {
+	t.Helper()
+	raw, err := json.Marshal(ev)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	var decoded map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("unmarshal %s: %v", raw, err)
+	}
+	keys := make([]string, 0, len(decoded))
+	for k := range decoded {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// setupChatPipelineToolSupportTestDB seeds an in-memory scope whose models differ
+// only in their persisted tool-calling flag, so the probe runs without the provider
+// catalog:
+//
+//	model-tools-on        — chat,    extra {"is_tools": true}
+//	model-tools-off       — chat,    extra {"is_tools": false}
+//	model-tools-disabled  — chat,    extra {"is_tools": true}, status inactive
+//	model-embedding-tools — embedding, extra {"is_tools": true}
+func setupChatPipelineToolSupportTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
+	if err != nil {
+		t.Fatalf("failed to open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(
+		&entity.Tenant{},
+		&entity.UserTenant{},
+		&entity.TenantModelProvider{},
+		&entity.TenantModelInstance{},
+		&entity.TenantModel{},
+	); err != nil {
+		t.Fatalf("failed to migrate model tables: %v", err)
+	}
+
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	activeStatus := "1"
+	rows := []interface{}{
+		&entity.UserTenant{ID: "user-tenant-1", UserID: "user-1", TenantID: "tenant-1", Role: "owner", InvitedBy: "user-1", Status: &activeStatus},
+		&entity.TenantModelProvider{ID: "provider-zhipu", TenantID: "tenant-1", ProviderName: "ZHIPU-AI"},
+		&entity.TenantModelInstance{ID: "instance-zhipu", ProviderID: "provider-zhipu", InstanceName: "default", APIKey: "sk-test", Status: "active", Extra: "{}"},
+		&entity.TenantModel{ID: "model-tools-on", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-plus", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-tools-off", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-flash", ModelType: int(entity.ModelTypeChat), Status: "active", Extra: `{"is_tools":false}`},
+		&entity.TenantModel{ID: "model-tools-disabled", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4-air", ModelType: int(entity.ModelTypeChat), Status: "inactive", Extra: `{"is_tools":true}`},
+		&entity.TenantModel{ID: "model-embedding-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "embedding-3", ModelType: int(entity.ModelTypeEmbedding), Status: "active", Extra: `{"is_tools":true}`},
+		// Enrolled ONLY as image-to-text: a valid chat-pipeline input, and the case
+		// that used to be resolved as chat and rejected.
+		&entity.TenantModel{ID: "model-image2text-tools", ProviderID: "provider-zhipu", InstanceID: "instance-zhipu", ModelName: "glm-4v-plus", ModelType: int(entity.ModelTypeImage2Text), Status: "active", Extra: `{"is_tools":true}`},
+	}
+	for _, row := range rows {
+		if err := db.Create(row).Error; err != nil {
+			t.Fatalf("failed to seed %T: %v", row, err)
+		}
+	}
+	return db
+}
+
+// seedChatPipelineToolSupportTenant sets the tenant's default chat model, which
+// the no-explicit-LLM branch of the probe resolves.
+func seedChatPipelineToolSupportTenant(t *testing.T, db *gorm.DB, defaultLLMID string) {
+	t.Helper()
+	status := string(entity.StatusValid)
+	if err := db.Create(&entity.Tenant{
+		ID:     "tenant-1",
+		LLMID:  defaultLLMID,
+		Status: &status,
+	}).Error; err != nil {
+		t.Fatalf("failed to create tenant: %v", err)
+	}
+}
+
+// configTools reports the is_tools flag getLLMModelConfig carries, read the way
+// a consumer of that config map does.
+func configTools(cfg map[string]interface{}) bool {
+	v, _ := cfg["is_tools"].(bool)
+	return v
+}
+
+// TestGetLLMModelConfigCarriesToolSupport pins that the resolution reports the
+// capability of the row it actually loaded — the config the pipeline then carries
+// through the request, which is where Python reads chat_mdl.is_tools from too.
+func TestGetLLMModelConfigCarriesToolSupport(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name      string
+		llm       string
+		wantTools bool
+		wantType  string
+	}{
+		{"tool-capable model", "model-tools-on", true, "chat"},
+		{"model without tool support", "model-tools-off", false, "chat"},
 	} {
-		if !strings.Contains(joined, want) {
-			t.Errorf("missing %q; got:\n%s", want, joined)
-		}
-	}
-	// Every line must be tagged as thinking and ThinkLineBreak-terminated so
-	// the HTML think block does not glue the stages together.
-	if len(thinks) != 3 {
-		t.Fatalf("got %d deltas, want 3: %#v", len(thinks), got)
-	}
-	for i, isThink := range thinks {
-		if !isThink {
-			t.Errorf("delta %d (%q) not tagged as thinking", i, got[i])
-		}
-		if !strings.HasSuffix(got[i], thinkLineBreak) {
-			t.Errorf("delta %d (%q) missing trailing %s", i, got[i], thinkLineBreak)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err != nil {
+				t.Fatalf("getLLMModelConfig(%s) failed: %v", tc.llm, err)
+			}
+			if got := configTools(cfg); got != tc.wantTools {
+				t.Errorf("is_tools for %s = %v, want %v", tc.llm, got, tc.wantTools)
+			}
+			if got, _ := cfg["model_type"].(string); got != tc.wantType {
+				t.Errorf("model_type for %s = %q, want %q", tc.llm, got, tc.wantType)
+			}
+		})
 	}
 }
 
-// TestRetrieveViaHarnessToolLoopObservation covers the non-terminal case: an
-// empty answer means the tool fed the next round, not the final reply.
-func TestRetrieveViaHarnessToolLoopObservation(t *testing.T) {
-	stubHarness(t, "")
+// TestResolveModelConfigRejectsImage2TextOnlyModel ensures that a model
+// enrolled only as image-to-text cannot be used as a chat model.
+func TestResolveModelConfigRejectsImage2TextOnlyModel(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
 
-	var got []string
-	var thinks []bool
+	_, err := svc.ModelFactory.resolveConfig(
+		t.Context(), ModelAccess{TenantID: "tenant-1"}, entity.ModelTypeChat, "model-image2text-tools",
+	)
+	if err == nil {
+		t.Fatal("ResolveModelConfig accepted an image2text-only model as chat")
+	}
+}
+
+// TestGetLLMModelConfigRejectsUnusableModels pins the fail-closed rule: a disabled
+// model, a model not enrolled as a chat model, and an unenrolled reference all
+// fail to resolve (or resolve without a capability) instead of reporting tool
+// support — the same outcome as Python's `getattr(chat_mdl, "is_tools", False)`
+// default.
+func TestGetLLMModelConfigRejectsUnusableModels(t *testing.T) {
+	setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+
+	for _, tc := range []struct {
+		name string
+		llm  string
+	}{
+		{"disabled model", "model-tools-disabled"},
+		{"not enrolled as chat", "model-embedding-tools"},
+		{"unknown model", "no-such-model"},
+		{"unenrolled composite reference", "ghost@default@ZHIPU-AI"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1", LLMID: tc.llm})
+			if err == nil && configTools(cfg) {
+				t.Errorf("unusable model %s reported tool support", tc.llm)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigFallsBackToTenantDefault covers the no-explicit-LLM branch:
+// the resolution must fall back to the tenant default chat model (composite
+// "model@provider" reference) and report its capability.
+func TestGetLLMModelConfigFallsBackToTenantDefault(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-plus@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if !configTools(cfg) {
+		t.Error("tenant default with is_tools=true reported no tool support, want true")
+	}
+}
+
+// TestGetLLMModelConfigTenantDefaultWithoutToolSupport is the mirror case: a
+// tenant default that cannot call tools must not be reported as capable.
+func TestGetLLMModelConfigTenantDefaultWithoutToolSupport(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	seedChatPipelineToolSupportTenant(t, db, "glm-4-flash@ZHIPU-AI")
+	svc := NewChatPipelineService()
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), &entity.Chat{TenantID: "tenant-1"})
+	if err != nil {
+		t.Fatalf("getLLMModelConfig(tenant default) failed: %v", err)
+	}
+	if configTools(cfg) {
+		t.Error("tenant default with is_tools=false reported tool support, want false")
+	}
+}
+
+// TestResolveReasoningLevelReadsAgenticLevel pins where the agentic RAG mode is
+// selected from. The level arrives as a number (frontend sends
+// Number(getThinkingLevel())), from the request first and the dialog's
+// prompt_config second, and reasoningLevelAgentic is the one level that means
+// anything beyond "retrieve normally".
+func TestResolveReasoningLevelReadsAgenticLevel(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         int
+	}{
+		{"absent everywhere", nil, nil, 0},
+		{"naive from request", map[string]interface{}{"reasoning": 0}, nil, 0},
+		{"stale level from request", map[string]interface{}{"reasoning": 3}, nil, 3},
+		{"agentic from request", map[string]interface{}{"reasoning": 5}, nil, reasoningLevelAgentic},
+		{
+			"request float from JSON",
+			map[string]interface{}{"reasoning": float64(reasoningLevelAgentic)},
+			nil,
+			reasoningLevelAgentic,
+		},
+		{
+			"agentic from dialog config",
+			nil,
+			map[string]interface{}{"reasoning": 5},
+			reasoningLevelAgentic,
+		},
+		{
+			// The UI always sends the level, so a request value must win over
+			// a dialog pinned to a different mode.
+			"request overrides dialog config",
+			map[string]interface{}{"reasoning": 2},
+			map[string]interface{}{"reasoning": 5},
+			2,
+		},
+		// chat_settings.ts writes a boolean, which must not read as agentic.
+		{"boolean false is not agentic", nil, map[string]interface{}{"reasoning": false}, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := resolveReasoningLevel(tc.kwargs, tc.promptConfig)
+			if got != tc.want {
+				t.Errorf("resolveReasoningLevel() = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestQuoteEnabledNeedsBothSourcesToAgree pins the effective citation setting:
+// the request and the dialog each get a veto, and an absent setting on either
+// side leaves citations on.
+//
+// The agentic dispatch resolves this before the retrieval phases, so it is the
+// same function Phase 6 uses. When the agentic branch resolved it separately
+// (or not at all), a request's quote:false was ignored and every agentic answer
+// still shipped [ID:N] markers plus a reference payload.
+func TestQuoteEnabledNeedsBothSourcesToAgree(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kwargs       map[string]interface{}
+		promptConfig map[string]interface{}
+		want         bool
+	}{
+		{"neither source", nil, nil, true},
+		{"request on", map[string]interface{}{"quote": true}, nil, true},
+		{"request off", map[string]interface{}{"quote": false}, nil, false},
+		{"dialog off", nil, map[string]interface{}{"quote": false}, false},
+		{"request off wins over dialog on", map[string]interface{}{"quote": false}, map[string]interface{}{"quote": true}, false},
+		// The dialog is a second veto, not a way to re-enable what the request
+		// turned off.
+		{"dialog off wins over request on", map[string]interface{}{"quote": true}, map[string]interface{}{"quote": false}, false},
+		// A non-bool is not a decision; ignore it rather than disabling citations.
+		{"non-bool request value", map[string]interface{}{"quote": "false"}, nil, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := quoteEnabled(tc.kwargs, tc.promptConfig); got != tc.want {
+				t.Errorf("quoteEnabled() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestAgenticDispatchRequiresKnowledgeBaseScope pins that the agentic branch is
+// unreachable without a knowledge base.
+//
+// The agent resolves a citation against an explicit kb_id scope, and
+// buildBoolQueryFromCondition drops that term when the scope is empty — so an
+// agentic turn on a KB-less dialog would resolve a cited chunk out of ANY KB in
+// the tenant. The dispatch therefore falls through instead of running the agent
+// with an unbounded scope, which keeps the empty-scope query unconstructible
+// rather than trusting each retrieval path to defend itself.
+func TestAgenticDispatchRequiresKnowledgeBaseScope(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		hasKBs bool
+		kwargs map[string]interface{}
+		want   bool
+	}{
+		{"agentic level with KBs", true, map[string]interface{}{"reasoning": reasoningLevelAgentic}, true},
+		{"agentic level without KBs", false, map[string]interface{}{"reasoning": reasoningLevelAgentic}, false},
+		{"explicit agent_mode without KBs", false, map[string]interface{}{"agent_mode": "smart-reasoning"}, false},
+		{"explicit agent_mode with KBs", true, map[string]interface{}{"agent_mode": "smart-reasoning"}, true},
+		{"no selection without KBs", false, map[string]interface{}{"reasoning": 0}, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// Mirrors the guard in AsyncChat's agentic branch.
+			_, byMode := tc.kwargs["agent_mode"].(string)
+			byLevel := resolveReasoningLevel(tc.kwargs, nil) == reasoningLevelAgentic
+			dispatches := (byMode || byLevel) && tc.hasKBs
+			if dispatches != tc.want {
+				t.Errorf("dispatches to agentic = %v, want %v (byMode=%v byLevel=%v hasKBs=%v)",
+					dispatches, tc.want, byMode, byLevel, tc.hasKBs)
+			}
+		})
+	}
+}
+
+// TestGetLLMModelConfigReadsToolSupportPerResolution pins the consequence of
+// carrying the flag on the resolution instead of memoizing it: a model edited
+// after the first request is seen by the next resolution, with no TTL to wait out.
+func TestGetLLMModelConfigReadsToolSupportPerResolution(t *testing.T) {
+	db := setupChatPipelineToolSupportTestDB(t)
+	svc := NewChatPipelineService()
+	chat := &entity.Chat{TenantID: "tenant-1", LLMID: "model-tools-on"}
+
+	cfg, _, _, _, err := svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig failed: %v", err)
+	}
+	if !configTools(cfg) {
+		t.Fatal("tool-capable model reported no support")
+	}
+
+	if err := db.Model(&entity.TenantModel{}).Where("id = ?", "model-tools-on").
+		Update("extra", `{"is_tools":false}`).Error; err != nil {
+		t.Fatalf("flip is_tools: %v", err)
+	}
+
+	cfg, _, _, _, err = svc.getLLMModelConfig(t.Context(), chat)
+	if err != nil {
+		t.Fatalf("getLLMModelConfig after the flag flip failed: %v", err)
+	}
+	if configTools(cfg) {
+		t.Error("a flipped is_tools flag was not seen by the next resolution")
+	}
+}
+
+// ttsSpyDriver records the text a TTS driver is asked to synthesize.
+type ttsSpyDriver struct {
+	modelModule.ModelDriver
+	input  string
+	called bool
+}
+
+func (d *ttsSpyDriver) AudioSpeech(_ context.Context, _ *string, audioContent *string, _ *modelModule.APIConfig, _ *modelModule.TTSConfig, _ *common.ModelUsage) (*modelModule.TTSResponse, error) {
+	d.input = *audioContent
+	d.called = true
+	return &modelModule.TTSResponse{Audio: []byte("audio")}, nil
+}
+
+// TestSynthesizeTTS_CutsAtFiveHundredCharacters pins the cap to 500 characters,
+// so a CJK answer keeps its length and never ends in half a rune.
+func TestSynthesizeTTS_CutsAtFiveHundredCharacters(t *testing.T) {
+	spy := &ttsSpyDriver{}
+	name := "tts"
+	ttsModel := modelModule.NewTTSModel(spy, &name, nil)
 	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "high", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
+	if audio := s.synthesizeTTS(t.Context(), ttsModel, strings.Repeat("知", 600)); audio == nil {
+		t.Fatal("expected audio")
 	}
-	joined := strings.Join(got, "")
-	if !strings.Contains(joined, "[Tool loop] The rag tool produced an observation for step 1.") {
-		t.Errorf("missing observation line; got:\n%s", joined)
-	}
-	if strings.Contains(joined, "final answer") {
-		t.Errorf("empty answer must not claim a final answer:\n%s", joined)
+	if want := strings.Repeat("知", 500); spy.input != want {
+		t.Errorf("TTS input is %d bytes / %d runes, want 500 whole characters", len(spy.input), len([]rune(spy.input)))
 	}
 }
 
-// TestRetrieveViaHarnessNaiveSkipsToolLoop guards the naive path: no agentic
-// loop runs, so no [Tool loop] narration must appear.
-func TestRetrieveViaHarnessNaiveSkipsToolLoop(t *testing.T) {
-	stubHarness(t, "x")
-
-	var got []string
-	var thinks []bool
-	s := &ChatPipelineService{}
-	if _, _, err := s.retrieveViaHarness(context.Background(), "q", nil, nil, nil, "", "naive", "t", "m", "sess", nil, collectSink(&got, &thinks)); err != nil {
-		t.Fatalf("retrieveViaHarness: %v", err)
-	}
-	if len(got) != 0 {
-		t.Errorf("naive mode emitted %d deltas, want 0: %#v", len(got), got)
+func TestCleanTTSText(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "empty"},
+		{name: "ASCII below limit", text: strings.Repeat("a", 499), want: strings.Repeat("a", 499)},
+		{name: "ASCII at limit", text: strings.Repeat("a", 500), want: strings.Repeat("a", 500)},
+		{name: "ASCII over limit", text: strings.Repeat("a", 501), want: strings.Repeat("a", 500)},
+		{name: "CJK below limit", text: strings.Repeat("知", 499), want: strings.Repeat("知", 499)},
+		{name: "CJK at limit", text: strings.Repeat("知", 500), want: strings.Repeat("知", 500)},
+		{name: "CJK over limit", text: strings.Repeat("知", 501), want: strings.Repeat("知", 500)},
+		{name: "mixed rune widths", text: strings.Repeat("aé知𐐀", 126), want: strings.Repeat("aé知𐐀", 125)},
+		{name: "control emoji and whitespace", text: "\x00\t你好🙂\nworld\x7f  ", want: "你好 world"},
+		{name: "tags", text: "<think>reason</think> <b>answer</b>", want: "reason answer"},
+		{name: "comparisons", text: "2 < 3 and 4 > 1; a < b and c > d", want: "2 < 3 and 4 > 1; a < b and c > d"},
+		{name: "compact comparisons", text: "a<b>c; x<value>y", want: "a<b>c; x<value>y"},
+		{name: "unclosed tag", text: "<B>answer", want: "<B>answer"},
+		{name: "unmatched closing tag", text: "a</b>c", want: "a</b>c"},
+		{name: "nested tags", text: "<B><i>answer</i></b>", want: "answer"},
+		{name: "unmatched outer tag", text: "<b>unclosed <b>paired</b>", want: "<b>unclosed paired"},
+		{name: "encoded comparisons", text: "a&lt;b&gt;c", want: "a&lt;b&gt;c"},
+		{name: "incomplete tag", text: `answer <b title="unfinished`, want: `answer <b title="unfinished`},
+		{name: "quoted attributes", text: `<b title="a > b">answer</b> <span title='c > d'>text</span><br/>`, want: "answer text"},
+		{name: "trailing reasoning tag", text: "答案</think>", want: "答案"},
+		{name: "invalid UTF-8", text: "\xff知\xc3é\xe7\x9f", want: "知é"},
+		{name: "valid replacement character", text: "知\ufffdé", want: "知\ufffdé"},
+		{name: "cleanup before limit", text: "<think>" + strings.Repeat("知", 499) + "</think>\xff界🙂\x00余", want: strings.Repeat("知", 499) + "界"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cleanTTSText(tc.text); got != tc.want {
+				t.Errorf("cleanTTSText() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
-// TestToolLoopLineNilSink guards the nil-sink path (streaming disabled).
-func TestToolLoopLineNilSink(t *testing.T) {
-	toolLoopLine(nil, "[Tool loop] Step 1: running rag...") // must not panic
-}
-
-// TestDecorateHarnessAnswerReferenceUsesClientChunkShape pins that the reasoning
-// path hands consumers the same reference shape as the non-reasoning one
-// (content / document_name / dataset_id — not the engine keys), and that the
-// source chunks are left untouched (no in-place vector stripping).
-func TestDecorateHarnessAnswerReferenceUsesClientChunkShape(t *testing.T) {
-	src := map[string]interface{}{
-		"chunk_id":            "c1",
-		"content_with_weight": "hello",
-		"docnm_kwd":           "Doc One",
-		"doc_id":              "d1",
-		"kb_id":               "kb1",
-		"vector":              []float64{0.1, 0.2},
-	}
-	kbinfos := map[string]interface{}{
-		"chunks":   []map[string]interface{}{src},
-		"doc_aggs": []interface{}{map[string]interface{}{"doc_id": "d1", "doc_name": "Doc One"}},
-	}
-
-	s := &ChatPipelineService{}
-	res := s.decorateHarnessAnswer("The answer [ID:0]", kbinfos)
-	if res.Reference == nil {
-		t.Fatal("a cited answer must carry a reference")
-	}
-	chunks, _ := res.Reference["chunks"].([]map[string]interface{})
-	if len(chunks) != 1 {
-		t.Fatalf("reference chunks = %#v, want 1", res.Reference["chunks"])
-	}
-	if chunks[0]["content"] != "hello" || chunks[0]["document_name"] != "Doc One" || chunks[0]["dataset_id"] != "kb1" {
-		t.Errorf("reference chunk = %#v, want the client-facing keys populated", chunks[0])
-	}
-	for _, engineKey := range []string{"content_with_weight", "docnm_kwd", "kb_id", "vector"} {
-		if _, has := chunks[0][engineKey]; has {
-			t.Errorf("reference chunk leaked engine key %q", engineKey)
-		}
-	}
-	if _, has := src["vector"]; !has {
-		t.Error("the shared source chunk lost its vector: the reference must not mutate it")
+func TestSynthesizeTTS_CleansTextBeforeCallingDriver(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		text string
+		want string
+	}{
+		{name: "mixed answer", text: "\xff<think>思考</think> \x00hello🙂", want: "思考 hello"},
+		{name: "compact comparison", text: "a<b>c", want: "a<b>c"},
+		{name: "empty"},
+		{name: "cleanup to empty", text: "<think></think>🙂\xff\x00 \t\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			spy := &ttsSpyDriver{}
+			name := "tts"
+			ttsModel := modelModule.NewTTSModel(spy, &name, nil)
+			s := &ChatPipelineService{}
+			audio := s.synthesizeTTS(t.Context(), ttsModel, tc.text)
+			wantCall := tc.want != ""
+			if spy.called != wantCall {
+				t.Errorf("TTS driver called = %v, want %v", spy.called, wantCall)
+			}
+			if spy.input != tc.want {
+				t.Errorf("TTS input = %q, want %q", spy.input, tc.want)
+			}
+			if (audio != nil) != wantCall {
+				t.Errorf("audio = %v, want audio present = %v", audio, wantCall)
+			}
+		})
 	}
 }

@@ -39,7 +39,7 @@ func (dao *UserDAO) Create(ctx context.Context, db *gorm.DB, user *entity.User) 
 // GetByID get user by ID
 func (dao *UserDAO) GetByID(ctx context.Context, db *gorm.DB, id uint) (*entity.User, error) {
 	var user entity.User
-	err := db.WithContext(ctx).First(&user, id).Error
+	err := db.WithContext(ctx).Take(&user, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -64,6 +64,31 @@ func (dao *UserDAO) GetNicknameByID(ctx context.Context, db *gorm.DB, id string)
 		Select("nickname").
 		Scan(&nickname).Error
 	return nickname, err
+}
+
+// GetNicknamesByIDs resolves nicknames for many users in one batched
+// lookup, keyed by user id; ids without a matching user row are absent.
+func (dao *UserDAO) GetNicknamesByIDs(ctx context.Context, db *gorm.DB, ids []string) (map[string]string, error) {
+	nicknames := make(map[string]string, len(ids))
+	if len(ids) == 0 {
+		return nicknames, nil
+	}
+	var rows []struct {
+		ID       string
+		Nickname string
+	}
+	err := db.WithContext(ctx).
+		Model(&entity.User{}).
+		Select("id, nickname").
+		Where("id IN ?", ids).
+		Find(&rows).Error
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range rows {
+		nicknames[r.ID] = r.Nickname
+	}
+	return nicknames, nil
 }
 
 // GetByEmail get user by email

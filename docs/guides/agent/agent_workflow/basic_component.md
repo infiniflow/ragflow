@@ -30,7 +30,7 @@ In `Conversational` mode, you can set the first message that the Agent says to t
 
 Example:
 
-> Hello, I can help you query product materials, compare models, and generate installation suggestions.  
+> Hello, I can help you query product materials, compare models, and generate installation suggestions.
 > Please describe your question, or upload the files that need to be analyzed.
 
 ![Begin Component](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/begin_component_1.jpg)
@@ -190,4 +190,3 @@ Retrieval parameters directly affect answer coverage, accuracy, and response tim
 | Similarity threshold | 0.2 | Loose recall | Questions with diverse expressions. |
 | Similarity threshold | 0.5 | General Q&A | Default starting value. |
 | Similarity threshold | 0.8 | Strict precise matching | Scenarios that require exact terminology matching. |
-

@@ -24,7 +24,7 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	"ragflow/internal/engine/redis"
+	"ragflow/internal/engine/kvrocks"
 	"ragflow/internal/handler"
 	"ragflow/internal/server"
 	"ragflow/internal/service"
@@ -113,13 +113,13 @@ func (h *Handler) Login(c *gin.Context) {
 		return
 	}
 
-	secretKey, err := server.GetSecretKey(ctx, redis.Get())
+	secretKey, err := server.GetSecretKey(ctx, kvrocks.Get())
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to get secret key: %s", err.Error()))
 		return
 	}
 
-	authToken, err := utility.DumpAccessToken(*user.AccessToken, secretKey)
+	authToken, err := common.DumpAccessToken(*user.AccessToken, secretKey)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, fmt.Sprintf("Failed to generate auth token: %s", err.Error()))
 		return
@@ -287,7 +287,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	userDetails, err := h.service.GetUserDetails(username)
+	userDetails, err := h.service.GetUserDetails(c.Request.Context(), username)
 	if err != nil {
 		if errors.Is(err, common.ErrUserNotFound) {
 			common.ErrorWithCode(c, common.CodeNotFound, "User not found")
@@ -297,7 +297,7 @@ func (h *Handler) GetUser(c *gin.Context) {
 		return
 	}
 
-	common.SuccessWithData(c, userDetails, "")
+	common.SuccessWithData(c, []map[string]interface{}{userDetails}, "")
 }
 
 // DeleteUser handle delete user
@@ -682,7 +682,8 @@ func (h *Handler) SetVariable(c *gin.Context) {
 	common.SuccessNoData(c, "Set variable successfully")
 }
 
-// ListConfigs handle list configs
+// ListConfigs returns configurations, including plaintext credentials, for
+// superuser inspection. AuthMiddleware enforces superuser access.
 func (h *Handler) ListConfigs(c *gin.Context) {
 	configs, err := h.service.ListAllConfigs()
 	if err != nil {
@@ -714,7 +715,7 @@ func (h *Handler) GetVersion(c *gin.Context) {
 func (h *Handler) ListSandboxProviders(c *gin.Context) {
 	providers, err := h.service.ListSandboxProviders()
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		writeSandboxError(c, err)
 		return
 	}
 
@@ -725,13 +726,13 @@ func (h *Handler) ListSandboxProviders(c *gin.Context) {
 func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 	providerID := c.Param("provider_id")
 	if providerID == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Provider ID is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider ID is required")
 		return
 	}
 
 	schema, err := h.service.GetSandboxProviderSchema(providerID)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		writeSandboxError(c, err)
 		return
 	}
 
@@ -740,9 +741,9 @@ func (h *Handler) GetSandboxProviderSchema(c *gin.Context) {
 
 // GetSandboxConfig handle get sandbox config
 func (h *Handler) GetSandboxConfig(c *gin.Context) {
-	config, err := h.service.GetSandboxConfig()
+	config, err := h.service.GetSandboxConfig(c.Request.Context(), c.Query("provider_type"))
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		writeSandboxError(c, err)
 		return
 	}
 
@@ -753,29 +754,26 @@ func (h *Handler) GetSandboxConfig(c *gin.Context) {
 type SetSandboxConfigHTTPRequest struct {
 	ProviderType string                 `json:"provider_type" binding:"required"`
 	Config       map[string]interface{} `json:"config"`
-	SetActive    bool                   `json:"set_active"`
+	SetActive    *bool                  `json:"set_active"`
 }
 
 // SetSandboxConfig handle set sandbox config
 func (h *Handler) SetSandboxConfig(c *gin.Context) {
 	var req SetSandboxConfigHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Request body is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string, config an object, and set_active a boolean")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Provider type is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
 		return
 	}
 
-	// Default to true for backward compatibility
-	_ = c.Request.Body.Close()
-	req.SetActive = true
-
-	result, err := h.service.SetSandboxConfig(req.ProviderType, req.Config, req.SetActive)
+	setActive := req.SetActive == nil || *req.SetActive
+	result, err := h.service.SetSandboxConfig(c.Request.Context(), req.ProviderType, req.Config, setActive)
 	if err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, err.Error())
+		writeSandboxError(c, err)
 		return
 	}
 
@@ -792,22 +790,35 @@ type TestSandboxConnectionHTTPRequest struct {
 func (h *Handler) TestSandboxConnection(c *gin.Context) {
 	var req TestSandboxConnectionHTTPRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Request body is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid JSON request: provider_type must be a nonempty string and config an object")
 		return
 	}
 
 	if req.ProviderType == "" {
-		common.ErrorWithCode(c, common.CodeBadRequest, "Provider type is required")
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Provider type is required")
 		return
 	}
 
-	result, err := h.service.TestSandboxConnection(req.ProviderType, req.Config)
+	result, err := h.service.TestSandboxConnection(c.Request.Context(), req.ProviderType, req.Config)
 	if err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid access token")
+		writeSandboxError(c, err)
+		return
+	}
+	if success, ok := result["success"].(bool); ok && !success {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, result, "Sandbox connection test failed")
 		return
 	}
 
 	common.SuccessWithData(c, result, "")
+}
+
+func writeSandboxError(c *gin.Context, err error) {
+	var coded *common.CodedError
+	if errors.As(err, &coded) {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, coded.Code, nil, coded.Message)
+		return
+	}
+	common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())
 }
 
 // AuthMiddleware JWT auth middleware
@@ -1135,7 +1146,7 @@ func (h *Handler) ShutdownIngestor(c *gin.Context) {
 		return
 	}
 
-	taskID := utility.GenerateUUID()
+	taskID := common.GenerateUUID()
 	//ingestionManager.SubmitTask(&common.TaskAssignment{
 	//	TaskId:     taskID,
 	//	TaskType:   "SHUTDOWN",
@@ -1165,8 +1176,8 @@ func (h *Handler) Reports(c *gin.Context) {
 	}
 
 	// Handle the heartbeat
-	errCode, message := h.service.HandleHeartbeat(&req)
-	common.ErrorWithCode(c, errCode, message)
+	errCode, data, message := h.service.HandleHeartbeat(&req)
+	common.ResponseWithCodeData(c, errCode, data, message)
 }
 
 func (h *Handler) ListAllModels(c *gin.Context) {
@@ -1240,7 +1251,7 @@ func (h *Handler) PingStore(c *gin.Context) {
 
 func (h *Handler) PingCache(c *gin.Context) {
 	ctx := c.Request.Context()
-	redisClient := redis.Get()
+	redisClient := kvrocks.Get()
 	if redisClient.Health(ctx) {
 		common.SuccessNoMessage(c, "SUCCESS")
 	} else {
@@ -1264,4 +1275,13 @@ func (h *Handler) PingEngine(c *gin.Context) {
 	}
 
 	common.SuccessNoMessage(c, "SUCCESS")
+}
+
+func (h *Handler) GetHardwareInfo(c *gin.Context) {
+	hardwareInfo, err := utility.GetHardwareInfo()
+	if err != nil {
+		common.ErrorWithCode(c, common.CodeServerError, err.Error())
+		return
+	}
+	common.SuccessWithData(c, hardwareInfo, "SUCCESS")
 }

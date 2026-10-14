@@ -29,6 +29,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"ragflow/internal/service/graph"
 	"ragflow/internal/service/nlp"
@@ -43,14 +44,14 @@ import (
 
 // KBServiceIface abstracts KnowledgebaseService for the Dify handler.
 type KBServiceIface interface {
-	GetByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
-	Accessible(ctx context.Context, kbID, userID string) bool
+	GetKnowledgebaseByID(ctx context.Context, kbID string) (*entity.Knowledgebase, error)
+	CheckAccess(ctx context.Context, subject permission.Subject, datasetID string, operation permission.Operation) error
 }
 
-// ModelServiceIface abstracts ModelProviderService for the Dify handler.
-type ModelServiceIface interface {
-	GetEmbeddingModel(ctx context.Context, tenantID, embdID string) (*modelModule.EmbeddingModel, error)
-	GetChatModel(ctx context.Context, tenantID, compositeModelName string) (*modelModule.ChatModel, error)
+// ModelCreator supplies typed model instances to Dify retrieval.
+type ModelCreator interface {
+	NewEmbeddingModel(ctx context.Context, access service.ModelAccess, modelRef string) (*modelModule.EmbeddingModel, error)
+	NewDefaultChatModel(ctx context.Context, access service.ModelAccess) (*modelModule.ChatModel, error)
 }
 
 // MetadataServiceIface abstracts MetadataService for the Dify handler.
@@ -132,7 +133,7 @@ type difyRecord struct {
 // DifyRetrievalHandler handles Dify-compatible retrieval requests.
 type DifyRetrievalHandler struct {
 	kbSvc        KBServiceIface
-	modelSvc     ModelServiceIface
+	modelFactory ModelCreator
 	metadataSvc  MetadataServiceIface
 	retrievalSvc RetrievalServiceIface
 	docDAO       DocumentDAOIface
@@ -144,7 +145,7 @@ type DifyRetrievalHandler struct {
 // a pipeline that depends on per-request model configuration.
 func NewDifyRetrievalHandler(
 	kbSvc KBServiceIface,
-	modelSvc ModelServiceIface,
+	modelFactory ModelCreator,
 	metadataSvc MetadataServiceIface,
 	retrievalSvc RetrievalServiceIface,
 	docDAO DocumentDAOIface,
@@ -152,7 +153,7 @@ func NewDifyRetrievalHandler(
 ) *DifyRetrievalHandler {
 	return &DifyRetrievalHandler{
 		kbSvc:        kbSvc,
-		modelSvc:     modelSvc,
+		modelFactory: modelFactory,
 		metadataSvc:  metadataSvc,
 		retrievalSvc: retrievalSvc,
 		docDAO:       docDAO,
@@ -205,7 +206,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	kb, err := h.kbSvc.GetByID(ctx, req.KnowledgeID)
+	kb, err := h.kbSvc.GetKnowledgebaseByID(ctx, req.KnowledgeID)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, "Knowledge base not found!")
@@ -215,8 +216,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 		return
 	}
 
-	if !h.kbSvc.Accessible(ctx, req.KnowledgeID, user.ID) {
-		common.ResponseWithHttpCodeData(c, http.StatusUnauthorized, common.CodeAuthenticationError, nil, "No authorization")
+	if err := h.kbSvc.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KnowledgeID, permission.OperationUse); err != nil {
+		respondHTTPPermissionError(c, err, false)
 		return
 	}
 
@@ -235,7 +236,8 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 	}
 
 	// Get embedding model
-	embModel, err := h.modelSvc.GetEmbeddingModel(ctx, kb.TenantID, kb.EmbdID)
+	access := service.ModelAccess{UserID: user.ID, TenantID: kb.TenantID}
+	embModel, err := h.modelFactory.NewEmbeddingModel(ctx, access, kb.EmbdID)
 	if err != nil {
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, fmt.Sprintf("failed to get embedding model: %v", err))
 		return
@@ -291,7 +293,7 @@ func (h *DifyRetrievalHandler) Retrieval(c *gin.Context) {
 
 	// KG retrieval (optional)
 	if req.UseKG {
-		chatModel, kgErr := h.modelSvc.GetChatModel(ctx, kb.TenantID, "")
+		chatModel, kgErr := h.modelFactory.NewDefaultChatModel(ctx, access)
 		if kgErr != nil {
 			common.Warn("KG retrieval: failed to get chat model", zap.String("kbID", req.KnowledgeID), zap.Error(kgErr))
 		} else if chatModel != nil {

@@ -16,8 +16,6 @@
 
 package common
 
-import "encoding/json"
-
 const (
 	// TaskSubject is the NATS subject on which ingestion and memory tasks are
 	// published and consumed. Producer and consumer must reference this single
@@ -35,20 +33,17 @@ const (
 	// TaskTypeMemory is the async memory-extraction task type. Memory tasks
 	// share the tasks.RAGFLOW subject and the Ingestor's consumer + worker
 	// pool with ingestion tasks; handleAndExecute dispatches them by TaskType.
-	// The memory-specific payload (message_dict/memory_id/source_id) is
-	// carried in TaskMessage.Payload.
+	// Their TaskMessage is only a wake-up; input lives in memory_task.
 	TaskTypeMemory = "memory"
 )
 
+// TaskMessage is a broker wake-up that identifies one durable task.
 type TaskMessage struct {
 	TaskID   string `json:"task_id" binding:"required"`
 	TaskType string `json:"task_type" binding:"required"`
-	// Payload carries the task-specific body for non-ingestion task types
-	// (e.g. the memory extraction payload). It is left empty for ingestion
-	// tasks and old messages, so existing consumers are unaffected.
-	Payload json.RawMessage `json:"payload,omitempty"`
 }
 
+// TaskHandle controls settlement and heartbeat for a received task message.
 type TaskHandle interface {
 	GetMessage() TaskMessage
 	Ack() error

@@ -15,6 +15,7 @@ import (
 	"github.com/redis/go-redis/v9"
 
 	"ragflow/internal/agent/canvas"
+	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 )
 
@@ -81,13 +82,13 @@ func TestCancelSessionRunDoesNotAffectAnotherSession(t *testing.T) {
 func TestCancelSessionRunFinishedSessionDoesNotCreateCancelMarker(t *testing.T) {
 	testDB := setupServiceTestDB(t)
 	pushServiceDB(t, testDB)
-	if err := testDB.Create(&entity.API4Conversation{
+	if err := dao.NewAPI4ConversationDAO().Create(t.Context(), testDB, &entity.API4Conversation{
 		ID:        "session-persisted",
 		DialogID:  "agent-1",
 		UserID:    "user-a",
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("create conversation: %v", err)
 	}
 
@@ -146,7 +147,7 @@ func TestRunAgentInitializationFailureReleasesActiveSession(t *testing.T) {
 		t.Fatalf("migrate agent tables: %v", err)
 	}
 	if err := testDB.Create(&entity.UserCanvas{ID: "agent-1", UserID: "user-a"}).Error; err != nil {
-		t.Fatalf("create canvas: %v", err)
+		t.Fatalf("create agent: %v", err)
 	}
 	tracker, mr := newAgentCancelTracker(t)
 	svc := NewAgentServiceWithOptions(nil, nil, tracker)

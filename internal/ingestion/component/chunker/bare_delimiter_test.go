@@ -11,12 +11,12 @@ import (
 // paragraphs that are then merged by token size — instead of being silently
 // ignored (the previous keepBare=false contract).
 //
-// Python contract (rag/nlp/__init__.py:1406-1415, naive_merge default path):
-// the payload is split on the delimiter, the delimiter text is DROPPED, and
-// each kept paragraph is rebuilt with a leading "\n" (its original surrounding
-// whitespace is preserved). Paragraphs are thus joined by "\n", never by the
-// raw delimiter. One chunk per segment (no token merge) happens ONLY for a
-// backtick-wrapped CUSTOM delimiter.
+// Lossless contract (plan B): a delimiter is a HINT for where the chunker MAY
+// break, never a character to DELETE. After chunking, concatenating every
+// emitted chunk's text must reproduce the source exactly — the delimiter is
+// retained (glued to the end of the segment that precedes it), and no stray
+// "\n" is synthesized in its place. One chunk per segment (no token merge)
+// happens ONLY for a backtick-wrapped CUSTOM delimiter.
 //
 // These tests target BOTH the text/markdown/html path (invokeTextPayload) and
 // the JSON path (invokeJSONPayload -> chunkFromItem + global merge), and lock
@@ -63,10 +63,9 @@ func joinedText(chunks []map[string]any) string {
 }
 
 // TestBareDelimiterSplitsAndTokenMergesText asserts the core fix: a bare
-// multi-char delimiter ("::") now splits the text into paragraphs, the
-// delimiter text is dropped, and the paragraphs are rejoined with "\n"
-// (matching Python's "\n"+sub_sec reconstruction) — not with the raw
-// delimiter. The paragraphs are then merged by token size.
+// multi-char delimiter ("::") now splits the text into paragraphs, each
+// paragraph KEEPS its trailing delimiter (lossless), and the paragraphs are
+// merged by token size. Concatenating the chunks reproduces the source exactly.
 func TestBareDelimiterSplitsAndTokenMergesText(t *testing.T) {
 	c := newBareChunker(t, []string{"::"}, 1024)
 	const text = "alpha::beta::gamma::delta"
@@ -74,73 +73,64 @@ func TestBareDelimiterSplitsAndTokenMergesText(t *testing.T) {
 	if len(chunks) == 0 {
 		t.Fatal("expected at least one chunk")
 	}
-	// The delimiter must never survive inside a chunk.
-	for _, ck := range chunks {
-		if strings.Contains(ck["text"].(string), "::") {
-			t.Errorf("bare delimiter leaked into chunk: %q", ck["text"].(string))
-		}
+	// Lossless: the joined content equals the source, delimiter included.
+	if got := joinedText(chunks); got != text {
+		t.Errorf("joined text: want %q got %q (chunks=%v)", text, got, chunkTexts(chunks))
 	}
-	// Paragraphs are rejoined with "\n" (each paragraph keeps a leading "\n"),
-	// so the joined content equals the source with "::" replaced by "\n".
-	const want = "alpha\nbeta\ngamma\ndelta"
-	if got := joinedText(chunks); got != want {
-		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
+	// Every paragraph retains its delimiter (it is not deleted).
+	for _, ck := range chunks {
+		if !strings.Contains(ck["text"].(string), "::") {
+			t.Errorf("bare delimiter dropped from chunk: %q", ck["text"].(string))
+		}
 	}
 }
 
 // TestBareSingleCharDelimiterSplitsText covers the classic case: a single
-// ASCII char delimiter (".") splits sentences, the delimiter is dropped, and
-// paragraphs are rejoined with "\n".
+// ASCII char delimiter (".") splits sentences and is retained.
 func TestBareSingleCharDelimiterSplitsText(t *testing.T) {
 	c := newBareChunker(t, []string{"."}, 1024)
-	chunks := invokeText(t, c, "first.second.third")
-	const want = "first\nsecond\nthird"
-	if got := joinedText(chunks); got != want {
-		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
-	}
-	for _, ck := range chunks {
-		if strings.Contains(ck["text"].(string), ".") {
-			t.Errorf("bare delimiter leaked into chunk: %q", ck["text"].(string))
-		}
+	const text = "first.second.third"
+	chunks := invokeText(t, c, text)
+	if got := joinedText(chunks); got != text {
+		t.Errorf("joined text: want %q got %q (chunks=%v)", text, got, chunkTexts(chunks))
 	}
 }
 
 // TestBareCJKBoundarySplitsText covers a CJK punctuation delimiter.
 func TestBareCJKBoundarySplitsText(t *testing.T) {
 	c := newBareChunker(t, []string{"；"}, 1024)
-	chunks := invokeText(t, c, "第一部分；第二部分；第三部分")
-	const want = "第一部分\n第二部分\n第三部分"
-	if got := joinedText(chunks); got != want {
-		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
+	const text = "第一部分；第二部分；第三部分"
+	chunks := invokeText(t, c, text)
+	if got := joinedText(chunks); got != text {
+		t.Errorf("joined text: want %q got %q (chunks=%v)", text, got, chunkTexts(chunks))
 	}
 }
 
 // TestBareDelimiterSplitsJSON asserts the JSON path also honors bare
-// delimiters (chunkFromItem now receives a non-nil pattern and the global
-// merge applies because there is no custom delimiter).
+// delimiters and reproduces the source exactly (delimiter retained, no "\n"
+// synthesized).
 func TestBareDelimiterSplitsJSON(t *testing.T) {
 	c := newBareChunker(t, []string{"。"}, 1024)
+	const text = "第一句内容。第二句内容。第三句内容。"
 	out, err := c.Invoke(context.Background(), nil, map[string]any{
 		"name":          "doc.json",
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "第一句内容。第二句内容。第三句内容。", "doc_type_kwd": "text"},
+			{"text": text, "doc_type_kwd": "text"},
 		},
 	})
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	const want = "第一句内容\n第二句内容\n第三句内容"
-	if got := joinedText(chunks); got != want {
-		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
+	if got := joinedText(chunks); got != text {
+		t.Errorf("joined text: want %q got %q (chunks=%v)", text, got, chunkTexts(chunks))
 	}
 }
 
 // TestCustomDelimiterStillOneChunkPerSegment locks the distinction: a
-// backtick-wrapped delimiter must yield one chunk per segment with NO token
-// merge (and the delimiter is dropped with no "\n" rejoin), even with a tight
-// budget.
+// backtick-wrapped delimiter yields one chunk per segment with NO token merge,
+// and the custom delimiter is DROPPED (Python-compatible split instruction).
 func TestCustomDelimiterStillOneChunkPerSegment(t *testing.T) {
 	c, err := NewTokenChunker(map[string]any{
 		"delimiter_mode":   "delimiter",
@@ -171,27 +161,25 @@ func TestBareDelimiterEmptyText(t *testing.T) {
 	}
 }
 
-// TestBareDelimiterDropsEmptySegment asserts that a genuinely empty segment
-// produced by a doubled delimiter ("alpha||beta") is dropped, so the joined
-// text has no empty paragraph (mirrors Python's `if not sub_sec: continue`).
-// (Whitespace-only segments are NOT dropped — Python keeps them — so this test
-// deliberately uses an empty, not whitespace, segment.)
+// TestBareDelimiterKeepsDoubledDelimiter asserts that a doubled delimiter
+// ("alpha||beta") is reproduced exactly: both delimiters survive, so the
+// joined text is "alpha||beta" (lossless), with no empty paragraph dropped.
 func TestBareDelimiterDropsEmptySegment(t *testing.T) {
 	c := newBareChunker(t, []string{"|"}, 1024)
 	chunks := invokeText(t, c, "alpha||beta")
-	const want = "alpha\nbeta"
+	const want = "alpha||beta"
 	if got := joinedText(chunks); got != want {
 		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
 	}
 }
 
 // TestBareDelimiterCRLFNormalized asserts CRLF/CR are normalized to LF before
-// splitting (mirrors Python naive_merge text normalization). The "\n" left
-// behind by the dropped delimiter is preserved between paragraphs.
+// splitting (mirrors Python naive_merge text normalization), and the retained
+// delimiter reproduces the source exactly.
 func TestBareDelimiterCRLFNormalized(t *testing.T) {
 	c := newBareChunker(t, []string{"."}, 1024)
 	chunks := invokeText(t, c, "line one.\r\nline two.\rline three.")
-	const want = "line one\n\nline two\n\nline three"
+	const want = "line one.\nline two.\nline three."
 	if got := joinedText(chunks); got != want {
 		t.Errorf("joined text: want %q got %q (chunks=%v)", want, got, chunkTexts(chunks))
 	}
@@ -222,17 +210,17 @@ func TestBareDelimiterNoDelimiterFallback(t *testing.T) {
 
 // TestBareDelimiterTokenMergeCoalesces asserts that short paragraphs separated
 // by a bare delimiter are merged up to the token budget (not one chunk per
-// paragraph when below budget), while still keeping the "\n" paragraph
-// boundary — exactly mirroring Python's merge.
+// paragraph when below budget), and the merged text keeps every retained
+// delimiter — reproducing the source exactly.
 func TestBareDelimiterTokenMergeCoalesces(t *testing.T) {
 	c := newBareChunker(t, []string{"。"}, 1024)
 	chunks := invokeText(t, c, "短句一。短句二。短句三。")
 	// All three short sentences fit under the large budget, so they coalesce
-	// into a single merged chunk whose text keeps the "\n" paragraph joins.
+	// into a single merged chunk whose text retains every "。" delimiter.
 	if len(chunks) != 1 {
 		t.Fatalf("expected single merged chunk, got %d (%v)", len(chunks), chunkTexts(chunks))
 	}
-	const want = "短句一\n短句二\n短句三"
+	const want = "短句一。短句二。短句三。"
 	if got := chunks[0]["text"].(string); got != want {
 		t.Errorf("merged text: want %q got %q", want, got)
 	}

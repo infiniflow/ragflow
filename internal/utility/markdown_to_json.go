@@ -88,10 +88,13 @@ type kv struct {
 }
 type OMap []kv
 
-// Node is one shaped mind-map node (Python's {"id", "children"} shape).
+// Node is one shaped mind-map node. SourceChunkIDs is populated by the Go
+// mindmap compiler when the model returns provenance in its JSON response;
+// legacy Markdown shaping leaves it empty.
 type Node struct {
-	ID       string
-	Children []*Node
+	ID             string
+	SourceChunkIDs []string
+	Children       []*Node
 }
 
 type blockType int
@@ -136,17 +139,17 @@ func Dictify(md string) OMap {
 	if len(blocks) == 0 {
 		return OMap{}
 	}
-	min := 100000
+	minVal := 100000
 	for _, b := range blocks {
 		lvl := 100000
 		if b.typ == headingBlock {
 			lvl = b.level
 		}
-		if lvl < min {
-			min = lvl
+		if lvl < minVal {
+			minVal = lvl
 		}
 	}
-	switch t := dictifyBlocks(blocks, min).(type) {
+	switch t := dictifyBlocks(blocks, minVal).(type) {
 	case OMap:
 		out := OMap{}
 		for _, e := range t {

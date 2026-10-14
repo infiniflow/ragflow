@@ -37,7 +37,6 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
   getMetaKeys,
   retrievalTestShare,
@@ -64,10 +63,6 @@ const methods = {
     url: documentThumbnails,
     method: 'get',
   },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
-  },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
     method: 'get',
@@ -87,10 +82,6 @@ const methods = {
   listPipelines: {
     url: listPipelines,
     method: 'get',
-  },
-  pipelineRerun: {
-    url: api.pipelineRerun,
-    method: 'post',
   },
 };
 
@@ -200,7 +191,7 @@ const chunkService = {
       page: rest.page,
       page_size: rest.page_size ?? rest.size,
       similarity_threshold: rest.similarity_threshold,
-      vector_similarity_weight: rest.vector_similarity_weight,
+      keywords_similarity_weight: rest.keywords_similarity_weight,
       top_k: rest.top_k,
       knn_top_k: rest.knn_top_k,
       knn_num_candidates: rest.knn_num_candidates,
@@ -362,10 +353,15 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list.
-export const listDatasetByIds = (ids: string[]) =>
+// in the first page of the paginated list. `canvasID` limits results to
+// datasets usable by both the canvas owner and the current user.
+export const listDatasetByIds = (ids: string[], canvasID?: string) =>
   request.get(api.kbList, {
-    params: { ids: ids.join(','), page_size: ids.length },
+    params: {
+      ids: ids.join(','),
+      page_size: ids.length,
+      ...(canvasID ? { canvas_id: canvasID } : {}),
+    },
   });
 
 export const datasetFilter = () => request.get(api.datasetFilter);
@@ -381,17 +377,23 @@ export const traceIndex = (datasetId: string, indexType: string) =>
 
 // getDatasetCompilationStatus reads the Go scheduler compile-status contract
 // (GET /datasets/:id/compilation/status), used on the Go backend to
-// replace the legacy traceIndex task-progress endpoint. Route it through the
+// replace the legacy traceIndex task-progress endpoint. The `kind` query param
+// scopes the status to one compile type, mirroring the per-type scoping the
+// Python branch gets from traceIndex's `type=` param. Route it through the
 // service-layer proxy (registerNextServer -> next-request) like the rest of the
 // *-service.ts HTTP proxies.
 const compilationStatusProxy = registerNextServer({
   getDatasetCompilationStatus: {
-    url: (datasetId: string) => api.compilationStatus(datasetId),
+    url: ({ datasetId }: { datasetId: string }) =>
+      api.compilationStatus(datasetId),
     method: 'get',
   },
 } as const);
-export const getDatasetCompilationStatus = (datasetId: string) =>
-  compilationStatusProxy.getDatasetCompilationStatus(datasetId);
+export const getDatasetCompilationStatus = (datasetId: string, kind: string) =>
+  compilationStatusProxy.getDatasetCompilationStatus(
+    { datasetId, params: { kind } },
+    true,
+  );
 
 // Using RESTful API: GET /api/v1/datasets/{dataset_id}/documents
 export const listDocument = (
@@ -506,6 +508,12 @@ export const listPipelineDatasetLogs = (
 
 export const getPipelineDetail = (datasetId: string, logId: string) =>
   request.get(api.getPipelineDetail(datasetId, logId));
+
+export const listIngestionMessages = (
+  datasetId: string,
+  logId: string,
+  params?: Record<string, any>,
+) => request.get(api.listIngestionMessages(datasetId, logId), { params });
 
 export const getKnowledgeBasicInfo = (datasetId: string) =>
   request.get(api.getKnowledgeBasicInfo(datasetId));

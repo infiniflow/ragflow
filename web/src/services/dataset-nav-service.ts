@@ -22,8 +22,14 @@ const datasetNavService = {
     request.get(api.getDatasetNav(params.datasetId), {
       params: { keywords: params.keywords || undefined },
     }),
-  getNavChildren: (params: { datasetId: string; name: string }) =>
-    request.get(api.getDatasetNavChildren(params.datasetId, params.name)),
+  getNavChildren: (params: {
+    datasetId: string;
+    name: string;
+    keywords?: string;
+  }) =>
+    request.get(api.getDatasetNavChildren(params.datasetId, params.name), {
+      params: { keywords: params.keywords || undefined },
+    }),
   deleteNav: (params: { datasetId: string }) =>
     request.delete(api.deleteDatasetNav(params.datasetId)),
   deleteNavNode: (params: { datasetId: string; name: string }) =>

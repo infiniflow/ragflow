@@ -32,10 +32,13 @@ import (
 	"math"
 	"testing"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 	"ragflow/internal/service/nlp"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -225,7 +228,7 @@ func TestTranslateChunk_MissingAllScores(t *testing.T) {
 // must produce an adapter whose Search returns the missing-service
 // error, not a panic.
 func TestNewNLPRetrievalAdapter_NilService(t *testing.T) {
-	a := NewNLPRetrievalAdapter(nil, nil, nil)
+	a := NewNLPRetrievalAdapter(nil, RetrievalModelConstructors{}, nil)
 	_, err := a.Search(context.TODO(), nil, RetrievalRequest{Query: "hi"})
 	if err == nil {
 		t.Fatal("expected error from nil-service adapter")
@@ -246,10 +249,14 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 		TopK:                     99,
 		KeywordsSimilarityWeight: &keywordWeight,
 		SimilarityThreshold:      &similarityThreshold,
+		AllowDenseFallback:       new(false),
 	}, []string{"tenant-a"}, 3, embeddingModel, false)
 
 	if got.Question != "hi" {
 		t.Fatalf("Question=%q want hi", got.Question)
+	}
+	if got.AllowDenseFallback == nil || *got.AllowDenseFallback {
+		t.Fatal("dense fallback opt-out was not passed to nlp retrieval")
 	}
 	if len(got.TenantIDs) != 1 || got.TenantIDs[0] != "tenant-a" {
 		t.Fatalf("TenantIDs=%v want [tenant-a]", got.TenantIDs)
@@ -272,6 +279,44 @@ func TestNLPRequestFromRetrieval_ThreadsSearchControls(t *testing.T) {
 	if got.EmbeddingModel != embeddingModel {
 		t.Fatal("EmbeddingModel was not passed to nlp retrieval request")
 	}
+	if got.VectorOnly {
+		t.Fatal("mixed retrieval must not be vector-only")
+	}
+}
+
+func TestNLPRequestFromRetrieval_DerivesPureModesFromKeywordWeight(t *testing.T) {
+	embeddingModel := &modelModule.EmbeddingModel{}
+	vectorOnlyWeight := 0.0
+	vectorOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &vectorOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if !vectorOnly.VectorOnly {
+		t.Fatal("keywords weight 0 must derive vector-only search")
+	}
+	if vectorOnly.EmbeddingModel != embeddingModel {
+		t.Fatal("vector-only search must retain the embedding model")
+	}
+	if vectorOnly.VectorSimilarityWeight == nil || *vectorOnly.VectorSimilarityWeight != 1 {
+		t.Fatalf("vector-only vector weight = %v, want 1", vectorOnly.VectorSimilarityWeight)
+	}
+
+	keywordOnlyWeight := 1.0
+	keywordOnly := nlpRequestFromRetrieval(RetrievalRequest{
+		Query:                    "hi",
+		DatasetIDs:               []string{"kb-1"},
+		KeywordsSimilarityWeight: &keywordOnlyWeight,
+	}, []string{"tenant-a"}, 3, embeddingModel, false)
+	if keywordOnly.VectorOnly {
+		t.Fatal("keywords weight 1 must not derive vector-only search")
+	}
+	if keywordOnly.EmbeddingModel != nil {
+		t.Fatal("keywords weight 1 must disable the vector leg")
+	}
+	if keywordOnly.VectorSimilarityWeight == nil || *keywordOnly.VectorSimilarityWeight != 0 {
+		t.Fatalf("keyword-only vector weight = %v, want 0", keywordOnly.VectorSimilarityWeight)
+	}
 }
 
 func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
@@ -286,6 +331,9 @@ func TestNLPRequestFromRetrieval_FallsBackToTopNHeadroom(t *testing.T) {
 	}
 	if got.VectorSimilarityWeight != nil {
 		t.Fatalf("VectorSimilarityWeight=%v want nil", got.VectorSimilarityWeight)
+	}
+	if got.AllowDenseFallback != nil {
+		t.Fatal("ordinary retrieval must preserve default dense fallback policy")
 	}
 }
 
@@ -367,6 +415,45 @@ func TestNLPRetrievalAdapter_SearchRejectsDatasetsFromMultipleTenants(t *testing
 	}
 }
 
+func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	state := runtime.NewCanvasState("run-1", "session-1")
+	state.Sys["user_id"] = "member"
+	ctx := runtime.WithState(t.Context(), state)
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for runtime caller despite req.UserID=owner", err)
+	}
+}
+
 func TestNLPRetrievalAdapter_ResolveDatasetsFromDatasetIDs(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{
@@ -423,7 +510,7 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				EmbdID:       "embedding@provider",
 				TenantEmbdID: &tenantEmbeddingID,
 			},
-			wantCall: "id:tenant-embedding-1",
+			wantCall: "resolve:tenant-embedding-1",
 		},
 		{
 			name: "knowledge base embedding reference",
@@ -440,20 +527,28 @@ func TestNLPRetrievalAdapter_ResolveEmbeddingModelPriority(t *testing.T) {
 				ID:       "kb-1",
 				TenantID: "tenant-1",
 			},
-			wantCall: "default",
+			wantCall: "resolve:",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			resolver := &fakeModelResolver{modelName: "resolved-model"}
-			adapter := &NLPRetrievalAdapter{modelResolver: resolver}
+			var gotRef string
+			adapter := &NLPRetrievalAdapter{
+				modelConstructors: RetrievalModelConstructors{
+					Embedding: func(_ context.Context, _ string, modelRef string) (*modelModule.EmbeddingModel, error) {
+						gotRef = modelRef
+						modelName := "resolved-model"
+						return modelModule.NewEmbeddingModel(&modelModule.DummyModel{}, &modelName, &modelModule.APIConfig{}, 512), nil
+					},
+				},
+			}
 			model, err := adapter.resolveEmbeddingModel(t.Context(), test.kb)
 			if err != nil {
 				t.Fatalf("resolveEmbeddingModel: %v", err)
 			}
-			if resolver.call != test.wantCall {
-				t.Fatalf("resolver call = %q, want %q", resolver.call, test.wantCall)
+			if got := "resolve:" + gotRef; got != test.wantCall {
+				t.Fatalf("constructor model ref = %q, want %q", got, test.wantCall)
 			}
 			if model == nil || model.ModelName == nil || *model.ModelName != "resolved-model" {
 				t.Fatalf("resolved model = %#v", model)
@@ -499,41 +594,6 @@ func TestValidateEmbeddingModelsRejectsDifferentBases(t *testing.T) {
 type fakeKnowledgebaseLookup struct {
 	kbs []*entity.Knowledgebase
 	err error
-}
-
-type fakeModelResolver struct {
-	call      string
-	modelName string
-	err       error
-}
-
-func (f *fakeModelResolver) GetModelConfigByID(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelID string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "id:" + modelID
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) ResolveModelConfig(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-	modelRef string,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "resolve:" + modelRef
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
-}
-
-func (f *fakeModelResolver) GetTenantDefaultModelByType(
-	_ context.Context,
-	_ string,
-	_ entity.ModelType,
-) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error) {
-	f.call = "default"
-	return nil, f.modelName, &modelModule.APIConfig{}, 512, f.err
 }
 
 func (f fakeKnowledgebaseLookup) GetByIDs(ctx context.Context, db *gorm.DB, ids []string) ([]*entity.Knowledgebase, error) {

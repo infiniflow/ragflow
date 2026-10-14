@@ -6,9 +6,32 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"ragflow/internal/common"
 	"testing"
 	"time"
 )
+
+func TestIsLLMDebugEnabled(t *testing.T) {
+	tests := []struct {
+		value string
+		want  bool
+	}{
+		{value: ""},
+		{value: "false"},
+		{value: "1", want: true},
+		{value: "true", want: true},
+		{value: " TRUE ", want: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.value, func(t *testing.T) {
+			t.Setenv(common.EnvLLMDebug, test.value)
+			if got := common.IsLLMDebugEnabled(); got != test.want {
+				t.Errorf("IsLLMDebugEnabled() = %v, want %v", got, test.want)
+			}
+		})
+	}
+}
 
 func TestBaseModelDoRequestAuthorizationHeader(t *testing.T) {
 	tests := []struct {

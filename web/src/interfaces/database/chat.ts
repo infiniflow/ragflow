@@ -20,9 +20,15 @@ export interface PromptConfig {
   use_kg: boolean;
   reasoning?: boolean;
   cross_languages?: Array<string>;
-  tavily_api_key?: string;
+  brave_api_key?: string;
+  exa_api_key?: string;
+  firecrawl_api_key?: string;
+  linkup_api_key?: string;
+  parallel_api_key?: string;
   querit_api_key?: string;
+  search1api_api_key?: string;
   serply_api_key?: string;
+  tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
@@ -76,7 +82,7 @@ export interface IDialog {
   tenant_id: string;
   update_date: string;
   update_time: number;
-  vector_similarity_weight: number;
+  keywords_similarity_weight?: number;
   similarity_threshold: number;
   top_k: number;
   top_n: number;
@@ -215,6 +221,7 @@ export interface IExternalChatInfo {
 
 export interface IMessage extends Message {
   id: string;
+  awaitingServerId?: boolean;
   reference?: IReference; // the latest news has reference
   conversationId?: string; // To distinguish which conversation the message belongs to
 }

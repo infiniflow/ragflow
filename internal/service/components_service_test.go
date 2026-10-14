@@ -28,7 +28,7 @@ import (
 	_ "ragflow/internal/agent/component" // registers agent components
 	"ragflow/internal/agent/runtime"
 	_ "ragflow/internal/ingestion/component"         // registers ingestion main components
-	_ "ragflow/internal/ingestion/component/chunker" // registers 4 chunker variants
+	_ "ragflow/internal/ingestion/component/chunker" // registers chunker variants
 )
 
 func TestComponentsService_List_NoFilter(t *testing.T) {
@@ -62,7 +62,7 @@ func TestComponentsService_List_FilterIngestion(t *testing.T) {
 		t.Fatalf("List(Ingestion) returned error: %v", err)
 	}
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertComponentNameSet(t, "ingestion", namesOf(got), wantNames)
@@ -85,7 +85,7 @@ func TestComponentsService_List_FilterIngestionAndShared(t *testing.T) {
 		t.Fatalf("List(Ingestion,Shared) returned error: %v", err)
 	}
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	assertComponentNameSet(t, "ingestion+shared", namesOf(got), wantNames)
@@ -104,7 +104,7 @@ func TestComponentsService_List_FilterDuplicates(t *testing.T) {
 		t.Fatalf("List(Ingestion x3) returned error: %v", err)
 	}
 	wantNames := []string{
-		"extractor", "file", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
+		"extractor", "file", "generalchunker", "grouptitlechunker", "hierarchytitlechunker", "manualchunker",
 		"onechunker", "pagechunker", "qachunker", "parser", "tablechunker", "titlechunker", "tokenchunker", "tokenizer",
 	}
 	if len(got) != len(wantNames) {

@@ -22,11 +22,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"log"
 	"sync"
 	"time"
 
+	"go.uber.org/zap"
+
 	"ragflow/internal/channels/core"
+	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/service"
@@ -85,7 +87,7 @@ func (r *Runtime) Run(ctx context.Context) {
 	// check channel's status periodically
 	for {
 		if err := r.Reconcile(ctx); err != nil {
-			log.Printf("chat channel reconcile failed: %v", err)
+			common.Error("chat channel reconcile failed", err)
 		}
 		select {
 		case <-ctx.Done():
@@ -133,7 +135,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 		}
 	}
 	if err = syncWhatsAppGateway(ctx, activeWhatsApp); err != nil && activeWhatsApp {
-		log.Printf("failed to sync WhatsApp gateway: %v", err)
+		common.Error("failed to sync WhatsApp gateway", err)
 		reconcileErr = fmt.Errorf("sync WhatsApp gateway: %w", err)
 	}
 
@@ -148,7 +150,7 @@ func (r *Runtime) Reconcile(ctx context.Context) error {
 			continue
 		}
 		if err = r.startChannel(ctx, accountID, wanted); err != nil {
-			log.Printf("failed to start chat channel %s (%s): %v", accountID, wanted.channel, err)
+			common.Error("failed to start chat channel", err, zap.String("account_id", accountID), zap.String("channel", wanted.channel))
 			r.recordStartFailure(accountID, wanted.fingerprint, now)
 			if reconcileErr == nil {
 				reconcileErr = fmt.Errorf("failed to start chat channel %s: %w", accountID, err)
@@ -282,7 +284,7 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 	r.mu.Lock()
 	r.running[accountID] = runningChannel{channel: ch, fingerprint: wanted.fingerprint}
 	r.mu.Unlock()
-	log.Printf("started chat channel %s:%s", ch.ChannelID(), accountID)
+	common.Info("started chat channel", zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
 	return nil
 }
 
@@ -346,6 +348,6 @@ func (r *Runtime) stopAll(ctx context.Context) {
 // stopChannel stops one platform channel and logs any shutdown error.
 func stopChannel(ctx context.Context, ch core.Channel) {
 	if err := ch.Stop(ctx); err != nil {
-		log.Printf("failed to stop chat channel %s:%s: %v", ch.ChannelID(), ch.AccountID(), err)
+		common.Error("failed to stop chat channel", err, zap.String("channel", ch.ChannelID()), zap.String("account_id", ch.AccountID()))
 	}
 }

@@ -51,3 +51,24 @@ func TestKindToVariant_CanonicalForms(t *testing.T) {
 		t.Errorf("structure/knowledge_graph/graph should map to the same variant, got %q %q %q", a, b, c)
 	}
 }
+
+func TestKindToTaskTypePreservesFrontendCategories(t *testing.T) {
+	tests := map[string]string{
+		"wiki":            TaskTypeWiki,
+		"tree":            TaskTypeTree,
+		"knowledge_graph": TaskTypeGraph,
+		"mind_map":        TaskTypeMindmap,
+		"timeline":        TaskTypeTimeline,
+		"page_index":      TaskTypePageIndex,
+	}
+	for kind, want := range tests {
+		got, err := KindToTaskType(kind)
+		if err != nil {
+			t.Errorf("KindToTaskType(%q) unexpected error: %v", kind, err)
+			continue
+		}
+		if got != want {
+			t.Errorf("KindToTaskType(%q) = %q, want %q", kind, got, want)
+		}
+	}
+}

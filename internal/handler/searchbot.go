@@ -34,9 +34,11 @@ import (
 
 // SearchBotAskRequest is the request body for POST /api/v1/searchbots/ask.
 type SearchBotAskRequest struct {
-	Question string             `json:"question" binding:"required"`
-	KbIDs    common.StringSlice `json:"kb_ids" binding:"required"`
-	SearchID string             `json:"search_id,omitempty"`
+	Query    string                   `json:"query,omitempty"`
+	Messages []map[string]interface{} `json:"messages,omitempty"`
+	Question string                   `json:"question"`
+	KbIDs    common.StringSlice       `json:"kb_ids" binding:"required"`
+	SearchID string                   `json:"search_id,omitempty"`
 }
 
 // SearchBotMindMapRequest is the request body for POST /api/v1/searchbots/mindmap.
@@ -48,27 +50,24 @@ type SearchBotMindMapRequest struct {
 
 // SearchBotRetrievalTestRequest is the request body for POST /api/v1/searchbots/retrieval_test.
 type SearchBotRetrievalTestRequest struct {
-	KbIDs                  common.StringSlice     `json:"kb_ids" binding:"required"`
-	Question               string                 `json:"question" binding:"required"`
-	Page                   *int                   `json:"page,omitempty"`
-	Size                   *int                   `json:"size,omitempty"`
-	RerankCandidatesCount  *int                   `json:"rerank_candidates_count,omitempty"`
-	DocIDs                 []string               `json:"doc_ids,omitempty"`
-	UseKG                  *bool                  `json:"use_kg,omitempty"`
-	TopK                   *int                   `json:"top_k,omitempty"`
-	CrossLanguages         []string               `json:"cross_languages,omitempty"`
-	SearchID               *string                `json:"search_id,omitempty"`
-	MetaDataFilter         map[string]interface{} `json:"meta_data_filter,omitempty"`
-	TenantRerankID         *string                `json:"tenant_rerank_id,omitempty"`
-	RerankID               *string                `json:"rerank_id,omitempty"`
-	Keyword                *bool                  `json:"keyword,omitempty"`
-	SimilarityThreshold    *float64               `json:"similarity_threshold,omitempty"`
-	VectorSimilarityWeight *float64               `json:"vector_similarity_weight,omitempty"`
-	// TODO: wire highlight to nlp Retrieval when engine supports highlightFields
-	// Python: bot_api.py → retrieval(highlight=req.get("highlight"))
-	//        → search.py highlightFields → ES get_highlight()
-	// Issue: https://github.com/infiniflow/ragflow/issues/15712
-	// Highlight           *bool                   `json:"highlight,omitempty"`
+	KbIDs                    common.StringSlice     `json:"kb_ids" binding:"required"`
+	Question                 string                 `json:"question" binding:"required"`
+	Page                     *int                   `json:"page,omitempty"`
+	Size                     *int                   `json:"size,omitempty"`
+	RerankCandidatesCount    *int                   `json:"rerank_candidates_count,omitempty"`
+	DocIDs                   []string               `json:"doc_ids,omitempty"`
+	UseKG                    *bool                  `json:"use_kg,omitempty"`
+	TopK                     *int                   `json:"top_k,omitempty"`
+	CrossLanguages           []string               `json:"cross_languages,omitempty"`
+	SearchID                 *string                `json:"search_id,omitempty"`
+	MetaDataFilter           map[string]interface{} `json:"meta_data_filter,omitempty"`
+	TenantRerankID           *string                `json:"tenant_rerank_id,omitempty"`
+	RerankID                 *string                `json:"rerank_id,omitempty"`
+	Keyword                  *bool                  `json:"keyword,omitempty"`
+	Highlight                *bool                  `json:"highlight,omitempty"`
+	SimilarityThreshold      *float64               `json:"similarity_threshold,omitempty"`
+	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
+	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 }
 
 // UnmarshalJSON accepts both kb_id (Python API) and kb_ids (Go compatibility).
@@ -104,22 +103,18 @@ type SearchBotRequest struct {
 //	POST /api/v1/searchbots/ask
 //	POST /api/v1/searchbots/mindmap
 type SearchBotHandler struct {
-	searchSvc *service.SearchService
-	tenantSvc *service.TenantService
-	llm       *service.ModelProviderService
-	streamLLM *service.ModelProviderService
-	chunkSvc  service.Retriever
-	askSvc    *service.AskService
-	sseWriter SSEWriter
+	searchSvc    *service.SearchService
+	tenantSvc    *service.TenantService
+	modelFactory *service.ModelFactory
+	chunkSvc     service.Retriever
+	askSvc       *service.AskService
+	sseWriter    SSEWriter
 }
 
 // NewSearchBotHandler creates a new SearchBotHandler.
-func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, llm *service.ModelProviderService, chunkSvc service.Retriever) *SearchBotHandler {
-	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, llm: llm, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
+func NewSearchBotHandler(searchSvc *service.SearchService, tenantSvc *service.TenantService, modelFactory *service.ModelFactory, chunkSvc service.Retriever) *SearchBotHandler {
+	return &SearchBotHandler{searchSvc: searchSvc, tenantSvc: tenantSvc, modelFactory: modelFactory, chunkSvc: chunkSvc, sseWriter: &ginSSEWriter{}}
 }
-
-// SetStreamLLM sets the streaming LLM for the Ask endpoint.
-func (h *SearchBotHandler) SetStreamLLM(llm *service.ModelProviderService) { h.streamLLM = llm }
 
 // SetAskService sets the AskService used by the Ask endpoint.
 func (h *SearchBotHandler) SetAskService(svc *service.AskService) { h.askSvc = svc }
@@ -152,10 +147,13 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 		return
 	}
 
-	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.llm)
+	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
-		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "LLM call failed")
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 
@@ -196,6 +194,13 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 		return
 	}
 
+	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.VectorSimilarityWeight = vectorSimilarityWeight
+
 	applyRetrievalDefaults(&req)
 
 	if req.TopK != nil && *req.TopK <= 0 {
@@ -207,8 +212,11 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "retrieval test failed")
+		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
 	}
 
@@ -237,6 +245,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
+	question, err := service.ResolveCompletionQuestion(req.Question, req.Query, req.Messages)
+	if err != nil {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, err.Error())
+		return
+	}
+	req.Question = question
+
 	// Filter empty kb_ids.
 	filtered := make(common.StringSlice, 0, len(req.KbIDs))
 	for _, id := range req.KbIDs {
@@ -252,14 +267,25 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 
 	// Resolve chat model ID.
 	modelID := ""
-	if req.SearchID != "" && h.searchSvc != nil {
+	options := service.AskStreamOptions{}
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
 		ctx := c.Request.Context()
-		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
-			if sc, ok := detail["search_config"].(map[string]interface{}); ok {
-				if cid, ok := sc["chat_id"].(string); ok && cid != "" {
-					modelID = cid
-				}
+		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
 			}
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		searchConfig := searchConfigFromDetail(detail)
+		options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
+		if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
+			modelID = chatID
 		}
 	}
 	if modelID == "" && h.tenantSvc != nil {
@@ -274,7 +300,7 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -283,13 +309,13 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 		h.sseWriter.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		h.sseWriter.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		h.sseWriter.Write(c, sseError("model factory not configured"))
 		return
 	}
 	ctx := c.Request.Context()
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: user.ID, ModelID: modelID}
-	for delta := range h.askSvc.Stream(ctx, adapter, user.ID, req.Question, filtered) {
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: user.ID, ModelID: modelID}
+	for delta := range h.askSvc.StreamWithOptions(ctx, adapter, user.ID, req.Question, filtered, options) {
 		switch delta.Kind {
 		case service.AskDeltaAnswer:
 			h.sseWriter.Write(c, sseAnswer(delta.Value, nil, false))
@@ -344,7 +370,7 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		jsonInternalError(c, fmt.Errorf("chunk service not configured"))
 		return
 	}
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		jsonInternalError(c, fmt.Errorf("LLM not configured"))
 		return
 	}
@@ -356,8 +382,11 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			jsonInternalError(c, err)
 			return
 		}
@@ -373,12 +402,15 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		AuthUserID:    user.ID,
 		ModelTenantID: user.ID,
 		ChunkSvc:      h.chunkSvc,
-		LLM:           h.llm,
+		LLM:           h.modelFactory,
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
-		jsonInternalError(c, err)
+		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
 	}
 	common.SuccessWithData(c, mindMap, "success")
@@ -401,16 +433,16 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
+	if h.searchSvc == nil {
+		jsonInternalError(c, fmt.Errorf("search service not configured"))
+		return
+	}
 	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
 	if err != nil {
-		switch err.Error() {
-		case "has no permission for this operation":
-			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "Has no permission for this operation.")
-		case "can't find this Search App!":
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
-		default:
-			jsonInternalError(c, err)
+		if respondPermissionErrorIf(c, err, true) {
+			return
 		}
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -520,6 +552,7 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 		TenantRerankID:         h.TenantRerankID,
 		RerankID:               h.RerankID,
 		Keyword:                h.Keyword,
+		Highlight:              h.Highlight,
 		SimilarityThreshold:    h.SimilarityThreshold,
 		VectorSimilarityWeight: h.VectorSimilarityWeight,
 	}

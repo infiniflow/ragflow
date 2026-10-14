@@ -95,13 +95,13 @@ func ResolveTemplate(s string, state *CanvasState) (string, error) {
 		v, err := state.GetVar(ref)
 		if err != nil {
 			if firstErr == nil {
-				firstErr = fmt.Errorf("canvas: resolve %q: %w", ref, err)
+				firstErr = fmt.Errorf("agent: resolve %q: %w", ref, err)
 			}
 			return ""
 		}
 		if v == nil {
 			if firstErr == nil {
-				firstErr = fmt.Errorf("canvas: unresolved reference %q", ref)
+				firstErr = NewUserFacingError(fmt.Sprintf("Can't find variable: '%s'", ref))
 			}
 			return ""
 		}

@@ -1,16 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
-import { GenerateType } from '@/constants/knowledge';
+import { GenerateType, TraceType } from '@/constants/knowledge';
 
 import { useTraceRunData } from '../use-dataset-generate';
 
 jest.mock('react-router', () => ({
   useParams: jest.fn(() => ({ id: 'kb1' })),
-}));
-
-jest.mock('@/utils/backend-variant', () => ({
-  useIsGoBackend: jest.fn(() => true),
 }));
 
 jest.mock('@/services/knowledge-service', () => ({
@@ -19,7 +15,7 @@ jest.mock('@/services/knowledge-service', () => ({
 
 // use-dataset-generate imports agent-service (and transitively register-server /
 // next-request / locales config that touch import.meta.env). Mock it so the
-// Go status path under test doesn't pull in that module graph.
+// status path under test doesn't pull in that module graph.
 jest.mock('@/services/agent-service', () => ({
   __esModule: true,
   default: { cancelDataflow: jest.fn(), deletePipelineTask: jest.fn() },
@@ -30,7 +26,6 @@ jest.mock('react-i18next', () => ({
 }));
 
 import { getDatasetCompilationStatus } from '@/services/knowledge-service';
-import { useIsGoBackend } from '@/utils/backend-variant';
 
 const mockStatus = jest.mocked(getDatasetCompilationStatus);
 
@@ -53,10 +48,9 @@ function makeWrapper() {
   return Wrapper;
 }
 
-describe('useTraceRunData (Go compile-status contract)', () => {
+describe('useTraceRunData (compile-status contract)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    (useIsGoBackend as jest.Mock).mockReturnValue(true);
   });
 
   it('maps a successful status to the scheduler contract fields', async () => {
@@ -83,6 +77,9 @@ describe('useTraceRunData (Go compile-status contract)', () => {
     expect(info?.inflight).toBe(2);
     expect(info?.backlog).toBe(1);
     expect(info?.compilationError).toBe('');
+    // The trace type doubles as the backend `kind` alias, so each view's
+    // status request is scoped to its own compile type.
+    expect(mockStatus).toHaveBeenCalledWith('kb1', TraceType.Artifact);
   });
 
   it('rejects a non-zero business code instead of mapping to idle', async () => {

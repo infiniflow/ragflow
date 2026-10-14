@@ -6,6 +6,8 @@ import (
 	"sync"
 
 	"gorm.io/gorm"
+
+	"ragflow/internal/ingestion/component/progress"
 )
 
 // DefaultLLMContextLength is the fallback chat-model context window (tokens)
@@ -28,6 +30,13 @@ type ChatRequest struct {
 	MaxTokens *int
 	APIKey    string
 	BaseURL   string
+	// DisableThinking asks the driver to turn chain-of-thought OFF. Reasoning
+	// models (MiniMax-M1/M3, kimi, qwen) otherwise spend the completion budget
+	// (and minutes) on visible COT before returning the structured payload —
+	// the fastest way to slow knowledge compilation to a crawl. Providers that
+	// have no thinking control silently ignore it. Defaults to false, so only
+	// call sites that know the model reasons opt in.
+	DisableThinking bool
 	// DisableRetry tells the production ChatInvoker that the caller owns
 	// transient-error retries (GenJSON is such a caller). It is internal
 	// plumbing and is not part of the user-facing model request.
@@ -158,6 +167,8 @@ type RedisClient interface {
 // interfaces so tests inject stubs; production wiring lives in
 // internal/ingestion/task (see PORT_PLAN.md §4 dependency injection seam).
 type Deps struct {
+	// Progress is the fraction budget allocated to this compilation template.
+	Progress      progress.Window
 	Chat          ChatInvoker
 	Embed         Embedder
 	Tokenizer     Tokenizer
@@ -183,8 +194,9 @@ type Deps struct {
 	ModelMaxOutput int
 }
 
-// DepsResolver resolves the per-run Deps from a tenant/llm/embedding triple.
-type DepsResolver func(tenantID, llmID, embeddingModel string) (Deps, error)
+// DepsResolver resolves the per-run Deps from the active task context and
+// tenant/model references.
+type DepsResolver func(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error)
 
 // DepsResolver / SetDepsResolver / ResolveDeps are the only injection seams the
 // component exposes. The component is DB-independent: it compiles knowledge
@@ -207,14 +219,14 @@ func SetDepsResolver(r DepsResolver) {
 }
 
 // ResolveDeps resolves Deps via the installed resolver.
-func ResolveDeps(tenantID, llmID, embeddingModel string) (Deps, error) {
+func ResolveDeps(ctx context.Context, tenantID, llmID, embeddingModel string) (Deps, error) {
 	depsResolverMu.RLock()
 	r := depsResolver
 	depsResolverMu.RUnlock()
 	if r == nil {
 		return Deps{}, fmt.Errorf("knowledge_compiler: no DepsResolver registered (call common.SetDepsResolver in production wiring)")
 	}
-	return r(tenantID, llmID, embeddingModel)
+	return r(ctx, tenantID, llmID, embeddingModel)
 }
 
 // GroupResolver resolves compilation-template-group ids to the concrete

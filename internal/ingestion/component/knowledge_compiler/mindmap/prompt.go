@@ -1,14 +1,16 @@
 package mindmap
 
 import (
+	"fmt"
 	"strings"
 
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// mindMapExtractionPrompt mirrors MIND_MAP_EXTRACTION_PROMPT verbatim
-// (rag/graphrag/general/mind_map_prompt.py). It is the SYSTEM message; the
-// user turn is the fixed string "Output:" (see userMessage).
+// mindMapExtractionPrompt is based on MIND_MAP_EXTRACTION_PROMPT
+// (rag/graphrag/general/mind_map_prompt.py), extended with the JSON tree and
+// source-chunk provenance contract. It is the SYSTEM message; the user turn is
+// the fixed string "Output:" (see userMessage).
 const mindMapExtractionPrompt = `
 - Role: You're a talent text processor to summarize a piece of text into a mind map.
 
@@ -22,7 +24,10 @@ const mindMapExtractionPrompt = `
   - Generate at least 4 levels.
   - Always try to maximize the number of sub-sections.
   - In language of 'Text'
-  - MUST IN FORMAT OF MARKDOWN
+  - Return JSON only, with this shape:
+    {"id":"node title","source_chunk_ids":["chunk id",...],"children":[{"id":"child title","source_chunk_ids":["chunk id",...],"children":[]}]}
+  - Every node MUST include source_chunk_ids containing only the IDs of source chunks that support that node.
+  - Each source chunk is enclosed by [CHUNK_ID: ...] and [END_CHUNK].
 
 -TEXT-
 {input_text}
@@ -53,6 +58,50 @@ func batchBudget() int {
 // {input_text} variable (prompt_variables is empty at the Python call site).
 func renderPrompt(text string) string {
 	return strings.ReplaceAll(mindMapExtractionPrompt, "{input_text}", text)
+}
+
+type mindmapBatch struct {
+	text string
+	ids  []string
+}
+
+func packMindmapBatches(chunks []common.Chunk, tok common.Tokenizer) []mindmapBatch {
+	var batches []mindmapBatch
+	var sections []string
+	var ids []string
+	cnt := 0
+	flush := func() {
+		if len(sections) == 0 {
+			return
+		}
+		batches = append(batches, mindmapBatch{
+			text: strings.Join(sections, "\n\n"),
+			ids:  append([]string(nil), ids...),
+		})
+		sections = nil
+		ids = nil
+		cnt = 0
+	}
+	for i, chunk := range chunks {
+		text := common.FirstNonEmpty(chunk.Text, chunk.Content)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		id := strings.TrimSpace(chunk.ID)
+		if id == "" {
+			id = "chunk-" + fmt.Sprint(i+1)
+		}
+		section := "[CHUNK_ID: " + id + "]\n" + text + "\n[END_CHUNK]"
+		sectionTokens := numTokens(tok, section)
+		if cnt+sectionTokens >= batchBudget() && len(sections) > 0 {
+			flush()
+		}
+		sections = append(sections, section)
+		ids = append(ids, id)
+		cnt += sectionTokens
+	}
+	flush()
+	return batches
 }
 
 // packSections mirrors MindMapExtractor.__call__'s batching: sections are

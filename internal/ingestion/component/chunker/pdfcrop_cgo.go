@@ -12,10 +12,19 @@ package chunker
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"image"
-	"log/slog"
+	"os"
+	"runtime"
+	"strconv"
+	"sync"
+	"sync/atomic"
 
+	"go.uber.org/zap"
+
+	agentruntime "ragflow/internal/agent/runtime"
+	"ragflow/internal/common"
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
@@ -55,90 +64,210 @@ func newPDFEngineFromUpstream(ctx context.Context, db *gorm.DB, up schema.Chunke
 	return deepdocpdf.NewEngine(data)
 }
 
+// cropConcurrency bounds how many chunks are cropped concurrently. The CGO
+// pdfium render is serialized by pdfsync.Mu inside the engine, so raising this
+// mostly parallelises the pure-Go crop + PNG-encode path (CropSectionImage →
+// image/png), which was the dominant cost in the serial loop. Overridable via
+// RAGFLOW_CROP_CONCURRENCY; defaults to GOMAXPROCS/3 (the crop path competes
+// with the rest of the ingestor — tokenizer, uploads, extractions — so we use
+// a third of the cores rather than saturating them), never below 1.
+func cropConcurrency() int {
+	if v := os.Getenv("RAGFLOW_CROP_CONCURRENCY"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	// Use a third of the available cores so the crop fan-out does not starve
+	// the rest of the ingestor pipeline; never drop below 1.
+	n := runtime.GOMAXPROCS(0) / 3
+	if n < 1 {
+		n = 1
+	}
+	return n
+}
+
 // cropImageChunks crops image/table chunks and renders text previews (for
 // text chunks that carry PDF positions, mirroring Python
-// restore_pdf_text_previews). Each spanned page is
-// rendered at most once. Chunks arrive in document order, so we keep only a
-// sliding window of page images: once we advance past a chunk whose minimum
-// page is P, no later chunk references a page < P, and we evict those entries
-// from pageCache. This bounds peak memory to the pages spanned by the recent
-// window (typically one page per chunk) instead of holding every rendered
-// page for the whole call. The pdfsync.Mu serializer inside the engine makes
-// concurrent renders safe, but we render sequentially here since the caller
-// fans out across chunks.
+// restore_pdf_text_previews). Each spanned page is rendered at most once and
+// cached; the cache is shared across chunks so two chunks on the same page
+// reuse one render.
+//
+// Concurrency: the per-chunk crop + PNG-encode (the dominant CPU cost,
+// CropSectionImage → image/png) is fanned out across a bounded worker pool.
+// The pdfium CGO render is serialized by pdfsync.Mu inside the engine, so
+// concurrent renders are safe — only the Go-side encode runs in parallel.
 func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks []schema.ChunkDoc) []schema.ChunkDoc {
 	if engine == nil {
 		return chunks
 	}
-	pageCache := make(map[int]image.Image)
+
+	// cache bounds peak memory (reference counting + LRU, see lruPageCache)
+	// so a thousands-of-pages PDF no longer spills every rendered page into
+	// RAM. This replaces the serial code's sliding-window eviction, which
+	// relied on in-order processing and is unsafe under fan-out. render is
+	// called outside the lock; the warning on failure is logged here so the
+	// cache stays render-agnostic and unit-testable.
+	cache := newLRUPageCache(pageCacheLimit())
+	render := func(pn int) (image.Image, bool) {
+		img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
+		if rerr != nil || img == nil {
+			common.Warn("cropImageChunks: render failed, skipping page",
+				zap.Int("page", pn), zap.Error(rerr))
+			return nil, false
+		}
+		return img, true
+	}
+
 	out := make([]schema.ChunkDoc, len(chunks))
-	for i, ck := range chunks {
+	var candidateIndices []int
+	for i := range chunks {
+		ck := chunks[i]
 		out[i] = ck
 		if !needsCrop(ck) || ck.Image != "" {
+			continue
+		}
+		// A media chunk whose finalized text is empty — no caption, no vision
+		// description, no media context — is not retrievable: its embedding
+		// would be the empty-string vector, so retrieval can never surface it,
+		// and every captionless image/table in a document would otherwise
+		// collapse onto the same canonical id (ChunkID(docID, "")), each
+		// overwrite the other's MinIO object. Skip the crop and upload
+		// entirely; the finalizer then drops the chunk, so no object is
+		// orphaned and no pdfium render / PNG encode / upload is wasted. This
+		// mirrors Python's token_chunker drop of empty-text media chunks.
+		// Text chunks are excluded: a text body always carries content, and the
+		// Chunker-1.3 preview restore must still run for positioned text
+		// regions.
+		if isMediaChunk(ck) && canonicalChunkText(ck) == "" {
 			continue
 		}
 		raw := ck.PDFPositions
 		if len(raw) == 0 {
 			raw = ck.Positions
 		}
-		var matrix [][]any
-		if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+		if len(raw) == 0 {
 			continue
 		}
-		positions := util.PositionsFromMatrix(matrix)
-		if len(positions) == 0 {
-			continue
+		candidateIndices = append(candidateIndices, i)
+	}
+	if len(candidateIndices) == 0 {
+		return out
+	}
+
+	total := int64(len(candidateIndices))
+	var settled atomic.Int64
+	sem := make(chan struct{}, cropConcurrency())
+	var wg sync.WaitGroup
+	for _, idx := range candidateIndices {
+		if ctx.Err() != nil {
+			break
 		}
-		// Minimum page this chunk touches; used to prune stale cache entries.
-		minPage := -1
-		for _, pos := range positions {
-			for _, pn := range pos.PageNumbers {
-				if pn < minPage || minPage < 0 {
-					minPage = pn
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(chunkIdx int) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			if ctx.Err() != nil {
+				return
+			}
+			defer func() {
+				if ctx.Err() == nil {
+					done := settled.Add(1)
+					agentruntime.ReportComponentFraction(ctx, float64(done)/float64(total))
+				}
+			}()
+
+			ck := out[chunkIdx]
+			raw := ck.PDFPositions
+			if len(raw) == 0 {
+				raw = ck.Positions
+			}
+			var matrix [][]any
+			if err := json.Unmarshal(raw, &matrix); err != nil || len(matrix) == 0 {
+				return
+			}
+			positions := util.PositionsFromMatrix(matrix)
+			if len(positions) == 0 {
+				return
+			}
+
+			single := make(map[int]image.Image, len(positions))
+			acquired := make([]int, 0, len(positions))
+			for _, pos := range positions {
+				for _, pn := range pos.PageNumbers {
+					if _, ok := single[pn]; ok {
+						continue
+					}
+					if img, ok := cache.Acquire(render, pn); ok {
+						single[pn] = img
+						acquired = append(acquired, pn)
+					}
 				}
 			}
-		}
-		// Evict page images that no later chunk can reference (all future
-		// chunks start at page >= minPage).
-		for pn := range pageCache {
-			if pn < minPage {
-				delete(pageCache, pn)
+			// Proceed whenever at least one spanned page resolved to an
+			// image — freshly rendered or served from the page cache.
+			if len(single) == 0 {
+				return
 			}
-		}
-		single := make(map[int]image.Image, len(positions))
-		for _, pos := range positions {
-			for _, pn := range pos.PageNumbers {
-				if _, ok := single[pn]; ok {
-					continue
-				}
-				if img, ok := pageCache[pn]; ok {
-					single[pn] = img
-					continue
-				}
-				img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
-				if rerr != nil || img == nil {
-					slog.Warn("cropImageChunks: render failed, skipping page",
-						"page", pn, "err", rerr)
-					continue
-				}
-				pageCache[pn] = img
-				single[pn] = img
+			var img string
+			if cropChunkType(ck) == "text" {
+				img = util.CropTextSectionPositions(positions, single, deepdoctype.DlaScale)
+			} else {
+				img = util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
 			}
-		}
-		// Proceed whenever at least one spanned page resolved to an
-		// image — whether freshly rendered or served from the page cache
-		// (the latter happens for the second chunk reusing page 0).
-		if len(single) == 0 {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			return out
-		}
-		img := util.CropSectionPositions(positions, single, deepdoctype.DlaScale)
-		if img == "" {
-			continue
-		}
-		out[i].Image = "data:image/png;base64," + img
+			// Release the page bitmaps now that cropping is done. They are no
+			// longer needed and may be evicted under the LRU cap; the image
+			// below is encoded from single and does not depend on the pages.
+			for _, pn := range acquired {
+				cache.Release(pn)
+			}
+			if img == "" {
+				return
+			}
+			out[chunkIdx].Image = "data:image/png;base64," + img
+
+			// Stream the freshly cropped preview to object storage and drop
+			// the in-memory base64 immediately, instead of carrying every
+			// chunk's image until the later batch upload pass
+			// (imageUploadDecorator). The batch pass is idempotent: it skips
+			// any chunk whose img_id is already set, so an upload that fails
+			// here simply falls through to that retry path. kb_id is empty
+			// only in canvas debug (dry-run) mode, where no persist stage
+			// runs and the decorator's debug branch drops the raw bytes.
+			if kbID, docID := resolveImageUploadContext(ctx, nil); kbID != "" {
+				if rawBytes, derr := base64.StdEncoding.DecodeString(img); derr == nil {
+					// Key the streamed upload under the chunk's canonical id,
+					// so the MinIO object is stored under exactly the key the
+					// decorator (imageUploadDecorator) later exposes as
+					// ck["id"] and the persist/retrieval path looks it up by.
+					// canonicalChunkText is the single source for that id text:
+					// it folds media context and strips position tags, so the
+					// value equals the tag-stripped (finalized) text the
+					// decorator derives — for every chunk type, including
+					// image/table chunks whose text still carries position tags
+					// when there is no media context. crop depends only on
+					// positions, so reading the canonical text here does not
+					// alter the cropped image or the chunker's later output
+					// text.
+					chunkID := canonicalChunkID(docID, out[chunkIdx])
+					if imgID, uerr := uploadOneImage(ctx, ChunkImageUploader, kbID, chunkID, rawBytes); uerr == nil {
+						out[chunkIdx].ImgID = imgID
+						out[chunkIdx].Image = ""
+						out[chunkIdx].ID = chunkID
+					} else {
+						// Note: the document text is intentionally NOT logged
+						// here (CWE-532). The upload is retried at the persist
+						// stage, so the error is enough to diagnose.
+						common.Warn("cropImageChunks: preview upload failed; will retry at persist stage",
+							zap.Error(uerr))
+					}
+				}
+			}
+		}(idx)
+	}
+	wg.Wait()
+	if ctx.Err() == nil {
+		agentruntime.ReportComponentFraction(ctx, 1.0)
 	}
 	return out
 }
@@ -148,11 +277,28 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 // cropped; text chunks with positions get a rendered preview of the text
 // region (Python restore_pdf_text_previews). A pre-existing Image is never
 // re-cropped — cropImageChunks honors that separately.
+//
+// CKType is the chunker-layer refinement (heading/text/image/table/
+// image/table). General and token chunkers always set it before cropping, so
+// they are handled by the CKType branch above. Group and hierarchy chunkers
+// forward the parser's output verbatim, which carries only the coarser
+// doc_type_kwd (no ck_type). For those, fall back to DocType so image/table/
+// text regions are still cropped on demand — otherwise every figure/table/
+// text preview in group/hierarchy would be silently skipped. When CKType is
+// set (general/token) it takes priority, so headings (CKType "heading") stay
+// excluded from preview cropping.
 func needsCrop(ck schema.ChunkDoc) bool {
-	switch ck.CKType {
+	switch cropChunkType(ck) {
 	case "image", "table", "text":
 		return len(ck.PDFPositions) > 0 || len(ck.Positions) > 0
 	default:
 		return false
 	}
+}
+
+func cropChunkType(ck schema.ChunkDoc) string {
+	if ck.CKType != "" {
+		return ck.CKType
+	}
+	return ck.DocType
 }

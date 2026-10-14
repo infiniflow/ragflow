@@ -79,3 +79,45 @@ func TestFormatPositionTagRange(t *testing.T) {
 		t.Errorf("FormatPositionTagRange = %q", tag)
 	}
 }
+
+func TestExtractPositionsNegativeCoord(t *testing.T) {
+	// A content box can extend slightly above/left of the page origin
+	// (e.g. top=-3.0). The parser must accept negative coordinates instead
+	// of dropping the whole tag (which previously lost the section image and
+	// emitted "cropSectionImage: empty position list").
+	text := "@@50\t45.0\t549.7\t-3.0\t737.9##"
+	poss := ExtractPositions(text)
+	if len(poss) != 1 {
+		t.Fatalf("expected 1 position for negative coord tag, got %d", len(poss))
+	}
+	p := poss[0]
+	if len(p.PageNumbers) != 1 || p.PageNumbers[0] != 49 {
+		t.Errorf("page numbers = %v, want [49]", p.PageNumbers)
+	}
+	if p.Left != 45.0 || p.Right != 549.7 || p.Top != -3.0 || p.Bottom != 737.9 {
+		t.Errorf("coords L=%.1f R=%.1f T=%.1f B=%.1f, want 45.0/549.7/-3.0/737.9",
+			p.Left, p.Right, p.Top, p.Bottom)
+	}
+}
+
+func TestFormatPositionTagNegativeRoundtrip(t *testing.T) {
+	// FormatPositionTag writes negative coordinates verbatim (e.g. top=-3.0),
+	// so ExtractPositions must be able to read them back. This was the
+	// self-inconsistency: the writer produced tags the reader rejected.
+	tag := FormatPositionTag(49, 45.0, 549.7, -3.0, 737.9)
+	want := "@@50\t45.0\t549.7\t-3.0\t737.9##"
+	if tag != want {
+		t.Fatalf("FormatPositionTag = %q, want %q", tag, want)
+	}
+	poss := ExtractPositions(tag)
+	if len(poss) != 1 {
+		t.Fatalf("roundtrip of negative coord failed: got %d positions, want 1", len(poss))
+	}
+	p := poss[0]
+	if p.Top != -3.0 {
+		t.Errorf("roundtrip Top = %v, want -3.0", p.Top)
+	}
+	if p.PageNumbers[0] != 49 {
+		t.Errorf("roundtrip page = %v, want 49", p.PageNumbers[0])
+	}
+}

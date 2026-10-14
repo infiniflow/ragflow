@@ -22,7 +22,45 @@ import (
 	"math"
 	"strings"
 	"testing"
+
+	"ragflow/internal/agentic_rag"
 )
+
+func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
+	for _, answer := range []string{
+		"Public facts. [ID:1]",
+		"Public facts. [Public source](https://example.com/source)",
+	} {
+		t.Run(answer, func(t *testing.T) {
+			registry := agentic_rag.NewEvidenceRegistry()
+			registry.Stamp("uncited-corpus-chunk")
+			web := agentic_rag.WebResult{Title: "Public source", URL: "https://example.com/source", Content: "Public facts."}
+			registry.StampWebResult(web)
+			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
+			s := &ChatPipelineService{}
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
+				t.Errorf("citation was not compacted to its reference position: %q", marked)
+			}
+			chunks, ok := reference["chunks"].([]map[string]interface{})
+			if !ok || len(chunks) != 1 {
+				t.Fatalf("expected only the cited web chunk: %v", reference)
+			}
+			chunk := chunks[0]
+			if chunk["id"] != registry.IDs()[1] || chunk["document_id"] != web.URL || chunk["document_name"] != web.Title || chunk["content"] != web.Content || chunk["url"] != web.URL {
+				t.Errorf("web reference lost its source metadata: %v", chunk)
+			}
+			aggs, ok := reference["doc_aggs"].([]interface{})
+			if !ok || len(aggs) != 1 {
+				t.Fatalf("expected one web source card: %v", reference["doc_aggs"])
+			}
+			agg, ok := aggs[0].(map[string]interface{})
+			if !ok || agg["url"] != web.URL || agg["doc_name"] != web.Title || agg["count"] != 1 {
+				t.Errorf("web source card lost its URL or snippet count: %v", agg)
+			}
+		})
+	}
+}
 
 func TestSentenceSplit_PlainText(t *testing.T) {
 	result := sentenceSplit("Hello world. This is a test.")
@@ -212,11 +250,13 @@ func TestInsertCitationsWithVectors_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatal("expected citations")
 	}
-	if !strings.Contains(answer, "[ID:abc123]") {
-		t.Errorf("answer should contain [ID:abc123]: %q", answer)
+	// Markers carry the chunk's position in `chunks` (the list the caller returns
+	// as the reference), not its chunk id.
+	if !strings.Contains(answer, "[ID:0]") {
+		t.Errorf("answer should contain [ID:0]: %q", answer)
 	}
-	if !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("answer should contain [ID:def456]: %q", answer)
+	if !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("answer should contain [ID:1]: %q", answer)
 	}
 }
 
@@ -231,7 +271,7 @@ func TestApplyCitations(t *testing.T) {
 	chunks := []SourcedChunk{{ID: "c1"}}
 	cites := map[int][]int{0: {0}}
 	answer, cited := applyCitations("Hello world.", []string{"Hello world."}, []int{0}, cites, chunks)
-	if answer != "Hello world. [ID:c1]" {
+	if answer != "Hello world. [ID:0]" {
 		t.Errorf("got %q", answer)
 	}
 	if len(cited) != 1 || cited[0] != 0 {
@@ -261,8 +301,8 @@ func TestInsertCitations_Happy(t *testing.T) {
 	if len(cited) == 0 {
 		t.Fatalf("expected citations, got none. answer=%q", answer)
 	}
-	if !strings.Contains(answer, "[ID:abc123]") || !strings.Contains(answer, "[ID:def456]") {
-		t.Errorf("missing [ID:*] markers: %q", answer)
+	if !strings.Contains(answer, "[ID:0]") || !strings.Contains(answer, "[ID:1]") {
+		t.Errorf("missing positional [ID:*] markers: %q", answer)
 	}
 }
 
@@ -331,5 +371,23 @@ func TestRepairBadCitationFormats(t *testing.T) {
 		if got := RepairBadCitationFormats(c.in); got != c.want {
 			t.Errorf("RepairBadCitationFormats(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// -----------------------------------------------------------------------
+
+func TestCitationStreamFilter(t *testing.T) {
+	var filter citationStreamFilter
+	want := "Answer\n## Heading\n[2024][guide](https://example.com) end"
+	got := ""
+	for _, delta := range []string{"Answer[", "ID:0][ID:1-", "3][ID:Slot 0](ID: 2)#", "#0", "$", "$\n#", "# Heading\n[2024][guide](https://example.com) end"} {
+		got += filter.write(delta)
+		if !strings.HasPrefix(want, got) {
+			t.Fatalf("stream leaked citation text: %q", got)
+		}
+	}
+	got += filter.flush()
+	if got != want {
+		t.Fatalf("filtered answer=%q, want %q", got, want)
 	}
 }

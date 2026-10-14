@@ -24,16 +24,28 @@ type AuthenticationConfig struct {
 }
 
 type APIServerConfig struct {
+	MCP      MCPConfig
 	Host     string `mapstructure:"host"`
 	HTTPPort int    `mapstructure:"http_port"`
+	// TrustedProxies lists the IPs / CIDRs whose X-Forwarded-For and
+	// X-Real-IP headers are trusted when resolving the client address.
+	// nil means "not configured" and resolves to common.DefaultTrustedProxies
+	// (loopback, i.e. the nginx bundled in the ragflow image). An explicit
+	// list replaces that default rather than extending it, and an empty
+	// list trusts no proxy at all.
+	TrustedProxies []string `mapstructure:"trusted_proxies"`
 
 	Authentication AuthenticationConfig `mapstructure:"authentication"`
 }
 
 func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
+	if err := c.parseMCPConfig(v); err != nil {
+		return err
+	}
+
 	// Default Admin config
 	c.apiServer.Host = "localhost"
-	c.apiServer.HTTPPort = 9384
+	c.apiServer.HTTPPort = 9380
 
 	if !v.IsSet("ragflow") {
 		return nil
@@ -51,8 +63,12 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 		c.apiServer.HTTPPort = sub.GetInt("http_port")
 	}
 
-	if c.apiServer.HTTPPort == 9380 {
-		c.apiServer.HTTPPort = 9384
+	if sub.IsSet("trusted_proxies") {
+		proxies := sub.GetStringSlice("trusted_proxies")
+		if proxies == nil {
+			proxies = []string{}
+		}
+		c.apiServer.TrustedProxies = proxies
 	}
 
 	c.parseAuthenticationConfig(v)

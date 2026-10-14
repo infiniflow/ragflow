@@ -1,23 +1,8 @@
 import { ParseDocumentType } from '@/components/layout-recognize-form-field';
 import { initialLlmBaseValues, Operator } from '@/constants/agent';
+import { FileType } from '@/constants/file';
 import { ModelTypeToField } from '@/constants/llm';
-import { pickByBackend } from '@/utils/backend-variant';
 import { cloneDeep } from 'lodash';
-
-export enum FileType {
-  PDF = 'pdf',
-  Spreadsheet = 'spreadsheet',
-  Image = 'image',
-  Email = 'email',
-  TextMarkdown = 'markdown',
-  Code = 'text&code',
-  Html = 'html',
-  Doc = 'doc',
-  Docx = 'docx',
-  PowerPoint = 'slides',
-  Video = 'video',
-  Audio = 'audio',
-}
 
 export enum PdfOutputFormat {
   Json = 'json',
@@ -79,11 +64,10 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-// The video parser defaults to the tenant's VLM model and the audio parser to
-// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
-// type without a configured tenant default keeps its empty model id.
+// The audio parser defaults to the tenant's ASR model, keyed by the
+// useFetchDefaultModelDictionary fields. (The vision model is a single global
+// parser option, not per file type, so video no longer appears here.)
 export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
-  [FileType.Video]: ModelTypeToField.vision,
   [FileType.Audio]: ModelTypeToField.asr,
 };
 
@@ -99,10 +83,6 @@ export const FileId = 'File'; // BeginId
 export enum TokenizerSearchMethod {
   Embedding = 'embedding',
   FullText = 'full_text',
-}
-
-export enum ImageParseMethod {
-  OCR = 'ocr',
 }
 
 export enum TokenizerFields {
@@ -183,29 +163,31 @@ export const initialParserValues = {
     html: { type: 'string', value: '' },
     json: { type: 'Array<object>', value: [] },
   },
+  // Global vision enhancement, off by default; the model id is prefilled from
+  // the tenant's image2text default when a node is created. The prompt is shared
+  // by the vision paths here; response language belongs to the knowledge base.
+  vlm: { llm_id: '', system_prompt: '' },
+  enable_vision_enhancement: false,
   setups: [
     {
       fileFormat: FileType.PDF,
       output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
       pages: [{ from: 1, to: 100000 }],
     },
     {
       fileFormat: FileType.Spreadsheet,
-      output_format: SpreadsheetOutputFormat.Html,
+      output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Json,
-      parse_method: ImageParseMethod.OCR,
+      ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
-      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,
@@ -217,7 +199,6 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Code,
@@ -234,14 +215,12 @@ export const initialParserValues = {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
@@ -253,7 +232,6 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Video,
       output_format: VideoOutputFormat.Text,
-      vlm: { llm_id: '' },
     },
     {
       fileFormat: FileType.Audio,
@@ -281,6 +259,28 @@ export const initialTokenChunkerValues = {
     { value: '？' },
   ],
   image_table_context_window: 0,
+  enable_children: false,
+  children_delimiters: [],
+};
+
+export const initialGeneralChunkerValues = {
+  outputs: {
+    chunks: { type: 'Array<Object>', value: [] },
+  },
+  chunk_token_size: 512,
+  overlapped_percent: 0,
+  delimiters: [
+    { value: '\n' },
+    { value: '!' },
+    { value: '?' },
+    { value: ';' },
+    { value: '。' },
+    { value: '；' },
+    { value: '！' },
+    { value: '？' },
+  ],
+  table_context_size: 0,
+  image_context_size: 0,
   enable_children: false,
   children_delimiters: [],
 };
@@ -365,30 +365,22 @@ export const initialTitleChunkerValues = {
   groupRules: cloneDeep(originalRules),
 };
 
-// Defaults for the Python backend extractor (legacy flat fields).
+// Defaults for the extractor: the LLM settings plus the nested per-feature
+// groups the Go schema reads (schema.ExtractorParam).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
-  field_name: ContextGeneratorFieldName.Summary,
-  auto_tags: 1,
-  tag_file_id: '',
-  outputs: {
-    chunks: { type: 'Array<Object>', value: [] },
-  },
-};
-
-// Defaults for the Go backend extractor: the LLM settings plus the nested
-// per-feature groups the Go schema reads (schema.ExtractorParam).
-export const initialGoExtractorValues = {
-  ...initialLlmBaseValues,
   keywords: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   questions: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   tags: {
+    enabled: false,
     top_n: 0,
     tag_file_id: '',
   },
@@ -407,15 +399,11 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return pickByBackend<
-    typeof initialGoExtractorValues | typeof initialExtractorValues
-  >({
-    go: initialGoExtractorValues,
-    python: initialExtractorValues,
-  });
+  return initialExtractorValues;
 }
 
 export const initialCompilationValues = {
+  ...initialLlmBaseValues,
   compilation_template_group_id: '',
   llm_id: '',
   outputs: {
@@ -425,54 +413,28 @@ export const initialCompilationValues = {
 
 export const NoDebugOperatorsList = [Operator.File];
 
-export const FileTypeSuffixMap = {
-  [FileType.PDF]: ['pdf'],
-  [FileType.Spreadsheet]: ['xls', 'xlsx', 'csv'],
-  [FileType.Image]: ['jpg', 'jpeg', 'png', 'gif'],
-  [FileType.Email]: ['eml', 'msg'],
-  [FileType.TextMarkdown]: ['md', 'markdown', 'mdx'],
-  [FileType.Code]: [
-    'txt',
-    'py',
-    'js',
-    'java',
-    'c',
-    'cpp',
-    'h',
-    'php',
-    'go',
-    'ts',
-    'sh',
-    'cs',
-    'kt',
-    'sql',
-  ],
-  [FileType.Html]: ['htm', 'html'],
-  [FileType.Doc]: ['doc'],
-  [FileType.Docx]: ['docx'],
-  [FileType.PowerPoint]: ['pptx', 'ppt'],
-  [FileType.Video]: ['mp4', 'avi', 'mkv'],
-  [FileType.Audio]: [
-    'da',
-    'wave',
-    'wav',
-    'mp3',
-    'aac',
-    'flac',
-    'ogg',
-    'aiff',
-    'au',
-    'midi',
-    'wma',
-    'realaudio',
-    'vqf',
-    'oggvorbis',
-    'ape',
-  ],
-};
+// Chunker operators available on the Go pipeline canvas. GeneralChunker is a
+// legacy Python operator and is deliberately excluded.
+export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
+// Operators offered in the flat top-level list of the pipeline "next step"
+// menu, distinct from the chunker group. Single-instance filtering happens
+// per entry in buildPipelineNextOperators.
+export const TopLevelOperators = [
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Compiler,
+  Operator.Extractor,
+];
+
+// Pipeline operators limited to a single instance per canvas. Title/Token
+// chunkers are separate entries here (each blocks its own duplication) but
+// also share one slot: see the chunker group rule in buildPipelineNextOperators.
 export const SingleOperators = [
   Operator.Tokenizer,
+  Operator.Compiler,
+  Operator.Extractor,
+  Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,
   Operator.Parser,

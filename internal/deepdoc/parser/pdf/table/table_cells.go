@@ -1,12 +1,14 @@
 package table
 
 import (
-	"log/slog"
 	"math"
 	"regexp"
 	"sort"
 	"strings"
 
+	"go.uber.org/zap"
+
+	"ragflow/internal/common"
 	pdf "ragflow/internal/deepdoc/parser/pdf/type"
 	"ragflow/internal/deepdoc/parser/pdf/util"
 )
@@ -121,7 +123,7 @@ func FillCellTextFromBoxes(cells []pdf.TSRCell, boxes []pdf.TextBox) {
 // every data row regardless of whether the table has a header. Rows with no
 // matching TSR row component (e.g. header rows) keep the grid-union strip X.
 func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, rowStrips []pdf.TSRCell) {
-	slog.Debug("fillCellTextFromBoxes", "cells", len(cells), "boxes", len(boxes))
+	common.Debug("fillCellTextFromBoxes", zap.Int("cells", len(cells)), zap.Int("boxes", len(boxes)))
 	if len(cells) == 0 || len(boxes) == 0 {
 		return
 	}
@@ -349,7 +351,7 @@ func FillCellTextFromBoxesWithRows(cells []pdf.TSRCell, boxes []pdf.TextBox, row
 			cells[i].Text = cellText[i]
 		}
 	}
-	slog.Debug("fillCellTextFromBoxes done", "box_cell_matches", matched, "cells_filled", matched)
+	common.Debug("fillCellTextFromBoxes done", zap.Int("box_cell_matches", matched), zap.Int("cells_filled", matched))
 }
 
 // tightestColumnDistance mirrors Python's find_horizontally_tightest_fit
@@ -434,10 +436,21 @@ func IsCaptionBox(text string, layoutType string) bool {
 // start-anchored with ^: an unanchored alternative wrongly classifies such a
 // paragraph as a caption and MergeCaptions then drops it (go_bug
 // table-text-interleaved-paragraph-dropped).
-var reTableCaptionText = regexp.MustCompile(`^表|(?i)^Table\s+\d+`)
+//
+// The CJK branch mirrors Python's `[图表]+[ 0-9:：]{2,}`: the 图/表 run must be
+// followed by ≥2 chars from [ 0-9:：], so a body paragraph that merely STARTS
+// with 表/图 (表格是一种…, 表現方法…, 图中所示…) is not a caption. The bare
+// `^表` previously classified any 表-prefixed CJK/Japanese body paragraph as a
+// caption that MergeCaptions either swallowed into <caption> or dropped —
+// content loss Python never has (go_bug cjk-caption-false-positive). Kind is
+// split by the run's first character because findNearestParent needs a
+// table/figure kind to pick which parent to search; Python has a single
+// pattern and picks the nearest parent of either kind instead.
+var reTableCaptionText = regexp.MustCompile(`^表[图表]*[ 0-9:：]{2,}|(?i)^Table\s+\d+`)
 
-// reFigureCaptionText matches text patterns that indicate a figure caption.
-var reFigureCaptionText = regexp.MustCompile(`^图|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
+// reFigureCaptionText matches text patterns that indicate a figure caption —
+// the figure-kind split of the same Python pattern (see reTableCaptionText).
+var reFigureCaptionText = regexp.MustCompile(`^图[图表]*[ 0-9:：]{2,}|(?i)^Fig\.?\s*\d+|(?i)^Figure\s+\d+`)
 
 // captionKind returns "table" if the section is a table caption,
 // "figure" if a figure caption, or "" if not a caption.
@@ -457,10 +470,6 @@ func CaptionKind(s pdf.Section) string {
 	}
 	if reFigureCaptionText.MatchString(t) {
 		return pdf.LayoutTypeFigure
-	}
-	// The chart/figure pattern is ambiguous (matches both) — fall back to isCaptionBox.
-	if IsCaptionBox(t, "") {
-		return pdf.LayoutTypeTable
 	}
 	return ""
 }
@@ -654,7 +663,7 @@ func HeaderSetWithBlockType(rows [][]pdf.TSRCell, boxes []pdf.TextBox) map[int]b
 				if bt == "Nu" {
 					continue // numeric cell in a numeric table: ignored
 				}
-				if colHit[ri][ci] || bt != "Nu" {
+				if colHit[ri][ci] {
 					h++
 				}
 			}

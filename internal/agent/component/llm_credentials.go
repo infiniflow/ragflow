@@ -17,14 +17,13 @@ import (
 )
 
 // resolveTenantLLMConfig fills tenant-scoped API credentials for the supplied
-// driver/model pair when the canvas DSL omitted them. It first checks the old
-// tenant_llm table, then falls back to tenant_model_provider +
-// tenant_model_instance when the composite llm_id carries an instance name.
+// driver/model pair when the canvas DSL omitted them. It resolves them through
+// tenant_model_provider + tenant_model_instance using the composite llm_id.
 func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, apiKey, baseURL, originalModelID string) (string, string) {
 	if apiKey != "" || driver == "" || modelID == "" {
 		return apiKey, baseURL
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		common.Debug("llm credentials: no canvas state in ctx")
 		return apiKey, baseURL
@@ -35,9 +34,6 @@ func resolveTenantLLMConfig(ctx context.Context, db *gorm.DB, driver, modelID, a
 		return apiKey, baseURL
 	}
 
-	if resolvedKey, resolvedBaseURL, ok := resolveTenantLLMCredentials(ctx, db, tid, driver, modelID, baseURL); ok {
-		return resolvedKey, resolvedBaseURL
-	}
 	if originalModelID == "" {
 		return apiKey, baseURL
 	}
@@ -71,31 +67,40 @@ func resolveChatModelRef(ctx context.Context, db *gorm.DB, modelID, driver, apiK
 	return modelID, driver, apiKey, baseURL, nil
 }
 
-// resolveTenantLLMCredentials looks up the old tenant_llm table for the given
-// tenant / factory / model. Returns true when credentials were found.
-func resolveTenantLLMCredentials(ctx context.Context, db *gorm.DB, tid, driver, modelID, baseURL string) (string, string, bool) {
-	common.Debug("llm credentials: tenant_llm lookup", zap.String("tid", tid), zap.String("factory", driver), zap.String("model", modelID))
-	row, err := dao.NewTenantLLMDAO().GetByTenantFactoryAndModelName(ctx, db, tid, driver, modelID)
-	if err != nil {
-		common.Debug("llm credentials: tenant_llm lookup", zap.Error(err))
-		return "", baseURL, false
+// modelImageCapability reports an explicitly known image capability. The
+// second result is false when the model is unknown, so local/test drivers keep
+// their historical multimodal behavior.
+func modelImageCapability(ctx context.Context, db *gorm.DB, modelRef, modelName string) (supports, known bool) {
+	if db != nil && modelRef != "" {
+		if row, err := dao.NewTenantModelDAO().GetByID(ctx, db, modelRef); err == nil && row != nil {
+			return entity.ModelType(row.ModelType).Has(entity.ModelTypeImage2Text), true
+		}
 	}
-	if row == nil {
-		common.Debug("llm credentials: tenant_llm lookup: no row")
-		return "", baseURL, false
+	if modelName == "" {
+		return false, false
 	}
+	model := dao.GetModelProviderManager().GetModelByNameOrAlias(modelName)
+	if model == nil || len(model.ModelTypes) == 0 {
+		return false, false
+	}
+	for _, typ := range model.ModelTypes {
+		if strings.EqualFold(typ, "vision") || strings.EqualFold(typ, "image2text") {
+			return true, true
+		}
+	}
+	return false, true
+}
 
-	apiKey := ""
-	if row.APIKey != nil {
-		apiKey = *row.APIKey
+func rejectUnsupportedImages(ctx context.Context, db *gorm.DB, state *runtime.CanvasState, modelRef, modelName string) error {
+	if state == nil {
+		return nil
 	}
-	if baseURL == "" && row.APIBase != nil {
-		baseURL = *row.APIBase
+	if _, images := collectSysFiles(state); len(images) > 0 {
+		if supports, known := modelImageCapability(ctx, db, modelRef, modelName); known && !supports {
+			return runtime.NewUserFacingError(fmt.Sprintf(`Image input is not supported by the selected model %q. Please select a vision-capable model.`, modelRef))
+		}
 	}
-	common.Debug("llm credentials: tenant_llm OK",
-		zap.Bool("api_key_present", apiKey != ""),
-		zap.Bool("base_url_present", baseURL != ""))
-	return apiKey, baseURL, apiKey != ""
+	return nil
 }
 
 // resolveTenantModelInstanceCredentials attempts to resolve llm credentials
@@ -184,7 +189,7 @@ func resolveTenantChatModelByID(ctx context.Context, db *gorm.DB, modelRef, apiK
 	if !isBareTenantModelID(modelRef) {
 		return "", "", apiKey, baseURL, false, nil
 	}
-	state, _, err := runtime.GetStateFromContext[*runtime.CanvasState](ctx)
+	state, err := runtime.GetStateFromContext(ctx)
 	if err != nil || state == nil {
 		return "", "", apiKey, baseURL, false, nil
 	}
@@ -319,21 +324,22 @@ func isBareTenantModelID(s string) bool {
 }
 
 // parseLLMIDParts splits a composite llm_id into model, instance, and
-// provider segments.
+// provider segments. The split is right-anchored — provider is the last
+// segment, instance the second-to-last, and everything left of them is the
+// model name, which may itself contain '@' (e.g. LM Studio quant-suffixed
+// ids). Mirrors Python's split_model_name (rsplit("@", 2)).
 //
 //	"model@provider"          -> ("model", "default", "provider")
 //	"model@instance@provider" -> ("model", "instance", "provider")
-//	4+ parts                  -> ("parts[0]", "parts[1]", "parts[2]")
+//	"model@tag@inst@provider" -> ("model@tag", "inst", "provider")
 func parseLLMIDParts(s string) (modelName, instanceName, providerName string) {
 	parts := strings.Split(strings.TrimSpace(s), "@")
 	switch len(parts) {
 	case 2:
 		return parts[0], "default", parts[1]
-	case 3:
-		return parts[0], parts[1], parts[2]
 	default:
-		if len(parts) >= 4 {
-			return parts[0], parts[1], parts[2]
+		if len(parts) >= 3 {
+			return strings.Join(parts[:len(parts)-2], "@"), parts[len(parts)-2], parts[len(parts)-1]
 		}
 		return s, "", ""
 	}

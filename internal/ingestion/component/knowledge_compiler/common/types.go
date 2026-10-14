@@ -24,6 +24,18 @@ const (
 	VariantMindmap   Variant = "mindmap"
 )
 
+// Task type labels are the values exposed by the pipeline operation log API.
+// They intentionally preserve the frontend categories instead of collapsing
+// every structure-based template into the internal structure variant.
+const (
+	TaskTypeWiki      = "Wiki"
+	TaskTypeTree      = "Tree"
+	TaskTypeGraph     = "Graph"
+	TaskTypeMindmap   = "Mindmap"
+	TaskTypeTimeline  = "Timeline"
+	TaskTypePageIndex = "PageIndex"
+)
+
 // Sentinel errors.
 var (
 	ErrUnknownVariant = errors.New("knowledge_compiler: unknown variant")
@@ -115,10 +127,7 @@ type Product struct {
 	DocID    string
 	TenantID string
 	Variant  Variant
-	// Kind is the original compilation_template.kind (e.g. "page_index"),
-	// distinct from Variant (the collapsed Go strategy, e.g. "structure"). It
-	// is stamped onto compilation_template_kind_kwd so the document-structure
-	// endpoint can group rows by the true template kind.
+	// Kind identifies the producing template's knowledge compilation kind.
 	Kind string
 	// TemplateID is the compilation template that produced this row.
 	TemplateID string
@@ -227,6 +236,46 @@ func KindToVariant(kind string) (Variant, error) {
 		return VariantStructure, nil
 	default:
 		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
+	}
+}
+
+// KindToTaskType maps the original compilation template kind to the category
+// shown in pipeline operation logs. Unlike KindToVariant, this mapping keeps
+// structure sub-kinds distinct so graph, timeline, and page-index logs are not
+// mislabeled as the same task.
+func KindToTaskType(kind string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "wiki":
+		return TaskTypeWiki, nil
+	case "tree":
+		return TaskTypeTree, nil
+	case "knowledge_graph", "knowledgegraph", "graph":
+		return TaskTypeGraph, nil
+	case "mind_map", "mindmap":
+		return TaskTypeMindmap, nil
+	case "timeline":
+		return TaskTypeTimeline, nil
+	case "page_index":
+		return TaskTypePageIndex, nil
+	default:
+		return "", fmt.Errorf("%w: %q", ErrUnknownVariant, kind)
+	}
+}
+
+// VariantToTaskType provides the best category available when reading legacy
+// rows that do not retain the original template kind.
+func VariantToTaskType(variant Variant) string {
+	switch variant {
+	case VariantWiki:
+		return TaskTypeWiki
+	case VariantTree:
+		return TaskTypeTree
+	case VariantMindmap:
+		return TaskTypeMindmap
+	case VariantStructure:
+		return TaskTypeGraph
+	default:
+		return ""
 	}
 }
 

@@ -6,19 +6,21 @@ package knowledge_compiler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 
 	"ragflow/internal/agent/runtime"
 	clog "ragflow/internal/common"
+	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/mindmap"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
 	"ragflow/internal/ingestion/component/knowledge_compiler/tree"
 	"ragflow/internal/ingestion/component/knowledge_compiler/wiki"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 
@@ -66,7 +68,7 @@ func NewKnowledgeCompilerComponent(name string, params map[string]any) (runtime.
 // Inputs documents the component's input surface for the catalog.
 func (c *KnowledgeCompilerComponent) Inputs() map[string]string {
 	return map[string]string{
-		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text/content_with_weight.",
+		"chunks":                "List of map[string]any from upstream chunker/parser; each must carry id + text.",
 		"historical_candidates": "Optional []common.Candidate override for historical dedup (test/offline).",
 	}
 }
@@ -87,6 +89,9 @@ func (c *KnowledgeCompilerComponent) Outputs() map[string]string {
 // {output_format:"chunks", chunks:[...]}.
 func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	_ = db
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	param := c.Param
 	// Resolve the run-level tenant scope from the shared CanvasState.Globals
 	// bag first (seeded by the pipeline at run start), falling back to the
@@ -133,7 +138,7 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	// template's id and kind. All products are buffered (no streaming sink), so
 	// the post-run loop below covers every row (M1).
 	var out common.Outputs
-	for _, spec := range specs {
+	for specIndex, spec := range specs {
 		variant, err := common.KindToVariant(spec.Kind)
 		if err != nil {
 			return nil, err
@@ -150,12 +155,14 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 		specParam.TemplateConfig = spec.Config
 		overlayTemplateConfig(&specParam, spec.Config)
 
-		deps, err := common.ResolveDeps(tenantID, specParam.LLMID, specParam.EmbeddingModel)
+		deps, err := common.ResolveDeps(ctx, tenantID, specParam.LLMID, specParam.EmbeddingModel)
 		if err != nil {
 			return nil, err
 		}
 		deps.TenantID = tenantID
 		deps.DatasetID = datasetID
+		// Reserve 1% for converting and merging all products.
+		deps.Progress = (progress.Window{Span: 0.99}).Sub(specIndex, len(specs))
 
 		// Per-spec Inputs copy: each spec must get its own VariantSpecific map,
 		// otherwise specIn.VariantSpecific below would mutate the shared map and
@@ -200,6 +207,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 			return nil, err
 		}
 
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		deps.Progress.Report(ctx, 1)
 		for i := range o.Products {
 			if o.Products[i].Meta == nil {
 				o.Products[i].Meta = map[string]any{}
@@ -259,6 +270,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 	if len(out.WikiActiveStates) > 0 {
 		result["wiki_active_map_states"] = wikiActiveStateValues(out.WikiActiveStates)
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	(progress.Window{Span: 1}).Report(ctx, 1)
 	return result, nil
 }
 
@@ -368,9 +383,8 @@ func overlayTemplateConfig(param *common.Param, cfg map[string]any) {
 	}
 }
 
-// kindOrVariant returns the original template kind when present (the true
-// compilation_template.kind, e.g. "page_index"), otherwise the collapsed Go
-// variant. It drives the compilation_template_kind_kwd stamp.
+// kindOrVariant returns the producing template kind, or the execution variant
+// when a product has no template kind.
 func kindOrVariant(p common.Product) string {
 	if p.Kind != "" {
 		return p.Kind
@@ -378,33 +392,15 @@ func kindOrVariant(p common.Product) string {
 	return string(p.Variant)
 }
 
-// variantCompileKWD maps each Go variant to the compile_kwd discriminator value
-// Python writes into ES (rag/advanced_rag/knowlege_compile). It is the primary
-// key that distinguishes compiled knowledge units from ordinary chunks and
-// routes retrieval-side filters. The wiki value MUST be "wiki_page" (Python's
-// canonical WIKI_PAGE_COMPILE_KWD in wiki.py:1661 / wiki_incremental.py:44 /
-// dataset_wiki_generator.py:108) so Go-produced wiki pages are visible to the
-// artifact API (dataset_artifact_service.go reads compile_kwd="wiki_page").
-var variantCompileKWD = map[common.Variant]string{
-	common.VariantStructure: "structure",
-	common.VariantWiki:      "wiki_page",
-	common.VariantTree:      "tree",
-	common.VariantMindmap:   "mindmap",
-}
-
 // productsToChunkDocs converts the internal compiled Product rows into
-// schema.ChunkDoc values aligned to conf/infinity_mapping.json (lines 1–77).
-// The compile_kwd discriminator marks them as compiled knowledge units
-// (distinct from plain chunks); variant-specific columns are populated from
-// Product.Meta using stable keys (see each variant's build site for the
-// contract). The original kind/level/name/size meta is also carried under
-// "kc_"-prefixed Extra keys so no information is lost.
+// schema.ChunkDoc values aligned to conf/infinity_mapping.json. Product.Meta is
+// not persisted: only engine columns are written, because Infinity rejects an
+// insert naming an unknown column.
 func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 	docs := make([]schema.ChunkDoc, 0, len(products))
 	for _, p := range products {
 		doc := schema.ChunkDoc{
-			Text:              p.Content,
-			ContentWithWeight: p.Content,
+			Text: p.Content,
 		}
 		// Populate content_ltks / content_sm_ltks the same way the chunker
 		// components do (see chunker/tag.go, chunker/qa.go): coarse tokenize
@@ -412,7 +408,19 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// are ignored (tokenizer pool may be uninitialised in no-CGo tests),
 		// leaving the fields empty — matching the chunker's graceful-degrade
 		// behaviour.
-		if ltks, err := tokenizer.Tokenize(p.Content); err == nil && ltks != "" {
+		//
+		// Structure rows tokenize the FLATTENED PAYLOAD DESCRIPTION, not the
+		// raw JSON: Python indexes
+		// _tokenize_for_search(_struct_payload_description(payload)), so
+		// tokenizing p.Content here would feed JSON keys/brackets and opaque
+		// chunk ids into the inverted index.
+		indexText := p.Content
+		if p.Variant == common.VariantStructure {
+			if d := structure.IndexText(p.Content); strings.TrimSpace(d) != "" {
+				indexText = d
+			}
+		}
+		if ltks, err := tokenizer.Tokenize(indexText); err == nil && ltks != "" {
 			doc.ContentLtks = ltks
 			if sm, err := tokenizer.FineGrainedTokenize(ltks); err == nil && sm != "" {
 				doc.ContentSmLtks = sm
@@ -427,34 +435,20 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				return nil, err
 			}
 		}
-		if p.TenantID != "" {
-			if err := doc.SetExtraValue("tenant_id", p.TenantID); err != nil {
-				return nil, err
-			}
-		}
-		compileKWD := variantCompileKWD[p.Variant]
-		// A variant may pin a finer-grained compile_kwd per row via Meta
-		// (structure stamps the inferred compile kind — list/set/hypergraph —
-		// mirroring Python's per-row autotype stamp).
-		if v := metaString(p.Meta, "compile_kwd"); v != "" {
-			compileKWD = v
-		}
-		// Wiki sub-parts: sections get their own compile_kwd so that a page
-		// search on compile_kwd="wiki_page" returns pages only (page.go emits
-		// both kind:"page" and kind:"section" rows under VariantWiki). This is
-		// the schema-backed page/section discriminator: "wiki_page" == page,
-		// "wiki_section" == a page sub-section.
-		if p.Variant == common.VariantWiki && metaString(p.Meta, "kind") == "section" && compileKWD == "wiki_page" {
-			compileKWD = "wiki_section"
-		}
-		if compileKWD == "" {
-			compileKWD = string(p.Variant)
-		}
+		compileKWD := enginetypes.CanonicalCompilationKind(kindOrVariant(p))
 		if err := doc.SetExtraValue("compile_kwd", compileKWD); err != nil {
 			return nil, err
 		}
-		if err := doc.SetExtraValue("compilation_template_kind_kwd", kindOrVariant(p)); err != nil {
-			return nil, err
+		if p.Variant == common.VariantStructure {
+			if inferred := metaString(p.Meta, "compile_kwd"); inferred != "" {
+				extra, err := json.Marshal(map[string]string{"compile_type": inferred})
+				if err != nil {
+					return nil, err
+				}
+				if err := doc.SetExtraValue("extra", string(extra)); err != nil {
+					return nil, err
+				}
+			}
 		}
 		// scope_kwd marks doc/dataset-level rows (B8/O1=B). A doc-level compiled
 		// product is always a per-document (scope="doc") input to the dataset-level
@@ -493,15 +487,9 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 				return nil, err
 			}
 		}
-		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–77).
+		// Per-variant fine-grained columns (conf/infinity_mapping.json §45–97).
 		if err := applyVariantColumns(&doc, p); err != nil {
 			return nil, err
-		}
-		// Preserve the raw Product.Meta under kc_* for round-trip fidelity.
-		for k, v := range p.Meta {
-			if err := doc.SetExtraValue("kc_"+k, v); err != nil {
-				return nil, err
-			}
 		}
 		docs = append(docs, doc)
 	}
@@ -516,11 +504,16 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 	switch p.Variant {
 	case common.VariantStructure:
-		// knowledge_graph_kwd: "entity" | "relation" | "graph".
+		// type_kwd: "entity" | "relation" | "graph".
 		return applyStructureGraphColumns(doc, p, kind)
 
 	case common.VariantWiki:
-		// One artifact_page row per wiki page; section rows reuse the same
+		if kind != "" {
+			if err := doc.SetExtraValue("type_kwd", "wiki_"+kind); err != nil {
+				return err
+			}
+		}
+		// Page and section roles reuse the same
 		// page-level columns so retrieval-side filters work uniformly.
 		// Match the Python writer contract (api/db/db_models.py slug_kwd):
 		// slug_kwd stores the full "<page_type>/<slug>" form, so retrieval
@@ -538,9 +531,6 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 				if err := doc.SetExtraValue("slug_kwd", fullSlug); err != nil {
 					return err
 				}
-				if err := doc.SetExtraValue("artifact_slug_kwd", fullSlug); err != nil {
-					return err
-				}
 			}
 		}
 		if v := metaString(p.Meta, "title"); v != "" {
@@ -550,7 +540,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 			setTitleTokens(doc, v)
 		}
 		if v := metaString(p.Meta, "page_type"); v != "" {
-			if err := doc.SetExtraValue("page_type_kwd", v); err != nil {
+			if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
 				return err
 			}
 		}
@@ -564,18 +554,9 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 				return err
 			}
 		}
-		// Section rows also carry level/index so a retriever can scope to a
-		// sub-section of a wiki page.
+		// Section depth goes to depth_int; there is no section_level_int column.
 		if v, ok := metaInt(p.Meta, "section_level"); ok {
-			if err := doc.SetExtraValue("section_level_int", v); err != nil {
-				return err
-			}
 			if err := doc.SetExtraValue("depth_int", v); err != nil {
-				return err
-			}
-		}
-		if v, ok := metaInt(p.Meta, "section_index"); ok {
-			if err := doc.SetExtraValue("section_index_int", v); err != nil {
 				return err
 			}
 		}
@@ -603,11 +584,35 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		case "entity", "relation", "graph":
 			// The tree is also projected onto the structure-graph shape (Python
 			// raptor_tree_to_graph + _struct_upsert_tree_graph_rows): entity /
-			// relation rows carry knowledge_graph_kwd and the compact graph blob
+			// relation rows carry type_kwd and the compact graph blob
 			// (kind "graph") is the /structure/graph discovery row. This is the
 			// same storage contract as the structure variant, so both share
 			// applyStructureGraphColumns.
 			return applyStructureGraphColumns(doc, p, kind)
+		case "claim":
+			// Claim rows are searchable on their own (global KNN) but are NOT
+			// part of the structure graph: they carry no relation, and a
+			// relation-less row would be rendered as a root in the artifacts
+			// tree. So they deliberately skip type_kwd, which keeps
+			// them out of the artifacts query (it filters
+			// type_kwd=["entity","relation"]) without a frontend
+			// change. Python mirrors this in _struct_upsert_tree_claim_rows.
+			if v := metaString(p.Meta, "name"); v != "" {
+				if err := doc.SetExtraValue("name_kwd", strings.ToLower(v)); err != nil {
+					return err
+				}
+			}
+			if v := metaString(p.Meta, "entity_type"); v != "" {
+				if err := doc.SetExtraValue("entity_type_kwd", v); err != nil {
+					return err
+				}
+			}
+			if v, ok := metaInt(p.Meta, "mention_count"); ok {
+				if err := doc.SetExtraValue("mention_count_int", v); err != nil {
+					return err
+				}
+			}
+			return nil
 		default:
 			// RAPTOR summary/root rows: raptor_kwd tags the node kind;
 			// raptor_layer_int records tree depth.
@@ -635,7 +640,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 		// Mindmap now emits entity/relation rows (plan §1.2) so it participates in
 		// dataset-level merge exactly like graph/timeline: each node is an entity,
 		// each parent→child edge is a relation. Reuse the shared structure-graph
-		// column contract (knowledge_graph_kwd + from/to_entity_kwd + name_kwd +
+		// column contract (type_kwd + from/to_entity_kwd + name_kwd +
 		// entity_type_kwd + mention_count_int). The relation type lives in the
 		// content_with_weight payload ({"from","to","type"}), matching Python —
 		// NOT a dedicated relation_type_kwd column.
@@ -647,7 +652,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 
 // applyStructureGraphColumns emits the structure-graph row columns shared by the
 // structure and tree variants (Python _struct_to_doc_storage_doc contract):
-//   - knowledge_graph_kwd: "entity" | "relation" | "graph"
+//   - type_kwd: "entity" | "relation" | "graph"
 //   - relations: from_entity_kwd / to_entity_kwd
 //   - entities: name_kwd (lowercased) / entity_type_kwd
 //   - mention_count_int
@@ -656,7 +661,7 @@ func applyVariantColumns(doc *schema.ChunkDoc, p common.Product) error {
 // diverging (review Major).
 func applyStructureGraphColumns(doc *schema.ChunkDoc, p common.Product, kind string) error {
 	if kind != "" {
-		if err := doc.SetExtraValue("knowledge_graph_kwd", kind); err != nil {
+		if err := doc.SetExtraValue("type_kwd", kind); err != nil {
 			return err
 		}
 	}
@@ -698,20 +703,15 @@ func metaString(m map[string]any, key string) string {
 	return v
 }
 
-// setTitleTokens populates the ChunkDoc title_tks / title_sm_tks fields from a
-// title string, mirroring how the chunker/tokenizer components tokenize titles
-// (coarse → TitleTks, fine-grained → TitleSmTks). Errors are ignored: when the
-// tokenizer pool is uninitialised (no-CGo test path) the fields stay empty,
-// matching the chunker's graceful-degrade behaviour.
+// setTitleTokens populates ChunkDoc.title_tks. Python's page row has no
+// title_sm_tks, and the Infinity writer folds title_kwd / title_sm_tks into
+// `docnm`, so the twin would make docnm map-order dependent.
 func setTitleTokens(doc *schema.ChunkDoc, title string) {
 	if title == "" {
 		return
 	}
 	if tks, err := tokenizer.Tokenize(title); err == nil && tks != "" {
 		doc.TitleTks = tks
-		if sm, err := tokenizer.FineGrainedTokenize(tks); err == nil && sm != "" {
-			doc.TitleSmTks = sm
-		}
 	}
 }
 
@@ -765,7 +765,7 @@ func mergeChunks(inputs map[string]any, compiled []schema.ChunkDoc) map[string]a
 			raw = append(raw, m)
 		}
 	default:
-		log.Printf("knowledge_compiler: mergeChunks: unexpected chunks type %T", inputs["chunks"])
+		clog.Warn("knowledge_compiler: mergeChunks: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
 	}
 	merged := make([]any, 0, len(raw)+len(compiled))
 	for _, r := range raw {
@@ -834,9 +834,9 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 	case []map[string]any:
 		raw = v
 	default:
-		log.Printf("knowledge_compiler: buildInputs: unexpected chunks type %T", inputs["chunks"])
+		clog.Warn("knowledge_compiler: buildInputs: unexpected chunks type", zap.String("type", fmt.Sprintf("%T", inputs["chunks"])))
 	}
-	log.Printf("knowledge_compiler: buildInputs: accepted %d chunk(s) from inputs[chunks]", len(raw))
+	clog.Info("knowledge_compiler: buildInputs: accepted chunks from inputs[chunks]", zap.Int("chunks", len(raw)))
 	for _, m := range raw {
 		ch := common.Chunk{Meta: m}
 		if id, ok := m["id"].(string); ok {
@@ -844,9 +844,7 @@ func buildInputs(inputs map[string]any, param common.Param) (common.Inputs, erro
 		}
 		if t, ok := m["text"].(string); ok {
 			ch.Text = t
-		}
-		if cw, ok := m["content_with_weight"].(string); ok {
-			ch.Content = cw
+			ch.Content = t
 		}
 		// Reuse the embedding the upstream pipeline already computed on the
 		// chunk (stored under q_<dim>_vec); variants fall back to embedding
@@ -878,7 +876,7 @@ func init() {
 	meta := runtime.Metadata{
 		Version: "0.1.0",
 		Inputs: map[string]string{
-			"chunks":                "Upstream chunker/parser output chunks (id + text/content_with_weight).",
+			"chunks":                "Upstream chunker/parser output chunks (id + text).",
 			"historical_candidates": "Optional historical dedup candidates for offline/test runs.",
 		},
 		Outputs: chunkerOutputs,

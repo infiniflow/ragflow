@@ -32,7 +32,6 @@ type Router struct {
 	systemHandler        *handler.SystemHandler
 	statsHandler         *handler.StatsHandler
 	chunkHandler         *handler.ChunkHandler
-	llmHandler           *handler.LLMHandler
 	chatHandler          *handler.ChatHandler
 	chatChannelHandler   *handler.ChatChannelHandler
 	langfuseHandler      *handler.LangfuseHandler
@@ -71,7 +70,6 @@ func NewRouter(
 	systemHandler *handler.SystemHandler,
 	statsHandler *handler.StatsHandler,
 	chunkHandler *handler.ChunkHandler,
-	llmHandler *handler.LLMHandler,
 	chatHandler *handler.ChatHandler,
 	chatChannelHandler *handler.ChatChannelHandler,
 	langfuseHandler *handler.LangfuseHandler,
@@ -107,7 +105,6 @@ func NewRouter(
 		systemHandler:        systemHandler,
 		statsHandler:         statsHandler,
 		chunkHandler:         chunkHandler,
-		llmHandler:           llmHandler,
 		chatHandler:          chatHandler,
 		chatChannelHandler:   chatChannelHandler,
 		langfuseHandler:      langfuseHandler,
@@ -217,8 +214,14 @@ func (r *Router) Setup(engine *gin.Engine) {
 		agentBotGroup.GET("/:agent_id/inputs", r.botHandler.AgentbotInputs)
 		agentBotGroup.GET("/:agent_id/logs/:message_id", r.botHandler.GetAgentbotLogs)
 
-		// Public bot endpoints (authenticated with an SDK beta token, not a session)
+		// Public bot endpoints (authenticated with an SDK beta token, not a session).
+		// The image/thumbnail routes accept the beta token like Python's
+		// login_required(auth_types=[AUTH_JWT, AUTH_API, AUTH_BETA]); shared
+		// chats render their images through them. Ownership is enforced in the
+		// service layer, not by the middleware group.
 		apiBetaAuth.GET("/documents/:id/preview", r.documentHandler.GetDocumentPreview)
+		apiBetaAuth.GET("/documents/:id/thumbnail", r.documentHandler.GetDocumentThumbnail)
+		apiBetaAuth.GET("/documents/:id/images/:image_id", r.documentHandler.GetDocumentImageForDocument)
 		apiBetaAuth.GET("/documents/images/:image_id", r.documentHandler.GetDocumentImage)
 		apiBetaAuth.GET("/thumbnails", r.documentHandler.GetThumbnail)
 
@@ -235,19 +238,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 	authorized := engine.Group("")
 	authorized.Use(r.authHandler.AuthMiddleware())
 	{
-		// User info endpoint
-		authorized.GET("/v1/user/info", r.userHandler.Info)
-		// User tenant info endpoint
-		authorized.GET("/v1/user/tenant_info", r.tenantHandler.TenantInfo)
-		// Tenant list endpoint
-		authorized.GET("/v1/tenant/list", r.tenantHandler.TenantList)
-		// User settings endpoint
-		authorized.POST("/v1/user/setting", r.userHandler.Setting)
-		// User change password endpoint
-		authorized.POST("/v1/user/setting/password", r.userHandler.ChangePassword)
-		// User set tenant info endpoint
-		authorized.POST("/v1/user/set_tenant_info", r.userHandler.SetTenantInfo)
-
 		// API v1 route group
 		v1 := authorized.Group("/api/v1")
 		{
@@ -291,13 +281,10 @@ func (r *Router) Setup(engine *gin.Engine) {
 			// Tenant routes (per-tenant resources)
 			tenant := v1.Group("/tenant")
 			{
-				tenant.GET("/list", r.tenantHandler.TenantList)
-				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)                         // Internal API only for GO
-				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)                       // Internal API only for GO
-				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)                   // Internal API only for GO
-				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore)                 // Internal API only for GO
-				tenant.POST("/dev_insert_chunks_from_file", r.tenantHandler.InsertChunksFromFile)     // Internal API only for GO
-				tenant.POST("/dev_insert_metadata_from_file", r.tenantHandler.InsertMetadataFromFile) // Internal API only for GO
+				tenant.POST("/chunk_store", r.tenantHandler.CreateChunkStore)         // Internal API only for GO
+				tenant.DELETE("/chunk_store", r.tenantHandler.DeleteChunkStore)       // Internal API only for GO
+				tenant.POST("/metadata_store", r.tenantHandler.CreateMetadataStore)   // Internal API only for GO
+				tenant.DELETE("/metadata_store", r.tenantHandler.DeleteMetadataStore) // Internal API only for GO
 			}
 
 			// Document routes
@@ -350,31 +337,24 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.GET("/:dataset_id", r.datasetsHandler.GetDataset)
 				datasets.PUT("/:dataset_id", r.datasetsHandler.UpdateDataset)
 				datasets.GET("/:dataset_id/graph", r.datasetsHandler.GetKnowledgeGraph)
-				datasets.GET("/:dataset_id/tags", r.datasetsHandler.ListTags)
-				datasets.PUT("/:dataset_id/tags", r.datasetsHandler.RenameTag)
-				datasets.DELETE("/:dataset_id/tags", r.datasetsHandler.RemoveTags)
 				datasets.POST("/:dataset_id/embedding/check", r.datasetsHandler.CheckEmbedding)
 				datasets.POST("/:dataset_id/documents/batch-update-status", r.documentHandler.BatchUpdateDocumentStatus)
-				// Scheduler compile-status contract (API_PROXY_SCHEME=go/hybrid);
-				// replaces the retired RunIndex/TraceIndex/DeleteIndex /index routes.
+				// Scheduler compile-status contract; replaces the retired
+				// RunIndex/TraceIndex/DeleteIndex /index routes.
 				datasets.GET("/:dataset_id/compilation/status", r.datasetsHandler.GetCompilationStatus)
 
 				// Knowledge-compilation wiki artifacts
 				datasets.HEAD("/:dataset_id/artifacts", r.datasetArtifactHandler.AnyArtifact)
 				datasets.GET("/:dataset_id/artifacts", r.datasetArtifactHandler.ListArtifacts)
-				datasets.DELETE("/:dataset_id/artifacts", r.datasetArtifactHandler.DeleteArtifacts)
 				datasets.GET("/:dataset_id/artifacts/topics", r.datasetArtifactHandler.ListArtifactTopics)
 				datasets.GET("/:dataset_id/artifacts/alteration", r.datasetArtifactHandler.GetArtifactAlteration)
 				datasets.GET("/:dataset_id/artifacts/graph", r.datasetArtifactHandler.GetArtifactGraph)
 				datasets.GET("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.GetArtifact)
 				datasets.PUT("/:dataset_id/artifacts/:page_type/*slug", r.datasetArtifactHandler.UpdateArtifact)
 				datasets.GET("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.ListStructures)
-				datasets.DELETE("/:dataset_id/artifacts/structure", r.datasetArtifactHandler.DeleteStructures)
 
 				// Knowledge-compilation navigation
 				datasets.GET("/:dataset_id/navigation", r.datasetArtifactHandler.ListNavigation)
-				datasets.DELETE("/:dataset_id/navigation", r.datasetArtifactHandler.DeleteNavigation)
-				datasets.DELETE("/:dataset_id/navigation/:name", r.datasetArtifactHandler.DeleteNavigationNode)
 				datasets.GET("/:dataset_id/navigation/:name/children", r.datasetArtifactHandler.ListNavigationChildren)
 
 				// Knowledge-compilation skills
@@ -394,6 +374,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				// Dataset ingestion logs
 				datasets.GET("/:dataset_id/ingestions/summary", r.datasetsHandler.GetIngestionSummary)
 				datasets.GET("/:dataset_id/ingestions", r.datasetsHandler.ListIngestionLogs)
+				datasets.GET("/:dataset_id/ingestions/:log_id/messages", r.datasetsHandler.ListIngestionMessages)
 				datasets.GET("/:dataset_id/ingestions/:log_id", r.datasetsHandler.GetIngestionLog)
 
 				// Metadata Config
@@ -424,6 +405,7 @@ func (r *Router) Setup(engine *gin.Engine) {
 				datasets.DELETE("/:dataset_id/documents/:document_id/chunks", r.chunkHandler.RemoveChunks)
 				datasets.PUT("/:dataset_id/documents/:document_id/metadata/config", r.datasetsHandler.UpdateDocumentMetadataConfig)
 				datasets.GET("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.GetDocumentGraph)
+				datasets.GET("/:dataset_id/documents/:document_id/structure/claims", r.datasetArtifactHandler.GetDocumentClaims)
 				datasets.DELETE("/:dataset_id/documents/:document_id/structure/graph", r.datasetArtifactHandler.DeleteDocumentGraph)
 				datasets.POST("/:dataset_id/metadata/update", r.documentHandler.MetadataBatchUpdate)
 				datasets.PATCH("/:dataset_id/documents/metadatas", r.documentHandler.UpdateDocumentMetadatas)
@@ -437,7 +419,6 @@ func (r *Router) Setup(engine *gin.Engine) {
 				searches.GET("/:search_id", r.searchHandler.GetSearch)
 				searches.PUT("/:search_id", r.searchHandler.UpdateSearch)
 				searches.DELETE("/:search_id", r.searchHandler.DeleteSearch)
-				searches.POST("/:search_id/completion", r.searchHandler.Completion)
 				searches.POST("/:search_id/completions", r.searchHandler.Completion)
 			}
 
@@ -451,15 +432,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 				files.GET("/:id/ancestors", r.fileHandler.GetFileAncestors)
 				files.GET("/:id/parent", r.fileHandler.GetParentFolder)
 				files.GET("/:id", r.fileHandler.Download)
-				files.GET("/:id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
-			// File routes
-			file := authorized.Group("/v1/file")
+			workspaceFiles := v1.Group("/workspace-files")
 			{
-				file.GET("/root_folder", r.fileHandler.GetRootFolder)
-				file.GET("/parent_folder", r.fileHandler.GetParentFolder)
-				file.GET("/all_parent_folder", r.fileHandler.GetAllParentFolders)
+				workspaceFiles.GET("/:file_id/versions", r.fileCommitHandler.GetFileVersionHistory)
 			}
 
 			// File commit routes — /folders/ takes folder_id directly
@@ -475,17 +452,17 @@ func (r *Router) Setup(engine *gin.Engine) {
 				commitFolders.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
-			// /workspace/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
-			commitWorkspace := v1.Group("/workspace")
+			// /workspaces/{workspace_id}/commits — alias for /folders/ (workspace_id == folder_id)
+			commitWorkspaces := v1.Group("/workspaces")
 			{
-				commitWorkspace.POST("/:folder_id/commits", r.fileCommitHandler.CreateCommit)
-				commitWorkspace.GET("/:folder_id/commits", r.fileCommitHandler.ListCommits)
-				commitWorkspace.GET("/:folder_id/commits/diff", r.fileCommitHandler.DiffCommits)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
-				commitWorkspace.GET("/:folder_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
-				commitWorkspace.GET("/:folder_id/changes", r.fileCommitHandler.GetUncommittedChanges)
+				commitWorkspaces.POST("/:workspace_id/commits", r.fileCommitHandler.CreateCommit)
+				commitWorkspaces.GET("/:workspace_id/commits", r.fileCommitHandler.ListCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/diff", r.fileCommitHandler.DiffCommits)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id", r.fileCommitHandler.GetCommit)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files", r.fileCommitHandler.ListCommitFiles)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/tree", r.fileCommitHandler.GetCommitTree)
+				commitWorkspaces.GET("/:workspace_id/commits/:commit_id/files/:file_id/content", r.fileCommitHandler.GetCommitFileContent)
+				commitWorkspaces.GET("/:workspace_id/changes", r.fileCommitHandler.GetUncommittedChanges)
 			}
 
 			// /datasets/{dataset_id}/commits — resolve dataset_id → folder_id via middleware
@@ -569,13 +546,18 @@ func (r *Router) Setup(engine *gin.Engine) {
 				provider.PATCH("/:provider_id_or_name/instances/:instance_id_or_name/models/*model_name", r.providerHandler.AlterModel)
 				provider.POST("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.AddModel)
 				provider.DELETE("/:provider_id_or_name/instances/:instance_id_or_name/models", r.providerHandler.DropInstanceModels)
-				v1.POST("/chat/to_model", r.providerHandler.ChatToModel)
-				v1.POST("/embeddings", r.providerHandler.EmbedText)
-				v1.POST("/rerank", r.providerHandler.RerankDocument)
-				v1.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
-				v1.POST("/audio/speech", r.providerHandler.AudioSpeech)
-				v1.POST("/file/ocr", r.providerHandler.OCRFile)
-				v1.POST("/file/parse", r.providerHandler.ParseFile)
+			}
+
+			// command is for CLI
+			command := v1
+			{
+				command.POST("/chat/to_model", r.providerHandler.ChatToModel)
+				command.POST("/embeddings", r.providerHandler.EmbedText)
+				command.POST("/rerank", r.providerHandler.RerankDocument)
+				command.POST("/audio/transcriptions", r.providerHandler.TranscribeAudio)
+				command.POST("/audio/speech", r.providerHandler.AudioSpeech)
+				command.POST("/file/ocr", r.providerHandler.OCRFile)
+				command.POST("/file/parse", r.providerHandler.ParseFile)
 			}
 
 			model := v1.Group("/models")
@@ -694,22 +676,15 @@ func (r *Router) Setup(engine *gin.Engine) {
 					// delete key /api/v1/system/keys/:key DELETE
 					keys.DELETE("/:key", r.systemHandler.DeleteKey)
 				}
-			}
 
-			// Document routes
-			doc := v1.Group("/document")
-			{
-				doc.POST("/list", r.documentHandler.ListDocuments)
-				doc.POST("/metadata/summary", r.documentHandler.MetadataSummary)
-				doc.POST("/set_meta", r.documentHandler.SetMeta)
-				doc.POST("/delete_meta", r.documentHandler.DeleteMeta) // Internal API only for GO
-			}
+				system.GET("/hardware", r.systemHandler.GetHardwareInfo)
 
-			// Chunk routes
-			chunk := v1.Group("/chunk")
-			{
-				chunk.POST("/list", r.chunkHandler.List)
-				chunk.POST("/update", r.chunkHandler.UpdateChunk) // Internal API only for GO
+				system.GET("/cores", r.systemHandler.GetCores)
+				system.PUT("/cores", r.systemHandler.SetCores)
+				system.GET("/memory", r.systemHandler.GetMemory)
+				system.PUT("/memory", r.systemHandler.SetMemory)
+				system.GET("/concurrency", r.systemHandler.GetConcurrency)
+				system.PUT("/concurrency", r.systemHandler.SetConcurrency)
 			}
 
 			// Chat Channel

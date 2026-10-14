@@ -37,7 +37,7 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err := db.AutoMigrate(&entity.API4Conversation{}); err != nil {
+	if err := db.AutoMigrate(&entity.API4Conversation{}, &entity.API4ConversationMessage{}, &entity.API4ConversationReference{}); err != nil {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
@@ -47,13 +47,13 @@ func setupAPI4ConversationTestDB(t *testing.T) *gorm.DB {
 func createAPI4ConversationForDAOTest(t *testing.T, id, agentID string) {
 	t.Helper()
 	ctx := t.Context()
-	if err := DB.WithContext(ctx).Create(&entity.API4Conversation{
+	if err := NewAPI4ConversationDAO().Create(ctx, DB, &entity.API4Conversation{
 		ID:        id,
 		DialogID:  agentID,
 		UserID:    "user-1",
 		Message:   json.RawMessage(`[]`),
 		Reference: json.RawMessage(`[]`),
-	}).Error; err != nil {
+	}); err != nil {
 		t.Fatalf("failed to create api conversation %s: %v", id, err)
 	}
 }

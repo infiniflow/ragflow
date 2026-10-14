@@ -22,6 +22,7 @@ import {
   type IArtifactGraphEntity,
 } from '@/interfaces/database/dataset';
 import {
+  type IClaimEvidence,
   type IStructureGraphTemplate,
   type StructureTemplateKind,
 } from '@/interfaces/database/document-structure';
@@ -40,6 +41,13 @@ export interface ClickableNode {
   id: string;
   name?: string;
   source_chunk_ids?: string[];
+  /** Tree leaves only: whether this node has child clusters. */
+  hasChildren?: boolean;
+  /** Leaf claim badge (tree slot). 0/undefined ⇒ nothing for the claims panel. */
+  badge?: React.ReactNode;
+  /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
+  description?: string;
+  evidence?: IClaimEvidence[];
 }
 
 const EmptyForceGraphData: IArtifactGraph = { entities: [], relations: [] };
@@ -79,6 +87,12 @@ export function RepresentationRenderer({
           id: item.id,
           name: item.name,
           source_chunk_ids: item.source_chunk_ids,
+          // Tree leaves are where the claims UI attaches; branches are pure
+          // structure and clicking them keeps the old behaviour.
+          hasChildren: !!item.children?.length,
+          badge: item.badge,
+          description: item.description,
+          evidence: item.evidence,
         });
       }
     },

@@ -37,10 +37,10 @@ func (f *scopeRecordingNav) Search(_ context.Context, _, _ string, _ string, _ [
 	f.scope = append([]string(nil), docScope...)
 	return f.hits, nil
 }
-func (f *scopeRecordingNav) ListClusters(context.Context, string, string, int, int) ([]NavNode, int64, error) {
+func (f *scopeRecordingNav) ListClusters(context.Context, string, string, string, int, int) ([]NavNode, int64, error) {
 	return nil, 0, nil
 }
-func (f *scopeRecordingNav) ListChildren(context.Context, string, string, string, int, int) ([]NavNode, int64, error) {
+func (f *scopeRecordingNav) ListChildren(context.Context, string, string, string, string, int, int) ([]NavNode, int64, error) {
 	return nil, 0, nil
 }
 func (f *scopeRecordingNav) SummariesByDocIDs(context.Context, string, string, []string) map[string]string {

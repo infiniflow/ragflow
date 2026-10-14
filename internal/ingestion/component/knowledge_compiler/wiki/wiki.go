@@ -23,6 +23,7 @@ import (
 	appcommon "ragflow/internal/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/knowledge_compiler/structure"
+	"ragflow/internal/ingestion/component/progress"
 
 	"go.uber.org/zap"
 )
@@ -293,6 +294,7 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 			return common.Outputs{}, err
 		}
 	}
+	deps.Progress.Sub(4, 6).Report(ctx, 1)
 	store := common.NewMemStore()
 	decider := structure.CosineDecider{Threshold: param.SimilarityThreshold}
 	stats := structure.MergeStats{}
@@ -380,6 +382,7 @@ func (p *wikiPipeline) run() error {
 		zap.Strings("claims", extractClaimDebug(p.mapExtracts)),
 		zap.Strings("relations", extractRelationDebug(p.mapExtracts)))
 	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Started: input_entities=%d input_concepts=%d input_claims=%d input_relations=%d", countExtractEntities(p.mapExtracts), countExtractConcepts(p.mapExtracts), countExtractClaims(p.mapExtracts), countExtractRelations(p.mapExtracts)))
+	p.deps.Progress.Sub(0, 6).Report(p.ctx, 1)
 	reduced := reduceExtracts(p.mapExtracts)
 	p.reduced = reduced
 	appcommon.Debug("wiki: REDUCE exact done",
@@ -395,6 +398,7 @@ func (p *wikiPipeline) run() error {
 		zap.Int("entities", len(p.reduced.Entities)),
 		zap.Int("claims", len(p.reduced.Claims)))
 	runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REDUCE Done: output_entities=%d output_concepts=%d output_claims=%d output_relations=%d", len(p.reduced.Entities), len(p.reduced.Concepts), len(p.reduced.Claims), len(p.reduced.Relations)))
+	p.deps.Progress.Sub(1, 6).Report(p.ctx, 1)
 	// PLAN uses the same topic-assignment path in both modes. Entity mode keeps
 	// one identity per page, while topic mode may merge related identities in
 	// the planner before assigning the resulting pages to MAP topics.
@@ -406,6 +410,7 @@ func (p *wikiPipeline) run() error {
 		return err
 	}
 	appcommon.Info("wiki: PLAN done", zap.String("dataset_id", p.datasetID), zap.String("doc_id", p.runKey()), zap.String("mode", p.wikiMode()), zap.Int("plan_pages", len(plan.Pages)))
+	p.deps.Progress.Sub(2, 6).Report(p.ctx, 1)
 	p.plan = plan
 	p.selectAffectedPages(plan.Pages)
 	appcommon.Info("wiki: PLAN done",
@@ -427,6 +432,7 @@ func (p *wikiPipeline) run() error {
 	if err != nil {
 		return err
 	}
+	p.deps.Progress.Sub(3, 6).Report(p.ctx, 1)
 	p.pages = pages
 	activeState, err := p.buildActiveMapState(plan.Pages)
 	if err != nil {
@@ -648,7 +654,7 @@ func (p *wikiPipeline) runMap() error {
 	// extraction payload; oversize batches caused truncated, unparseable JSON
 	// (unexpected end of JSON input) on the real pipeline.
 	batches := common.PackBatches(p.inputs.Chunks, wikiMapTokenBudget, p.deps.Tokenizer)
-	extracts, err := runMapBatches(p.ctx, batches, p.mapBatch)
+	extracts, err := runMapBatches(p.ctx, batches, p.deps.Progress.Sub(0, 6), p.mapBatch)
 	if err != nil {
 		return err
 	}
@@ -669,12 +675,14 @@ func (p *wikiPipeline) wikiMode() string {
 func runMapBatches(
 	ctx context.Context,
 	batches [][]common.Chunk,
+	window progress.Window,
 	mapBatch func([]common.Chunk) (wikiExtract, error),
 ) ([]wikiExtract, error) {
 	if len(batches) == 0 {
 		return nil, nil
 	}
 	extracts := make([]wikiExtract, len(batches))
+	completed := window.Counter(ctx, len(batches))
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
@@ -688,6 +696,7 @@ func runMapBatches(
 			}
 			// Distinct slice index per batch keeps results stable without locks.
 			extracts[i] = extract
+			completed()
 			return nil
 		})
 	}
@@ -714,10 +723,106 @@ func (p *wikiPipeline) mapBatch(batch []common.Chunk) (wikiExtract, error) {
 }
 
 func (p *wikiPipeline) runPlan() (wikiPlan, error) {
+	if p.wikiMode() == "entity" {
+		return p.runEntityPlan()
+	}
 	if p.wikiMode() == "topic" && p.deps.Embed != nil {
 		return p.runTopicPlan()
 	}
 	return p.runLegacyPlan()
+}
+
+// runEntityPlan builds one page for every reduced entity or concept. Entity
+// mode already has a canonical identity from MAP/REDUCE, so a PLAN LLM call
+// would only repeat fields that the compiler can derive deterministically.
+func (p *wikiPipeline) runEntityPlan() (wikiPlan, error) {
+	if err := p.ctx.Err(); err != nil {
+		return wikiPlan{}, err
+	}
+
+	plan := wikiPlan{Pages: buildWikiEntityPlanPages(p.reduced)}
+	plan.Pages = assembleWikiPlanRelatedPages(plan.Pages, p.reduced.Relations)
+	plan.Pages = normalizeWikiPlanPages(plan.Pages, p.reduced)
+	plan.Pages = normalizeWikiPlanPageLinks(plan.Pages)
+	reconciled, err := p.reconcilePlan(plan)
+	if err != nil {
+		return wikiPlan{}, err
+	}
+	reconciled.Pages = normalizeWikiPlanPageLinks(reconciled.Pages)
+	return reconciled, nil
+}
+
+// buildWikiEntityPlanPages projects MAP/REDUCE identities into deterministic
+// page metadata. Topic assignment uses source-chunk overlap with MAP topics;
+// the page itself remains one-to-one with the extracted entity or concept.
+func buildWikiEntityPlanPages(reduced wikiExtract) []wikiPlanPage {
+	pages := make([]wikiPlanPage, 0, len(reduced.Entities)+len(reduced.Concepts))
+	for _, entity := range reduced.Entities {
+		name := strings.TrimSpace(entity.Name)
+		if name == "" {
+			continue
+		}
+		pages = append(pages, wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        entityPageSlug(name, entity.Type),
+			Title:       name,
+			PageType:    "entity",
+			Topic:       selectWikiIdentityTopic(name, "entity", sourceChunkIDsForWikiIdentity(name, entity.SourceChunkIDs, reduced.Claims), reduced.Topics),
+			EntityNames: uniqueStrings(append([]string{name}, entity.Aliases...)),
+			Priority:    len(pages) + 1,
+		})
+	}
+	for _, concept := range reduced.Concepts {
+		term := strings.TrimSpace(concept.Term)
+		if term == "" {
+			continue
+		}
+		pages = append(pages, wikiPlanPage{
+			Action:      "CREATE",
+			Slug:        "concept/" + slugify(term),
+			Title:       term,
+			PageType:    "concept",
+			Topic:       selectWikiIdentityTopic(term, "concept", sourceChunkIDsForWikiIdentity(term, concept.SourceChunkIDs, reduced.Claims), reduced.Topics),
+			EntityNames: []string{term},
+			Priority:    len(pages) + 1,
+		})
+	}
+	return pages
+}
+
+func sourceChunkIDsForWikiIdentity(name string, sourceChunkIDs []string, claims []wikiClaim) []string {
+	ids := append([]string(nil), sourceChunkIDs...)
+	for _, claim := range claims {
+		if normKey(claim.Subject) == normKey(name) {
+			ids = append(ids, claim.SourceChunkIDs...)
+		}
+	}
+	return uniqueStrings(ids)
+}
+
+func selectWikiIdentityTopic(name, pageType string, sourceChunkIDs []string, topics []wikiTopic) string {
+	identityChunks := normalizedStringSet(sourceChunkIDs)
+	bestPath := ""
+	bestOverlap := 0
+	for _, topic := range topics {
+		path := common.NormalizeWikiTopicPath(topic.Path)
+		if path == "" || (pageType != "topic" && normKey(common.WikiTopicLeaf(path)) == normKey(name)) {
+			continue
+		}
+		overlap := normalizedOverlapCount(identityChunks, topic.SourceChunkIDs)
+		if overlap == 0 || overlap < bestOverlap {
+			continue
+		}
+		if overlap == bestOverlap && bestPath != "" && normKey(path) >= normKey(bestPath) {
+			continue
+		}
+		bestPath = path
+		bestOverlap = overlap
+	}
+	if bestPath == "" {
+		return common.GeneralWikiTopic
+	}
+	return bestPath
 }
 
 func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
@@ -743,6 +848,7 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 	// can never leak back into the plan via buildWikiFallbackPages.
 	approved := wikiExtract{}
 	plans := make([]wikiPlan, len(batches))
+	var planDone func()
 	jobs := make([]func() error, 0, len(batches))
 	for i, batch := range batches {
 		i, batch := i, batch
@@ -768,9 +874,11 @@ func (p *wikiPipeline) runLegacyPlan() (wikiPlan, error) {
 			}
 			// Distinct slice index keeps results stable without locks.
 			plans[i] = plan
+			planDone()
 			return nil
 		})
 	}
+	planDone = p.deps.Progress.Sub(2, 6).Counter(p.ctx, len(jobs))
 	if err := runBatches(p.ctx, jobs); err != nil {
 		return wikiPlan{}, err
 	}
@@ -847,6 +955,7 @@ func (p *wikiPipeline) runRefine() ([]wikiPageResult, error) {
 			results[i] = res
 			progressMu.Lock()
 			completed++
+			p.deps.Progress.Sub(3, 6).Report(p.ctx, float64(completed)/float64(len(pages)))
 			if shouldReportRefineProgress(completed, len(pages)) {
 				runtime.ReportProgressMessage(p.ctx, "Compiler", fmt.Sprintf("Wiki REFINE Progress: completed_pages=%d total_pages=%d", completed, len(pages)))
 			}
@@ -949,10 +1058,6 @@ func (p *wikiPipeline) runRefinePage(
 	// full-slug is linked once, only if not already present in Outlinks.
 	contentRendered, outlinks = appendWikiSeeAlso(contentRendered, outlinks, planItem.RelatedKB, p.datasetID, pageTitles, slugToPageType)
 	sourceDocIDs := collectWikiSourceDocIDs(p.inputs.Chunks, sourceChunkIDs, p.docID)
-	summary := firstParagraph(contentRendered)
-	if summary == "" {
-		summary = firstNonEmpty(planItem.Title, planItem.Slug)
-	}
 	topic := firstNonEmpty(planItem.Topic, planItem.Title, planItem.Slug)
 	return wikiPageResult{
 		Slug:           planItem.Slug,
@@ -964,7 +1069,6 @@ func (p *wikiPipeline) runRefinePage(
 		RelatedKBPages: uniqueStrings(planItem.RelatedKB),
 		ContentRaw:     contentRaw,
 		Content:        contentRendered,
-		Summary:        summary,
 		Outlinks:       outlinks,
 		SourceChunkIDs: sourceChunkIDs,
 		SourceDocIDs:   sourceDocIDs,

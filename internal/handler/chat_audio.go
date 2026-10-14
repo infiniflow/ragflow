@@ -30,8 +30,8 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/service"
 )
 
 const (
@@ -68,17 +68,21 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "TTS service not available")
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeTTS)
+	ttsModel, err := h.modelFactory.NewDefaultTTSModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
 	}
 
+	modelName, providerName := "", ""
+	if info := ttsModel.Info(); info != nil {
+		modelName, providerName = info.Name, info.ProviderName
+	}
 	writeAudioHeaders := func(mediaType string) {
 		c.Header("Content-Type", mediaType)
 		c.Header("Cache-Control", "no-cache")
@@ -98,13 +102,17 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 	// a single WAV before being written.
 	var wavFmt *wavFormat
 	var wavPCM []byte
+	var firstSynthErr error
 	for i, seg := range segments {
 		seg = strings.TrimSpace(seg)
 		if seg == "" {
 			continue
 		}
-		resp, err := driver.AudioSpeech(ctx, &modelName, &seg, apiConfig, &modelModule.TTSConfig{Format: "mp3"}, nil)
+		resp, err := ttsModel.Speech(ctx, &seg, &modelModule.TTSConfig{Format: "mp3"}, nil)
 		if err != nil {
+			if firstSynthErr == nil {
+				firstSynthErr = err
+			}
 			common.Warn("chat TTS synthesis failed",
 				zap.Int("segmentIndex", i),
 				zap.Int("segmentLen", len(seg)),
@@ -165,7 +173,13 @@ func (h *ChatHandler) ChatAudioSpeech(c *gin.Context) {
 		c.Writer.Flush()
 	}
 	if !headerWritten {
-		common.ErrorWithCode(c, common.CodeServerError, "TTS synthesis produced no audio")
+		if firstSynthErr != nil {
+			common.ErrorWithCode(c, common.CodeServerError,
+				fmt.Sprintf("TTS synthesis failed for model %s (%s)", modelName, providerName))
+			return
+		}
+		common.ErrorWithCode(c, common.CodeServerError,
+			fmt.Sprintf("TTS synthesis produced no audio for model %s (%s)", modelName, providerName))
 	}
 }
 
@@ -203,7 +217,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	if h.llm == nil {
+	if h.modelFactory == nil {
 		common.ErrorWithCode(c, common.CodeServerError, "ASR service not available")
 		return
 	}
@@ -254,7 +268,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	driver, modelName, apiConfig, _, err := h.llm.GetTenantDefaultModelByType(ctx, user.ID, entity.ModelTypeSpeech2Text)
+	asrModel, err := h.modelFactory.NewDefaultASRModel(ctx, service.ModelAccess{UserID: user.ID, TenantID: user.ID})
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeDataError, err.Error())
 		return
@@ -262,7 +276,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 
 	streamMode := strings.ToLower(c.PostForm("stream")) == "true"
 	if streamMode {
-		disableWriteDeadlineForSSE(c)
+		clearResponseWriteDeadline(c)
 		c.Header("Content-Type", "text/event-stream")
 		c.Header("Cache-Control", "no-cache")
 		c.Header("Connection", "keep-alive")
@@ -289,7 +303,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 			return nil
 		}
 
-		if err = driver.TranscribeAudioWithSender(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil, sender); err != nil {
+		if err = asrModel.TranscribeWithSender(ctx, &tmpPath, &modelModule.ASRConfig{}, nil, sender); err != nil {
 			errEvent := map[string]interface{}{"event": "error", "text": err.Error()}
 			data, _ := json.Marshal(errEvent)
 			_, _ = c.Writer.WriteString(fmt.Sprintf("data: %s\n\n", data))
@@ -307,7 +321,7 @@ func (h *ChatHandler) ChatAudioTranscription(c *gin.Context) {
 		return
 	}
 
-	resp, err := driver.TranscribeAudio(ctx, &modelName, &tmpPath, apiConfig, &modelModule.ASRConfig{}, nil)
+	resp, err := asrModel.Transcribe(ctx, &tmpPath, &modelModule.ASRConfig{}, nil)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return

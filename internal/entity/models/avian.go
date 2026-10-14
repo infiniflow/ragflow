@@ -39,7 +39,7 @@ func NewAvianModel(baseURL map[string]string, urlSuffix URLSuffix) *AvianModel {
 		baseModel: BaseModel{
 			BaseURL:    baseURL,
 			URLSuffix:  urlSuffix,
-			httpClient: NewDriverHTTPClient(false),
+			httpClient: common.GetSSRFHTTPClient(),
 		},
 	}
 }
@@ -83,7 +83,7 @@ func (a *AvianModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, err
 	}
 
-	return HandleNonStreamingResponse(body, modelUsage, chatModelConfig, OpenAIParserConfig)
+	return HandleNonStreamingResponse(ctx, body, modelUsage, chatModelConfig, OpenAIParserConfig)
 }
 
 func (a *AvianModel) ChatStreamlyWithSender(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage, sender func(*string, *string) error) error {

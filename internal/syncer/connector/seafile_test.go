@@ -231,9 +231,9 @@ func seafileValidationServer(t *testing.T) *httptest.Server {
 func TestSeaFileValidateAccountToken(t *testing.T) {
 	server := seafileValidationServer(t)
 	defer server.Close()
-	orig := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = orig }()
 
 	connector := seafileTestConnector(t, map[string]any{
 		"seafile_url": server.URL,
@@ -251,9 +251,9 @@ func TestSeaFileValidateAccountToken(t *testing.T) {
 func TestSeaFileValidateConnectorSettingUsesRequestUsernamePassword(t *testing.T) {
 	server := seafileValidationServer(t)
 	defer server.Close()
-	orig := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = orig }()
 
 	receiver := seafileTestConnector(t, map[string]any{
 		"seafile_url": server.URL,
@@ -275,9 +275,9 @@ func TestSeaFileValidateConnectorSettingUsesRequestUsernamePassword(t *testing.T
 func TestSeaFileValidateRepoToken(t *testing.T) {
 	server := seafileValidationServer(t)
 	defer server.Close()
-	orig := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = orig }()
 
 	connector := seafileTestConnector(t, map[string]any{
 		"seafile_url": server.URL,
@@ -292,9 +292,9 @@ func TestSeaFileValidateRepoToken(t *testing.T) {
 }
 
 func TestSeaFileDefaultListLibrariesFiltersShared(t *testing.T) {
-	orig := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = orig }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api2/repos/" || r.Header.Get("Authorization") != "Token token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -687,9 +687,9 @@ func TestSeaFileRegistryOpen(t *testing.T) {
 }
 
 func TestSeaFileDirentWrapperAndDownloadLinkDecode(t *testing.T) {
-	orig := restAPISSRFAllowLoopback
-	restAPISSRFAllowLoopback = true
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	connectorAllowLoopbackForTest = true
+	defer func() { connectorAllowLoopbackForTest = orig }()
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
@@ -741,10 +741,10 @@ func TestSeaFileDirentWrapperAndDownloadLinkDecode(t *testing.T) {
 }
 
 func TestSeaFileAssertURLSafe(t *testing.T) {
-	orig := restAPISSRFAllowLoopback
-	defer func() { restAPISSRFAllowLoopback = orig }()
+	orig := connectorAllowLoopbackForTest
+	defer func() { connectorAllowLoopbackForTest = orig }()
 
-	restAPISSRFAllowLoopback = false
+	connectorAllowLoopbackForTest = false
 	if _, _, err := seafileAssertURLSafe(context.Background(), "ftp://example.com"); err == nil {
 		t.Fatalf("expected scheme rejection")
 	}
@@ -758,7 +758,7 @@ func TestSeaFileAssertURLSafe(t *testing.T) {
 		t.Fatalf("expected loopback rejection")
 	}
 
-	restAPISSRFAllowLoopback = true
+	connectorAllowLoopbackForTest = true
 	hostname, pinIP, err := seafileAssertURLSafe(context.Background(), "http://127.0.0.1:8080/seafile")
 	if err != nil {
 		t.Fatalf("loopback should be allowed: %v", err)

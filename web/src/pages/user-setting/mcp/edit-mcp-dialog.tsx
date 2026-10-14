@@ -43,6 +43,7 @@ import {
   useBuildFormSchema,
 } from './edit-mcp-form';
 import { McpToolCard } from './tool-card';
+import { connectionFields, TokenMask } from './mcp-connection';
 
 function transferToolToArray(tools: IMCPToolObject) {
   return Object.entries(tools).reduce<IMCPTool[]>((pre, [name, tool]) => {
@@ -57,10 +58,6 @@ const DefaultValues = {
   url: '',
   authorization_token: '',
 };
-
-// Mask shown in the token field when editing an existing server that already
-// has a token, so the user knows a secret is stored without exposing it.
-const TokenMask = '********';
 
 export function EditMcpDialog({
   hideModal,
@@ -103,21 +100,15 @@ export function EditMcpDialog({
   }, []);
 
   const handleOk = async (values: z.infer<typeof FormSchema>) => {
-    // When the field still holds the mask, the user did not change the token;
-    // send the previously stored token so it is not overwritten with empty.
-    const token =
-      values.authorization_token === TokenMask
-        ? data.variables?.authorization_token
-        : values.authorization_token;
+    // A masked token is preserved by the backend when editing a saved server.
     const nextValues = {
       ...omit(values, 'authorization_token'),
-      variables: { authorization_token: token },
-      headers: { Authorization: 'Bearer ${authorization_token}' },
+      ...connectionFields(values.authorization_token, data),
     };
     if (isTriggeredBySaving) {
       onOk?.(nextValues);
     } else {
-      const ret = await testMcpServer(nextValues);
+      const ret = await testMcpServer({ ...nextValues, mcp_id: id });
       if (ret.code === 0) {
         setFieldChanged(false);
       }

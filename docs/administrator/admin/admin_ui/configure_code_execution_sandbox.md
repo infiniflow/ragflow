@@ -14,8 +14,7 @@ The current page supports the following `Provider` options:
 
 | Provider | Description |
 | --- | --- |
-| `Local` | Execute code directly in the current host process. |
-| `Self-Managed` | Use Daytona or Docker for localized deployment. |
+| `Self-Managed` | Connect to the external [Sandbox executor manager](https://github.com/infiniflow/sandbox). |
 | `SSH` | Execute code on a remote machine through SSH. |
 | `AliyunCodeInterpreter` | Use Alibaba Cloud Function Compute Code Interpreter. |
 | `E2B` | Use E2B Cloud Code Execution Sandboxes. |
@@ -23,13 +22,10 @@ The current page supports the following `Provider` options:
 
 After selecting a `Provider`, the page displays the corresponding configuration area.
 
-![Select Sandbox Provider](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/select_sandbox_provider.jpg)
-
-**Caution:** Sandbox configuration affects not only connection availability, but also code isolation, network access, file access, and runtime resource limits. In production environments, prefer `Self-Managed`, cloud, or independent remote execution solutions with isolation capabilities. Direct use of `Local` is not recommended.
+**Caution:** Sandbox configuration affects not only connection availability, but also code isolation, network access, file access, and runtime resource limits. In production environments, use `Self-Managed`, cloud, or independent remote execution solutions with isolation capabilities.
 
 | Provider | Applicable scenario | Main characteristics | Recommendation |
 | --- | --- | --- | --- |
-| `Local` | Local development and functional debugging | Runs code directly on the current host and is easy to configure. | Recommended only for controlled development and test environments. |
 | `Self-Managed` | Enterprise intranet and private deployment | Uses a self-managed sandbox service to execute code. Data and runtime environments can be controlled independently. | Suitable for production environments and scenarios with high data security requirements. |
 | `SSH` | Existing independent execution servers | Executes code on a remote host through SSH. | Suitable for reusing existing servers or custom runtime environments. |
 | `AliyunCodeInterpreter` | Alibaba Cloud-related services | Uses a cloud service to provide the code execution environment, making elastic scaling easier. | Suitable for organizations already using the corresponding cloud service. |
@@ -39,28 +35,6 @@ After selecting a `Provider`, the page displays the corresponding configuration 
 ## Test and Save Configuration
 
 When configuring a sandbox, first fill in the connection information and runtime parameters required by the selected `Provider`, then use **Test connection** to verify availability. After the test succeeds, click **Save**.
-
-## Local Runtime Configuration
-
-`Local configuration` configures the local code execution environment. The system uses the following configuration when executing code tasks such as Python and Node.js.
-
-1. Go to **Local Configuration**.
-2. Configure each parameter according to the actual runtime environment.
-3. Click **Test connection** to test whether the configuration is correct.
-4. After the test succeeds, click **Save**.
-
-| Parameter | Description | Recommendation |
-| --- | --- | --- |
-| `Working Directory` | Working directory used during code execution, for temporary files generated during runtime. | Keep the default, or configure a local directory with read and write permissions. |
-| `Python Binary` | Python executable name or path. | Usually `python3`. If using a virtual environment, enter the full Python path. |
-| `Node.js Binary` | Node.js executable name or path. | Usually `node`. If installed elsewhere, enter the full path. |
-| `Max Artifact Size (bytes)` | Maximum allowed size for a single generated file. | Configure according to business needs. The default usually satisfies common use. |
-| `Max Artifacts` | Maximum number of files allowed in one run. | Keep the default to avoid generating too many temporary files. |
-| `Max Memory (MB)` | Maximum memory available to a single code run. | Configure according to server resources. Increase it when resources are sufficient. |
-| `Max Output (bytes)` | Maximum length of console output. | Keep the default to avoid oversized output. |
-| `Timeout (seconds)` | Maximum runtime for a single code execution. | Set according to the business scenario. The task is terminated automatically after timeout. |
-
-If Python or Node.js is not installed, or the executable path is wrong, the connection test fails.
 
 ## Self-Managed Configuration
 
@@ -74,15 +48,16 @@ If Python or Node.js is not installed, or the executable path is wrong, the conn
 | Parameter | Description | Recommendation |
 | --- | --- | --- |
 | `Executor Manager Endpoint` | Access address of the `SandboxExecutorManager` service. | Enter the HTTP address of the code execution service, such as `http://sandbox-executor-manager:9385` or `http://<SERVER_IP>:9385`. Make sure RAGFlow can access this address. |
+| `Executor Manager API Token` | Shared secret authenticating RAGFlow to the executor manager. | Set the same strong token on the service; a blank field falls back to `SANDBOX_EXECUTOR_MANAGER_API_TOKEN`. |
 | `Request Timeout (seconds)` | Timeout for requests to the code execution service. | Configure according to the network environment and code execution duration. The default 30 seconds is sufficient for most cases; increase it for large tasks. |
 
 `Executor Manager Endpoint` must be the address of a deployed and normally running `SandboxExecutorManager` service.
 
-`Deployment Defaults` displays the current default deployment parameters of `SandboxExecutorManager`.
+The standalone Sandbox repository owns runtime images, pool sizing, isolation, and execution limits. RAGFlow's optional Compose profile runs a published image; it does not build it. Admin settings do not reconfigure or report the state of an independently hosted service. See [Sandbox quickstart](../../configurations/sandbox_quickstart.md).
 
 ## SSH Configuration
 
-`SSH` configuration connects to a remote Linux host and executes Python, Node.js, and other code tasks on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
+`SSH` configuration connects to a remote Linux host and executes Python or Node.js code on the remote server. After configuration, the system logs in to the specified server through SSH and executes code in the remote working directory.
 
 1. Go to **System management > Model service > SSH Configuration**.
 2. Fill in the remote server connection information.
@@ -120,7 +95,7 @@ The system supports `Password` and `PrivateKey` authentication.
 | `Max Output Bytes` | Maximum size of console output. | Keep the default. Output exceeding the limit is truncated. |
 | `Timeout (seconds)` | Maximum runtime for a single code execution. | The default is 30 seconds. Increase it when execution takes longer. |
 
-Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute Python, Node.js, and other runtime environments. When using private-key authentication, make sure the private key matches the server configuration.
+Make sure the remote server has SSH enabled and allows the current user to log in. The configured user must have read and write permissions on the remote working directory and be able to execute the configured Python and Node.js binaries. When using private-key authentication, make sure the private key matches the server configuration.
 
 ## Alibaba Cloud CodeInterpreter Configuration
 

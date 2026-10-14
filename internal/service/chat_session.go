@@ -25,9 +25,7 @@ import (
 	"math"
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
-	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/storage"
-	"ragflow/internal/utility"
 	"strconv"
 	"strings"
 	"time"
@@ -37,6 +35,8 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
 )
 
 // Interfaces for testability — satisfied by the concrete DAO/pipeline types.
@@ -47,21 +47,18 @@ type chatSessionStore interface {
 	Create(ctx context.Context, db *gorm.DB, conv *entity.ChatSession) error
 	UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error
 	DeleteByID(ctx context.Context, db *gorm.DB, id string) error
-	ListByChatID(ctx context.Context, db *gorm.DB, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) ([]*entity.ChatSession, error)
+	ListByResourceIDs(ctx context.Context, db *gorm.DB, chatID string, sessionIDs []string, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) ([]*entity.ChatSession, error)
 	GetDialogByID(ctx context.Context, db *gorm.DB, chatID string) (*entity.Chat, error)
-	CheckDialogExists(ctx context.Context, db *gorm.DB, tenantID, chatID string) (bool, error)
-}
-
-type userTenantStore interface {
-	GetTenantIDsByUserID(ctx context.Context, db *gorm.DB, userID string) ([]string, error)
 }
 
 type chatPipelineRunner interface {
 	AsyncChat(ctx context.Context, userID string, chat *entity.Chat, messages []map[string]interface{}, stream bool, kwargs map[string]interface{}) (<-chan AsyncChatResult, error)
 }
 
-type chatModelConfigResolver interface {
-	GetChatModelConfig(ctx context.Context, tenantID, llmID string) (modelModule.ModelDriver, string, *modelModule.APIConfig, int, error)
+type chatModelInfoResolver interface {
+	ResolveInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType, modelRef string) (*modelModule.ModelInfo, error)
+	ResolveDefaultInfo(ctx context.Context, access ModelAccess, modelType entity.ModelType) (*modelModule.ModelInfo, error)
+	ResolveModelType(ctx context.Context, access ModelAccess, modelRef string) ([]entity.ModelType, error)
 }
 
 // chunkFeedbackApplier is the dispatch seam for chunk-level feedback
@@ -84,9 +81,9 @@ type chunkPagerankAdjuster interface {
 // The RAG pipeline is delegated to ChatPipelineService.
 type ChatSessionService struct {
 	chatSessionDAO       chatSessionStore
-	userTenantDAO        userTenantStore
+	permissionChecker    resourceScopeChecker
 	pipeline             chatPipelineRunner
-	modelProviderSvc     chatModelConfigResolver
+	modelFactory         chatModelInfoResolver
 	chunkFeedbackApplier chunkFeedbackApplier
 	docEngine            engine.DocEngine
 }
@@ -94,128 +91,11 @@ type ChatSessionService struct {
 // NewChatSessionService create chat session service
 func NewChatSessionService() *ChatSessionService {
 	return &ChatSessionService{
-		chatSessionDAO:   dao.NewChatSessionDAO(),
-		userTenantDAO:    dao.NewUserTenantDAO(),
-		pipeline:         NewChatPipelineService(),
-		modelProviderSvc: NewModelProviderService(),
-		docEngine:        engine.Get(),
+		chatSessionDAO: dao.NewChatSessionDAO(),
+		pipeline:       NewChatPipelineService(),
+		modelFactory:   NewModelFactory(),
+		docEngine:      engine.Get(),
 	}
-}
-
-// SetChatSessionRequest set chat session request.
-type SetChatSessionRequest struct {
-	SessionID string `json:"conversation_id,omitempty"`
-	DialogID  string `json:"dialog_id,omitempty"`
-	Name      string `json:"name,omitempty"`
-	IsNew     bool   `json:"is_new"`
-}
-
-// SetChatSessionResponse set chat session response.
-type SetChatSessionResponse struct {
-	*entity.ChatSession
-}
-
-// SetChatSession creates or updates a chat session.
-// Kept as a compatibility entrypoint for older chat-session callers.
-func (s *ChatSessionService) SetChatSession(ctx context.Context, userID string, req *SetChatSessionRequest) (*SetChatSessionResponse, error) {
-	name := req.Name
-	if name == "" {
-		name = "New chat session"
-	}
-	if len(name) > 255 {
-		name = name[:255]
-	}
-
-	if !req.IsNew {
-		updates := map[string]interface{}{
-			"name":    name,
-			"user_id": userID,
-		}
-		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, req.SessionID, updates); err != nil {
-			return nil, errors.New("chat session not found")
-		}
-		session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, req.SessionID)
-		if err != nil {
-			return nil, errors.New("fail to update a chat session")
-		}
-		return &SetChatSessionResponse{ChatSession: session}, nil
-	}
-
-	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, req.DialogID)
-	if err != nil {
-		return nil, errors.New("dialog not found")
-	}
-
-	prologue := "Hi! I'm your assistant. What can I do for you?"
-	if dialog.PromptConfig != nil {
-		if p, ok := dialog.PromptConfig["prologue"].(string); ok && p != "" {
-			prologue = p
-		}
-	}
-	messagesJSON, _ := json.Marshal([]map[string]interface{}{
-		{
-			"role":    "assistant",
-			"content": prologue,
-		},
-	})
-	referenceJSON, _ := json.Marshal([]interface{}{})
-
-	session := &entity.ChatSession{
-		ID:        utility.GenerateUUID(),
-		DialogID:  req.DialogID,
-		Name:      &name,
-		Message:   messagesJSON,
-		UserID:    &userID,
-		Reference: referenceJSON,
-	}
-	if err = s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
-		return nil, errors.New("fail to create a chat session")
-	}
-
-	return &SetChatSessionResponse{ChatSession: session}, nil
-}
-
-// RemoveChatSessions removes chat sessions.
-// Kept as a compatibility entrypoint for older chat-session callers.
-func (s *ChatSessionService) RemoveChatSessions(ctx context.Context, userID string, chatSessions []string) error {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return err
-	}
-
-	tenantIDSet := make(map[string]bool)
-	for _, tid := range tenantIDs {
-		tenantIDSet[tid] = true
-	}
-	tenantIDSet[userID] = true
-
-	for _, convID := range chatSessions {
-		session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, convID)
-		if err != nil {
-			return fmt.Errorf("chat session not found: %s", convID)
-		}
-
-		isOwner := false
-		for tenantID := range tenantIDSet {
-			exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, tenantID, session.DialogID)
-			if err != nil {
-				return err
-			}
-			if exists {
-				isOwner = true
-				break
-			}
-		}
-		if !isOwner {
-			return errors.New("only owner of chat session authorized for this operation")
-		}
-
-		if err = s.chatSessionDAO.DeleteByID(ctx, dao.DB, convID); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 // ListChatSessionsRequest list chat sessions request.
@@ -243,39 +123,11 @@ type ChatSessionPayload struct {
 }
 
 // ListChatSessions lists chat sessions for a dialog
-func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name, orderby string, desc bool, page, pageSize int) (*ListChatSessionsResponse, error) {
-	// Get user's tenants
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
+func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatID, sessionID, name string, terms []dao.OrderTerm, page, pageSize int, includeHistory ...bool) (*ListChatSessionsResponse, error) {
+	sessionIDs, err := accessibleChatSessionIDs(ctx, s.permissionChecker, userID, chatID, permission.OperationRead)
 	if err != nil {
-		return nil, err
-	}
-
-	// Check if user is the owner of the dialog
-	isOwner := false
-	for _, tenantID := range tenantIDs {
-		var exists bool
-		exists, err = s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, tenantID, chatID)
-		if err != nil {
-			return nil, err
-		}
-		if exists {
-			isOwner = true
-			break
-		}
-	}
-
-	// Also check with userID as tenant
-	if !isOwner {
-		var exists bool
-		exists, err = s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, userID, chatID)
-		if err != nil {
-			return nil, err
-		}
-		isOwner = exists
-	}
-
-	if !isOwner {
-		return nil, errors.New("no authorization")
+		_, normalizedErr := normalizeChatPermissionError(err)
+		return nil, normalizedErr
 	}
 
 	// items_per_page == 0 returns an empty list (mirrors Python's list_sessions).
@@ -284,7 +136,7 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 	}
 
 	// List chat sessions
-	sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, sessionID, name, orderby, desc, page, pageSize)
+	sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, sessionID, name, terms, page, pageSize, includeHistory...)
 	if err != nil {
 		return nil, err
 	}
@@ -294,12 +146,9 @@ func (s *ChatSessionService) ListChatSessions(ctx context.Context, userID, chatI
 
 // GetSession returns one chat session after ownership validation.
 func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, sessionID string) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -312,6 +161,10 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 	if session.DialogID != chatID {
 		return nil, common.CodeDataError, errors.New("session does not belong to this chat")
 	}
+	if err = checkChatSessionPermission(ctx, s.permissionChecker, userID, sessionID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
+	}
 
 	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
 	if err != nil && !isChatSessionNotFound(err) {
@@ -323,12 +176,9 @@ func (s *ChatSessionService) GetSession(ctx context.Context, userID, chatID, ses
 
 // CreateSession create a session in a dialog
 func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationCreate); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
 	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
@@ -360,15 +210,16 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 	}
 	messagesJSON, _ := json.Marshal([]map[string]interface{}{
 		{
-			"role":    "assistant",
-			"content": prologue,
+			"role":       "assistant",
+			"content":    prologue,
+			"created_at": float64(time.Now().Unix()),
 		},
 	})
 
 	referenceJSON, _ := json.Marshal([]interface{}{})
 
 	conv := &entity.ChatSession{
-		ID:        utility.GenerateUUID(),
+		ID:        common.GenerateUUID(),
 		DialogID:  chatID,
 		Name:      &name,
 		Message:   messagesJSON,
@@ -389,12 +240,9 @@ func (s *ChatSessionService) CreateSession(ctx context.Context, userID, chatID s
 
 // DeleteSessions delete a session in a dialog
 func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID string, req map[string]interface{}) (interface{}, string, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return nil, "", common.CodeServerError, err
-	}
-	if !ok {
-		return false, "no authorization", common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, "", code, normalizedErr
 	}
 
 	if len(req) == 0 {
@@ -405,10 +253,20 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 	if !hasIDs || len(sessionIDs) == 0 {
 		deleteAll, _ := req["delete_all"].(bool)
 		if deleteAll {
-			sessions, err := s.chatSessionDAO.ListByChatID(ctx, dao.DB, chatID, "", "", "create_time", true, 0, -1)
+			authorizedSessionIDs, err := accessibleChatSessionIDs(ctx, s.permissionChecker, userID, chatID, permission.OperationDelete)
+			if err != nil {
+				code, normalizedErr := normalizeChatPermissionError(err)
+				return nil, "", code, normalizedErr
+			}
+			sessionIDs = authorizedSessionIDs
+			if len(sessionIDs) == 0 {
+				return map[string]interface{}{}, "success", common.CodeSuccess, nil
+			}
+			sessions, err := s.chatSessionDAO.ListByResourceIDs(ctx, dao.DB, chatID, sessionIDs, "", "", []dao.OrderTerm{{Column: "create_time", Desc: true}}, 0, -1, false)
 			if err != nil {
 				return nil, "", common.CodeServerError, err
 			}
+			sessionIDs = sessionIDs[:0]
 			for _, session := range sessions {
 				sessionIDs = append(sessionIDs, session.ID)
 			}
@@ -432,12 +290,9 @@ func (s *ChatSessionService) DeleteSessions(ctx context.Context, userID, chatID 
 			continue
 		}
 
-		writable, werr := s.ensureSessionWritable(ctx, userID, chatID, session)
-		if werr != nil {
-			return nil, "", common.CodeServerError, werr
-		}
-		if !writable {
-			errorsList = append(errorsList, fmt.Sprintf("No permission to delete the readonly session %s", sid))
+		if werr := checkChatSessionPermission(ctx, s.permissionChecker, userID, sid, permission.OperationDelete); werr != nil {
+			_, normalizedErr := normalizeChatPermissionError(werr)
+			errorsList = append(errorsList, fmt.Sprintf("%s: %s", normalizedErr, sid))
 			continue
 		}
 
@@ -556,37 +411,31 @@ func checkDuplicateChatSessionIDs(ids []string) ([]string, []string) {
 
 // UpdateSession updates one chat session after Python-style field validation.
 func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, sessionID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
 	session, err := s.chatSessionDAO.GetBySessionIDAndChatID(ctx, dao.DB, sessionID, chatID)
 	if err != nil {
 		if isChatSessionNotFound(err) {
-			return nil, common.CodeDataError, errors.New("session not found")
+			return nil, common.CodeDataError, errors.New("Session not found!")
 		}
 		return nil, common.CodeServerError, err
 	}
 
-	writable, err := s.ensureSessionWritable(ctx, userID, chatID, session)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !writable {
-		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
+	if err = checkChatSessionPermission(ctx, s.permissionChecker, userID, sessionID, permission.OperationUpdate); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
-	if _, ok = req["message"]; ok {
+	if _, ok := req["message"]; ok {
 		return nil, common.CodeDataError, errors.New("`messages` cannot be changed")
 	}
-	if _, ok = req["messages"]; ok {
+	if _, ok := req["messages"]; ok {
 		return nil, common.CodeDataError, errors.New("`messages` cannot be changed")
 	}
-	if _, ok = req["reference"]; ok {
+	if _, ok := req["reference"]; ok {
 		return nil, common.CodeDataError, errors.New("`reference` cannot be changed")
 	}
 
@@ -634,12 +483,9 @@ func (s *ChatSessionService) UpdateSession(ctx context.Context, userID, chatID, 
 }
 
 func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, chatID, sessionID, msgID string) (*ChatSessionPayload, common.ErrorCode, error) {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -650,12 +496,9 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	writable, werr := s.ensureSessionWritable(ctx, userID, chatID, session)
-	if werr != nil {
-		return nil, common.CodeServerError, werr
-	}
-	if !writable {
-		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
+	if werr := checkChatSessionPermission(ctx, s.permissionChecker, userID, sessionID, permission.OperationUpdate); werr != nil {
+		code, normalizedErr := normalizeChatPermissionError(werr)
+		return nil, code, normalizedErr
 	}
 
 	// parseMessages / parseReferenceList return nil for
@@ -669,22 +512,28 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 	if len(session.Reference) > 0 && references == nil {
 		return nil, common.CodeDataError, errors.New("invalid session reference")
 	}
+	found := false
 	for i, msg := range messages {
 		if msgID != stringValue(msg["id"]) {
 			continue
 		}
-		if i+1 >= len(messages) || stringValue(messages[i+1]["id"]) != msgID {
+		if stringValue(msg["role"]) != "user" {
 			return nil, common.CodeServerError, errors.New("message pair assertion failed")
 		}
-		messages = append(messages[:i], messages[i+2:]...)
-		refIndex := (i - 1) / 2
-		if refIndex < 0 {
-			refIndex = 0
+		end := i + 1
+		if end < len(messages) && stringValue(messages[end]["role"]) == "assistant" && stringValue(messages[end]["id"]) == msgID {
+			refIndex := sessionMessageReferenceIndex(messages, end)
+			if refIndex >= 0 && refIndex < len(references) {
+				references = append(references[:refIndex], references[refIndex+1:]...)
+			}
+			end++
 		}
-		if refIndex < len(references) {
-			references = append(references[:refIndex], references[refIndex+1:]...)
-		}
+		messages = append(messages[:i], messages[end:]...)
+		found = true
 		break
+	}
+	if !found {
+		return nil, common.CodeDataError, errors.New("message not found")
 	}
 
 	messageRaw, err := json.Marshal(messages)
@@ -696,9 +545,11 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 		return nil, common.CodeServerError, err
 	}
 	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{
-		"message":   messageRaw,
-		"reference": referenceRaw,
+		"history_update": dao.ConversationHistoryUpdate{DeleteMessageID: msgID},
 	}); err != nil {
+		if isChatSessionNotFound(err) {
+			return nil, common.CodeDataError, errors.New("message not found")
+		}
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
@@ -708,34 +559,9 @@ func (s *ChatSessionService) DeleteSessionMessage(ctx context.Context, userID, c
 }
 
 func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, chatID, sessionID, msgID string, req map[string]interface{}) (*ChatSessionPayload, common.ErrorCode, error) {
-
-	ownerTenantID := ""
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, tenantID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = tenantID
-			break
-		}
-	}
-	if ownerTenantID == "" {
-		exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, userID, chatID)
-		if err != nil {
-			return nil, common.CodeServerError, err
-		}
-		if exists {
-			ownerTenantID = userID
-		}
-	}
-	ok := ownerTenantID != ""
-	if !ok {
-		return nil, common.CodeAuthenticationError, errors.New("no authorization")
+	if err := checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRead); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
 	}
 
 	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, sessionID)
@@ -746,10 +572,13 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 		return nil, common.CodeDataError, errors.New("session not found")
 	}
 
-	// Shared-session readonly rule: the chat owner (ownerTenantID) or the
-	// session's creator may leave feedback; other team members cannot.
-	if ownerTenantID != userID && (session.UserID == nil || *session.UserID != userID) {
-		return nil, common.CodeAuthenticationError, errSharedSessionReadonly
+	if err = checkChatSessionPermission(ctx, s.permissionChecker, userID, sessionID, permission.OperationUpdate); err != nil {
+		code, normalizedErr := normalizeChatPermissionError(err)
+		return nil, code, normalizedErr
+	}
+	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
+	if err != nil {
+		return nil, common.CodeServerError, err
 	}
 
 	thumbRaw, ok := req["thumbup"]
@@ -799,7 +628,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 
 	if messageIndex != -1 && applyChunkFeedback {
-		refIndex := (messageIndex - 1) / 2
+		refIndex := sessionMessageReferenceIndex(messages, messageIndex)
 		if refIndex >= 0 && refIndex < len(references) {
 			if reference, ok := references[refIndex].(map[string]interface{}); ok && len(reference) > 0 {
 				feedbackReference = reference
@@ -811,7 +640,13 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	if err != nil {
 		return nil, common.CodeServerError, err
 	}
-	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"message": messageRaw}); err != nil {
+	feedbackUpdate := map[string]interface{}{"thumb_up": thumbup}
+	if thumbup {
+		feedbackUpdate["feedback"] = nil
+	} else if messageIndex != -1 && messages[messageIndex]["feedback"] != nil {
+		feedbackUpdate["feedback"] = messages[messageIndex]["feedback"]
+	}
+	if err = s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{FeedbackMessageID: msgID, Feedback: feedbackUpdate}}); err != nil {
 		return nil, common.CodeServerError, err
 	}
 	session.Message = messageRaw
@@ -822,7 +657,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 			applier = s
 		}
 		if priorThumbBool, ok := priorThumb.(bool); ok && priorThumbBool != thumbup {
-			result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, !priorThumbBool)
+			result, _ := applier.applyChunkFeedback(ctx, dialog.TenantID, feedbackReference, !priorThumbBool)
 			if result != nil {
 				common.Debug("Chunk feedback undo applied",
 					zap.Any("success_count", result["success_count"]),
@@ -830,7 +665,7 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 				)
 			}
 		}
-		result, _ := applier.applyChunkFeedback(ctx, ownerTenantID, feedbackReference, thumbup)
+		result, _ := applier.applyChunkFeedback(ctx, dialog.TenantID, feedbackReference, thumbup)
 		if result != nil {
 			common.Debug("Chunk feedback applied",
 				zap.Any("success_count", result["success_count"]),
@@ -840,6 +675,28 @@ func (s *ChatSessionService) UpdateMessageFeedback(ctx context.Context, userID, 
 	}
 
 	return s.buildSessionPayload(session, nil, false), common.CodeSuccess, nil
+}
+
+// sessionMessageReferenceIndex counts assistant responses after the first user
+// message, excluding the prologue and unanswered questions.
+func sessionMessageReferenceIndex(messages []map[string]interface{}, messageIndex int) int {
+	refIndex := -1
+	hasUser := false
+	for i, msg := range messages {
+		role := stringValue(msg["role"])
+		if role == "user" {
+			hasUser = true
+		} else if role == "assistant" && hasUser {
+			refIndex++
+		}
+		if i == messageIndex {
+			if role == "assistant" && hasUser {
+				return refIndex
+			}
+			return -1
+		}
+	}
+	return -1
 }
 
 const (
@@ -1142,48 +999,6 @@ func floatValue(value interface{}) (float64, bool) {
 	}
 }
 
-func (s *ChatSessionService) ensureOwnedChat(ctx context.Context, userID, chatID string) (bool, error) {
-	tenantIDs, err := s.userTenantDAO.GetTenantIDsByUserID(ctx, dao.DB, userID)
-	if err != nil {
-		return false, err
-	}
-
-	for _, tenantID := range tenantIDs {
-		exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, tenantID, chatID)
-		if err != nil {
-			return false, err
-		}
-		if exists {
-			return true, nil
-		}
-	}
-
-	exists, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, userID, chatID)
-	if err != nil {
-		return false, err
-	}
-	return exists, nil
-}
-
-// errSharedSessionReadonly is returned when a caller who can read a chat
-// shared with their team tries to mutate a session created by someone else.
-var errSharedSessionReadonly = errors.New("shared session is readonly")
-
-// ensureSessionWritable enforces the shared-session readonly rule: team
-// members can read the sessions of a chat shared with their tenant, but a
-// session may only be mutated by the chat owner (the dialog tenant) or by
-// the session's creator. Everyone else sees the session readonly.
-func (s *ChatSessionService) ensureSessionWritable(ctx context.Context, userID, chatID string, session *entity.ChatSession) (bool, error) {
-	owns, err := s.chatSessionDAO.CheckDialogExists(ctx, dao.DB, userID, chatID)
-	if err != nil {
-		return false, err
-	}
-	if owns {
-		return true, nil
-	}
-	return session.UserID != nil && *session.UserID == userID, nil
-}
-
 func (s *ChatSessionService) buildSessionPayload(session *entity.ChatSession, dialog *entity.Chat, includeAvatar bool) *ChatSessionPayload {
 	var avatar *string
 	if includeAvatar {
@@ -1312,181 +1127,6 @@ func isChatSessionNotFound(err error) bool {
 	return errors.Is(err, gorm.ErrRecordNotFound)
 }
 
-// Completion performs chat completion with full RAG support via ChatPipelineService.
-// Kept as a compatibility entrypoint for callers that still use the pre-ChatCompletions API.
-func (s *ChatSessionService) Completion(ctx context.Context, userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string) (map[string]interface{}, error) {
-	if len(messages) == 0 {
-		return nil, errors.New("messages cannot be empty")
-	}
-	lastRole, _ := messages[len(messages)-1]["role"].(string)
-	if lastRole != "user" {
-		return nil, errors.New("the last content of this conversation is not from user")
-	}
-
-	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conversationID)
-	if err != nil {
-		return nil, errors.New("conversation not found")
-	}
-
-	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, session.DialogID)
-	if err != nil {
-		return nil, errors.New("dialog not found")
-	}
-
-	sessionMessages := s.buildSessionMessages(session, messages)
-	reference := s.initializeReference(session)
-
-	isEmbedded := llmID != ""
-	if llmID != "" {
-		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
-		if err != nil || !hasKey {
-			return nil, fmt.Errorf("cannot use specified model %s", llmID)
-		}
-		dialog.LLMID = llmID
-		if chatModelConfig != nil {
-			dialog.LLMSetting = chatModelConfig
-		}
-	}
-
-	kwargs := chatModelConfig
-	if kwargs == nil {
-		kwargs = map[string]interface{}{}
-	}
-	resultChan, err := s.pipeline.AsyncChat(context.Background(), userID, dialog, messages, false, kwargs)
-	if err != nil {
-		return nil, err
-	}
-
-	var answer strings.Builder
-	var finalRef map[string]interface{}
-	for result := range resultChan {
-		if result.Final && result.Answer != "" {
-			// The final event carries the complete (decorated) answer;
-			// it replaces any accumulated deltas rather than appending.
-			answer.Reset()
-			answer.WriteString(result.Answer)
-		} else if result.Answer != "" {
-			answer.WriteString(result.Answer)
-		}
-		if result.Reference != nil {
-			finalRef = result.Reference
-		}
-	}
-
-	ans := map[string]interface{}{
-		"answer":    answer.String(),
-		"reference": finalRef,
-		"final":     true,
-	}
-	result := s.structureAnswerWithConv(session, ans, messageID, session.ID, reference)
-
-	if !isEmbedded {
-		sessionMessages = append(sessionMessages, map[string]interface{}{
-			"role":       "assistant",
-			"content":    answer.String(),
-			"id":         messageID,
-			"created_at": float64(time.Now().Unix()),
-		})
-		s.updateSessionMessages(ctx, session, sessionMessages, reference)
-	}
-
-	return result, nil
-}
-
-// CompletionStream performs streaming chat completion with full RAG support via ChatPipelineService.
-// Kept as a compatibility entrypoint for callers that still use the pre-ChatCompletions API.
-func (s *ChatSessionService) CompletionStream(ctx context.Context, userID string, conversationID string, messages []map[string]interface{}, llmID string, chatModelConfig map[string]interface{}, messageID string, streamChan chan<- string) error {
-	if len(messages) == 0 {
-		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "messages cannot be empty", "data": {"answer": "**ERROR**: messages cannot be empty", "reference": []}}`)
-		return errors.New("messages cannot be empty")
-	}
-	lastRole, _ := messages[len(messages)-1]["role"].(string)
-	if lastRole != "user" {
-		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "the last content of this conversation is not from user", "data": {"answer": "**ERROR**: the last content of this conversation is not from user", "reference": []}}`)
-		return errors.New("the last content of this conversation is not from user")
-	}
-
-	session, err := s.chatSessionDAO.GetByID(ctx, dao.DB, conversationID)
-	if err != nil {
-		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "Conversation not found", "data": {"answer": "**ERROR**: Conversation not found", "reference": []}}`)
-		return errors.New("conversation not found")
-	}
-
-	dialog, err := s.chatSessionDAO.GetDialogByID(ctx, dao.DB, session.DialogID)
-	if err != nil {
-		streamChan <- fmt.Sprintf("data: %s\n\n", `{"code": 500, "message": "Dialog not found", "data": {"answer": "**ERROR**: Dialog not found", "reference": []}}`)
-		return errors.New("dialog not found")
-	}
-
-	sessionMessages := s.buildSessionMessages(session, messages)
-	reference := s.initializeReference(session)
-
-	isEmbedded := llmID != ""
-	if llmID != "" {
-		hasKey, err := s.checkTenantLLMAPIKey(ctx, dialog.TenantID, llmID)
-		if err != nil || !hasKey {
-			errMsg := fmt.Sprintf(`{"code": 500, "message": "Cannot use specified model %s", "data": {"answer": "**ERROR**: Cannot use specified model", "reference": []}}`, llmID)
-			streamChan <- fmt.Sprintf("data: %s\n\n", errMsg)
-			return fmt.Errorf("cannot use specified model %s", llmID)
-		}
-		dialog.LLMID = llmID
-		if chatModelConfig != nil {
-			dialog.LLMSetting = chatModelConfig
-		}
-	}
-
-	kwargs := chatModelConfig
-	if kwargs == nil {
-		kwargs = map[string]interface{}{}
-	}
-	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, messages, true, kwargs)
-	if err != nil {
-		streamChan <- fmt.Sprintf("data: %s\n\n", fmt.Sprintf(`{"code": 500, "message": "%s", "data": {"answer": "**ERROR**: %s", "reference": []}}`, err.Error(), err.Error()))
-		return err
-	}
-
-	var fullAnswer strings.Builder
-	for result := range resultChan {
-		if result.Reference != nil && len(reference) > 0 {
-			reference[len(reference)-1] = result.Reference
-		}
-		if result.Final {
-			if result.Answer != "" {
-				fullAnswer.Reset()
-				fullAnswer.WriteString(result.Answer)
-			}
-		} else if result.Answer != "" {
-			fullAnswer.WriteString(result.Answer)
-		}
-		ans := s.structureAnswer(session, fullAnswer.String(), messageID, session.ID, reference)
-		data, _ := json.Marshal(map[string]interface{}{
-			"code":    0,
-			"message": "",
-			"data":    ans,
-		})
-		streamChan <- fmt.Sprintf("data: %s\n\n", string(data))
-	}
-
-	finalData, _ := json.Marshal(map[string]interface{}{
-		"code":    0,
-		"message": "",
-		"data":    true,
-	})
-	streamChan <- fmt.Sprintf("data: %s\n\n", string(finalData))
-
-	if !isEmbedded {
-		sessionMessages = append(sessionMessages, map[string]interface{}{
-			"role":       "assistant",
-			"content":    fullAnswer.String(),
-			"id":         messageID,
-			"created_at": float64(time.Now().Unix()),
-		})
-		s.updateSessionMessages(ctx, session, sessionMessages, reference)
-	}
-
-	return nil
-}
-
 // ChatCompletions handles chat completion matching Python's session_completion.
 // When stream=true, returns nil result and streams SSE via streamChan.
 // When stream=false, returns the structured answer map.
@@ -1496,10 +1136,11 @@ func (s *ChatSessionService) ChatCompletions(
 	chatID string, sessionID string,
 	messages []map[string]interface{}, question string, files []interface{},
 	llmID string, genConfig map[string]interface{}, kwargs map[string]interface{},
-	passAllHistory bool, storeHistory bool, legacy bool,
+	legacy bool,
 	stream bool, streamChan chan<- string,
 ) (map[string]interface{}, error) {
 
+	receivedAt := float64(time.Now().UnixNano()) / 1e9
 	fail := func(err error) (map[string]interface{}, error) {
 		if stream && streamChan != nil {
 			s.sendSSEError(streamChan, err.Error())
@@ -1516,10 +1157,18 @@ func (s *ChatSessionService) ChatCompletions(
 		}
 	}
 
+	// Correlate every log line this request emits (retrieval, model calls)
+	// with the conversation turn's session id.
+	ctx = common.WithSessionID(ctx, sessionID)
+
 	common.Info("ChatCompletions started")
 
 	// --- 1. Normalize messages ---
-	requestMessages, requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files)
+	storeHistoryMessages, err := ResolveStoreHistoryMessages(kwargs)
+	if err != nil {
+		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
+	}
+	requestMsg, messageID, err := s.normalizeCompletionMessages(messages, question, files, storeHistoryMessages)
 	if err != nil {
 		return fail(common.NewCodedError(common.CodeArgumentError, err.Error()))
 	}
@@ -1533,8 +1182,9 @@ func (s *ChatSessionService) ChatCompletions(
 	var dialog *entity.Chat
 	var session *entity.ChatSession
 	if chatID != "" {
-		if err = s.checkDialogOwnership(ctx, userID, chatID); err != nil {
-			return fail(common.NewCodedError(common.CodeAuthenticationError, "no authorization"))
+		if err = checkChatPermission(ctx, s.permissionChecker, userID, chatID, permission.OperationRun); err != nil {
+			code, normalizedErr := normalizeChatPermissionError(err)
+			return fail(common.NewCodedError(code, normalizedErr.Error()))
 		}
 		dialog, err = s.chatSessionDAO.GetDialogByID(ctx, dao.DB, chatID)
 		if err != nil {
@@ -1548,30 +1198,34 @@ func (s *ChatSessionService) ChatCompletions(
 			if session.DialogID != chatID {
 				return fail(common.NewCodedError(common.CodeDataError, "Session does not belong to this chat!"))
 			}
-			// Shared-session readonly rule: only the chat owner (the dialog
-			// tenant) or the session's creator may append to a session.
-			// Team members who can read the shared chat see it readonly.
-			if dialog.TenantID != userID && (session.UserID == nil || *session.UserID != userID) {
-				return fail(common.NewCodedError(common.CodeAuthenticationError, errSharedSessionReadonly.Error()))
+			if err = checkChatSessionPermission(ctx, s.permissionChecker, userID, sessionID, permission.OperationRun); err != nil {
+				code, normalizedErr := normalizeChatPermissionError(err)
+				return fail(common.NewCodedError(code, normalizedErr.Error()))
 			}
-		} else {
-			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID, storeHistory)
+		} else if storeHistoryMessages {
+			session, err = s.createSessionForCompletion(ctx, chatID, dialog, userID)
 			if err != nil {
 				return fail(err)
 			}
 			sessionID = session.ID
+			// Fresh-session requests carry no session_id, so the correlation
+			// tag has to be (re)applied with the id the server just
+			// allocated.
+			ctx = common.WithSessionID(ctx, sessionID)
 		}
 
-		if passAllHistory {
-			session.Message, _ = json.Marshal(requestMessages)
+		if storeHistoryMessages {
+			session = s.appendSessionMessage(session, requestMsg, receivedAt)
+			requestMsg = s.filterSystemAndLeadingAssistant(session)
 		} else {
-			session = s.appendSessionMessage(session, requestMsg)
+			session = nil
 		}
-		requestMsg = s.filterSystemAndLeadingAssistant(session)
-		_ = messageID
 	} else {
 		dialog = s.buildDefaultCompletionDialog(userID)
 		if !stream {
+			if genConfig == nil {
+				genConfig = map[string]interface{}{}
+			}
 			genConfig["stream"] = false
 		}
 	}
@@ -1580,6 +1234,8 @@ func (s *ChatSessionService) ChatCompletions(
 	var reference []interface{}
 	if session != nil {
 		reference = s.initializeReference(session)
+	} else if !storeHistoryMessages {
+		reference = s.initializeReference(&entity.ChatSession{})
 	}
 
 	// --- 5. LLM override ---
@@ -1615,6 +1271,12 @@ func (s *ChatSessionService) ChatCompletions(
 	}
 
 	// --- 6. Run pipeline ---
+	if session != nil {
+		updates := map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{Message: requestMsg[len(requestMsg)-1]}}
+		if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, updates); err != nil {
+			return fail(err)
+		}
+	}
 	resultChan, err := s.pipeline.AsyncChat(ctx, userID, dialog, requestMsg, stream, kwargs)
 	if err != nil {
 		return fail(err)
@@ -1628,7 +1290,24 @@ func (s *ChatSessionService) ChatCompletions(
 			if result.Reference != nil && len(reference) > 0 {
 				reference[len(reference)-1] = result.Reference
 			}
-
+			if result.Final {
+				failed := strings.Contains(result.Answer, "**ERROR**")
+				if session != nil && !failed {
+					// Store with <think>thinking content</think>
+					content := fullAnswer.String()
+					if content == "" || result.AnswerIsAuthoritative {
+						content = result.Answer
+					}
+					s.appendAssistantToSession(session, content, messageID)
+					if ctx.Err() == nil {
+						s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
+					}
+				}
+				if result.AnswerIsAuthoritative {
+					fullAnswer.Reset()
+					fullAnswer.WriteString(result.Answer)
+				}
+			}
 			if legacy {
 				if result.Final {
 					if strings.Contains(result.Answer, "**ERROR**") {
@@ -1638,6 +1317,10 @@ func (s *ChatSessionService) ChatCompletions(
 						}
 						sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 					}
+					// Synchronize the in-memory session snapshot with the final
+					// event before building the response. This does not write
+					// through to the DAO.
+					s.compactSessionAssistant(session, result.Answer, messageID)
 					finalLegacyAnswer = s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 					continue
 				}
@@ -1645,12 +1328,17 @@ func (s *ChatSessionService) ChatCompletions(
 					fullAnswer.WriteString("<think>")
 				} else if result.EndToThink {
 					fullAnswer.WriteString("</think>")
-				} else if result.Answer != "" {
-					fullAnswer.WriteString(result.Answer)
-				} else if result.Reasoning != "" {
-					// In-think reasoning text between the markers (tool and
-					// harness paths) — keep it inside the <think> block.
+				}
+				if result.Reasoning != "" {
+					// Same as the non-legacy branch: there is no reasoning
+					// channel in this protocol, so thinking rides in `answer`
+					// between the start/end flags.
 					fullAnswer.WriteString(result.Reasoning)
+				}
+				if result.Answer != "" {
+					// Marker and text can arrive together (see the note in the
+					// non-legacy branch): never trade one for the other.
+					fullAnswer.WriteString(result.Answer)
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
@@ -1660,12 +1348,20 @@ func (s *ChatSessionService) ChatCompletions(
 				ans["end_to_think"] = nil
 				delete(ans, "start_to_think")
 				delete(ans, "end_to_think")
+				// Same structured step channel as the non-legacy path.
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
 				sendOrCancel(fmt.Sprintf("data:%s\n\n", sseMarshalChunk(sanitizeJSONFloats(ans).(map[string]interface{}), chatID)))
 			} else {
 				if result.Final {
+					// Synchronize the in-memory session snapshot with the final
+					// event before building the response. This does not write
+					// through to the DAO.
+					s.compactSessionAssistant(session, result.Answer, messageID)
 					if strings.Contains(result.Answer, "**ERROR**") {
 						ans := s.structureAnswer(session, result.Answer, messageID, sessionID, reference)
 						if chatID != "" {
@@ -1693,27 +1389,49 @@ func (s *ChatSessionService) ChatCompletions(
 				deltaAnswer := ""
 				if result.StartToThink {
 					fullAnswer.WriteString("<think>")
+					deltaAnswer = "<think>"
 				} else if result.EndToThink {
 					fullAnswer.WriteString("</think>")
-				} else if result.Answer != "" {
-					fullAnswer.WriteString(result.Answer)
-					deltaAnswer = result.Answer
-				} else if result.Reasoning != "" {
-					// In-think reasoning text arriving between the
-					// StartToThink / EndToThink markers (the tool path and the
-					// harness high/ultra path both deliver it via Reasoning so
-					// OpenAI-compat can map it to reasoning_content). Treat it
-					// as think-block content so the chat UI shows the
-					// reasoning instead of dropping it.
+					deltaAnswer = "</think>"
+				}
+				if result.Reasoning != "" {
+					// The native protocol has NO reasoning channel: the UI
+					// rebuilds the whole assistant message from `answer`
+					// alone, wrapping the stretch between start_to_think and
+					// end_to_think in <think>. Reasoning must therefore
+					// travel in `answer` too — dropping it here is what left
+					// the think panel empty while the run was in progress.
 					fullAnswer.WriteString(result.Reasoning)
-					deltaAnswer = result.Reasoning
+					deltaAnswer += result.Reasoning
+				}
+				if result.Answer != "" {
+					// A marker and the text it delimits can ride on the SAME
+					// result: the first content delta after a think block is
+					// the EndToThink result. Treating the marker as an
+					// alternative to the text drops that delta, which is how an
+					// answer came out starting mid-sentence.
+					fullAnswer.WriteString(result.Answer)
+					deltaAnswer += result.Answer
 				}
 				if session != nil {
 					s.appendAssistantToSession(session, fullAnswer.String(), messageID)
 				}
 				ans := s.structureAnswer(session, deltaAnswer, messageID, sessionID, reference)
+				// Citations ship ONLY on the final event: the intermediate
+				// deltas have nothing to cite yet, and an empty
+				// `reference: {chunks: []}` on every chunk just buries the
+				// real payload.
+				delete(ans, "reference")
 				ans["start_to_think"] = result.StartToThink
 				ans["end_to_think"] = result.EndToThink
+				// The structured twin of a reasoning step rides the chunk that
+				// carries it. An event-only chunk (no delta) is a no-op for a
+				// client that only reads answer/think markers, and gives a
+				// step-rendering client the fields the sentence cannot convey
+				// (tool, status, sources, duration).
+				if result.ThinkEvent != nil {
+					ans["think_event"] = result.ThinkEvent
+				}
 				if chatID != "" {
 					ans["chat_id"] = chatID
 				}
@@ -1730,11 +1448,6 @@ func (s *ChatSessionService) ChatCompletions(
 
 		wrapper := sseWrapper{Code: 0, Message: "", Data: true}
 		sendOrCancel(fmt.Sprintf("data:%s\n\n", marshalJSONWithSpaces(wrapper)))
-
-		// Persist session state (matches Python's update_by_id after loop)
-		if session != nil && storeHistory {
-			s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
-		}
 	} else {
 		ans := accumulateNonStreamAnswer(resultChan)
 		if session != nil {
@@ -1742,7 +1455,7 @@ func (s *ChatSessionService) ChatCompletions(
 			if chatID != "" {
 				result["chat_id"] = chatID
 			}
-			if storeHistory {
+			if ctx.Err() == nil && !strings.Contains(stringValue(ans["answer"]), "**ERROR**") {
 				s.updateSessionMessages(ctx, session, s.getSessionMessagesAsSlice(session), reference)
 			}
 			return sanitizeJSONFloats(result).(map[string]interface{}), nil
@@ -1807,76 +1520,44 @@ func accumulateNonStreamAnswer(resultChan <-chan AsyncChatResult) map[string]int
 	return ans
 }
 
-// normalizeCompletionMessages mirrors Python _normalize_completion_messages.
+// normalizeCompletionMessages uses the full payload only for non-storing model tests.
 func (s *ChatSessionService) normalizeCompletionMessages(
-	messages []map[string]interface{}, question string, files []interface{},
-) (requestMessages []map[string]interface{}, requestMsg []map[string]interface{}, messageID string, err error) {
-	if len(messages) == 0 {
+	messages []map[string]interface{}, question string, files []interface{}, storeHistoryMessages bool,
+) (requestMsg []map[string]interface{}, messageID string, err error) {
+	if !storeHistoryMessages && len(messages) == 0 {
+		return nil, "", errors.New("`messages` is required when `store_history_messages` is false")
+	}
+	if storeHistoryMessages && (question != "" || len(messages) == 0) {
 		if question == "" {
-			return nil, nil, "", errors.New("required argument are missing: messages")
+			return nil, "", errors.New("required argument are missing: messages")
 		}
 		messages = []map[string]interface{}{{"role": "user", "content": question}}
 		if len(files) > 0 {
 			messages[0]["files"] = files
 		}
 	}
-
-	requestMessages = make([]map[string]interface{}, len(messages))
-	for i, m := range messages {
-		requestMessages[i] = make(map[string]interface{})
-		for k, v := range m {
-			requestMessages[i][k] = v
-		}
+	lastMessage := messages[len(messages)-1]
+	if lastMessage["role"] != "user" {
+		return nil, "", errors.New("the last content of this conversation is not from user")
 	}
-
-	// Filter system and leading assistant messages
+	if storeHistoryMessages {
+		messages = messages[len(messages)-1:]
+	}
 	requestMsg = make([]map[string]interface{}, 0, len(messages))
-	for _, m := range messages {
-		role, _ := m["role"].(string)
-		if role == "system" {
-			continue
+	for _, msg := range messages {
+		message := make(map[string]interface{}, len(msg))
+		for key, value := range msg {
+			message[key] = value
 		}
-		if role == "assistant" && len(requestMsg) == 0 {
-			continue
-		}
-		requestMsg = append(requestMsg, m)
+		requestMsg = append(requestMsg, message)
 	}
-
-	if len(requestMsg) == 0 {
-		return nil, nil, "", errors.New("`messages` must contain a user message")
+	message := requestMsg[len(requestMsg)-1]
+	messageID, _ = message["id"].(string)
+	if messageID == "" {
+		messageID = common.GenerateToken()
+		message["id"] = messageID
 	}
-	lastRole, _ := requestMsg[len(requestMsg)-1]["role"].(string)
-	if lastRole != "user" {
-		return nil, nil, "", errors.New("the last content of this conversation is not from user")
-	}
-
-	// Generate message ID if missing — matches Python's get_uuid() in _normalize_completion_messages.
-	lastUserMsg := requestMsg[len(requestMsg)-1]
-	if id, ok := lastUserMsg["id"].(string); ok && id != "" {
-		messageID = id
-	} else {
-		messageID = utility.GenerateToken()
-		lastUserMsg["id"] = messageID
-		for i := len(requestMessages) - 1; i >= 0; i-- {
-			if role, _ := requestMessages[i]["role"].(string); role == "user" {
-				requestMessages[i]["id"] = messageID
-				break
-			}
-		}
-	}
-	return requestMessages, requestMsg, messageID, nil
-}
-
-// checkDialogOwnership checks if the user owns the dialog.
-func (s *ChatSessionService) checkDialogOwnership(ctx context.Context, userID, chatID string) error {
-	ok, err := s.ensureOwnedChat(ctx, userID, chatID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return errors.New("no authorization")
-	}
-	return nil
+	return requestMsg, messageID, nil
 }
 
 // buildDefaultCompletionDialog mirrors Python _build_default_completion_dialog.
@@ -1896,7 +1577,7 @@ func (s *ChatSessionService) buildDefaultCompletionDialog(tenantID string) *enti
 	}
 }
 
-func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string, saveSession bool) (*entity.ChatSession, error) {
+func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, chatID string, dialog *entity.Chat, userID string) (*entity.ChatSession, error) {
 	name := "New session"
 
 	prologue := "Hi! I'm your assistant. What can I do for you?"
@@ -1907,7 +1588,7 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 	}
 
 	msg := []map[string]interface{}{
-		{"role": "assistant", "content": prologue},
+		{"role": "assistant", "content": prologue, "created_at": float64(time.Now().Unix())},
 	}
 	msgJSON, _ := json.Marshal(msg)
 	refJSON, _ := json.Marshal([]interface{}{})
@@ -1919,12 +1600,7 @@ func (s *ChatSessionService) createSessionForCompletion(ctx context.Context, cha
 		UserID:    &userID,
 		Reference: refJSON,
 	}
-	if !saveSession {
-		// Multi-model comparison sends store_history_messages=false; the
-		// ephemeral session must not be persisted (mirrors Python).
-		return session, nil
-	}
-	session.ID = utility.GenerateUUID()
+	session.ID = common.GenerateUUID()
 	if err := s.chatSessionDAO.Create(ctx, dao.DB, session); err != nil {
 		return nil, err
 	}
@@ -1969,9 +1645,14 @@ func channelSessionID(dialogID, channelID, chatID string) string {
 }
 
 // appendSessionMessage appends the last user message to the session's message history.
-func (s *ChatSessionService) appendSessionMessage(session *entity.ChatSession, requestMsg []map[string]interface{}) *entity.ChatSession {
+func (s *ChatSessionService) appendSessionMessage(session *entity.ChatSession, requestMsg []map[string]interface{}, receivedAt float64) *entity.ChatSession {
 	msgs := parseMessages(session.Message)
-	msgs = append(msgs, requestMsg[len(requestMsg)-1])
+	message := make(map[string]interface{}, len(requestMsg[len(requestMsg)-1])+1)
+	for k, v := range requestMsg[len(requestMsg)-1] {
+		message[k] = v
+	}
+	message["created_at"] = receivedAt
+	msgs = append(msgs, message)
 	session.Message, _ = json.Marshal(msgs)
 	return session
 }
@@ -2000,16 +1681,27 @@ func (s *ChatSessionService) appendAssistantToSession(session *entity.ChatSessio
 		messages = append(messages, map[string]interface{}{
 			"role":       "assistant",
 			"content":    content,
-			"created_at": float64(time.Now().Unix()),
+			"created_at": float64(time.Now().UnixNano()) / 1e9,
 			"id":         messageID,
 		})
 	} else {
 		lastIdx := len(messages) - 1
 		messages[lastIdx]["content"] = content
-		messages[lastIdx]["created_at"] = float64(time.Now().Unix())
+		messages[lastIdx]["created_at"] = float64(time.Now().UnixNano()) / 1e9
 		messages[lastIdx]["id"] = messageID
 	}
 	session.Message, _ = json.Marshal(messages)
+}
+
+// compactSessionAssistant replaces the assistant content in the in-memory
+// session snapshot with a non-blank final answer. It does not write to the DAO;
+// any persistence is handled by the caller. A blank final leaves the accumulated
+// content unchanged.
+func (s *ChatSessionService) compactSessionAssistant(session *entity.ChatSession, final, messageID string) {
+	if session == nil || strings.TrimSpace(final) == "" {
+		return
+	}
+	s.appendAssistantToSession(session, final, messageID)
 }
 
 // getSessionMessagesAsSlice returns the session's messages as a slice of maps.
@@ -2035,37 +1727,6 @@ func (s *ChatSessionService) sendSSEError(streamChan chan<- string, errMsg strin
 
 // Helper methods
 
-func (s *ChatSessionService) buildSessionMessages(session *entity.ChatSession, messages []map[string]interface{}) []map[string]interface{} {
-	prefix := make([]map[string]interface{}, 0, 1)
-	existingMessages := parseMessages(session.Message)
-	if len(existingMessages) > 0 {
-		if role, _ := existingMessages[0]["role"].(string); role == "assistant" {
-			firstIncomingRole := ""
-			if len(messages) > 0 {
-				firstIncomingRole, _ = messages[0]["role"].(string)
-			}
-			if firstIncomingRole != "assistant" {
-				prologue := make(map[string]interface{}, len(existingMessages[0]))
-				for k, v := range existingMessages[0] {
-					prologue[k] = v
-				}
-				prefix = append(prefix, prologue)
-			}
-		}
-	}
-
-	sessionMessages := make([]map[string]interface{}, 0, len(prefix)+len(messages))
-	sessionMessages = append(sessionMessages, prefix...)
-	for _, msg := range messages {
-		cloned := make(map[string]interface{}, len(msg))
-		for k, v := range msg {
-			cloned[k] = v
-		}
-		sessionMessages = append(sessionMessages, cloned)
-	}
-	return sessionMessages
-}
-
 func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []interface{} {
 	var reference []interface{}
 	if len(session.Reference) > 0 {
@@ -2086,11 +1747,26 @@ func (s *ChatSessionService) initializeReference(session *entity.ChatSession) []
 }
 
 func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID, modelName string) (bool, error) {
-	resolver := s.modelProviderSvc
-	if resolver == nil {
-		resolver = NewModelProviderService()
+	modelFactory := s.modelFactory
+	if modelFactory == nil {
+		modelFactory = NewModelFactory()
 	}
-	_, _, _, _, err := resolver.GetChatModelConfig(ctx, tenantID, modelName)
+	var err error
+	access := ModelAccess{TenantID: tenantID}
+	if modelName == "" {
+		_, err = modelFactory.ResolveDefaultInfo(ctx, access, entity.ModelTypeChat)
+	} else {
+		modelType := entity.ModelTypeChat
+		if modelTypes, typeErr := modelFactory.ResolveModelType(ctx, access, modelName); typeErr == nil {
+			for _, resolvedType := range modelTypes {
+				if resolvedType.Has(entity.ModelTypeImage2Text) {
+					modelType = entity.ModelTypeImage2Text
+					break
+				}
+			}
+		}
+		_, err = modelFactory.ResolveInfo(ctx, access, modelType, modelName)
+	}
 	if err != nil {
 		return false, err
 	}
@@ -2099,8 +1775,12 @@ func (s *ChatSessionService) checkTenantLLMAPIKey(ctx context.Context, tenantID,
 
 // sseAnswerChunk has deterministic JSON field order matching Python's structure_answer output.
 type sseAnswerChunk struct {
-	Answer       string                 `json:"answer"`
-	Reference    map[string]interface{} `json:"reference"`
+	Answer string `json:"answer"`
+	// Reference is omitted from the JSON when the producer did not set one:
+	// intermediate streaming deltas have nothing to cite yet, and only the
+	// final event carries the citation payload (set explicitly by the
+	// pipeline's Final branch). sseMarshalChunk leaves it nil in that case.
+	Reference    map[string]interface{} `json:"reference,omitempty"`
 	AudioBinary  interface{}            `json:"audio_binary"`
 	Prompt       string                 `json:"prompt"`
 	CreatedAt    float64                `json:"created_at"`
@@ -2110,6 +1790,7 @@ type sseAnswerChunk struct {
 	ChatID       string                 `json:"chat_id,omitempty"`
 	StartToThink bool                   `json:"start_to_think,omitempty"`
 	EndToThink   bool                   `json:"end_to_think,omitempty"`
+	ThinkEvent   interface{}            `json:"think_event,omitempty"`
 }
 
 // sseWrapper wraps the SSE response with deterministic field order matching Python:
@@ -2198,9 +1879,17 @@ func sanitizeJSONFloats(v interface{}) interface{} {
 // sseMarshalChunk converts an answer map to the ordered sseAnswerChunk struct
 // and marshals it with Python-compatible JSON formatting (spaces, field order).
 func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
-	ref, _ := ans["reference"].(map[string]interface{})
-	if ref == nil {
-		ref = map[string]interface{}{"chunks": []interface{}{}}
+	// Reference is emitted only when the producer set one: the delta branch
+	// deletes the key so intermediate chunks stay reference-free, and silently
+	// re-adding an empty `{"chunks": []}` here would undo that — every
+	// intermediate chunk would carry a citation payload it cannot back.
+	ref := map[string]interface{}{"chunks": []interface{}{}}
+	if raw, hasRef := ans["reference"]; hasRef {
+		if m, ok := raw.(map[string]interface{}); ok && m != nil {
+			ref = m
+		}
+	} else {
+		ref = nil // key absent → omit from the JSON entirely (omitempty)
 	}
 	answer, _ := ans["answer"].(string)
 	prompt, _ := ans["prompt"].(string)
@@ -2224,6 +1913,7 @@ func sseMarshalChunk(ans map[string]interface{}, chatID string) string {
 		ChatID:       chatID,
 		StartToThink: startToThink,
 		EndToThink:   endToThink,
+		ThinkEvent:   ans["think_event"],
 	}
 	wrapper := sseWrapper{Code: 0, Message: "", Data: chunk}
 	return marshalJSONWithSpaces(wrapper)
@@ -2269,10 +1959,15 @@ func (s *ChatSessionService) updateSessionMessages(ctx context.Context, session 
 		return
 	}
 
-	updates := map[string]interface{}{
-		"message":   messagesJSON,
-		"reference": referenceJSON,
+	if len(messages) == 0 || stringValue(messages[len(messages)-1]["role"]) != "assistant" {
+		return
 	}
+	message := messages[len(messages)-1]
+	var latestReference map[string]interface{}
+	if len(reference) > 0 {
+		latestReference, _ = reference[len(reference)-1].(map[string]interface{})
+	}
+	updates := map[string]interface{}{"history_update": dao.ConversationHistoryUpdate{Message: message, QuestionID: stringValue(message["id"]), Reference: latestReference, AppendReference: true}}
 	if err := s.chatSessionDAO.UpdateByID(ctx, dao.DB, session.ID, updates); err != nil {
 		common.Warn("updateSessionMessages: DAO update failed", zap.Error(err))
 		return
@@ -2317,7 +2012,7 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 		messages = append(messages, map[string]interface{}{
 			"role":       "assistant",
 			"content":    content,
-			"created_at": float64(time.Now().Unix()),
+			"created_at": float64(time.Now().UnixNano()) / 1e9,
 			"id":         messageID,
 		})
 	} else {
@@ -2329,7 +2024,7 @@ func (s *ChatSessionService) structureAnswerWithConv(session *entity.ChatSession
 			existing, _ := lastMsg["content"].(string)
 			lastMsg["content"] = existing + content
 		}
-		lastMsg["created_at"] = float64(time.Now().Unix())
+		lastMsg["created_at"] = float64(time.Now().UnixNano()) / 1e9
 		lastMsg["id"] = messageID
 		messages[lastIdx] = lastMsg
 	}
@@ -2376,7 +2071,7 @@ func (s *ChatSessionService) chunksFormat(reference map[string]interface{}) []ma
 	for _, chunk := range raw {
 		out = append(out, map[string]interface{}{
 			"id":                getValue(chunk, "chunk_id", "id"),
-			"content":           getValue(chunk, "content_with_weight", "content"),
+			"content":           getValue(chunk, "content", "content_with_weight"),
 			"document_id":       getValue(chunk, "doc_id", "document_id"),
 			"document_name":     getValue(chunk, "docnm_kwd", "document_name"),
 			"dataset_id":        getValue(chunk, "kb_id", "dataset_id"),

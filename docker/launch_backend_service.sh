@@ -12,10 +12,10 @@ usage() {
     echo "  --debug         Enable debug mode and debug-level logging"
     echo
     echo "Available service types:"
-    echo "  ragflow         Start RAGFlow server based on API_PROXY_SCHEME"
-    echo "  task_executor   Start task workers based on API_PROXY_SCHEME"
-    echo "  admin           Start Admin server based on API_PROXY_SCHEME"
-    echo "  data_sync       Start rag/svr/sync_data_source.py"
+    echo "  ragflow         Start RAGFlow server"
+    echo "  task_executor   Start task workers"
+    echo "  admin           Start Admin server"
+    echo "  data_sync       Start the data source syncer"
     echo
     echo "Examples:"
     echo "  $0"
@@ -50,12 +50,8 @@ load_env_file
 
 # Unset HTTP proxies that might be set by Docker daemon
 export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
-export PYTHONPATH=$(pwd)
 
 export LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/
-JEMALLOC_PATH=$(pkg-config --variable=libdir jemalloc)/libjemalloc.so
-
-PY=python3
 
 # Set default number of workers if WS is not set or less than 1
 if [[ -z "$WS" || $WS -lt 1 ]]; then
@@ -72,9 +68,7 @@ STOP=false
 PIDS=()
 
 # Set the path to the NLTK data directory
-# download_deps.py downloads NLTK data into ragflow_deps/nltk_data (see
-# ragflow_deps/download_deps.py); point NLTK_DATA there directly instead of a
-# stale top-level ./nltk_data so this matches what's actually populated.
+# Use the repository's NLTK data directory when it is provisioned.
 export NLTK_DATA="$(pwd)/ragflow_deps/nltk_data"
 
 # Function to handle termination signals
@@ -97,25 +91,18 @@ trap cleanup SIGINT SIGTERM
 # Function to execute task_executor with retry logic
 task_exe(){
     local task_id=$1
-    local task_name="task_executor.py for task $task_id"
-    local -a task_cmd=("$PY" "rag/svr/task_executor.py" "-i" "$task_id")
-    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        prepare_for_go
-        task_name="ragflow_server --ingestor"
-        task_cmd=("bin/ragflow_server" "--ingestor")
-        if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            task_cmd+=("--debug")
-        fi
+    local task_name="ragflow_server --ingestor"
+    local -a task_cmd=("bin/ragflow_server" "--ingestor")
+    prepare_for_go
+    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        task_cmd+=("--log-level" "debug")
     fi
     local retry_count=0
+
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
         echo "Starting ${task_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
-        if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-            "${task_cmd[@]}" || EXIT_CODE=$?
-        else
-            LD_PRELOAD=$JEMALLOC_PATH "${task_cmd[@]}" || EXIT_CODE=$?
-        fi
+        "${task_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
             echo "$task_name exited successfully."
             break
@@ -134,15 +121,11 @@ task_exe(){
 
 # Function to execute ragflow_server with retry logic
 run_server(){
-    local server_name="ragflow_server.py"
-    local -a server_cmd=("$PY" "api/ragflow_server.py")
-    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        prepare_for_go
-        server_name="ragflow_server"
-        server_cmd=("bin/ragflow_server" "--api")
-    fi
+    local server_name="ragflow_server"
+    local -a server_cmd=("bin/ragflow_server" "--api")
+    prepare_for_go
     if [[ "$DEBUG_MODE" -eq 1 ]]; then
-        server_cmd+=("--debug")
+        server_cmd+=("--log-level" "debug")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
@@ -167,15 +150,11 @@ run_server(){
 
 # Function to execute admin_server with retry logic
 run_admin_server(){
-    local server_name="admin_server.py"
-    local -a server_cmd=("$PY" "admin/server/admin_server.py")
-    if [[ "${API_PROXY_SCHEME}" == "go" ]]; then
-        prepare_for_go
-        server_name="admin_server"
-        server_cmd=("bin/ragflow_server" "--admin")
-        if [[ "$DEBUG_MODE" -eq 1 ]]; then
-            server_cmd+=("--debug")
-        fi
+    local server_name="admin_server"
+    local -a server_cmd=("bin/ragflow_server" "--admin")
+    prepare_for_go
+    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        server_cmd+=("--log-level" "debug")
     fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
@@ -199,44 +178,47 @@ run_admin_server(){
 
 # Function to execute sync_data_source with retry logic
 run_data_sync(){
+    local server_name="ragflow_server --syncer"
+    local -a sync_cmd=("bin/ragflow_server" "--syncer")
+    prepare_for_go
+    if [[ "$DEBUG_MODE" -eq 1 ]]; then
+        sync_cmd+=("--log-level" "debug")
+    fi
     local retry_count=0
     while ! $STOP && [ $retry_count -lt $MAX_RETRIES ]; do
-        echo "Starting sync_data_source.py (Attempt $((retry_count+1)))"
+        echo "Starting ${sync_cmd[*]} (Attempt $((retry_count+1)))"
         EXIT_CODE=0
-        $PY rag/svr/sync_data_source.py || EXIT_CODE=$?
+        "${sync_cmd[@]}" || EXIT_CODE=$?
         if [ $EXIT_CODE -eq 0 ]; then
-            echo "sync_data_source.py exited successfully."
+            echo "$server_name exited successfully."
             break
         else
-            echo "sync_data_source.py failed with exit code $EXIT_CODE. Retrying..." >&2
+            echo "$server_name failed with exit code $EXIT_CODE. Retrying..." >&2
             retry_count=$((retry_count + 1))
             sleep 2
         fi
     done
 
     if [ $retry_count -ge $MAX_RETRIES ]; then
-        echo "sync_data_source.py failed after $MAX_RETRIES attempts. Exiting..." >&2
+        echo "$server_name failed after $MAX_RETRIES attempts. Exiting..." >&2
         cleanup
     fi
 }
 
-ensure_db_init() {
-    echo "Initializing database tables..."
-    "$PY" -c "from api.db.db_models import init_database_tables as init_web_db; init_web_db()"
-    echo "Database tables initialized."
-}
-
-run_mysql_migrations() {
+run_migrations() {
     local db_type="${DB_TYPE:-mysql}"
     db_type="${db_type,,}"
     if [ "$db_type" = "gaussdb" ] || [ "$db_type" = "gauss" ]; then
-        # This migration script contains MySQL-only SQL and cannot run against
-        # a GaussDB metadata database.
+        # The migrations contain MySQL-only SQL and cannot run against a GaussDB
+        # metadata database.
         echo "Skipping MySQL-specific model provider table migrations for DB_TYPE=${DB_TYPE:-mysql}."
         return 0
     fi
 
-    tools/scripts/run_migrations.sh
+    # --migrate is a standalone action: it runs the migrations and exits, so it
+    # is independent of any server actually starting.
+    echo "Running model provider table migrations..."
+    bin/ragflow_server --migrate
 }
 
 prepare_for_go() {
@@ -299,18 +281,13 @@ for arg in "$@"; do
   esac
 done
 
-if [[ "$DEBUG_MODE" -eq 1 && "${API_PROXY_SCHEME}" != "go" ]]; then
-  export LOG_LEVELS="root=DEBUG"
-fi
-
 if [[ "$SERVICE_SELECTED" -eq 0 ]]; then
   START_RAGFLOW=1
   START_TASK_EXECUTOR=1
 fi
 
 if [[ "$START_RAGFLOW" -eq 1 ]]; then
-  ensure_db_init
-  run_mysql_migrations
+  run_migrations
 fi
 
 # Start task executors

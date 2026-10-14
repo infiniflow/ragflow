@@ -176,9 +176,6 @@ func (p *Parser) parseUserCommand() (*Command, error) {
 		return p.parseAPIResetCommands()
 	case TokenImport:
 		return p.parseAPIImport()
-	case TokenInsert:
-		// Use for development only
-		return p.parseDevInsertCommand()
 	case TokenRetrieve:
 		return p.parseAPIRetrieve()
 	case TokenParse:

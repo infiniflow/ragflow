@@ -19,11 +19,11 @@ package dao
 import (
 	"context"
 	"fmt"
-	"log"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 	"strings"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -45,11 +45,29 @@ func (dao *FileDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entit
 	return &file, nil
 }
 
+// GetByIDAndTenant gets a file by ID scoped to the given tenant. Callers that
+// resolve a user-supplied file ID (e.g. parser_config.tags.tag_file_id, which
+// the dataset update API accepts from the client) MUST use this instead of
+// GetByID: an unscoped ID lookup crosses tenant boundaries and is an IDOR
+// (CWE-639). An empty id or tenantID fails closed with gorm.ErrRecordNotFound
+// so callers see the same "not found" as a missing row.
+func (dao *FileDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenantID string) (*entity.File, error) {
+	if id == "" || tenantID == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+	var file entity.File
+	err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&file).Error
+	if err != nil {
+		return nil, err
+	}
+	return &file, nil
+}
+
 // GetByPfID gets files by parent folder ID with pagination and filtering.
 // When keywords is empty, only direct children of pfID are listed; when
 // keywords is non-empty, the search covers the whole subtree under pfID so
 // files and folders nested in sub-folders can be found too.
-func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, orderBy string, desc bool, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
+func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID string, page, pageSize int, terms []OrderTerm, keywords string, excludeSkills bool) ([]*entity.File, int64, error) {
 	var files []*entity.File
 	var total int64
 
@@ -75,12 +93,12 @@ func (dao *FileDAO) GetByPfID(ctx context.Context, db *gorm.DB, tenantID, pfID s
 		return nil, 0, err
 	}
 
-	// Apply ordering
-	orderDirection := "ASC"
-	if desc {
-		orderDirection = "DESC"
-	}
-	query = query.Order(orderBy + " " + orderDirection)
+	// Apply ordering. Route orderBy through fileOrderClause so a user-supplied
+	// query param can never reach Order() verbatim: the helper validates
+	// against fileOrderableColumns (a closed allowlist) and falls back to
+	// "create_time" on a miss.
+	// codeql[go/sql-injection] False positive: fileOrderClause
+	query = query.Order(fileOrderClause(terms))
 
 	// Apply pagination
 	if page > 0 && pageSize > 0 {
@@ -143,7 +161,7 @@ func (dao *FileDAO) GetRootFolder(ctx context.Context, db *gorm.DB, tenantID str
 	}
 
 	// Create root folder if not exists
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file = entity.File{
 		ID:        fileID,
 		ParentID:  fileID,
@@ -336,7 +354,7 @@ func (dao *FileDAO) GetIDListByID(ctx context.Context, db *gorm.DB, id string, n
 // CreateFolder creates a folder in the database
 func (dao *FileDAO) CreateFolder(ctx context.Context, db *gorm.DB, parentID, tenantID, name, fileType string) (*entity.File, error) {
 	file := &entity.File{
-		ID:         utility.GenerateToken(),
+		ID:         common.GenerateToken(),
 		ParentID:   parentID,
 		TenantID:   tenantID,
 		CreatedBy:  tenantID,
@@ -383,6 +401,21 @@ func (dao *FileDAO) Query(ctx context.Context, db *gorm.DB, name string, parentI
 		return nil, err
 	}
 	return files, nil
+}
+
+// NameExists reports whether a file or folder with the given name already
+// exists under parentID for the tenant, comparing names case-insensitively.
+// excludeID, when non-empty, omits that entry from the check so moving or
+// renaming an entry does not collide with itself.
+func (dao *FileDAO) NameExists(ctx context.Context, db *gorm.DB, name, parentID, tenantID, excludeID string) (bool, error) {
+	q := db.WithContext(ctx).Model(&entity.File{}).
+		Where("LOWER(name) = LOWER(?) AND parent_id = ? AND tenant_id = ?", name, parentID, tenantID)
+	if excludeID != "" {
+		q = q.Where("id <> ?", excludeID)
+	}
+	var count int64
+	err := q.Count(&count).Error
+	return count > 0, err
 }
 
 // Delete deletes a file by ID (hard delete)
@@ -457,12 +490,12 @@ func (dao *FileDAO) InitDatasetDocs(ctx context.Context, db *gorm.DB, rootID, te
 
 	if len(existing) > 0 {
 		if len(existing) > 1 {
-			log.Printf("[WARN] Found %d duplicate '%s' folders under root %s, keeping only the first",
-				len(existing), DatasetFolderName, rootID)
+			common.Warn("Found duplicate folders under root, keeping only the first",
+				zap.Int("duplicates", len(existing)), zap.String("name", DatasetFolderName), zap.String("root_id", rootID))
 			keepID := existing[0].ID
 			for _, dup := range existing[1:] {
 				if err := reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate folder %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate folder", err, zap.String("folder_id", dup.ID))
 				}
 			}
 		}
@@ -516,19 +549,19 @@ func (dao *FileDAO) newAFileFromDataset(ctx context.Context, db *gorm.DB, tenant
 
 	if len(existingFiles) > 0 {
 		if len(existingFiles) > 1 {
-			log.Printf("[WARN] Found %d duplicate entries named '%s' under parent %s, keeping only the first",
-				len(existingFiles), name, parentID)
+			common.Warn("Found duplicate entries under parent, keeping only the first",
+				zap.Int("duplicates", len(existingFiles)), zap.String("name", name), zap.String("parent_id", parentID))
 			keepID := existingFiles[0].ID
 			for _, dup := range existingFiles[1:] {
 				if err = reparentAndDeleteFolder(ctx, db, dup.ID, keepID); err != nil {
-					log.Printf("[ERROR] Failed to deduplicate file entry %s: %v", dup.ID, err)
+					common.Error("Failed to deduplicate file entry", err, zap.String("entry_id", dup.ID))
 				}
 			}
 		}
 		return existingFiles[0], nil
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   parentID,
@@ -570,7 +603,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		docLocation = *doc.Location
 	}
 
-	fileID := utility.GenerateToken()
+	fileID := common.GenerateToken()
 	file := &entity.File{
 		ID:         fileID,
 		ParentID:   datasetFolderID,
@@ -587,7 +620,7 @@ func (dao *FileDAO) addFileFromKB(ctx context.Context, db *gorm.DB, doc *entity.
 		return err
 	}
 
-	f2dID := utility.GenerateToken()
+	f2dID := common.GenerateToken()
 	f2d := &entity.File2Document{
 		ID:         f2dID,
 		FileID:     &fileID,

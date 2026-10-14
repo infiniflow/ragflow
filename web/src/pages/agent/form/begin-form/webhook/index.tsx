@@ -89,6 +89,7 @@ export function WebHook() {
                 <NumberInput
                   max={getLimitRateLimitPerMax(rateLimitPer)}
                   className="w-full"
+                  integer
                 ></NumberInput>
               </RAGFlowFormItem>
               <Separator className="w-2" />

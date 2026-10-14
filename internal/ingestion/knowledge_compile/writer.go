@@ -31,8 +31,10 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
-	"ragflow/internal/utility"
+	"ragflow/internal/service/file"
+	"ragflow/internal/tokenizer"
 )
 
 // Writer persists dataset-level merged products and removes them on document
@@ -92,6 +94,7 @@ type Writer interface {
 // folded descriptions and the union of source docs/chunks. It is written as a
 // scope_kwd="dataset" row. Relations carry FromEntity/ToEntity instead of Name.
 type StructureBucket struct {
+	CompileType    string
 	Name           string
 	Type           string
 	Description    string   // folded entity descriptions
@@ -101,22 +104,13 @@ type StructureBucket struct {
 	VecCount       int    // number of vectors folded into Vector (for true mean)
 	FromEntity     string // relation only
 	ToEntity       string // relation only
-	// CompileKwd is the raw compile keyword (the inferred compile type / autotype,
-	// e.g. "hypergraph", "timeline", "mindmap", "list") that produced this bucket.
-	// It is stamped on the stored row's compile_kwd so distinct structure kinds
-	// never collide in the same dataset namespace (plan §1.1). It matches the doc
-	// row's own compile_kwd — Python _do_build carries the doc row's compile_kwd
-	// verbatim onto the dataset row, it does NOT rewrite it to the template kind.
+	// CompileKwd is the canonical knowledge compilation kind for this bucket.
 	CompileKwd string
 	// TemplateID is the compilation template id (compilation_template_ids[0]) that
 	// produced this bucket. Stamped on the dataset row so read/delete paths can
 	// filter per template (mirror Python get_dataset_structure).
 	TemplateID string
-	// TemplateKind is the authoritative template kind (compilation_template_kind_kwd,
-	// e.g. "knowledge_graph", "mind_map", "timeline"). This — NOT compile_kwd — is
-	// the field read/delete paths match on for the dataset-structure kind
-	// (mirror Python get_dataset_structure._discover_scope_templates, which
-	// matches _resolve_dataset_structure_kind against compilation_template_kind_kwd).
+	// TemplateKind identifies the producing template and determines CompileKwd.
 	TemplateKind string
 	// RelationType is the relation type (Python default "related"), persisted as
 	// relation_type_kwd and part of the relation bucket/ID identity.
@@ -130,7 +124,12 @@ type StructureBucket struct {
 // obtained via engine.Get(); the storage schema lives behind the engine
 // abstraction rather than in this package.
 type engineWriter struct {
-	eng engine.DocEngine
+	eng           engine.DocEngine
+	commitService pageCommitter
+}
+
+type pageCommitter interface {
+	RecordPageEdit(context.Context, file.PageEditCommitInput) (*entity.FileCommit, error)
 }
 
 func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb string, ids []string) error {
@@ -146,13 +145,13 @@ func (w engineWriter) DeleteMergedWikiPages(ctx context.Context, tenant, kb stri
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	_, err := eng.DeleteChunks(ctx, map[string]interface{}{
-		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "compile_kwd": compileKwdWikiPage,
+		"id": ids, "kb_id": kb, "available_int": 1, "scope_kwd": "dataset", "type_kwd": compileKwdWikiPage,
 	}, baseName, kb)
 	return err
 }
 
 // datasetStructureSupported reports whether the running doc engine can filter
-// the dataset-structure fields (knowledge_graph_kwd + scope_kwd + raw
+// the dataset-structure fields (type_kwd + scope_kwd + raw
 // compile_kwd) this feature writes/deletes. Only infinity and elasticsearch
 // support them today; OceanBase/SeekDB/SereneDB have explicit schemas that lack
 // these filter keys and would reject the query or silently drop unknown fields.
@@ -186,6 +185,20 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	if len(products) == 0 {
 		return nil
 	}
+	var existingWikiPageContent map[string]string
+	canRecordWikiCommits := w.commitService != nil
+	if canRecordWikiCommits {
+		var err error
+		existingWikiPageContent, err = w.loadWikiPageContent(ctx, tenant, kb, products)
+		if err != nil {
+			// The compiled page write must not fail because the audit lookup is
+			// unavailable. Skip auditing this batch rather than recording an
+			// incorrect add commit for a page whose old content is unknown.
+			common.Warn("knowledge_compile: failed to load Wiki page content for version history",
+				zap.String("kb_id", kb), zap.Error(err))
+			canRecordWikiCommits = false
+		}
+	}
 	// Dataset-level telemetry: break the merged set down by compile_kwd so a
 	// missing wiki_page at query time can be traced to "WriteMerged never
 	// received any wiki_page products" (generation/merge bug) rather than
@@ -213,7 +226,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	// shard, so rows from the same execution share plan_kwd and reruns of the
 	// same plan share input_hash_kwd.
 	now := time.Now()
-	runID := utility.GenerateUUID()
+	runID := common.GenerateUUID()
 	inputHash := mergedInputHash(products)
 	// Diagnostics: before building merged rows, confirm the incoming products
 	// actually carry an embedding. mergedChunkMap only writes q_<dim>_vec when
@@ -264,16 +277,192 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 			return err
 		})
 	}
-	return runCompilerJobs(ctx, jobs)
+	if err := runCompilerJobs(ctx, jobs); err != nil {
+		return err
+	}
+	if canRecordWikiCommits {
+		w.recordWikiPageCommits(ctx, kb, products, existingWikiPageContent)
+	}
+	return nil
+}
+
+type wikiPageCommitTarget struct {
+	key      string
+	fullSlug string
+	bareSlug string
+	pageType string
+}
+
+// loadWikiPageContent returns the currently persisted content for the page
+// products in products. A missing key means that this is the page's first
+// generated version, while an empty value means an existing page currently has
+// empty content; callers must preserve that distinction.
+func (w engineWriter) loadWikiPageContent(ctx context.Context, tenant, kb string, products []kccommon.Product) (map[string]string, error) {
+	eng := w.eng
+	if eng == nil {
+		eng = engine.Get()
+	}
+	result := make(map[string]string)
+	if eng == nil {
+		return result, nil
+	}
+
+	pageSlugs := make(map[string]struct{})
+	for _, product := range products {
+		target, ok := wikiPageCommitTargetForProduct(product)
+		if ok {
+			pageSlugs[target.fullSlug] = struct{}{}
+		}
+	}
+	if len(pageSlugs) == 0 {
+		return result, nil
+	}
+
+	slugs := make([]string, 0, len(pageSlugs))
+	for slug := range pageSlugs {
+		slugs = append(slugs, slug)
+	}
+	sort.Strings(slugs)
+	baseName := fmt.Sprintf("ragflow_%s", tenant)
+	const pageBatchSize = 2000
+	for offset := 0; ; offset += pageBatchSize {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			Offset:     offset,
+			Limit:      pageBatchSize,
+			SelectFields: []string{
+				"id", "slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "content_with_weight",
+			},
+			Filter: map[string]interface{}{
+				"type_kwd":      compileKwdWikiPage,
+				"available_int": 1,
+				"kb_id":         kb,
+				"slug_kwd":      slugs,
+			},
+			OrderBy: (&types.OrderByExpr{}).Asc("slug_kwd"),
+		})
+		if err != nil {
+			return nil, err
+		}
+		if res == nil || len(res.Chunks) == 0 {
+			break
+		}
+		for _, row := range res.Chunks {
+			target, ok := wikiPageCommitTargetForRow(
+				types.WikiPageCategory(row),
+				pageEngineString(row["slug_kwd"]),
+			)
+			if !ok {
+				continue
+			}
+			content := types.WikiPageContent(row)
+			if content == "" {
+				raw, err := eng.GetChunk(ctx, baseName, pageEngineString(row["id"]), []string{kb})
+				if err != nil {
+					return nil, err
+				}
+				stored, _ := raw.(map[string]interface{})
+				content = types.WikiPageContent(stored)
+			}
+			result[target.key] = content
+		}
+		if len(res.Chunks) < pageBatchSize {
+			break
+		}
+	}
+	return result, nil
+}
+
+// recordWikiPageCommits records generated page revisions after their merged
+// rows have been written. Sections and other Wiki products are intentionally
+// excluded because Python's generated-page history is page-level only.
+func (w engineWriter) recordWikiPageCommits(ctx context.Context, kb string, products []kccommon.Product, existing map[string]string) {
+	if w.commitService == nil {
+		return
+	}
+	seen := make(map[string]struct{})
+	for _, product := range products {
+		target, ok := wikiPageCommitTargetForProduct(product)
+		if !ok {
+			continue
+		}
+		if _, duplicate := seen[target.key]; duplicate {
+			continue
+		}
+		seen[target.key] = struct{}{}
+
+		_, err := w.commitService.RecordPageEdit(ctx, file.PageEditCommitInput{
+			DatasetID:  kb,
+			Slug:       target.bareSlug,
+			PageType:   target.pageType,
+			Title:      "Regenerated by artifact compilation",
+			Comments:   "Auto-update via incremental wiki compilation",
+			OldContent: existing[target.key],
+			NewContent: product.Content,
+		})
+		if err != nil {
+			common.Warn("knowledge_compile: failed to record generated Wiki page version",
+				zap.String("kb_id", kb),
+				zap.String("slug", target.fullSlug),
+				zap.Error(err))
+		}
+	}
+}
+
+func wikiPageCommitTargetForProduct(product kccommon.Product) (wikiPageCommitTarget, bool) {
+	if product.Variant != kccommon.VariantWiki || strings.ToLower(strings.TrimSpace(metaString(product.Meta, "kind"))) != "page" {
+		return wikiPageCommitTarget{}, false
+	}
+	return wikiPageCommitTargetForRow(
+		metaString(product.Meta, "page_type"),
+		metaString(product.Meta, "slug"),
+	)
+}
+
+func wikiPageCommitTargetForRow(pageType, slug string) (wikiPageCommitTarget, bool) {
+	pageType = strings.TrimSpace(pageType)
+	slug = strings.TrimSpace(slug)
+	if pageType == "" || slug == "" {
+		return wikiPageCommitTarget{}, false
+	}
+	bareSlug := strings.TrimPrefix(slug, pageType+"/")
+	if bareSlug == "" {
+		return wikiPageCommitTarget{}, false
+	}
+	return wikiPageCommitTarget{
+		key:      pageType + "\x00" + bareSlug,
+		fullSlug: pageType + "/" + bareSlug,
+		bareSlug: bareSlug,
+		pageType: pageType,
+	}, true
+}
+
+func pageEngineString(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case []string:
+		if len(typed) > 0 {
+			return typed[0]
+		}
+	case []any:
+		if len(typed) > 0 {
+			if text, ok := typed[0].(string); ok {
+				return text
+			}
+		}
+	}
+	return ""
 }
 
 // WriteMergedStructure writes the dataset-level structure merged rows for a KB
 // (G1/G4). Each StructureBucket is a scope_kwd="dataset" row with a stable
-// dataset-level id keyed on (name, type, raw compile kind), the folded
+// dataset-level id keyed on (template, name, raw compile kind), the folded
 // description, the union of source docs/chunks, and the bucket vector. Rows are
 // available_int=1 so the dataset-level structure index is searchable; the raw
 // compile kind (timeline/graph/mindmap) is stamped on compile_kwd and the
-// entity/relation discriminator on knowledge_graph_kwd.
+// entity/relation discriminator on type_kwd.
 func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb string, buckets []StructureBucket) error {
 	if len(buckets) == 0 {
 		return nil
@@ -290,57 +479,18 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	now := time.Now()
-	// Read-modify-write: an incremental batch must not drop the source docs/chunks
-	// an earlier batch already accumulated for a (name,type) bucket, so load the
-	// existing dataset rows by their stable id and union their sources (review
-	// issue 3 / #3 Major).
-	existing := map[string]StructureBucket{}
-	{
-		ids := make([]string, 0, len(buckets))
-		for _, b := range buckets {
-			if b.Name == "" {
-				continue
-			}
-			ids = append(ids, datasetLevelStructureID(tenant, kb, b.Name, b.Type, b.CompileKwd, b.RelationType))
-		}
-		if len(ids) > 0 {
-			res, err := eng.Search(ctx, &types.SearchRequest{
-				IndexNames:   []string{baseName},
-				KbIDs:        []string{kb},
-				SelectFields: []string{"id", "source_doc_ids", "source_chunk_ids"},
-				Filter:       map[string]interface{}{"kb_id": kb, "id": ids},
-				Limit:        len(ids),
-			})
-			if err != nil {
-				return fmt.Errorf("structure merge read-modify-write load: %w", err)
-			}
-			for _, c := range res.Chunks {
-				id, _ := c["id"].(string)
-				if id == "" {
-					continue
-				}
-				existing[id] = StructureBucket{
-					SourceDocIDs:   firstStringSlice(c["source_doc_ids"]),
-					SourceChunkIDs: firstStringSlice(c["source_chunk_ids"]),
-				}
-			}
-		}
+	staleIDs, err := mergeExistingStructureBuckets(ctx, eng, baseName, tenant, kb, buckets)
+	if err != nil {
+		return err
 	}
 	rows := make([]map[string]interface{}, 0, len(buckets))
 	for _, b := range buckets {
+		if !structureBucketWritable(b) {
+			continue
+		}
 		desc := strings.TrimSpace(b.Description)
-		if desc == "" {
-			continue
-		}
-		if b.Name == "" {
-			continue
-		}
-		bid := datasetLevelStructureID(tenant, kb, b.Name, b.Type, b.CompileKwd, b.RelationType)
-		// Union the current batch's sources with any already-accumulated ones.
-		if prev, ok := existing[bid]; ok {
-			b.SourceDocIDs = appendUnique(b.SourceDocIDs, prev.SourceDocIDs)
-			b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, prev.SourceChunkIDs)
-		}
+		template := structureTemplateIdentity(b.TemplateID, b.TemplateKind)
+		bid := datasetLevelStructureID(tenant, kb, template, b.Name, b.Type, b.CompileKwd, b.RelationType)
 		ckwd := b.CompileKwd
 		if ckwd == "" {
 			ckwd = compileKwdStructure
@@ -380,42 +530,38 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		payload := string(payloadBytes)
 		row := map[string]interface{}{
-			// Stable dataset-level id keyed on the (name, type) or (from, to)
-			// bucket plus the raw compile kind.
+			// Stable dataset-level id keyed on the template-scoped entity name or
+			// relation identity plus the raw compile kind.
 			"id":                   bid,
 			"doc_id":               kb,
-			"tenant_id":            tenant,
 			"kb_id":                kb,
 			"available_int":        1,
-			"compile_kwd":          ckwd,
+			"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(b.TemplateKind, ckwd)),
 			"scope_kwd":            "dataset",
 			"content_with_weight":  payload,
-			"kc_payload":           payload,
 			"source_doc_ids":       b.SourceDocIDs,
 			"source_chunk_ids":     b.SourceChunkIDs,
 			"create_time":          now.Format("2006-01-02 15:04:05"),
 			"create_timestamp_flt": float64(now.Unix()),
 		}
-		// Stamp the authoritative template identity so read/delete paths can match
-		// the dataset-structure kind by compilation_template_kind_kwd (mirror Python
-		// get_dataset_structure._discover_scope_templates), independent of the
-		// autotype-valued compile_kwd above.
-		if b.TemplateKind != "" {
-			row["compilation_template_kind_kwd"] = b.TemplateKind
+		if b.CompileType != "" {
+			extra, err := json.Marshal(map[string]string{"compile_type": b.CompileType})
+			if err != nil {
+				return err
+			}
+			row["extra"] = string(extra)
 		}
 		if b.TemplateID != "" {
 			row["compilation_template_ids"] = []string{b.TemplateID}
 		}
 		if b.FromEntity != "" || b.ToEntity != "" {
 			// relation row: carries from/to entities; kind=relation, no name_kwd.
-			row["knowledge_graph_kwd"] = "relation"
 			row["type_kwd"] = "relation"
 			row["from_entity_kwd"] = b.FromEntity
 			row["to_entity_kwd"] = b.ToEntity
 		} else {
-			row["knowledge_graph_kwd"] = "entity"
 			row["type_kwd"] = "entity"
-			row["name_kwd"] = b.Name
+			row["name_kwd"] = strings.ToLower(b.Name)
 			row["entity_type_kwd"] = b.Type
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount
@@ -433,7 +579,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	// Python _META_ROW_KWD legacy field NOT present in the Infinity/ES/OS schemas,
 	// so writing it would fail with an undefined-column error — see review). It is
 	// a write/delete-side marker — GET discovery does NOT read it (it scans
-	// knowledge_graph_kwd=["entity"] rows instead, per §6).
+	// type_kwd=["entity"] rows instead, per §6).
 	seenKwd := map[string]bool{}
 	for _, b := range buckets {
 		ckwd := b.CompileKwd
@@ -447,12 +593,11 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		rows = append(rows, map[string]interface{}{
 			"id":                   "dataset_build_meta_" + hashStr(tenant+"\x00"+kb+"\x00"+ckwd),
 			"doc_id":               kb,
-			"tenant_id":            tenant,
 			"kb_id":                kb,
 			"available_int":        0,
-			"compile_kwd":          ckwd,
+			"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(b.TemplateKind, ckwd)),
 			"scope_kwd":            "dataset",
-			"knowledge_graph_kwd":  "kg_build_meta",
+			"type_kwd":             "kg_build_meta",
 			"create_time":          now.Format("2006-01-02 15:04:05"),
 			"create_timestamp_flt": float64(now.Unix()),
 		})
@@ -473,7 +618,178 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		})
 	}
-	return runCompilerJobs(ctx, jobs)
+	if err := runCompilerJobs(ctx, jobs); err != nil {
+		return err
+	}
+	if len(staleIDs) > 0 {
+		if _, err := eng.DeleteChunks(ctx, map[string]interface{}{"id": staleIDs, "kb_id": kb}, baseName, kb); err != nil {
+			return fmt.Errorf("structure merge remove superseded rows: %w", err)
+		}
+	}
+	return nil
+}
+
+func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, baseName, tenant, kb string, buckets []StructureBucket) ([]string, error) {
+	byIdentity := make(map[string]int, len(buckets))
+	compileKinds := make([]string, 0, len(buckets))
+	for i := range buckets {
+		byIdentity[structureBucketIdentity(buckets[i])] = i
+		compileKinds = appendUnique(compileKinds, []string{structureCompileKind(buckets[i].CompileKwd)})
+	}
+	if len(byIdentity) == 0 {
+		return nil, nil
+	}
+
+	const pageSize = 500
+	stale := map[string]bool{}
+	for offset := 0; ; offset += pageSize {
+		res, err := eng.Search(ctx, &types.SearchRequest{
+			IndexNames: []string{baseName},
+			KbIDs:      []string{kb},
+			SelectFields: []string{
+				"id", "compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
+				"content_with_weight", "source_doc_ids", "source_chunk_ids",
+			},
+			Filter: map[string]interface{}{
+				"kb_id":               kb,
+				"scope_kwd":           "dataset",
+				"compile_kwd":         compileKinds,
+				"knowledge_graph_kwd": []string{"entity", "relation"},
+			},
+			Offset: offset,
+			Limit:  pageSize,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("structure merge load existing rows: %w", err)
+		}
+		for _, row := range res.Chunks {
+			identity := structureRowIdentity(row)
+			idx, ok := byIdentity[identity]
+			if !ok {
+				continue
+			}
+			bucket := &buckets[idx]
+			if !structureBucketWritable(*bucket) {
+				continue
+			}
+			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
+			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+			payload := structureRowPayload(row)
+			if bucket.FromEntity == "" && bucket.ToEntity == "" {
+				existingType := structureString(row["entity_type_kwd"])
+				if existingType == "" {
+					existingType = structureString(payload["type"])
+				}
+				bucket.Type = preferredStructureEntityType(existingType, bucket.Type)
+			}
+			id := structureString(row["id"])
+			newID := datasetLevelStructureID(tenant, kb, structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind), bucket.Name, bucket.Type, bucket.CompileKwd, bucket.RelationType)
+			if id != "" && id != newID {
+				stale[id] = true
+			}
+		}
+		if len(res.Chunks) < pageSize {
+			break
+		}
+	}
+	ids := make([]string, 0, len(stale))
+	for id := range stale {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids, nil
+}
+
+func structureCompileKind(compileKwd string) string {
+	if compileKwd = strings.TrimSpace(compileKwd); compileKwd != "" {
+		return types.CanonicalCompilationKind(compileKwd)
+	}
+	return "graph"
+}
+
+func structureRelationType(value string) string {
+	value = strings.ToLower(strings.Join(strings.Fields(value), " "))
+	if value == "" {
+		return "related"
+	}
+	return value
+}
+
+func structureBucketWritable(bucket StructureBucket) bool {
+	return strings.TrimSpace(bucket.Name) != "" && strings.TrimSpace(bucket.Description) != ""
+}
+
+func structureBucketIdentity(bucket StructureBucket) string {
+	template := structureTemplateIdentity(bucket.TemplateID, bucket.TemplateKind)
+	compileKwd := structureCompileKind(bucket.CompileKwd)
+	if bucket.FromEntity != "" || bucket.ToEntity != "" {
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.FromEntity) + "\x00" + structureRelationType(bucket.RelationType) + "\x00" + normalizedStructureEntityName(bucket.ToEntity)
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(bucket.Name)
+}
+
+func structureRowIdentity(row map[string]interface{}) string {
+	templateID := ""
+	if ids := firstStringSlice(row["compilation_template_ids"]); len(ids) > 0 {
+		templateID = ids[0]
+	}
+	template := structureTemplateIdentity(templateID, types.CompilationKind(row))
+	compileKwd := structureCompileKind(types.CompilationKind(row))
+	payload := structureRowPayload(row)
+	if strings.EqualFold(structureRowType(row), "relation") {
+		from := structureString(row["from_entity_kwd"])
+		to := structureString(row["to_entity_kwd"])
+		if from == "" {
+			from = structureString(payload["from"])
+		}
+		if to == "" {
+			to = structureString(payload["to"])
+		}
+		return "relation\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(from) + "\x00" + structureRelationType(structureString(payload["type"])) + "\x00" + normalizedStructureEntityName(to)
+	}
+	name := structureString(row["name_kwd"])
+	if name == "" {
+		name = structureString(payload["name"])
+	}
+	return "entity\x00" + template + "\x00" + compileKwd + "\x00" + normalizedStructureEntityName(name)
+}
+
+func structureRowType(row map[string]interface{}) string {
+	if value := structureString(row["type_kwd"]); value != "" {
+		return value
+	}
+	return structureString(row["knowledge_graph_kwd"])
+}
+
+func structureRowPayload(row map[string]interface{}) map[string]interface{} {
+	// The payload is content_with_weight verbatim (Python json.dumps's it there);
+	// there is no separate payload column.
+	if value := structureString(row["content_with_weight"]); value != "" {
+		var payload map[string]interface{}
+		if json.Unmarshal([]byte(value), &payload) == nil {
+			return payload
+		}
+	}
+	return map[string]interface{}{}
+}
+
+func structureString(value interface{}) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case []string:
+		if len(typed) > 0 {
+			return strings.TrimSpace(typed[0])
+		}
+	case []interface{}:
+		if len(typed) > 0 {
+			if text, ok := typed[0].(string); ok {
+				return strings.TrimSpace(text)
+			}
+		}
+	}
+	return ""
 }
 
 // DeleteStructureForDocs removes dataset-level structure rows whose source docs
@@ -516,7 +832,7 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 			SelectFields: []string{"id", "source_doc_ids", "compile_kwd"},
 			// Match dataset-scope entity/relation rows across ALL structure kinds
 			// (timeline/graph/session_graph/mindmap), which now each stamp their
-			// raw compile_kwd; knowledge_graph_kwd ∈ {entity,relation} + scope_kwd
+			// raw compile_kwd; type_kwd ∈ {entity,relation} + scope_kwd
 			// =dataset is the kind-agnostic predicate (plan §1, §4.2).
 			Filter: map[string]interface{}{
 				"kb_id":               kb,
@@ -599,14 +915,18 @@ func (w engineWriter) DeleteStructureForDocs(ctx context.Context, tenant, kb str
 }
 
 // datasetLevelStructureID builds the stable dataset-level id for a structure
-// bucket, keyed on (name, type, compile kind, relation type). It must be
+// bucket, keyed on template, name, compile kind, and relation type. It must be
 // deterministic so an incremental merge read-modify-writes the same row (and a
 // rebuild clean removes it). Including the raw compile kind keeps
 // timeline/graph/mindmap buckets from colliding in the same dataset namespace;
 // including the relation type keeps two relation types between the same endpoints
 // (e.g. "causes" vs "contradicts") from colliding into one id (review fix).
-func datasetLevelStructureID(tenant, kb, name, typ, compileKwd, relationType string) string {
-	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+strings.ToLower(name)+"\x00"+typ+"\x00"+compileKwd+"\x00"+strings.ToLower(relationType))
+func datasetLevelStructureID(tenant, kb, template, name, typ, compileKwd, relationType string) string {
+	identity := template + "\x00" + normalizedStructureEntityName(name) + "\x00" + structureCompileKind(compileKwd)
+	if relationType != "" {
+		identity += "\x00" + typ + "\x00" + structureRelationType(relationType)
+	}
+	return "dataset_structure_" + hashStr(tenant+"\x00"+kb+"\x00"+identity)
 }
 
 // f32ToF64Slice converts a float32 vector to float64 for the engine's dense
@@ -635,7 +955,6 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 	m := map[string]interface{}{
 		"id":            datasetLevelID(tenant, kb, p),
 		"doc_id":        kb,
-		"tenant_id":     tenant,
 		"kb_id":         kb,
 		"available_int": 1,
 		// scope_kwd marks this row as dataset-level (O1=B). It is the unified
@@ -643,9 +962,8 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		// carry scope_kwd="dataset" alongside available_int=1 so the consumer and
 		// clean paths can filter by scope instead of (only) available_int.
 		"scope_kwd":            "dataset",
-		"compile_kwd":          compileKwdForVariant(p.Variant),
+		"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(p.Kind, string(p.Variant))),
 		"content_with_weight":  p.Content,
-		"kc_payload":           p.Content, // raw payload, for Reader reconstruction
 		"source_doc_ids":       srcDocIDs,
 		"source_chunk_ids":     srcChunkIDs,
 		"plan_kwd":             runID,
@@ -653,15 +971,8 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		"create_time":          now.Format("2006-01-02 15:04:05"),
 		"create_timestamp_flt": float64(now.Unix()),
 	}
-	// wiki_incremental port: persist the product kind so the Reader can round-trip
-	// page vs section without re-deriving it from compile_kwd. The merged writer
-	// carries the authoritative kc_kind; legacy rows without it are derived in
-	// productFromChunkMap (compile_kwd wiki_page -> "page", wiki_section ->
-	// "section"). Without this, the dataset-level merge could not distinguish a
-	// wiki page from a section and the processBatch "Meta.kind==page" filter would
-	// be unreliable.
-	if kind := metaString(p.Meta, "kind"); kind != "" {
-		m["kc_kind"] = kind
+	if p.Variant == kccommon.VariantWiki {
+		m["type_kwd"] = "wiki_" + kccommon.FirstNonEmpty(metaString(p.Meta, "kind"), "page")
 	}
 	// wiki_incremental port: preserve the original creation timestamp across a
 	// page merge. If the incoming merged product already carries
@@ -673,11 +984,8 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 		// Rebuild the human-readable form from the preserved unix time.
 		m["create_time"] = time.Unix(int64(v), 0).Format("2006-01-02 15:04:05")
 	}
-	// Carry the wiki page metadata onto the merged row so the dataset-level
-	// products keep the fields the artifact API (ListArtifacts/ListWikiTopics)
-	// and page renderers read. Without this the merged rows lose page_type_kwd /
-	// topic_kwd / title_kwd and the compilation page would show no wiki pages
-	// even though per-document products carry them.
+	// Carry wiki metadata onto the merged row so the dataset-level
+	// products retain their category, topic, title, and rendered page body.
 	//
 	// slug_kwd follows the Python writer contract (api/db/db_models.py): it is
 	// stored as the full "<page_type>/<slug>" form so GetWikiPage's filter
@@ -691,13 +999,12 @@ func mergedChunkMap(tenant, kb, runID, inputHash string, now time.Time, p kccomm
 			fullSlug = pageType + "/" + slug
 		}
 		m["slug_kwd"] = fullSlug
-		m["artifact_slug_kwd"] = fullSlug
 	}
 	if v := metaString(p.Meta, "title"); v != "" {
 		m["title_kwd"] = v
 	}
 	if pageType != "" {
-		m["page_type_kwd"] = pageType
+		m["entity_type_kwd"] = pageType
 	}
 	if v := kccommon.NormalizeWikiTopicPath(metaString(p.Meta, "topic")); v != "" {
 		m["topic_kwd"] = v
@@ -972,14 +1279,7 @@ func metaFloat(m map[string]any, key string) (float64, bool) {
 	return 0, false
 }
 
-// KwdToVariant is the inverse of compileKwdForVariant: it maps a stored
-// compile_kwd back to its compiler Variant. Both wiki_page and wiki_section
-// map to VariantWiki (same product family); the page/section distinction is
-// carried by the kc_kind field, not the variant. Returns an error for an
-// unknown kwd so callers can reject dirty/foreign rows. Structure products
-// stamp the inferred compile kind verbatim (list/set/hypergraph), which are NOT
-// in the KindToVariant whitelist, so they are mapped to VariantStructure
-// explicitly before the whitelist lookup; unknown kinds hard-fail (O2a).
+// KwdToVariant maps a stored compilation kind to its execution variant.
 func KwdToVariant(kwd string) (kccommon.Variant, error) {
 	switch kwd {
 	case compileKwdWikiPage, compileKwdWikiSection, compileKwdWikiEntity, compileKwdWikiRelation:
@@ -1002,22 +1302,15 @@ func KwdToVariant(kwd string) (kccommon.Variant, error) {
 
 // --- Wiki page graph materialization (wiki_entity / wiki_relation) ---
 
-// compile_kwd values for the dataset-level products this package writes. The
-// wiki variant compiles into "wiki_page" rows (per the Python writer contract
-// that GetWikiAlteration / ListArtifacts / GetWikiGraph all filter on
-// compile_kwd = "wiki_page"), while the page graph is materialized as the
-// dedicated wiki_entity / wiki_relation buckets.
+// Wiki row-role values used by readers and graph projection.
 const (
 	compileKwdWikiPage      = "wiki_page"
 	compileKwdWikiSection   = "wiki_section"
 	compileKwdWikiEntity    = "wiki_entity"
 	compileKwdWikiRelation  = "wiki_relation"
 	compileKwdWikiPageGraph = "wiki_page_graph" // legacy Python blob, swept on drop
-	// compileKwdStructure tags structure dataset-level merged rows
-	// (scope_kwd="dataset"); compileKwdNav tags the dataset-navigation rows
-	// written by NavService. Both are targets of per-variant clean (B4).
+	// Structure is the default execution family when no template kind is supplied.
 	compileKwdStructure = "structure"
-	compileKwdNav       = "dataset_nav"
 )
 
 // wikiGraphBatchSize bounds how many graph rows each parallel InsertChunks call
@@ -1028,14 +1321,12 @@ const wikiGraphBatchSize = 200
 // a heavily-shared page does not accumulate an unbounded id list.
 const wikiGraphSourceDocCap = 64
 
-// compileKwdForVariant maps a compiler Variant to the compile_kwd stamped on the
-// merged chunk document. The wiki variant is special-cased because all read
-// paths filter on compile_kwd = "wiki_page", not the raw variant string "wiki".
+// compileKwdForVariant returns the canonical storage kind of an execution variant.
 func compileKwdForVariant(v kccommon.Variant) string {
 	if v == kccommon.VariantWiki {
-		return compileKwdWikiPage
+		return "wiki"
 	}
-	return string(v)
+	return types.CanonicalCompilationKind(string(v))
 }
 
 // wikiGraphXXHash derives a stable 16-char hex id (matches Python
@@ -1060,6 +1351,26 @@ func wikiGraphBareKey(slug string) string {
 	}
 	s = strings.ReplaceAll(s, "_", "-")
 	return strings.TrimSpace(s)
+}
+
+// tokenizeWikiGraphContent tokenizes Python's entity search text,
+// `slug + " " + description` (dataset_wiki_generator.py:750-773); the entity row
+// gets no title token column.
+func tokenizeWikiGraphContent(slug, description string) (string, string) {
+	content := strings.TrimSpace(strings.Join([]string{slug, description}, " "))
+	if content == "" {
+		return "", ""
+	}
+
+	contentLTKS, err := tokenizer.Tokenize(content)
+	if err != nil || contentLTKS == "" {
+		contentLTKS = content
+	}
+	contentSMLTKS, err := tokenizer.FineGrainedTokenize(contentLTKS)
+	if err != nil || contentSMLTKS == "" {
+		contentSMLTKS = contentLTKS
+	}
+	return contentLTKS, contentSMLTKS
 }
 
 // wikiPageProjection is the subset of a merged wiki_page row that the graph
@@ -1125,18 +1436,29 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 	if eng == nil {
 		return nil, nil
 	}
+	enabledIDs, statusAvailable, err := enabledDocumentIDs(ctx, kb)
+	if err != nil {
+		return nil, fmt.Errorf("load enabled Wiki documents for graph: %w", err)
+	}
+	if statusAvailable && len(enabledIDs) == 0 {
+		return nil, nil
+	}
 	const batchSize = 2000
 	bySlug := make(map[string]wikiPageProjection)
 	for offset := 0; ; offset += batchSize {
+		filter := map[string]interface{}{
+			"type_kwd": compileKwdWikiPage, "available_int": 0,
+			"scope_kwd": "doc", "kb_id": kb,
+		}
+		if statusAvailable {
+			filter["doc_id"] = enabledIDs
+		}
 		result, err := eng.Search(ctx, &types.SearchRequest{
 			IndexNames: []string{fmt.Sprintf("ragflow_%s", tenant)},
 			KbIDs:      []string{kb},
-			Filter: map[string]interface{}{
-				"compile_kwd": compileKwdWikiPage, "available_int": 0,
-				"scope_kwd": "doc", "kb_id": kb,
-			},
+			Filter:     filter,
 			SelectFields: []string{
-				"slug_kwd", "page_type_kwd", "title_kwd", "entity_names_kwd",
+				"slug_kwd", "page_type_kwd", "compile_kwd", "entity_type_kwd", "type_kwd", "title_kwd", "entity_names_kwd",
 				"summary_with_weight", "outlinks_kwd", "source_doc_ids", "source_chunk_ids",
 			},
 			Limit: batchSize, Offset: offset,
@@ -1156,7 +1478,7 @@ func (w engineWriter) loadActiveDocumentWikiPages(ctx context.Context, tenant, k
 			page := bySlug[slug]
 			if page.Slug == "" {
 				page.Slug = slug
-				page.PageType = metaString(row, "page_type_kwd")
+				page.PageType = types.WikiPageCategory(row)
 				page.Title = metaString(row, "title_kwd")
 				page.Summary = metaString(row, "summary_with_weight")
 			}
@@ -1196,13 +1518,8 @@ func (w engineWriter) DeleteMerged(ctx context.Context, tenant, kb string) error
 	return w.DeleteMergedForVariant(ctx, tenant, kb, []kccommon.Variant{kccommon.VariantWiki})
 }
 
-// DeleteMergedForVariant deletes the dataset-level merged rows for a KB across
-// the given compile variants (B4). When variants is empty it clears the full set
-// the consumer manages (B1b: a full rebuild always clears everything, so an
-// empty set still means "clear all"). Row scope: structure dataset rows are
-// tagged scope_kwd="dataset"; wiki merged rows carry available_int=1; nav rows
-// carry compile_kwd="dataset_nav". The filter union is OR-ed across variants so
-// one call clears every relevant row in a single engine delete.
+// DeleteMergedForVariant clears the selected dataset outputs, preserving
+// document-level compilation inputs. An empty variant set clears all outputs.
 func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb string, variants []kccommon.Variant) error {
 	eng := w.eng
 	if eng == nil {
@@ -1213,30 +1530,22 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 	}
 	baseName := fmt.Sprintf("ragflow_%s", tenant)
 	if len(variants) == 0 {
-		// Full-set clean (B1b): everything the consumer manages. Structure
-		// dataset rows are tagged scope_kwd="dataset" (not a fixed compile_kwd),
-		// so the full clean deletes by kb_id + compile_kwd IN (the fixed-kwd
-		// buckets) OR scope_kwd="dataset". The scope_kwd="dataset" sweep requires
-		// the dataset-structure filter keys, so it is guarded like the per-variant
-		// structure branch (review fix: this is the highest-impact destructive
-		// path and must fail loudly on unsupported engines).
+		// Navigation roles and searchable wiki outputs are separate from the
+		// dataset-scoped structure sweep.
 		if !datasetStructureSupported() {
 			return errDatasetStructureUnsupported()
 		}
 		_, err := eng.DeleteChunks(ctx, map[string]interface{}{
 			"kb_id": kb,
-			"compile_kwd": []string{
-				compileKwdNav,
-				compileKwdWikiPage,
-				compileKwdWikiSection,
-				compileKwdStructure,
+			"or": []map[string]interface{}{
+				{"type_kwd": []string{"nav_doc", "nav_cluster"}},
+				{"type_kwd": []string{compileKwdWikiPage, compileKwdWikiSection}, "available_int": 1},
 			},
 		}, baseName, kb)
 		if err != nil {
 			return fmt.Errorf("delete merged (all variants): %w", err)
 		}
-		// structure dataset rows carry scope_kwd="dataset" + compile_kwd="structure";
-		// sweep them too (idempotent with the compile_kwd filter above).
+		// Clear dataset-scoped outputs after preserving document inputs.
 		_, err = eng.DeleteChunks(ctx, map[string]interface{}{
 			"kb_id":     kb,
 			"scope_kwd": "dataset",
@@ -1246,12 +1555,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 		}
 		return nil
 	}
-	// Issue ONE delete per distinct variant bucket rather than one AND-ed filter:
-	// different variants target different columns (wiki: available_int=1 +
-	// compile_kwd; structure: scope_kwd="dataset"; nav: compile_kwd="dataset_nav"
-	// with available_int=0), and AND-ing them would exclude the others' rows.
-	// RebuildDataset (B1b) passes the full managed set, so this per-bucket sweep
-	// is correct for both full and per-variant rebuilds.
+	// Each output family has its own role, scope, and visibility constraints.
 	for _, v := range variants {
 		switch v {
 		case kccommon.VariantWiki:
@@ -1260,7 +1564,7 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 			if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
 				"kb_id":         kb,
 				"available_int": 1,
-				"compile_kwd":   []string{compileKwdWikiPage, compileKwdWikiSection},
+				"type_kwd":      []string{compileKwdWikiPage, compileKwdWikiSection},
 			}, baseName, kb); err != nil {
 				return fmt.Errorf("delete merged (wiki): %w", err)
 			}
@@ -1269,8 +1573,8 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 				return errDatasetStructureUnsupported()
 			}
 			// structure/mindmap dataset rows are scope_kwd="dataset" +
-			// knowledge_graph_kwd ∈ {entity,relation,kg_build_meta} with a raw
-			// compile_kwd (timeline/graph/session_graph/mindmap). knowledge_graph_kwd
+			// type_kwd ∈ {entity,relation,kg_build_meta} with a raw
+			// compile_kwd (timeline/graph/session_graph/mindmap). type_kwd
 			// is required: wiki merged rows ALSO carry scope_kwd="dataset" (W5), so
 			// a scope-only sweep would wrongly delete wiki merged rows too (review
 			// Major). kg_build_meta (the build marker) is deleted together with the
@@ -1283,11 +1587,11 @@ func (w engineWriter) DeleteMergedForVariant(ctx context.Context, tenant, kb str
 				return fmt.Errorf("delete merged (structure/mindmap): %w", err)
 			}
 		case kccommon.VariantTree:
-			// tree/nav rows are compile_kwd="dataset_nav" with available_int=0;
+			// Navigation rows have available_int=0;
 			// do NOT add available_int=1 (that would exclude them).
 			if _, err := eng.DeleteChunks(ctx, map[string]interface{}{
-				"kb_id":       kb,
-				"compile_kwd": []string{compileKwdNav},
+				"kb_id":    kb,
+				"type_kwd": []string{"nav_doc", "nav_cluster"},
 			}, baseName, kb); err != nil {
 				return fmt.Errorf("delete merged (nav): %w", err)
 			}
@@ -1344,12 +1648,12 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 			IndexNames: []string{baseName},
 			KbIDs:      []string{kb},
 			Filter: map[string]interface{}{
-				"compile_kwd":   compileKwdWikiPage,
+				"type_kwd":      compileKwdWikiPage,
 				"available_int": 1,
 				"kb_id":         kb,
 			},
 			SelectFields: []string{
-				"slug_kwd", "page_type_kwd", "title_kwd",
+				"slug_kwd", "page_type_kwd", "entity_type_kwd", "type_kwd", "title_kwd",
 				"entity_names_kwd", "summary_with_weight", "outlinks_kwd",
 				"source_doc_ids", "source_chunk_ids",
 				// compile_kwd is selected purely so the query-result telemetry
@@ -1380,7 +1684,7 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 		for _, c := range res.Chunks {
 			p := wikiPageProjection{
 				Slug:           metaString(c, "slug_kwd"),
-				PageType:       metaString(c, "page_type_kwd"),
+				PageType:       types.WikiPageCategory(c),
 				Title:          metaString(c, "title_kwd"),
 				Aliases:        metaStringSlice(c, "entity_names_kwd"),
 				Summary:        metaString(c, "summary_with_weight"),
@@ -1465,34 +1769,37 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 		seen[entityID] = true
 
 		weight := len(p.Outlinks) // raw outlink count; 0 is allowed (Python parity)
+		// Python's canvas payload (dataset_wiki_generator.py:751-758): aliases /
+		// description / type live inside it. No such columns exist, and Infinity
+		// rejects an insert naming one.
 		content, err := json.Marshal(map[string]any{
-			"slug":      p.Slug,
-			"page_type": p.PageType,
-			"title":     p.Title,
-			"aliases":   p.Aliases,
-			"summary":   p.Summary,
-			"weight":    weight,
+			"slug":        p.Slug,
+			"name":        p.Title,
+			"aliases":     p.Aliases,
+			"description": p.Summary,
+			"type":        p.PageType,
+			"weight":      weight,
 		})
 		if err != nil {
 			return nil, err
 		}
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(p.Slug, p.Summary)
 		rows = append(rows, map[string]interface{}{
-			"id":                      entityID,
-			"doc_id":                  kb,
-			"tenant_id":               tenant,
-			"kb_id":                   kb,
-			"available_int":           1,
-			"compile_kwd":             compileKwdWikiEntity,
-			"type_kwd":                "wiki_" + p.PageType,
-			"entity_type_kwd":         "wiki_" + p.PageType,
-			"slug_kwd":                p.Slug,
-			"title_kwd":               p.Title,
-			"aliases_kwd":             p.Aliases,
-			"description_with_weight": p.Summary,
-			"weight_int":              weight,
-			"source_chunk_ids":        p.SourceChunkIDs,
-			"source_doc_ids":          capSourceDocs(p.SourceDocIDs),
-			"content_with_weight":     string(content),
+			"id":                  entityID,
+			"doc_id":              kb,
+			"kb_id":               kb,
+			"available_int":       1,
+			"compile_kwd":         "wiki",
+			"type_kwd":            compileKwdWikiEntity,
+			"entity_type_kwd":     p.PageType,
+			"slug_kwd":            p.Slug,
+			"title_kwd":           p.Title,
+			"weight_int":          weight,
+			"source_chunk_ids":    p.SourceChunkIDs,
+			"source_doc_ids":      capSourceDocs(p.SourceDocIDs),
+			"content_ltks":        contentLTKS,
+			"content_sm_ltks":     contentSMLTKS,
+			"content_with_weight": string(content),
 		})
 
 		// Relations: one edge per outlink whose target page exists in this
@@ -1536,13 +1843,10 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			rows = append(rows, map[string]interface{}{
 				"id":                  relID,
 				"doc_id":              kb,
-				"tenant_id":           tenant,
 				"kb_id":               kb,
 				"available_int":       1,
-				"compile_kwd":         compileKwdWikiRelation,
+				"compile_kwd":         "wiki",
 				"type_kwd":            compileKwdWikiRelation,
-				"from_id":             entityID,
-				"to_id":               wikiGraphXXHash("wiki_entity", kb, tgt),
 				"from_kwd":            p.Slug,
 				"to_kwd":              tgt,
 				"source_doc_ids":      srcDocs,
@@ -1552,7 +1856,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 	}
 	var relCount, entCount int
 	for _, r := range rows {
-		switch r["compile_kwd"] {
+		switch r["type_kwd"] {
 		case compileKwdWikiRelation:
 			relCount++
 		case compileKwdWikiEntity:

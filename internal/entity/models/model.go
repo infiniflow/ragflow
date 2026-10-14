@@ -170,11 +170,16 @@ type Model struct {
 	URL           string         `json:"url"`
 	MaxDimension  *int           `json:"max_dimension"`  // used by embedding models
 	MaxBatchSize  *int           `json:"max_batch_size"` // used by embedding models
-	Dimensions    []int          `json:"dimensions"`
-	BatchSize     *int           `json:"batch_size"` // max texts per Embed request; used by embedding models
-	Alias         []string       `json:"alias"`
-	Rank          *int           `json:"rank"`
-	ModelTypeMap  map[string]bool
+	// Tokenizer names the tokenizer family that counts this embedding model's
+	// input (see internal/tokenizer: "xlmr-spm", "bert-wordpiece", "cl100k_base",
+	// ...). Empty or unknown means "we cannot count this model exactly"; callers
+	// then count with cl100k plus a calibrated safety ratio.
+	Tokenizer    *string  `json:"tokenizer"`
+	Dimensions   []int    `json:"dimensions"`
+	BatchSize    *int     `json:"batch_size"` // max texts per Embed request; used by embedding models
+	Alias        []string `json:"alias"`
+	Rank         *int     `json:"rank"`
+	ModelTypeMap map[string]bool
 }
 
 // Provider represents an LLM provider
@@ -187,6 +192,10 @@ type Provider struct {
 	Features    Features          `json:"features"`
 	Class       string            `json:"class"`
 	ModelDriver ModelDriver
+	// URLHint is a display-only example endpoint shown as the URL input's
+	// placeholder. Unlike URL, it is never used to build requests and never
+	// pre-fills the form.
+	URLHint string `json:"url_hint"`
 }
 
 // ProviderManager manages provider and model operations
@@ -383,6 +392,9 @@ func (pm *ProviderManager) ListProviders() ([]map[string]interface{}, error) {
 			"model_types": modelTypes,
 			"url_suffix":  provider.URLSuffix,
 		}
+		if provider.URLHint != "" {
+			providerData["url_hint"] = provider.URLHint
+		}
 		providers = append(providers, providerData)
 	}
 
@@ -405,8 +417,10 @@ func (pm *ProviderManager) ListAllModels() ([]map[string]interface{}, error) {
 	for _, model := range pm.AllModels {
 
 		modelData := map[string]interface{}{
-			"name":        model.Name,
-			"model_types": model.ModelTypes,
+			"name":           model.Name,
+			"model_types":    model.ModelTypes,
+			"context_length": model.ContextLength,
+			"max_output":     model.MaxOutput,
 		}
 		if model.Alias != nil {
 			modelData["alias"] = model.Alias
@@ -482,6 +496,55 @@ func GetEmbeddingBatchSize(modelName string) int {
 	return DefaultEmbeddingBatchSize
 }
 
+// GetModelTokenizer returns the tokenizer id declared for the named model in
+// the provider catalog (conf/all_models.json "tokenizer"), or "" when the model
+// is unknown or declares none. The TOKENIZER_EMBEDDING_TOKENIZER env var overrides
+// everything, so an operator can pin a family without editing the catalog.
+//
+// The returned value is an id understood by internal/tokenizer; whether an id whose asset
+// is missing may fall back to a calibrated cl100k count is the CALLER's decision - the
+// ingest embedder refuses (internal/ingestion/task/embedder.go), while a model that
+// declares no tokenizer at all is calibrated by design.
+func GetModelTokenizer(modelName string) string {
+	if v := strings.TrimSpace(os.Getenv("TOKENIZER_EMBEDDING_TOKENIZER")); v != "" {
+		return v
+	}
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if m := pm.GetModelByNameOrAlias(modelName); m != nil && m.Tokenizer != nil {
+				return strings.TrimSpace(*m.Tokenizer)
+			}
+		}
+	}
+	return ""
+}
+
+// GetEmbeddingMaxTokens returns the input window declared for the named model:
+// its context_length first, then the legacy max_tokens field. It
+// returns 0 when the catalog knows nothing, leaving the caller to apply its
+// default — deliberately, because a wrong non-zero value here is a rejected
+// request (an oversized input) rather than a shorter one.
+func GetEmbeddingMaxTokens(modelName string) int {
+	if v := strings.TrimSpace(os.Getenv("TOKENIZER_EMBEDDING_MAX_TOKENS")); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
+	}
+	if modelName != "" {
+		if pm := GetProviderManager(); pm != nil {
+			if m := pm.GetModelByNameOrAlias(modelName); m != nil {
+				if m.ContextLength != nil && *m.ContextLength > 0 {
+					return *m.ContextLength
+				}
+				if m.MaxTokens != nil && *m.MaxTokens > 0 {
+					return *m.MaxTokens
+				}
+			}
+		}
+	}
+	return 0
+}
+
 // 2. Show specific provider information (including base_url)
 func (pm *ProviderManager) GetProviderByName(providerName string) (map[string]interface{}, error) {
 
@@ -523,13 +586,17 @@ func (pm *ProviderManager) ListModels(providerName string) ([]map[string]interfa
 		// the object.
 		modelData := map[string]interface{}{
 			"name":           model.Name,
+			"context_length": model.ContextLength,
 			"max_output":     model.MaxOutput,
 			"model_types":    model.ModelTypes,
 			"max_dimension":  model.MaxDimension,
 			"max_batch_size": model.MaxBatchSize,
 			"dimensions":     model.Dimensions,
 		}
-		if model.MaxTokens != nil {
+		if model.ContextLength != nil {
+			modelData["max_tokens"] = *model.ContextLength
+		} else if model.MaxTokens != nil {
+			// Persisted max_tokens predates the context_length/max_output split.
 			modelData["max_tokens"] = *model.MaxTokens
 		}
 		if model.BatchSize != nil {

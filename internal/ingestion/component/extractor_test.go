@@ -167,6 +167,43 @@ func TestExtractorComponent_Invoke_HappyPath(t *testing.T) {
 	}
 }
 
+func TestExtractorComponent_SkipsMediaChunksWithoutTextAndUsesContext(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "context summary"})
+
+	c := &ExtractorComponent{Param: schema.ExtractorParam{
+		LLMID:   "gpt-4o-mini",
+		Summary: schema.SummaryExtractConfig{Enabled: true},
+	}}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{
+			{"image": "image-only"},
+			{"image": "context-image", "context_above": "The table shows", "context_below": "annual revenue."},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 1 {
+		t.Fatalf("LLM calls = %d, want one call for the context-bearing media chunk", calls)
+	}
+	chunks, ok := out["chunks"].([]map[string]any)
+	if !ok || len(chunks) != 2 {
+		t.Fatalf("chunks = %#v, want two input chunks", out["chunks"])
+	}
+	if _, exists := chunks[0]["summary"]; exists {
+		t.Errorf("image-only chunk received a summary: %#v", chunks[0]["summary"])
+	}
+	if chunks[1]["summary"] != "context summary" {
+		t.Errorf("context-bearing media summary = %#v, want context summary", chunks[1]["summary"])
+	}
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	request := stub.lastRequest()
+	if got := request.Messages[len(request.Messages)-1].Content; got != "The table shows annual revenue." {
+		t.Errorf("media extraction prompt = %q, want joined context", got)
+	}
+}
+
 // TestExtractorComponent_Invoke_LLMError verifies a mock LLM
 // error is surfaced through Invoke with the component-name prefix.
 func TestExtractorComponent_Invoke_LLMError(t *testing.T) {
@@ -416,6 +453,95 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_ToggleDerivation covers the enabled-switch contract
+// for keywords/questions/tags: an explicit "enabled" key is authoritative,
+// a group without the key (legacy DSL) derives enabled from top_n > 0.
+func TestExtractorComponent_ToggleDerivation(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		// legacy group: no enabled key, top_n > 0 → on
+		"keywords": map[string]any{"top_n": 3},
+		// legacy group: no enabled key, top_n = 0 → off
+		"questions": map[string]any{"top_n": 0},
+		// new contract: explicit switch wins over a positive top_n
+		"tags": map[string]any{"enabled": false, "top_n": 5},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ext := c.(*ExtractorComponent)
+	if !ext.Param.Keywords.Enabled {
+		t.Errorf("legacy keywords top_n=3 should derive Enabled=true: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.Questions.Enabled {
+		t.Errorf("legacy questions top_n=0 should derive Enabled=false: %+v", ext.Param.Questions)
+	}
+	if ext.Param.Tags.Enabled || ext.Param.Tags.TopN != 5 {
+		t.Errorf("explicit enabled=false must win over top_n=5 (kept for re-enable): %+v", ext.Param.Tags)
+	}
+
+	// Numeric enabled values are accepted like summary/metadata do.
+	c, err = NewExtractorComponent(map[string]any{
+		"keywords": map[string]any{"enabled": 1, "top_n": 2},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent numeric enabled: %v", err)
+	}
+	if !c.(*ExtractorComponent).Param.Keywords.Enabled {
+		t.Error("enabled: 1 should parse as true")
+	}
+}
+
+// TestExtractorComponent_ToggleOnWithoutTopNFails covers the contradictory
+// new-contract config: enabled=true with top_n < 1 must fail at canvas build
+// time for keywords/questions/tags alike.
+func TestExtractorComponent_ToggleOnWithoutTopNFails(t *testing.T) {
+	for _, group := range []string{"keywords", "questions", "tags"} {
+		for _, topN := range []any{0, -2} {
+			_, err := NewExtractorComponent(map[string]any{
+				group: map[string]any{"enabled": true, "top_n": topN},
+			})
+			if err == nil {
+				t.Errorf("%s enabled=true top_n=%v: expected error, got nil", group, topN)
+			} else if !strings.Contains(err.Error(), group+".enabled requires top_n >= 1") {
+				t.Errorf("%s enabled=true top_n=%v: unexpected error: %v", group, topN, err)
+			}
+		}
+		// enabled=true with top_n absent entirely is the same contradiction.
+		if _, err := NewExtractorComponent(map[string]any{
+			group: map[string]any{"enabled": true},
+		}); err == nil {
+			t.Errorf("%s enabled=true without top_n: expected error, got nil", group)
+		}
+	}
+}
+
+// TestExtractorComponent_Invoke_ToggleOffSkipsExtraction verifies a group
+// switched off (enabled=false) performs no LLM call even when top_n is set.
+func TestExtractorComponent_Invoke_ToggleOffSkipsExtraction(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "kw1, kw2"})
+
+	c, err := NewExtractorComponent(map[string]any{
+		"llm_id":   "gpt-4o-mini",
+		"keywords": map[string]any{"enabled": false, "top_n": 3},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	out, err := c.(*ExtractorComponent).Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "first doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 0 {
+		t.Errorf("LLM calls = %d, want 0 for a switched-off keywords group", calls)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if _, exists := chunks[0]["important_kwd"]; exists {
+		t.Errorf("switched-off keywords should not enrich the chunk: %#v", chunks[0])
+	}
+}
+
 // TestExtractorComponent_InputsOutputs_NonEmpty verifies Inputs and Outputs shapes.
 func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	c := &ExtractorComponent{}
@@ -563,6 +689,49 @@ func TestExtractorComponent_runEnableMetadata_MergesIntoChunkMetadata(t *testing
 	}
 	if meta["category"] != "finance" || meta["region"] != "east" {
 		t.Errorf("metadata = %v, want category=finance region=east", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys verifies a model
+// that invents or re-cases a field cannot widen the dataset's metadata schema:
+// only keys from the declared field set survive.
+func TestExtractorComponent_runEnableMetadata_DropsUndeclaredKeys(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"category":"finance","authors":["李白"],"Category":"finance"}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if meta["category"] != "finance" {
+		t.Errorf("metadata[category] = %v, want finance", meta["category"])
+	}
+	if _, leaked := meta["authors"]; leaked {
+		t.Errorf("undeclared key authors leaked into metadata: %v", meta)
+	}
+	if _, leaked := meta["Category"]; leaked {
+		t.Errorf("re-cased key Category leaked into metadata: %v", meta)
+	}
+}
+
+// TestExtractorComponent_runEnableMetadata_AllKeysUndeclared verifies a response
+// whose every key falls outside the declared set leaves existing metadata intact.
+func TestExtractorComponent_runEnableMetadata_AllKeysUndeclared(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"authors":["李白"]}`})
+	c := newMetadataExtractor(common.MetadataFieldDef{Key: "category", Type: "string"})
+	ck := map[string]any{"metadata": map[string]any{"preexisting": "keep"}}
+	if err := c.runEnableMetadata(t.Context(), nil, extractorInputs{llmID: "m"}, ck, "chunk text"); err != nil {
+		t.Fatalf("runEnableMetadata: %v", err)
+	}
+	meta, ok := ck["metadata"].(map[string]any)
+	if !ok {
+		t.Fatalf("ck[metadata] missing or wrong type: %T", ck["metadata"])
+	}
+	if len(meta) != 1 || meta["preexisting"] != "keep" {
+		t.Errorf("metadata = %v, want only preexisting=keep", meta)
 	}
 }
 
@@ -816,7 +985,7 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:    "gpt-4o-mini",
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -957,7 +1126,7 @@ func TestCleanLLMText(t *testing.T) {
 func TestExtractorComponent_callStructured(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
@@ -967,7 +1136,7 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 
 	// Non-JSON response → (nil, nil), not an error.
 	withStubChatInvoker(t, stubResponse{Content: "this is not JSON"})
-	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err = c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured on non-JSON: %v", err)
 	}
@@ -980,12 +1149,20 @@ func TestExtractorComponent_callStructured(t *testing.T) {
 func TestExtractorComponent_callStructured_MidTextThink(t *testing.T) {
 	withStubChatInvoker(t, stubResponse{Content: `preamble<think>reasoning</think>{"a": 1}`})
 	c := &ExtractorComponent{}
-	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "")
+	got, err := c.callStructured(t.Context(), nil, extractorInputs{llmID: "m"}, "system", "chunk text")
 	if err != nil {
 		t.Fatalf("callStructured: %v", err)
 	}
 	if got == nil || got["a"].(float64) != 1 {
 		t.Errorf("parsed = %v, want map with a=1", got)
+	}
+}
+
+func TestExtractorComponentRejectsEmptyLLMInput(t *testing.T) {
+	withStubChatInvoker(t, stubResponse{Content: `{"unexpected": true}`})
+	c := &ExtractorComponent{}
+	if _, err := c.callRaw(t.Context(), nil, extractorInputs{llmID: "m"}, "system", " "); err == nil {
+		t.Fatal("callRaw accepted an empty chunk text")
 	}
 }
 
@@ -1001,8 +1178,8 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:     "gpt-4o-mini",
-		Keywords:  schema.KeywordExtractConfig{TopN: 2},
-		Questions: schema.QuestionExtractConfig{TopN: 2},
+		Keywords:  schema.KeywordExtractConfig{Enabled: true, TopN: 2},
+		Questions: schema.QuestionExtractConfig{Enabled: true, TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{
@@ -1415,7 +1592,7 @@ func TestExtractorModularPromptsExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Hello world content"},
+			{"text": "Hello world content"},
 		},
 	}
 
@@ -1528,7 +1705,7 @@ func TestExtractorModularMetadataExecution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Written by Alice in 2026."},
+			{"text": "Written by Alice in 2026."},
 		},
 	}
 
@@ -1572,7 +1749,7 @@ func TestExtractorDefaultSummaryPromptInjection(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "This is a detailed paragraph about artificial intelligence."},
+			{"text": "This is a detailed paragraph about artificial intelligence."},
 		},
 	}
 
@@ -1627,7 +1804,7 @@ func TestExtractorCustomSummarySystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Text to summarize."},
+			{"text": "Text to summarize."},
 		},
 	}
 
@@ -1685,7 +1862,7 @@ func TestExtractorCustomKeywordsAndQuestionsSystemPrompt(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1741,7 +1918,7 @@ func TestExtractorTopNPlaceholderSubstitution(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1783,7 +1960,7 @@ func TestExtractorDefaultPromptsRenderTopN(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Content text."},
+			{"text": "Content text."},
 		},
 	}
 
@@ -1826,7 +2003,7 @@ func TestExtractorDisabledSummarySkipsCall(t *testing.T) {
 
 	in := map[string]any{
 		"chunks": []map[string]any{
-			{"content_with_weight": "Some text."},
+			{"text": "Some text."},
 		},
 	}
 
@@ -2046,8 +2223,8 @@ func TestExtractor_KeywordsThenTagsSynergy(t *testing.T) {
 	in := map[string]any{
 		"chunks": []map[string]any{
 			{
-				"docnm_kwd":           "Tender_Notice.pdf",
-				"content_with_weight": "General bidding notice content.",
+				"docnm_kwd": "Tender_Notice.pdf",
+				"text":      "General bidding notice content.",
 			},
 		},
 	}

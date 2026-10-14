@@ -229,7 +229,7 @@ func TestImageUploadDecorator_EndToEnd(t *testing.T) {
 		"kb_id":  testKBID,
 		"doc_id": testDocID,
 		"chunks": []map[string]any{
-			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
+			{"text": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
 	out, err := decorated.Invoke(context.Background(), nil, inputs)
@@ -306,7 +306,7 @@ func TestImageUploadDecorator_DebugSkipsUpload(t *testing.T) {
 		"kb_id":  "", // debug mode: no KB -> no upload
 		"doc_id": testDocID,
 		"chunks": []map[string]any{
-			{"content_with_weight": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
+			{"text": "a cropped figure", "image": "data:image/png;base64," + pngBase64},
 		},
 	}
 	out, err := decorated.Invoke(context.Background(), nil, inputs)
@@ -349,7 +349,7 @@ func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
 	src := make([]map[string]any, 0, 6)
 	for i := 0; i < 6; i++ {
 		src = append(src, map[string]any{
-			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+			"text": fmt.Sprintf("chunk-%d", i),
 		})
 	}
 	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}
@@ -376,8 +376,8 @@ func TestImageUploadDecorator_DebugCapsChunks(t *testing.T) {
 	}
 	for i, ck := range chunks {
 		want := fmt.Sprintf("chunk-%d", i)
-		if got, _ := ck["content_with_weight"].(string); got != want {
-			t.Errorf("chunks[%d].content_with_weight = %q, want %q (wrong chunk kept after truncation)", i, got, want)
+		if got, _ := ck["text"].(string); got != want {
+			t.Errorf("chunks[%d].text = %q, want %q (wrong chunk kept after truncation)", i, got, want)
 		}
 	}
 }
@@ -389,7 +389,7 @@ func TestImageUploadDecorator_NoCapKeepsAll(t *testing.T) {
 	src := make([]map[string]any, 0, 5)
 	for i := 0; i < 5; i++ {
 		src = append(src, map[string]any{
-			"content_with_weight": fmt.Sprintf("chunk-%d", i),
+			"text": fmt.Sprintf("chunk-%d", i),
 		})
 	}
 	decorated := &imageUploadDecorator{inner: &stubChunker{chunks: src}}

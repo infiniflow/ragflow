@@ -91,6 +91,8 @@ func buildSyntheticDoc(t *testing.T, text string) []byte {
 	copy(dir[1*128:], dirEntry("WordDocument", 2, 2, uint64(len(wordDoc))))
 	copy(dir[2*128:], dirEntry("0Table", 2, 3, uint64(len(clx))))
 	copy(dir[3*128:], dirEntry("", 0, 0xFFFFFFFF, 0))
+	binary.LittleEndian.PutUint32(dir[0*128+0x4C:], 1) // root child: WordDocument
+	binary.LittleEndian.PutUint32(dir[1*128+0x44:], 2) // left sibling: 0Table
 
 	// ── Assemble ──────────────────────────────────────────────────────────
 	tableSector := make([]byte, sector)
@@ -146,8 +148,11 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 	if pr.Err != nil {
 		t.Fatalf("ParseWithResult error: %v", pr.Err)
 	}
-	if pr.OutputFormat != "text" {
-		t.Fatalf("OutputFormat = %q, want %q", pr.OutputFormat, "text")
+	if pr.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want %q", pr.OutputFormat, "json")
+	}
+	if len(pr.JSON) != 1 {
+		t.Fatalf("ParseWithResult returned %d JSON items, want 1", len(pr.JSON))
 	}
 	if pr.Text == "" {
 		t.Fatal("ParseWithResult returned empty text — synthetic .doc was not parsed")
@@ -156,5 +161,16 @@ func TestDOCParser_SyntheticDocRoundTrip(t *testing.T) {
 		if !bytes.Contains([]byte(pr.Text), []byte(want)) {
 			t.Errorf("parsed text missing %q; got:\n%s", want, pr.Text)
 		}
+	}
+	if got, _ := pr.JSON[0]["text"].(string); got != pr.Text {
+		t.Errorf("JSON text = %q, want complete parser text %q", got, pr.Text)
+	}
+
+	// Also verify that explicit output_format="text" in setup is respected
+	pText := NewDOCParser()
+	pText.ConfigureFromSetup(map[string]any{"output_format": "text"})
+	prText := pText.ParseWithResult(context.Background(), "synthetic.doc", data)
+	if prText.OutputFormat != "text" {
+		t.Errorf("configured text OutputFormat = %q, want text", prText.OutputFormat)
 	}
 }

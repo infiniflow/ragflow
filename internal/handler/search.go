@@ -31,7 +31,7 @@ import (
 type SearchHandler struct {
 	searchService *service.SearchService
 	userService   *service.UserService
-	streamLLM     *service.ModelProviderService
+	modelFactory  *service.ModelFactory
 	askService    *service.AskService
 	sseWriter     SSEWriter
 }
@@ -46,8 +46,8 @@ func NewSearchHandler(searchService *service.SearchService, userService *service
 }
 
 // SetCompletionDependencies wires the streaming search completion runtime.
-func (h *SearchHandler) SetCompletionDependencies(streamLLM *service.ModelProviderService, askService *service.AskService) {
-	h.streamLLM = streamLLM
+func (h *SearchHandler) SetCompletionDependencies(modelFactory *service.ModelFactory, askService *service.AskService) {
+	h.modelFactory = modelFactory
 	h.askService = askService
 }
 
@@ -78,6 +78,7 @@ func getOwnerIDs(c *gin.Context) []string {
 // @Param page query int false "page number"
 // @Param page_size query int false "items per page"
 // @Param orderby query string false "order by field (default: create_time)"
+// @Param sort query string false "ordered terms, column:direction separated by commas, such as name:asc,create_time:desc. Takes precedence over orderby and desc"
 // @Param desc query bool false "descending order (default: true)"
 // @Param owner_ids query []string false "owner IDs"
 // @Success 200 {object} service.ListSearchAppsResponse
@@ -113,6 +114,7 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 	if descStr := c.Query("desc"); descStr != "" {
 		desc = descStr != "false"
 	}
+	terms := orderTermsFromQuery(c, orderby, desc)
 
 	ownerIDs := getOwnerIDs(c)
 
@@ -129,8 +131,11 @@ func (h *SearchHandler) ListSearches(c *gin.Context) {
 
 	// List search apps with filtering
 	ctx := c.Request.Context()
-	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, orderby, desc, ownerIDs)
+	result, err := h.searchService.ListSearches(ctx, userID, keywords, page, pageSize, terms, ownerIDs)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
 		return
 	}
@@ -215,9 +220,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	search, err := h.searchService.GetSearchDetail(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's a permission error
-		if err.Error() == "has no permission for this operation" {
-			common.ResponseWithCodeData(c, common.CodeOperatingError, false, "Has no permission for this operation.")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Not found error
@@ -234,7 +237,7 @@ func (h *SearchHandler) GetSearch(c *gin.Context) {
 		"created_by":    search.CreatedBy,
 		"create_time":   search.CreateTime,
 		"update_time":   search.UpdateTime,
-		"search_config": search.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(search.SearchConfig),
 	}
 
 	if search.Avatar != nil {
@@ -274,9 +277,7 @@ func (h *SearchHandler) DeleteSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	err := h.searchService.DeleteSearch(ctx, userID, searchID)
 	if err != nil {
-		// Check if it's an authorization error
-		if err.Error() == "no authorization" {
-			common.ResponseWithCodeData(c, common.CodeDataError, false, "No authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		// Delete failed error
@@ -331,10 +332,11 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 	ctx := c.Request.Context()
 	updatedSearch, err := h.searchService.UpdateSearch(ctx, userID, searchID, &req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		errMsg := err.Error()
 		switch errMsg {
-		case "no authorization":
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
 		case "duplicated search name":
 			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Duplicated search name.")
 		default:
@@ -358,7 +360,7 @@ func (h *SearchHandler) UpdateSearch(c *gin.Context) {
 		"status":        updatedSearch.Status,
 		"create_time":   updatedSearch.CreateTime,
 		"update_time":   updatedSearch.UpdateTime,
-		"search_config": updatedSearch.SearchConfig,
+		"search_config": service.BuildSearchConfigResponse(updatedSearch.SearchConfig),
 	}
 
 	if updatedSearch.Avatar != nil {
@@ -390,8 +392,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 	ctx := c.Request.Context()
 	plan, code, err := searchSvc.PrepareCompletion(ctx, user.ID, c.Param("search_id"), &req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		if code == common.CodeServerError {
@@ -406,7 +407,7 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		return
 	}
 
-	disableWriteDeadlineForSSE(c)
+	clearResponseWriteDeadline(c)
 	c.Header("Content-Type", "text/event-stream; charset=utf-8")
 	c.Header("Cache-Control", "no-cache")
 	c.Header("Connection", "keep-alive")
@@ -424,12 +425,12 @@ func (h *SearchHandler) Completion(c *gin.Context) {
 		writer.Write(c, sseError("ask service not configured"))
 		return
 	}
-	if h.streamLLM == nil {
-		writer.Write(c, sseError("streaming LLM not configured"))
+	if h.modelFactory == nil {
+		writer.Write(c, sseError("model factory not configured"))
 		return
 	}
 
-	adapter := &service.TenantStreamAdapter{LLM: h.streamLLM, TenantID: plan.UserID, ModelID: plan.ModelID}
+	adapter := &service.TenantStreamAdapter{Factory: h.modelFactory, TenantID: plan.UserID, ModelID: plan.ModelID}
 
 	hadError := false
 	for delta := range h.askService.StreamWithOptions(c.Request.Context(), adapter, plan.UserID, plan.Question, plan.DatasetIDs, plan.Options) {

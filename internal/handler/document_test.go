@@ -25,6 +25,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -40,10 +41,89 @@ import (
 	"ragflow/internal/service/document"
 )
 
+func TestParseMetadataSelectorDocumentIDs(t *testing.T) {
+	tests := []struct {
+		name    string
+		body    string
+		wantIDs []string
+		wantErr string
+	}{
+		{name: "missing selector", body: `{}`},
+		{name: "missing IDs", body: `{"selector":{}}`},
+		{name: "null IDs", body: `{"selector":{"document_ids":null}}`},
+		{name: "empty IDs", body: `{"selector":{"document_ids":[]}}`},
+		{name: "string IDs", body: `{"selector":{"document_ids":["doc-1","doc-2"]}}`, wantIDs: []string{"doc-1", "doc-2"}},
+		{name: "non-list IDs", body: `{"selector":{"document_ids":"doc-1"}}`, wantErr: "document_ids must be a list."},
+		{name: "numeric ID", body: `{"selector":{"document_ids":[123]}}`, wantErr: "document_ids must contain only strings."},
+		{name: "boolean ID", body: `{"selector":{"document_ids":[true]}}`, wantErr: "document_ids must contain only strings."},
+		{name: "null ID", body: `{"selector":{"document_ids":[null]}}`, wantErr: "document_ids must contain only strings."},
+		{name: "object ID", body: `{"selector":{"document_ids":[{}]}}`, wantErr: "document_ids must contain only strings."},
+		{name: "array ID", body: `{"selector":{"document_ids":[[]]}}`, wantErr: "document_ids must contain only strings."},
+		{name: "mixed IDs", body: `{"selector":{"document_ids":["doc-1",123]}}`, wantErr: "document_ids must contain only strings."},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var body map[string]interface{}
+			if err := json.Unmarshal([]byte(tt.body), &body); err != nil {
+				t.Fatal(err)
+			}
+			selector, errMsg := parseMetadataSelector(body["selector"])
+			if errMsg != tt.wantErr {
+				t.Fatalf("error = %q, want %q", errMsg, tt.wantErr)
+			}
+			if tt.wantErr != "" {
+				if selector != nil {
+					t.Fatalf("selector = %#v, want nil", selector)
+				}
+				return
+			}
+			if selector == nil || !reflect.DeepEqual(selector.DocumentIDs, tt.wantIDs) {
+				t.Fatalf("selector = %#v, want IDs %v", selector, tt.wantIDs)
+			}
+		})
+	}
+}
+
+func TestDocumentMetadataBatchRejectsNonStringIDs(t *testing.T) {
+	setupDocumentPermissionDB(t, true)
+	h := &DocumentHandler{
+		datasetService: dataset.NewDatasetService(),
+	}
+	tests := []struct {
+		method  string
+		path    string
+		handler gin.HandlerFunc
+	}{
+		{http.MethodPost, "/api/v1/datasets/kb-owner/metadata/update", h.MetadataBatchUpdate},
+		{http.MethodPatch, "/api/v1/datasets/kb-owner/documents/metadatas", h.UpdateDocumentMetadatas},
+	}
+	for _, tt := range tests {
+		t.Run(tt.method, func(t *testing.T) {
+			c, w := setupGinContextWithUser(tt.method, tt.path, `{"selector":{"document_ids":[123]}}`)
+			c.Params = gin.Params{{Key: "dataset_id", Value: "kb-owner"}}
+			tt.handler(c)
+			if w.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", w.Code, w.Body.String())
+			}
+			var resp struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Code != common.CodeDataError || resp.Message != "document_ids must contain only strings." {
+				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+		})
+	}
+}
+
 // fakeDocumentService implements documentServiceIface for handler tests.
 type fakeDocumentService struct {
 	deleted                int
 	err                    error
+	downloadErr            error
 	doc                    *document.DocumentResponse
 	docErr                 error
 	updateCalled           bool
@@ -66,9 +146,6 @@ type fakeDocumentService struct {
 	metadataErr            error
 	metadataKBID           string
 	metadataDocIDs         []string
-	setMetaCalled          bool
-	setMetaDocID           string
-	setMetaValue           map[string]interface{}
 	uploadLocalData        []map[string]interface{}
 	uploadLocalErrs        []string
 	uploadLocalKB          *entity.Knowledgebase
@@ -88,6 +165,20 @@ type fakeDocumentService struct {
 	metadataByKBs          map[string]interface{}
 	hasActiveTasks         bool
 	hasActiveTasksErr      error
+	imageData              []byte
+	imageErr               error
+	imageUserID            string
+	imageID                string
+	imageDocumentID        string
+}
+
+func TestMapDocumentListItemIncludesLatestIngestionEvent(t *testing.T) {
+	event := &service.IngestionEventItem{ID: 42, EventType: dao.EventTypeMessage, Message: "queued"}
+	item := mapDocumentListItem(&entity.DocumentListItem{ID: "doc-1", KbID: "kb-1"}, map[string]interface{}{}, event)
+	got, ok := item["latest_ingestion_event"].(*service.IngestionEventItem)
+	if !ok || got != event {
+		t.Fatalf("latest_ingestion_event = %#v, want original event", item["latest_ingestion_event"])
+	}
 }
 
 func (f *fakeDocumentService) Ingest(ctx context.Context, userID string, req *document.IngestDocumentRequest) (common.ErrorCode, error) {
@@ -139,8 +230,11 @@ func (f *fakeDocumentService) GetDocumentPreview(ctx context.Context, userID, do
 	}, nil
 }
 func (f *fakeDocumentService) DownloadDocument(ctx context.Context, datasetID, docID string) (*document.DownloadDocumentResp, error) {
+	if f.downloadErr != nil {
+		return nil, f.downloadErr
+	}
 	if docID == "not-found" {
-		return nil, fmt.Errorf("not found")
+		return nil, document.ErrDocumentNotFound
 	}
 	return &document.DownloadDocumentResp{
 		Data:        []byte("document data"),
@@ -211,8 +305,21 @@ func (f *fakeDocumentService) GetThumbnails(ctx context.Context, userID string, 
 	f.thumbnailDocIDs = append([]string(nil), docIDs...)
 	return f.thumbnails, f.thumbnailErr
 }
-func (f *fakeDocumentService) GetDocumentImage(ctx context.Context, imageID string) ([]byte, error) {
-	return nil, nil
+func (f *fakeDocumentService) GetDocumentImage(ctx context.Context, userID, imageID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageID = imageID
+	return f.imageData, f.imageErr
+}
+func (f *fakeDocumentService) GetDocumentImageForDocument(ctx context.Context, userID, docID, imageID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageDocumentID = docID
+	f.imageID = imageID
+	return f.imageData, f.imageErr
+}
+func (f *fakeDocumentService) GetDocumentThumbnail(ctx context.Context, userID, docID string) ([]byte, error) {
+	f.imageUserID = userID
+	f.imageDocumentID = docID
+	return f.imageData, f.imageErr
 }
 func (f *fakeDocumentService) GetDocumentsByAuthorID(ctx context.Context, authorID, page, pageSize int) ([]*document.DocumentResponse, int64, error) {
 	return nil, 0, nil
@@ -226,18 +333,6 @@ func (f *fakeDocumentService) HasActiveIngestionTasks(ctx context.Context, datas
 	return f.hasActiveTasks, f.hasActiveTasksErr
 }
 
-func (f *fakeDocumentService) SetDocumentMetadata(ctx context.Context, docID string, meta map[string]interface{}) error {
-	f.setMetaCalled = true
-	f.setMetaDocID = docID
-	f.setMetaValue = meta
-	return nil
-}
-func (f *fakeDocumentService) DeleteDocumentMetadata(ctx context.Context, docID string, keys []string) error {
-	return nil
-}
-func (f *fakeDocumentService) DeleteDocumentAllMetadata(ctx context.Context, docID string) error {
-	return nil
-}
 func (f *fakeDocumentService) GetDocumentMetadataByID(ctx context.Context, docID string) (map[string]interface{}, error) {
 	return nil, nil
 }
@@ -305,6 +400,15 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	}).Error; err != nil {
 		t.Fatalf("insert knowledgebase: %v", err)
 	}
+	if err := db.Create(&entity.UserTenant{
+		ID:       "ut-owner",
+		UserID:   "owner-user",
+		TenantID: "tenant-owner",
+		Role:     "owner",
+		Status:   sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
+	}
 	if accessible {
 		if err := db.Create(&entity.UserTenant{
 			ID:       "ut-user-1",
@@ -322,9 +426,8 @@ func setupDocumentPermissionDB(t *testing.T, accessible bool) {
 	t.Cleanup(func() { dao.DB = orig })
 }
 
-func TestSetMetaHandler_NotAccessible(t *testing.T) {
+func TestDocumentReadHandlersForbidden(t *testing.T) {
 	setupDocumentPermissionDB(t, false)
-
 	fake := &fakeDocumentService{
 		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
 	}
@@ -332,60 +435,41 @@ func TestSetMetaHandler_NotAccessible(t *testing.T) {
 		documentService: fake,
 		datasetService:  dataset.NewDatasetService(),
 	}
-
-	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"poc\":\"blocked\"}"}`)
-	h.SetMeta(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	tests := []struct {
+		name    string
+		method  string
+		path    string
+		body    string
+		params  gin.Params
+		handler gin.HandlerFunc
+		status  int
+	}{
+		{"document detail", http.MethodGet, "/api/v1/documents/doc-1", "", gin.Params{{Key: "id", Value: "doc-1"}}, h.GetDocumentByID, http.StatusForbidden},
+		{"metadata summary", http.MethodGet, "/api/v1/datasets/kb-owner/metadata/summary?doc_ids=doc-1", "", gin.Params{{Key: "dataset_id", Value: "kb-owner"}}, h.MetadataSummaryByDataset, http.StatusOK},
 	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
-		t.Fatalf("expected auth error, got %v", resp)
-	}
-	if resp["message"] != "no authorization" {
-		t.Fatalf("unexpected message: %v", resp["message"])
-	}
-	if fake.setMetaCalled {
-		t.Fatal("SetDocumentMetadata should not be called without dataset access")
-	}
-}
-
-func TestSetMetaHandler_Accessible(t *testing.T) {
-	setupDocumentPermissionDB(t, true)
-
-	fake := &fakeDocumentService{
-		doc: &document.DocumentResponse{ID: "doc-1", KbID: "kb-owner"},
-	}
-	h := &DocumentHandler{
-		documentService: fake,
-		datasetService:  dataset.NewDatasetService(),
-	}
-
-	c, w := setupGinContextWithUser("POST", "/api/v1/document/set_meta", `{"doc_id":"doc-1","meta":"{\"category\":\"tech\",\"year\":2026}"}`)
-	h.SetMeta(c)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
-	}
-	var resp map[string]interface{}
-	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
-		t.Fatal(err)
-	}
-	if resp["code"] != float64(common.CodeSuccess) || resp["data"] != true {
-		t.Fatalf("unexpected response: %v", resp)
-	}
-	if !fake.setMetaCalled {
-		t.Fatal("SetDocumentMetadata should be called with dataset access")
-	}
-	if fake.setMetaDocID != "doc-1" {
-		t.Fatalf("set meta doc id = %q, want doc-1", fake.setMetaDocID)
-	}
-	if fake.setMetaValue["category"] != "tech" || fake.setMetaValue["year"] != float64(2026) {
-		t.Fatalf("unexpected meta: %#v", fake.setMetaValue)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, w := setupGinContextWithUser(tt.method, tt.path, tt.body)
+			c.Params = tt.params
+			tt.handler(c)
+			if w.Code != tt.status {
+				t.Fatalf("status = %d, want %d: %s", w.Code, tt.status, w.Body.String())
+			}
+			var resp struct {
+				Code    common.ErrorCode `json:"code"`
+				Message string           `json:"message"`
+				Data    interface{}      `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Code != common.CodeForbidden || resp.Message != "Permission denied" || resp.Data != nil {
+				t.Fatalf("unexpected response: %s", w.Body.String())
+			}
+			if fake.metadataKBID != "" {
+				t.Fatal("GetMetadataSummary should not be called without dataset access")
+			}
+		})
 	}
 }
 
@@ -411,10 +495,10 @@ func TestDeleteDocumentHandler_NotAccessible(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
+	if resp["code"] != float64(common.CodeForbidden) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.deleteCalled {
@@ -477,10 +561,10 @@ func TestUpdateDocumentHandler_NotAccessible(t *testing.T) {
 	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
 		t.Fatal(err)
 	}
-	if resp["code"] != float64(common.CodeAuthenticationError) {
+	if resp["code"] != float64(common.CodeForbidden) {
 		t.Fatalf("expected auth error, got %v", resp)
 	}
-	if resp["message"] != "no authorization" {
+	if resp["message"] != "Permission denied" {
 		t.Fatalf("unexpected message: %v", resp["message"])
 	}
 	if fake.updateCalled {
@@ -610,6 +694,9 @@ func setupUploadHandlerDB(t *testing.T, role string) *gorm.DB {
 	}
 	if err := db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: role, Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert user_tenant: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	pipelineID := "pipe-1"
 	if err := db.Create(&entity.Knowledgebase{
@@ -1041,6 +1128,40 @@ func TestDocumentHandlerIngestPropagatesServiceErrorCode(t *testing.T) {
 	}
 }
 
+func TestDocumentHandlerIngest_CancelDispatchesToService(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	c, w := setupGinContextWithUser("POST", "/api/v1/documents/ingest", `{"doc_ids":["doc-1"],"run":2}`)
+	h.Ingest(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if resp["code"] != float64(common.CodeSuccess) {
+		t.Fatalf("expected code 0, got %v", resp["code"])
+	}
+	if resp["data"] != true {
+		t.Fatalf("expected data true, got %#v", resp["data"])
+	}
+	if fake.ingestReq == nil || len(fake.ingestReq.DocIDs) != 1 || fake.ingestReq.DocIDs[0] != "doc-1" {
+		t.Fatalf("unexpected ingestReq: %#v", fake.ingestReq)
+	}
+	if fmt.Sprint(fake.ingestReq.Run) != "2" {
+		t.Fatalf("run = %v, want 2", fake.ingestReq.Run)
+	}
+}
+
 func TestStopParseDocumentsHandler_EmptyDocIDs(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -1091,8 +1212,7 @@ func TestStopParseDocumentsHandler_BadJSON(t *testing.T) {
 	}
 }
 
-// setupHandlerAccessDB sets up SQLite in-memory DB for handler tests that need
-// datasetService.Accessible to work.
+// setupHandlerAccessDB sets up SQLite in-memory DB for handler dataset access tests.
 func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -1117,7 +1237,8 @@ func setupHandlerAccessDB(t *testing.T) *gorm.DB {
 	// Insert tenant
 	db.Create(&entity.Tenant{ID: "tenant-1", LLMID: "llm-1", EmbdID: "embd-1", ASRID: "asr-1"})
 	// Insert user_tenant mapping
-	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "admin"})
+	db.Create(&entity.UserTenant{ID: "ut-owner", UserID: "owner-1", TenantID: "tenant-1", Role: "owner", Status: sptr(string(entity.StatusValid))})
+	db.Create(&entity.UserTenant{ID: "ut-1", UserID: "user-1", TenantID: "tenant-1", Role: "normal", Status: sptr(string(entity.StatusValid))})
 	// Insert knowledgebase
 	db.Create(&entity.Knowledgebase{
 		ID: "ds-1", TenantID: "tenant-1", Name: "test-kb", EmbdID: "embd-1",
@@ -1152,7 +1273,7 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 		datasetService:  dataset.NewDatasetService(),
 	}
 
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=DONE&types=doc&desc=false", "")
+	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?type=filter&keywords=report&suffix=pdf&run=COMPLETED&types=doc&desc=false", "")
 	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
 
 	h.ListDocuments(c)
@@ -1169,8 +1290,8 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	if len(fake.filterOpts.Suffixes) != 1 || fake.filterOpts.Suffixes[0] != "pdf" {
 		t.Fatalf("expected suffix pdf, got %#v", fake.filterOpts.Suffixes)
 	}
-	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != string(entity.TaskStatusDone) {
-		t.Fatalf("expected run DONE to map to %q, got %#v", string(entity.TaskStatusDone), fake.filterOpts.RunStatuses)
+	if len(fake.filterOpts.RunStatuses) != 1 || fake.filterOpts.RunStatuses[0] != common.COMPLETED {
+		t.Fatalf("expected run COMPLETED to map to %q, got %#v", common.COMPLETED, fake.filterOpts.RunStatuses)
 	}
 	if len(fake.filterOpts.Types) != 1 || fake.filterOpts.Types[0] != "doc" {
 		t.Fatalf("expected type doc, got %#v", fake.filterOpts.Types)
@@ -1186,6 +1307,43 @@ func TestListDocumentsHandler_FilterRequestUsesQueryFilters(t *testing.T) {
 	data := resp["data"].(map[string]interface{})
 	if data["total"] != float64(2) {
 		t.Fatalf("expected total 2, got %v", data["total"])
+	}
+}
+
+func TestListDocumentsRejectsInvalidRunFilter(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+
+	fake := &fakeDocumentService{}
+	h := &DocumentHandler{
+		documentService: fake,
+		datasetService:  dataset.NewDatasetService(),
+	}
+
+	for _, invalid := range []string{"1", "DONE", "CANCEL", "FAIL", "SCHEDULE"} {
+		c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents?run="+invalid, "user-1")
+		c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}}
+
+		h.ListDocuments(c)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("expected 200 wrapper, got %d: %s", w.Code, w.Body.String())
+		}
+		var resp map[string]interface{}
+		if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+			t.Fatalf("invalid json response: %v", err)
+		}
+		if int(resp["code"].(float64)) != int(common.CodeDataError) {
+			t.Fatalf("expected code %d for %s, got %v", common.CodeDataError, invalid, resp["code"])
+		}
+		msg, _ := resp["message"].(string)
+		if !strings.Contains(msg, "Invalid filter run status conditions: "+invalid) {
+			t.Fatalf("expected error message for %s to contain 'Invalid filter run status conditions: %s', got %q", invalid, invalid, msg)
+		}
 	}
 }
 
@@ -1238,7 +1396,7 @@ func TestListDocumentsHandlerReturnsScheduledIngestionStatus(t *testing.T) {
 	}
 }
 
-func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
+func TestListDocumentsHandlerReturnsUnstartWhenNoIngestionTask(t *testing.T) {
 	db := setupHandlerAccessDB(t)
 	orig := dao.DB
 	dao.DB = db
@@ -1281,8 +1439,11 @@ func TestListDocumentsHandlerOmitsEmptyIngestionStatus(t *testing.T) {
 	if len(response.Data.Docs) != 1 {
 		t.Fatalf("document count = %d, want 1", len(response.Data.Docs))
 	}
-	if _, exists := response.Data.Docs[0]["ingestion_status"]; exists {
-		t.Fatalf("ingestion_status should be omitted when no ingestion task exists")
+	if got := response.Data.Docs[0]["ingestion_status"]; got != "UNSTART" {
+		t.Fatalf("ingestion_status = %v, want UNSTART", got)
+	}
+	if _, exists := response.Data.Docs[0]["run"]; exists {
+		t.Fatalf("run field should not exist in response")
 	}
 }
 
@@ -1438,7 +1599,7 @@ func TestListDocumentsHandler_MetadataFilterNarrowsDocumentIDs(t *testing.T) {
 		listIDs: []string{"doc-1", "doc-2", "doc-3"},
 		metadataByKBs: map[string]interface{}{
 			"author": map[string][]string{
-				"Alice": []string{"doc-2", "doc-4"},
+				"Alice": {"doc-2", "doc-4"},
 			},
 		},
 	}
@@ -1692,7 +1853,7 @@ func TestGetThumbnail_Success(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	fake := &fakeDocumentService{
 		thumbnails: map[string]string{
-			"doc-1": "/api/v1/documents/images/kb-1-thumb-1.png",
+			"doc-1": "/api/v1/documents/doc-1/thumbnail",
 			"doc-2": "",
 		},
 	}
@@ -1722,11 +1883,83 @@ func TestGetThumbnail_Success(t *testing.T) {
 		t.Fatalf("expected code %d, got %v", common.CodeSuccess, resp["code"])
 	}
 	data := resp["data"].(map[string]interface{})
-	if data["doc-1"] != "/api/v1/documents/images/kb-1-thumb-1.png" {
+	if data["doc-1"] != "/api/v1/documents/doc-1/thumbnail" {
 		t.Fatalf("unexpected thumbnail for doc-1: %v", data["doc-1"])
 	}
 	if data["doc-2"] != "" {
 		t.Fatalf("unexpected thumbnail for doc-2: %v", data["doc-2"])
+	}
+}
+
+func TestGetDocumentImagePassesPrincipalAndDisablesCaching(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("\x89PNG\r\n\x1a\nimage")}
+	h := &DocumentHandler{documentService: fake}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/doc-1/images/imagetemps-page-1.png", "")
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}, {Key: "image_id", Value: "imagetemps-page-1.png"}}
+
+	h.GetDocumentImageForDocument(c)
+
+	if w.Code != http.StatusOK || w.Header().Get("Content-Type") != "image/png" || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("unexpected response: status=%d content-type=%q cache=%q", w.Code, w.Header().Get("Content-Type"), w.Header().Get("Cache-Control"))
+	}
+	if fake.imageUserID != "user-1" || fake.imageDocumentID != "doc-1" || fake.imageID != "imagetemps-page-1.png" {
+		t.Fatalf("service arguments: user=%q doc=%q image=%q", fake.imageUserID, fake.imageDocumentID, fake.imageID)
+	}
+}
+
+func TestGetDocumentImageRequiresPrincipal(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("\x89PNG\r\n\x1a\nimage")}
+	h := &DocumentHandler{documentService: fake}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/documents/doc-1/images/imagetemps-page-1.png", nil)
+	c.Params = gin.Params{{Key: "id", Value: "doc-1"}, {Key: "image_id", Value: "imagetemps-page-1.png"}}
+
+	h.GetDocumentImageForDocument(c)
+
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] == float64(common.CodeSuccess) || fake.imageID != "" {
+		t.Fatalf("anonymous request reached image service: response=%s image=%q", w.Body.String(), fake.imageID)
+	}
+}
+
+func TestGetDocumentImageRejectsNonImagePayload(t *testing.T) {
+	fake := &fakeDocumentService{imageData: []byte("%PDF-1.7")}
+	h := &DocumentHandler{documentService: fake}
+	c, w := setupGinContextWithUser("GET", "/api/v1/documents/images/anything.png", "")
+	c.Params = gin.Params{{Key: "image_id", Value: "anything.png"}}
+
+	h.GetDocumentImage(c)
+
+	var response map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response["code"] != float64(common.CodeDataError) {
+		t.Fatalf("unexpected response: %s", w.Body.String())
+	}
+}
+
+func TestDocumentImageContentTypeSupportedFormats(t *testing.T) {
+	tests := map[string]struct {
+		data []byte
+		want string
+	}{
+		"png":  {[]byte("\x89PNG\r\n\x1a\n"), "image/png"},
+		"jpeg": {[]byte{0xff, 0xd8, 0xff}, "image/jpeg"},
+		"gif":  {[]byte("GIF89a"), "image/gif"},
+		"webp": {[]byte("RIFF\x00\x00\x00\x00WEBP"), "image/webp"},
+		"bmp":  {[]byte("BM"), "image/bmp"},
+	}
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			if got := documentImageContentType(test.data); got != test.want {
+				t.Fatalf("documentImageContentType() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 
@@ -1887,13 +2120,35 @@ func TestGetDocumentPreview_StorageErrorGenericMessage(t *testing.T) {
 	}
 }
 
-func TestDownloadDocument_Success(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
+// downloadHandlerWithAccessDB wires the real dataset permission check against
+// the seeded in-memory DB (ds-1 is owned by tenant-1 / user-1) so the tests
+// exercise the tenant gate on the download route.
+func downloadHandlerWithAccessDB(t *testing.T) *DocumentHandler {
+	t.Helper()
+	db := setupHandlerAccessDB(t)
+	orig := dao.DB
+	dao.DB = db
+	t.Cleanup(func() { dao.DB = orig })
+	return &DocumentHandler{
 		documentService: &fakeDocumentService{},
+		datasetService:  dataset.NewDatasetService(),
 	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/doc-1", "")
-	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "doc-1"}}
+}
+
+func downloadContextAs(userID, datasetID, docID string) (*gin.Context, *httptest.ResponseRecorder) {
+	gin.SetMode(gin.TestMode)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest("GET", "/api/v1/datasets/"+datasetID+"/documents/"+docID, nil)
+	c.Set("user", &entity.User{ID: userID})
+	c.Set("user_id", userID)
+	c.Params = gin.Params{{Key: "dataset_id", Value: datasetID}, {Key: "document_id", Value: docID}}
+	return c, w
+}
+
+func TestDownloadDocument_Success(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
 
 	h.DownloadDocument(c)
 
@@ -1909,12 +2164,8 @@ func TestDownloadDocument_Success(t *testing.T) {
 }
 
 func TestDownloadDocument_NotFound(t *testing.T) {
-	gin.SetMode(gin.TestMode)
-	h := &DocumentHandler{
-		documentService: &fakeDocumentService{},
-	}
-	c, w := setupGinContextWithUser("GET", "/api/v1/datasets/ds-1/documents/not-found", "")
-	c.Params = gin.Params{{Key: "dataset_id", Value: "ds-1"}, {Key: "document_id", Value: "not-found"}}
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-1", "ds-1", "not-found")
 
 	h.DownloadDocument(c)
 
@@ -1923,7 +2174,59 @@ func TestDownloadDocument_NotFound(t *testing.T) {
 	}
 	var resp map[string]interface{}
 	json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp["code"] != float64(common.CodeDataError) {
-		t.Fatalf("expected code %d, got %v", common.CodeDataError, resp["code"])
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
+	}
+	if resp["message"] != "Resource not found" {
+		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
+	}
+}
+
+func TestDownloadDocument_ServiceErrorReturnsServerError(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	h.documentService = &fakeDocumentService{downloadErr: errors.New("database connection failed")}
+	c, w := downloadContextAs("user-1", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 response envelope, got %d", w.Code)
+	}
+	var resp map[string]interface{}
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp["code"] != float64(common.CodeServerError) {
+		t.Fatalf("expected code %d, got %v", common.CodeServerError, resp["code"])
+	}
+	if resp["message"] != "Failed to download document" {
+		t.Fatalf("unexpected client-visible error: %v", resp["message"])
+	}
+	if strings.Contains(w.Body.String(), "database connection failed") {
+		t.Fatal("database error detail leaked to the client")
+	}
+}
+
+// A logged-in user who is not a member of the dataset's tenant must not be
+// able to download its documents, and must not learn whether they exist.
+func TestDownloadDocument_ForeignUserRejected(t *testing.T) {
+	h := downloadHandlerWithAccessDB(t)
+	c, w := downloadContextAs("user-2", "ds-1", "doc-1")
+
+	h.DownloadDocument(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200 envelope, got %d: %s", w.Code, w.Body.String())
+	}
+	if strings.Contains(w.Body.String(), "document data") {
+		t.Fatalf("document bytes must not be served to a foreign user")
+	}
+	var resp map[string]interface{}
+	json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp["code"] != float64(common.CodeNotFound) {
+		t.Fatalf("expected code %d, got %v", common.CodeNotFound, resp["code"])
+	}
+	if resp["message"] != "Resource not found" {
+		t.Fatalf("unexpected hidden-resource message: %v", resp["message"])
 	}
 }

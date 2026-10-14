@@ -24,6 +24,8 @@ import IterationStartForm from '../form/iteration-start-from';
 import KeenableForm from '../form/keenable-form';
 import SofyaForm from '../form/sofya-form';
 import FXMacroDataForm from '../form/fxmacrodata-form';
+import Search1APICrawlForm from '../form/search1api-crawl-form';
+import Search1APIForm from '../form/search1api-form';
 import YouComForm from '../form/youcom-form';
 import ListOperationsForm from '../form/list-operations-form';
 import LoopForm from '../form/loop-form';
@@ -50,6 +52,7 @@ import VariableAssignerForm from '../form/variable-assigner-form';
 import WenCaiForm from '../form/wencai-form';
 import WikipediaForm from '../form/wikipedia-form';
 import YahooFinanceForm from '../form/yahoo-finance-form';
+import type { INextOperatorForm } from '../interface';
 
 export const FormConfigMap = {
   [Operator.Begin]: {
@@ -88,6 +91,12 @@ export const FormConfigMap = {
   [Operator.FXMacroData]: { component: FXMacroDataForm },
   [Operator.SofyaSearch]: {
     component: SofyaForm,
+  },
+  [Operator.Search1APISearch]: {
+    component: Search1APIForm,
+  },
+  [Operator.Search1APICrawl]: {
+    component: Search1APICrawlForm,
   },
   [Operator.Wikipedia]: {
     component: WikipediaForm,
@@ -186,11 +195,21 @@ export const FormConfigMap = {
   [Operator.Tokenizer]: {
     component: TokenizerForm,
   },
+  [Operator.GeneralChunker]: {
+    component: (props: INextOperatorForm) => (
+      <TokenChunkerForm {...props} isGeneralChunker />
+    ),
+  },
   [Operator.TokenChunker]: {
     component: TokenChunkerForm,
   },
   [Operator.TitleChunker]: {
     component: TitleChunkerForm,
+  },
+  [Operator.ManualChunker]: {
+    component: (props: INextOperatorForm) => (
+      <TitleChunkerForm {...props} pinMethodGroup />
+    ),
   },
   [Operator.Extractor]: {
     component: ExtractorForm,

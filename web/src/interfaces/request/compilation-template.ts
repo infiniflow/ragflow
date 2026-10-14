@@ -16,6 +16,7 @@ export interface ICompilationTemplateRaptorConfigRequest {
   clustering_threshold?: number;
   clustering_ratio?: number;
   rechunk?: boolean;
+  claim_prompt?: string;
 }
 
 export interface ICompilationTemplateConfigRequest {
