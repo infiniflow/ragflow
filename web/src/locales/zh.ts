@@ -3087,6 +3087,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
+      apiKeyRequired: '请输入 API Key',
+      apiKeyMissing: '未配置 API Key，请先填写',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
       extractorKeywordsTopNMissing:

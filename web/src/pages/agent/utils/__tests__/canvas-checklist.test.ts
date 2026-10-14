@@ -817,6 +817,112 @@ describe('collectCanvasIssues: stale resources', () => {
   });
 });
 
+describe('collectCanvasIssues: required tool API key', () => {
+  it.each([
+    ['SofyaSearch', 'SofyaSearch:s1'],
+    ['Search1APISearch', 'Search1API:s2'],
+  ])('flags a standalone %s node without an API key', (label, id) => {
+    const issues = collect({
+      nodes: [makeNode(id, label, { api_key: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: id,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it.each([['SofyaSearch'], ['Search1APISearch']])(
+    'passes a standalone %s node with an API key',
+    (label) => {
+      const issues = collect({
+        nodes: [makeNode(`${label}:s1`, label, { api_key: 'secret' })],
+      });
+
+      expect(
+        issues.some(
+          (x) =>
+            x.type === CanvasIssueType.MissingRequired &&
+            x.messageKey === 'flow.apiKeyMissing',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('flags an agent-embedded tool without an API key on the Tool node', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: '' },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / Sofya',
+        operatorLabel: 'SofyaSearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('flags an agent-embedded tool with no params object at all', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [{ component_name: 'Search1APISearch', id: 'tool-2' }],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        toolId: undefined,
+        nodeName: 'Agent:a1 / Search1APISearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('passes an agent-embedded tool with an API key and skips other tools', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: 'secret' },
+        },
+        { component_name: 'ExeSQL', id: 'tool-2', params: {} },
+      ],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.apiKeyMissing'),
+    ).toHaveLength(0);
+  });
+});
+
 describe('collectCanvasIssues: agent-embedded retrieval tools', () => {
   const agentWithTool = () =>
     makeNode('Agent:a1', 'Agent', {
