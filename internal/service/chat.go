@@ -226,7 +226,7 @@ func (s *ChatService) Create(ctx context.Context, userID string, req map[string]
 		if !ok {
 			return nil, common.CodeDataError, errors.New("`prompt_config` should be an object")
 		}
-		if err := validatePromptConfigParameters(promptConfig); err != nil {
+		if err := validatePromptConfig(promptConfig); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -875,7 +875,7 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 		if !ok {
 			return nil, errors.New("`prompt_config` should be an object")
 		}
-		if err := validatePromptConfigParameters(promptConfig); err != nil {
+		if err := validatePromptConfig(promptConfig); err != nil {
 			return nil, err
 		}
 		if patch {
@@ -941,7 +941,17 @@ func (s *ChatService) updateChatREST(ctx context.Context, userID, chatID string,
 	return s.buildRESTChatResponse(ctx, updatedChat), nil
 }
 
-func validatePromptConfigParameters(promptConfig map[string]interface{}) error {
+func validatePromptConfig(promptConfig map[string]interface{}) error {
+	if value, ok := promptConfig["knowledge_compilation_scope"]; ok && value != nil {
+		scope, ok := value.(string)
+		if !ok {
+			return errors.New("`knowledge_compilation_scope` should be a string")
+		}
+		if err := ValidateKnowledgeCompilationScope(scope); err != nil {
+			return err
+		}
+	}
+
 	parameters, ok := promptConfig["parameters"].([]interface{})
 	if !ok {
 		return nil

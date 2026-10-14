@@ -575,6 +575,41 @@ func TestChatServiceUpdateRejectsDuplicatePromptParameterKeys(t *testing.T) {
 	}
 }
 
+func TestChatServicePatchValidatesKnowledgeCompilationScope(t *testing.T) {
+	db := setupChatRESTUpdateServiceTestDB(t)
+	createChatRESTUpdateServiceTestChat(t, db, "chat-1", "user-1")
+
+	svc := NewChatService()
+	ctx := t.Context()
+	for _, tt := range []struct {
+		scope interface{}
+		want  string
+	}{
+		{scope: "all", want: "knowledge_compilation_scope must be one of dataset, doc, both"},
+		{scope: true, want: "`knowledge_compilation_scope` should be a string"},
+	} {
+		_, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{
+			"prompt_config": map[string]interface{}{"knowledge_compilation_scope": tt.scope},
+		})
+		if err == nil || err.Error() != tt.want {
+			t.Fatalf("scope %v: error = %v, want %q", tt.scope, err, tt.want)
+		}
+	}
+
+	if _, err := svc.PatchChat(ctx, "user-1", "chat-1", map[string]interface{}{
+		"prompt_config": map[string]interface{}{"knowledge_compilation_scope": "dataset"},
+	}); err != nil {
+		t.Fatalf("PatchChat failed: %v", err)
+	}
+	chat, err := svc.chatDAO.GetByID(ctx, dao.DB, "chat-1")
+	if err != nil {
+		t.Fatalf("failed to fetch updated chat: %v", err)
+	}
+	if chat.PromptConfig["knowledge_compilation_scope"] != "dataset" {
+		t.Fatalf("expected knowledge_compilation_scope to be stored, got %+v", chat.PromptConfig)
+	}
+}
+
 func TestChatServiceCreatePromptDefaultsContract(t *testing.T) {
 	setupChatRESTUpdateServiceTestDB(t)
 

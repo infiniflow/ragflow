@@ -720,6 +720,7 @@ func (s *ChatPipelineService) AsyncChat(
 					threshold := chat.SimilarityThreshold
 					vsw := chat.VectorSimilarityWeight
 					topN := int(chat.TopN)
+					compiledScope, _ := chat.PromptConfig["knowledge_compilation_scope"].(string)
 
 					req := &nlp.RetrievalRequest{
 						Question:               searchQuestion,
@@ -736,6 +737,7 @@ func (s *ChatPipelineService) AsyncChat(
 						RerankModel:            rerankModel,
 						EmbeddingModel:         embModel,
 						Aggs:                   func() *bool { v := true; return &v }(),
+						Filter:                 CompiledChunksFilter(nil, compiledScope),
 					}
 
 					result, retErr := retrievalSvc.Retrieval(ctx, req)
