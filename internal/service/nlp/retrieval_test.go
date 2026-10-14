@@ -165,8 +165,8 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 			var got []string
 			for _, chunk := range result.Chunks {
 				got = append(got, chunk["chunk_id"].(string))
-				if chunk["available_int"] != 1 {
-					t.Fatalf("available_int = %v, want 1", chunk["available_int"])
+				if _, ok := chunk["available_int"]; ok {
+					t.Fatal("available_int should not be returned in retrieval results")
 				}
 			}
 			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
@@ -327,10 +327,14 @@ func (parentChunkMissingEngine) Search(context.Context, *types.SearchRequest) (*
 type parentChunkScopeEngine struct {
 	engine.DocEngine
 	parentSearch *types.SearchRequest
+	parentChunk  map[string]interface{}
 }
 
 func (e *parentChunkScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.parentSearch = req
+	if e.parentChunk != nil {
+		return &types.SearchResult{Chunks: []map[string]interface{}{e.parentChunk}}, nil
+	}
 	return &types.SearchResult{}, nil
 }
 
@@ -364,6 +368,20 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 	}
 	if !engine.parentSearch.IncludeUnavailable {
 		t.Fatal("parent lookup must include hidden parent chunks")
+	}
+	engine.parentChunk = map[string]interface{}{
+		"id": "legacy-shared-parent-id", "doc_id": "doc-a", "kb_id": "kb-1",
+		"available_int": 0, "content_with_weight": "parent text",
+	}
+	got = RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1", "tenant-2"}, engine, t.Context())
+	if len(got) != 1 || got[0]["chunk_id"] != "legacy-shared-parent-id" || got[0]["content_with_weight"] != "parent text" {
+		t.Fatalf("retrieval result = %#v, want aggregated parent", got)
+	}
+	if _, ok := got[0]["available_int"]; ok {
+		t.Fatal("available_int should not be returned in aggregated retrieval results")
+	}
+	if engine.parentChunk["available_int"] != 0 {
+		t.Fatal("stored parent availability should remain unchanged")
 	}
 }
 
