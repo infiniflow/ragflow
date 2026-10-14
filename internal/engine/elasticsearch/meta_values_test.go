@@ -53,6 +53,7 @@ type fakeMetaES struct {
 	searches     int
 	partialParam []string
 	skipParams   [][]string
+	idBatches    []int
 
 	// Injected for every response.
 	timedOut     bool
@@ -122,6 +123,11 @@ func (f *fakeMetaES) handler(t *testing.T) http.HandlerFunc {
 		}
 		skip := agg.Composite.Sources[0]["v"].Terms.Script.Params.Skip
 		f.skipParams = append(f.skipParams, skip)
+		for _, clause := range body.Query.Bool.Filter {
+			if ids, ok := clause["ids"]; ok {
+				f.idBatches = append(f.idBatches, len(toStrings(ids["values"])))
+			}
+		}
 
 		counts := map[string]int64{}
 		for _, doc := range f.docs {

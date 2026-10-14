@@ -38,6 +38,14 @@ var ErrIndexNotFound = errors.New("index does not exist")
 // as a hard document scope.
 var ErrMetaValueSpaceIncomplete = errors.New("metadata value space is incomplete")
 
+// MetaValueCount is how many documents hold one metadata value. Value is what
+// encoding/json decodes the stored value to: a string, a float64 or a bool.
+type MetaValueCount struct {
+	Key   string
+	Value interface{}
+	Docs  int64
+}
+
 // SearchRequest unified search request for all engines
 type SearchRequest struct {
 	// Search target

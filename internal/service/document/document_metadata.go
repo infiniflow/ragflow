@@ -227,7 +227,7 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 				if val == nil {
 					continue
 				}
-				strVal := fmt.Sprintf("%v", val)
+				strVal := metadataValueLabel(val)
 				flattenedMeta[fieldName][strVal] = append(flattenedMeta[fieldName][strVal], docID)
 			}
 		}
@@ -240,6 +240,13 @@ func (s *DocumentService) GetMetadataByKBs(ctx context.Context, kbIDs []string) 
 	}
 
 	return metaResult, nil
+}
+
+// metadataValueLabel renders one stored metadata value -- a scalar, or an
+// element of a list -- as GetMetadataByKBs keys it, which is both the label the
+// file list's filter shows and the value a selection is resolved against.
+func metadataValueLabel(value interface{}) string {
+	return fmt.Sprintf("%v", value)
 }
 
 // aggregateMetadata aggregates metadata from search results

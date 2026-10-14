@@ -19,9 +19,12 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
+
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -301,6 +304,41 @@ func flattedMetaValue(value interface{}) (string, bool) {
 // backend has one; values come back typed the way encoding/json decodes them.
 type metaValueSpaceProvider interface {
 	MetaValueSpace(ctx context.Context, tenantID string, kbIDs []string) (map[string][]interface{}, error)
+}
+
+// metaFacetProvider is implemented by doc engines that can count the file
+// list's metadata facet with an aggregation instead of reading every
+// document's metadata. Only the Elasticsearch backend has one.
+type metaFacetProvider interface {
+	MetaFacets(ctx context.Context, tenantID, kbID string, docIDs []string) ([]types.MetaValueCount, int64, error)
+}
+
+// GetMetadataFacets counts, among docIDs, how many documents hold each
+// metadata value, and how many hold any metadata value at all.
+//
+// ok=false means the doc store cannot give an exact answer -- the backend has
+// no aggregation path, or the aggregation came back partial
+// (types.ErrMetaValueSpaceIncomplete) -- and the caller counts the documents
+// itself. Any other failure is returned: a doc store that cannot be reached
+// would fail the scan too.
+func (s *MetadataService) GetMetadataFacets(ctx context.Context, kbID string, docIDs []string) ([]types.MetaValueCount, int64, bool, error) {
+	provider, ok := s.docEngine.(metaFacetProvider)
+	if !ok {
+		return nil, 0, false, nil
+	}
+	tenantID, err := s.GetTenantIDByKBID(ctx, kbID)
+	if err != nil {
+		return nil, 0, false, err
+	}
+	facets, carrying, err := provider.MetaFacets(ctx, tenantID, kbID, docIDs)
+	if errors.Is(err, types.ErrMetaValueSpaceIncomplete) {
+		common.Warn("metadata facets came back incomplete; counting the documents instead", zap.String("kb_id", kbID), zap.Error(err))
+		return nil, 0, false, nil
+	}
+	if err != nil {
+		return nil, 0, false, err
+	}
+	return facets, carrying, true, nil
 }
 
 // GetMetaValueSpaceByKBs returns the distinct metadata values per key across
