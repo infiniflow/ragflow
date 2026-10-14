@@ -2555,6 +2555,8 @@ curl --request POST \
   - `"dataset"`: Only dataset-level compilation chunks.
   - `"doc"`: Only document-level compilation chunks.
   - `"both"`: Both (default).
+
+  The scope is applied on Elasticsearch and Infinity; on Infinity, a compilation chunk without a scope counts as `"doc"`. OceanBase/SeekDB and SereneDB ignore it. On Vastbase, `"dataset"` or `"doc"` drops all compilation chunks, like `"include_knowledge_compilation": false`.
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`
@@ -2718,7 +2720,7 @@ curl --request POST \
   - `"refine_multiturn"`: `boolean`
   - `"reasoning"`: `boolean`
   - `"cross_languages"`: `list[string]`
-  - `"knowledge_compilation_scope"`: `string` Which knowledge-compilation chunks retrieval includes: `"dataset"` (dataset-level only), `"doc"` (document-level only), or `"both"` (default). Source chunks are not affected.
+  - `"knowledge_compilation_scope"`: `string` Which knowledge-compilation chunks retrieval includes: `"dataset"` (dataset-level only), `"doc"` (document-level only), or `"both"` (default). Source chunks are not affected. The scope is applied on Elasticsearch and Infinity (on Infinity, a compilation chunk without a scope counts as `"doc"`); OceanBase/SeekDB and SereneDB ignore it; on Vastbase, `"dataset"` or `"doc"` drops all compilation chunks.
   - `"web_search_provider"`: `string` The web search service to use. Supported values are `"brave"`, `"exa"`, `"firecrawl"`, `"linkup"`, `"parallel"`, `"querit"`, `"search1api"`, `"serply"`, `"tavily"`, and `"youcom"`. If omitted, Tavily is selected only when `"tavily_api_key"` is configured; otherwise web search is disabled.
   - `"tavily_api_key"`: `string`
   - `"brave_api_key"`: `string` The Brave Search API key. Set `web_search_provider` to `"brave"` when using this field.
