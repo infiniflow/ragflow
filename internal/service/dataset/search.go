@@ -310,9 +310,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
 	}
-	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope, docIDs)
+	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
 	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {
-		// Dataset artifacts use dataset IDs; the filter restricts their source documents.
+		// Dataset artifacts use dataset IDs instead of source document IDs.
 		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
@@ -360,38 +360,20 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}, nil
 }
 
-func knowledgeCompilationFilter(include *bool, scope string, docIDs []string) map[string]interface{} {
+func knowledgeCompilationFilter(include *bool, scope string) map[string]interface{} {
+	ordinary := map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
 	if include != nil && !*include {
-		return map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+		return ordinary
 	}
-	if scope == "" {
+	switch scope {
+	case "all":
+		return nil
+	case "document":
+		scope = "doc"
+	default:
 		scope = "dataset"
 	}
-	scopes := []string{scope}
-	if scope == "all" {
-		scopes = []string{"dataset", "document"}
-	}
-	ordinary := map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
-	if len(docIDs) > 0 {
-		ordinary["doc_id"] = docIDs
-	}
-	branches := []map[string]interface{}{ordinary}
-	for _, scope := range scopes {
-		compiled := map[string]interface{}{"exists": "compile_kwd"}
-		if scope == "document" {
-			compiled["scope_kwd"] = "doc"
-			if len(docIDs) > 0 {
-				compiled["doc_id"] = docIDs
-			}
-		} else {
-			compiled["scope_kwd"] = "dataset"
-			if len(docIDs) > 0 {
-				compiled["source_doc_ids"] = docIDs
-			}
-		}
-		branches = append(branches, compiled)
-	}
-	return map[string]interface{}{"or": branches}
+	return map[string]interface{}{"or": []map[string]interface{}{ordinary, {"scope_kwd": scope}}}
 }
 
 func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {
