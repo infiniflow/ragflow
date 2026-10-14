@@ -1993,7 +1993,7 @@ Failure:
 
 **GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
 
-Retrieves a specified chunk in a specified document. Internal fields such as availability, vector, and token fields are not returned.
+Retrieves a specified chunk in a specified document. Runtime fields such as vector and token fields are not returned.
 
 #### Request
 
@@ -2027,6 +2027,7 @@ Success:
 {
     "code": 0,
     "data": {
+        "available_int": 1,
         "content_with_weight": "This is a test content.",
         "doc_id": "b330ec2e91ec11efbc510242ac120004",
         "docnm_kwd": "1.txt",

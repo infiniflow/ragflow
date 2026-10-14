@@ -544,7 +544,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 		return nil, fmt.Errorf("chunk not found")
 	}
 
-	// Return the stored row without internal availability or tokenized/vector fields.
+	// Return the stored row without tokenized/vector runtime fields.
 	result := make(map[string]interface{}, len(chunk))
 	for k, v := range chunk {
 		if isChunkRuntimeField(k) {
@@ -558,7 +558,7 @@ func (s *ChunkService) Get(ctx context.Context, req *service.GetChunkRequest, us
 // isChunkRuntimeField identifies internal fields omitted from chunk responses.
 // The _vec suffix is anchored at the end; token field names use substring matches.
 func isChunkRuntimeField(name string) bool {
-	return name == "available_int" || strings.HasSuffix(name, "_vec") ||
+	return strings.HasSuffix(name, "_vec") ||
 		strings.Contains(name, "_sm_") ||
 		strings.Contains(name, "_tks") ||
 		strings.Contains(name, "_ltks")

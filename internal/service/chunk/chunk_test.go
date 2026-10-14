@@ -469,8 +469,8 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 	if _, ok := resp.Chunk["content_ltks"]; ok {
 		t.Fatal("content_ltks should be stripped like Python's _strip_chunk_runtime_fields")
 	}
-	if _, ok := resp.Chunk["available_int"]; ok {
-		t.Fatal("available_int should not be returned in chunk detail")
+	if got := resp.Chunk["available_int"]; got != 0 {
+		t.Fatalf("available_int = %v, want stored availability 0", got)
 	}
 	if engine.chunk["available_int"] != 0 {
 		t.Fatal("stored availability should remain unchanged")
@@ -554,8 +554,8 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 	}
 }
 
-// TestIsChunkRuntimeField checks that availability and tokenized/vector fields
-// are dropped while other stored fields survive. Only _vec is end-anchored.
+// TestIsChunkRuntimeField checks that tokenized/vector fields are dropped while
+// other stored fields survive. Only _vec is end-anchored.
 func TestIsChunkRuntimeField(t *testing.T) {
 	cases := []struct {
 		name string
@@ -588,7 +588,7 @@ func TestIsChunkRuntimeField(t *testing.T) {
 		{"mom_id", false},
 		{"position_int", false},
 		{"img_id", false},
-		{"available_int", true},
+		{"available_int", false},
 	}
 	for _, tc := range cases {
 		if got := isChunkRuntimeField(tc.name); got != tc.want {
