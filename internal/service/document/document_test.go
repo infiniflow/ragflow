@@ -4556,7 +4556,7 @@ func TestRemoveDocumentKeepFileCleansUpEngineData(t *testing.T) {
 	engine := &keepFileCleanupDocEngine{}
 	svc := testDocumentService(t)
 	svc.docEngine = engine
-	svc.metadataSvc = nil // metadata cleanup is best-effort; nil guards against panic
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
 
 	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err != nil {
 		t.Fatalf("RemoveDocumentKeepFile failed: %v", err)
@@ -4573,6 +4573,13 @@ func TestRemoveDocumentKeepFileCleansUpEngineData(t *testing.T) {
 	}
 	if got := engine.deleteChunksCondition["doc_id"]; got != "doc-1" {
 		t.Fatalf("DeleteChunks condition[doc_id] = %v, want %q", got, "doc-1")
+	}
+
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("DeleteMetadata calls=%d, want 1", engine.deleteMetadataCalls)
+	}
+	if engine.deleteMetadataCond["id"] != "doc-1" || engine.deleteMetadataCond["kb_id"] != "kb-1" {
+		t.Fatalf("metadata condition=%v", engine.deleteMetadataCond)
 	}
 
 	// Verify document row removed.
