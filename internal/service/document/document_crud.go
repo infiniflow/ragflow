@@ -414,7 +414,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	if len(variants) == 0 {
 		if s.metadataSvc != nil {
-			_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+			if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -431,7 +433,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
-		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+		if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+			return err
+		}
 	}
 	return nil
 }

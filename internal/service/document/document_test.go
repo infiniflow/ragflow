@@ -4514,6 +4514,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 type keepFileCleanupDocEngine struct {
 	fakeChatDocEngine
 	deleteChunksError     error
+	deleteMetadataError   error
 	deleteChunksCalls     int
 	deleteChunksCondition map[string]interface{}
 	deleteChunksIndexName string
@@ -4533,7 +4534,7 @@ func (e *keepFileCleanupDocEngine) DeleteChunks(_ context.Context, condition map
 func (e *keepFileCleanupDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, _ string) (int64, error) {
 	e.deleteMetadataCalls++
 	e.deleteMetadataCond = condition
-	return 0, nil
+	return 0, e.deleteMetadataError
 }
 
 // TestRemoveDocumentKeepFileCleansUpEngineData regression-locks the
@@ -4659,5 +4660,25 @@ func TestRemoveDocumentKeepFileKeepsRowOnEngineFailure(t *testing.T) {
 	}
 	if kb.DocNum != 1 {
 		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
+	}
+}
+
+func TestRemoveDocumentKeepFileKeepsRowOnMetadataFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	engine := &keepFileCleanupDocEngine{deleteMetadataError: fmt.Errorf("metadata unavailable")}
+	svc := testDocumentService(t)
+	svc.docEngine = engine
+	svc.metadataSvc = service.NewMetadataServiceForTest(dao.NewKnowledgebaseDAO(), engine)
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected metadata error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain: %v", err)
+	}
+	if engine.deleteMetadataCalls != 1 {
+		t.Fatalf("metadata calls=%d", engine.deleteMetadataCalls)
 	}
 }
