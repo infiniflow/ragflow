@@ -24,7 +24,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/cespare/xxhash/v2"
 )
@@ -172,13 +171,6 @@ func ParseBytesString(s string) int64 {
 		return 0
 	}
 	return int64(val * float64(multiplier))
-}
-
-func FormatTime(t *int64) string {
-	if t == nil {
-		return "N/A"
-	}
-	return time.UnixMilli(*t).Format("2006-01-02 15:04:05")
 }
 
 func IsValidString(v interface{}) bool {

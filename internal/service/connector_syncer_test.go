@@ -8,6 +8,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	syncerconnector "ragflow/internal/syncer/connector"
 )
 
@@ -115,7 +116,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := db.AutoMigrate(&entity.Connector{}, &entity.SyncLogs{}); err != nil {
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 	if err := db.Create(&entity.Connector{
@@ -131,6 +132,19 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		TimeoutSecs: 60,
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "user-1", CreatedBy: "user-1", Name: "kb-1", EmbdID: "embd",
+		Permission: string(entity.TenantPermissionMe), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("insert connector dataset link: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: string(permission.RoleOwner), Status: &valid}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	if err := db.Create(&entity.SyncLogs{
 		ID:            "task-1",
@@ -216,13 +230,21 @@ func TestRebuildConnectorDeletesOldSyncCheckpointsBeforePublishing(t *testing.T)
 		t.Fatalf("insert connector: %v", err)
 	}
 	if err := db.Create(&entity.Knowledgebase{
-		ID:        "kb-1",
-		TenantID:  "user-1",
-		Name:      "kb-1",
-		CreatedBy: "user-1",
-		EmbdID:    "embd",
+		ID:         "kb-1",
+		TenantID:   "user-1",
+		Name:       "kb-1",
+		CreatedBy:  "user-1",
+		EmbdID:     "embd",
+		Permission: string(entity.TenantPermissionMe),
+		Status:     sptr(string(entity.StatusValid)),
 	}).Error; err != nil {
 		t.Fatalf("insert kb: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{
+		ID: "ut-owner", UserID: "user-1", TenantID: "user-1",
+		Role: "owner", Status: sptr(string(entity.StatusValid)),
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
 		t.Fatalf("insert connector mapping: %v", err)
@@ -286,12 +308,18 @@ func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
 		t.Fatalf("insert connector: %v", err)
 	}
 	// kb-1 is owned by the caller but is never bound to conn-1.
-	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", Name: "kb-1", CreatedBy: "user-1", EmbdID: "embd"}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-1", TenantID: "user-1", Name: "kb-1", CreatedBy: "user-1", EmbdID: "embd", Permission: string(entity.TenantPermissionMe), Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert kb-1: %v", err)
 	}
 	// kb-foreign belongs to another tenant.
-	if err := db.Create(&entity.Knowledgebase{ID: "kb-foreign", TenantID: "user-2", Name: "kb-foreign", CreatedBy: "user-2", EmbdID: "embd"}).Error; err != nil {
+	if err := db.Create(&entity.Knowledgebase{ID: "kb-foreign", TenantID: "user-2", Name: "kb-foreign", CreatedBy: "user-2", EmbdID: "embd", Permission: string(entity.TenantPermissionMe), Status: sptr(string(entity.StatusValid))}).Error; err != nil {
 		t.Fatalf("insert kb-foreign: %v", err)
+	}
+	if err := db.Create([]entity.UserTenant{
+		{ID: "ut-owner-1", UserID: "user-1", TenantID: "user-1", Role: "owner", Status: sptr(string(entity.StatusValid))},
+		{ID: "ut-owner-2", UserID: "user-2", TenantID: "user-2", Role: "owner", Status: sptr(string(entity.StatusValid))},
+	}).Error; err != nil {
+		t.Fatalf("insert tenant owners: %v", err)
 	}
 
 	svc := NewConnectorService()
@@ -308,11 +336,11 @@ func TestRebuildConnectorRejectsCrossTenantAndUnboundKB(t *testing.T) {
 
 	// The caller cannot access a cross-tenant kb at all: denied up front.
 	ok, code, err = svc.RebuildConnector(t.Context(), "conn-1", "user-1", "kb-foreign")
-	if err == nil || !errors.Is(err, ErrConnectorNoAuth) {
-		t.Fatalf("err = %v, want ErrConnectorNoAuth", err)
+	if err == nil || !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("err = %v, want permission denial", err)
 	}
-	if ok || code != common.CodeAuthenticationError {
-		t.Fatalf("ok/code = %v/%v, want false/authentication error", ok, code)
+	if ok || code != common.CodeForbidden {
+		t.Fatalf("ok/code = %v/%v, want false/forbidden", ok, code)
 	}
 }
 

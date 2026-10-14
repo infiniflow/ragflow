@@ -64,11 +64,10 @@ export const OutputFormatMap = {
   [FileType.Audio]: AudioOutputFormat,
 };
 
-// The video parser defaults to the tenant's VLM model and the audio parser to
-// the ASR model, keyed by the useFetchDefaultModelDictionary fields. A file
-// type without a configured tenant default keeps its empty model id.
+// The audio parser defaults to the tenant's ASR model, keyed by the
+// useFetchDefaultModelDictionary fields. (The vision model is a single global
+// parser option, not per file type, so video no longer appears here.)
 export const FileTypeDefaultModelFieldMap: Partial<Record<FileType, string>> = {
-  [FileType.Video]: ModelTypeToField.vision,
   [FileType.Audio]: ModelTypeToField.asr,
 };
 
@@ -84,10 +83,6 @@ export const FileId = 'File'; // BeginId
 export enum TokenizerSearchMethod {
   Embedding = 'embedding',
   FullText = 'full_text',
-}
-
-export enum ImageParseMethod {
-  OCR = 'ocr',
 }
 
 export enum TokenizerFields {
@@ -168,13 +163,17 @@ export const initialParserValues = {
     html: { type: 'string', value: '' },
     json: { type: 'Array<object>', value: [] },
   },
+  // Global vision enhancement, off by default; the model id is prefilled from
+  // the tenant's image2text default when a node is created. The prompt is shared
+  // by the vision paths here; response language belongs to the knowledge base.
+  vlm: { llm_id: '', system_prompt: '' },
+  enable_vision_enhancement: false,
   setups: [
     {
       fileFormat: FileType.PDF,
       output_format: PdfOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
       pages: [{ from: 1, to: 100000 }],
     },
@@ -183,14 +182,12 @@ export const initialParserValues = {
       output_format: SpreadsheetOutputFormat.Json,
       parse_method: ParseDocumentType.DeepDOC,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Image,
       output_format: ImageOutputFormat.Json,
-      parse_method: ImageParseMethod.OCR,
+      ocr_enabled: true,
       preprocess: PreprocessValue.main_content,
-      system_prompt: '',
     },
     {
       fileFormat: FileType.Email,
@@ -202,7 +199,6 @@ export const initialParserValues = {
       fileFormat: FileType.TextMarkdown,
       output_format: TextMarkdownOutputFormat.Text,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
     },
     {
       fileFormat: FileType.Code,
@@ -219,14 +215,12 @@ export const initialParserValues = {
       fileFormat: FileType.Doc,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
       fileFormat: FileType.Docx,
       output_format: DocxOutputFormat.Json,
       preprocess: PreprocessValue.main_content,
-      flatten_media_to_text: false,
       remove_header_footer: false,
     },
     {
@@ -238,7 +232,6 @@ export const initialParserValues = {
     {
       fileFormat: FileType.Video,
       output_format: VideoOutputFormat.Text,
-      vlm: { llm_id: '' },
     },
     {
       fileFormat: FileType.Audio,
@@ -372,30 +365,22 @@ export const initialTitleChunkerValues = {
   groupRules: cloneDeep(originalRules),
 };
 
-// Defaults for the Python backend extractor (legacy flat fields).
+// Defaults for the extractor: the LLM settings plus the nested per-feature
+// groups the Go schema reads (schema.ExtractorParam).
 export const initialExtractorValues = {
   ...initialLlmBaseValues,
-  field_name: ContextGeneratorFieldName.Summary,
-  auto_tags: 1,
-  tag_file_id: '',
-  outputs: {
-    chunks: { type: 'Array<Object>', value: [] },
-  },
-};
-
-// Defaults for the Go backend extractor: the LLM settings plus the nested
-// per-feature groups the Go schema reads (schema.ExtractorParam).
-export const initialGoExtractorValues = {
-  ...initialLlmBaseValues,
   keywords: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   questions: {
+    enabled: false,
     top_n: 0,
     system_prompt: '',
   },
   tags: {
+    enabled: false,
     top_n: 0,
     tag_file_id: '',
   },
@@ -414,7 +399,7 @@ export const initialGoExtractorValues = {
 };
 
 export function getInitialExtractorValues() {
-  return initialGoExtractorValues;
+  return initialExtractorValues;
 }
 
 export const initialCompilationValues = {
@@ -432,12 +417,23 @@ export const NoDebugOperatorsList = [Operator.File];
 // legacy Python operator and is deliberately excluded.
 export const ChunkerOperators = [Operator.TokenChunker, Operator.TitleChunker];
 
+// Operators offered in the flat top-level list of the pipeline "next step"
+// menu, distinct from the chunker group. Single-instance filtering happens
+// per entry in buildPipelineNextOperators.
+export const TopLevelOperators = [
+  Operator.Parser,
+  Operator.Tokenizer,
+  Operator.Compiler,
+  Operator.Extractor,
+];
+
 // Pipeline operators limited to a single instance per canvas. Title/Token
 // chunkers are separate entries here (each blocks its own duplication) but
 // also share one slot: see the chunker group rule in buildPipelineNextOperators.
 export const SingleOperators = [
   Operator.Tokenizer,
   Operator.Compiler,
+  Operator.Extractor,
   Operator.GeneralChunker,
   Operator.TokenChunker,
   Operator.TitleChunker,

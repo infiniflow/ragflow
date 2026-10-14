@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -43,7 +42,7 @@ func (dao *IngestionTaskDAO) Create(ctx context.Context, db *gorm.DB, ingestionT
 		return nil, fmt.Errorf("document id %s already exists, status: %s, task id: %s", ingestionTask.DocumentID, existing.Status, existing.ID)
 	}
 	if ingestionTask.ID == "" {
-		ingestionTask.ID = utility.GenerateUUID()
+		ingestionTask.ID = common.GenerateUUID()
 	}
 	if err = db.WithContext(ctx).Create(ingestionTask).Error; err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
@@ -212,7 +211,7 @@ func (dao *IngestionTaskDAO) ListByStatus(ctx context.Context, db *gorm.DB, stat
 
 func (dao *IngestionTaskDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.IngestionTask, error) {
 	var task *entity.IngestionTask
-	err := db.WithContext(ctx).Where("id = ?", id).First(&task).Error
+	err := db.WithContext(ctx).Take(&task, "id = ?", id).Error
 	return task, err
 }
 
@@ -224,7 +223,7 @@ func (dao *IngestionTaskDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, 
 	err := db.WithContext(ctx).
 		Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("id = ?", id).
-		First(&task).Error
+		Take(&task).Error
 	return task, err
 }
 

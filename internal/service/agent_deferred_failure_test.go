@@ -17,14 +17,14 @@ import (
 
 func TestDeferredAgentStreamFailureText(t *testing.T) {
 	deferred := &runtime.DeferredStreamError{Text: "**ERROR**: [GraphRunError] model unavailable"}
-	if got := deferredAgentStreamFailureText(fmt.Errorf("canvas invoke: component %q invoke: %w", "Message:x", deferred)); got != deferred.Text {
+	if got := deferredAgentStreamFailureText(fmt.Errorf("agent invoke: component %q invoke: %w", "Message:x", deferred)); got != deferred.Text {
 		t.Errorf("deferredAgentStreamFailureText = %q, want the Agent _ERROR text", got)
 	}
 	embedded := &runtime.DeferredStreamError{Text: "**ERROR**: [GraphRunError] consume deferred Agent stream: model unavailable"}
-	if got := deferredAgentStreamFailureText(fmt.Errorf("canvas invoke: %w", embedded)); got != embedded.Text {
+	if got := deferredAgentStreamFailureText(fmt.Errorf("agent invoke: %w", embedded)); got != embedded.Text {
 		t.Errorf("marker text embedded in the _ERROR value truncated the failure text to %q", got)
 	}
-	if got := deferredAgentStreamFailureText(errors.New("canvas invoke: Message: consume deferred Agent stream: unrelated")); got != "" {
+	if got := deferredAgentStreamFailureText(errors.New("agent invoke: Message: consume deferred Agent stream: unrelated")); got != "" {
 		t.Errorf("plain error containing the marker text returned %q, want empty", got)
 	}
 	if got := deferredAgentStreamFailureText(fmt.Errorf("invoke: %w", &runtime.DeferredStreamError{Err: errors.New("stream dropped")})); got != "stream dropped" {
@@ -33,7 +33,7 @@ func TestDeferredAgentStreamFailureText(t *testing.T) {
 	if got := deferredAgentStreamFailureText(fmt.Errorf("invoke: %w", &runtime.DeferredStreamError{Err: context.Canceled})); got != "" {
 		t.Errorf("cancellation inside the deferred stream returned %q, want empty", got)
 	}
-	if got := deferredAgentStreamFailureText(errors.New("canvas invoke: compile error")); got != "" {
+	if got := deferredAgentStreamFailureText(errors.New("agent invoke: compile error")); got != "" {
 		t.Errorf("non-deferred error returned %q, want empty", got)
 	}
 	if got := deferredAgentStreamFailureText(context.DeadlineExceeded); got != "" {
@@ -43,7 +43,7 @@ func TestDeferredAgentStreamFailureText(t *testing.T) {
 
 func TestCanvasInvokeErrorForUnmatchedSwitch(t *testing.T) {
 	got := canvasInvokeError(errors.New("[GraphRunError] no tasks to execute, last completed nodes: [Switch:Route]"))
-	if got.Error() != "canvas invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches" {
+	if got.Error() != "agent invoke: Switch routing stopped because no connected branch matched the condition; check the Switch branches" {
 		t.Fatalf("got %q", got)
 	}
 

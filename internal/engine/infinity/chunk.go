@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"hash/fnv"
+	"maps"
 	"os"
 	"ragflow/internal/common"
 	"ragflow/internal/engine/types"
@@ -371,11 +372,13 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	// ShowColumns returns a result set where Data contains arrays of column values
 	re := regexp.MustCompile(`Embedding\([a-z]+,(\d+)\)`)
 	hasChunkData := false
+	columns := make(map[string]bool)
 	if nameArr, ok := result.Data["name"]; ok {
 		if typeArr, ok := result.Data["type"]; ok {
 			for i := 0; i < len(nameArr); i++ {
 				colName, _ := nameArr[i].(string)
 				colType, _ := typeArr[i].(string)
+				columns[colName] = true
 				if colName == "chunk_data" {
 					hasChunkData = true
 				}
@@ -405,6 +408,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
 		// so the producer value (if any) is intentionally overridden here.
 		insertChunks[i]["kb_id"] = datasetID
+	}
+	if err := e.dropUndeclaredFields(tableName, insertChunks, columns); err != nil {
+		return nil, err
 	}
 
 	// Delete existing rows with matching IDs
@@ -444,6 +450,67 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	common.Info("InfinityConnection.InsertChunks result", zap.String("tableName", tableName), zap.Int("count", len(insertChunks)))
 	return []string{}, nil
+}
+
+// vectorColumnPattern matches the q_<dim>_vec columns the engine adds per
+// embedding size; no mapping file declares them.
+var vectorColumnPattern = regexp.MustCompile(`^q_\d+_vec$`)
+
+// dropUndeclaredFields removes each row key that is not a column of the table
+// and that no mapping file declares, such as parser bookkeeping keys
+// (slide_number, __outline__). Infinity fails the whole batch on one unknown
+// column. A declared key that the table lacks is kept, so a stale table still
+// fails the insert instead of losing that value.
+func (e *Engine) dropUndeclaredFields(tableName string, rows []map[string]interface{}, columns map[string]bool) error {
+	var declared map[string]bool
+	dropped := make(map[string]bool)
+	for _, row := range rows {
+		for key := range row {
+			if columns[key] || key == "chunk_data" || vectorColumnPattern.MatchString(key) {
+				continue
+			}
+			if declared == nil {
+				var err error
+				if declared, err = declaredChunkColumns(e.mappingFileName); err != nil {
+					return err
+				}
+			}
+			if !declared[key] {
+				delete(row, key)
+				dropped[key] = true
+			}
+		}
+	}
+	if len(dropped) > 0 {
+		common.Warn("Dropping fields that are not Infinity columns",
+			zap.String("tableName", tableName),
+			zap.Strings("fields", slices.Sorted(maps.Keys(dropped))))
+	}
+	return nil
+}
+
+// declaredChunkColumns returns the columns of the chunk mapping and of the
+// memory message mapping, because memory messages go through InsertChunks too.
+func declaredChunkColumns(mappingFileName string) (map[string]bool, error) {
+	declared := make(map[string]bool)
+	for _, name := range []string{mappingFileName, "message_infinity_mapping.json"} {
+		path, err := utility.FindConfFileInProject(name)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(*path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read mapping file %s: %w", *path, err)
+		}
+		var schema map[string]json.RawMessage
+		if err := json.Unmarshal(data, &schema); err != nil {
+			return nil, fmt.Errorf("failed to parse mapping file %s: %w", *path, err)
+		}
+		for column := range schema {
+			declared[column] = true
+		}
+	}
+	return declared, nil
 }
 
 // UpdateChunks updates chunks in a dataset
@@ -1307,17 +1374,6 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 			}
 
-			// Filter-only queries (e.g. the management chunk list) are the ones
-			// that can silently span KBs, so echo per-table outcome at debug
-			// level: which table was queried with which filter, and how many
-			// rows came back.
-			if !hasTextMatch && !hasVectorMatch {
-				common.Debug("Infinity filter-only search",
-					zap.String("table", tableName),
-					zap.String("filter", filterStr),
-					zap.Int("rows", len(searchChunks)))
-			}
-
 			// Parse total_hits_count from ExtraInfo
 			var tableTotal int64
 			if df.ExtraInfo != "" {
@@ -1328,6 +1384,17 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 					}
 				}
 			}
+
+			// Log every query shape at debug level: which table, which filter, whether
+			// a match was applied, and the row/total counts. A query that silently
+			// spans the dataset is only visible here.
+			common.Debug("Infinity search",
+				zap.String("table", tableName),
+				zap.String("filter", filterStr),
+				zap.Bool("hasTextMatch", hasTextMatch),
+				zap.Bool("hasVectorMatch", hasVectorMatch),
+				zap.Int("rows", len(searchChunks)),
+				zap.Int64("total", tableTotal))
 
 			searchResult := &types.SearchResult{
 				Chunks: searchChunks,
@@ -1514,7 +1581,28 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 		chunk["position_int"] = []interface{}{}
 	}
 
+	if val, ok := chunk["tag_kwd"].(string); ok {
+		chunk["tag_kwd"], _ = splitKeywordList("tag_kwd", val)
+	}
+
 	return chunk, nil
+}
+
+// splitKeywordList reads a "###"-joined keyword column back as a list.
+// transformChunkFields always joins tag_kwd, so it reads back as a list even
+// with one tag or none; any other keyword column is split only when it holds
+// several values, since most of them are scalar.
+func splitKeywordList(field, value string) ([]interface{}, bool) {
+	if field != "tag_kwd" && !strings.Contains(value, "###") {
+		return nil, false
+	}
+	list := []interface{}{}
+	for part := range strings.SplitSeq(value, "###") {
+		if part != "" {
+			list = append(list, part)
+		}
+	}
+	return list, true
 }
 
 // applyFieldMappings applies field mappings to chunks (side-effect only).
@@ -1605,16 +1693,10 @@ func applyFieldMappings(chunks []map[string]interface{}) {
 			if !ok || val == nil || val == "" {
 				chunk[colName] = []interface{}{}
 			} else if !kwdNoSplit[colName] {
-				// Split by "###" for _kwd fields
-				if strVal, ok := val.(string); ok && strings.Contains(strVal, "###") {
-					parts := strings.Split(strVal, "###")
-					var filtered []interface{}
-					for _, p := range parts {
-						if p != "" {
-							filtered = append(filtered, p)
-						}
+				if strVal, ok := val.(string); ok {
+					if list, split := splitKeywordList(colName, strVal); split {
+						chunk[colName] = list
 					}
-					chunk[colName] = filtered
 				}
 			}
 		}
@@ -1825,15 +1907,10 @@ func (e *Engine) GetFields(chunks []map[string]interface{}, fields []string) map
 				needsSplit = true
 			}
 			if needsSplit {
-				if strVal, ok := val.(string); ok && strings.Contains(strVal, "###") {
-					parts := strings.Split(strVal, "###")
-					var filtered []interface{}
-					for _, p := range parts {
-						if p != "" {
-							filtered = append(filtered, p)
-						}
+				if strVal, ok := val.(string); ok {
+					if list, split := splitKeywordList(fieldLower, strVal); split {
+						chunk[field] = list
 					}
-					chunk[field] = filtered
 				}
 				continue
 			}
@@ -2505,8 +2582,42 @@ func floatsEqual(a, b float64) bool {
 	return diff < 1e-9
 }
 
+func buildGraphTypeFilterCondition(value interface{}) string {
+	var values []string
+	switch val := value.(type) {
+	case []string:
+		values = val
+	case []interface{}:
+		for _, item := range val {
+			values = append(values, fmt.Sprintf("%v", item))
+		}
+	case string:
+		values = []string{val}
+	default:
+		values = []string{fmt.Sprintf("%v", value)}
+	}
+	conditions := make([]string, 0, len(values)*2)
+	for _, value := range values {
+		if strings.TrimSpace(value) == "" {
+			continue
+		}
+		conditions = append(conditions,
+			keywordFilterCondition("type_kwd", value),
+			fmt.Sprintf("knowledge_graph_kwd='%s'", escapeFilterValue(value)),
+		)
+	}
+	return joinBalanced(conditions, " OR ")
+}
+
 // equivalentConditionToStr converts a condition map to an Infinity filter string
 func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
+	Type    string
+	Default interface{}
+}) string {
+	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns)
+}
+
+func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
 }) string {
@@ -2517,6 +2628,22 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 	var cond []string
 
 	for k, v := range condition {
+		if k == "and" || k == "or" {
+			var children []string
+			for _, child := range types.FilterClauses(v) {
+				if expr := equivalentConditionToStrRaw(child, tableColumns); expr != "" {
+					children = append(children, "("+expr+")")
+				}
+			}
+			operator := " AND "
+			if k == "or" {
+				operator = " OR "
+			}
+			if len(children) > 0 {
+				cond = append(cond, joinBalanced(children, operator))
+			}
+			continue
+		}
 		if k == "_id" || utility.IsEmpty(v) {
 			continue
 		}
@@ -2524,11 +2651,8 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {
-				for kk, vv := range m {
-					if kk == "exists" {
-						// For must_not exists, use !='' since we don't have table schema
-						cond = append(cond, fmt.Sprintf("NOT (%v!='')", vv))
-					}
+				if expr := equivalentConditionToStrRaw(m, tableColumns); expr != "" {
+					cond = append(cond, "NOT ("+expr+")")
 				}
 			}
 			continue
@@ -2537,6 +2661,13 @@ func equivalentConditionToStr(condition map[string]interface{}, tableColumns map
 		// Handle exists specially (without table schema, use string comparison)
 		if k == "exists" {
 			cond = append(cond, fmt.Sprintf("%v!=''", v))
+			continue
+		}
+
+		if k == "knowledge_graph_kwd" {
+			if graphTypeCondition := buildGraphTypeFilterCondition(v); graphTypeCondition != "" {
+				cond = append(cond, graphTypeCondition)
+			}
 			continue
 		}
 

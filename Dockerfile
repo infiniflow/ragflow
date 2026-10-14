@@ -16,7 +16,7 @@ WORKDIR /ragflow
 # layout.laws/manual/paper.onnx are byte-identical to layout.onnx, so we
 # exclude them from the tar extract and symlink them to layout.onnx instead,
 # saving ~219MB in the image.
-RUN mkdir -p /ragflow/rag/res/deepdoc /root/.ragflow
+RUN mkdir -p /ragflow/internal/rag/res/deepdoc /root/.ragflow
 RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co,target=/huggingface.co \
     tar --exclude='.*' \
         --exclude='layout.laws.onnx' \
@@ -30,15 +30,14 @@ RUN --mount=type=bind,from=infiniflow/ragflow_deps:latest,source=/huggingface.co
         --exclude='layout.manual.ort' \
         --exclude='layout.paper.ort' \
         -cf - \
-        /huggingface.co/InfiniFlow/text_concat_xgb_v1.0 \
         /huggingface.co/InfiniFlow/deepdoc \
-        | tar -xf - --strip-components=3 -C /ragflow/rag/res/deepdoc && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.laws.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.manual.onnx && \
-    #ln -s layout.onnx /ragflow/rag/res/deepdoc/layout.paper.onnx
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.laws.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.manual.ort && \
-    ln -s layout.ort /ragflow/rag/res/deepdoc/layout.paper.ort
+        | tar -xf - --strip-components=3 -C /ragflow/internal/rag/res/deepdoc && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.laws.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.manual.onnx && \
+    #ln -s layout.onnx /ragflow/internal/rag/res/deepdoc/layout.paper.onnx
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.laws.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.manual.ort && \
+    ln -s layout.ort /ragflow/internal/rag/res/deepdoc/layout.paper.ort
 
 # Copy the cl100k_base BPE table used by the Go tokenizer (tiktoken-go
 # cl100k_base). The deps image ships it at its root; the Go image previously
@@ -170,13 +169,23 @@ USER root
 SHELL ["/bin/bash", "-c"]
 WORKDIR /ragflow
 
+# Pin GOMODCACHE/GOCACHE to the BuildKit cache-mount paths for the whole stage.
+# Without this, the `GOMODCACHE=... GOCACHE=...` prefix on the RUN lines below only
+# applies to the command before `&&`, so `./build.sh --go` (the command after `&&`)
+# falls back to the default /root/go/pkg/mod and re-downloads every module that
+# `go mod download` already fetched. Exporting them as ENV makes every go command in
+# this stage — including the `go build` inside build.sh — share the same persistent
+# cache mount, so the download happens once and is reused across builds (the CI
+# runner shares the host Docker daemon, so the mount persists across jobs/replicas).
+ENV GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild
+
 # Cache Go modules BEFORE copying source (mirrors the Dockerfile_ci fix):
 # copy only the manifests, download the full module graph into a persistent
 # BuildKit cache mount, then bring in source. GOMODCACHE/GOCACHE are pinned to the
 # mounted paths so `go mod download` and `build.sh --go` share the same cache and
 # dependencies are never re-fetched when only source changes.
 COPY go.mod go.sum ./
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
     GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
     GOPROXY=${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct} \
@@ -185,10 +194,6 @@ RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
 COPY internal internal
 COPY cmd cmd
 COPY build.sh ./
-# build.sh's check_ort_version_consistency (run via `./build.sh --go`) greps the
-# ORT version pins from these files; without them the --go build fails with
-# "could not parse the ONNX Runtime version from one of the pinned locations".
-COPY ragflow_deps/download_go_deps.py ragflow_deps/download_deps.py ./ragflow_deps/
 COPY Dockerfile ./
 
 # ONNX Runtime static archives: build.sh's _seed_from_system looks for the ORT
@@ -218,7 +223,7 @@ RUN set -eux; \
 RUN git config --global safe.directory "*" && \
     cd /ragflow && ./build.sh --cpp
 
-RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod \
+RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
     GOMODCACHE=/root/.cache/gomod GOCACHE=/root/.cache/gobuild \
     git config --global safe.directory "*" && \
@@ -250,7 +255,6 @@ RUN rm -f /etc/nginx/sites-enabled/default
 
 COPY conf conf
 COPY internal/agent/templates agent/templates
-COPY rag/prompts rag/prompts
 
 # Wiki page-structure presets read at runtime by the Go backend
 # (CompilationTemplateService.LoadWikiPresets).
@@ -266,4 +270,4 @@ COPY --from=web-builder /ragflow/VERSION /ragflow/VERSION
 # Set environment variables
 ENV HF_ENDPOINT=https://hf-mirror.com
 
-ENTRYPOINT ["./entrypoint-go.sh"]
+ENTRYPOINT ["./entrypoint.sh"]

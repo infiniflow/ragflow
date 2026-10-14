@@ -26,7 +26,7 @@ import (
 // payload yields (nil, 0, nil) rather than an error, so the caller's
 // empty-PDF short-circuit stays correct under the pure-Go engine.
 func TestPlainText_EmptyInput(t *testing.T) {
-	items, pageCount, err := PlainText(nil)
+	items, pageCount, err := PlainText(nil, nil)
 	if err != nil {
 		t.Fatalf("err = %v, want nil", err)
 	}
@@ -39,7 +39,7 @@ func TestPlainText_EmptyInput(t *testing.T) {
 // instead of silently producing empty items — the pure-Go ledongthuc/pdf
 // path must surface a parse error, never a plausible empty success.
 func TestPlainText_GarbageReturnsError(t *testing.T) {
-	_, _, err := PlainText([]byte("this is not a pdf"))
+	_, _, err := PlainText([]byte("this is not a pdf"), nil)
 	if err == nil {
 		t.Fatal("expected error for non-PDF input, got nil")
 	}
@@ -58,7 +58,7 @@ func TestPlainText_NegativePageCountDoesNotPanic(t *testing.T) {
 		}
 	}()
 	data := buildPDFWithCount(t, -1)
-	_, _, err := PlainText(data)
+	_, _, err := PlainText(data, nil)
 	if err == nil {
 		t.Fatal("expected error for a PDF with a negative /Count, got nil")
 	}
@@ -75,7 +75,7 @@ func TestPlainText_HugePageCountDoesNotHang(t *testing.T) {
 		}
 	}()
 	data := buildPDFWithCount(t, 1<<30)
-	_, _, err := PlainText(data)
+	_, _, err := PlainText(data, nil)
 	if err == nil {
 		t.Fatal("expected error for a PDF with a huge /Count, got nil")
 	}

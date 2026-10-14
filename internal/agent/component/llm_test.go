@@ -663,7 +663,8 @@ func (d *streamingStubDriver) ChatStreamlyWithSender(_ context.Context, _ string
 // "chat invoker *component.resolvedModelInvoker does not support streaming" —
 // and the client received the whole answer in one piece.
 func TestResolvedModelInvokerStreams(t *testing.T) {
-	invoker := NewResolvedInvoker(&streamingStubDriver{}, "stub-model", &models.APIConfig{})
+	modelName := "stub-model"
+	invoker := NewResolvedInvoker(models.NewChatModel(&streamingStubDriver{}, &modelName, &models.APIConfig{}))
 	streamer, ok := invoker.(chat.StreamingInvoker)
 	if !ok {
 		t.Fatalf("resolved invoker %T must implement chat.StreamingInvoker", invoker)

@@ -55,7 +55,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"ragflow/internal/utility"
 	"runtime/debug"
 	"sync"
 	"time"
@@ -268,7 +267,7 @@ func (r *Runner) Run(
 	out := make(chan RunEvent, 8)
 
 	if run == nil {
-		pushErr(ctx, out, "canvas: nil RunFunc", sessionID)
+		pushErr(ctx, out, "agent: nil RunFunc", sessionID)
 		close(out)
 		return out
 	}
@@ -276,7 +275,7 @@ func (r *Runner) Run(
 	// Reuse a persisted question's identifier for the RunFunc and SSE envelope.
 	messageID, _ := root["__message_id__"].(string)
 	if messageID == "" {
-		messageID = utility.GenerateToken()
+		messageID = common.GenerateToken()
 	}
 
 	// Inject the output channel + metadata so the RunFunc can emit

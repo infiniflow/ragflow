@@ -218,7 +218,7 @@ func (p *Pipeline) Run(ctx context.Context, inputs map[string]any, overrideParam
 	}
 	compiled, err := canvas.Compile(compileCtx, p.canvas, compileOpts...)
 	if err != nil {
-		return nil, fmt.Errorf("pipeline: Run: compile canvas: %w", err)
+		return nil, fmt.Errorf("pipeline: Run: compile agent: %w", err)
 	}
 
 	// Record the component count as the authoritative denominator for

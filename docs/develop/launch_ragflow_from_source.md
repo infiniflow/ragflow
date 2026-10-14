@@ -13,7 +13,7 @@ sidebar_custom_props: {
 Build and run the complete Go API, admin, ingestor, and syncer services on your host, with supporting services in Docker. Run all commands from the repository root unless a step says otherwise. This guide uses the default Elasticsearch and MySQL configuration on Ubuntu 24.04 x86_64; the native ONNX Runtime archive used by this build targets Linux x86_64.
 
 :::note macOS
-This source-build procedure is for Ubuntu 24.04 x86_64. On macOS, use Docker Desktop and follow [Build RAGFlow Docker Image](./build_docker_image.mdx) to build and run the Go `linux/amd64` image.
+This source-build procedure is for Ubuntu 24.04 x86_64. macOS is temporarily not supported by the Go backend, so use a Linux x86_64 host to build and run the Go services.
 :::
 
 The RAGFlow open-source 1.0 DeepDoc backend uses CPU inference for layout analysis, OCR, and table recognition.
@@ -27,7 +27,7 @@ All long-running RAGFlow processes started below use `bin/ragflow_server`.
 - Go 1.27 or later, as declared in `go.mod` (check `go version`).
 - CMake 4.0 or later, Clang 20, LLD 20, and PCRE2 development headers.
 - Node.js 18.20.4 or later and npm for the frontend.
-- Python 3.10 or later only for `ragflow_deps/download_go_deps.py`, which downloads the native libraries and model resources required by the Go build.
+- Python 3.10 or later for `tools/scripts/download_dev_deps.py` and `ragflow_deps/download_deps.py`, which download the native libraries and model resources required by the Go build.
 
 See the [Docker installation guide](https://docs.docker.com/engine/install/) if Docker is not installed. Use the Go version declared in `go.mod` and the compiler versions listed above when preparing the build environment.
 
@@ -42,7 +42,7 @@ clang++ --version
 ld.lld --version
 ```
 
-Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. On Ubuntu, install the compiler, linker, PCRE2 headers, Python virtual-environment support, and command-line tools used by the build with:
+Install Go 1.27 or later if needed; make sure the Go executable selected by your shell meets the requirement in `go.mod`. Install `uv` as well; the dependency downloaders run through it. On Ubuntu, install the compiler, linker, PCRE2 headers, Python 3, and command-line tools used by the build with:
 
 ```bash
 sudo apt update
@@ -54,17 +54,15 @@ Ubuntu's enabled repositories may not provide `clang-20` and `lld-20`. If APT ca
 
 Make `clang++` resolve to Clang 20 and `ld.lld` to LLD 20 before building. Installing `lld-20` alone does not necessarily replace an older system default `ld.lld`. Check both versions above: an older LLD can produce a binary that builds successfully but fails before the Go server starts. Install CMake 4.0 or later separately if your distribution package is older; the Go development guide includes the Ubuntu 24.04 Kitware repository setup. The `binutils` package supplies `objcopy` and `nm`; do not ignore a missing-`objcopy` warning because skipping the RE2 symbol-renaming step can cause a runtime crash.
 
-Download the native libraries and Go DeepDoc model weights with a small, isolated Python environment:
+Download the native static libraries and the runtime model / tokenizer resources with the two dependency downloaders (`uv run` installs each script's declared Python dependencies):
 
 ```bash
-python3 -m venv /tmp/ragflow-go-download-venv
-/tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-/tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_go_deps.py
+uv run tools/scripts/download_dev_deps.py   # local-dev one-stop: native .a + cl100k, DeepDoc .ort, tokenizer assets
 ```
 
-The downloader fetches the static libraries needed by `build.sh`, plus `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, and `ocr.res` into `rag/res/deepdoc/`. These files are required by the in-process Go DeepDoc backend. Keep the server's working directory at the repository root so it can find them automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `rag/res/deepdoc`.
+`download_dev_deps.py` is the local-dev one-stop: it fetches the static libraries needed by `build.sh` (pdfium / pdf_oxide / office_oxide / onnxruntime → `~/ragflow-native-libs`) AND the runtime resources the backend loads at runtime — `det.ort`, `layout.ort`, `tsr.ort`, `rec.ort`, `ocr.res` into `internal/rag/res/deepdoc/` (required by the in-process Go DeepDoc backend) and `ragflow_deps/cl100k_base.tiktoken` and the embedding tokenizer assets under `ragflow_deps/huggingface.co/`. Run it once and the local environment is ready; already-present files are skipped on re-run. The image-facing `ragflow_deps/download_deps.py` fetches the same runtime resources PLUS the stagehand server (installed into `${XDG_CACHE_HOME:-$HOME/.cache}/stagehand/lib/go_<SDK version>/`) and skips the native `.a`; run it only when building the dependency image or in CI. Native archives support Linux x86_64. Keep the server's working directory at the repository root so it can find the DeepDoc models automatically; if you launch it elsewhere, set `DEEPDOC_MODEL_DIR` to the absolute path of `internal/rag/res/deepdoc`.
 
-The isolated download environment can be removed after the resources have been prepared.
+Skip either script if you have prepared the same resources by other means.
 
 Build the C++ bindings and Go binaries:
 
@@ -72,7 +70,7 @@ Build the C++ bindings and Go binaries:
 bash build.sh --all
 ```
 
-For a smaller production binary, use `bash build.sh --strip --all` instead. The build script also tries to place `ragflow_deps/cl100k_base.tiktoken` in the repository. If it reports that the BPE table could not be provisioned, download it before starting the server:
+For a smaller production binary, use `bash build.sh --strip --all` instead. The dependency downloader prepares `ragflow_deps/cl100k_base.tiktoken`. If the table is missing, download it before starting the server:
 
 ```bash
 curl -fsSL -o ragflow_deps/cl100k_base.tiktoken https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken
@@ -87,6 +85,16 @@ Check that the newly built executable can load and parse API arguments:
 It should print API usage information and may exit with status 1. This command only checks that the binary can load and parse arguments; it does not initialize DeepDoc, connect to dependencies, or prove that the API can start. Complete the runtime checks in section 5 after starting the dependencies and Go processes.
 
 The Go/C++ build requires LLD 20. Confirm that `ld.lld --version` reports LLD 20 before building; merely installing `lld-20` is insufficient when an older `ld.lld` remains the system default. If the binary builds successfully but exits or crashes before reaching Go `main`, verify the selected linker and rebuild with LLD 20.
+
+To prepare the resource image used by the Go Dockerfile, first run `uv run ragflow_deps/download_deps.py` (above) to populate `ragflow_deps/`, then build from `ragflow_deps/`:
+
+```bash
+cd ragflow_deps
+docker build -f Dockerfile -t infiniflow/ragflow_deps:latest .
+cd ..
+```
+
+The downloader prepares the five Go DeepDoc files under `ragflow_deps/huggingface.co/InfiniFlow/deepdoc/` for the resource image, as well as `internal/rag/res/deepdoc/` for local use. The Go Dockerfile copies these models into the runtime model directory. Analyzer dictionaries and fonts are installed separately by the Go Dockerfile.
 
 ## 2. Start supporting services
 
@@ -103,7 +111,7 @@ The change made with `sysctl -w` is temporary. To preserve it after a reboot, ad
 
 ```bash
 docker compose --env-file docker/.env -f docker/docker-compose-base.yml up -d --wait es01 mysql minio nats kvrocks clickhouse
-docker compose --env-file docker/.env -f docker/docker-compose-base.yml ps
+docker ps
 ```
 
 The base Compose file also defines an unprofiled Redis service. Starting every service with `up -d` can make Redis and Kvrocks compete for host port 6379; the explicit service list above starts Kvrocks for the Go backend. Compose may print a warning that `REDIS_PORT` is unset because the unused Redis service is still parsed.
@@ -147,7 +155,7 @@ If you changed a dependency's published port or credentials, update `conf/servic
 
 `RAGFLOW_DEV_MODE=true` bypasses the code-versus-database version check. Use it only for development, not to run an older production binary against a newer database. The standalone `--migrate` action must still complete first.
 
-If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `ragflow_deps/`.
+If startup reports `no in-process DeepDoc backend serving`, check that all five model files above are in `internal/rag/res/deepdoc/`, then re-run the Go dependency downloader and rebuild if necessary. If the tokenizer reports a missing `cl100k_base.tiktoken`, ensure the BPE table is in `ragflow_deps/`.
 
 ## 4. Start the frontend
 
@@ -156,10 +164,10 @@ In another terminal:
 ```bash
 cd web
 npm install
-API_PROXY_SCHEME=go npm run dev
+npm run dev
 ```
 
-With `API_PROXY_SCHEME=go`, the frontend routes requests to two Go backend ports: regular /api and /v1 requests use port 9380, while /api/v1/admin requests use port 9381.
+The frontend routes requests to the Go backend by default: regular `/api` and `/v1` requests use port `9380`, while `/api/v1/admin` requests use port `9381`.
 Open http://127.0.0.1:9222/ unless Vite prints a different frontend port.
 
 ## 5. Verify the startup

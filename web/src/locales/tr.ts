@@ -413,7 +413,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): mevcut ayrıştırıcı yapılandırması tarafından desteklenmiyor',
       reselectParserAfterUploadHint:
-        'Yüklemeye devam edin, ardından dosya listesinde bu dosyalar için ayrıştırma yöntemini yeniden seçin.',
+        'Yüklemeye devam edin; sistem bu dosyaları otomatik olarak desteklenen yerleşik bir ayrıştırma yapılandırmasına geçirecektir.',
       reselectParserToParseHint:
         'Etkilenen dosyalar için ayrıştırma yöntemini yeniden seçin, ardından yeniden ayrıştırın.',
       addModelAfterUploadHint:
@@ -670,6 +670,7 @@ Prosedürel Bellek: Öğrenilen beceriler, alışkanlıklar ve otomatik prosedü
       reRankModelWaring: 'Yeniden sıralama modeli çok zaman alır.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Tohum, farklı çalıştırmalarda aynı çıktının yeniden üretilebilirliğini sağlayan sözde rastgele bir algoritmanın başlangıç noktasıdır.',
       datasetDescription: `Dataset'inizi açıklayın`,
@@ -1162,14 +1163,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       thinkingEnabled: 'Etkin',
       thinkingDisabled: 'Devre dışı',
       thinkingLevelNone: 'Yalın',
-      thinkingLevelLow: 'Düşük',
-      thinkingLevelLowDescription: 'Hızlı yanıtlar',
-      thinkingLevelMedium: 'Orta',
-      thinkingLevelMediumDescription: 'Dengeli hız ve derinlik',
-      thinkingLevelHigh: 'Yüksek',
-      thinkingLevelHighDescription: 'Derin akıl yürütme',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maksimum bilişsel çaba',
       thinkingTip:
         'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
       quote: 'Alıntı göster',
@@ -2803,7 +2796,7 @@ En uygun olduğu durumlar: Anlatı bütünlüğünün bitişik paragrafları bir
       dataManipulation: 'Veri işleme',
       flow: 'Akış',
       dialog: 'Diyalog',
-      cite: 'Alıntı',
+      cite: 'Alıntıları göster',
       citeTip: 'alıntıİpucu',
       name: 'Ad',
       nameMessage: 'Lütfen ad girin',

@@ -181,8 +181,8 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("content-Type", "application/json")
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
@@ -277,8 +277,8 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
@@ -705,7 +705,7 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)

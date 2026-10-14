@@ -119,6 +119,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewTokenPonyModel(baseURL, urlSuffix), nil
 	case "tokenhub":
 		return NewTokenHubModel(baseURL, urlSuffix), nil
+	case "demon route":
+		return NewDemonRouteModel(baseURL, urlSuffix), nil
 	case "novitaai":
 		return NewNovitaModel(baseURL, urlSuffix), nil
 	case "avian":
@@ -149,6 +151,9 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewMinerLocalUModel(baseURL, urlSuffix), nil
 	case "monkeyocrv2":
 		return NewMonkeyOCRv2Model(baseURL, urlSuffix), nil
+	case "monkeyocr":
+		// MonkeyOCR's RAGFlow adapter uses the same /file_parse ZIP protocol as MinerU.
+		return NewMonkeyOCRModel(baseURL, urlSuffix), nil
 	case "futurmix":
 		return NewFuturMixModel(baseURL, urlSuffix), nil
 	case "perplexity":
@@ -179,6 +184,8 @@ func (f *ModelFactory) CreateModelDriver(providerName string, baseURL map[string
 		return NewAnonRouterModel(baseURL, urlSuffix), nil
 	case "api-route":
 		return NewApiRouteModel(baseURL, urlSuffix), nil
+	case "opper":
+		return NewOpperModel(baseURL, urlSuffix), nil
 	default:
 		return NewDummyModel(baseURL, urlSuffix), nil
 	}

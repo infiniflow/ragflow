@@ -41,6 +41,7 @@ import { BeginFormSchemaType } from './form/begin-form/schema';
 import { DataOperationsFormSchemaType } from './form/data-operations-form';
 import { ExtractorFormSchemaType } from './form/extractor-form';
 import { ParserFormSchemaType } from './form/parser-form';
+import { normalizeParserFormValues } from './form/parser-form/utils';
 import { TitleChunkerFormSchemaType } from './form/title-chunker-form';
 import { TokenChunkerFormSchemaType } from './form/token-chunker-form';
 import { BeginQuery, IPosition } from './interface';
@@ -204,7 +205,10 @@ function transformObjectArrayToPureArray(
 }
 
 export function transformParserParams(params: ParserFormSchemaType) {
-  const setups = params.setups.reduce<
+  // Save global vision options from the normalized form alongside the
+  // per-family setups, including nodes whose form has not been opened.
+  const normalizedParams = normalizeParserFormValues(params);
+  const setups = normalizedParams.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
   >((pre, cur, index) => {
     if (cur.fileFormat) {
@@ -227,8 +231,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
             ...filteredSetup,
             parse_method: cur.parse_method,
             lang: cur.lang,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
             enable_multi_column: cur.enable_multi_column,
             remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
@@ -245,8 +247,6 @@ export function transformParserParams(params: ParserFormSchemaType) {
           filteredSetup = {
             ...filteredSetup,
             parse_method: cur.parse_method,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
           };
           // Only include TCADP parameters if TCADP Parser is selected
           if (cur.parse_method?.toLowerCase() === 'tcadp parser') {
@@ -270,9 +270,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,
-            parse_method: cur.parse_method,
-            lang: cur.lang,
-            system_prompt: cur.system_prompt,
+            ocr_enabled: cur.ocr_enabled,
           };
           break;
         case FileType.Email:
@@ -284,38 +282,24 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Doc:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Html:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
-        case FileType.TextMarkdown:
-          filteredSetup = {
-            ...filteredSetup,
-            vlm: { llm_id: cur.vlm?.llm_id },
-            flatten_media_to_text: cur.flatten_media_to_text,
-            remove_toc: cur.remove_toc,
-          };
-          break;
-        case FileType.Video:
         case FileType.Audio:
+          // Audio keeps its own per-setup model: it is an ASR model, not the
+          // shared vision one.
           filteredSetup = {
             ...filteredSetup,
             vlm: { llm_id: cur.vlm?.llm_id },
@@ -334,7 +318,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
   }, {});
 
   // Flatten the setups map into the top-level params.
-  return { ...omit(params, ['setups']), ...setups };
+  return { ...omit(normalizedParams, ['setups']), ...setups };
 }
 
 // Decides whether an empty delimiter list should be re-seeded with the
@@ -499,7 +483,7 @@ export const LlmSettingParamKeys = [
 // the transitional "metadata_config", ...). Accept them as read
 // fallbacks — flat "metadata" is an array, which distinguishes it from
 // the group object — but never re-emit them.
-function transformExtractorParamsGo(
+export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
   const raw = params as Record<string, any>;
@@ -540,6 +524,22 @@ function transformExtractorParamsGo(
   const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
   const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
 
+  // The enabled switch is authoritative when the form carries it; an unopened
+  // legacy node (flat keys only) derives it from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const isKeywordsEnabled =
+    params.keywords?.enabled !== undefined
+      ? Boolean(params.keywords.enabled)
+      : keywordsTopN > 0;
+  const isQuestionsEnabled =
+    params.questions?.enabled !== undefined
+      ? Boolean(params.questions.enabled)
+      : questionsTopN > 0;
+  const isTagsEnabled =
+    params.tags?.enabled !== undefined
+      ? Boolean(params.tags.enabled)
+      : tagsTopN > 0;
+
   // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
   // nested per-feature groups, so emit exactly that whitelist along with
   // the LLM settings the form defines — no legacy flat mirrors, no
@@ -547,14 +547,17 @@ function transformExtractorParamsGo(
   return {
     ...pick(params, LlmSettingParamKeys),
     keywords: {
+      enabled: isKeywordsEnabled,
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
     },
     questions: {
+      enabled: isQuestionsEnabled,
       top_n: questionsTopN,
       system_prompt: questionsSysPrompt,
     },
     tags: {
+      enabled: isTagsEnabled,
       top_n: tagsTopN,
       tag_file_id: tagFileId,
     },
@@ -568,12 +571,6 @@ function transformExtractorParamsGo(
       built_in_metadata: builtInMetadataList,
     },
   };
-}
-
-export function transformExtractorParams(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  return transformExtractorParamsGo(params);
 }
 
 // The Compiler reads the compilation template group plus the same LLM runtime

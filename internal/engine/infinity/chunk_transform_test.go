@@ -214,7 +214,6 @@ func compiledRowForTransform() map[string]interface{} {
 		"compile_kwd":         "tree",
 		"raptor_kwd":          "root",
 		"raptor_layer_int":    2,
-		"md_with_weight":      "# page",
 		"extra":               map[string]interface{}{"raptor_method": "gmm"},
 		"q_3_vec":             []float64{0.1, 0.2, 0.3},
 	}
@@ -789,5 +788,134 @@ func TestRealignJSONColumnCells(t *testing.T) {
 	})
 	if len(notJSON[0]) != 0 {
 		t.Errorf("non-JSON segments must be left untouched, got %#v", notJSON[0])
+	}
+}
+
+// TestTagKwdRoundTripsAsList pins that tag_kwd, which the write path always
+// stores "###"-joined, reads back as a list on every read path even when it
+// holds a single tag or none, while scalar keyword columns stay strings.
+func TestTagKwdRoundTripsAsList(t *testing.T) {
+	cases := []struct {
+		name string
+		tags []string
+		want []interface{}
+	}{
+		{"single tag", []string{"alpha"}, []interface{}{"alpha"}},
+		{"several tags", []string{"alpha", "beta"}, []interface{}{"alpha", "beta"}},
+		{"no tags", []string{}, []interface{}{}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			stored := transformChunkFields(map[string]interface{}{"tag_kwd": tc.tags, "doc_type_kwd": "pdf"}, nil)
+
+			searched := []map[string]interface{}{{"tag_kwd": stored["tag_kwd"], "doc_type_kwd": stored["doc_type_kwd"]}}
+			applyFieldMappings(searched)
+			if !reflect.DeepEqual(searched[0]["tag_kwd"], tc.want) {
+				t.Fatalf("search tag_kwd = %#v, want %#v", searched[0]["tag_kwd"], tc.want)
+			}
+
+			fields := (&Engine{}).GetFields(
+				[]map[string]interface{}{{"id": "c1", "tag_kwd": stored["tag_kwd"], "doc_type_kwd": stored["doc_type_kwd"]}},
+				[]string{"tag_kwd", "doc_type_kwd"},
+			)
+			if !reflect.DeepEqual(fields["c1"]["tag_kwd"], tc.want) {
+				t.Fatalf("get fields tag_kwd = %#v, want %#v", fields["c1"]["tag_kwd"], tc.want)
+			}
+			if fields["c1"]["doc_type_kwd"] != "pdf" {
+				t.Fatalf("get fields doc_type_kwd = %#v, want scalar \"pdf\"", fields["c1"]["doc_type_kwd"])
+			}
+
+			tagKwd, _ := stored["tag_kwd"].(string)
+			if got, ok := splitKeywordList("tag_kwd", tagKwd); !ok || !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("get chunk tag_kwd = %#v (split %v), want %#v", got, ok, tc.want)
+			}
+			if _, ok := splitKeywordList("doc_type_kwd", "pdf"); ok {
+				t.Fatal("a single-valued scalar keyword column must stay a string")
+			}
+		})
+	}
+}
+
+// TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys covers #20500: parser
+// keys that are not columns (slide_number, __outline__) failed the whole batch.
+func TestDropUndeclaredFieldsKeepsColumnsAndDeclaredKeys(t *testing.T) {
+	outline := []map[string]interface{}{{"title": "Intro", "depth": 1}}
+	vector := []float64{0.1, 0.2}
+	rows := []map[string]interface{}{
+		transformChunkFields(map[string]interface{}{
+			"id": "c1", "content_with_weight": "slide text", "docnm_kwd": "deck.pptx",
+			"slide_number": 2, "q_1024_vec": vector, "legacy_col": "kept",
+		}, nil),
+		transformChunkFields(map[string]interface{}{
+			"id": "c2", "content_with_weight": "pdf text", "__outline__": outline,
+			"important_kwd": []string{"a"}, "memory_id": "m1", "chunk_data": map[string]interface{}{"k": "v"},
+		}, nil),
+	}
+	// The table lacks q_1024_vec, important_keywords, memory_id and chunk_data,
+	// but the engine or a mapping declares each one. They must reach the insert.
+	// legacy_col is a table column that no mapping declares.
+	columns := map[string]bool{"id": true, "content": true, "docnm": true, "legacy_col": true}
+
+	if err := (&Engine{mappingFileName: "infinity_mapping.json"}).dropUndeclaredFields("ragflow_t_kb", rows, columns); err != nil {
+		t.Fatalf("dropUndeclaredFields: %v", err)
+	}
+
+	want := []map[string]interface{}{
+		{"id": "c1", "content": "slide text", "docnm": "deck.pptx", "q_1024_vec": vector, "legacy_col": "kept"},
+		{
+			"id": "c2", "content": "pdf text", "important_keywords": "a", "important_kwd_empty_count": 0,
+			"memory_id": "m1", "chunk_data": `{"k":"v"}`,
+		},
+	}
+	if !reflect.DeepEqual(rows, want) {
+		t.Fatalf("rows = %#v\nwant %#v", rows, want)
+	}
+}
+
+func TestDropUndeclaredFieldsKeepsEveryMappingColumn(t *testing.T) {
+	path, err := utility.FindConfFileInProject("message_infinity_mapping.json")
+	if err != nil {
+		t.Fatalf("locate message_infinity_mapping.json: %v", err)
+	}
+	data, err := os.ReadFile(*path)
+	if err != nil {
+		t.Fatalf("read %s: %v", *path, err)
+	}
+	var messageColumns map[string]json.RawMessage
+	if err := json.Unmarshal(data, &messageColumns); err != nil {
+		t.Fatalf("parse %s: %v", *path, err)
+	}
+
+	row := map[string]interface{}{}
+	for column := range chunkMappingColumns(t) {
+		row[column] = "v"
+	}
+	for column := range messageColumns {
+		row[column] = "v"
+	}
+	before := len(row)
+
+	if err := (&Engine{mappingFileName: "infinity_mapping.json"}).dropUndeclaredFields("ragflow_t_kb", []map[string]interface{}{row}, map[string]bool{}); err != nil {
+		t.Fatalf("dropUndeclaredFields: %v", err)
+	}
+	if len(row) != before {
+		t.Fatalf("dropped %d mapping columns from a table with no columns", before-len(row))
+	}
+}
+
+func TestDropUndeclaredFieldsFailsWhenMappingIsMissing(t *testing.T) {
+	engine := &Engine{mappingFileName: "no_such_mapping.json"}
+
+	allColumns := []map[string]interface{}{{"id": "c1"}}
+	if err := engine.dropUndeclaredFields("ragflow_t_kb", allColumns, map[string]bool{"id": true}); err != nil {
+		t.Fatalf("a row with only table columns must not read the mapping: %v", err)
+	}
+
+	unknown := []map[string]interface{}{{"id": "c1", "slide_number": 2}}
+	if err := engine.dropUndeclaredFields("ragflow_t_kb", unknown, map[string]bool{"id": true}); err == nil {
+		t.Fatal("expected an error when the mapping file cannot be read")
+	}
+	if _, ok := unknown[0]["slide_number"]; !ok {
+		t.Fatal("a failed mapping read must leave the row unchanged")
 	}
 }

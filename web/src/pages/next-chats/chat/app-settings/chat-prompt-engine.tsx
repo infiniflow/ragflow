@@ -220,7 +220,6 @@ export function ChatPromptEngine({
             prefix,
             'keywords_similarity_weight',
           )}
-          similarityWeightType="keyword"
         ></SimilaritySliderFormField>
         <RerankCandidatesCountFormField
           name={prefixName(prefix, 'rerank_candidates_count')}
