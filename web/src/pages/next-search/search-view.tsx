@@ -351,28 +351,28 @@ export default function SearchingView({
                 </div>
               )}
           </div>
-
-          {!mindMapVisible &&
-            !isFirstRender &&
-            !isSearchStrEmpty &&
-            !isEmpty(searchData.search_config.kb_ids) &&
-            searchData.search_config.query_mindmap && (
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    onClick={showMindMapModal}
-                    variant={'outline'}
-                    className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
-                  >
-                    <ListTree />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-fit">
-                  {t('chunk.mind')}
-                </PopoverContent>
-              </Popover>
-            )}
         </div>
+        {!mindMapVisible &&
+          !isFirstRender &&
+          !isSearchStrEmpty &&
+          !isEmpty(searchData.search_config.kb_ids) &&
+          searchData.search_config.query_mindmap && (
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button
+                  onClick={showMindMapModal}
+                  variant={'outline'}
+                  // className="absolute top-16 translate-y-2 right-10 z-30 rounded-full size-6"
+                  className=" translate-y-2 ml-2 mt-16 z-30 rounded-full size-6"
+                >
+                  <ListTree />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-fit">
+                {t('chunk.mind')}
+              </PopoverContent>
+            </Popover>
+          )}
         {mindMapVisible && (
           <MindMapSheet
             visible={mindMapVisible}
