@@ -280,7 +280,7 @@ func (h *HuaweiCloudModel) Embed(ctx context.Context, modelName *string, request
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Embedding, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model":           *modelName,
@@ -388,7 +388,7 @@ func (h *HuaweiCloudModel) Rerank(ctx context.Context, modelName *string, reques
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Rerank, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Rerank)
 
 	reqBody := map[string]interface{}{
 		"model":     *modelName,
@@ -494,7 +494,7 @@ func (h *HuaweiCloudModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(h.baseModel.URLSuffix.Models, "/"))
+	url := joinURL(baseURL, h.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

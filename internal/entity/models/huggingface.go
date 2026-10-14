@@ -58,11 +58,10 @@ func (h *HuggingFaceModel) ChatWithMessages(ctx context.Context, modelName strin
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -96,11 +95,10 @@ func (h *HuggingFaceModel) ChatStreamlyWithSender(ctx context.Context, modelName
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil && modelConfig.Thinking != nil {
@@ -144,11 +142,11 @@ func (h *HuggingFaceModel) Embed(ctx context.Context, modelName *string, request
 		return nil, err
 	}
 
-	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	embedURL, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Embedding, *modelName)
+	url := embedURL + "/" + *modelName
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -229,11 +227,10 @@ func (h *HuggingFaceModel) ListModels(ctx context.Context, apiConfig *APIConfig)
 		return nil, err
 	}
 
-	resolvedBaseURL, err := h.baseModel.GetBaseURL(apiConfig)
+	url, err := h.baseModel.EndpointURL(apiConfig, h.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, h.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
