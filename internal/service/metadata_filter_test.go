@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"slices"
 	"sort"
@@ -27,6 +28,7 @@ import (
 
 	"ragflow/internal/common"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/tokenizer"
 )
 
 func TestRenderMetaFilterTemplate(t *testing.T) {
@@ -717,4 +719,130 @@ func newCapturingFilterModel(t *testing.T) (*modelModule.ChatModel, *capturingFi
 	driver := &capturingFilterDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
 	name := "fake-model"
 	return &modelModule.ChatModel{ModelDriver: driver, ModelName: &name, APIConfig: &modelModule.APIConfig{}}, driver
+}
+
+// newCapturingFilterModelWithContext is newCapturingFilterModel for a model
+// whose resolved metadata declares contextLength; 0 is an unresolved window.
+func newCapturingFilterModelWithContext(t *testing.T, contextLength int) (*modelModule.ChatModel, *capturingFilterDriver) {
+	t.Helper()
+	driver := &capturingFilterDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	name := "fake-model"
+	return modelModule.NewChatModelWithInfo(driver, &name, &modelModule.APIConfig{}, &modelModule.ModelInfo{ContextLength: contextLength}), driver
+}
+
+// bigMetaData returns n distinct values under one key, which is how a real
+// high-cardinality metadata key renders into the prompt.
+func bigMetaData(n int) common.MetaData {
+	values := make(common.MetaValueDocs, n)
+	for i := range n {
+		values[fmt.Sprintf("value-%06d", i)] = []string{fmt.Sprintf("doc-%06d", i)}
+	}
+	return common.MetaData{"project": values}
+}
+
+// requireTokenCounts skips when the cl100k BPE table is absent: without it
+// NumTokensFromString returns 0, every prompt "fits", and a budget assertion
+// would be meaningless rather than wrong.
+func requireTokenCounts(t *testing.T) {
+	t.Helper()
+	if tokenizer.NumTokensFromString("hello world") == 0 {
+		t.Skip("cl100k BPE table missing; token counts are 0")
+	}
+}
+
+// The value space is the whole dataset's, so it can exceed the model's context
+// on its own. A filter picked from a value list that lost entries is applied as
+// a hard document scope, and the model cannot report that it only saw part of
+// the metadata -- so no conditions at all, and no model call.
+func TestGenMetaFilter_RefusesAnOversizedValueSpace(t *testing.T) {
+	requireTokenCounts(t)
+	chatModel, driver := newCapturingFilterModelWithContext(t, 256)
+
+	result, err := GenMetaFilter(t.Context(), chatModel, bigMetaData(2000), "which project?", nil)
+	if err != nil {
+		t.Fatalf("GenMetaFilter: %v", err)
+	}
+	if len(result.Conditions) != 0 || result.Logic != "and" {
+		t.Errorf("result: got %+v, want no conditions with logic and", result)
+	}
+	if driver.calls != 0 {
+		t.Errorf("the model was called %d times with a prompt that does not fit its context", driver.calls)
+	}
+}
+
+// A value space that fits is sent untouched.
+func TestGenMetaFilter_SendsAValueSpaceThatFits(t *testing.T) {
+	requireTokenCounts(t)
+	chatModel, driver := newCapturingFilterModelWithContext(t, 128000)
+
+	metas := common.MetaData{"project": {"alpha": {"doc-1"}, "beta": {"doc-2"}}}
+	if _, err := GenMetaFilter(t.Context(), chatModel, metas, "which project?", nil); err != nil {
+		t.Fatalf("GenMetaFilter: %v", err)
+	}
+	if driver.calls != 1 {
+		t.Fatalf("model calls: got %d, want 1", driver.calls)
+	}
+	if !strings.Contains(driver.system, "alpha") {
+		t.Errorf("the value space did not reach the prompt: %q", driver.system)
+	}
+}
+
+// A context window that could not be resolved is 0, which must mean
+// tokenizer.Fit's 8192 default and NOT "no budget at all".
+func TestGenMetaFilter_UnresolvedContextLengthUsesTheDefaultBudget(t *testing.T) {
+	requireTokenCounts(t)
+
+	t.Run("under the default budget the prompt is sent", func(t *testing.T) {
+		chatModel, driver := newCapturingFilterModelWithContext(t, 0)
+
+		if _, err := GenMetaFilter(t.Context(), chatModel, common.MetaData{"project": {"alpha": {"doc-1"}}}, "which project?", nil); err != nil {
+			t.Fatalf("GenMetaFilter: %v", err)
+		}
+		if driver.calls != 1 {
+			t.Errorf("model calls: got %d, want 1", driver.calls)
+		}
+	})
+
+	t.Run("over the default budget the prompt is refused", func(t *testing.T) {
+		chatModel, driver := newCapturingFilterModelWithContext(t, 0)
+		metas := bigMetaData(4000)
+		if got := tokenizer.NumTokensFromString(fmt.Sprint(metas)); got <= 8192 {
+			t.Fatalf("fixture is only %d tokens; it must exceed the 8192 default to test the budget", got)
+		}
+
+		result, err := GenMetaFilter(t.Context(), chatModel, metas, "which project?", nil)
+		if err != nil {
+			t.Fatalf("GenMetaFilter: %v", err)
+		}
+		if len(result.Conditions) != 0 {
+			t.Errorf("conditions: got %+v, want none", result.Conditions)
+		}
+		if driver.calls != 0 {
+			t.Errorf("the model was called %d times past the default budget", driver.calls)
+		}
+	})
+}
+
+// At the caller, an oversized value space leaves the search unscoped instead
+// of narrowing it to nothing.
+func TestApplyMetaDataFilter_OversizedValueSpaceLeavesTheSearchUnscoped(t *testing.T) {
+	requireTokenCounts(t)
+	for _, method := range []string{"auto", "semi_auto"} {
+		t.Run(method, func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModelWithContext(t, 256)
+			filter := map[string]interface{}{"method": method}
+			if method == "semi_auto" {
+				filter["semi_auto"] = []interface{}{"project"}
+			}
+
+			docIDs := ApplyMetaDataFilter(t.Context(), filter, bigMetaData(2000), "which project?", chatModel, []string{"doc-1"}, nil)
+
+			if driver.calls != 0 {
+				t.Errorf("the model was asked to pick from a prompt that does not fit (%d calls)", driver.calls)
+			}
+			if docIDs != nil {
+				t.Errorf("got %v, want nil so retrieval keeps its own document scope", docIDs)
+			}
+		})
+	}
 }
