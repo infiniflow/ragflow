@@ -88,3 +88,37 @@ func TestSelectMetadataFilteredDocIDs(t *testing.T) {
 		})
 	}
 }
+
+func TestFormatDatasetSearchChunksCompilationVisibility(t *testing.T) {
+	enabled, disabled := true, false
+	for _, tt := range []struct {
+		name    string
+		include *bool
+		present bool
+	}{
+		{name: "disabled", include: &disabled},
+		{name: "enabled", include: &enabled, present: true},
+		{name: "unspecified", present: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			chunks := []map[string]interface{}{
+				{"chunk_id": "parent-1", "content_with_weight": "parent content", "compile_kwd": "page_index", "vector": []float64{1}},
+				{"chunk_id": "ordinary-1", "content_with_weight": "ordinary content"},
+			}
+			formatDatasetSearchChunks(chunks, tt.include)
+			if len(chunks) != 2 || chunks[0]["id"] != "parent-1" || chunks[0]["content"] != "parent content" {
+				t.Fatalf("parent promotion or API fields changed: %#v", chunks)
+			}
+			kind, present := chunks[0]["compile_kwd"]
+			if present != tt.present || (present && kind != "page_index") {
+				t.Fatalf("compile_kwd = %v, present = %v; want present = %v", kind, present, tt.present)
+			}
+			if _, present := chunks[1]["compile_kwd"]; present {
+				t.Fatalf("ordinary chunk has compilation marker: %#v", chunks[1])
+			}
+			if _, present := chunks[0]["vector"]; present {
+				t.Fatalf("API chunk still has vector: %#v", chunks[0])
+			}
+		})
+	}
+}
