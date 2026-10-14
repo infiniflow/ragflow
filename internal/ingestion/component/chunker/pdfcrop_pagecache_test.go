@@ -30,7 +30,7 @@ func renderCountingFake(rendered *map[int]int, mu *sync.Mutex) func(int) (image.
 }
 
 func TestLRUPageCache_BasicMissThenHit(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -54,7 +54,7 @@ func TestLRUPageCache_BasicMissThenHit(t *testing.T) {
 }
 
 func TestLRUPageCache_EvictsLeastRecent(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -85,7 +85,7 @@ func TestLRUPageCache_EvictsLeastRecent(t *testing.T) {
 }
 
 func TestLRUPageCache_GetRefreshesRecency(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -104,7 +104,7 @@ func TestLRUPageCache_GetRefreshesRecency(t *testing.T) {
 }
 
 func TestLRUPageCache_CapacityClampedTo1(t *testing.T) {
-	c := newLRUPageCache(0)
+	c := newLRUPageCache(0, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -124,7 +124,7 @@ func TestLRUPageCache_CapacityClampedTo1(t *testing.T) {
 // be evicted under the LRU cap, so the worker never loses the bitmap it is
 // still cropping from and never re-renders it.
 func TestLRUPageCache_InFlightPageNotEvicted(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -147,7 +147,7 @@ func TestLRUPageCache_InFlightPageNotEvicted(t *testing.T) {
 }
 
 func TestLRUPageCache_ReleasedPageBecomesEvictable(t *testing.T) {
-	c := newLRUPageCache(2)
+	c := newLRUPageCache(2, 1<<40)
 	rendered := make(map[int]int)
 	var mu sync.Mutex
 	r := renderCountingFake(&rendered, &mu)
@@ -169,7 +169,7 @@ func TestLRUPageCache_ReleasedPageBecomesEvictable(t *testing.T) {
 }
 
 func TestLRUPageCache_ConcurrentSafe(t *testing.T) {
-	c := newLRUPageCache(8)
+	c := newLRUPageCache(8, 1<<40)
 	var wg sync.WaitGroup
 	for g := 0; g < 32; g++ {
 		wg.Add(1)
@@ -211,5 +211,82 @@ func TestPageCacheLimit_DefaultAndOverride(t *testing.T) {
 	t.Setenv("RAGFLOW_PAGE_CACHE_LIMIT", "0") // invalid → fall back to default
 	if got := pageCacheLimit(); got != 64 {
 		t.Fatalf("invalid override should fall back to 64, got %d", got)
+	}
+}
+
+// sizedRender renders every page as a w×h RGBA bitmap (4 bytes per pixel)
+// and counts renders per page.
+func sizedRender(w, h int, rendered map[int]int) func(int) (image.Image, bool) {
+	return func(pn int) (image.Image, bool) {
+		rendered[pn]++
+		return image.NewRGBA(image.Rect(0, 0, w, h)), true
+	}
+}
+
+// TestLRUPageCache_EvictsByBytes guards the production OOM where a PDF of 14
+// huge sheets (~730 MB per page at 216 DPI) stayed fully cached because the
+// cache was bounded only by page count: idle pages beyond the byte budget
+// must be evicted even when the page cap is far away.
+func TestLRUPageCache_EvictsByBytes(t *testing.T) {
+	const pageBytes = 10 * 10 * 4
+	c := newLRUPageCache(64, 2*pageBytes)
+	rendered := make(map[int]int)
+	r := sizedRender(10, 10, rendered)
+	for pn := 1; pn <= 14; pn++ {
+		c.Acquire(r, pn)
+		c.Release(pn)
+	}
+	if got := c.ll.Len(); got != 2 {
+		t.Fatalf("retained %d pages, want 2 (byte budget of two pages)", got)
+	}
+	if c.bytes != 2*pageBytes {
+		t.Fatalf("cache bytes = %d, want %d", c.bytes, 2*pageBytes)
+	}
+	// The two most recent pages are still served from the cache.
+	c.Acquire(r, 14)
+	c.Release(14)
+	if rendered[14] != 1 {
+		t.Fatalf("page 14 rendered %d times, want 1 (still cached)", rendered[14])
+	}
+}
+
+// TestLRUPageCache_OversizedPageServedThenDropped checks that a page larger
+// than the whole byte budget is still handed to the workers holding it, and
+// dropped as soon as the last one releases it.
+func TestLRUPageCache_OversizedPageServedThenDropped(t *testing.T) {
+	c := newLRUPageCache(64, 100)
+	rendered := make(map[int]int)
+	r := sizedRender(10, 10, rendered) // 400 bytes > 100
+	if _, ok := c.Acquire(r, 1); !ok {
+		t.Fatal("oversized page must still be served")
+	}
+	if _, ok := c.Acquire(r, 1); !ok {
+		t.Fatal("second holder must get the cached page")
+	}
+	if rendered[1] != 1 {
+		t.Fatalf("page rendered %d times while held, want 1", rendered[1])
+	}
+	c.Release(1)
+	if c.ll.Len() != 1 {
+		t.Fatal("page still held by one worker must stay cached")
+	}
+	c.Release(1)
+	if c.ll.Len() != 0 || c.bytes != 0 {
+		t.Fatalf("idle oversized page retained: %d pages, %d bytes", c.ll.Len(), c.bytes)
+	}
+}
+
+func TestPageCacheBytes_DefaultAndOverride(t *testing.T) {
+	t.Setenv("RAGFLOW_PAGE_CACHE_MB", "")
+	if got := pageCacheBytes(); got != 1<<30 {
+		t.Fatalf("default = %d, want 1 GiB", got)
+	}
+	t.Setenv("RAGFLOW_PAGE_CACHE_MB", "256")
+	if got := pageCacheBytes(); got != 256<<20 {
+		t.Fatalf("override = %d, want 256 MiB", got)
+	}
+	t.Setenv("RAGFLOW_PAGE_CACHE_MB", "-1") // invalid → fall back to default
+	if got := pageCacheBytes(); got != 1<<30 {
+		t.Fatalf("invalid override should fall back to 1 GiB, got %d", got)
 	}
 }

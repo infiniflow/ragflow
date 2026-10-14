@@ -102,13 +102,14 @@ func cropImageChunks(ctx context.Context, engine deepdoctype.PDFEngine, chunks [
 		return chunks
 	}
 
-	// cache bounds peak memory (reference counting + LRU, see lruPageCache)
-	// so a thousands-of-pages PDF no longer spills every rendered page into
-	// RAM. This replaces the serial code's sliding-window eviction, which
-	// relied on in-order processing and is unsafe under fan-out. render is
-	// called outside the lock; the warning on failure is logged here so the
-	// cache stays render-agnostic and unit-testable.
-	cache := newLRUPageCache(pageCacheLimit())
+	// cache bounds peak memory (reference counting + LRU by page count and
+	// bytes, see lruPageCache) so neither a thousands-of-pages PDF nor a few
+	// huge sheets spill every rendered page into RAM. This replaces the
+	// serial code's sliding-window eviction, which relied on in-order
+	// processing and is unsafe under fan-out. render is called outside the
+	// lock; the warning on failure is logged here so the cache stays
+	// render-agnostic and unit-testable.
+	cache := newLRUPageCache(pageCacheLimit(), pageCacheBytes())
 	render := func(pn int) (image.Image, bool) {
 		img, rerr := deepdocpdf.RenderPageToImage(engine, pn)
 		if rerr != nil || img == nil {
