@@ -324,13 +324,20 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	ctx := t.Context()
 	page := 1
 	size := 30
-	if _, err := svc.List(ctx, &service.ListChunksRequest{
+	resp, err := svc.List(ctx, &service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
 		Page:      &page,
 		Size:      &size,
-	}, userID); err != nil {
+	}, userID)
+	if err != nil {
 		t.Fatalf("List() error = %v", err)
+	}
+	if len(resp.Chunks) != 1 {
+		t.Fatalf("chunks = %v, want one chunk", resp.Chunks)
+	}
+	if _, ok := resp.Chunks[0]["available_int"]; ok {
+		t.Fatal("available_int should not be returned in chunk lists")
 	}
 
 	if engine.searchReq == nil {
@@ -424,6 +431,7 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 		"docnm_kwd":           "doc.txt",
 		"content_with_weight": "invoice body",
 		"content_ltks":        []string{"invoice", "body"},
+		"available_int":       0,
 	}}
 	svc := &ChunkService{
 		docEngine: engine,
@@ -460,6 +468,12 @@ func TestGetScopesChunkLookupToDocumentDataset(t *testing.T) {
 	}
 	if _, ok := resp.Chunk["content_ltks"]; ok {
 		t.Fatal("content_ltks should be stripped like Python's _strip_chunk_runtime_fields")
+	}
+	if got := resp.Chunk["available_int"]; got != 0 {
+		t.Fatalf("available_int = %v, want stored availability 0", got)
+	}
+	if engine.chunk["available_int"] != 0 {
+		t.Fatal("stored availability should remain unchanged")
 	}
 }
 
@@ -540,9 +554,8 @@ func TestGetRequiresDocumentInRouteDataset(t *testing.T) {
 	}
 }
 
-// TestIsChunkRuntimeField pins the strip rule's Python-parity semantics
-// (_vec$|_sm_|_tks|_ltks — only _vec is end-anchored): tokenized/vector runtime
-// fields are dropped, stored fields survive.
+// TestIsChunkRuntimeField checks that tokenized/vector fields are dropped while
+// other stored fields survive. Only _vec is end-anchored.
 func TestIsChunkRuntimeField(t *testing.T) {
 	cases := []struct {
 		name string
@@ -2096,6 +2109,7 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 				"id":                  "chunk-1",
 				"content":             "plain invoice terms body",
 				"content_with_weight": "weighted invoice terms body",
+				"available_int":       0,
 				"doc_id":              "doc-1",
 			},
 		},
