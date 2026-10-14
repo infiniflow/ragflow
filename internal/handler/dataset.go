@@ -1130,12 +1130,12 @@ func (h *DatasetsHandler) SearchDatasets(c *gin.Context) {
 		return
 	}
 	if req.DatasetIDs == nil {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id is required")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids is required")
 		return
 	}
 
 	if len(req.DatasetIDs) == 0 {
-		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "kb_id array cannot be empty")
+		common.ResponseWithCodeData(c, common.CodeArgumentError, nil, "dataset_ids array cannot be empty")
 		return
 	}
 	if err := validateSearchDatasetsRequest(&req); err != nil {
@@ -1226,6 +1226,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err
@@ -1235,6 +1238,9 @@ func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err

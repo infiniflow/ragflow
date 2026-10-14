@@ -256,6 +256,12 @@ func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
 		if !strings.Contains(payload, `"name":"Acme Corp"`) {
 			t.Errorf("entity payload = %s, want extracted spelling Acme Corp", payload)
 		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(text, "company") || !strings.Contains(strings.ToLower(text), "acme corp") || strings.Contains(text, `"name":`) {
+				t.Errorf("%s = %q, want searchable entity payload text", field, text)
+			}
+		}
 		return
 	}
 	t.Fatal("inserted rows contain no entity")
@@ -275,6 +281,12 @@ func TestWriteMergedStructurePreservesDistinctRelationTypes(t *testing.T) {
 	for _, row := range eng.insertedChunks {
 		if row["type_kwd"] != "relation" {
 			continue
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(strings.ToLower(text), "acme corp") || !strings.Contains(strings.ToLower(text), "beta ltd") || strings.Contains(text, `"from":`) {
+				t.Errorf("%s = %q, want searchable relation payload text", field, text)
+			}
 		}
 		payload, _ := row["content_with_weight"].(string)
 		for _, relationType := range []string{"supplies", "owns"} {

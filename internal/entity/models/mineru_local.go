@@ -177,7 +177,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 	if err != nil {
 		return nil, err
 	}
-	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
+	apiURL := joinURL(resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -286,11 +286,11 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("taskID is empty")
 	}
 
-	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
+	taskURL, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Task)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s/result", resolvedBaseURL, m.baseModel.URLSuffix.Task, taskID)
+	url := taskURL + "/" + taskID + "/result"
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 
