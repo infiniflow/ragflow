@@ -30,6 +30,12 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	if len(req.DatasetIDs) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
 	}
+	if req.RetrievalMode != "" {
+		if err := req.RetrievalMode.Validate(); err != nil {
+			return nil, common.NewCodedError(common.CodeArgumentError, err.Error())
+		}
+	}
+	retrievalMode := req.RetrievalMode
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
 	page := 1
@@ -132,11 +138,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		kbRecords = append(kbRecords, kb)
 	}
 
-	// Check if all kbs have the same embedding model
-	if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
-		return nil, err
-	}
-
 	// Override request fields with values from saved search config
 	var chatID string
 	if searchID != "" {
@@ -161,6 +162,16 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		}
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			rerankCandidatesCount = 100
+			if savedMode, exists := searchConfig["retrieval_mode"]; exists {
+				mode, ok := savedMode.(string)
+				if !ok {
+					return nil, common.NewCodedError(common.CodeArgumentError, "search_config.retrieval_mode 必须是 hybrid、vector 或 keyword 字符串")
+				}
+				retrievalMode = nlp.RetrievalMode(mode)
+				if err := retrievalMode.Validate(); err != nil {
+					return nil, common.NewCodedError(common.CodeArgumentError, "search_config."+err.Error())
+				}
+			}
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
 				metadataFilter = scMetadataFilter
 			}
@@ -203,6 +214,17 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Invalid search_id: search_config missing or invalid", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
+	}
+	if retrievalMode == "" {
+		retrievalMode = nlp.RetrievalModeHybrid
+	}
+	if retrievalMode != nlp.RetrievalModeKeyword {
+		if err := service.ValidateDatasetEmbeddingModels(ctx, dao.DB, kbRecords); err != nil {
+			return nil, err
+		}
+	}
+	if retrievalMode == nlp.RetrievalModeVector && kbRecords[0].EmbdID == "" {
+		return nil, common.NewCodedError(common.CodeArgumentError, "retrieval_mode=vector 需要知识库配置可用的 embedding 模型")
 	}
 	knnNumCandidates = max(knnNumCandidates, knnTopK)
 
@@ -273,7 +295,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 
 	// Determine embedding model
 	var embeddingModel *modelModule.EmbeddingModel
-	if kbRecords[0].EmbdID != "" {
+	if retrievalMode != nlp.RetrievalModeKeyword && kbRecords[0].EmbdID != "" {
 		embeddingModel, err = modelFactory.NewEmbeddingModel(ctx, service.ModelAccess{TenantID: tenantIDs[0]}, kbRecords[0].EmbdID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get embedding model by embd_id: %w", err)
@@ -290,6 +312,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	retrievalReq := &nlp.RetrievalRequest{
+		Mode:                   retrievalMode,
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,
 		KbIDs:                  datasetIDs,
