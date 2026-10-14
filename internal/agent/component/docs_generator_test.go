@@ -250,27 +250,33 @@ func TestResolveDocsGeneratorContent_ThinkAndTrim(t *testing.T) {
 	}
 }
 
-// TestSanitizeFilename_CapsBaseInCharacters pins the 180-character cap on the
-// base name. Cutting bytes instead split the last rune of a mixed ASCII/CJK
-// name, leaving invalid UTF-8 in the filename and download URL.
-func TestSanitizeFilename_CapsBaseInCharacters(t *testing.T) {
+// TestSanitizeFilename_CapsLength pins the two caps on generated names: 180
+// characters for the base, then 255 bytes for the whole name. Both cuts land
+// on a rune boundary and keep the extension; cutting bytes mid-rune left
+// invalid UTF-8 in the filename and download URL.
+func TestSanitizeFilename_CapsLength(t *testing.T) {
 	cases := []struct {
 		name string
 		raw  string
+		ext  string
 		want string
 	}{
-		{"ascii", strings.Repeat("x", 200), strings.Repeat("x", 180) + ".pdf"},
-		{"cjk", strings.Repeat("报", 200), strings.Repeat("报", 180) + ".pdf"},
-		{"mixed", "a" + strings.Repeat("报", 200), "a" + strings.Repeat("报", 179) + ".pdf"},
-		{"at cap", "a" + strings.Repeat("报", 179), "a" + strings.Repeat("报", 179) + ".pdf"},
+		{"ascii over 180 chars", strings.Repeat("x", 200), ".pdf", strings.Repeat("x", 180) + ".pdf"},
+		{"cjk at 255 bytes", strings.Repeat("报", 83), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		{"cjk over 255 bytes", strings.Repeat("报", 84), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		{"cjk over both caps", strings.Repeat("报", 200), ".pdf", strings.Repeat("报", 83) + ".pdf"},
+		// The leading "a" puts the 255-byte boundary inside a 3-byte character.
+		{"mixed cut on a character", "a" + strings.Repeat("报", 200), ".pdf", "a" + strings.Repeat("报", 83) + ".pdf"},
+		{"longer extension", strings.Repeat("报", 100), ".docx", strings.Repeat("报", 83) + ".docx"},
+		{"extension already present", strings.Repeat("报", 100) + ".PDF", ".pdf", strings.Repeat("报", 83) + ".PDF"},
 	}
 	for _, c := range cases {
-		got := sanitizeFilename(c.raw, ".pdf")
-		if !utf8.ValidString(got) {
-			t.Errorf("%s: sanitizeFilename returned invalid UTF-8 %q", c.name, got)
-		}
+		got := sanitizeFilename(c.raw, c.ext)
 		if got != c.want {
-			t.Errorf("%s: sanitizeFilename = %q (%d runes), want %q (%d runes)", c.name, got, utf8.RuneCountInString(got), c.want, utf8.RuneCountInString(c.want))
+			t.Errorf("%s: sanitizeFilename = %q (%d bytes), want %q (%d bytes)", c.name, got, len(got), c.want, len(c.want))
+		}
+		if len(got) > 255 || !utf8.ValidString(got) || !strings.HasSuffix(strings.ToLower(got), c.ext) {
+			t.Errorf("%s: %q is longer than 255 bytes, not valid UTF-8 or lacks %s", c.name, got, c.ext)
 		}
 	}
 }
