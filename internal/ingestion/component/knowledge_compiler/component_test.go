@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/ingestion/component/globals"
@@ -337,6 +338,9 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 		}
 		if ck, _ := cm["compile_kwd"].(string); ck != "" {
 			seenCompiled = true
+			if cm["scope_kwd"] != "doc" {
+				t.Fatalf("Invoke(%s): scope_kwd = %v, want doc", variant, cm["scope_kwd"])
+			}
 			if _, ok := cm["q_8_vec"]; !ok {
 				t.Fatalf("Invoke(%s): compiled chunk missing vector: %v", variant, cm)
 			}
@@ -1096,7 +1100,7 @@ func TestKnowledgeCompiler_Structure_MalformedJSONFailsLoud(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
 	}
-	_, err = c.Invoke(context.Background(), nil, map[string]any{
+	_, err = c.Invoke(common.WithRetryDelay(context.Background(), time.Millisecond), nil, map[string]any{
 		"chunks":    []any{map[string]any{"id": "c1", "text": "Alpha is a Beta"}},
 		"doc_id":    "d1",
 		"tenant_id": "t1",

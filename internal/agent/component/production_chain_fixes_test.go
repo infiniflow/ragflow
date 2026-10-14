@@ -647,6 +647,17 @@ func TestCodeExec_LegacyDSLWrapperBridgesParamsAndOutputs(t *testing.T) {
 	if got := out["_ERROR"]; got != "" {
 		t.Errorf("CodeExec _ERROR = %v, want empty string", got)
 	}
+
+	out, err = c.Invoke(t.Context(), nil, map[string]any{"x": 7})
+	if err != nil {
+		t.Fatalf("CodeExec.Invoke with named argument: %v", err)
+	}
+	if got := recorder.req.Arguments["x"]; got != float64(7) {
+		t.Errorf("sandbox arguments[x] = %v, want 7 from named argument", got)
+	}
+	if got := out["result"]; got != float64(14) {
+		t.Errorf("CodeExec result = %v, want numeric 14", got)
+	}
 }
 
 func TestCodeExec_LegacyDSLWrapperResolvesArgumentRefsFromState(t *testing.T) {

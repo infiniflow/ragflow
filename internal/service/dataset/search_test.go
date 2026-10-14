@@ -1,9 +1,13 @@
 package dataset
 
 import (
+	"reflect"
+	"slices"
 	"testing"
 
+	"ragflow/internal/engine/types"
 	"ragflow/internal/service"
+	"ragflow/internal/service/nlp"
 )
 
 func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
@@ -34,6 +38,8 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		IncludeCompiledChunks:  &includeKnowledgeCompilation,
+
+		KnowledgeCompilationScope: "all",
 	}
 
 	converted := req.ToSearchDatasetsRequest("dataset-1")
@@ -58,6 +64,103 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	if converted.IncludeCompiledChunks != req.IncludeCompiledChunks {
 		t.Fatalf("converted request did not preserve include_knowledge_compilation: %#v", converted)
 	}
+	if converted.KnowledgeCompilationScope != req.KnowledgeCompilationScope {
+		t.Fatalf("knowledge_compilation_scope=%v want %v", converted.KnowledgeCompilationScope, req.KnowledgeCompilationScope)
+	}
+}
+
+func TestKnowledgeCompilationFilter(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "source-1", "doc_id": "doc-1"},
+		{"id": "source-2", "doc_id": "doc-2"},
+		{"id": "document-1", "compile_kwd": "graph", "scope_kwd": "doc", "doc_id": "doc-1"},
+		{"id": "document-2", "compile_kwd": "graph", "scope_kwd": "doc", "doc_id": "doc-2"},
+		{"id": "dataset-1", "compile_kwd": "graph", "scope_kwd": "dataset", "doc_id": "kb-1", "source_doc_ids": []string{"doc-1", "doc-2"}},
+		{"id": "dataset-2", "compile_kwd": "graph", "scope_kwd": "dataset", "doc_id": "kb-1", "source_doc_ids": []string{"doc-2"}},
+		{"id": "unscoped", "compile_kwd": "graph", "doc_id": "doc-2"},
+	}
+	for _, tt := range []struct {
+		name         string
+		include      *bool
+		scope        string
+		docIDs, want []string
+	}{
+		{name: "omitted", want: []string{"source-1", "source-2", "dataset-1", "dataset-2"}},
+		{name: "omitted with compilation enabled", include: new(true), want: []string{"source-1", "source-2", "dataset-1", "dataset-2"}},
+		{name: "omitted with compilation disabled", include: new(false), want: []string{"source-1", "source-2"}},
+		{name: "omitted with selected document", docIDs: []string{"doc-1"}, want: []string{"source-1", "dataset-1", "dataset-2"}},
+		{name: "dataset", include: new(true), scope: "dataset", want: []string{"source-1", "source-2", "dataset-1", "dataset-2"}},
+		{name: "document", include: new(true), scope: "document", want: []string{"source-1", "source-2", "document-1", "document-2"}},
+		{name: "all", include: new(true), scope: "all", want: []string{"source-1", "source-2", "document-1", "document-2", "dataset-1", "dataset-2", "unscoped"}},
+		{name: "default include", scope: "document", want: []string{"source-1", "source-2", "document-1", "document-2"}},
+		{name: "disabled overrides scope", include: new(false), scope: "all", want: []string{"source-1", "source-2"}},
+		{name: "all with selected document", scope: "all", docIDs: []string{"doc-1"}, want: []string{"source-1", "document-1", "dataset-1", "dataset-2"}},
+		{name: "dataset with selected document", scope: "dataset", docIDs: []string{"doc-1"}, want: []string{"source-1", "dataset-1", "dataset-2"}},
+		{name: "document with selected document", scope: "document", docIDs: []string{"doc-1"}, want: []string{"source-1", "document-1"}},
+		{name: "all with unscoped compilation", scope: "all", docIDs: []string{"doc-2"}, want: []string{"source-2", "document-2", "dataset-1", "dataset-2", "unscoped"}},
+		{name: "dataset with unrelated document", scope: "dataset", docIDs: []string{"doc-3"}, want: []string{"dataset-1", "dataset-2"}},
+		{name: "document with unrelated document", scope: "document", docIDs: []string{"doc-3"}},
+		{name: "all with unrelated document", scope: "all", docIDs: []string{"doc-3"}, want: []string{"dataset-1", "dataset-2"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			req := nlp.RetrievalSearchRequest{DocIDs: tt.docIDs, Filter: knowledgeCompilationFilter(tt.include, tt.scope)}
+			if len(tt.docIDs) > 0 && (tt.include == nil || *tt.include) && tt.scope != "document" {
+				req.DocIDs = append(slices.Clone(tt.docIDs), "kb-1")
+			}
+			filter := req.GetFilters()
+			var got []string
+			for _, row := range rows {
+				if matchesKnowledgeCompilationFilter(filter, row) {
+					got = append(got, row["id"].(string))
+				}
+			}
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("matched chunks=%v want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func matchesKnowledgeCompilationFilter(filter, row map[string]interface{}) bool {
+	for field, value := range filter {
+		switch field {
+		case "or":
+			matched := false
+			for _, branch := range types.FilterClauses(value) {
+				matched = matched || matchesKnowledgeCompilationFilter(branch, row)
+			}
+			if !matched {
+				return false
+			}
+		case "must_not":
+			if matchesKnowledgeCompilationFilter(value.(map[string]interface{}), row) {
+				return false
+			}
+		case "exists":
+			if row[value.(string)] == nil {
+				return false
+			}
+		default:
+			if values, ok := value.([]string); ok {
+				matched := false
+				for _, expected := range values {
+					if actual, ok := row[field].([]string); ok {
+						for _, item := range actual {
+							matched = matched || item == expected
+						}
+					} else {
+						matched = matched || row[field] == expected
+					}
+				}
+				if !matched {
+					return false
+				}
+			} else if row[field] != value {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func TestSelectMetadataFilteredDocIDs(t *testing.T) {

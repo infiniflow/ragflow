@@ -354,34 +354,58 @@ func (m *EmbeddingModel) ResolveTokenizerID() string {
 	return GetModelTokenizer(name)
 }
 
-// QuotaKey names the deployment this embedding model counts against: endpoint,
-// region, model name and an API-key prefix. The tokenizer belongs to the model, but
-// what a provider accepts is per deployment - the same model behind two endpoints
-// can have different windows - so everything that learns a real/own token ratio
-// (the ingest embedder, the dataset-nav embedder, the knowledge-compiler embedder)
-// has to key that ratio the same way; otherwise each path re-learns the same
-// rejection and none of them tightens for the others.
+// QuotaKey names the deployment this embedding model counts against: provider,
+// endpoint, region, model name and an API-key prefix. The tokenizer belongs to the
+// model, but what a provider accepts is per deployment - the same model behind two
+// endpoints can have different windows - so everything that learns a real/own token
+// ratio (the ingest embedder, the dataset-nav embedder, the knowledge-compiler
+// embedder) has to key that ratio the same way; otherwise each path re-learns the
+// same rejection and none of them tightens for the others.
 func (m *EmbeddingModel) QuotaKey() string {
 	if m == nil {
 		return ""
 	}
-	var baseURL, region, apiKey, modelName string
-	if cfg := m.APIConfig; cfg != nil {
-		if cfg.BaseURL != nil {
-			baseURL = *cfg.BaseURL
+	return quotaKeyFor(providerNameOf(m.info), m.APIConfig, m.ModelName)
+}
+
+// providerNameOf is the provider a model was resolved from, or "" when it was built
+// without catalog metadata (tests, direct construction).
+func providerNameOf(info *ModelInfo) string {
+	if info == nil {
+		return ""
+	}
+	return info.ProviderName
+}
+
+// quotaKeyFor is the shared key used by every model that calibrates a real/own
+// token ratio against a provider deployment: provider, resolved endpoint, region,
+// model name and a short API-key digest. The tokenizer belongs to the model, but the
+// accepted window belongs to the deployment, and the digest keeps two tenants of the
+// same endpoint from sharing one learned ratio.
+//
+// providerName matters when BaseURL is empty: the driver then falls back to the
+// endpoint its provider config supplies for that region, so provider + region is what
+// identifies the deployment. Without it two providers that resolve to different
+// default endpoints but agree on region, model and key would share one learned ratio,
+// and the tighter window would over-truncate the other's requests.
+func quotaKeyFor(providerName string, apiConfig *APIConfig, modelName *string) string {
+	var baseURL, region, apiKey, name string
+	if apiConfig != nil {
+		if apiConfig.BaseURL != nil {
+			baseURL = *apiConfig.BaseURL
 		}
-		if cfg.Region != nil {
-			region = *cfg.Region
+		if apiConfig.Region != nil {
+			region = *apiConfig.Region
 		}
-		if cfg.ApiKey != nil {
-			apiKey = *cfg.ApiKey
+		if apiConfig.ApiKey != nil {
+			apiKey = *apiConfig.ApiKey
 		}
 	}
-	if m.ModelName != nil {
-		modelName = *m.ModelName
+	if modelName != nil {
+		name = *modelName
 	}
 	sum := sha256.Sum256([]byte(apiKey))
-	return fmt.Sprintf("%s|%s|%s|%x", baseURL, region, modelName, sum[:8])
+	return fmt.Sprintf("%s|%s|%s|%s|%x", providerName, baseURL, region, name, sum[:8])
 }
 
 // RerankModel wraps a ModelDriver with rerank-specific configuration
@@ -401,25 +425,41 @@ func NewRerankModel(driver ModelDriver, modelName *string, apiConfig *APIConfig,
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
-	tokenizerID := ""
-	if modelName != nil {
-		tokenizerID = GetModelTokenizer(*modelName)
-	}
-	return &RerankModel{
+	model := &RerankModel{
 		ModelDriver: driver,
 		ModelName:   modelName,
 		APIConfig:   apiConfig,
 		MaxTokens:   maxTokens,
-		limiter:     tokenizer.LimiterFor(tokenizerID, "", tokenizer.DefaultCalibration()),
-		limiterErr:  tokenizer.RefuseUnavailableCounter(tokenizerID, "rerank"),
 	}
+	model.initLimiter()
+	return model
 }
 
 // NewRerankModelWithInfo creates a rerank model with resolved metadata.
 func NewRerankModelWithInfo(driver ModelDriver, modelName *string, apiConfig *APIConfig, maxTokens int, info *ModelInfo) *RerankModel {
 	model := NewRerankModel(driver, modelName, apiConfig, maxTokens)
 	model.info = cloneModelInfo(info)
+	// Rebuild the limiter now that the provider is known: it is part of the
+	// calibration key (see quotaKeyFor), and it was built without it above.
+	model.initLimiter()
 	return model
+}
+
+// initLimiter binds the model's declared tokenizer and its deployment calibration
+// key. Safe to call more than once; the constructors call it after the model's
+// metadata is set so the key can include the provider.
+func (r *RerankModel) initLimiter() {
+	tokenizerID := ""
+	if r.ModelName != nil {
+		tokenizerID = GetModelTokenizer(*r.ModelName)
+	}
+	// The calibration key is the deployment, not the model: rerank and embedding
+	// that share an endpoint still learn separate ratios, but every rerank caller
+	// of one deployment keys the same ratio and tightens it together (see
+	// RerankModel.Rerank, which records over-limit rejections against it).
+	quotaKey := r.QuotaKey()
+	r.limiter = tokenizer.LimiterFor(tokenizerID, quotaKey, tokenizer.DefaultCalibration())
+	r.limiterErr = tokenizer.RefuseUnavailableCounter(tokenizerID, quotaKey)
 }
 
 // Info returns metadata for this selected rerank model.
@@ -430,8 +470,26 @@ func (r *RerankModel) Info() *ModelInfo {
 	return cloneModelInfo(r.info)
 }
 
+// QuotaKey names the deployment this rerank model counts against, so its
+// calibration is keyed the same way as an embedding model on the same endpoint.
+func (r *RerankModel) QuotaKey() string {
+	if r == nil {
+		return ""
+	}
+	return quotaKeyFor(providerNameOf(r.info), r.APIConfig, r.ModelName)
+}
+
 // Rerank calculates similarity between query and texts. Rerank input is measured
 // and truncated with the model's declared tokenizer, just like embedding input.
+// An over-limit rejection is recovered like the embedding path: the documents are
+// re-cut with a smaller budget and the calibration is told, as an attempt - if every
+// budget is rejected the provider's error is still returned.
+//
+// The window bounds the query PLUS each document, not a single text, so only the
+// documents can shrink - the query is fixed. RERANK_TOKEN_LIMIT_MODE decides
+// whether that is wanted at all: "passthrough" sends the input untouched, and
+// "raise_error" reports an oversized document instead of trimming it, so neither
+// retries; only "truncate" (the default) shrinks-and-retries.
 func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankConfig *RerankConfig, modelUsage *common.ModelUsage) (*RerankResponse, error) {
 	if r == nil || r.ModelDriver == nil {
 		return nil, errors.New("rerank model: driver is nil")
@@ -440,12 +498,6 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	if maxTokens <= 0 {
 		maxTokens = defaultMaxRerankTokens
 	}
-	if r.limiterErr != nil {
-		return nil, r.limiterErr
-	}
-	limiter := r.limiter
-	counter := limiter.Counter()
-	effectiveMaxTokens := limiter.Limit(maxTokens)
 	mode := strings.ToLower(strings.TrimSpace(common.GetEnv(common.EnvRerankTokenLimitMode)))
 	if mode == "" {
 		mode = "truncate"
@@ -453,26 +505,62 @@ func (r *RerankModel) Rerank(ctx context.Context, request RerankRequest, rerankC
 	if mode != "truncate" && mode != "passthrough" && mode != "raise_error" {
 		return nil, fmt.Errorf("%w: invalid %s %q; expected %q, %q, or %q", ErrRerankTokenLimitPolicy, common.EnvRerankTokenLimitMode, mode, "truncate", "passthrough", "raise_error")
 	}
-	if mode != "passthrough" && len(request.Documents) > 0 {
-		queryTokens := counter.Count(request.Query)
-		if mode == "truncate" {
-			documentBudget := max(effectiveMaxTokens-queryTokens, 0)
-			documentTokens := tokenizer.OverLimitLadder(documentBudget)[0]
-			documents := make([]string, len(request.Documents))
-			for i, document := range request.Documents {
-				documents[i] = counter.TrimToLimit(document, documentTokens)
-			}
-			request.Documents = documents
-		} else {
-			for i, document := range request.Documents {
-				inputTokens := queryTokens + counter.Count(document)
-				if inputTokens > effectiveMaxTokens {
-					return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
-				}
+	// passthrough opted out of measuring the input; an empty document list has
+	// nothing to cut. Neither needs the tokenizer counter, so the "declared
+	// tokenizer asset is missing" refusal does not apply to them.
+	if mode == "passthrough" || len(request.Documents) == 0 {
+		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+	}
+	// Both remaining modes count tokens, so an unavailable declared tokenizer is a
+	// refusal rather than a silent fallback to the calibrated estimate.
+	if r.limiterErr != nil {
+		return nil, r.limiterErr
+	}
+	limiter := r.limiter
+	counter := limiter.Counter()
+	effectiveMaxTokens := limiter.Limit(maxTokens)
+
+	queryTokens := counter.Count(request.Query)
+	documentBudget := max(effectiveMaxTokens-queryTokens, 0)
+
+	if mode == "raise_error" {
+		for i, document := range request.Documents {
+			inputTokens := queryTokens + counter.Count(document)
+			if inputTokens > effectiveMaxTokens {
+				return nil, fmt.Errorf("%w: rerank input at document index %d has %d tokens, exceeding the configured maximum of %d", ErrRerankTokenLimitPolicy, i, inputTokens, effectiveMaxTokens)
 			}
 		}
+		return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
 	}
-	return r.ModelDriver.Rerank(ctx, r.ModelName, request, r.APIConfig, rerankConfig, modelUsage)
+
+	// mode == "truncate": pre-cut each document to the window, then shrink and
+	// retry if the provider still rejects an input as over its window. A provider
+	// that rejects a window computed from its own declared limit is telling us the
+	// declared limit was too optimistic (an estimate, or a smaller real window);
+	// re-cutting keeps the call alive, and the observation tightens the next one.
+	original := request.Documents
+	cal, calKey := limiter.Calibration()
+	var lastErr error
+	for _, budget := range tokenizer.OverLimitLadder(documentBudget) {
+		attempt := request
+		attempt.Documents = make([]string, len(original))
+		for i, document := range original {
+			attempt.Documents[i] = counter.TrimToLimit(document, budget)
+		}
+		resp, err := r.ModelDriver.Rerank(ctx, r.ModelName, attempt, r.APIConfig, rerankConfig, modelUsage)
+		if err == nil {
+			return resp, nil
+		}
+		if !tokenizer.IsOverLimitError(err) {
+			return nil, err
+		}
+		// The provider rejected the documents we actually sent, so the true ratio is
+		// at least maxTokens / our count of that attempt's largest pair - not the
+		// original's, which is longer and would understate the ratio.
+		cal.ObserveOverLimit(calKey, queryTokens+tokenizer.OwnTokenMax(attempt.Documents, counter), maxTokens)
+		lastErr = err
+	}
+	return nil, lastErr
 }
 
 // OCRModel wraps a ModelDriver with optical-character-recognition configuration.

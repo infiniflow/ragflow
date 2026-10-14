@@ -228,6 +228,61 @@ func isReadableIngestionLog(log *entity.PipelineOperationLog) bool {
 	return log.RunCount == nil || *log.RunCount > 0
 }
 
+// ListSyncLogs returns paginated sync logs for connectors currently linked to an accessible dataset.
+func (d *DatasetService) ListSyncLogs(ctx context.Context, datasetID, userID string, page, pageSize int) (map[string]interface{}, common.ErrorCode, error) {
+	if datasetID == "" {
+		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
+	}
+	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
+		code, permissionErr := permissionresponse.Normalize(err)
+		return nil, code, permissionErr
+	}
+
+	if page <= 0 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = 30
+	}
+
+	connectors, err := d.connectorDAO.ListByDatasetID(ctx, dao.DB, datasetID)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connectors for sync logs: %w", err)
+	}
+	checker := permission.NewDatabaseChecker(dao.DB)
+	subject := permission.Subject{UserID: userID}
+	taskIDs := make([]string, 0)
+	for _, connector := range connectors {
+		connectorRef := permission.ResourceRef{Kind: permission.ResourceKindConnector, ID: connector.ID}
+		scope, scopeErr := checker.Scope(ctx, subject, permission.ScopeQuery{
+			Kind:      permission.ResourceKindSyncTask,
+			Parent:    connectorRef,
+			Operation: permission.OperationRead,
+			Entry:     &connectorRef,
+			EntryOp:   permission.OperationUse,
+		})
+		if scopeErr != nil {
+			code, permissionErr := permissionresponse.Normalize(scopeErr)
+			return nil, code, permissionErr
+		}
+		if scope.Mode == permission.ScopeIDs {
+			taskIDs = append(taskIDs, scope.ResourceIDs...)
+		}
+	}
+	logs, total, err := d.connectorDAO.ListLogsByTaskIDs(ctx, dao.DB, taskIDs, datasetID, (page-1)*pageSize, pageSize)
+	if err != nil {
+		return nil, common.CodeServerError, fmt.Errorf("list dataset connector sync logs: %w", err)
+	}
+	if logs == nil {
+		logs = []*entity.ConnectorSyncLog{}
+	}
+
+	return map[string]interface{}{
+		"total": total,
+		"logs":  logs,
+	}, common.CodeSuccess, nil
+}
+
 func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userID string, page, pageSize int, terms []dao.OrderTerm, operationStatus []string, createDateFrom, createDateTo, logType, keywords, documentID string) (map[string]interface{}, common.ErrorCode, error) {
 	if datasetID == "" {
 		return nil, common.CodeDataError, errors.New(`lack of "Dataset ID"`)
@@ -235,6 +290,9 @@ func (d *DatasetService) ListIngestionLogs(ctx context.Context, datasetID, userI
 	if err := d.CheckAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationRead); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return nil, code, permissionErr
+	}
+	if logType != "dataset" && logType != "file" {
+		return nil, common.CodeDataError, errors.New(`Invalid "log_type", expected "dataset" or "file"`)
 	}
 
 	if page <= 0 {

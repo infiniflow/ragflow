@@ -15,6 +15,7 @@
  */
 
 import Image, { useDocumentImageUrl } from '@/components/image';
+import FileIcon from '@/components/file-icon';
 import {
   Carousel,
   CarouselContent,
@@ -22,12 +23,15 @@ import {
   CarouselNext,
   CarouselPrevious,
 } from '@/components/ui/carousel';
+import { useSetModalState } from '@/hooks/common-hooks';
 import { IReferenceChunk } from '@/interfaces/database/chat';
+import PdfDrawer from '@/pages/next-search/document-preview-modal';
+import { buildCitationDisplayMap } from '@/utils/chat';
+import { middleEllipsis } from '@/utils/common-util';
 import { isPlainObject } from 'lodash';
 import { RotateCw, ZoomIn, ZoomOut } from 'lucide-react';
 import { useMemo } from 'react';
 import { PhotoProvider, PhotoView } from 'react-photo-view';
-import { extractNumbersFromMessageContent } from './utils';
 type IProps = {
   referenceChunks?: IReferenceChunk[] | Record<string, IReferenceChunk>;
   messageContent: string;
@@ -36,6 +40,7 @@ type IProps = {
 type ImageItem = {
   id: string;
   documentId: string;
+  documentName: string;
   index: number;
 };
 
@@ -59,25 +64,57 @@ const getButtonVisibilityClass = (imageCount: number) => {
  * @param documentId - The document identifier for the image
  * @param index - The display index of the image in the list
  */
-function ImagePhotoView({ id, documentId, index }: ImageItem) {
+function ImagePhotoView({ id, documentId, documentName, index }: ImageItem) {
   const src = useDocumentImageUrl(id, documentId);
-
+  const { visible, showModal, hideModal } = useSetModalState();
+  const previewButton = (
+    <button
+      type="button"
+      title={documentName}
+      onClick={(e) => {
+        // Prevent triggering the image fullscreen preview
+        e.stopPropagation();
+        showModal();
+      }}
+      className="absolute bottom-2 left-2 flex max-w-[calc(100%-2.5rem)] items-end gap-1 rounded-md text-[11px] leading-tight "
+    >
+      <span className="[&>img]:h-4 [&>img]:w-4 [&>svg]:h-4 [&>svg]:w-4">
+        <FileIcon id={documentId} name={documentName} width={14}></FileIcon>
+      </span>
+      <span className="truncate">{middleEllipsis(documentName, 10, 6)}</span>
+    </button>
+  );
   const imageElement = (
     <Image
       id={id}
       documentId={documentId}
       className="h-40 w-full"
       label={`[${index + 1}]`}
+      previewButton={previewButton}
     />
+  );
+
+  const wrapped = (
+    <div className="relative">
+      {imageElement}
+      {visible && (
+        <PdfDrawer
+          visible={visible}
+          hideModal={hideModal}
+          documentId={documentId}
+          chunk={{ document_name: documentName }}
+        ></PdfDrawer>
+      )}
+    </div>
   );
 
   // When src is not yet available, render image without PhotoView
   // to avoid PhotoView caching an empty src that would show blank preview
   if (!src) {
-    return imageElement;
+    return wrapped;
   }
 
-  return <PhotoView src={src}>{imageElement}</PhotoView>;
+  return <PhotoView src={src}>{wrapped}</PhotoView>;
 }
 
 function ImageCarousel({ images }: { images: ImageItem[] }) {
@@ -113,7 +150,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
         }}
       >
         <CarouselContent>
-          {images.map(({ id, documentId, index }) => (
+          {images.map(({ id, documentId, documentName, index }) => (
             <CarouselItem
               key={index}
               className="
@@ -127,6 +164,7 @@ function ImageCarousel({ images }: { images: ImageItem[] }) {
               <ImagePhotoView
                 id={id}
                 documentId={documentId}
+                documentName={documentName}
                 index={index}
               ></ImagePhotoView>
             </CarouselItem>
@@ -143,39 +181,35 @@ export function ReferenceImageList({
   referenceChunks,
   messageContent,
 }: IProps) {
-  const allChunkIndexes = extractNumbersFromMessageContent(messageContent);
   const images = useMemo(() => {
-    if (Array.isArray(referenceChunks)) {
-      return referenceChunks
-        .map((chunk, idx) => ({
+    // Same positional mapping as the citation chips in next-markdown-content:
+    // each unique marker is a 0-based position by first occurrence and the
+    // chunk is read by insertion order. This works for both plain chat and
+    // agent references (whose markers are [ID:<chunkId>] and chunks are arrays).
+    const displayIndexes = [
+      ...buildCitationDisplayMap(messageContent).values(),
+    ];
+    const orderedChunks = Array.isArray(referenceChunks)
+      ? referenceChunks
+      : isPlainObject(referenceChunks)
+        ? Object.values(referenceChunks ?? {})
+        : [];
+
+    return displayIndexes
+      .map((position) => {
+        const chunk = orderedChunks[position];
+        if (!chunk?.image_id || !chunk?.document_id) {
+          return null;
+        }
+        return {
           id: chunk.image_id,
           documentId: chunk.document_id,
-          index: idx,
-        }))
-        .filter(
-          (item, idx) =>
-            allChunkIndexes.includes(idx) && item.id && item.documentId,
-        );
-    }
-
-    if (isPlainObject(referenceChunks)) {
-      return Object.entries(referenceChunks || {}).reduce<ImageItem[]>(
-        (pre, [idx, chunk]) => {
-          if (allChunkIndexes.includes(Number(idx)) && chunk.image_id) {
-            return pre.concat({
-              id: chunk.image_id,
-              documentId: chunk.document_id,
-              index: Number(idx),
-            });
-          }
-          return pre;
-        },
-        [],
-      );
-    }
-
-    return [];
-  }, [allChunkIndexes, referenceChunks]);
+          documentName: chunk.document_name,
+          index: position,
+        } as ImageItem;
+      })
+      .filter((item): item is ImageItem => item !== null);
+  }, [messageContent, referenceChunks]);
 
   const imageCount = images?.length || 0;
 

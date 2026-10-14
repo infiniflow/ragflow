@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
 func TestPDFParser_ParseWithResult_OpenDataLoaderJSONIntegration(t *testing.T) {
@@ -134,8 +136,19 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("items len = %d, want 1", len(items))
 	}
-	if got, want := items[0]["text"], "<table><tr><th >a</th><th >b</th></tr></table>"; got != want {
-		t.Fatalf("text = %q, want %q", got, want)
+	td, ok := items[0]["table"].(*entity.TableData)
+	if !ok || td == nil {
+		t.Fatalf("table field missing: %#v", items[0])
+	}
+	if items[0]["text"] != nil {
+		t.Fatalf("table item must not carry legacy HTML text: %#v", items[0])
+	}
+	rows := td.CellTexts()
+	if len(rows) != 1 || len(rows[0]) != 2 || rows[0][0] != "a" || rows[0][1] != "b" {
+		t.Fatalf("table rows = %#v, want [[a b]]", rows)
+	}
+	if td.HeaderRows != 1 {
+		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
 	}
 }
 

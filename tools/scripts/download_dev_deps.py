@@ -1,0 +1,671 @@
+#!/usr/bin/env python3
+
+# PEP 723 metadata
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "requests",
+#   "huggingface-hub",
+# ]
+# ///
+
+# Download the native static libraries the Go build links (pdfium / pdf_oxide /
+# office_oxide / onnxruntime) and unpack them into ~/ragflow-native-libs, so
+# build.sh can compile the Go server without network access.
+#
+# This is the LOCAL-DEV one-stop: it also fetches the runtime resources the Go
+# server needs to actually RUN, parse documents and count tokens (the cl100k
+# BPE table, the DeepDoc `.ort` weights for the in-process PDF/table backend,
+# and the embedding tokenizer assets). Run it ONCE and the local environment is
+# ready — you do NOT also need download_deps.py for local development.
+#
+# The image-facing counterpart ragflow_deps/download_deps.py fetches the same
+# runtime resources PLUS the stagehand server binary (used by the Browser
+# component) and skips the native `.a` files, because the build stage bakes
+# those into the server binary. Both scripts land the shared runtime resources
+# at the SAME paths, so running one after the other never re-downloads an
+# already-present asset.
+#
+# All version numbers and URLs are defined in the block below; bump a version
+# there, not at the call sites.
+#
+# Typical workflow:
+#
+#   uv run tools/scripts/download_dev_deps.py
+#
+# Behind the GFW, route GitHub release downloads through a mirror with
+# --china-mirrors (or export GH_PROXY=https://gh-proxy.com/).
+
+import argparse
+import hashlib
+import os
+import re
+import shutil
+import sys
+import tarfile
+import tempfile
+import zipfile
+
+import requests
+
+# ── Dependency versions & URLs (edit here) ────────────────────────────────
+# This script's own copy of the native static-library versions and download URLs
+# it fetches. build.sh does NOT grep these (it pins PDFIUM/PDF_OXIDE itself and
+# reads ORT from internal/common/environments.go + the Dockerfile ARG, so it
+# stays tied to the checked-out source tree and the Docker build needs no COPY
+# of this script) — keep the two in sync when bumping a version.
+
+# ONNX Runtime (statically linked into the Go in-process DeepDoc backend).
+#
+# Source of the native static archives: infiniflow/ragflow-build (our own
+# ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
+# account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
+# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`. The archive is occasionally
+# re-issued under this SAME tag/asset name with patched content (e.g. the
+# build that exports SessionGetInitializer*); the downloader detects that via
+# a `{asset}.sha256` sidecar and re-downloads/re-extracts, so a stale local
+# copy never silently lingers.
+ORT_VERSION = "1.29.0"
+
+# pdf_oxide go-ffi release. Bare module version (the "v" is added by
+# pdf_oxide_url); matches the value build.sh uses to validate the embedded
+# .a stamp.
+PDF_OXIDE_VERSION = "0.3.73"
+
+# pdfium release, as the numeric build number after "chromium%2F" (the "v" and
+# the URL-encoded slash are added by pdfium_url). Matches build.sh's
+# PDFIUM_STATIC_VERSION.
+PDFIUM_VERSION = "7809"
+
+
+def gh_proxy() -> str:
+    """GitHub release proxy prefix (gh-proxy.com behind the GFW), else empty."""
+    return os.environ.get("GH_PROXY") or ""
+
+
+def go_module_version(module: str, repo_root: str) -> str:
+    """Read a Go module's pinned version (the "vX.Y.Z" after its require line)
+    from `repo_root`/go.mod. Raises RuntimeError when go.mod or the module is
+    missing — the caller cannot link the right library without it."""
+    go_mod = os.path.join(repo_root, "go.mod")
+    if not os.path.isfile(go_mod):
+        raise RuntimeError(f"go.mod not found at {go_mod}")
+    with open(go_mod, encoding="utf-8") as file:
+        match = re.search(rf"{re.escape(module)}\s+v([^\s]+)", file.read())
+    if match is None:
+        raise RuntimeError(f"{module} version not found in {go_mod}")
+    return match.group(1)
+
+
+# ── URL builders ──────────────────────────────────────────────────────────
+# Every download URL is assembled from the constants above via one of these
+# helpers, so a version bump touches exactly one constant.
+
+
+def pdf_oxide_url() -> str:
+    """pdf_oxide go-ffi tarball."""
+    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+
+
+def pdfium_url() -> str:
+    """pdfium static library tarball."""
+    return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/pdfium-linux-x64-static.tgz"
+
+
+def office_oxide_url(repo_root: str) -> str:
+    """office_oxide native tarball. The version is derived from go.mod so it
+    always matches what the Go build actually links (no second hardcoded copy
+    to drift)."""
+    version = go_module_version("github.com/yfedoseev/office_oxide/go", repo_root)
+    return f"{gh_proxy()}https://github.com/yfedoseev/office_oxide/releases/download/v{version}/native-linux-x86_64.tar.gz"
+
+
+# ── ONNX Runtime release asset helpers ─────────────────────────────────────
+
+
+def ort_asset_name(version: str = ORT_VERSION) -> str:
+    """Release asset filename under infiniflow/ragflow-build tag onnxruntime-v{version}."""
+    return f"onnxruntime-v{version}-linux-x86_64.zip"
+
+
+def ort_url(version: str = ORT_VERSION) -> str:
+    return f"{gh_proxy()}https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{version}/{ort_asset_name(version)}"
+
+
+def ort_extracted_dir(version: str = ORT_VERSION) -> str:
+    """Top-level directory name INSIDE the release zip (what extractall creates)."""
+    return f"onnxruntime-v{version}-linux-x86_64"
+
+
+def ort_normalized_dir(version: str = ORT_VERSION) -> str:
+    """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib."""
+    return f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+
+
+def _repo_root() -> str:
+    """Walk up from this file to the repo root (the directory holding go.mod).
+
+    The script lives at tools/scripts/, two levels below the repo root, so a
+    fixed parent-count would break if it is ever moved again; searching for
+    go.mod keeps REPO_ROOT correct regardless of nesting."""
+    d = os.path.dirname(os.path.abspath(__file__))
+    while d and d != os.path.dirname(d):
+        if os.path.isfile(os.path.join(d, "go.mod")):
+            return d
+        d = os.path.dirname(d)
+    raise RuntimeError("go.mod not found: cannot locate repo root")
+
+
+REPO_ROOT = _repo_root()
+# Downloaded archives are anchored under ragflow_deps/ (ignored by .gitignore
+# via *.tgz / ragflow_deps/*.zip) regardless of the caller's working directory,
+# so a move of this script does not scatter large files into tools/scripts/.
+RAGFLOW_DEPS_DIR = os.path.join(REPO_ROOT, "ragflow_deps")
+NATIVE_LIBS_DIR = os.path.expanduser("~/ragflow-native-libs")
+
+
+def _sha256_of(path):
+    """sha256 of a file, streamed in chunks so large archives don't blow memory."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download_with_progress(url, filename):
+    """Download URL to FILENAME atomically (temp file, then move on success).
+
+    A failed or empty download leaves any previous valid file untouched, so an
+    interrupted run never destroys a working dependency tree."""
+    filename = os.fspath(filename)
+    temporary = None
+    try:
+        with requests.get(url, stream=True, timeout=(15, 60)) as response:
+            response.raise_for_status()
+            total_size = int(response.headers.get("content-length", 0))
+            with tempfile.NamedTemporaryFile(dir=os.path.dirname(os.path.abspath(filename)), delete=False) as file:
+                temporary = file.name
+                downloaded = 0
+                for data in response.iter_content(1 << 20):
+                    file.write(data)
+                    downloaded += len(data)
+                    if total_size > 0:
+                        progress = (downloaded / total_size) * 100
+                        sys.stdout.write(f"\rProgress: {progress:.1f}% ({downloaded}/{total_size} bytes)")
+                        sys.stdout.flush()
+            if downloaded == 0:
+                raise requests.RequestException(f"Empty dependency download: {url}")
+            os.replace(temporary, filename)
+    finally:
+        if temporary is not None and os.path.exists(temporary):
+            os.unlink(temporary)
+    print()
+
+
+def _valid_download(filename):
+    """True when FILENAME is a non-empty, structurally valid archive of its kind."""
+    if not os.path.isfile(filename) or os.path.getsize(filename) == 0:
+        return False
+    if filename.endswith((".tar.gz", ".tgz")):
+        if not tarfile.is_tarfile(filename):
+            return False
+        if os.path.basename(filename) == "office_oxide-linux-x86_64.tar.gz":
+            version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+            with tarfile.open(filename) as archive:
+                try:
+                    member = next((m for m in archive.getmembers() if os.path.normpath(m.name) == "lib/liboffice_oxide.a"), None)
+                    if member is None:
+                        return False
+                    library = archive.extractfile(member)
+                    if library is None:
+                        return False
+                    with library:
+                        return b"\x00" + version.encode() + b"\x00" in library.read()
+                except (KeyError, tarfile.TarError, EOFError):
+                    return False
+        return True
+    if filename.endswith(".zip"):
+        return zipfile.is_zipfile(filename)
+    return True
+
+
+def _extract_native_archive(archive_path, target, required_files, version=None):
+    """Extract ARCHIVE_PATH into TARGET, verifying REQUIRED_FILES (and, for .a
+    files, an optional null-delimited VERSION stamp) before promoting the
+    staged tree.
+
+    Path-traversal / absolute / non-regular members are rejected before
+    extraction, and an incomplete archive raises instead of replacing a
+    previously good directory."""
+
+    def complete(directory):
+        for name in required_files:
+            path = os.path.join(directory, name)
+            if not os.path.isfile(path) or os.path.getsize(path) == 0:
+                return False
+            if version is not None and name.endswith(".a"):
+                with open(path, "rb") as file:
+                    if b"\x00" + version.encode() + b"\x00" not in file.read():
+                        return False
+        return True
+
+    if complete(target):
+        print(f"  ✓ {os.path.basename(target)} already extracted to {target}")
+        return
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+    staging = tempfile.mkdtemp(dir=os.path.dirname(target))
+    try:
+        with tarfile.open(archive_path) as archive:
+            members = archive.getmembers()
+            for member in members:
+                if os.path.isabs(member.name) or ".." in member.name.split("/") or not (member.isfile() or member.isdir()):
+                    raise tarfile.TarError(f"Unsafe native archive member: {member.name}")
+            archive.extractall(staging, members=members)
+        if not complete(staging):
+            raise RuntimeError(f"{archive_path} is missing required native files or version {version}")
+        if os.path.isdir(target):
+            shutil.rmtree(target)
+        os.replace(staging, target)
+        staging = None
+    finally:
+        # No-op after a successful replace (the dir was renamed away); cleans
+        # up the partial tree when extraction or validation failed.
+        if staging is not None:
+            shutil.rmtree(staging, ignore_errors=True)
+    print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
+
+
+def prune_stale_onnxruntime(static_lib_dir, version):
+    """Remove ONNX Runtime version dirs under static_lib that do NOT match
+    `version`. Without this, a version bump leaves the stale dir next to
+    the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
+    symbols / wrong version, silently)."""
+    if not os.path.isdir(static_lib_dir):
+        return
+    expected = ort_normalized_dir(version)
+    for name in os.listdir(static_lib_dir):
+        if not name.startswith("onnxruntime-linux-x64-static_lib-"):
+            continue
+        if name == expected:
+            continue
+        stale = os.path.join(static_lib_dir, name)
+        print(f"  Removing stale ONNX Runtime dir: {stale}")
+        shutil.rmtree(stale)
+
+
+def has_static_archives(directory):
+    """True when `directory` holds at least one static archive (.a)."""
+    return any(f.endswith(".a") for _, _, files in os.walk(directory) for f in files)
+
+
+def extract_onnxruntime(static_lib_dir, archive_path, version):
+    """Ensure the ONNX Runtime static archives for `version` sit under
+    `static_lib_dir`. Returns True when that version is available afterwards
+    (extracted now or already present), False when the archive is missing.
+
+    The infiniflow/ragflow-build release zip carries a top-level dir named
+    onnxruntime-v{version}-linux-x86_64, so a present
+    `static_lib_dir` is NOT evidence that THIS version is extracted: after a
+    version bump the stale dir is pruned and the new one must be extracted.
+    """
+    if not os.path.isfile(archive_path):
+        print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
+        return False
+    prune_stale_onnxruntime(static_lib_dir, version)
+    version_dir = os.path.join(static_lib_dir, ort_normalized_dir(version))
+    if os.path.isdir(version_dir) and has_static_archives(version_dir):
+        print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
+        return True
+    os.makedirs(static_lib_dir, exist_ok=True)
+    print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
+    with zipfile.ZipFile(archive_path) as zf:
+        zf.extractall(static_lib_dir)
+    # The release zip's top-level dir is onnxruntime-v{version}-linux-x86_64, but
+    # build.sh's glob and the stale checks above all expect
+    # onnxruntime-linux-x64-static_lib-{version}-glibc2_28. Rename it so every
+    # consumer shares one name convention (driven by ORT_VERSION).
+    extracted = os.path.join(static_lib_dir, ort_extracted_dir(version))
+    normalized = os.path.join(static_lib_dir, ort_normalized_dir(version))
+    if os.path.isdir(extracted) and extracted != normalized:
+        if os.path.exists(normalized):
+            shutil.rmtree(normalized)
+        print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
+        os.rename(extracted, normalized)
+    return True
+
+
+def _fetch_ort_sidecar_sha(url):
+    """Fetch the published `<asset>.sha256` sidecar for the ORT archive.
+
+    The infiniflow/ragflow-build zip is occasionally re-issued under the SAME
+    tag/asset name with patched content, so a stale local copy would link the
+    wrong build. Returns the expected digest, or None when the sidecar cannot
+    be fetched (best-effort; the downloader then falls back to the legacy
+    existence check)."""
+    try:
+        resp = requests.get(url, timeout=30)
+        resp.raise_for_status()
+        return resp.text.split()[0]
+    except Exception as exc:  # noqa: BLE001 - best-effort; fall back to legacy
+        print(f"  WARNING: could not fetch {url} ({exc}); skipping checksum")
+        return None
+
+
+def _download_ort_archive(archive_path):
+    """Download the ORT release zip, verifying it against the published
+    .sha256 sidecar so a re-issued archive is always refreshed.
+
+    A (re-)download drops any previously extracted version dir, so the
+    same-named re-issued archive actually refreshes the .a files instead of
+    being masked by the extraction-time idempotence check."""
+    url = ort_url()
+    expected_sha = _fetch_ort_sidecar_sha(url + ".sha256")
+    if os.path.isfile(archive_path) and os.path.getsize(archive_path) > 0:
+        if expected_sha is not None:
+            actual = _sha256_of(archive_path)
+            if actual == expected_sha:
+                print(f"  ✓ {os.path.basename(archive_path)} checksum matches released {expected_sha}; skipping download")
+                return
+            print(f"  {os.path.basename(archive_path)} checksum mismatch (local {actual} != released {expected_sha}); re-downloading")
+        elif _valid_download(archive_path):
+            return
+    download_with_progress(url, archive_path)
+    if expected_sha is not None:
+        actual = _sha256_of(archive_path)
+        if actual != expected_sha:
+            os.unlink(archive_path)
+            print(f"  ERROR: {os.path.basename(archive_path)} checksum mismatch after download (got {actual}, expected {expected_sha})", file=sys.stderr)
+            sys.exit(1)
+        print(f"  ✓ {os.path.basename(archive_path)} checksum verified ({actual})")
+    if not _valid_download(archive_path):
+        os.unlink(archive_path)
+        raise RuntimeError(f"Invalid downloaded dependency: {os.path.basename(archive_path)}")
+    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", ort_normalized_dir())
+    if os.path.isdir(version_dir):
+        print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
+        shutil.rmtree(version_dir)
+
+
+# ── Runtime resources the local Go dev server also needs ───────────────────
+# The build-facing native `.a` libs above let the server LINK; these let it
+# RUN, parse documents and count tokens. Fetched here too so a developer runs
+# THIS script once and the environment is ready. Landing paths match
+# ragflow_deps/download_deps.py, so re-running that image script never
+# re-downloads an already-present asset. stagehand is deliberately NOT fetched
+# here (Browser component only) — that is download_deps.py's job for images.
+
+
+# cl100k BPE table. Hosted on Azure blob storage (NOT a GitHub release), so the
+# GitHub mirror prefix does not apply and is deliberately omitted.
+def cl100k_url() -> str:
+    return "https://openaipublic.blob.core.windows.net/encodings/cl100k_base.tiktoken"
+
+
+HF_DEEPDOC_REPO = "InfiniFlow/deepdoc"
+HF_DEEPDOC_MODEL_FILES = ["det.ort", "layout.ort", "tsr.ort", "rec.ort", "ocr.res"]
+
+
+# Embedding tokenizer assets the Go counters load. Inlined here (no separate
+# manifest file) as the single source of truth this script reads directly; the
+# image script ragflow_deps/download_deps.py carries its own copy (no shared
+# module, by design). One entry per tuple: (repo, file, kind).
+#   runtime - the Go counters load it in production; the runtime images must ship
+#             it and the loader must pin its SHA-1.
+#   oracle  - only scripts/gen_tokenizer_oracle.py needs it to regenerate the
+#             test fixtures, so it is deliberately NOT shipped to the image.
+TOKENIZER_ASSETS = [
+    ("BAAI/bge-m3", "sentencepiece.bpe.model", "runtime"),
+    ("BAAI/bge-large-en-v1.5", "vocab.txt", "runtime"),
+    ("Qwen/Qwen3-Embedding-0.6B", "tokenizer.json", "runtime"),
+    ("intfloat/e5-mistral-7b-instruct", "tokenizer.json", "runtime"),
+    ("BAAI/bge-m3", "tokenizer.json", "oracle"),
+    ("BAAI/bge-large-en-v1.5", "tokenizer.json", "oracle"),
+]
+
+
+# Single huggingface_hub import seam, so the module stays importable (and its
+# unit tests stay huggingface-free) without the dep installed.
+def _hf_download(repo_id, filename, local_dir):
+    """Lazy huggingface_hub import + download into LOCAL_DIR."""
+    from huggingface_hub import hf_hub_download
+
+    return hf_hub_download(repo_id=repo_id, filename=filename, local_dir=local_dir)
+
+
+def download_cl100k():
+    """Fetch the cl100k BPE table into ragflow_deps/ (skip if already present)."""
+    target = os.path.join(RAGFLOW_DEPS_DIR, "cl100k_base.tiktoken")
+    if os.path.isfile(target) and os.path.getsize(target) > 0:
+        print("  ✓ cl100k_base.tiktoken already present")
+        return
+    print(f"Downloading cl100k_base.tiktoken from {cl100k_url()}...")
+    download_with_progress(cl100k_url(), target)
+
+
+def load_tokenizer_assets(assets=None):
+    """Validate and return the inlined tokenizer asset list as (repo, file, kind)
+    tuples. When ASSETS is None, uses the module-level TOKENIZER_ASSETS.
+
+    Fetched per file, not by snapshot: these repos also carry multi-GB weights
+    we do not want. A malformed entry (bad kind, malformed repo, or an empty
+    list) fails dependency preparation loudly instead of handing a broken tree
+    to the image build."""
+    items = TOKENIZER_ASSETS if assets is None else assets
+    result = []
+    for repo, filename, kind in items:
+        if kind not in ("runtime", "oracle"):
+            raise RuntimeError(f"unknown tokenizer asset kind {kind!r} for {repo}/{filename}")
+        if "/" not in repo or not filename:
+            raise RuntimeError(f"malformed tokenizer asset repo/file {repo}/{filename}")
+        result.append((repo, filename, kind))
+    if not result:
+        raise RuntimeError("no tokenizer assets listed")
+    return result
+
+
+def download_go_models(use_china_mirrors=False):
+    """Download the Go DeepDoc `.ort` weights so a Go dev can run the in-process
+    backend with no further setup.
+
+    Written into the repo's canonical model directory
+    internal/rag/res/deepdoc/ (one level up from ragflow_deps/). The Go server
+    auto-discovers that directory, and build.sh --test-native defaults MODEL_DIR
+    there too. A copy also lands under ragflow_deps/huggingface.co/InfiniFlow/deepdoc/
+    to keep the dependency image's existing build-context layout."""
+    if use_china_mirrors:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    target_dir = os.path.join(REPO_ROOT, "internal", "rag", "res", "deepdoc")
+    missing = []
+    for fname in HF_DEEPDOC_MODEL_FILES:
+        dest = os.path.join(target_dir, fname)
+        if os.path.isfile(dest) and os.path.getsize(dest) > 0:
+            print(f"  ✓ {fname} already present")
+            continue
+        print(f"Downloading deepdoc model {fname}...")
+        try:
+            _hf_download(repo_id=HF_DEEPDOC_REPO, filename=fname, local_dir=target_dir)
+            if not os.path.isfile(dest) or os.path.getsize(dest) == 0:
+                raise RuntimeError(f"Empty or missing model: {dest}")
+        except Exception as e:  # noqa: BLE001 - collected and surfaced below
+            missing.append((fname, e))
+    if missing:
+        for fname, e in missing:
+            print(f"  ERROR: failed to download {fname}: {e}", file=sys.stderr)
+        print(
+            "\nThe Go in-process DeepDoc backend loads ONLY the .ort weights listed in\n"
+            "HF_DEEPDOC_MODEL_FILES. They are fetched from "
+            f"{HF_DEEPDOC_REPO} into:\n  {target_dir}\n"
+            "Without them the backend cannot serve — the server exits with a fatal\n"
+            '"no in-process DeepDoc backend serving". To recover:\n'
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or copy the missing files into that directory by hand.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    # Keep the dependency image's existing huggingface.co build-context layout.
+    image_dir = os.path.join(RAGFLOW_DEPS_DIR, "huggingface.co", HF_DEEPDOC_REPO)
+    os.makedirs(image_dir, exist_ok=True)
+    for fname in HF_DEEPDOC_MODEL_FILES:
+        shutil.copyfile(os.path.join(target_dir, fname), os.path.join(image_dir, fname))
+    print(f"  ✓ Go DeepDoc models ready under {target_dir}")
+
+
+def download_tokenizer_assets(use_china_mirrors=False):
+    """Download the embedding tokenizer assets the Go counters load, into
+    ragflow_deps/huggingface.co/<repo>/<file> (the path internal/tokenizer
+    searches and the one ragflow_deps/Dockerfile builds its image from).
+
+    A missing asset is fatal: models declaring its tokenizer refuse ingestion."""
+    if use_china_mirrors:
+        os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
+    base = os.path.join(RAGFLOW_DEPS_DIR, "huggingface.co")
+    missing = []
+    try:
+        entries = load_tokenizer_assets()
+    except Exception as e:  # noqa: BLE001 - manifest missing/malformed is fatal
+        missing.append(("<manifest>", "<manifest>", e))
+    else:
+        for repo_id, filename, _kind in entries:
+            target_dir = os.path.join(base, repo_id)
+            target_file = os.path.join(target_dir, filename)
+            if os.path.isfile(target_file) and os.path.getsize(target_file) > 0:
+                print(f"  ✓ {repo_id}/{filename} already present")
+                continue
+            os.makedirs(target_dir, exist_ok=True)
+            print(f"Downloading tokenizer asset {repo_id}/{filename}...")
+            try:
+                _hf_download(repo_id=repo_id, filename=filename, local_dir=target_dir)
+                if not os.path.isfile(target_file) or os.path.getsize(target_file) == 0:
+                    raise RuntimeError(f"Empty or missing tokenizer asset: {target_file}")
+            except Exception as e:  # noqa: BLE001 - collected and surfaced below
+                missing.append((repo_id, filename, e))
+    if missing:
+        for repo_id, filename, e in missing:
+            print(f"  ERROR: could not fetch {repo_id}/{filename}: {e}", file=sys.stderr)
+        print(
+            "\nThe embedding tokenizer counters in internal/tokenizer load these files from\n"
+            f"  {base}\n"
+            "Without one, models that declare its tokenizer cannot be ingested.\n"
+            "The runtime images refuse to build on the same condition, so this script fails\n"
+            "instead of handing a broken tree to the image build. To recover:\n"
+            "  - re-run this script (a transient HF/network error usually clears);\n"
+            "  - behind the GFW, re-run with --china-mirrors (routes via hf-mirror.com);\n"
+            "  - or point MODEL_ASSETS_DIR at a directory holding the same layout.\n",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    print("  ✓ embedding tokenizer assets ready")
+
+
+def main():
+    """Download the native static libraries the Go build links, then the runtime
+    resources (cl100k BPE table, DeepDoc .ort weights, embedding tokenizer assets)
+    the local Go dev server needs to run, parse and count tokens.
+
+    This is the local-dev one-stop: one invocation readies the environment. The
+    Browser component's server binary is intentionally NOT fetched here — that
+    is the image script's job. Run `uv run ragflow_deps/download_deps.py` for the
+    full image resources (it adds that binary and skips the native .a, which the
+    build stage bakes into the binary)."""
+    parser = argparse.ArgumentParser(description="Download the native static libraries and runtime resources the local Go dev server needs")
+    parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
+    args = parser.parse_args()
+    if args.china_mirrors:
+        os.environ["GH_PROXY"] = "https://gh-proxy.com/"
+
+    # Anchor the downloaded archives to ragflow_deps/ regardless of the
+    # caller's working directory (build.sh invokes this from the repo root).
+    os.chdir(RAGFLOW_DEPS_DIR)
+
+    # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
+    _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_asset_name()))
+    archives = [
+        (pdfium_url(), "pdfium-linux-x64-static.tgz"),
+        (pdf_oxide_url(), "pdf_oxide-go-ffi-linux-amd64.tar.gz"),
+        (office_oxide_url(REPO_ROOT), "office_oxide-linux-x86_64.tar.gz"),
+    ]
+    for url, filename in archives:
+        print(f"Downloading {filename} from {url}...")
+        if _valid_download(filename):
+            print(f"  ✓ {filename} already present")
+            continue
+        download_with_progress(url, filename)
+        if not _valid_download(filename):
+            os.unlink(filename)
+            raise RuntimeError(f"Invalid downloaded dependency: {filename}")
+
+    # Extract native static libraries to ~/ragflow-native-libs for the Go build.
+    # Ensures build.sh can find them without network access.
+    office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
+    extractions = [
+        ("pdfium-linux-x64-static.tgz", "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
+        ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide", ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], None),
+        ("office_oxide-linux-x86_64.tar.gz", "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
+    ]
+
+    for archive, subdir, required_files, version in extractions:
+        archive_path = os.path.join(RAGFLOW_DEPS_DIR, archive)
+        if not os.path.isfile(archive_path):
+            print(f"  Skipping extraction: {archive} not found")
+            continue
+        target = os.path.join(NATIVE_LIBS_DIR, subdir)
+        try:
+            _extract_native_archive(archive_path, target, required_files, version)
+        except (tarfile.TarError, EOFError, RuntimeError):
+            os.unlink(archive_path)
+            raise
+
+    if not extract_onnxruntime(
+        os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib"),
+        os.path.join(RAGFLOW_DEPS_DIR, ort_asset_name()),
+        ORT_VERSION,
+    ):
+        # The archive was not downloaded or failed to extract, so no .a landed.
+        # Fail loud instead of exiting 0: build.sh's ORT guard would otherwise
+        # reject the build later with a less actionable message, and a missing
+        # .a left here is exactly the "silent green" this split must prevent.
+        print(
+            f"  ERROR: ONNX Runtime static archives for {ORT_VERSION} were not "
+            f"extracted to {os.path.join(NATIVE_LIBS_DIR, 'onnxruntime', 'static_lib')}. "
+            f"Check the download above; build.sh will refuse to link without them.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # ONNX Runtime is statically linked into the server binary, so there is no
+    # runtime .so to surface. Log where build.sh (ONNXRUNTIME_STATIC_PREFIX) will
+    # find the archives — the .a files live under
+    # ~/ragflow-native-libs/onnxruntime/static_lib. The in-process backend
+    # resolves OrtGetApiBase via dlopen(NULL); there is no dynamic .so fallback.
+    ort_static_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib")
+    ort_a_files = [os.path.join(root, f) for root, _, files in os.walk(ort_static_dir) for f in files if f.endswith(".a")]
+    if ort_a_files:
+        print(f"  ✓ onnxruntime static archives ready: {len(ort_a_files)} .a under {ort_static_dir}")
+    else:
+        print(f"  ERROR: ONNX Runtime .a files still missing under {ort_static_dir} after extraction; build.sh will refuse to link.", file=sys.stderr)
+        sys.exit(1)
+
+    # The Go server also needs the runtime resources (cl100k BPE table, the
+    # DeepDoc .ort weights for in-process PDF/table parsing, the embedding
+    # tokenizer assets for token counting) to actually RUN and ingest — not
+    # just link. Fetch them here too so a local developer runs THIS script
+    # once and the environment is ready. The Browser component's server binary
+    # is fetched by the image script, not here.
+    print("== cl100k_base.tiktoken ==")
+    download_cl100k()
+    print("== DeepDoc models ==")
+    download_go_models(args.china_mirrors)
+    print("== tokenizer assets ==")
+    download_tokenizer_assets(args.china_mirrors)
+
+    print()
+    print(f"✓ Native build libraries ready under {NATIVE_LIBS_DIR}/")
+    print("  Run: bash build.sh (it will find them without network access).")
+    print("  Runtime resources (cl100k / DeepDoc .ort / tokenizer) are also in place,")
+    print("  so the local Go server is ready to build, run, parse and count tokens.")
+
+
+if __name__ == "__main__":
+    main()

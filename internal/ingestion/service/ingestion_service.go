@@ -162,7 +162,7 @@ func NewIngestor(name string, maxConcurrency int32, supportedTypes []string) *In
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	dispatchCtx, dispatchCancel := context.WithCancel(context.Background())
-	id := utility.GenerateUUID()
+	id := common.GenerateUUID()
 	ingestor := &Ingestor{
 		id:                       id,
 		name:                     name,
@@ -694,7 +694,7 @@ func (e *Ingestor) executeMemoryTaskWithHeartbeat(ctx context.Context, taskCtx *
 		settleAck = true
 		return
 	}
-	leaseOwner := fmt.Sprintf("%s:%s", e.id, utility.GenerateUUID())
+	leaseOwner := fmt.Sprintf("%s:%s", e.id, common.GenerateUUID())
 	disposition, err := e.runMemoryTask(ctx, taskID, leaseOwner)
 	if err != nil {
 		common.Error(fmt.Sprintf("memory task %s execution failed", taskID), err)

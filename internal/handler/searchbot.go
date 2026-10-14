@@ -149,6 +149,9 @@ func (h *SearchBotHandler) Handle(c *gin.Context) {
 
 	questions, err := service.GenerateRelatedQuestions(ctx, user.ID, req.Question, req.SearchID, h.searchSvc, h.tenantSvc, h.modelFactory)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("searchbot related questions failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
@@ -209,6 +212,9 @@ func (h *SearchBotHandler) RetrievalTest(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, err := h.chunkSvc.RetrievalTest(ctx, svcReq, user.ID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("search bot retrieval test failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 		return
@@ -262,14 +268,24 @@ func (h *SearchBotHandler) Ask(c *gin.Context) {
 	// Resolve chat model ID.
 	modelID := ""
 	options := service.AskStreamOptions{}
-	if req.SearchID != "" && h.searchSvc != nil {
+	if req.SearchID != "" {
+		if h.searchSvc == nil {
+			jsonInternalError(c, fmt.Errorf("search service not configured"))
+			return
+		}
 		ctx := c.Request.Context()
-		if detail, err := h.searchSvc.GetDetail(ctx, req.SearchID); err == nil {
-			searchConfig := searchConfigFromDetail(detail)
-			options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
-			if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
-				modelID = chatID
+		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
+		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
 			}
+			common.ErrorWithCode(c, common.CodeDataError, err.Error())
+			return
+		}
+		searchConfig := searchConfigFromDetail(detail)
+		options = service.BuildAskStreamOptions(req.SearchID, searchConfig)
+		if chatID, ok := searchConfig["chat_id"].(string); ok && chatID != "" {
+			modelID = chatID
 		}
 	}
 	if modelID == "" && h.tenantSvc != nil {
@@ -366,8 +382,11 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 			return
 		}
 		ctx := c.Request.Context()
-		detail, err := h.searchSvc.GetDetail(ctx, req.SearchID)
+		detail, err := h.searchSvc.GetDetail(ctx, user.ID, req.SearchID)
 		if err != nil {
+			if respondPermissionErrorIf(c, err, true) {
+				return
+			}
 			jsonInternalError(c, err)
 			return
 		}
@@ -387,6 +406,9 @@ func (h *SearchBotHandler) MindMap(c *gin.Context) {
 		TenantSvc:     h.tenantSvc,
 	})
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.Warn("searchbot mindmap failed", zap.String("error", err.Error()))
 		common.ResponseWithCodeData(c, common.CodeOperatingError, nil, err.Error())
 		return
@@ -411,16 +433,16 @@ func (h *SearchBotHandler) SearchBotDetail(c *gin.Context) {
 		common.ResponseWithCodeData(c, code, nil, "Authentication error: API key is invalid!")
 		return
 	}
+	if h.searchSvc == nil {
+		jsonInternalError(c, fmt.Errorf("search service not configured"))
+		return
+	}
 	detail, err := h.searchSvc.GetSearchShareDetail(ctx, user.ID, searchID)
 	if err != nil {
-		switch err.Error() {
-		case "has no permission for this operation":
-			common.ResponseWithCodeData(c, common.CodeOperatingError, nil, "Has no permission for this operation.")
-		case "can't find this Search App!":
-			common.ResponseWithCodeData(c, common.CodeDataError, nil, "Can't find this Search App!")
-		default:
-			jsonInternalError(c, err)
+		if respondPermissionErrorIf(c, err, true) {
+			return
 		}
+		jsonInternalError(c, err)
 		return
 	}
 
@@ -536,14 +558,12 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 	}
 }
 
-// ptrFloat64 returns a pointer to a float64 value.
-func ptrFloat64(v float64) *float64 { return &v }
-
-func intPtr(v int) *int           { return &v }
-func floatPtr(v float64) *float64 { return &v }
-
 // applyRetrievalDefaults fills in default values for optional fields,
 // matching Python bot_api.py retrieval_test endpoint.
+//
+// similarity_threshold, vector_similarity_weight and top_k are left nil:
+// ChunkService.RetrievalTest resolves them against the search app's saved
+// search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
 		v := 1
@@ -553,10 +573,6 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 		v := 30
 		req.Size = &v
 	}
-	if req.TopK == nil {
-		v := 1024
-		req.TopK = &v
-	}
 	if req.UseKG == nil {
 		v := false
 		req.UseKG = &v
@@ -564,13 +580,5 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Keyword == nil {
 		v := false
 		req.Keyword = &v
-	}
-	if req.SimilarityThreshold == nil {
-		v := 0.0
-		req.SimilarityThreshold = &v
-	}
-	if req.VectorSimilarityWeight == nil {
-		v := 0.3
-		req.VectorSimilarityWeight = &v
 	}
 }

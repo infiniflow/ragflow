@@ -403,6 +403,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			if v, ok := chunk["doc_id"].(string); ok {
 				docID = v
 			}
+			if kbID, _ := chunk["kb_id"].(string); docID != "" && docID == kbID {
+				continue
+			}
 			if entry, exists := docAggsMap[docName]; exists {
 				entry.count++
 				docAggsMap[docName] = entry
@@ -711,6 +714,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
+		"compile_kwd", "scope_kwd",
 		"_score",
 	}
 
@@ -1076,7 +1080,7 @@ func RetrievalByChildren(chunks []map[string]interface{}, tenantIDs []string, do
 	for key, childList := range momChunks {
 		momID := key.momID
 		parentResult, err := docEngine.Search(ctx, &types.SearchRequest{
-			IndexNames:         []string{indexNames[0]},
+			IndexNames:         indexNames,
 			KbIDs:              []string{key.kbID},
 			Limit:              1,
 			IncludeUnavailable: true,
@@ -1197,6 +1201,9 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 	// Collect all doc_ids from chunks
 	chunkDocIDs := make([]string, 0, len(result.Field))
 	for _, chunk := range result.Field {
+		if isDatasetCompilationChunk(chunk) {
+			continue
+		}
 		if docID, ok := chunk["doc_id"].(string); ok && docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
@@ -1245,8 +1252,8 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 			continue
 		}
 		docID, ok := chunk["doc_id"].(string)
-		if !ok || docID == "" {
-			// Keep chunks without doc_id
+		if !ok || docID == "" || isDatasetCompilationChunk(chunk) {
+			// Dataset artifacts use the dataset ID instead of a source document ID.
 			filteredIDs = append(filteredIDs, chunkID)
 			filteredChunks = append(filteredChunks, chunk)
 			filteredField[chunkID] = chunk
@@ -1288,14 +1295,23 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 	}, nil
 }
 
-// buildIndexNames creates index names for the given tenant IDs.
+func isDatasetCompilationChunk(chunk map[string]interface{}) bool {
+	docID, _ := chunk["doc_id"].(string)
+	kbID, _ := chunk["kb_id"].(string)
+	compileKind, _ := chunk["compile_kwd"].(string)
+	return chunk["scope_kwd"] == "dataset" && compileKind != "" && docID != "" && docID == kbID
+}
+
+// buildIndexNames creates one index name per distinct tenant ID.
 // Each tenantID may be a comma-separated list.
 func buildIndexNames(tenantIDs []string) []string {
 	var indexNames []string
+	seen := make(map[string]bool)
 	for _, tid := range tenantIDs {
 		for part := range strings.SplitSeq(tid, ",") {
 			part = strings.TrimSpace(part)
-			if part != "" {
+			if part != "" && !seen[part] {
+				seen[part] = true
 				indexNames = append(indexNames, fmt.Sprintf("ragflow_%s", part))
 			}
 		}

@@ -155,13 +155,11 @@ function SearchSetting({
     }
   }, [open]);
 
-  const { rerankModelEnabled, aiSummaryEnabled } = useRevalidatePersistedModels(
-    {
-      control: formMethods.control,
-      trigger: formMethods.trigger,
-      modelsFetched,
-    },
-  );
+  const { rerankModelEnabled, llmRequired } = useRevalidatePersistedModels({
+    control: formMethods.control,
+    trigger: formMethods.trigger,
+    modelsFetched,
+  });
 
   const selectedKbIds = useWatch({
     control: formMethods.control,
@@ -417,6 +415,17 @@ function SearchSetting({
                 ></RerankFormFields>
               </>
             )}
+            <LlmSettingFieldItems
+              prefix="search_config.llm_setting"
+              showCollapse
+              llmRequired={llmRequired}
+              showFields={[
+                'temperature',
+                'top_p',
+                'presence_penalty',
+                'frequency_penalty',
+              ]}
+            ></LlmSettingFieldItems>
             {/* AI Summary */}
             <FormField
               control={formMethods.control}
@@ -433,18 +442,6 @@ function SearchSetting({
                 </FormItem>
               )}
             />
-            {aiSummaryEnabled && (
-              <LlmSettingFieldItems
-                prefix="search_config.llm_setting"
-                llmRequired
-                showFields={[
-                  'temperature',
-                  'top_p',
-                  'presence_penalty',
-                  'frequency_penalty',
-                ]}
-              ></LlmSettingFieldItems>
-            )}
             {/* Feature Controls */}
             {/* <FormField
               control={formMethods.control}

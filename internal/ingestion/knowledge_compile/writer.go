@@ -35,7 +35,6 @@ import (
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/service/file"
 	"ragflow/internal/tokenizer"
-	"ragflow/internal/utility"
 )
 
 // Writer persists dataset-level merged products and removes them on document
@@ -227,7 +226,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 	// shard, so rows from the same execution share plan_kwd and reruns of the
 	// same plan share input_hash_kwd.
 	now := time.Now()
-	runID := utility.GenerateUUID()
+	runID := common.GenerateUUID()
 	inputHash := mergedInputHash(products)
 	// Diagnostics: before building merged rows, confirm the incoming products
 	// actually carry an embedding. mergedChunkMap only writes q_<dim>_vec when
@@ -530,6 +529,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		}
 		payload := string(payloadBytes)
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent("", kccommon.PayloadDescription(payloadMap, nil))
 		row := map[string]interface{}{
 			// Stable dataset-level id keyed on the template-scoped entity name or
 			// relation identity plus the raw compile kind.
@@ -540,6 +540,8 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(b.TemplateKind, ckwd)),
 			"scope_kwd":            "dataset",
 			"content_with_weight":  payload,
+			"content_ltks":         contentLTKS,
+			"content_sm_ltks":      contentSMLTKS,
 			"source_doc_ids":       b.SourceDocIDs,
 			"source_chunk_ids":     b.SourceChunkIDs,
 			"create_time":          now.Format("2006-01-02 15:04:05"),
@@ -562,7 +564,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			row["to_entity_kwd"] = b.ToEntity
 		} else {
 			row["type_kwd"] = "entity"
-			row["name_kwd"] = b.Name
+			row["name_kwd"] = strings.ToLower(b.Name)
 			row["entity_type_kwd"] = b.Type
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount
@@ -1792,6 +1794,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			"available_int":       1,
 			"compile_kwd":         "wiki",
 			"type_kwd":            compileKwdWikiEntity,
+			"scope_kwd":           "dataset",
 			"entity_type_kwd":     p.PageType,
 			"slug_kwd":            p.Slug,
 			"title_kwd":           p.Title,
@@ -1848,6 +1851,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 				"available_int":       1,
 				"compile_kwd":         "wiki",
 				"type_kwd":            compileKwdWikiRelation,
+				"scope_kwd":           "dataset",
 				"from_kwd":            p.Slug,
 				"to_kwd":              tgt,
 				"source_doc_ids":      srcDocs,

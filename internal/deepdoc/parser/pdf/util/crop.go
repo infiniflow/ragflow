@@ -127,7 +127,6 @@ func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]imag
 	entries = append(entries, positionEntry{position: bottomBand, isEdge: true})
 
 	plan := &sectionRasterPlan{}
-	maxInt := int(^uint(0) >> 1)
 	for _, entry := range entries {
 		pos := entry.position
 		left, right := pos.Left, pos.Right
@@ -170,15 +169,21 @@ func buildSectionRasterPlan(positions []pdf.Position, decodedImages map[int]imag
 	if len(plan.segments) == 0 {
 		return nil, false
 	}
+	return plan, measureSectionRasterPlan(plan, decodedImages)
+}
+
+func measureSectionRasterPlan(plan *sectionRasterPlan, decodedImages map[int]image.Image) bool {
+	plan.width, plan.height = 0, 0
+	maxInt := int(^uint(0) >> 1)
 	for _, segment := range plan.segments {
 		width, height := cropSize(decodedImages[segment.page], segment.x0, segment.y0, segment.x1, segment.y1)
 		plan.width = max(plan.width, width)
 		if height > maxInt-sectionRasterGap || plan.height > maxInt-(height+sectionRasterGap) {
-			return nil, false
+			return false
 		}
 		plan.height += height + sectionRasterGap
 	}
-	return plan, plan.width > 0 && plan.height > 0
+	return plan.width > 0 && plan.height > 0
 }
 
 func (p *sectionRasterPlan) addCrop(page, x0, y0, x1, y1 int, isEdge bool) {
