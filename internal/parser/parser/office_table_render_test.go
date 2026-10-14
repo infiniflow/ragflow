@@ -890,6 +890,21 @@ func TestRenderFormSheetKV(t *testing.T) {
 	if !strings.Contains(text, "DSP Millhaus") {
 		t.Fatalf("missing metadata in text:\n%s", text)
 	}
+
+	// Wide mixed-table rows inside the form prefix must be skipped, not break
+	// extraction of the following narrow form rows.
+	rowsWithWide := [][]string{
+		{"label", "1"},
+		{"a", "b", "c", "d", "e"},
+		{"other label", "2"},
+	}
+	text2 := renderFormSheetKV("wide-mixed", rowsWithWide)
+	if strings.Contains(text2, "a: b") {
+		t.Fatalf("wide mixed-table row should be skipped:\n%s", text2)
+	}
+	if !strings.Contains(text2, "other label: 2") {
+		t.Fatalf("narrow row after wide row should still be extracted:\n%s", text2)
+	}
 }
 
 // TestXLSXParser_FormSheetEmitsKVChunk verifies that a form-style sheet

@@ -933,6 +933,11 @@ func renderFormSheetKV(sheet string, rows [][]string) string {
 		limit = formSheetPrefixLen
 	}
 	for _, row := range rows[:limit] {
+		// Wide rows are part of a mixed table, not the sparse form prefix.
+		// Skip them but keep scanning later rows that may return to the form.
+		if rowNonEmpty(row) > 3 {
+			continue
+		}
 		var labels []string
 		var numbers []string
 		for _, cell := range row {
