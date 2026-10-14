@@ -60,6 +60,7 @@ type SearchDatasetsRequest struct {
 	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+	CompiledChunksScope      string                 `json:"knowledge_compilation_scope,omitempty"`
 	ForceRefresh             bool                   `json:"force_refresh"`
 }
 
@@ -94,6 +95,7 @@ type SearchDatasetRequest struct {
 	KeywordsSimilarityWeight *float64               `json:"keywords_similarity_weight,omitempty"`
 	VectorSimilarityWeight   *float64               `json:"vector_similarity_weight,omitempty"`
 	IncludeCompiledChunks    *bool                  `json:"include_knowledge_compilation,omitempty"`
+	CompiledChunksScope      string                 `json:"knowledge_compilation_scope,omitempty"`
 }
 
 // ToSearchDatasetsRequest converts a single-dataset search request into the multi-dataset form.
@@ -124,6 +126,7 @@ func (req *SearchDatasetRequest) ToSearchDatasetsRequest(datasetID string) *Sear
 		KeywordsSimilarityWeight: req.KeywordsSimilarityWeight,
 		VectorSimilarityWeight:   req.VectorSimilarityWeight,
 		IncludeCompiledChunks:    req.IncludeCompiledChunks,
+		CompiledChunksScope:      req.CompiledChunksScope,
 	}
 }
 

@@ -305,9 +305,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
-	}
-	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
-		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+		Filter:                 service.CompiledChunksFilter(req.IncludeCompiledChunks, req.CompiledChunksScope),
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)

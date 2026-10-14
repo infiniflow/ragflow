@@ -34,6 +34,7 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 		SimilarityThreshold:    &similarityThreshold,
 		VectorSimilarityWeight: &vectorSimilarityWeight,
 		IncludeCompiledChunks:  &includeKnowledgeCompilation,
+		CompiledChunksScope:    "dataset",
 	}
 
 	converted := req.ToSearchDatasetsRequest("dataset-1")
@@ -57,6 +58,9 @@ func TestSearchDatasetRequestToSearchDatasetsRequest(t *testing.T) {
 	}
 	if converted.IncludeCompiledChunks != req.IncludeCompiledChunks {
 		t.Fatalf("converted request did not preserve include_knowledge_compilation: %#v", converted)
+	}
+	if converted.CompiledChunksScope != "dataset" {
+		t.Fatalf("converted request did not preserve knowledge_compilation_scope: %#v", converted)
 	}
 }
 

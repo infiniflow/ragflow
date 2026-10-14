@@ -90,6 +90,43 @@ func TestCompilationQueryMatchesNewAndOldRows(t *testing.T) {
 	}
 }
 
+// TestCompiledScopeFilterKeepsSourceChunks pins the retrieval filter built for
+// knowledge_compilation_scope: compiled rows outside the scope are dropped,
+// compiled rows without scope_kwd are dropped, source chunks always stay.
+func TestCompiledScopeFilterKeepsSourceChunks(t *testing.T) {
+	scopeFilter := func(scope string) map[string]interface{} {
+		return map[string]interface{}{"must_not": map[string]interface{}{
+			"exists":   "compile_kwd",
+			"must_not": map[string]interface{}{"scope_kwd": scope},
+		}}
+	}
+	source := map[string]interface{}{"kb_id": "kb1"}
+	docRow := map[string]interface{}{"kb_id": "kb1", "compile_kwd": "graph", "scope_kwd": "doc"}
+	datasetRow := map[string]interface{}{"kb_id": "kb1", "compile_kwd": "graph", "scope_kwd": "dataset"}
+	unscopedRow := map[string]interface{}{"kb_id": "kb1", "compile_kwd": "graph"}
+	for _, test := range []struct {
+		name  string
+		scope string
+		row   map[string]interface{}
+		want  bool
+	}{
+		{"dataset keeps source chunk", "dataset", source, true},
+		{"dataset keeps dataset row", "dataset", datasetRow, true},
+		{"dataset drops doc row", "dataset", docRow, false},
+		{"dataset drops unscoped compiled row", "dataset", unscopedRow, false},
+		{"doc keeps source chunk", "doc", source, true},
+		{"doc keeps doc row", "doc", docRow, true},
+		{"doc drops dataset row", "doc", datasetRow, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			query := buildBoolQueryFromCondition(scopeFilter(test.scope), []string{"kb1"}, false, false)
+			if got := matchesCompilationQuery(query, test.row); got != test.want {
+				t.Fatalf("query %v matched = %v, want %v", query, got, test.want)
+			}
+		})
+	}
+}
+
 func matchesCompilationQuery(query, row map[string]interface{}) bool {
 	if clause, ok := query["bool"].(map[string]interface{}); ok {
 		for _, field := range []string{"must", "filter"} {

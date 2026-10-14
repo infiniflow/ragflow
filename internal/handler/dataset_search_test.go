@@ -52,7 +52,7 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14,"keywords_similarity_weight":0.7}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/ds-1/search", strings.NewReader(`{"question":"hello","document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[{"name":"author","comparison_operator":"=","value":"Luo"}]},"knn_top_k":7,"knn_num_candidates":14,"keywords_similarity_weight":0.7,"knowledge_compilation_scope":"doc"}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -78,6 +78,9 @@ func TestDatasetsHandlerSearchDataset(t *testing.T) {
 	}
 	if fake.req.VectorSimilarityWeight == nil || math.Abs(*fake.req.VectorSimilarityWeight-0.3) > 1e-9 {
 		t.Fatalf("vector_similarity_weight = %v, want 0.3", fake.req.VectorSimilarityWeight)
+	}
+	if fake.req.CompiledChunksScope != "doc" {
+		t.Fatalf("knowledge_compilation_scope = %q, want doc", fake.req.CompiledChunksScope)
 	}
 	if len(fake.req.ToSearchDatasetsRequest("ds-1").DatasetIDs) != 1 {
 		t.Fatal("request conversion failed")
@@ -168,7 +171,7 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	h := &DatasetsHandler{searchDatasetsService: fake}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[]},"top_k":7,"include_knowledge_compilation":false}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/datasets/search", strings.NewReader(`{"question":"  hello  ","dataset_ids":["ds-1"],"document_ids":["doc-1"],"page_size":9,"metadata_condition":{"logic":"and","conditions":[]},"top_k":7,"include_knowledge_compilation":false,"knowledge_compilation_scope":"dataset"}`))
 	req.Header.Set("Content-Type", "application/json")
 	c, _ := gin.CreateTestContext(rec)
 	c.Request = req
@@ -184,6 +187,9 @@ func TestDatasetsHandlerSearchDatasetsSuccess(t *testing.T) {
 	}
 	if fake.req.IncludeCompiledChunks == nil || *fake.req.IncludeCompiledChunks {
 		t.Fatalf("include_knowledge_compilation=%v want false", fake.req.IncludeCompiledChunks)
+	}
+	if fake.req.CompiledChunksScope != "dataset" {
+		t.Fatalf("knowledge_compilation_scope=%q want dataset", fake.req.CompiledChunksScope)
 	}
 	if fake.req.TopK == nil || *fake.req.TopK != 7 {
 		t.Fatalf("legacy top_k alias=%v want 7", fake.req.TopK)
@@ -214,6 +220,7 @@ func TestDatasetsHandlerSearchDatasetsValidationErrorsUseArgumentEnvelope(t *tes
 		{name: "knn candidates below default top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_num_candidates":10}`},
 		{name: "knn candidates below top k", body: `{"question":"hello","dataset_ids":["ds-1"],"knn_top_k":8,"knn_num_candidates":7}`},
 		{name: "invalid threshold", body: `{"question":"hello","dataset_ids":["ds-1"],"similarity_threshold":1.1}`},
+		{name: "invalid knowledge compilation scope", body: `{"question":"hello","dataset_ids":["ds-1"],"knowledge_compilation_scope":"all"}`},
 	}
 
 	for _, tt := range tests {

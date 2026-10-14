@@ -2486,6 +2486,7 @@ Retrieves chunks from specified datasets.
   - `"metadata_condition"`: `object`
   - `"use_kg"`: `boolean`
   - `"include_knowledge_compilation"`: `boolean`
+  - `"knowledge_compilation_scope"`: `string`
 
 ##### Request example
 
@@ -2549,6 +2550,11 @@ curl --request POST \
   The number of initial retrieval candidates to rank. It must be at least `"page"` multiplied by `"page_size"`. Defaults to `64`.
 - `"include_knowledge_compilation"`: `boolean`
   Whether to include knowledge-compilation chunks in the results. Defaults to `true`.
+- `"knowledge_compilation_scope"`: `string`
+  Which knowledge-compilation chunks to include when `"include_knowledge_compilation"` is `true`. Source chunks are not affected.
+  - `"dataset"`: Only dataset-level compilation chunks.
+  - `"doc"`: Only document-level compilation chunks.
+  - `"both"`: Both (default).
 - `"use_kg"`: `boolean`
   Whether to search chunks related to the generated knowledge graph for multi-hop queries. Defaults to `False`. Before enabling this, ensure you have successfully constructed a knowledge graph for the specified datasets. See [here](../guides/knowledge_compilation/built_in_templates_and_dedicated_configuration.md#graph) for details.
 - `"rerank_id"`: `string`

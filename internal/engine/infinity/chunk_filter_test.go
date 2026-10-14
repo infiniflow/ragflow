@@ -111,3 +111,19 @@ func TestListFilterConditionKeepsDocumentScope(t *testing.T) {
 		})
 	}
 }
+
+// TestCompiledScopeSearchCondition pins the Infinity rendering of the
+// knowledge_compilation_scope filter. scope_kwd defaults to "doc" in the
+// Infinity mapping, so the scope test only applies to rows with compile_kwd.
+func TestCompiledScopeSearchCondition(t *testing.T) {
+	filter := map[string]interface{}{"must_not": map[string]interface{}{
+		"exists":   "compile_kwd",
+		"must_not": map[string]interface{}{"scope_kwd": "dataset"},
+	}}
+	exists := "compile_kwd!=''"
+	scope := "NOT ((filter_fulltext('scope_kwd', 'dataset')))"
+	got := equivalentConditionToStr(filter, nil)
+	if got != "NOT ("+exists+" AND "+scope+")" && got != "NOT ("+scope+" AND "+exists+")" {
+		t.Fatalf("scope condition = %q", got)
+	}
+}

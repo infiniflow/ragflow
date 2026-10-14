@@ -1226,6 +1226,9 @@ func (h *DatasetsHandler) SearchDataset(c *gin.Context) {
 }
 
 func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.CompiledChunksScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err
@@ -1235,6 +1238,9 @@ func validateSearchDatasetsRequest(req *service.SearchDatasetsRequest) error {
 }
 
 func validateSearchDatasetRequest(req *service.SearchDatasetRequest) error {
+	if err := service.ValidateKnowledgeCompilationScope(req.CompiledChunksScope); err != nil {
+		return err
+	}
 	vectorSimilarityWeight, err := service.ResolveVectorSimilarityWeight(req.KeywordsSimilarityWeight, req.VectorSimilarityWeight)
 	if err != nil {
 		return err
