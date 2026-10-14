@@ -203,6 +203,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 	// Determine meta_data_filter
 	var chatID string
 	var chatModelForFilter *models.ChatModel
+	// Filled by the search_id block below, then used to resolve retrieval
+	// parameters.
+	var searchConfig map[string]interface{}
 	filter := req.Filter
 	tenantRerankID := req.TenantRerankID
 	rerankID := req.RerankID
@@ -220,7 +223,8 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		if err != nil {
 			return nil, fmt.Errorf("failed to get search app %s: %w", *req.SearchID, err)
 		}
-		if searchConfig, ok := searchConfigMap(searchDetail["search_config"]); ok && searchConfig != nil {
+		if cfg, ok := searchConfigMap(searchDetail["search_config"]); ok && cfg != nil {
+			searchConfig = cfg
 			if req.RerankCandidatesCount == nil || *req.RerankCandidatesCount == 0 {
 				rerankCandidatesCount = 100
 				if configuredRerankCandidatesCount, ok := common.GetInt(searchConfig["rerank_candidates_count"]); ok {
@@ -393,6 +397,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		}
 	}
 
+	// Resolved here because search_config is only known after the search_id
+	// block above.
+	similarityThreshold, vectorSimilarityWeight, topK := resolveSearchbotRetrievalParams(req, searchConfig)
+
 	retrievalReq := &nlp.RetrievalRequest{
 		TenantIDs:              tenantIDs,
 		Question:               modifiedQuestion,
@@ -401,9 +409,9 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Page:                   common.CoalesceInt(req.Page, 1),
 		PageSize:               common.CoalesceInt(req.Size, 30),
 		RerankCandidatesCount:  &rerankCandidatesCount,
-		KNNTopK:                req.TopK,
-		SimilarityThreshold:    req.SimilarityThreshold,
-		VectorSimilarityWeight: req.VectorSimilarityWeight,
+		KNNTopK:                &topK,
+		SimilarityThreshold:    &similarityThreshold,
+		VectorSimilarityWeight: &vectorSimilarityWeight,
 		RerankModel:            rerankModel,
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
@@ -439,6 +447,49 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// Endpoint defaults for the searchbot retrieval_test path, used when neither
+// the request nor the saved search_config provides a value.
+const (
+	searchbotDefaultSimilarityThreshold    = 0.0
+	searchbotDefaultVectorSimilarityWeight = 0.3
+	searchbotDefaultTopK                   = 1024
+)
+
+// resolveSearchbotRetrievalParams resolves similarity_threshold,
+// vector_similarity_weight and top_k from the request, falling back to the
+// search app's saved search_config and then to the endpoint defaults. A nil
+// pointer means the field was omitted, so an explicit zero is kept — it is how
+// a caller disables the threshold floor or selects a zero vector weight.
+// searchConfig may be nil.
+//
+// vector_similarity_weight also derives from keywords_similarity_weight
+// (vector = 1 - keywords) when the config carries only the keyword form.
+func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchConfig map[string]interface{}) (similarityThreshold, vectorSimilarityWeight float64, topK int) {
+	similarityThreshold = searchbotDefaultSimilarityThreshold
+	if req.SimilarityThreshold != nil {
+		similarityThreshold = *req.SimilarityThreshold
+	} else if configured, ok := common.ToFloat(searchConfig["similarity_threshold"]); ok {
+		similarityThreshold = configured
+	}
+
+	vectorSimilarityWeight = searchbotDefaultVectorSimilarityWeight
+	if req.VectorSimilarityWeight != nil {
+		vectorSimilarityWeight = *req.VectorSimilarityWeight
+	} else if configured, ok := common.ToFloat(searchConfig["vector_similarity_weight"]); ok {
+		vectorSimilarityWeight = configured
+	} else if keywords, ok := common.ToFloat(searchConfig["keywords_similarity_weight"]); ok {
+		vectorSimilarityWeight = 1 - keywords
+	}
+
+	topK = searchbotDefaultTopK
+	if req.TopK != nil {
+		topK = *req.TopK
+	} else if configured, ok := common.GetInt(searchConfig["top_k"]); ok {
+		topK = configured
+	}
+	return similarityThreshold, vectorSimilarityWeight, topK
 }
 
 // knowledgebaseEmbeddingKey groups datasets by their resolved base embedding

@@ -109,7 +109,7 @@ func (j *JinaModel) ChatWithMessages(ctx context.Context, modelName string, mess
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	messages = prepareJinaMessages(baseURL, messages)
-	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
+	url := joinURL(baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -150,7 +150,7 @@ func (j *JinaModel) ChatStreamlyWithSender(ctx context.Context, modelName string
 	}
 	baseURL = strings.TrimSuffix(baseURL, "/")
 	messages = prepareJinaMessages(baseURL, messages)
-	url := fmt.Sprintf("%s/%s", baseURL, j.baseModel.URLSuffix.Chat)
+	url := joinURL(baseURL, j.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
@@ -437,11 +437,10 @@ func (j *JinaModel) Embed(ctx context.Context, modelName *string, request EmbedR
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -549,11 +548,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, request Reran
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -622,11 +620,10 @@ func (j *JinaModel) Rerank(ctx context.Context, modelName *string, request Reran
 
 func (j *JinaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListModelResponse, error) {
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
