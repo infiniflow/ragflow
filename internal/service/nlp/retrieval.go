@@ -403,6 +403,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			if v, ok := chunk["doc_id"].(string); ok {
 				docID = v
 			}
+			if kbID, _ := chunk["kb_id"].(string); docID != "" && docID == kbID {
+				continue
+			}
 			if entry, exists := docAggsMap[docName]; exists {
 				entry.count++
 				docAggsMap[docName] = entry

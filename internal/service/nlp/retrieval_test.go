@@ -157,7 +157,7 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 			eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: tt.rows}}
 			result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
 				Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
-				VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(false),
+				VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(true),
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -171,6 +171,12 @@ func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
 			}
 			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
 				t.Fatalf("chunks=%v total=%d want %v", got, result.Total, tt.want)
+			}
+			if len(result.DocAggs) != len(tt.want)-1 {
+				t.Fatalf("doc_aggs=%v, want only source documents", result.DocAggs)
+			}
+			if len(result.DocAggs) > 0 && (result.DocAggs[0]["doc_id"] != "doc-1" || result.DocAggs[0]["count"] != 1) {
+				t.Fatalf("doc_aggs=%v, want doc-1 with count 1", result.DocAggs)
 			}
 		})
 	}
