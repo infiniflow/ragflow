@@ -229,12 +229,8 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
 	// Create full-text indexes for varchar fields with analyzers. CreateTable
-	// above is ConflictTypeIgnore, so this may be an existing table whose
-	// analyzer was settled under another language.
-	existingIndexes, err := listIndexNames(table)
-	if err != nil {
-		return fmt.Errorf("failed to list indexes on %s: %w", tableName, err)
-	}
+	// above is ConflictTypeIgnore, so this may be an existing table: its indexes
+	// are kept as they are, and with them the analyzer it was created with.
 	for _, fieldName := range schema.Keys {
 		fieldInfo := schema.Fields[fieldName]
 		if fieldInfo.Type != "varchar" || fieldInfo.Analyzer == nil {
@@ -253,17 +249,11 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 			}
 		}
 
-		wanted := wantedFulltextIndexes(fieldName, analyzers, language)
-		if hasForeignRagIndex(existingIndexes, fieldName, wanted) {
-			common.Info("Table keeps its existing analyzer; this language needs a fresh table",
-				zap.String("tableName", tableName), zap.String("field", fieldName), zap.String("language", language))
-			continue
-		}
-
-		for indexNameFt, analyzer := range wanted {
+		for _, analyzer := range analyzers {
+			indexNameFt := fulltextIndexName(fieldName, analyzer)
 			_, err = table.CreateIndex(
 				indexNameFt,
-				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzer}),
+				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzerForLanguage(analyzer, language)}),
 				infinity.ConflictTypeIgnore,
 				"",
 			)
