@@ -180,6 +180,10 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	if err != nil {
 		return nil, fmt.Errorf("build tools: %w", err)
 	}
+	toolAliases, err := indexedToolNameAliases(ctx, tools)
+	if err != nil {
+		return nil, fmt.Errorf("build tools: %w", err)
+	}
 	input := buildAgentInputMessages(ctx, p)
 	// Eino's MaxStep counts graph nodes, not model calls. One ReAct round
 	// consists of a model decision, a tool node, and the following model
@@ -196,7 +200,8 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	agent, err := react.NewAgent(ctx, &react.AgentConfig{
 		ToolCallingModel: chatModel,
 		ToolsConfig: compose.ToolsNodeConfig{
-			Tools: tools,
+			Tools:       tools,
+			ToolAliases: toolAliases,
 		},
 		// Python's streaming tool loop consumes the complete provider
 		// response before deciding whether the round contains a tool call.
@@ -778,6 +783,53 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
 	}
 	return tools, nil
+}
+
+// indexedToolNameAliases lets the model call an indexed tool by its bare
+// name. MCP tools are exposed as <name>_<index> so that equally named tools
+// from different servers stay distinct, but models often call the bare
+// <name> they read in the prompt. Without an alias the eino ToolsNode fails
+// the whole run with "tool ... not found". A bare name is aliased only when
+// it is not itself a tool and exactly one <name>_<digits> tool matches it;
+// ambiguous names stay unresolved.
+func indexedToolNameAliases(ctx context.Context, tools []einotool.BaseTool) (map[string]compose.ToolAliasConfig, error) {
+	names := make(map[string]struct{}, len(tools))
+	candidates := make(map[string][]string)
+	for _, tool := range tools {
+		info, err := tool.Info(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: %w", err)
+		}
+		names[info.Name] = struct{}{}
+		if base, ok := indexedToolBaseName(info.Name); ok {
+			candidates[base] = append(candidates[base], info.Name)
+		}
+	}
+	var aliases map[string]compose.ToolAliasConfig
+	for base, matches := range candidates {
+		if _, exists := names[base]; exists || len(matches) != 1 {
+			continue
+		}
+		if aliases == nil {
+			aliases = make(map[string]compose.ToolAliasConfig)
+		}
+		aliases[matches[0]] = compose.ToolAliasConfig{NameAliases: []string{base}}
+	}
+	return aliases, nil
+}
+
+// indexedToolBaseName splits "<base>_<digits>" and returns base.
+func indexedToolBaseName(name string) (string, bool) {
+	i := strings.LastIndexByte(name, '_')
+	if i <= 0 || i == len(name)-1 {
+		return "", false
+	}
+	for _, r := range name[i+1:] {
+		if r < '0' || r > '9' {
+			return "", false
+		}
+	}
+	return name[:i], true
 }
 
 type subAgentTool struct {
