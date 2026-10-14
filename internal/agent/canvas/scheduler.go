@@ -37,9 +37,7 @@ import (
 // (events channel, message/session ids) so the statePre/statePost
 // wrappers can emit node_started/node_finished without depending on
 // the service package.
-type ctxKey string
-
-const ctxKeyRunMeta ctxKey = "canvas_run_meta"
+const ctxKeyRunMeta = "canvas_run_meta"
 const terminalMergeNodeID = "__canvas_terminal_merge__"
 
 // RunMeta carries the per-run metadata that node lifecycle hooks need.

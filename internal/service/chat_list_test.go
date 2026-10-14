@@ -99,7 +99,7 @@ func TestChatServiceListChatsDefaultReturnsAllWithCorrectTotal(t *testing.T) {
 	}
 }
 
-func TestChatServiceListChatsFiltersByOwnerIDs(t *testing.T) {
+func TestChatServiceListChatsDoesNotExposeAnotherTenantsChats(t *testing.T) {
 	db := setupChatListTestDB(t)
 
 	if err := db.Create(&entity.User{
@@ -130,14 +130,8 @@ func TestChatServiceListChatsFiltersByOwnerIDs(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListChats failed: %v", err)
 	}
-	if result.Total != 1 || len(result.Chats) != 1 {
-		t.Fatalf("expected one filtered chat, got total=%d len=%d", result.Total, len(result.Chats))
-	}
-	if result.Chats[0].TenantID != "tenant-2" {
-		t.Fatalf("expected tenant-2 chat, got tenant %q", result.Chats[0].TenantID)
-	}
-	if result.Chats[0].Nickname != "team owner" {
-		t.Fatalf("expected nickname team owner, got %q", result.Chats[0].Nickname)
+	if result.Total != 0 || len(result.Chats) != 0 {
+		t.Fatalf("expected another tenant's chat to be hidden, got total=%d len=%d", result.Total, len(result.Chats))
 	}
 }
 

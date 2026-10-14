@@ -122,7 +122,8 @@ export default function Agent() {
   }, [saveGraph]);
   const { flowDetail: agentDetail } = useFetchDataOnMount();
   const { issues, getLatestIssues } = useCanvasChecklist({
-    ownerTenantId: agentDetail?.user_id,
+    ownerTenantId: agentDetail?.tenant_id,
+    canvasID: id,
   });
   const hasBlockingIssues = useCallback(() => {
     if (getLatestIssues().length > 0) {
@@ -402,7 +403,7 @@ export default function Agent() {
           </DropdownMenu>
         </div>
       </PageHeader>
-      <OwnerTenantIdContext.Provider value={agentDetail?.user_id}>
+      <OwnerTenantIdContext.Provider value={agentDetail?.tenant_id}>
         <ReactFlowProvider>
           <DropdownProvider>
             <AgentCanvas

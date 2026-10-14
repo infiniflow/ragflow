@@ -80,8 +80,8 @@ type visionPDFCropper struct {
 }
 
 // newVisionImageCropper builds the on-demand cropper. It never touches storage
-// here; the source PDF is re-acquired lazily on the first Crop call that needs
-// it.
+// here; the source PDF is re-acquired lazily by Prepare or Crop when an item
+// has PDF positions but no inline image.
 func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]any) (visionImageCropper, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -96,6 +96,26 @@ func newVisionImageCropper(ctx context.Context, db *gorm.DB, inputs map[string]a
 	}, nil
 }
 
+// pdfSourcePositions returns the cropped positions when item requires the
+// source PDF: no inlined image but usable PDF positions. Prepare and Crop
+// share this predicate so a future condition change cannot make Prepare skip a
+// fetch that Crop then performs under image admission, silently reintroducing
+// the admission block.
+func pdfSourcePositions(item map[string]any) ([]deepdoctype.Position, bool) {
+	if img, _ := item["image"].(string); img != "" {
+		return nil, false
+	}
+	matrix, ok := parser.ExtractPDFPositions(item)
+	if !ok {
+		return nil, false
+	}
+	positions := util.PositionsFromMatrix(matrix)
+	if len(positions) == 0 {
+		return nil, false
+	}
+	return positions, true
+}
+
 func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visionImage, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -105,12 +125,8 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 	if img, _ := item["image"].(string); img != "" {
 		return materializeInlineVisionImage(img)
 	}
-	matrix, ok := parser.ExtractPDFPositions(item)
+	positions, ok := pdfSourcePositions(item)
 	if !ok {
-		return nil, nil
-	}
-	positions := util.PositionsFromMatrix(matrix)
-	if len(positions) == 0 {
 		return nil, nil
 	}
 	if err := c.ensureEngine(); err != nil {
@@ -164,6 +180,19 @@ func (c *visionPDFCropper) Crop(ctx context.Context, item map[string]any) (*visi
 		return nil, nil
 	}
 	return &visionImage{Raster: raster}, nil
+}
+
+func (c *visionPDFCropper) Prepare(ctx context.Context, item map[string]any) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if _, ok := pdfSourcePositions(item); !ok {
+		return nil
+	}
+	if err := c.ensureEngine(); err != nil {
+		return err
+	}
+	return ctx.Err()
 }
 
 func pdfPagesRasterWithinVisionLimits(engine deepdoctype.PDFEngine, pageNums map[int]struct{}) bool {
@@ -263,12 +292,14 @@ func (c *visionPDFCropper) Close() error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.cancelSource()
+	var closeErr error
+	if c.engine != nil {
+		closeErr = c.engine.Close()
+		c.engine = nil
+	}
 	if c.sourceErr != nil && c.invocationCtx.Err() == nil {
 		common.Warn("vision enhancement: source PDF unavailable for VLM crop", zap.Error(c.sourceErr))
 		c.sourceErr = nil
 	}
-	if c.engine != nil {
-		return c.engine.Close()
-	}
-	return nil
+	return closeErr
 }

@@ -4496,14 +4496,10 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	docSvc := testDocumentService(t)
-	fileSvc := file.NewFileService(
-		func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
-		docSvc,
-	)
+	fileSvc := file.NewFileService(docSvc)
 
-	success, msg := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"})
-	if !success {
-		t.Fatalf("DeleteFiles failed: %s", msg)
+	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")
@@ -4517,6 +4513,7 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 // underlying file record + storage blob are explicitly preserved.
 type keepFileCleanupDocEngine struct {
 	fakeChatDocEngine
+	deleteChunksError     error
 	deleteChunksCalls     int
 	deleteChunksCondition map[string]interface{}
 	deleteChunksIndexName string
@@ -4530,7 +4527,7 @@ func (e *keepFileCleanupDocEngine) DeleteChunks(_ context.Context, condition map
 	e.deleteChunksCondition = condition
 	e.deleteChunksIndexName = indexName
 	e.deleteChunksDatasetID = datasetID
-	return 1, nil
+	return 1, e.deleteChunksError
 }
 
 func (e *keepFileCleanupDocEngine) DeleteMetadata(_ context.Context, condition map[string]interface{}, _ string) (int64, error) {
@@ -4639,5 +4636,28 @@ func TestRemoveDocumentKeepFilePreservesFileRecord(t *testing.T) {
 	// Storage blob should still exist.
 	if !store.ObjExist(t.Context(), "kb-1", loc) {
 		t.Fatal("storage blob should survive")
+	}
+}
+
+func TestRemoveDocumentKeepFileKeepsRowOnEngineFailure(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 30, 10)
+	insertTestDoc(t, "doc-1", "kb-1", 30, 10)
+	svc := testDocumentService(t)
+	svc.docEngine = &keepFileCleanupDocEngine{deleteChunksError: fmt.Errorf("partial delete")}
+	svc.metadataSvc = nil
+	if err := svc.RemoveDocumentKeepFile(t.Context(), "doc-1"); err == nil {
+		t.Fatal("expected engine error")
+	}
+	if _, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1"); err != nil {
+		t.Fatalf("document row must remain: %v", err)
+	}
+	kb, err := dao.NewKnowledgebaseDAO().GetByID(t.Context(), db, "kb-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if kb.DocNum != 1 {
+		t.Fatalf("doc_num=%d, want 1", kb.DocNum)
 	}
 }

@@ -34,7 +34,7 @@
 //	    Failed   []MemoryFailure
 //	}
 //
-//	func (s *MemoryMessageService) QueueSaveToMemoryTask(
+//	func (s *MemoryMessageService) queueSaveToMemoryTask(
 //	    ctx context.Context,
 //	    memoryIDs []string,
 //	    msg MemoryMessage,
@@ -68,7 +68,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// MemoryMessage is the wire shape for QueueSaveToMemoryTask. It
+// MemoryMessage is the message payload used to queue memory persistence. It
 // mirrors the Python `message_dict` built in
 // agent/component/message.py:_save_to_memory:
 //
@@ -123,8 +123,8 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 	}
 }
 
-// QueueSaveToMemoryTask runs the memory-persistence flow for the
-// supplied memory_ids + message. See package comment for the
+// queueSaveToMemoryTask runs the memory-persistence flow for the
+// permission-filtered memory IDs and message. See the package comment for the
 // step-by-step contract. The function is synchronous — the Python
 // async version awaits `embed_and_save` and Redis calls; this Go port does the
 // same work synchronously from the HTTP request path.
@@ -133,7 +133,7 @@ func NewMemoryMessageService(memories *MemoryService) *MemoryMessageService {
 // the per-memory outcomes. The outer error is reserved for
 // call-level failures (e.g. invalid input); per-memory failures
 // go into Failed, mirroring the Python tuple shape.
-func (s *MemoryMessageService) QueueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
+func (s *MemoryMessageService) queueSaveToMemoryTask(ctx context.Context, memoryIDs []string, msg MemoryMessage) (*QueueSaveResult, error) {
 	if len(memoryIDs) == 0 {
 		return &QueueSaveResult{}, nil
 	}

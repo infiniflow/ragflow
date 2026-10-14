@@ -14,7 +14,7 @@
 //  limitations under the License.
 //
 
-// local.go is the Go port of `agent/sandbox/providers/local.py`.
+// Local execution runs trusted code on the RAGFlow host.
 //
 // LocalProvider runs the user's code on the Go host itself via
 // os/exec. There is no sandboxing — the code runs with the Go
@@ -107,8 +107,7 @@ func (c *localOutputCapture) Write(p []byte) (int, error) {
 	return n, err
 }
 
-// LocalProvider is the Go port of
-// `agent/sandbox/providers/local.py::LocalProvider`.
+// LocalProvider executes code on the current host.
 type LocalProvider struct {
 	pythonBin        string
 	nodeBin          string
@@ -180,6 +179,9 @@ func (p *LocalProvider) ProviderType() ProviderType { return ProviderLocal }
 // version, we do not set rlimits here — the limits are applied
 // to the child per-execution via Cmd.SysProcAttr.
 func (p *LocalProvider) Initialize(ctx context.Context) error {
+	if p.maxOutputBytes <= 0 {
+		return fmt.Errorf("local: max_output_bytes must be greater than 0")
+	}
 	if err := os.MkdirAll(p.workDir, 0o700); err != nil {
 		return fmt.Errorf("local: create work_dir %q: %w", p.workDir, err)
 	}
@@ -315,14 +317,12 @@ func (p *LocalProvider) ExecuteCode(
 	cmd := exec.CommandContext(ctx, cmdName, cmdArgs...)
 	cmd.Dir = instanceDir
 	cmd.Env = childEnv
-	// pdeath_signal + process group so the subprocess dies
-	// with the parent. On Linux this is SysProcAttr.Pdeathsig;
 	// Setpgid puts the child in its own process group, which
-	// lets us kill the whole group on timeout.
-	cmd.SysProcAttr = &syscall.SysProcAttr{
-		Setpgid:   true,
-		Pdeathsig: syscall.SIGTERM,
-	}
+	// lets us kill the whole group on timeout. On Linux and
+	// FreeBSD the child also gets SIGTERM if the parent dies
+	// (Pdeathsig); other platforms have no equivalent, so there
+	// a child can outlive an unexpected parent exit.
+	cmd.SysProcAttr = localSysProcAttr()
 	// Apply rlimits via pre-start. Go's os/exec does not expose
 	// rlimit directly, so we do it after fork via the parent's
 	// process-group kill. We do NOT replicate the Python

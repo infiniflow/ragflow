@@ -84,10 +84,11 @@ func (s *S3Storage) connect(ctx context.Context) error {
 	}
 
 	// Create S3 client with custom endpoint if provided
-	clientOpts := []func(*s3.Options){}
+	var clientOpts []func(*s3.Options)
 	if s.config.EndpointURL != "" {
 		clientOpts = append(clientOpts, func(o *s3.Options) {
 			o.BaseEndpoint = aws.String(s.config.EndpointURL)
+			o.UsePathStyle = s.config.AddressingStyle == "path"
 		})
 	}
 

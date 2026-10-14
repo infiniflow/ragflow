@@ -220,7 +220,7 @@ func (s *DocumentService) DeleteDocument(ctx context.Context, id string) error {
 //	Returns the number of successfully deleted documents.
 func (s *DocumentService) DeleteDocuments(ctx context.Context, ids []string, deleteAll bool, datasetID, userID string) (int, error) {
 	// 1. Check dataset is accessible by the user
-	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDelete); err != nil {
+	if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: userID}, datasetID, permission.OperationDeleteContent); err != nil {
 		_, permissionErr := permissionresponse.Normalize(err)
 		return 0, permissionErr
 	}
@@ -313,7 +313,7 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 	if err != nil {
 		return err
 	}
-	if _, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID); typeErr != nil {
+	if _, _, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID); typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)

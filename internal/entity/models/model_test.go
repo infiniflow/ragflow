@@ -61,6 +61,103 @@ func readProviderConfig(t *testing.T, fileName string) []byte {
 	return nil
 }
 
+// A provider that supports rerank must declare its rerank url_suffix. Without it
+// the request is posted to the base URL (".../") instead of "/rerank", which the
+// server answers with a generic 500 — the failure reported in #16033.
+func TestOpenAIAPICompatibleDeclaresRerankSuffix(t *testing.T) {
+	var cfg struct {
+		URLSuffix URLSuffix `json:"url_suffix"`
+	}
+	if err := json.Unmarshal(readProviderConfig(t, "openai-api-compatible.json"), &cfg); err != nil {
+		t.Fatalf("parse openai-api-compatible.json: %v", err)
+	}
+	if strings.TrimSpace(cfg.URLSuffix.Rerank) == "" {
+		t.Fatal("openai-api-compatible.json declares no rerank url_suffix")
+	}
+}
+
+// providerConfDir locates conf/models relative to the test's CWD.
+func providerConfDir(t *testing.T) string {
+	t.Helper()
+
+	for _, candidate := range []string{
+		filepath.Join("..", "..", "..", "conf", "models"),
+		filepath.Join("conf", "models"),
+	} {
+		if info, err := os.Stat(candidate); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+
+	t.Fatal("could not locate conf/models")
+	return ""
+}
+
+// A provider keeps the API version either in its base URL (OpenAI-compatible
+// shape: base ".../v1" + suffix "chat/completions") or in url_suffix (MiniMax
+// shape: base "https://api.minimaxi.com" + suffix "v1/text/chatcompletion_v2").
+// url_hint is the example endpoint shown in the base URL field, so a hint that
+// carries the version the suffix already supplies makes every request 404 on a
+// doubled "/v1/v1/..." as soon as the user pastes it. GPUStack shipped exactly
+// that hint before joinURL deduplicated the segment.
+func TestProviderConfURLHintsFollowVersionConvention(t *testing.T) {
+	dir := providerConfDir(t)
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read %s: %v", dir, err)
+	}
+
+	checked := 0
+	for _, entry := range entries {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(dir, entry.Name()))
+		if err != nil {
+			t.Fatalf("read %s: %v", entry.Name(), err)
+		}
+
+		var cfg struct {
+			Name      string         `json:"name"`
+			URLHint   string         `json:"url_hint"`
+			URLSuffix map[string]any `json:"url_suffix"`
+		}
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			t.Fatalf("parse %s: %v", entry.Name(), err)
+		}
+		if cfg.URLHint == "" {
+			continue
+		}
+
+		trimmed := strings.TrimRight(strings.TrimSpace(cfg.URLHint), "/")
+		idx := strings.LastIndex(trimmed, "/")
+		if idx < 0 {
+			continue
+		}
+		hintVersion := apiVersionSegment(trimmed[idx+1:])
+		if hintVersion == "" {
+			continue
+		}
+
+		checked++
+		for key, value := range cfg.URLSuffix {
+			suffix, ok := value.(string)
+			if !ok {
+				continue
+			}
+			if apiVersionSegment(firstPathSegment(suffix)) == hintVersion {
+				t.Errorf("%s: url_hint %q ends with %q but url_suffix.%s also starts with it; "+
+					"the version must live in one place only",
+					entry.Name(), cfg.URLHint, hintVersion, key)
+			}
+		}
+	}
+
+	if checked == 0 {
+		t.Fatal("no provider url_hint was checked; conf/models layout changed")
+	}
+}
+
 // setupProviderTestDir creates a temporary directory populated with provider
 // config files and conf/all_models.json, then changes the working directory to
 // it. InitProviderManager hardcodes a read of conf/all_models.json relative to

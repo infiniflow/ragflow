@@ -17,9 +17,9 @@
 // BotService is the shared service layer for the public
 // chatbot/agentbot endpoints (api/v1/chatbots/...,
 // api/v1/agentbots/...) plus the agent attachment download. It is
-// intentionally a thin aggregator — it sequences DAO lookups, the
-// tenant/status authorisation guard, and delegates the heavy work
-// (LLM call, canvas run) to the existing services.
+// intentionally a thin aggregator — it sequences permission checks and DAO
+// lookups, and delegates the heavy work (LLM call, canvas run) to the existing
+// services.
 package service
 
 import (
@@ -64,22 +64,25 @@ func NewBotService(agentSvc *AgentService) *BotService {
 }
 
 // ChatbotInfo returns the public metadata of a chatbot dialog.
-//
-// Mirrors the python `bot_api.py::chatbot_info` handler. The
-// authorisation check is: dialog must exist, the requester must own
-// it (TenantID match), and Status must equal common.StatusDialogValid
-// (the python StatusEnum.VALID.value).
-func (s *BotService) ChatbotInfo(ctx context.Context, tenantID, dialogID string) (
+func (s *BotService) ChatbotInfo(ctx context.Context, userID, dialogID string) (
 	title, avatar, prologue, llmID string, hasWebSearch bool, ec common.ErrorCode, err error,
 ) {
+	if err = checkChatPermission(ctx, nil, userID, dialogID, permission.OperationRead); err != nil {
+		ec, err = normalizeChatPermissionError(err)
+		return "", "", "", "", false, ec, err
+	}
+
 	dialog, err := s.chatDAO.GetDialogByID(ctx, dao.DB, dialogID)
 	if err != nil {
-		return "", "", "", "", false, common.CodeDataError, err
+		if dao.IsNotFoundErr(err) {
+			ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+			return "", "", "", "", false, ec, err
+		}
+		return "", "", "", "", false, common.CodeServerError, err
 	}
-	if dialog == nil || dialog.TenantID != tenantID ||
-		dialog.Status == nil || *dialog.Status != common.StatusDialogValid {
-		return "", "", "", "", false, common.CodeDataError,
-			errors.New("authentication error: no access to this chatbot")
+	if dialog == nil {
+		ec, err = normalizeChatPermissionError(permission.ErrResourceNotFound)
+		return "", "", "", "", false, ec, err
 	}
 	pc := dialog.PromptConfig
 	// Defensive lookups mirroring python's

@@ -17,6 +17,20 @@ export function parseWikiLinkHref(
   const normalized = href.trim();
   if (!normalized) return null;
 
+  // Lexical's LinkNode renders scheme-less hrefs by prepending https://, so an
+  // internal `artifact/{id}/{pageType}/{slug}` link surfaces in the DOM as
+  // `https://artifact/{id}/{pageType}/{slug}` with a bogus "artifact" host.
+  // Recognise that normalized form before rejecting URLs with a scheme.
+  const lexicalArtifactMatch = normalized.match(
+    /^https?:\/\/artifact\/[^/]+\/(entity|concept|topic)\/([^\s"']+)/i,
+  );
+  if (lexicalArtifactMatch) {
+    return {
+      pageType: lexicalArtifactMatch[1] as WikiPageType,
+      slug: lexicalArtifactMatch[2],
+    };
+  }
+
   // Leave URLs with a scheme or authority to normal link navigation.
   if (/^(?:[a-z][a-z\d+.-]*:|[\\/]{2})/i.test(normalized)) return null;
 

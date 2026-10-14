@@ -202,14 +202,47 @@ func TestResolveAndValidate(t *testing.T) {
 	})
 }
 
-func TestResolveAndValidateProductionEnvCannotDisableGuard(t *testing.T) {
+// TestResolveAndValidateProductionEnvCannotDisableURLGuard checks that
+// ALLOW_ANY_HOST does not relax user-controlled URL checks, while a
+// database host dial still accepts the resolved address.
+func TestResolveAndValidateProductionEnvCannotDisableURLGuard(t *testing.T) {
 	t.Setenv(common.EnvAllowAnyHost, "true")
 
 	if _, _, err := ResolveAndValidate("http://127.0.0.1/"); err == nil {
 		t.Fatal("ResolveAndValidate(loopback) = nil, want SSRF rejection")
 	}
-	if _, err := ValidateDBHost("127.0.0.1"); err == nil {
-		t.Fatal("ValidateDBHost(loopback) = nil, want SSRF rejection")
+
+	dbHost, err := ValidateDBHost("127.0.0.1")
+	if err != nil {
+		t.Fatalf("ValidateDBHost(loopback) = %v, want nil when ALLOW_ANY_HOST is set", err)
+	}
+	if dbHost != "127.0.0.1" {
+		t.Fatalf("ValidateDBHost(loopback) = %q, want 127.0.0.1", dbHost)
+	}
+}
+
+// TestValidateDBHostAllowAnyHostPinsPrivateResolution checks that a
+// private DNS answer is accepted and the dial stays pinned to that IP.
+func TestValidateDBHostAllowAnyHostPinsPrivateResolution(t *testing.T) {
+	t.Setenv(common.EnvAllowAnyHost, "1")
+	orig := common.LookupHost
+	common.LookupHost = func(host string) ([]string, error) {
+		if host == "host.docker.internal" {
+			return []string{"192.168.65.254"}, nil
+		}
+		return nil, errors.New("no such host")
+	}
+	t.Cleanup(func() { common.LookupHost = orig })
+
+	got, err := ValidateDBHost("host.docker.internal")
+	if err != nil {
+		t.Fatalf("ValidateDBHost(host.docker.internal) = %v", err)
+	}
+	if got != "192.168.65.254" {
+		t.Fatalf("ValidateDBHost(host.docker.internal) = %q, want 192.168.65.254", got)
+	}
+	if _, err = ValidateDBHost("missing.internal"); err == nil {
+		t.Fatal("unresolvable host must still fail when ALLOW_ANY_HOST is set")
 	}
 }
 

@@ -19,7 +19,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	_ "net/http/pprof"
@@ -40,7 +42,6 @@ import (
 	"ragflow/internal/handler"
 	"ragflow/internal/ingestion/knowledge_compile"
 	ingestion "ragflow/internal/ingestion/service"
-	agentic_rag "ragflow/internal/rag/agentic-rag"
 	"ragflow/internal/router"
 	"ragflow/internal/server/local"
 	"ragflow/internal/service"
@@ -102,202 +103,171 @@ type serverArgs struct {
 	deepdocInferenceCPUCores *int
 }
 
-func parseArgs() (*serverArgs, error) {
+// parseArgsFrom parses argv (argv[0] is the program name, mirroring os.Args)
+// into a serverArgs using the standard library flag package. The accepted
+// syntax is exactly the standard one: every flag works as "-flag value",
+// "-flag=value", "--flag value" and "--flag=value"; boolean flags also accept
+// "=true"/"=false". Flags absent from argv leave their serverArgs field nil,
+// which callers use to distinguish "unspecified" from an explicit zero value.
+func parseArgsFrom(argv []string) (*serverArgs, error) {
+	fs := flag.NewFlagSet("ragflow_server", flag.ContinueOnError)
+	// Suppress the standard usage/error dump: main prints its own one-line
+	// error and printHelp owns the usage text.
+	fs.SetOutput(io.Discard)
+	fs.Usage = func() {}
+
 	args := &serverArgs{}
 
-	// Mode flags share one variable, so the last one passed wins.
-	var serverMode string
-	var configPath string
-	for i := 1; i < len(os.Args); i++ {
-		arg := os.Args[i]
-		if key, value, ok := strings.Cut(arg, "="); ok {
-			switch key {
-			case "--log-level":
-				if err := validateLogLevel(value); err != nil {
-					return nil, err
-				}
-				args.logLevel = &value
-				continue
-			case "--deepdoc-inference-concurrency":
-				n, convErr := strconv.Atoi(value)
-				if convErr != nil {
-					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
-				}
-				if n <= 0 {
-					return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
-				}
-				args.deepdocInferenceConcurrency = &n
-				continue
-			case "--ingestor-max-concurrent-workers":
-				n, convErr := strconv.Atoi(value)
-				if convErr != nil {
-					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
-				}
-				if n <= 0 {
-					return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
-				}
-				args.ingestorMaxConcurrentWorkers = &n
-				continue
-			case "--ingestor-page-concurrency":
-				n, convErr := strconv.Atoi(value)
-				if convErr != nil {
-					return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
-				}
-				if n <= 0 {
-					return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
-				}
-				args.ingestorPageConcurrency = &n
-				continue
-			case "--deepdoc-inference-cpu-cores":
-				n, convErr := strconv.Atoi(value)
-				if convErr != nil {
-					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
-				}
-				if n < 0 {
-					return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
-				}
-				args.deepdocInferenceCPUCores = &n
-				continue
-			}
-		}
+	var (
+		logLevel           string
+		configPath         string
+		adminHost          string
+		name               string
+		port               int
+		deepdocConcurrency int
+		ingestorWorkers    int
+		pageConcurrency    int
+		cpuCores           int
+		initSuperUser      bool
+		enablePProf        bool
+		helpFlag           bool
+		versionFlag        bool
+		modes              []string
+	)
 
-		switch arg {
-		case "--admin":
-			serverMode = "admin"
-			args.mode = &serverMode
-		case "--ingestor":
-			serverMode = "ingestor"
-			args.mode = &serverMode
-		case "--api":
-			serverMode = "api"
-			args.mode = &serverMode
-		case "--syncer":
-			serverMode = "syncer"
-			args.mode = &serverMode
-		case "--deepdoc":
-			serverMode = "deepdoc"
-			args.mode = &serverMode
-		case "--migrate":
-			serverMode = "migrate"
-			args.mode = &serverMode
-		case "-h", "--help":
-			args.helpFlag = true
-		case "-v", "--version":
-			args.versionFlag = true
-		case "--log-level":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--log-level requires a value")
-			}
-			i++
-			level := os.Args[i]
-			if err := validateLogLevel(level); err != nil {
-				return nil, err
-			}
-			args.logLevel = &level
-		case "-f", "--config":
-			if i+1 >= len(os.Args) {
-				return nil, fmt.Errorf("%s requires a value", arg)
-			}
-			i++
-			configPath = os.Args[i]
-			args.configPath = &configPath
-		case "--init-superuser":
-			args.initSuperUser = true
-		case "-p", "--port":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--port requires a value")
-			}
-			i++
-			port, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid port: %w", convErr)
-			}
-			args.port = &port
-			if port <= 0 || port > 65535 {
-				return nil, fmt.Errorf("invalid port: %d", port)
-			}
-		case "--admin-host":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--admin-host requires a value")
-			}
-			i++
-			parts := strings.SplitN(os.Args[i], ":", 2)
-			if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
-				return nil, errors.New("--admin-host must be in the form 'ip:port'")
-			}
-			ip, portStr := parts[0], parts[1]
-			port, convErr := strconv.Atoi(portStr)
-			if convErr != nil {
-				return nil, fmt.Errorf("failed to parse admin port: %w", convErr)
-			}
-			args.adminHost = &ip
-			args.adminPort = &port
-		case "--name":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--name requires a value")
-			}
-			i++
-			args.name = &os.Args[i]
-		case "--profile":
-			args.enablePProf = true
-		case "--deepdoc-inference-concurrency":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--deepdoc-inference-concurrency requires a value")
-			}
-			i++
-			n, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency: %w", convErr)
-			}
-			if n <= 0 {
-				return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", n)
-			}
-			args.deepdocInferenceConcurrency = &n
-		case "--ingestor-max-concurrent-workers":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--ingestor-max-concurrent-workers requires a value")
-			}
-			i++
-			n, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers: %w", convErr)
-			}
-			if n <= 0 {
-				return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", n)
-			}
-			args.ingestorMaxConcurrentWorkers = &n
-		case "--ingestor-page-concurrency":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--ingestor-page-concurrency requires a value")
-			}
-			i++
-			n, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid --ingestor-page-concurrency: %w", convErr)
-			}
-			if n <= 0 {
-				return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", n)
-			}
-			args.ingestorPageConcurrency = &n
-		case "--deepdoc-inference-cpu-cores":
-			if i+1 >= len(os.Args) {
-				return nil, errors.New("--deepdoc-inference-cpu-cores requires a value")
-			}
-			i++
-			n, convErr := strconv.Atoi(os.Args[i])
-			if convErr != nil {
-				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores: %w", convErr)
-			}
-			if n < 0 {
-				return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", n)
-			}
-			args.deepdocInferenceCPUCores = &n
-		default:
-			return nil, fmt.Errorf("unknown parameter: %s", arg)
+	fs.StringVar(&logLevel, "log-level", "", "")
+	fs.StringVar(&configPath, "config", "", "")
+	fs.StringVar(&configPath, "f", "", "")
+	fs.StringVar(&adminHost, "admin-host", "", "")
+	fs.StringVar(&name, "name", "", "")
+	fs.IntVar(&port, "port", 0, "")
+	fs.IntVar(&port, "p", 0, "")
+	fs.IntVar(&deepdocConcurrency, "deepdoc-inference-concurrency", 0, "")
+	fs.IntVar(&ingestorWorkers, "ingestor-max-concurrent-workers", 0, "")
+	fs.IntVar(&pageConcurrency, "ingestor-page-concurrency", 0, "")
+	fs.IntVar(&cpuCores, "deepdoc-inference-cpu-cores", 0, "")
+	fs.BoolVar(&initSuperUser, "init-superuser", false, "")
+	fs.BoolVar(&enablePProf, "profile", false, "")
+	fs.BoolVar(&helpFlag, "help", false, "")
+	fs.BoolVar(&helpFlag, "h", false, "")
+	fs.BoolVar(&versionFlag, "version", false, "")
+	fs.BoolVar(&versionFlag, "v", false, "")
+	for _, mode := range []string{"admin", "api", "ingestor", "syncer", "deepdoc", "migrate"} {
+		fs.Var(modeFlag{name: mode, seen: &modes}, mode, "")
+	}
+
+	if len(argv) > 0 {
+		if err := fs.Parse(argv[1:]); err != nil {
+			return nil, err
 		}
+	}
+	// The flag package silently stops at the first positional argument, which
+	// would hide a mistyped mode (e.g. "ragflow_server apii" starting with no
+	// mode). This binary has no positional arguments, so reject them.
+	if fs.NArg() > 0 {
+		return nil, fmt.Errorf("unexpected argument: %s", fs.Arg(0))
+	}
+
+	// Visit visits exactly the flags present on the command line, which
+	// preserves the "unspecified" (nil) vs explicit-zero distinction.
+	seen := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) {
+		seen[f.Name] = true
+		switch f.Name {
+		case "log-level":
+			args.logLevel = &logLevel
+		case "config", "f":
+			args.configPath = &configPath
+		case "name":
+			args.name = &name
+		case "port", "p":
+			args.port = &port
+		case "deepdoc-inference-concurrency":
+			args.deepdocInferenceConcurrency = &deepdocConcurrency
+		case "ingestor-max-concurrent-workers":
+			args.ingestorMaxConcurrentWorkers = &ingestorWorkers
+		case "ingestor-page-concurrency":
+			args.ingestorPageConcurrency = &pageConcurrency
+		case "deepdoc-inference-cpu-cores":
+			args.deepdocInferenceCPUCores = &cpuCores
+		case "init-superuser":
+			args.initSuperUser = initSuperUser
+		case "profile":
+			args.enablePProf = enablePProf
+		case "help", "h":
+			args.helpFlag = helpFlag
+		case "version", "v":
+			args.versionFlag = versionFlag
+		}
+	})
+
+	if seen["admin-host"] {
+		parts := strings.SplitN(adminHost, ":", 2)
+		if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+			return nil, errors.New("--admin-host must be in the form 'ip:port'")
+		}
+		adminPort, convErr := strconv.Atoi(parts[1])
+		if convErr != nil {
+			return nil, fmt.Errorf("failed to parse admin port: %w", convErr)
+		}
+		args.adminHost = &parts[0]
+		args.adminPort = &adminPort
+	}
+
+	// Mode flags share one slot; the last one on the command line wins.
+	if len(modes) > 0 {
+		mode := modes[len(modes)-1]
+		args.mode = &mode
+	}
+
+	if args.logLevel != nil {
+		if err := validateLogLevel(*args.logLevel); err != nil {
+			return nil, err
+		}
+	}
+	if args.port != nil && (*args.port <= 0 || *args.port > 65535) {
+		return nil, fmt.Errorf("invalid port: %d", *args.port)
+	}
+	if args.deepdocInferenceConcurrency != nil && *args.deepdocInferenceConcurrency <= 0 {
+		return nil, fmt.Errorf("invalid --deepdoc-inference-concurrency %d: must be positive", *args.deepdocInferenceConcurrency)
+	}
+	if args.ingestorMaxConcurrentWorkers != nil && *args.ingestorMaxConcurrentWorkers <= 0 {
+		return nil, fmt.Errorf("invalid --ingestor-max-concurrent-workers %d: must be positive", *args.ingestorMaxConcurrentWorkers)
+	}
+	if args.ingestorPageConcurrency != nil && *args.ingestorPageConcurrency <= 0 {
+		return nil, fmt.Errorf("invalid --ingestor-page-concurrency %d: must be positive", *args.ingestorPageConcurrency)
+	}
+	if args.deepdocInferenceCPUCores != nil && *args.deepdocInferenceCPUCores < 0 {
+		return nil, fmt.Errorf("invalid --deepdoc-inference-cpu-cores %d: must be >= 0 (0 means all cores)", *args.deepdocInferenceCPUCores)
 	}
 
 	return args, nil
+}
+
+func parseArgs() (*serverArgs, error) {
+	return parseArgsFrom(os.Args)
+}
+
+// modeFlag is a boolean flag that records which mode flag was set and in what
+// order, so the last mode on the command line wins (matching the previous
+// hand-rolled parser). "=false" selects nothing.
+type modeFlag struct {
+	name string
+	seen *[]string
+}
+
+func (m modeFlag) String() string   { return "" }
+func (m modeFlag) IsBoolFlag() bool { return true }
+
+func (m modeFlag) Set(value string) error {
+	on, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	if on {
+		*m.seen = append(*m.seen, m.name)
+	}
+	return nil
 }
 
 func validateLogLevel(level string) error {
@@ -458,7 +428,7 @@ func printHelp(args *serverArgs) {
 		fmt.Fprintf(os.Stderr, "RAGFlow DeepDoc Inference Service - DeepDoc model inference service\n\n")
 		fmt.Fprintf(os.Stderr, "Options:\n")
 		fmt.Fprintf(os.Stderr, "  -f --config string\tPath to config file\n")
-		fmt.Fprintf(os.Stderr, "  --name string\t\t\tSync service server name (default: \"default_syncer\")\n")
+		fmt.Fprintf(os.Stderr, "  --name string\t\t\tDeepDoc server name (default: \"deepdoc_server\")\n")
 		fmt.Fprintf(os.Stderr, "  --admin-host string\tAdmin server host:port (overrides config file)\n")
 		fmt.Fprintf(os.Stderr, "  -v, --version  \t\tPrint version information and exit\n")
 		fmt.Fprintf(os.Stderr, "  --profile      \t\tEnable pprof server\n")
@@ -537,18 +507,12 @@ func main() {
 			port = *arguments.port
 			apiServerConfig.HTTPPort = port
 		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("api_server_%d", port)
-		}
 	case "admin":
 		adminServerConfig := globalConfig.GetAdminServerConfig()
 		port := adminServerConfig.HTTPPort
 		if arguments.port != nil {
 			port = *arguments.port
 			adminServerConfig.HTTPPort = port
-		}
-		if arguments.name == nil {
-			serverName = fmt.Sprintf("admin_server_%d", port)
 		}
 	case "ingestor":
 		if serverName == "" {
@@ -1117,7 +1081,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	connectorService := service.NewConnectorService()
 	searchService := service.NewSearchService()
 	searchService.SetTenantService(tenantService)
-	fileService := file.NewFileService(service.CheckFileTeamPermission, documentService)
+	fileService := file.NewFileService(documentService)
 	memoryService := service.NewMemoryService()
 	mcpService := service.NewMCPService()
 	modelProviderService := service.NewModelProviderService()
@@ -1162,7 +1126,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		retrievalEnhancer,
 	)
 	agenttool.SetRetrievalService(retrievalAdapter)
-	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService))
+	agenttool.SetMemoryRetrievalService(retrievalbridge.NewMemoryAdapter(memoryService, retrievalEnhancer))
 	common.Info("agent: retrieval service adapter installed")
 
 	// The smart-reasoning agent's corpus tools (internal/agentic_rag): regex
@@ -1175,15 +1139,18 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	runtime.SetBm25Service(bm25Adapter)
 	common.Info("agent: smart-reasoning corpus services installed (grep + bm25)")
 
-	// Wire the agentic-RAG runtime as the Go chat pipeline's evidence engine
-	// (internal/service/chat_pipeline.retrieveViaHarness): it runs each request on a
-	// model resolved from the caller's ModelID and searches through the adapter
-	// above. Activating the agentic loop here enables the full planner/SCA path for
-	// reasoning chats.
+	// The compiled-knowledge graph walk (graph_explore) resolves its service per
+	// call the same way. Without this registration GetKgService() returns the
+	// failing stub, so the tool could only ever report an infrastructure error.
+	// The seed encoder is left unset: the walk then seeds by keyword match on the
+	// entity rows, the documented fallback on a deployment without an embedder.
+	smartagentic.SetKgService(smartagentic.NewKgAdapter(docEngine))
+	common.Info("agent: smart-reasoning compiled-knowledge graph service installed")
+	// The smart-reasoning agent's corpus tools resolve the shared retrieval
+	// service per call, so the production adapter must be registered before the
+	// server starts serving.
 	runtime.SetRetrievalService(retrievalbridge.NewRuntimeAdapter(retrievalAdapter))
-	agentic_rag.SetAgenticLoop(agentic_rag.NewAgenticLoop())
-	service.SetHarnessRetriever(retrievalbridge.NewHarnessRetriever(modelFactory, metadataService, docEngine))
-	common.Info("agent: runtime chat retriever wired (runtime retrieval + agentic loop)")
+	common.Info("agent: runtime retrieval service wired")
 
 	// Initialize handler layer
 	authHandler := handler.NewAuthHandler()

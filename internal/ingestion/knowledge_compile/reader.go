@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -356,6 +357,16 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	merged := isAvailable(c["available_int"])
 
 	meta := map[string]any{}
+	var payload map[string]any
+	if expect == kccommon.VariantStructure || expect == kccommon.VariantMindmap {
+		if err := json.Unmarshal([]byte(content), &payload); err != nil {
+			if strings.HasPrefix(strings.TrimSpace(content), "{") {
+				common.Warn("knowledge_compile: failed to decode structure payload",
+					zap.String("row_id", id), zap.String("compile_kwd", variant), zap.Error(err))
+			}
+			payload = nil
+		}
+	}
 	if raw := asString(c["extra"]); raw != "" {
 		var extra map[string]any
 		if err := json.Unmarshal([]byte(raw), &extra); err != nil {
@@ -372,7 +383,14 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		}
 	}
 	if v, ok := c["name_kwd"].(string); ok && v != "" {
-		meta["name"] = v
+		name := v
+		for _, key := range []string{"name", "text", "term", "title"} {
+			if extracted, ok := payload[key].(string); ok && extracted != "" && normalizedStructureEntityName(extracted) == normalizedStructureEntityName(v) {
+				name = strings.TrimSpace(extracted)
+				break
+			}
+		}
+		meta["name"] = name
 	}
 	if v, ok := c["entity_type_kwd"].(string); ok && v != "" {
 		if expect == kccommon.VariantMindmap && v == "mindmap" {
@@ -387,6 +405,11 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 	if v, ok := c["to_entity_kwd"].(string); ok && v != "" {
 		meta["to"] = v
 		meta["kind"] = "relation"
+	}
+	if metaString(meta, "kind") == "relation" {
+		if v, ok := payload["type"].(string); ok && v != "" {
+			meta["relation_type"] = v
+		}
 	}
 	if v, ok := metaInt(c, "mention_count_int"); ok {
 		meta["mention_count"] = v

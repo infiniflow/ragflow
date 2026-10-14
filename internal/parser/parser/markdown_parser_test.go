@@ -281,7 +281,7 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if !tableRowsContain(td, "Check item") {
-				t.Errorf("table item rows missing header label: %+v", td.Rows)
+				t.Errorf("table item rows missing header label: %+v", td.CellTexts())
 			}
 		case "text":
 			if strings.Contains(text, "<table") {
@@ -965,7 +965,7 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 // the substring want, so table-contract tests can assert cell content without
 // depending on the legacy HTML markup shape.
 func tableRowsContain(td *entity.TableData, want string) bool {
-	for _, row := range td.Rows {
+	for _, row := range td.CellTexts() {
 		for _, cell := range row {
 			if strings.Contains(cell, want) {
 				return true
