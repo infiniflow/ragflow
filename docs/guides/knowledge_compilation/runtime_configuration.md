@@ -75,6 +75,34 @@ When all retries are exhausted, the backend records the detailed failure in
 its service log and the frontend task log receives only the stage, context, and
 error type. Provider response bodies are not forwarded to the frontend.
 
+## Wiki Page Writer Recovery
+
+Wiki REFINE can retry a page's LLM writing request after the provider and
+adaptive pool have exhausted their retries. This recovery is limited to the
+LLM call, before embedding and persistence; successful pages, database writes,
+page versions, and edit-history records are not replayed.
+
+| Environment variable | Default | Description |
+| --- | ---: | --- |
+| `WIKI_REFINE_LLM_RETRIES` | `2` | Additional page-writer attempts after a transient failure. Set to `0` to disable recovery. |
+| `WIKI_REFINE_LLM_RETRY_BASE_DELAY` | `30` seconds | Initial recovery delay, doubled for each subsequent attempt, with up to 25% positive jitter. |
+| `WIKI_REFINE_LLM_RETRY_MAX_DELAY` | `120` seconds | Maximum recovery delay, including jitter. |
+
+Explicit rate limits, timeouts, connection failures, and retryable server
+errors can recover. Authentication, invalid requests, content filtering,
+quota/billing failures (including permanent 429 responses), and unknown errors
+are not retried. When an exception retains a `Retry-After` header, recovery
+waits at least that long; a delay exceeding the configured maximum fails
+without retrying early. Providers that return error strings lose HTTP headers,
+so those calls use the configured backoff instead.
+
+The attempts stay in the running task and use its existing adaptive LLM pool.
+Cancellation interrupts the recovery wait. Exhausted failures keep the existing
+failure marker and `Wiki incomplete ... retry required` behavior for a later
+manual Update. This does not add durable task requeueing or recovery after a
+worker restart. Provider and pool retries still apply inside each attempt, so
+increase these settings cautiously to avoid amplifying requests and cost.
+
 ## Example
 
 The following configuration lowers concurrency for providers with a smaller
