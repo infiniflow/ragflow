@@ -1147,6 +1147,15 @@ func (e *Engine) DeleteChunks(ctx context.Context, condition map[string]interfac
 		deleted = int64(d)
 	}
 
+	// delete_by_query can answer 200 while only part of the work was done.
+	// Surface that so callers do not treat leftover chunks as deleted.
+	if timedOut, _ := result["timed_out"].(bool); timedOut {
+		return deleted, fmt.Errorf("elasticsearch delete by query timed out after deleting %d chunks from %s", deleted, fullIndexName)
+	}
+	if failures, ok := result["failures"].([]interface{}); ok && len(failures) > 0 {
+		return deleted, fmt.Errorf("elasticsearch delete by query reported %d failures after deleting %d chunks from %s", len(failures), deleted, fullIndexName)
+	}
+
 	common.Info("Successfully deleted chunks", zap.String("index_name", fullIndexName), zap.Int64("deleted_count", deleted))
 	return deleted, nil
 }
