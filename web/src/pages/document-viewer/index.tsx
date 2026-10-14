@@ -17,6 +17,14 @@ import { useTranslation } from 'react-i18next';
 import { useParams, useSearchParams } from 'react-router';
 import CSVFileViewer from '@/components/document-preview/csv-preview';
 
+// Extract the filename from a Content-Disposition header value, or return
+// undefined when the header is missing/malformed.
+const parseContentDispositionFilename = (header?: string): string | undefined => {
+  if (!header) return undefined;
+  const match = /filename[^;=\n]*=(["']?)([^"';\n]*)\1/.exec(header);
+  return match?.[2]?.trim();
+};
+
 const DocumentViewer = () => {
   const { t } = useTranslation();
   const { id: documentId } = useParams();
@@ -29,11 +37,6 @@ const DocumentViewer = () => {
       ? `${restAPIv1}/files/${documentId}`
       : `${restAPIv1}/documents/${documentId}/preview`;
 
-  if (ext === 'html' && documentId) {
-    previewHtmlFile(documentId, resource);
-    return;
-  }
-
   const handleDownload = useCallback(async () => {
     if (!documentId) return;
     try {
@@ -41,11 +44,16 @@ const DocumentViewer = () => {
         method: 'GET',
         responseType: 'blob',
       });
-      downloadFileFromBlob(response.data, documentId);
+      const filename =
+        parseContentDispositionFilename(
+          response.headers['content-disposition'],
+        ) ||
+        (ext ? `${documentId}.${ext}` : documentId);
+      downloadFileFromBlob(response.data, filename);
     } catch {
       message.error(t('message.failed'));
     }
-  }, [api, documentId, t]);
+  }, [api, documentId, ext, t]);
 
   const previewNode = useMemo(() => {
     if (Images.includes(ext!)) {
@@ -84,6 +92,11 @@ const DocumentViewer = () => {
         return null;
     }
   }, [api, ext]);
+
+  if (ext === 'html' && documentId) {
+    previewHtmlFile(documentId, resource);
+    return null;
+  }
 
   if (!previewNode) {
     return (
