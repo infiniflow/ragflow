@@ -432,7 +432,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// wire must be re-parsed rather than re-chunked.
 		var rows [][]string
 		if td != nil {
-			rows = td.Rows
+			rows = td.CellTexts()
 		}
 		if len(rows) > 0 {
 			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
@@ -468,7 +468,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if err != nil || td == nil {
 		return nil
 	}
-	return qaPairsFromRows(td.Rows, strictPairs, nil, false)
+	return qaPairsFromRows(td.CellTexts(), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

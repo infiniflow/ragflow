@@ -29,6 +29,7 @@ import (
 	"strings"
 
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -76,7 +77,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window fractionWindow) parser.ParseResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window progress.Window) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -139,16 +140,16 @@ func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schem
 // the component exits. Only the local DeepDOC backend fires it; remote
 // engines (MinerU, PaddleOCR, Docling, …) never call the callback and
 // the fraction stays at zero.
-func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window fractionWindow) {
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window progress.Window) {
 	pdfParser, ok := p.(*parser.PDFParser)
-	if !ok || window.span <= 0 {
+	if !ok || window.Span <= 0 {
 		return
 	}
 	pdfParser.OnPageDone = func(done, total int) {
 		if total <= 0 {
 			return
 		}
-		window.report(ctx, float64(done)/float64(total))
+		window.Report(ctx, float64(done)/float64(total))
 	}
 }
 

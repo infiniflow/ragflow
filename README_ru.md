@@ -216,13 +216,14 @@ Docker подходит для быстрой оценки, интеграцио
    cd ragflow
    ```
 
-2. Подготовьте зависимости:
+2. Выполните скрипты загрузки зависимостей, чтобы подготовить нативные статические библиотеки, которые линкует сборка Go (`download_dev_deps.py`), и ресурсы моделей / токенизаторов, которые бэкенд загружает во время выполнения (`download_deps.py`):
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py` загружает и распаковывает pdfium, pdf_oxide, office_oxide и onnxruntime в `~/ragflow-native-libs`; `download_deps.py` загружает словарь cl100k, модели DeepDoc и ресурсы токенизаторов эмбеддингов в `ragflow_deps/`. Оба скрипта — Python; `uv run` автоматически установит объявленные зависимости (`requests`, а для загрузки моделей и токенизаторов ещё и `huggingface-hub`). Пропустите этот шаг, если те же ресурсы уже подготовлены иным способом. При запуске из корня репозитория сервисы Go автоматически находят `internal/rag/res/deepdoc`; при запуске из другого каталога задайте `DEEPDOC_MODEL_DIR` с его абсолютным путём.
 
 3. Соберите сервисы:
 
@@ -277,7 +278,7 @@ Docker подходит для быстрой оценки, интеграцио
 
 Подробнее см. [Запуск из исходников](./docs/develop/launch_ragflow_from_source.md).
 
-> **Эксплуатационные примечания:** для постоянной настройки Elasticsearch добавьте `vm.max_map_count=262144` в `/etc/sysctl.conf`. При стандартном MySQL точка входа Docker выполняет миграцию перед запуском Admin, Syncer, Ingestor и API. В open-source 1.0 DeepDoc использует CPU для анализа макета, OCR и таблиц. После изменения Docker перезапустите сервисы и следуйте [руководству Docker](./docker/README.md) для сохранения или удаления данных. `download_deps.py` подготавливает нативные библиотеки и модели и требует `requests` и `huggingface-hub`. `--migrate` выполняет миграцию и завершается; `--admin` запускает службу администрирования, `--ingestor` — службу загрузки данных, `--syncer` — службу синхронизации внешних источников данных, а `--api` — службу API для Web UI и SDK. HTTP 200 означает готовность API.
+> **Эксплуатационные примечания:** для постоянной настройки Elasticsearch добавьте `vm.max_map_count=262144` в `/etc/sysctl.conf`. При стандартном MySQL точка входа Docker выполняет миграцию перед запуском Admin, Syncer, Ingestor и API. В open-source 1.0 DeepDoc использует CPU для анализа макета, OCR и таблиц. После изменения Docker перезапустите сервисы и следуйте [руководству Docker](./docker/README.md) для сохранения или удаления данных. `download_dev_deps.py` подготавливает нативные библиотеки, а `download_deps.py` — модели и ресурсы токенизаторов; оба запускаются через `uv run`. `--migrate` выполняет миграцию и завершается; `--admin` запускает службу администрирования, `--ingestor` — службу загрузки данных, `--syncer` — службу синхронизации внешних источников данных, а `--api` — службу API для Web UI и SDK. HTTP 200 означает готовность API.
 
 ## 📚 Документация
 

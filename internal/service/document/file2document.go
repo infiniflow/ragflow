@@ -20,7 +20,6 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
-	"ragflow/internal/service"
 	"strings"
 
 	"go.uber.org/zap"
@@ -30,6 +29,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/permission"
 	permissionresponse "ragflow/internal/permission/response"
+	"ragflow/internal/service"
 	"ragflow/internal/utility"
 )
 
@@ -107,6 +107,17 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	}
 
 	// ── 3. Expand folders to leaf files, then deduplicate ─────────────────────
+	checker := permission.NewDatabaseChecker(dao.DB)
+	checkFileRead := func(file *entity.File) error {
+		kind := permission.ResourceKindFile
+		if file.Type == "folder" {
+			kind = permission.ResourceKindFolder
+		}
+		return checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: kind,
+			ID:   file.ID,
+		}, permission.OperationRead)
+	}
 	// Mixed folder + direct file inputs (or overlapping folders) can yield the
 	// same leaf file more than once; dedupe so each file is converted exactly
 	// once.
@@ -114,6 +125,10 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 	for _, id := range req.FileIDs {
 		file := filesSet[id]
 		if file.Type == "folder" {
+			if err := checkFileRead(file); err != nil {
+				_, permissionErr := permissionresponse.Normalize(err)
+				return permissionErr
+			}
 			inner, err := s.getAllInnermostFileIDs(ctx, id)
 			if err != nil {
 				common.Warn("LinkToDatasets: folder expansion failed", zap.String("fileID", id), zap.Error(err))
@@ -132,8 +147,8 @@ func (s *File2DocumentService) LinkToDatasets(ctx context.Context, userID string
 		if err != nil || file == nil {
 			return ErrLinkFileNotFound
 		}
-		if !service.CheckFileTeamPermission(ctx, s.fileDAO, file, userID) {
-			_, permissionErr := permissionresponse.Normalize(permission.ErrPermissionDenied)
+		if err := checkFileRead(file); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
 			return permissionErr
 		}
 	}

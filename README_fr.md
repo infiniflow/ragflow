@@ -209,13 +209,14 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
    cd ragflow
    ```
 
-2. Exécutez le [script de téléchargement des dépendances](./ragflow_deps/download_deps.py) pour préparer les bibliothèques natives et les fichiers de modèles :
+2. Exécutez les scripts de téléchargement des dépendances pour préparer les bibliothèques natives statiques liées par la compilation Go (`download_dev_deps.py`) et les ressources de modèles / tokeniseurs chargées à l'exécution par le backend (`download_deps.py`) :
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py` télécharge et décompresse pdfium, pdf_oxide, office_oxide et onnxruntime sous `~/ragflow-native-libs` ; `download_deps.py` télécharge le vocabulaire cl100k, les modèles DeepDoc et les ressources de tokeniseurs d'embedding sous `ragflow_deps/`. Les deux sont des scripts Python ; `uv run` installe automatiquement leurs dépendances déclarées (`requests`, plus `huggingface-hub` pour les téléchargements de modèles et de tokeniseurs). Ignorez cette étape si vous avez déjà préparé les mêmes ressources autrement. Lors du démarrage depuis la racine du dépôt, les services Go trouvent automatiquement `internal/rag/res/deepdoc` ; pour démarrer depuis un autre répertoire, définissez `DEEPDOC_MODEL_DIR` sur son chemin absolu.
 
 3. Compilez les services :
 
@@ -270,7 +271,7 @@ Docker utilise `docker/.env` et `docker/docker-compose.yml`. Suivez le [guide de
 
 Consultez [Lancer le service depuis les sources](./docs/develop/launch_ragflow_from_source.md) pour plus de détails.
 
-> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_deps.py` prépare les bibliothèques natives et les modèles et nécessite `requests` et `huggingface-hub`. `--migrate` migre puis quitte ; `--admin` démarre le service d’administration, `--ingestor` le service d’ingestion, `--syncer` le service de synchronisation des sources de données externes et `--api` le service API pour l’interface Web et les SDK. Une réponse HTTP 200 indique que l’API est prête.
+> **Notes d’exploitation :** pour rendre le réglage Elasticsearch permanent, ajoutez `vm.max_map_count=262144` à `/etc/sysctl.conf`. Avec MySQL par défaut, l’entrée de l’image Docker exécute la migration avant de démarrer Admin, Syncer, Ingestor et API. Dans la version open source 1.0, DeepDoc utilise le CPU pour l’analyse de mise en page, l’OCR et les tableaux. Après une modification Docker, redémarrez les services et suivez le [guide Docker](./docker/README.md) pour conserver ou supprimer les données. `download_dev_deps.py` prépare les bibliothèques natives et `download_deps.py` les modèles et ressources de tokeniseurs ; les deux s'exécutent via `uv run`. `--migrate` migre puis quitte ; `--admin` démarre le service d’administration, `--ingestor` le service d’ingestion, `--syncer` le service de synchronisation des sources de données externes et `--api` le service API pour l’interface Web et les SDK. Une réponse HTTP 200 indique que l’API est prête.
 
 ## 📚 Documentation
 
