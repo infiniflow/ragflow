@@ -491,3 +491,57 @@ def test_image_script_does_not_handle_native_archives():
     assert not hasattr(img, "extract_onnxruntime")
     assert not hasattr(img, "_extract_native_archive")
     assert "onnxruntime" not in (img.__doc__ or "").lower()
+
+
+# ── Documentation contract: ARM64 build-host minimums ─────────────────────
+# The ARM64 host requirements are empirical findings from real hardware
+# (glibc 2.38 __isoc23_* symbols, GCC 13 libstdc++, SIMDe headers, cmake 4.x,
+# lld 20 — where lld-18 LINKS but hangs at startup). They cost half a day to
+# diagnose, so a doc refactor must not silently drop them: these tests pin the
+# section and its failure signatures.
+
+
+def _arm64_docs_section():
+    """Return the ARM64 host-requirements block of internal/development.md.
+
+    Scoped to the section (anchor → next "###" heading) so the assertions
+    below check the requirements block itself, not unrelated version numbers
+    elsewhere in an 800-line document.
+    """
+    doc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "internal", "development.md")
+    assert os.path.isfile(doc), f"development.md not found at {doc}"
+    with open(doc, encoding="utf-8") as file:
+        text = file.read()
+    start = text.find("ARM64 (aarch64) build hosts")
+    assert start != -1, "development.md no longer has an ARM64 build-hosts section"
+    end = text.find("\n### ", start)
+    return text[start:] if end == -1 else text[start:end]
+
+
+def test_development_docs_document_arm64_host_requirements():
+    section = _arm64_docs_section()
+    # Each minimum, with its concrete failure signature, must stay documented.
+    for token in (
+        "glibc",
+        "2.38",
+        "__isoc23_strtoll",
+        "GCC",
+        "13",
+        "libsimde-dev",
+        "simde/x86/sse4.1.h",
+        "cmake",
+        "4.0",
+        "lld",
+        "20",
+        "inittrace",
+    ):
+        assert token in section, f"development.md ARM64 section lost requirement token {token!r}"
+
+
+def test_arm64_docs_section_warns_that_lld18_links_but_hangs():
+    # The subtle failure mode: lld-18 produces a binary that links fine and
+    # then spins at startup. Drop this warning and an ARM64 host silently
+    # keeping the distro-default lld hits an undebuggable hang.
+    section = _arm64_docs_section()
+    assert "lld-18" in section, "lld-18 is no longer called out as insufficient"
+    assert "hang" in section.lower() or "spin" in section.lower(), "lld-18 startup-hang failure mode missing"

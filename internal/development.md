@@ -25,6 +25,34 @@ sudo ln -s /usr/bin/clang-20 /usr/bin/clang
 sudo ln -s /usr/bin/ld.lld-20 /usr/bin/ld.lld
 ```
 
+> **ARM64 (aarch64) build hosts need more than the above** (empirical minimum,
+> verified on a Snapdragon X Elite host with a trixie-based container):
+> - glibc ≥ 2.38 — the prebuilt native libs reference `__isoc23_*` symbols;
+>   Debian bookworm (glibc 2.36) fails linking with
+>   `undefined reference to __isoc23_strtoll`.
+> - GCC ≥ 13 (libstdc++ ≥ 13) — symbols like
+>   `std::__cxx11::basic_string::_M_replace_cold` need GCC 13+; bookworm's
+>   GCC 12 fails.
+> - `libsimde-dev` — SIMDe supplies the x86 SSE/AVX headers the C++ sources
+>   include (`simde/x86/sse4.1.h`, …); without it `./build.sh --cpp` fails at
+>   the include stage.
+> - cmake ≥ 4.0 — the DeepDoc C++ project requires cmake 4.x; Ubuntu 24.04's
+>   default-repo cmake is older than that (§1.1's kitware route installs a
+>   current one).
+> - lld ≥ 20 — **lld-18 is not enough**. With lld-18 the Go binaries link
+>   successfully but then hang at startup: 100% CPU spin, zero output, before
+>   any Go init runs (`GODEBUG=inittrace=1` prints nothing). Root cause:
+>   build.sh's versioned-symlink cache-busting paths (e.g.
+>   `office_oxide-v0.1.12/lib/liboffice_oxide.a`) make lld-18 pull in ~4 MB of
+>   duplicate archive members, and the duplicated C++ static initializers spin
+>   forever. The same flags with lld-20 produce a correct, smaller binary
+>   (12.5 MB vs 16.7 MB).
+>
+> The `apt install clang-20 lld-20` above only works on distros that ship them
+> (e.g. Debian trixie); Ubuntu 24.04's default lld is 18. On 24.04 use a
+> trixie-based container or the LLVM apt repository — an ARM64 host that
+> silently keeps lld-18 hits the startup hang described above.
+
 ### 1.3 Install golang
 
 ```shell
