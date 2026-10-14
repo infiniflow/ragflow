@@ -718,7 +718,7 @@ export default {
       destinationFolder: 'Pasta de destino',
     },
     flow: {
-      cite: 'Citar',
+      cite: 'Mostrar citações',
       citeTip: 'dicaDeCitação',
       name: 'Nome',
       nameMessage: 'Por favor, insira o nome',

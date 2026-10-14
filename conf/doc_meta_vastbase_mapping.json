@@ -1,0 +1,8 @@
+{
+  "create_time": {"type": "varchar(32)", "default": ""},
+  "create_timestamp_flt": {"type": "double precision", "default": 0.0},
+  "id": {"type": "varchar(128)", "default": ""},
+  "kb_id": {"type": "varchar(128)", "default": ""},
+  "doc_id": {"type": "varchar(128)", "default": ""},
+  "meta_fields": {"type": "text", "default": "{}"}
+}
