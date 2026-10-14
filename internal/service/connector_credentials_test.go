@@ -243,6 +243,27 @@ func TestUpdateConnectorRejectsEncryptedCredentialsInput(t *testing.T) {
 	}
 }
 
+func TestCreateConnectorRejectsEncryptedCredentialsInput(t *testing.T) {
+	t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
+	db := setupConnectorCredentialsServiceDB(t)
+
+	_, err := NewConnectorService().CreateConnector(t.Context(), "tenant-1", &CreateConnectorRequest{
+		Name:   "conn",
+		Source: "mock",
+		Config: entity.JSONMap{"credentials": "enc:v1:abc"},
+	})
+	if !errors.Is(err, ErrConnectorEncryptedCredentials) {
+		t.Fatalf("CreateConnector: err=%v, want ErrConnectorEncryptedCredentials", err)
+	}
+	var count int64
+	if err := db.Model(&entity.Connector{}).Count(&count).Error; err != nil {
+		t.Fatalf("count connectors: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("connector rows = %d, want 0", count)
+	}
+}
+
 func TestConnectorServiceTestConnectorDecryptsStoredCredentials(t *testing.T) {
 	t.Setenv(common.EnvRAGFlowConnectorKey, testConnectorKey)
 	db := setupConnectorCredentialsServiceDB(t)

@@ -717,7 +717,7 @@ func TestConnectorHandlerListSyncLogs(t *testing.T) {
 
 func TestConnectorHandlerCreateConnectorRejectsEncryptedCredentials(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	h := &ConnectorHandler{connectorService: fakeConnectorService{err: fmt.Errorf("CreateConnector must not be called")}}
+	h := &ConnectorHandler{connectorService: fakeConnectorService{err: service.ErrConnectorEncryptedCredentials}}
 	resp := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(resp)
 	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/connectors", strings.NewReader(`{"name":"n","source":"github","config":{"credentials":"enc:v1:abc"}}`))

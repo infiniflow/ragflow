@@ -286,6 +286,9 @@ func (s *ConnectorService) CreateConnector(ctx context.Context, userID string, r
 	if req.PruneFreq != nil && *req.PruneFreq <= 0 {
 		return nil, fmt.Errorf("%w: prune_freq got %d", ErrConnectorInvalidFreq, *req.PruneFreq)
 	}
+	if common.HasEncryptedConnectorCredentials(req.Config) {
+		return nil, ErrConnectorEncryptedCredentials
+	}
 	refreshFreq := int64(defaultConnectorFreq)
 	if req.RefreshFreq != nil {
 		refreshFreq = *req.RefreshFreq
