@@ -143,10 +143,10 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 		parserConfig = pipelinepkg.BuildParserConfig(dslJSON, req.ParserConfig)
 	}
 
-	// Preserve the public default shape when parser_config is empty. The
-	// parent_child block remains the single source of truth; chunker
-	// children_delimiters are derived below only when it is configured.
+	// Preserve the public default shape without overriding pipeline delimiters
+	// unless the request explicitly configures parent_child.
 	parentChild := resolveParentChild(req.ParserConfig)
+	parentChildConfigured := parentChild != nil
 	if parentChild == nil {
 		parentChild = map[string]interface{}{
 			"use_parent_child":   false,
@@ -174,7 +174,9 @@ func (d *DatasetService) CreateDataset(ctx context.Context, req *service.CreateD
 			}
 		}
 	}
-	pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	if parentChildConfigured {
+		pipelinepkg.ApplyParentChildChunkerConfig(parserConfig, parentChildConfig)
+	}
 
 	var parserConfigMap map[string]interface{} = parserConfig
 
