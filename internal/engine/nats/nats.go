@@ -286,7 +286,7 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 		Name:          taskConsumerName,
 		Durable:       taskConsumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    16,
+		MaxDeliver:    common.TaskMaxDeliver,
 		MaxAckPending: 1024 * 128,
 		FilterSubject: "tasks.>",
 		AckWait:       60 * time.Second,
@@ -519,4 +519,12 @@ func (m *NatsMessageHandle) Nack() error {
 
 func (m *NatsMessageHandle) InProgress() error {
 	return m.message.InProgress()
+}
+
+func (m *NatsMessageHandle) NumDelivered() uint64 {
+	meta, err := m.message.Metadata()
+	if err != nil {
+		return 0
+	}
+	return meta.NumDelivered
 }

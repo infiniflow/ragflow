@@ -92,3 +92,27 @@ func TestInitConsumer_ReplacesEphemeralConsumer(t *testing.T) {
 		t.Fatalf("handle = %v, want the unacknowledged in-flight task", handle)
 	}
 }
+
+func TestNatsMessageHandle_NumDelivered(t *testing.T) {
+	queue := newTaskQueue(t)
+	publishTask(t, queue, "counted")
+	ctx, cancel := taskPullContext(t)
+	defer cancel()
+	handle, err := queue.PullMessage(ctx)
+	if err != nil || handle == nil {
+		t.Fatalf("PullMessage = %v, %v", handle, err)
+	}
+	if got := handle.NumDelivered(); got != 1 {
+		t.Fatalf("NumDelivered = %d on the first delivery, want 1", got)
+	}
+}
+
+func TestTaskConsumerMaxDeliverMatchesIngestorLimit(t *testing.T) {
+	consumer, err := newTaskQueue(t).stream.Consumer(t.Context(), taskConsumerName)
+	if err != nil {
+		t.Fatalf("task consumer: %v", err)
+	}
+	if got := consumer.CachedInfo().Config.MaxDeliver; got != common.TaskMaxDeliver {
+		t.Fatalf("MaxDeliver = %d, want common.TaskMaxDeliver = %d", got, common.TaskMaxDeliver)
+	}
+}

@@ -520,3 +520,83 @@ func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
 		t.Fatal("waitAfterPullError did not cancel promptly on dispatchCtx.Done")
 	}
 }
+
+// TestHandleAndExecute_LastDeliveryFailsTask guards the production incident
+// where a document that crashed the ingestor on every attempt used up its
+// broker deliveries and left its task RUNNING forever: on the last delivery
+// the task is failed with an explanation instead of run again.
+func TestHandleAndExecute_LastDeliveryFailsTask(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-last-delivery", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		t.Fatal("pipeline ran on the last delivery")
+		return nil
+	}
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-"+taskID).Error; err != nil {
+		t.Fatalf("reload pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("pipeline log status = %q, want FAIL", run.OperationStatus)
+	}
+	if !ingestor.claimTask(taskID) {
+		t.Fatal("the claim was not released after failing the task")
+	}
+}
+
+// TestHandleAndExecute_EarlierRedeliveryStillRuns checks that a redelivery
+// below the limit still resumes the task.
+func TestHandleAndExecute_EarlierRedeliveryStillRuns(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-redelivery-runs", 1, []string{"pdf"})
+	pipelineRan := false
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver - 1,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if !pipelineRan {
+		t.Fatal("pipeline did not run on a redelivery below the limit")
+	}
+}

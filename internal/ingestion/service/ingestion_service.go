@@ -538,6 +538,13 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
+		if delivered := handle.NumDelivered(); delivered >= common.TaskMaxDeliver {
+			// The broker will not deliver this message again, so a run that
+			// dies now (the previous ones evidently did: OOM kill, native
+			// crash) would leave the task RUNNING forever. Fail it instead.
+			e.failExhaustedTask(hb, handle, task, delivered)
+			return
+		}
 		// Claim the task before applying document/log side effects. A duplicate
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
@@ -551,6 +558,24 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
+}
+
+// failExhaustedTask fails a claimed task whose message reached its last
+// delivery without ever settling, then acks the message.
+func (e *Ingestor) failExhaustedTask(hb *Heartbeat, handle common.TaskHandle, task *entity.IngestionTask, delivered uint64) {
+	defer e.releaseTask(task.ID)
+	common.Error(fmt.Sprintf("task %s never settled, marking it FAILED (doc_id=%s kb_id=%s)",
+		task.ID, task.DocumentID, task.DatasetID),
+		fmt.Errorf("delivery %d of %d reached", delivered, common.TaskMaxDeliver))
+	e.markTerminalProgress(task)
+	if !e.markFailed(e.ctx, task.ID) {
+		e.nackHandle(hb, handle, task.ID)
+		return
+	}
+	e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf(
+		"Task failed: it was delivered %d times without finishing; the ingestor most likely crashed or ran out of memory while processing this document.",
+		delivered))
+	e.ackHandle(hb, handle, task.ID)
 }
 
 func (e *Ingestor) ackHandle(hb *Heartbeat, handle common.TaskHandle, taskID string) {
