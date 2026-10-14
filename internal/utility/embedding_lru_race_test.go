@@ -27,11 +27,18 @@ func TestEmbeddingLRUConcurrentGet(t *testing.T) {
 // Distinct (question, embeddingID) pairs must not collide in the cache key.
 func TestEmbeddingLRUCompositeKeyNoCollision(t *testing.T) {
 	c := NewEmbeddingLRU(2)
-	c.Put("a::b", "c", []float64{1})
-	c.Put("a", "b::c", []float64{2})
-	v, ok := c.Get("a::b", "c")
-	if !ok || v[0] != 1 {
-		t.Fatalf("colliding composite keys returned %v (ok=%v)", v, ok)
+	c.Put("a||b", "c", []float64{1})
+	c.Put("a", "b||c", []float64{2})
+	first, ok := c.Get("a||b", "c")
+	if !ok || first[0] != 1 {
+		t.Fatalf("first value = %v, found=%v", first, ok)
+	}
+	second, ok := c.Get("a", "b||c")
+	if !ok || second[0] != 2 {
+		t.Fatalf("second value = %v, found=%v", second, ok)
+	}
+	if c.Len() != 2 {
+		t.Fatalf("cache length = %d, want 2", c.Len())
 	}
 }
 
