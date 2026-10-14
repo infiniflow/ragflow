@@ -528,7 +528,7 @@ async def test_mws_bound_tool_stream_normalizes_existing_tool_history():
             r"function\.arguments must be a JSON object string",
         ),
         (
-            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "{"}}]}],
+            [{"role": "assistant", "content": None, "tool_calls": [{"id": "call_123", "function": {"name": "lookup", "arguments": "not json"}}]}],
             r"function\.arguments must be a JSON object string",
         ),
         (

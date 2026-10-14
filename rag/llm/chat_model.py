@@ -1364,18 +1364,25 @@ class MWSChat(Base):
                 if tool_calls:
                     if content is not None and not isinstance(content, str):
                         raise ValueError("MWS assistant message content must be a string")
+                    normalized_calls = []
                     for tool_call in tool_calls:
                         function = tool_call.get("function") if isinstance(tool_call, dict) else None
                         arguments = function.get("arguments") if isinstance(function, dict) else None
                         if not isinstance(arguments, str):
                             raise ValueError("MWS tool call function.arguments must be a JSON object string")
-                        try:
-                            parsed_arguments = json.loads(arguments)
-                        except json.JSONDecodeError as exc:
-                            raise ValueError("MWS tool call function.arguments must be a JSON object string") from exc
+                        parsed_arguments = json_repair.loads(arguments)
                         if not isinstance(parsed_arguments, dict):
                             raise ValueError("MWS tool call function.arguments must be a JSON object string")
-                    serialized_calls = json.dumps(tool_calls, ensure_ascii=False, separators=(",", ":"))
+                        normalized_calls.append(
+                            {
+                                **tool_call,
+                                "function": {
+                                    **function,
+                                    "arguments": json.dumps(parsed_arguments, ensure_ascii=False, separators=(",", ":")),
+                                },
+                            }
+                        )
+                    serialized_calls = json.dumps(normalized_calls, ensure_ascii=False, separators=(",", ":"))
                     serialized_content = f"<tool_calls>{serialized_calls}</tool_calls>"
                     if isinstance(content, str) and content:
                         serialized_content = f"{content}\n{serialized_content}"
