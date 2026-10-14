@@ -85,8 +85,11 @@ page versions, and edit-history records are not replayed.
 | Environment variable | Default | Description |
 | --- | ---: | --- |
 | `WIKI_REFINE_LLM_RETRIES` | `2` | Additional page-writer attempts after a transient failure. Set to `0` to disable recovery. |
-| `WIKI_REFINE_LLM_RETRY_BASE_DELAY` | `30` seconds | Initial recovery delay, doubled for each subsequent attempt, with up to 25% positive jitter. |
-| `WIKI_REFINE_LLM_RETRY_MAX_DELAY` | `120` seconds | Maximum recovery delay, including jitter. |
+| `WIKI_REFINE_LLM_RETRY_BASE_DELAY` | `30` seconds | Initial recovery delay, doubled for each subsequent attempt, with up to 25% positive jitter. Must be positive for recovery to run. |
+| `WIKI_REFINE_LLM_RETRY_MAX_DELAY` | `120` seconds | Maximum recovery delay, including jitter. Must be positive for recovery to run. |
+
+Setting either delay bound to zero disables additional recovery instead of
+retrying without a cooldown.
 
 Explicit rate limits, timeouts, connection failures, and retryable server
 errors can recover. Authentication, invalid requests, content filtering,

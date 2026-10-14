@@ -2156,6 +2156,7 @@ async def test_refine_recovers_exhausted_llm_call_without_duplicate_writes(mode,
     limited.async_chat = AsyncMock(side_effect=["**ERROR**: ERROR_MAX_RETRIES - Error code: 429 - 您已达到总请求数限制", "SUMMARY: Recovered\nTOPIC: General\nRecovered page."])
 
     async def refine(page_id, model):
+        """Run the real page-refinement path with the selected writing mode."""
         return await _wiki._wiki_refine_page(
             mode=mode,
             page_id=page_id,
@@ -2187,6 +2188,7 @@ async def test_refine_recovers_exhausted_llm_call_without_duplicate_writes(mode,
 
 @pytest.mark.parametrize("failure", [TimeoutError(), ConnectionError(), RuntimeError("**ERROR**: ERROR_TIMEOUT - timed out"), RuntimeError("**ERROR**: ERROR_MAX_RETRIES - Error code: 503")])
 async def test_page_writer_recovers_transient_exception(failure, page_writer_retry, monkeypatch):
+    """Recover explicit transient exceptions after a bounded cooldown."""
     ask = AsyncMock(side_effect=[failure, "Recovered"])
     monkeypatch.setattr(_wiki, "_chat_mdl_ask", ask)
     assert await _wiki._wiki_ask_page_writer(None, "system", "user", page_id="page") == "Recovered"
@@ -2210,6 +2212,7 @@ async def test_page_writer_recovers_transient_exception(failure, page_writer_ret
     ],
 )
 async def test_page_writer_does_not_retry_permanent_or_unknown_errors(error, page_writer_retry):
+    """Fail permanent and unclassified LLM errors without additional requests."""
     model = MockChatModel()
     model.async_chat = AsyncMock(side_effect=RuntimeError(error))
     with pytest.raises(RuntimeError, match=re.escape(error)):
@@ -2219,6 +2222,7 @@ async def test_page_writer_does_not_retry_permanent_or_unknown_errors(error, pag
 
 
 async def test_page_writer_exhaustion_is_bounded_and_does_not_persist(page_writer_retry, monkeypatch):
+    """Exhausted recovery leaves storage untouched and raises the final error."""
     store = make_doc_store()
     monkeypatch.setattr(_wiki.settings, "docStoreConn", store)
     model = MockChatModel("**ERROR**: ERROR_MAX_RETRIES - 429 too many requests")
@@ -2232,6 +2236,7 @@ async def test_page_writer_exhaustion_is_bounded_and_does_not_persist(page_write
 
 
 async def test_page_writer_recovery_can_be_disabled(page_writer_retry, monkeypatch):
+    """A zero attempt limit preserves the single-call failure behavior."""
     monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRIES", 0)
     model = MockChatModel()
     model.async_chat = AsyncMock(side_effect=TimeoutError())
@@ -2243,6 +2248,7 @@ async def test_page_writer_recovery_can_be_disabled(page_writer_retry, monkeypat
 
 @pytest.mark.parametrize("retry_after, expected_delay, calls", [("90", 90, 2), ("invalid", 37.5, 2), ("600", None, 1)])
 async def test_page_writer_respects_retry_after_without_unbounded_wait(retry_after, expected_delay, calls, page_writer_retry):
+    """Honor reset delays within the cap and reject longer waits."""
     error = RuntimeError("429 rate limit")
     error.status_code = 429
     error.response = SimpleNamespace(headers={"Retry-After": retry_after})
@@ -2259,6 +2265,7 @@ async def test_page_writer_respects_retry_after_without_unbounded_wait(retry_aft
 
 
 async def test_page_writer_cancellation_interrupts_recovery(page_writer_retry):
+    """Cancellation during the cooldown prevents further LLM attempts."""
     model = MockChatModel()
     model.async_chat = AsyncMock(side_effect=TimeoutError())
     page_writer_retry.side_effect = asyncio.CancelledError()
@@ -2289,15 +2296,55 @@ async def test_page_writer_does_not_retry_persistence_errors(page_writer_retry, 
 
 @pytest.mark.parametrize("value", ["nan", "inf", "-10", "bad date"])
 def test_page_writer_ignores_invalid_retry_after(value):
+    """Invalid and non-finite reset values fall back to normal backoff."""
     error = RuntimeError("429")
     error.response = SimpleNamespace(headers={"Retry-After": value})
     assert _wiki._wiki_retry_after(error) == 0
 
 
 def test_page_writer_parses_http_date_retry_after():
+    """Parse the HTTP-date form of the server reset time."""
     from datetime import UTC, datetime, timedelta
     from email.utils import format_datetime
 
     error = RuntimeError("429")
     error.response = SimpleNamespace(headers={"Retry-After": format_datetime(datetime.now(UTC) + timedelta(seconds=90), usegmt=True)})
     assert 88 <= _wiki._wiki_retry_after(error) <= 90
+
+
+@pytest.mark.parametrize("base_delay,max_delay", [(0, 0), (0, 120), (30, 0)])
+async def test_page_writer_zero_delay_disables_recovery(base_delay, max_delay, page_writer_retry, monkeypatch):
+    """A zero delay bound never permits an immediate retry burst."""
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_BASE_DELAY", base_delay)
+    monkeypatch.setattr(_wiki, "WIKI_REFINE_LLM_RETRY_MAX_DELAY", max_delay)
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=TimeoutError())
+    with pytest.raises(TimeoutError):
+        await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page")
+    assert model.async_chat.await_count == 1
+    page_writer_retry.assert_not_awaited()
+
+
+@pytest.mark.parametrize("typed_status", [True, False])
+async def test_page_writer_recovers_529_overload(typed_status, page_writer_retry):
+    """Recover both typed HTTP overload errors and flattened provider responses."""
+    error = RuntimeError("529 overloaded_error")
+    if typed_status:
+        error.status_code = 529
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    assert model.async_chat.await_count == 2
+    page_writer_retry.assert_awaited_once()
+
+
+@pytest.mark.parametrize("header_name", ["retry-after", "RETRY-AFTER", "ReTrY-AfTeR"])
+async def test_page_writer_honors_case_insensitive_retry_after(header_name, page_writer_retry):
+    """Plain dictionary headers still honor the server's full reset delay."""
+    error = RuntimeError("429 rate limit")
+    error.response = SimpleNamespace(headers={header_name: "120"})
+    model = MockChatModel()
+    model.async_chat = AsyncMock(side_effect=[error, "Recovered"])
+    assert await _wiki._wiki_ask_page_writer(model, "system", "user", page_id="page") == "Recovered"
+    page_writer_retry.assert_awaited_once_with(120)
+    assert model.async_chat.await_count == 2
