@@ -1143,8 +1143,12 @@ func TestAliyunTranscribeAudioSurfacesAPIError(t *testing.T) {
 	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
 
 	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
-	if err == nil || !strings.Contains(err.Error(), "aliyun ASR API error") {
-		t.Fatalf("error = %v, want ASR API error", err)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want APIStatusError with status 401", err)
+	}
+	if !strings.Contains(statusErr.Body, "InvalidApiKey") {
+		t.Fatalf("error body = %q, want to include InvalidApiKey", statusErr.Body)
 	}
 }
 

@@ -665,12 +665,17 @@ func (a *AliyunModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 	}
 	defer resp.Body.Close()
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("aliyun ASR API error: %s, body: %s", resp.Status, string(body))
+		body, err := readModelErrorBody(resp.Body)
+		if err != nil {
+			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
+		}
+		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
+	}
+
+	body, err := readModelResponseBody(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
 
 	var parsed aliyunASRResponse
