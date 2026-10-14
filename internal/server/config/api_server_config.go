@@ -54,28 +54,36 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 		return err
 	}
 
-	// Default Admin config
+	// Defaults; each is overridden from the ROOT viper using the FULL dotted
+	// key. The previous guard `if !v.IsSet("ragflow") { return }` checked the
+	// PARENT key, which an env var maps to the child key `ragflow.http_port`,
+	// so the guard was false for a lone env override and the server kept
+	// binding 9380. Reading the full key from the root viper (which carries
+	// the RAGFLOW prefix/replacer/AutomaticEnv from server.Init) honours both
+	// the YAML file and the env layer — including the env-only case — and
+	// stays consistent with the env-merge fix in ParseLogConfig.
+	//
+	// BindEnv makes RAGFLOW_HTTP_PORT reach the API port: viper's AutomaticEnv
+	// maps the dotted key `ragflow.http_port` to RAGFLOW_RAGFLOW_HTTP_PORT
+	// (the prefix is doubled under the ragflow section), so the var operators
+	// and CI actually set would otherwise never reach the parser. RAGFLOW_HTTP_PORT
+	// is the intended var; RAGFLOW_RAGFLOW_HTTP_PORT remains a harmless legacy
+	// side-effect of AutomaticEnv and is intentionally NOT listed here.
 	c.apiServer.Host = "localhost"
 	c.apiServer.HTTPPort = 9380
 
-	if !v.IsSet("ragflow") {
-		return nil
-	}
-	sub := v.Sub("ragflow")
-	if sub == nil {
-		return nil
+	_ = v.BindEnv("ragflow.http_port", "RAGFLOW_HTTP_PORT")
+
+	if v.IsSet("ragflow.host") {
+		c.apiServer.Host = v.GetString("ragflow.host")
 	}
 
-	if sub.IsSet("host") {
-		c.apiServer.Host = sub.GetString("host")
+	if v.IsSet("ragflow.http_port") {
+		c.apiServer.HTTPPort = v.GetInt("ragflow.http_port")
 	}
 
-	if sub.IsSet("http_port") {
-		c.apiServer.HTTPPort = sub.GetInt("http_port")
-	}
-
-	if sub.IsSet("trusted_proxies") {
-		proxies := sub.GetStringSlice("trusted_proxies")
+	if v.IsSet("ragflow.trusted_proxies") {
+		proxies := v.GetStringSlice("ragflow.trusted_proxies")
 		if proxies == nil {
 			proxies = []string{}
 		}

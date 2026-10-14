@@ -18,6 +18,7 @@ package config
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/spf13/viper"
@@ -160,5 +161,53 @@ func TestPortSetterRoundTrip(t *testing.T) {
 	}
 	if got := c.GetAdminServerConfig().HTTPPort; got != 9443 {
 		t.Fatalf("admin server HTTPPort = %d, want 9443", got)
+	}
+}
+
+// TestParseAPIServerConfigReadsEnvOnlyPort pins that a lone RAGFLOW_HTTP_PORT
+// (no `ragflow:` YAML section) still reaches the parsed config. The previous
+// guard `if !v.IsSet("ragflow") { return nil }` checked the PARENT key, which
+// an env var maps to the child key `ragflow.http_port`, so the guard was false
+// and the env override was silently dropped (the server kept binding 9380).
+// viper.Sub doubles the prefix under the `ragflow` section (RAGFLOW_RAGFLOW_HTTP_PORT),
+// so the var operators actually set (and CI sets) never reached the parser;
+// ParseAPIServerConfig now binds RAGFLOW_HTTP_PORT as well and reads the full
+// dotted key from the root viper.
+func TestParseAPIServerConfigReadsEnvOnlyPort(t *testing.T) {
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	t.Setenv("RAGFLOW_HTTP_PORT", "9399")
+
+	c := &Config{}
+	if err := c.ParseAPIServerConfig(v); err != nil {
+		t.Fatalf("ParseAPIServerConfig: %v", err)
+	}
+	if got := c.GetAPIServerConfig().HTTPPort; got != 9399 {
+		t.Fatalf("env-only RAGFLOW_HTTP_PORT = %d, want 9399 (env layer must reach the config)", got)
+	}
+}
+
+// TestParseAdminConfigReadsEnvOnlyPort mirrors the above for the admin server:
+// a lone RAGFLOW_ADMIN_HTTP_PORT (no `admin:` YAML section) must reach the
+// parsed config instead of being silently dropped by the parent IsSet guard.
+// The admin port env var is RAGFLOW_ADMIN_HTTP_PORT (no prefix doubling), so
+// the root read already consults it.
+func TestParseAdminConfigReadsEnvOnlyPort(t *testing.T) {
+	v := viper.New()
+	v.SetEnvPrefix("RAGFLOW")
+	v.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
+	v.AutomaticEnv()
+
+	t.Setenv("RAGFLOW_ADMIN_HTTP_PORT", "9401")
+
+	c := &Config{}
+	if err := c.ParseAdminConfig(v); err != nil {
+		t.Fatalf("ParseAdminConfig: %v", err)
+	}
+	if got := c.GetAdminServerConfig().HTTPPort; got != 9401 {
+		t.Fatalf("env-only RAGFLOW_ADMIN_HTTP_PORT = %d, want 9401 (env layer must reach the config)", got)
 	}
 }
