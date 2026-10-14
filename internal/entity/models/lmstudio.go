@@ -65,12 +65,12 @@ func (l *LmStudioModel) ChatWithMessages(ctx context.Context, modelName string, 
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, l.baseModel.URLSuffix.Chat)
 
 	// For qwen/glm models, use async chat endpoint
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body
@@ -112,10 +112,10 @@ func (l *LmStudioModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.Chat)
+	url := joinURL(resolvedBaseURL, l.baseModel.URLSuffix.Chat)
 	modelType := strings.Split(modelName, "-")[0]
 	if modelType == "qwen" || modelType == "glm" {
-		url = fmt.Sprintf("%s/%s", resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
+		url = joinURL(resolvedBaseURL, l.baseModel.URLSuffix.AsyncChat)
 	}
 
 	// Build request body with streaming enabled
@@ -164,7 +164,7 @@ func (l *LmStudioModel) Embed(ctx context.Context, modelName *string, request Em
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), l.baseModel.URLSuffix.Embedding)
+	url := joinURL(baseURL, l.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -273,7 +273,7 @@ func (l *LmStudioModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, fmt.Errorf("missing base URL: please configure the local access address for LM Studio (e.g., http://127.0.0.1:1234/v1)")
 	}
 
-	url := fmt.Sprintf("%s/%s", baseURL, l.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, l.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]interface{}{}
 
