@@ -15,11 +15,32 @@
 package chunker
 
 import (
+	"strings"
 	"testing"
 
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 )
+
+// wantHTMLCells asserts the chunk text is an HTML table carrying exactly the
+// given header and data cells (in order). The row chunks render header+row as
+// HTML, so the projected row's cells appear as <td> values.
+func wantHTMLCells(t *testing.T, text string, header, data []string) {
+	t.Helper()
+	if !strings.Contains(text, "<table>") {
+		t.Fatalf("not HTML: %q", text)
+	}
+	for _, h := range header {
+		if !strings.Contains(text, "<th>"+h+"</th>") {
+			t.Fatalf("missing header cell %q in %q", h, text)
+		}
+	}
+	for _, d := range data {
+		if !strings.Contains(text, "<td>"+d+"</td>") {
+			t.Fatalf("missing data cell %q in %q", d, text)
+		}
+	}
+}
 
 func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 	td := &entity.TableData{
@@ -30,12 +51,8 @@ func TestExpandHTMLTableRowsFromTableData(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(out))
 	}
-	if out[0].Text != "- Name: Alice\n- Age: 30" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
-	if out[1].Text != "- Name: Bob\n- Age: 25" {
-		t.Fatalf("row1 text = %q", out[1].Text)
-	}
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Alice", "30"})
+	wantHTMLCells(t, out[1].Text, []string{"Name", "Age"}, []string{"Bob", "25"})
 	for _, c := range out {
 		if c.TableData != nil {
 			t.Fatalf("TableData must be cleared on emitted row chunk, got %+v", c.TableData)
@@ -89,15 +106,11 @@ func TestExpandHTMLTableRowsKeepsRowspanColumns(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2", len(out))
 	}
-	if out[0].Text != "- Name: Alice\n- Age: 30" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Alice", "30"})
 	// The continuation row must keep the spanned "Name" column resolved to the
-	// origin value and stay aligned: "Name: Alice" + "Age: 25", not a shifted
-	// "Name: 25" that drops the Age column.
-	if out[1].Text != "- Name: Alice\n- Age: 25" {
-		t.Fatalf("row1 text = %q (rowspan column must be preserved, not dropped/misaligned)", out[1].Text)
-	}
+	// origin value and stay aligned: "Alice" + "25", not a shifted "25" that
+	// drops the Age column.
+	wantHTMLCells(t, out[1].Text, []string{"Name", "Age"}, []string{"Alice", "25"})
 }
 
 // A cell that spans BOTH rows and columns (RowSpan>1 && ColSpan>1) must keep
@@ -127,14 +140,11 @@ func TestExpandHTMLTableRowsKeepsRowColSpanBlock(t *testing.T) {
 	if len(out) != 2 {
 		t.Fatalf("got %d chunks, want 2 (one per data row)", len(out))
 	}
-	if out[0].Text != "- Name: Wide\n- B: Wide\n- C: x" {
-		t.Fatalf("row0 text = %q", out[0].Text)
-	}
+	// The origin row keeps both covered columns resolved to "Wide".
+	wantHTMLCells(t, out[0].Text, []string{"Name", "B", "C"}, []string{"Wide", "Wide", "x"})
 	// The continuation row must keep BOTH covered columns resolved to "Wide",
-	// not drop the second one to a blank and misalign under the header.
-	if out[1].Text != "- Name: Wide\n- B: Wide\n- C: y" {
-		t.Fatalf("row1 text = %q (both spanned columns must be preserved)", out[1].Text)
-	}
+	// not drop the second one and misalign under the header.
+	wantHTMLCells(t, out[1].Text, []string{"Name", "B", "C"}, []string{"Wide", "Wide", "y"})
 }
 
 // A data row whose first cell spans two columns must keep both columns after
@@ -159,7 +169,6 @@ func TestExpandHTMLTableRowsKeepsColspanColumns(t *testing.T) {
 	if len(out) != 1 {
 		t.Fatalf("got %d chunks, want 1", len(out))
 	}
-	if out[0].Text != "- Name: Info\n- Age: Info" {
-		t.Fatalf("row text = %q (colspan must fill both columns)", out[0].Text)
-	}
+	// colspan must fill both columns with the spanned value "Info".
+	wantHTMLCells(t, out[0].Text, []string{"Name", "Age"}, []string{"Info", "Info"})
 }
