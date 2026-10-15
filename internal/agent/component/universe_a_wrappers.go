@@ -117,10 +117,10 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.UserID = v
 	}
 	if v, ok := params["top_n"]; ok {
-		out.TopN = toIntParam(v)
+		out.TopN, _ = common.ToInt(v)
 	}
 	if v, ok := params["top_k"]; ok {
-		out.TopK = toIntParam(v)
+		out.TopK, _ = common.ToInt(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
 		value := toFloatParam(v)
@@ -203,6 +203,9 @@ func (c *retrievalComponent) Outputs() map[string]string {
 func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	merged := c.applyDefaults(inputs)
 	normalizeLegacyRetrievalInputs(ctx, db, merged)
+	if err := checkCanvasRetrievalDependencies(ctx, db, merged); err != nil {
+		return nil, fmt.Errorf("agent Retrieval dependency permission: %w", err)
+	}
 	query, _ := merged["query"].(string)
 	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
 		if resolved, err := runtime.ResolveTemplateAuto(query, state); err == nil {
@@ -240,6 +243,30 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 
 	return normalizeRetrievalOutputs(parseToolEnvelope(out)), nil
 
+}
+
+func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.Sys["user_id"].(string)
+		if strings.TrimSpace(canvasID) == "" && strings.TrimSpace(userID) != "" {
+			return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
+		}
+		if strings.TrimSpace(canvasID) != "" && strings.TrimSpace(userID) == "" {
+			return permission.ErrUnauthenticated
+		}
+	}
+	datasetIDs := toStringSlice(inputs["dataset_ids"])
+	memoryIDs := toStringSlice(inputs["memory_ids"])
+	retrievalFrom, _ := inputs["retrieval_from"].(string)
+	switch {
+	case strings.EqualFold(strings.TrimSpace(retrievalFrom), "memory"):
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	case strings.TrimSpace(retrievalFrom) == "" && len(datasetIDs) == 0 && len(memoryIDs) > 0:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	default:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasetIDs)
+	}
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -775,26 +802,6 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 		}
 	}
 	return nil, false
-}
-
-// toIntParam coerces a node-param int value to int. JSON-decoded
-// values come in as float64 when numeric, so we tolerate that
-// case explicitly. Strings that parse as int also work.
-// (Renamed from toInt to avoid colliding with
-// list_operations.go's same-name helper.)
-func toIntParam(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	}
-	return 0
 }
 
 // toFloatParam coerces a node-param float value to float64. Same

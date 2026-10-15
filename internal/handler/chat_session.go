@@ -112,9 +112,7 @@ func (h *ChatSessionHandler) ListChatSessions(c *gin.Context) {
 	includeHistory := c.DefaultQuery("include_history", "true")
 	result, err := h.chatSessionService.ListChatSessions(ctx, userID, chatID, c.Query("id"), c.Query("name"), terms, page, pageSize, includeHistory != "false" && includeHistory != "False")
 	if err != nil {
-		// Mirror Python: ownership failures return code 109 "no authorization"
-		if strings.Contains(err.Error(), "no authorization") {
-			common.ResponseWithCodeData(c, common.CodeAuthenticationError, false, "no authorization")
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
@@ -318,6 +316,9 @@ func (h *ChatSessionHandler) GetSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, code, err := h.chatSessionService.GetSession(ctx, userID, chatID, sessionID)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
@@ -361,8 +362,7 @@ func (h *ChatSessionHandler) CreateSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, code, err := h.chatSessionService.CreateSession(ctx, userID, chatID, req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ErrorWithCode(c, code, err.Error())
@@ -409,8 +409,7 @@ func (h *ChatSessionHandler) DeleteSessions(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, message, code, err := h.chatSessionService.DeleteSessions(ctx, userID, chatID, req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ErrorWithCode(c, code, err.Error())
@@ -440,6 +439,9 @@ func (h *ChatSessionHandler) UpdateSession(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, code, err := h.chatSessionService.UpdateSession(ctx, userID, chatID, sessionID, req)
 	if err != nil {
+		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
 		common.ErrorWithCode(c, code, err.Error())
 		return
 	}
@@ -458,8 +460,7 @@ func (h *ChatSessionHandler) DeleteSessionMessage(c *gin.Context) {
 	ctx := c.Request.Context()
 	result, code, err := h.chatSessionService.DeleteSessionMessage(ctx, userID, chatID, sessionID, msgID)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ErrorWithCode(c, code, err.Error())
@@ -495,8 +496,7 @@ func (h *ChatSessionHandler) UpdateMessageFeedback(c *gin.Context) {
 
 	result, code, err := h.chatSessionService.UpdateMessageFeedback(c.Request.Context(), userID, chatID, sessionID, msgID, req)
 	if err != nil {
-		if code == common.CodeAuthenticationError {
-			common.ResponseWithCodeData(c, code, false, err.Error())
+		if respondPermissionErrorIf(c, err, true) {
 			return
 		}
 		common.ErrorWithCode(c, code, err.Error())

@@ -82,7 +82,7 @@ type RetrievalRequest struct {
 	// DocScope restricts retrieval to a set of document ids (the doc_id list
 	// routed by the dataset_navigation_by_tree tool). Empty = no doc filter.
 	DocScope []string
-	// TenantID is the calling tenant (== user_id in RAGFlow's data model).
+	// TenantID is the tenant that owns the running canvas.
 	TenantID string
 	// RankFeature is the label_question term→weight map passed through to the
 	// engine so retrieval is biased toward the query's predicted topic class.
@@ -154,7 +154,7 @@ type GrepRequest struct {
 	Sort []string // Ordered ascending sort fields.
 	// SelectFields limits the ES _source fields returned per hit.
 	SelectFields []string
-	TenantID     string // Calling tenant (== user_id in RAGFlow's data model).
+	TenantID     string // Tenant that owns the running canvas.
 }
 
 // Bm25Service is the lexical full-text (BM25) search surface used by
@@ -173,7 +173,7 @@ type Bm25Request struct {
 	DatasetIDs []string // Knowledge base IDs to restrict to.
 	DocScope   []string // Document IDs to restrict to (empty = no doc filter).
 	TopN       int      // Max chunks per query before merging.
-	TenantID   string   // Calling tenant (== user_id in RAGFlow's data model).
+	TenantID   string   // Tenant that owns the running canvas.
 }
 
 // ErrRetrievalServiceMissing is returned when no RetrievalService is registered.

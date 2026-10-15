@@ -237,6 +237,69 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Acme Corp", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph",
+	}}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		if row["name_kwd"] != "acme corp" {
+			t.Errorf("name_kwd = %v, want normalized keyword acme corp", row["name_kwd"])
+		}
+		payload, _ := row["content_with_weight"].(string)
+		if !strings.Contains(payload, `"name":"Acme Corp"`) {
+			t.Errorf("entity payload = %s, want extracted spelling Acme Corp", payload)
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(text, "company") || !strings.Contains(strings.ToLower(text), "acme corp") || strings.Contains(text, `"name":`) {
+				t.Errorf("%s = %q, want searchable entity payload text", field, text)
+			}
+		}
+		return
+	}
+	t.Fatal("inserted rows contain no entity")
+}
+
+func TestWriteMergedStructurePreservesDistinctRelationTypes(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	buckets := []StructureBucket{
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "supplies", Description: "supply", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "owns", Description: "ownership", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+	}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", buckets); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	relations := map[string]bool{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "relation" {
+			continue
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(strings.ToLower(text), "acme corp") || !strings.Contains(strings.ToLower(text), "beta ltd") || strings.Contains(text, `"from":`) {
+				t.Errorf("%s = %q, want searchable relation payload text", field, text)
+			}
+		}
+		payload, _ := row["content_with_weight"].(string)
+		for _, relationType := range []string{"supplies", "owns"} {
+			if strings.Contains(payload, `"type":"`+relationType+`"`) {
+				relations[relationType] = true
+			}
+		}
+	}
+	if len(relations) != 2 || !relations["supplies"] || !relations["owns"] {
+		t.Errorf("stored relation types = %v, want separate supplies and owns rows", relations)
+	}
+}
+
 func TestWriteMergedStructureDoesNotDeleteForInvalidBucket(t *testing.T) {
 	oldID := "dataset_structure_old"
 	eng := &fakeEngine{searchChunks: []map[string]interface{}{

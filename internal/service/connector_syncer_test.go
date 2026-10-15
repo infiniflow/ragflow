@@ -116,7 +116,7 @@ func TestUpdateConnectorSchedulePublishesSyncerTask(t *testing.T) {
 func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
-	if err := db.AutoMigrate(&entity.Connector{}, &entity.SyncLogs{}); err != nil {
+	if err := db.AutoMigrate(&entity.Connector{}, &entity.Connector2Kb{}, &entity.Knowledgebase{}, &entity.SyncLogs{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate connector tables: %v", err)
 	}
 	if err := db.Create(&entity.Connector{
@@ -132,6 +132,19 @@ func TestResumeFailedSyncSchedulesOriginalTaskFromCheckpoint(t *testing.T) {
 		TimeoutSecs: 60,
 	}).Error; err != nil {
 		t.Fatalf("insert connector: %v", err)
+	}
+	valid := string(entity.StatusValid)
+	if err := db.Create(&entity.Knowledgebase{
+		ID: "kb-1", TenantID: "user-1", CreatedBy: "user-1", Name: "kb-1", EmbdID: "embd",
+		Permission: string(entity.TenantPermissionMe), Status: &valid,
+	}).Error; err != nil {
+		t.Fatalf("insert knowledgebase: %v", err)
+	}
+	if err := db.Create(&entity.Connector2Kb{ID: "conn-1-kb-1", ConnectorID: "conn-1", KbID: "kb-1", AutoParse: "1"}).Error; err != nil {
+		t.Fatalf("insert connector dataset link: %v", err)
+	}
+	if err := db.Create(&entity.UserTenant{ID: "owner-user-1", UserID: "user-1", TenantID: "user-1", Role: string(permission.RoleOwner), Status: &valid}).Error; err != nil {
+		t.Fatalf("insert tenant owner: %v", err)
 	}
 	if err := db.Create(&entity.SyncLogs{
 		ID:            "task-1",

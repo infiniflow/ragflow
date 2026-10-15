@@ -1022,7 +1022,7 @@ const generateDataSourceFormFields = (t: TFunction) => ({
       label: t('setting.dataSourceFieldMyDriveEmails'),
       name: 'config.my_drive_emails',
       type: FormFieldType.Text,
-      required: true,
+      required: false,
       placeholder: 'user1@example.com,user2@example.com',
       tooltip: t('setting.google_driveMyDriveEmailsTip'),
     },

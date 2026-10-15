@@ -9,7 +9,10 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/progress"
+	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/utility"
 )
 
 type fractionObservation struct {
@@ -32,7 +35,7 @@ func TestAttachPDFPageProgress_ReportsFraction(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser)
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0, Span: 1})
 	if pdfParser.OnPageDone == nil {
 		t.Fatal("expected OnPageDone to be wired")
 	}
@@ -56,7 +59,7 @@ func TestAttachPDFPageProgress_IgnoresUnknownTotal(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser)
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0, Span: 1})
 	pdfParser.OnPageDone(1, 0)
 
 	if len(seen) != 0 {
@@ -68,9 +71,72 @@ func TestAttachPDFPageProgress_LeavesOtherParsersAlone(t *testing.T) {
 	var seen []fractionObservation
 	ctx := boundFractionContext(t, "Parser:txt", &seen)
 
-	attachPDFPageProgress(ctx, parser.NewTextParser())
+	attachPDFPageProgress(ctx, parser.NewTextParser(), progress.Window{Base: 0, Span: 1})
 
 	if len(seen) != 0 {
 		t.Errorf("expected no fraction from a non-PDF parser, got %v", seen)
+	}
+}
+
+func TestAttachPDFPageProgress_ZeroWindowSilent(t *testing.T) {
+	var seen []fractionObservation
+	ctx := boundFractionContext(t, "Parser:pdf", &seen)
+
+	pdfParser := parser.NewPDFParser()
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{})
+	if pdfParser.OnPageDone != nil {
+		t.Fatal("expected OnPageDone to remain nil for zero window")
+	}
+	if len(seen) != 0 {
+		t.Errorf("expected no observations for zero window, got %v", seen)
+	}
+}
+
+func TestAttachPDFPageProgress_ReportsFractionInWindow(t *testing.T) {
+	var seen []fractionObservation
+	ctx := boundFractionContext(t, "Parser:pdf", &seen)
+
+	pdfParser := parser.NewPDFParser()
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0.1, Span: 0.4})
+	if pdfParser.OnPageDone == nil {
+		t.Fatal("expected OnPageDone to be wired")
+	}
+
+	pdfParser.OnPageDone(3, 12)  // 0.25 -> 0.1 + 0.4*0.25 = 0.20
+	pdfParser.OnPageDone(12, 12) // 1.0  -> 0.1 + 0.4*1.0  = 0.50
+
+	want := []fractionObservation{{"Parser:pdf", 0.2}, {"Parser:pdf", 0.5}}
+	if len(seen) != len(want) {
+		t.Fatalf("observations = %v, want %v", seen, want)
+	}
+	for i := range want {
+		if seen[i] != want[i] {
+			t.Errorf("observation %d = %v, want %v", i, seen[i], want[i])
+		}
+	}
+}
+
+func TestPDFPageProgressSupported(t *testing.T) {
+	tests := []struct {
+		fileType utility.FileType
+		method   string
+		want     bool
+	}{
+		{utility.FileTypePDF, "", true},
+		{utility.FileTypePDF, "deepdoc", true},
+		{utility.FileTypePDF, "mineru", false},
+		{utility.FileTypePDF, "paddleocr", false},
+		{utility.FileTypePDF, "docling", false},
+		{utility.FileTypePDF, "plain_text", false},
+		{utility.FileTypeDOCX, "deepdoc", false},
+		{utility.FileTypeMarkdown, "", false},
+	}
+	for _, tc := range tests {
+		setups := map[string]schema.ParserSetup{
+			"pdf": {"parse_method": tc.method},
+		}
+		if got := pdfPageProgressSupported(tc.fileType, setups); got != tc.want {
+			t.Errorf("pdfPageProgressSupported(%s, method=%s) = %v, want %v", tc.fileType, tc.method, got, tc.want)
+		}
 	}
 }

@@ -40,6 +40,7 @@ export default {
       languagePlaceholder: '请选择语言',
       copy: '复制',
       copied: '复制成功',
+      readOnly: '只读',
       viewMore: '查看更多',
       viewLess: '收起',
       comingSoon: '即将推出',
@@ -367,8 +368,16 @@ export default {
       uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
+      manualSwitchAfterUploadHint:
+        '可继续上传，上传后可手动切换这些文件的解析配置。',
+      mixedSwitchAfterUploadHint:
+        '可继续上传，部分文件将自动切换至内置解析配置，其余文件上传后可手动切换解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -453,6 +462,7 @@ export default {
       source: '来源',
       fileName: '文件名',
       datasetLogs: '知识库',
+      datasourceLogs: '数据源',
       fileLogs: '文件',
       overview: '日志',
       success: '成功',
@@ -1057,14 +1067,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       thinkingEnabled: '开启',
       thinkingDisabled: '关闭',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: '快速响应',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: '平衡速度与深度',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: '深度推理',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: '尽力思考',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: '自主探索语料库',
       thinkingTip:
@@ -1198,11 +1200,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
-      showChunkMetadata: '显示块元数据',
-      showChunkMetadataTip:
-        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
-      metadataFields: '元数据字段',
-      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',
@@ -1255,7 +1252,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         '请上传由 OAuth helper 或 Google Cloud Console 导出的 OAuth token JSON。也支持上传 “installed” 或 “web” 类型的 client_secret JSON。若为首次同步，将自动弹出浏览器完成 OAuth 授权流程；如果该 JSON 已包含 refresh token，将会被自动复用。',
       google_drivePrimaryAdminTip: '拥有相应 Drive 访问权限的管理员邮箱。',
       google_driveMyDriveEmailsTip:
-        '需要索引其 “我的云端硬盘” 的邮箱，多个邮箱用逗号分隔（建议包含管理员）。',
+        '可选。将索引这些邮箱的整个 “我的云端硬盘”，并与下方的共享文件夹一并同步，多个邮箱用逗号分隔。留空则仅同步这些文件夹。',
       google_driveSharedFoldersTip:
         '需要同步的 Google Drive 文件夹链接，多个链接用逗号分隔。',
       gmailPrimaryAdminTip:
@@ -2351,6 +2348,12 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       oneChunkTitle: 'Note',
       oneChunkDescription:
         '所有解析后的 sections 会按原始顺序合并为 1 个 chunk。',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        '从上传的图片中本地提取文字。视觉增强独立于该开关，为图片补充描述。',
+      imageTextSourceRequired: '图片需要文本来源，请保留 OCR 或视觉增强。',
+      visionEnhancementPromptTip:
+        '自定义视觉模型的指令。留空则使用内置提示词。',
       enableVisionEnhancement: '启用视觉增强',
       enableVisionEnhancementTip:
         '使用视觉模型解析图片和表格区块，关闭时按普通文本处理。',
@@ -2371,7 +2374,7 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       communication: '通信',
       developer: '开发者',
       typeCommandORsearch: '输入命令或或搜索...',
-      builtIn: '内置解析模板',
+      builtIn: '内置',
       goto: '异常分支',
       comment: '默认值',
       ExceptionDefaultValue: '异常处理默认值',
@@ -2585,11 +2588,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
       wikipedia: '维基百科',
       emailTip:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       email: '邮箱',
       pubMed: 'PubMed',
       pubMedDescription:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       bGPT: 'BGPT',
       bGPTDescription:
         '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API Key。',
@@ -3079,8 +3082,16 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
+      apiKeyRequired: '请输入 API Key',
+      apiKeyMissing: '未配置 API Key，请先填写',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
+      extractorKeywordsTopNMissing:
+        '自动关键词已开启，请设置抽取数量（至少为 1）',
+      extractorQuestionsTopNMissing:
+        '自动问题已开启，请设置生成数量（至少为 1）',
+      extractorTagsTopNMissing: '自动标签已开启，请设置标签数量（至少为 1）',
+      extractorTagFileMissing: '自动标签已开启，请先选择标签文件',
       retrievalDatasetMissing: '未选择知识库，请先选择',
       retrievalMemoryMissing: '未选择记忆，请先选择',
       checklist: '检查清单',
@@ -3254,6 +3265,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         removeFirst: '移除第一个',
         removeLast: '移除最后一个',
       },
+      variableAssignerVariableMissing: '请选择变量',
+      variableAssignerOperatorMissing: '请选择运算符',
+      variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
         methods: '方法',

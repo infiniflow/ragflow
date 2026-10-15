@@ -137,8 +137,6 @@ const (
 	EnvSandboxProviderType               = "SANDBOX_PROVIDER_TYPE"
 	EnvSandboxExecutorManagerURL         = "SANDBOX_EXECUTOR_MANAGER_URL"
 	EnvSandboxExecutorManagerTimeout     = "SANDBOX_EXECUTOR_MANAGER_TIMEOUT"
-	EnvSandboxExecutorManagerPoolSize    = "SANDBOX_EXECUTOR_MANAGER_POOL_SIZE"
-	EnvSandboxExecutorManagerMaxRetries  = "SANDBOX_EXECUTOR_MANAGER_MAX_RETRIES"
 	EnvSandboxExecutorManagerAPIToken    = "SANDBOX_EXECUTOR_MANAGER_API_TOKEN"
 	EnvSandboxBasePythonImage            = "SANDBOX_BASE_PYTHON_IMAGE"
 	EnvSandboxBaseNodeJSImage            = "SANDBOX_BASE_NODEJS_IMAGE"
@@ -200,6 +198,11 @@ const (
 	EnvMineruServerURL                   = "MINERU_SERVER_URL"
 	EnvMonkeyOCRv2ServerURL              = "MONKEYOCRV2_SERVER_URL"
 	EnvMonkeyOCRv2Timeout                = "MONKEYOCRV2_TIMEOUT"
+	EnvMonkeyOCRAPIServer                = "MONKEYOCR_APISERVER"
+	EnvMonkeyOCROutputDir                = "MONKEYOCR_OUTPUT_DIR"
+	EnvMonkeyOCRServerURL                = "MONKEYOCR_SERVER_URL"
+	EnvMonkeyOCRBackend                  = "MONKEYOCR_BACKEND"
+	EnvMonkeyOCRDeleteOutput             = "MONKEYOCR_DELETE_OUTPUT"
 	EnvOpenDataLoaderAPIServer           = "OPENDATALOADER_APISERVER"
 	EnvOpenDataLoaderAPIKey              = "OPENDATALOADER_API_KEY"
 	EnvPaddleOCRBaseUrl                  = "PADDLEOCR_BASE_URL"
@@ -321,9 +324,8 @@ func HasModelFiles(dir string) bool {
 
 // DeepDocORTVersion is the onnxruntime native release the in-process (Go)
 // DeepDoc backend is built and tested against (e.g. "1.29.0"). It is ONE OF
-// THREE raw version declarations that must stay equal (the other two are
-// ORT_VERSION in ragflow_deps/download_deps.py and ARG ORT_VERSION in
-// Dockerfile) — NOT a single source of truth. The
+// TWO raw version declarations that must stay equal (the other is
+// ARG ORT_VERSION in Dockerfile) — NOT a single source of truth. The
 // download URL and extracted dir name are built from those ORT_VERSION
 // constants, not from this one. The Go binding
 // (github.com/infiniflow/onnxruntime_go, the org mirror of yalue/onnxruntime_go)
@@ -333,11 +335,16 @@ func HasModelFiles(dir string) bool {
 // the same minor line. ONNX Runtime is linked statically (libonnxruntime.a),
 // so there is no .so / SONAME at runtime.
 //
-// To bump ORT, the three Go-side native pins above must change together
+// To bump ORT, the two Go-side native pins above must change together
 // (drift breaks the static link or the runtime OrtGetApiBase lookup):
 //   - DeepDocORTVersion (here, Go)
-//   - ORT_VERSION in ragflow_deps/download_deps.py
 //   - ARG ORT_VERSION in Dockerfile
+//
+// The dev downloader tools/scripts/download_dev_deps.py carries its own copy of
+// ORT_VERSION used only to fetch the matching infiniflow/ragflow-build release;
+// build.sh no longer greps it, so the Docker build needs no extra COPY of the
+// script. Keep all three (this, Dockerfile ARG, the downloader) on the same
+// version when bumping.
 //
 // Separately, keep these on the same ORT minor line but version them
 // independently of the Go native lib (see pyproject.toml / development.md):

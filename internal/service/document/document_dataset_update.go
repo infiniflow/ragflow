@@ -145,7 +145,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
-		if err = s.updateDocumentNameOnly(ctx, doc, kb.TenantID, *req.Name); err != nil {
+		if err = s.updateDocumentNameOnly(ctx, doc, kb, *req.Name); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -163,6 +163,20 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	current := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	eff, _ := service.Resolve(current, sel)
 	isPipeline, effParserID, effPipelineID := eff.Effective()
+	if (sel != nil || present["parser_config"]) && isPipeline && effPipelineID != nil && strings.TrimSpace(*effPipelineID) != "" {
+		accessErr := permission.NewDatabaseChecker(dao.DB).CheckDependency(
+			ctx,
+			permission.Subject{UserID: userID, TenantID: kb.TenantID},
+			permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: kb.ID},
+			permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: strings.TrimSpace(*effPipelineID)},
+			permission.OperationUpdate,
+			permission.OperationUse,
+		)
+		if accessErr != nil {
+			code, permissionErr := permissionresponse.Normalize(accessErr)
+			return nil, code, permissionErr
+		}
+	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
 		// Normalize "pages" ranges before persistence. Invalid ranges are
@@ -439,7 +453,9 @@ func validateMetaFields(meta map[string]any) error {
 	return nil
 }
 
-func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, tenantID, newName string) error {
+// updateDocumentNameOnly renames a document and re-tokenizes its chunks' title
+// fields with the dataset language, the way ingestion tokenized them.
+func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
 		return errors.New("database error (Document rename)")
 	}
@@ -456,9 +472,14 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		return nil
 	}
 
-	titleTks, _ := tokenizer.Tokenize(newName)
-	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+	tok := tokenizer.New(language)
+	titleTks, _ := tok.Tokenize(newName)
+	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	return s.docEngine.UpdateChunks(
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},
