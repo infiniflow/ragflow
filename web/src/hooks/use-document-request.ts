@@ -129,15 +129,18 @@ export const DocumentStructureKeys = {
     ] as const,
 };
 
-// Refreshes the document list after a change to the dataset's documents. The
-// change also moves the filter counts, but those are fetched only when the
-// filter popover opens, so they are marked stale rather than refetched: the
-// next open loads them again.
-const invalidateDocumentQueries = (queryClient: QueryClient) => {
+// A change to the dataset's documents moves the filter counts, but those are
+// fetched only when the filter popover opens, so they are marked stale rather
+// than refetched: the next open loads them again.
+const invalidateDocumentFilters = (queryClient: QueryClient) =>
   queryClient.invalidateQueries({
     queryKey: DocumentKeys.allFilters(),
     refetchType: 'none',
   });
+
+// Refreshes the document list after a change to the dataset's documents.
+const invalidateDocumentQueries = (queryClient: QueryClient) => {
+  invalidateDocumentFilters(queryClient);
   return queryClient.invalidateQueries({ queryKey: DocumentKeys.all() });
 };
 
@@ -409,6 +412,9 @@ export const useGetDocumentFilter = (): {
     queryKey,
     enabled: filterOpened,
     staleTime: DocumentFilterStaleTimeMs,
+    // Fetched on open only (handleOpenChange), never in the background while
+    // the popover is closed.
+    refetchOnReconnect: false,
     queryFn: async () => {
       if (!datasetId) {
         return;
@@ -597,8 +603,10 @@ export const useRunDocument = () => {
         // For a start request, keep the optimistic running state until the
         // polling query observes the worker's state. Invalidating here can
         // immediately fetch the pre-worker "not started" row and disable
-        // polling again.
-        if (run !== 1) {
+        // polling again. The status counts still moved.
+        if (run === 1) {
+          invalidateDocumentFilters(queryClient);
+        } else {
           invalidateDocumentQueries(queryClient);
         }
         message.success(i18n.t('message.operated'));
@@ -761,6 +769,7 @@ export const useCreateDocument = () => {
         if (page === 1) {
           invalidateDocumentQueries(queryClient);
         } else {
+          invalidateDocumentFilters(queryClient);
           setPaginationParams(); // fetch document list
         }
 
