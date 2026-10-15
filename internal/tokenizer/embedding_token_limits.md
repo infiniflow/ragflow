@@ -347,7 +347,8 @@ an unrelated `vocab.txt` there silently replaces the verified artifact; and audi
 1. **Identify the architecture** from the model's own artifact (`tokenizer.json`, or
    `vocab.txt` / `sentencepiece.bpe.model`). If the vocabulary is byte-identical to a
    family fixture, only step 4 is needed; if it differs, the model needs its own fixture.
-2. **Add the artifact** to `ragflow_deps/download_deps.py`'s `TOKENIZER_ASSETS` list -
+2. **Add the artifact** to the `TOKENIZER_ASSETS` list inlined in
+   `ragflow_deps/download_deps.py` (the downloader fetches individual files from) -
    individual files, not `snapshot_download` of a multi-GB repo - pin its SHA-1 in the
    loader map so a mismatch fails at load instead of counting with the wrong table, and add
    it to the copy loop in `Dockerfile` / `Dockerfile_base` so every runtime image ships it
@@ -388,9 +389,11 @@ property tier green, `gofmt` clean.
 
 ## Assets and the oracle
 
-Assets are fetched, never committed: `ragflow_deps/download_deps.py` has a `TOKENIZER_ASSETS`
-list that downloads **individual files** (not `snapshot_download` of a repo that also
-carries multi-GB weights) into `ragflow_deps/huggingface.co/<repo>/<file>`, which
+Assets are fetched, never committed: the `TOKENIZER_ASSETS` list inlined in
+`ragflow_deps/download_deps.py` is the source the downloader reads to download
+**individual files** (not `snapshot_download` of a repo that also carries multi-GB
+weights) from, into
+`ragflow_deps/huggingface.co/<repo>/<file>`, which
 `.gitignore` already excludes (`huggingface.co/`). Loaders read them from disk with a
 SHA-1 pin, walk up from the working and executable directories like `bpe_loader.go`, and
 perform no network I/O. A missing asset fails loudly at every layer that can report one: the
@@ -412,10 +415,12 @@ embedder whose model declares a tokenizer it cannot load **fails the ingest** wi
 `embedding tokenizer "<id>" is declared for <model> but its asset is unavailable …:
 refusing to count with the calibrated estimate`, instead of counting differently.
 
-The three places are held together by `ragflow_deps/test_tokenizer_assets.py`, which
-fails when a `"runtime"` asset is missing from either Dockerfile, when an `"oracle"`
-asset is shipped, or when a runtime asset has no 40-hex SHA-1 pin in
-`internal/tokenizer/*.go`. It is there because the first version of this chain silently
+The three places are held together by the inlined `TOKENIZER_ASSETS` list (read by
+`download_deps.py` and `download_dev_deps.py`) and the Dockerfile copy loops plus
+the Go loader SHA-1 pins, which must stay in sync: a `"runtime"` asset must be copied
+into both `Dockerfile` and `Dockerfile_base` and pinned with a 40-hex SHA-1 in
+`internal/tokenizer/*.go`, while an `"oracle"` asset must never be shipped. The first
+version of this chain silently
 skipped step three: the counters loaded fine in a developer checkout and quietly
 degraded to the calibrated path in the image.
 
@@ -784,8 +789,8 @@ bash scripts/restart_ingestor.sh
 # how much of the catalog the tags cover (regenerate the tables in the strategy section)
 python3 scripts/tokenizer_coverage.py --markdown
 
-# asset plumbing: download list vs runtime images vs SHA-1 pins
-python3 -m pytest ragflow_deps/test_tokenizer_assets.py -q
+# asset plumbing: download manifest vs runtime images vs SHA-1 pins
+./build.sh --test ./internal/tokenizer/ -run TestTokenizerAssetsAreWellFormed
 ```
 
 Expected output today: all packages `ok`; the oracle test logs

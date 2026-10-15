@@ -24,12 +24,9 @@ package component
 import (
 	"context"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"image"
 	"io"
-	"os"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,7 +38,9 @@ import (
 	pdflayout "ragflow/internal/deepdoc/parser/pdf/layout"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
@@ -54,7 +53,6 @@ var (
 )
 
 const (
-	figureVisionPromptFile           = "vision_llm_figure_describe_prompt.md"
 	visionEnhancementConcurrency int = 10
 	// visionChatTimeout bounds a single VLM call so a hung endpoint cannot
 	// occupy one of the concurrency slots indefinitely. Python wraps the
@@ -63,40 +61,8 @@ const (
 	visionMediaItemBudget = 10 * time.Second
 )
 
-var (
-	figureVisionPrompts     promptDirState
-	figureVisionPromptCache = make(map[string]string)
-	figureVisionPromptMu    sync.RWMutex
-)
-
-// promptDirState caches the project root that contains rag/prompts. The once
-// guard makes initialization sticky; unlike a function-local initErr, an
-// initialization failure is preserved for every subsequent call.
-type promptDirState struct {
-	once    sync.Once
-	root    string
-	initErr error
-}
-
-func (s *promptDirState) resolve(requestedRoot string) (string, error) {
-	s.once.Do(func() {
-		if info, statErr := os.Stat(filepath.Join(requestedRoot, "rag", "prompts")); statErr == nil && info.IsDir() {
-			s.root = requestedRoot
-			return
-		}
-		s.initErr = fmt.Errorf("rag/prompts not found under project root %q", requestedRoot)
-	})
-	if s.initErr != nil {
-		return "", s.initErr
-	}
-	if s.root == "" {
-		return "", errors.New("prompts base dir not initialized")
-	}
-	return s.root, nil
-}
-
-// isUsableVisionImage reports whether raw carries a valid image data URI or a
-// base64 payload that can be sent to a vision model.
+// isUsableVisionImage checks the encoded size and rejects raster dimensions
+// beyond the limits shared by Parser and VLM materialization.
 func isUsableVisionImage(raw string) bool {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -142,10 +108,11 @@ func isValidBase64(s string, stripWhitespace bool) bool {
 	return false
 }
 
-// visionImageCropper materializes the VLM payload for a parsed item. Under
-// cgo it crops PDF sections on demand; inline images stay encoded. Close
-// releases any re-acquired native engine.
+// visionImageCropper prepares any source document before image admission,
+// materializes one item's VLM payload under image admission, and releases
+// source resources when the batch finishes.
 type visionImageCropper interface {
+	Prepare(ctx context.Context, item map[string]any) error
 	Crop(ctx context.Context, item map[string]any) (*visionImage, error)
 	Close() error
 }
@@ -167,7 +134,7 @@ func maybeDispatchVisionEnhancement(
 	dispatched parser.ParseResult,
 	inputs map[string]any,
 	vision visionSettings,
-	window fractionWindow,
+	window progress.Window,
 ) (parser.ParseResult, bool, error) {
 	w := window
 
@@ -239,14 +206,18 @@ func maybeDispatchVisionEnhancement(
 		return dispatched, false, nil
 	}
 
-	// Materialize one resource at a time. The VLM semaphore is acquired before
-	// materialization, so at most visionEnhancementConcurrency encoded payloads
-	// remain live while model requests run.
+	// Prepare PDF sources outside image admission so slow storage reads do not
+	// block unrelated image materialization. The separate VLM semaphore bounds
+	// how many encoded payloads remain live while model requests run.
 	cropper, cerr := visionImageCropperFactory(ctx, db, inputs)
 	if cerr != nil {
 		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement skipped: %v", cerr))
 		return dispatched, false, nil
 	}
+	// Close is invoked explicitly after materialization so the engine and the
+	// source bytes are released while model requests are still in flight. Keep
+	// a deferred Close as a panic/early-return safety net: Close is idempotent
+	// (engine is nilled, sourceErr cleared), so the second call is a no-op.
 	defer cropper.Close()
 	modified := false
 	descriptions := make([]string, len(items))
@@ -275,13 +246,26 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
+			item := dispatched.JSON[itemIdx]
+			if err := cropper.Prepare(ctx, item); err != nil {
+				if ctx.Err() == nil {
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
+					}
+				}
+				if resource == nil && ctx.Err() == nil {
+					failures[slot] = fmt.Sprintf("image source preparation failed: %v", err)
+				}
+				return
+			}
+
 			itemCtx, cancelItem := context.WithTimeout(ctx, visionMediaItemBudget)
 			defer cancelItem()
 			release, err := parser.AcquireImageMedia(itemCtx)
 			if err != nil {
 				if ctx.Err() == nil && vlmReady {
-					if payload, _ := dispatched.JSON[itemIdx]["image"].(string); payload != "" {
-						resource = &visionImage{VLMData: payload}
+					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
+						resource = &visionImage{VLMData: payload, VLMDataValidated: true}
 					}
 				}
 				if resource == nil && ctx.Err() == nil {
@@ -290,7 +274,6 @@ func maybeDispatchVisionEnhancement(
 				return
 			}
 			defer release()
-			item := dispatched.JSON[itemIdx]
 			resource, err = cropper.Crop(itemCtx, item)
 			if err != nil || resource == nil {
 				cropErr := err
@@ -325,7 +308,7 @@ func maybeDispatchVisionEnhancement(
 		if resource == nil {
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		if !resource.VLMDataValidated && !isUsableVisionImage(resource.VLMData) {
@@ -334,7 +317,7 @@ func maybeDispatchVisionEnhancement(
 			}
 			releaseSlot()
 			n := settled.Add(1)
-			w.report(ctx, float64(n)/float64(total))
+			w.Report(ctx, float64(n)/float64(total))
 			continue
 		}
 		wg.Add(1)
@@ -344,7 +327,7 @@ func maybeDispatchVisionEnhancement(
 			defer func() {
 				if ctx.Err() == nil {
 					n := settled.Add(1)
-					w.report(ctx, float64(n)/float64(total))
+					w.Report(ctx, float64(n)/float64(total))
 				}
 			}()
 
@@ -364,11 +347,15 @@ func maybeDispatchVisionEnhancement(
 			}
 		}(slot, resource.VLMData)
 	}
+	if err := cropper.Close(); err != nil {
+		dispatched.Warnings = append(dispatched.Warnings, fmt.Sprintf("vision enhancement cleanup failed: %v", err))
+		common.Warn("vision enhancement: failed to close image cropper", zap.Error(err))
+	}
 	wg.Wait()
 	if err := ctx.Err(); err != nil {
 		return dispatched, modified, err
 	}
-	w.report(ctx, 1.0)
+	w.Report(ctx, 1.0)
 	failedItems := 0
 	firstFailure := ""
 	for _, failure := range failures {
@@ -410,39 +397,11 @@ func appendItemText(item map[string]any, text string) {
 }
 
 func buildFigureVisionPrompt(language string) (string, error) {
-	template, err := loadFigureVisionPromptFile(figureVisionPromptFile)
+	template, err := (prompts.EmbeddedPromptLoader{}).Load("vision_llm_figure_describe_prompt")
 	if err != nil {
 		return "", err
 	}
 	return renderFigureVisionLanguage(template, language), nil
-}
-
-func loadFigureVisionPromptFile(filename string) (string, error) {
-	figureVisionPromptMu.RLock()
-	if cached, ok := figureVisionPromptCache[filename]; ok {
-		figureVisionPromptMu.RUnlock()
-		return cached, nil
-	}
-	figureVisionPromptMu.RUnlock()
-
-	baseDir, err := figureVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", filename)
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("figure vision prompt %q: %w", filename, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	figureVisionPromptMu.Lock()
-	figureVisionPromptCache[filename] = cached
-	figureVisionPromptMu.Unlock()
-	return cached, nil
-}
-
-func figureVisionPromptsBaseDir() (string, error) {
-	return figureVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 func buildVisionMessages(prompt, imageBase64 string) []modelModule.Message {

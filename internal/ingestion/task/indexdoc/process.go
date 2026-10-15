@@ -152,9 +152,8 @@ func cleanupConsumedChunkFields(ck map[string]any) {
 //
 // The Python index doc carries none of them — its chunk builder emits only the
 // persist fields — but Go's chunker hands them on, and the write boundary is
-// strict about unknown columns: Infinity rejects the whole insert with
-// "Column ck_type not found in table" (InfinityException 3013). Elasticsearch
-// merely swallowed them, because a dynamic mapping accepts any field.
+// where they stop: Elasticsearch and Vastbase would add a field for each key,
+// and Infinity would drop each key at insert with a warning.
 var pipelineOnlyFields = []string{
 	"ck_type", "tk_nums", "layout", "layout_type", "layoutno", "image",
 	"context_above", "context_below", "page_number",

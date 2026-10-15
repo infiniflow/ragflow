@@ -302,6 +302,9 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if !isMemoryIndex && docCopy["available_int"] == nil {
+			docCopy["available_int"] = 1
+		}
 		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
 			docCopy["tag_feas"] = raw
 		}

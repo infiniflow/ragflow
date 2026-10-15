@@ -29,10 +29,7 @@ import {
   IClaimsResponse,
   IStructureGraphResponse,
 } from '@/interfaces/database/document-structure';
-import {
-  IChangeParserConfigRequestBody,
-  IDocumentMetaRequestBody,
-} from '@/interfaces/request/document';
+import { IChangeParserConfigRequestBody } from '@/interfaces/request/document';
 import i18n from '@/locales/config';
 import { EMPTY_METADATA_FIELD } from '@/pages/dataset/dataset/use-select-filters';
 import {
@@ -700,39 +697,6 @@ export const useSetDocumentPipelineParser = () => {
   });
 
   return { setDocumentPipelineParser: mutateAsync, data, loading };
-};
-
-export const useSetDocumentMeta = () => {
-  const queryClient = useQueryClient();
-
-  const {
-    data,
-    isPending: loading,
-    mutateAsync,
-  } = useMutation({
-    mutationKey: [DocumentApiAction.SetDocumentMeta],
-    mutationFn: async (params: IDocumentMetaRequestBody) => {
-      try {
-        const { data } = await kbService.setMeta({
-          meta: params.meta,
-          doc_id: params.documentId,
-        });
-
-        if (data?.code === 0) {
-          queryClient.invalidateQueries({
-            queryKey: DocumentKeys.all(),
-          });
-
-          message.success(i18n.t('message.modified'));
-        }
-        return data?.code;
-      } catch (error) {
-        message.error('error:' + error);
-      }
-    },
-  });
-
-  return { setDocumentMeta: mutateAsync, data, loading };
 };
 
 export const useCreateDocument = () => {

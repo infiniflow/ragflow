@@ -201,15 +201,9 @@ func InitLogger(level string, file FileOutput, serviceName string) error {
 	}
 	stdoutSyncer := zapcore.AddSync(os.Stdout)
 	syncers := []zapcore.WriteSyncer{stdoutSyncer}
-	// File sink only when a destination is actually configured. The cmd/*
-	// entry points init the logger TWICE: a pre-config temporary logger
-	// (before the port is known, e.g. "api_server" → logs/api_server.log)
-	// and the real one after server.Init renames it (e.g.
-	// "api_server_9384" → logs/api_server_9384.log). The temporary pass now
-	// passes an empty FileOutput and stays stdout-only, so the pre-config
-	// startup window no longer litters a second, orphaned log file next to
-	// the real one (and ragflow-cli no longer drops a lumberjack file into
-	// os.TempDir()).
+	// File sink only when a destination is actually configured. The server
+	// entry point initializes a temporary stdout-only logger before loading
+	// configuration, then reinitializes it with the configured file destination.
 	if file.Path != "" && file.Filename != "" {
 		ljLogger := &lumberjack.Logger{
 			Filename:   filepath.Join(file.Path, file.Filename),

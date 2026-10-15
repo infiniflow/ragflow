@@ -188,6 +188,18 @@ func (dao *UserTenantDAO) DeleteByUserAndTenant(ctx context.Context, db *gorm.DB
 		Delete(&entity.UserTenant{}).Error
 }
 
+// DeleteByUserAndTenantAndRole deletes an active membership only when its role
+// matches, and reports whether a row was removed.
+func (dao *UserTenantDAO) DeleteByUserAndTenantAndRole(ctx context.Context, db *gorm.DB, userID, tenantID, role string) (bool, error) {
+	result := db.WithContext(ctx).Unscoped().
+		Where("user_id = ? AND tenant_id = ? AND role = ? AND status = ?", userID, tenantID, role, "1").
+		Delete(&entity.UserTenant{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
 // UpdateRoleByUserAndTenant updates the role for a specific user+tenant pair.
 // Returns an error if no matching row was found.
 func (dao *UserTenantDAO) UpdateRoleByUserAndTenant(ctx context.Context, db *gorm.DB, userID, tenantID, role string) error {

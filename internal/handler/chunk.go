@@ -34,7 +34,6 @@ import (
 
 // chunkService is the consumer-side interface for ChunkHandler's service dependency.
 type chunkService interface {
-	RetrievalTest(ctx context.Context, req *service.RetrievalTestRequest, userID string) (*service.RetrievalTestResponse, error)
 	Get(ctx context.Context, req *service.GetChunkRequest, userID string) (*service.GetChunkResponse, error)
 	List(ctx context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error)
 	SwitchChunks(ctx context.Context, userID string, datasetID, documentID string, availableInt int, chunkIDs []string) error
@@ -57,83 +56,6 @@ func NewChunkHandler(chunkService chunkService, userService *service.UserService
 		chunkService: chunkService,
 		userService:  userService,
 	}
-}
-
-// RetrievalTest performs retrieval test for chunks
-// @Summary Retrieval Test
-// @Description Test retrieval of chunks based on question and knowledge base
-// @Tags chunks
-// @Param request body service.RetrievalTestRequest true "retrieval test parameters"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/datasets/search [post]
-func (h *ChunkHandler) RetrievalTest(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	// Bind JSON request
-	var req service.RetrievalTestRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeBadRequest, nil, "Invalid request body: "+err.Error())
-		return
-	}
-
-	// Set default values for optional parameters
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.Size == nil {
-		defaultSize := 30
-		req.Size = &defaultSize
-	}
-	if req.TopK == nil {
-		defaultTopK := 1024
-		req.TopK = &defaultTopK
-	}
-	if req.UseKG == nil {
-		defaultUseKG := false
-		req.UseKG = &defaultUseKG
-	}
-
-	// Strip and validate question.  Matching Python chunk_api.py which returns
-	// an empty result for blank questions rather than an error.
-	if strings.TrimSpace(req.Question) == "" {
-		common.SuccessWithData(c, &service.RetrievalTestResponse{
-			Chunks:  []map[string]interface{}{},
-			DocAggs: []map[string]interface{}{},
-			Total:   0,
-		}, "success")
-		return
-	}
-
-	// Validate required fields
-	if req.Datasets == nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id is required")
-		return
-	}
-
-	if len(req.Datasets) == 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "kb_id array cannot be empty")
-		return
-	}
-	if req.TopK != nil && *req.TopK <= 0 {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "top_k must be greater than 0")
-		return
-	}
-
-	ctx := c.Request.Context()
-	// Call service with user ID for permission checks
-	resp, err := h.chunkService.RetrievalTest(ctx, &req, user.ID)
-	if err != nil {
-		common.Warn("dataset search failed", zap.String("error", err.Error()))
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, "dataset search failed")
-		return
-	}
-
-	common.SuccessWithData(c, resp, "success")
 }
 
 // Get retrieves a chunk by ID.
@@ -361,50 +283,6 @@ func (h *ChunkHandler) StopParsing(c *gin.Context) {
 	common.SuccessWithData(c, data, message)
 }
 
-// List retrieves chunks for a document.
-// @Summary List Chunks
-// @Description Retrieve paginated chunks for a document with optional filtering.
-// @Tags chunks
-// @Param request body service.ListChunksRequest true "List chunks parameters"
-// @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/list [post]
-func (h *ChunkHandler) List(c *gin.Context) {
-	user, errorCode, errorMessage := GetUser(c)
-	if errorCode != common.CodeSuccess {
-		common.ErrorWithCode(c, errorCode, errorMessage)
-		return
-	}
-
-	// Bind JSON request
-	var req service.ListChunksRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, err.Error())
-		return
-	}
-
-	// Set default values for optional parameters
-	if req.Page == nil {
-		defaultPage := 1
-		req.Page = &defaultPage
-	}
-	if req.Size == nil {
-		defaultSize := 30
-		req.Size = &defaultSize
-	}
-
-	ctx := c.Request.Context()
-	resp, err := h.chunkService.List(ctx, &req, user.ID)
-	if err != nil {
-		if respondPermissionErrorIf(c, err, false) {
-			return
-		}
-		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, 500, nil, err.Error())
-		return
-	}
-
-	common.SuccessWithData(c, resp, "success")
-}
-
 // SwitchChunks enable or disable a chunk
 func (h *ChunkHandler) SwitchChunks(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
@@ -539,7 +417,7 @@ func optionalBodyString(rawBody map[string]interface{}, field, typeMessage strin
 // @Tags chunks
 // @Param request body service.UpdateChunkRequest true "update chunk"
 // @Success 200 {object} map[string]interface{}
-// @Router /api/v1/chunk/update [post]
+// @Router /api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id} [patch]
 func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -547,7 +425,7 @@ func (h *ChunkHandler) UpdateChunk(c *gin.Context) {
 		return
 	}
 
-	// Validate allowed update fields and get IDs from body
+	// Decode the update fields.
 	body, err := io.ReadAll(c.Request.Body)
 	var rawBody map[string]interface{}
 	if err == nil {

@@ -73,13 +73,16 @@ func (dao *MCPServerDAO) CreateMCPServer(ctx context.Context, db *gorm.DB, serve
 	return db.WithContext(ctx).Create(server).Error
 }
 
-// ListMCPServers returns MCP servers for a tenant with optional filtering.
+// ListMCPServers returns MCP servers for one tenant with optional ID filtering.
 func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenantID string, ids []string, keywords string, orderby string, desc bool) ([]*entity.MCPServer, int64, error) {
+	orderColumn, err := mcpServerOrderColumn(orderby)
+	if err != nil {
+		return nil, 0, err
+	}
 	var servers []*entity.MCPServer
 	var total int64
 
 	query := db.WithContext(ctx).Model(&entity.MCPServer{}).Where("tenant_id = ?", tenantID)
-
 	if len(ids) > 0 {
 		query = query.Where("id IN ?", ids)
 	}
@@ -92,10 +95,6 @@ func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenant
 		return nil, 0, err
 	}
 
-	orderColumn, err := mcpServerOrderColumn(orderby)
-	if err != nil {
-		return nil, 0, err
-	}
 	orderDirection := "ASC"
 	if desc {
 		orderDirection = "DESC"
@@ -109,15 +108,6 @@ func (dao *MCPServerDAO) ListMCPServers(ctx context.Context, db *gorm.DB, tenant
 	}
 
 	return servers, total, nil
-}
-
-// GetByIDAndTenant returns an MCP server owned by a tenant.
-func (dao *MCPServerDAO) GetByIDAndTenant(ctx context.Context, db *gorm.DB, id, tenantID string) (*entity.MCPServer, error) {
-	var server entity.MCPServer
-	if err := db.WithContext(ctx).Where("id = ? AND tenant_id = ?", id, tenantID).First(&server).Error; err != nil {
-		return nil, err
-	}
-	return &server, nil
 }
 
 // DeleteMCPServer deletes an MCP server owned by a tenant.
