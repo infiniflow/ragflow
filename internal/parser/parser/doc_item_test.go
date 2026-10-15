@@ -277,7 +277,24 @@ func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
 	}
 	opaqueMap := map[string]any{"foo": "bar", "nested": map[string]any{"a": 1}}
 
-	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap} {
+	// PDF crop positions arrive as [][]any (normalizePDFPositions), not
+	// [][]float64; the typed conversion must preserve them verbatim. Regression
+	// guard for the positions-dropping bug caught during review.
+	imageMapAny := map[string]any{
+		"text":      "alt",
+		"image":     "data:image/png;base64,xxx",
+		DocTypeKey:  DocTypeImage,
+		"ck_type":   "image",
+		"positions": [][]any{{1, 2, 3, 4}},
+	}
+	tableMapAny := map[string]any{
+		"table":     &entity.TableData{},
+		DocTypeKey:  DocTypeTable,
+		"ck_type":   DocTypeTable,
+		"positions": [][]any{{1, 2, 3, 4}},
+	}
+
+	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap, imageMapAny, tableMapAny} {
 		got := DocItemFromMap(m).ToMap()
 		if !reflect.DeepEqual(got, m) {
 			t.Fatalf("DocItemFromMap round-trip mismatch for %q\n got=%#v\nwant=%#v", m[DocTypeKey], got, m)

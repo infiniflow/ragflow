@@ -218,7 +218,11 @@ func imageItemFromMap(m map[string]any) DocItem {
 		CKType:    stringField(m, "ck_type"),
 		Sheet:     stringField(m, "sheet"),
 		Positions: positionsField(m),
-		Extra:     extraFromMap(m, "text", "image", DocTypeKey, "ck_type", "sheet", "positions"),
+		// "positions" is intentionally NOT stripped: when the map carries
+		// positions as [][]any (e.g. PDF crop regions from normalizePDFPositions)
+		// the typed field cannot capture them, and stripping would drop the key
+		// from ToMap. Leaving it in Extra preserves the wire shape exactly.
+		Extra: extraFromMap(m, "text", "image", DocTypeKey, "ck_type", "sheet"),
 	}
 }
 
@@ -229,7 +233,9 @@ func tableItemFromMap(m map[string]any) DocItem {
 		Sheet:     stringField(m, "sheet"),
 		Positions: positionsField(m),
 		CKType:    stringField(m, "ck_type"),
-		Extra:     extraFromMap(m, "table", DocTypeKey, "ck_type", "sheet", "positions"),
+		// Same as imageItemFromMap: keep "positions" in Extra so non-[][]float64
+		// position matrices survive the typed conversion unchanged.
+		Extra: extraFromMap(m, "table", DocTypeKey, "ck_type", "sheet"),
 	}
 }
 
