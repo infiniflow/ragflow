@@ -15,7 +15,7 @@ export function useGraphEntitySearch(
 ) {
   const [graphKeywords, setGraphKeywords] = useState('');
   const [searchKeyword, setSearchKeyword] = useState(''); // ExpandableSearchInput value
-  const [selectedNodeId, setSelectedNodeId] = useState(''); // entity name
+  const [selectedNodeName, setSelectedNodeName] = useState('');
 
   // Non-graph kinds search server-side with the same ?keywords= query the
   // graph-kind Enter search uses; the two inputs never show at once, and the
@@ -49,11 +49,11 @@ export function useGraphEntitySearch(
   // Only refill the select when the selected entity is still in the current
   // graph data, to avoid showing raw text with no matching option
   const selectedEntityName =
-    selectedNodeId &&
+    selectedNodeName &&
     (selectedTemplate?.entities ?? []).some(
-      (entity) => getEntityDisplayName(entity) === selectedNodeId,
+      (entity) => getEntityDisplayName(entity) === selectedNodeName,
     )
-      ? selectedNodeId
+      ? selectedNodeName
       : '';
 
   // Picking an option behaves like an Enter search: refetch the server-side
@@ -64,11 +64,11 @@ export function useGraphEntitySearch(
       if (!name) {
         setGraphKeywords('');
         setSearchKeyword('');
-        setSelectedNodeId('');
+        setSelectedNodeName('');
         onNodeClick?.(null);
         return;
       }
-      setSelectedNodeId(name);
+      setSelectedNodeName(name);
       setGraphKeywords(name);
       setSearchKeyword('');
       const entity = (selectedTemplate?.entities ?? []).find(
@@ -101,7 +101,7 @@ export function useGraphEntitySearch(
       }
       setGraphKeywords(keywords);
       setSearchKeyword('');
-      setSelectedNodeId('');
+      setSelectedNodeName('');
       onNodeClick?.(null);
     },
     [selectedTemplate?.entities, handleSelectEntity, onNodeClick],
@@ -116,7 +116,7 @@ export function useGraphEntitySearch(
   const handleNodeClick = useCallback(
     (node: ClickableNode) => {
       if (isGraphKind && node.name) {
-        setSelectedNodeId(node.name);
+        setSelectedNodeName(node.name);
       }
       onNodeClick?.(node);
     },
@@ -128,7 +128,7 @@ export function useGraphEntitySearch(
       setSelectedTemplateId(templateId);
       setGraphKeywords('');
       setSearchKeyword('');
-      setSelectedNodeId('');
+      setSelectedNodeName('');
       onNodeClick?.(null);
     },
     [setSelectedTemplateId, onNodeClick],

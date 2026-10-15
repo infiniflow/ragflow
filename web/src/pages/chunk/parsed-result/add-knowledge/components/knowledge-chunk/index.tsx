@@ -267,7 +267,7 @@ function Chunk() {
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
                   positions={positions}
-                  onNodeChange={handleSelectedEntityChange}
+                  onEntityChange={handleSelectedEntityChange}
                   onClaimsPanelChange={handleClaimsPanelChange}
                   onEvidencePanelChange={handleEvidencePanelChange}
                 />
