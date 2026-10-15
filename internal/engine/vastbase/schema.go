@@ -178,7 +178,7 @@ var skillFullTextFields = []string{"name_tks", "tags_tks", "description_tks", "c
 
 // CreateChunkStore creates or upgrades the shared baseName table. The dataset
 // ID is a row-level discriminator for chunk and memory tables.
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}

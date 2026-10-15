@@ -1067,6 +1067,8 @@ func TestAddChunkSuccess(t *testing.T) {
 
 	engine := &addChunkTestEngine{}
 	var incrementTokenNum, incrementChunkNum int64
+	language := "Slovak"
+	var tokenizeLanguages []string
 	svc := &ChunkService{
 		docEngine:   engine,
 		kbDAO:       dao.NewKnowledgebaseDAO(),
@@ -1078,7 +1080,7 @@ func TestAddChunkSuccess(t *testing.T) {
 			return permission.ErrPermissionDenied
 		},
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
-			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
+			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1", Language: &language}, nil
 		},
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			driver := &stubEmbeddingDriver{
@@ -1098,9 +1100,15 @@ func TestAddChunkSuccess(t *testing.T) {
 			incrementChunkNum = chunkNum
 			return nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
-		numTokensFunc:           func(text string) int { return len(text) },
+		tokenizeFunc: func(text, lang string) (string, error) {
+			tokenizeLanguages = append(tokenizeLanguages, lang)
+			return text, nil
+		},
+		fineGrainedTokenizeFunc: func(text, lang string) (string, error) {
+			tokenizeLanguages = append(tokenizeLanguages, lang)
+			return text + "_fg", nil
+		},
+		numTokensFunc: func(text string) int { return len(text) },
 	}
 
 	resp, err := svc.AddChunk(ctx, &service.AddChunkRequest{
@@ -1141,6 +1149,19 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 	if inserted["img_id"] != nil {
 		t.Fatalf("did not expect image id in inserted chunk: %#v", inserted)
+	}
+	// A manual chunk is tokenized like the dataset's parsed chunks, and the
+	// write that may create the chunk store carries the dataset language.
+	if len(tokenizeLanguages) != 4 {
+		t.Fatalf("tokenizer calls = %v, want 4", tokenizeLanguages)
+	}
+	for _, lang := range tokenizeLanguages {
+		if lang != language {
+			t.Fatalf("tokenized with language %q, want %q", lang, language)
+		}
+	}
+	if engine.insertLanguage != language {
+		t.Fatalf("InsertChunks language = %q, want %q", engine.insertLanguage, language)
 	}
 	vec, ok := inserted["q_2_vec"].([]float64)
 	if !ok {
@@ -1190,8 +1211,8 @@ func TestAddChunkPersistsTagKwdOnlyWhenProvided(t *testing.T) {
 				return models.NewEmbeddingModel(driver, &modelName, &models.APIConfig{}, 0), nil
 			},
 			incrementChunkStatsFunc: func(_, _ string, _, _ int64, _ float64) error { return nil },
-			tokenizeFunc:            func(text string) (string, error) { return text, nil },
-			fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+			tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+			fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 			numTokensFunc:           func(text string) int { return len(text) },
 		}
 		return svc, engine
@@ -1337,8 +1358,8 @@ func TestAddChunkImageAndTagFeatureValidation(t *testing.T) {
 		getKnowledgebaseByIDFunc: func(id string) (*entity.Knowledgebase, error) {
 			return &entity.Knowledgebase{ID: id, TenantID: userID, EmbdID: "embed-1"}, nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 		numTokensFunc:           func(text string) int { return len(text) },
 		getEmbeddingModelFunc: func(string, string) (*models.EmbeddingModel, error) {
 			driver := &stubEmbeddingDriver{
@@ -1435,8 +1456,8 @@ func TestAddChunkIncrementsStatsAfterInsert(t *testing.T) {
 			incrementCalls++
 			return nil
 		},
-		tokenizeFunc:            func(text string) (string, error) { return text, nil },
-		fineGrainedTokenizeFunc: func(text string) (string, error) { return text + "_fg", nil },
+		tokenizeFunc:            func(text, _ string) (string, error) { return text, nil },
+		fineGrainedTokenizeFunc: func(text, _ string) (string, error) { return text + "_fg", nil },
 		numTokensFunc:           func(text string) int { return len(text) },
 	}
 
@@ -1959,11 +1980,11 @@ type parseTestDocEngine struct {
 	chunkStoreExists      bool // if true, ChunkStoreExists returns true
 }
 
-func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (e *parseTestDocEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
 
-func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (e *parseTestDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 
@@ -2064,13 +2085,15 @@ type addChunkTestEngine struct {
 	insertedChunks []map[string]interface{}
 	insertIndex    string
 	insertDataset  string
+	insertLanguage string
 	insertErr      error
 }
 
-func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
 	e.insertedChunks = chunks
 	e.insertIndex = baseName
 	e.insertDataset = datasetID
+	e.insertLanguage = language
 	return nil, e.insertErr
 }
 
@@ -2377,10 +2400,10 @@ type switchChunksEngineMock struct {
 	updateCalls []updateChunksCall
 }
 
-func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string) error {
+func (m *switchChunksEngineMock) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (m *switchChunksEngineMock) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (m *switchChunksEngineMock) UpdateChunks(_ context.Context, condition map[string]interface{}, newValue map[string]interface{}, indexName string, datasetID string) error {

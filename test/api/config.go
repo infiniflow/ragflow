@@ -20,6 +20,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var TestConfig *ServerTestConfig
@@ -81,16 +83,8 @@ func InitServerTestConfig() *ServerTestConfig {
 	}
 
 	zhipuAPIKey := os.Getenv("ZHIPU_AI_API_KEY")
-	if zhipuAPIKey == "" {
-		fmt.Fprintf(os.Stderr, "ZHIPU_AI_API_KEY is not set\n")
-		return nil
-	}
 
 	siliconFlowAPIKey := os.Getenv("SILICONFLOW_API_KEY")
-	if siliconFlowAPIKey == "" {
-		fmt.Fprintf(os.Stderr, "SILICONFLOW_API_KEY is not set\n")
-		return nil
-	}
 
 	email := os.Getenv("RAGFLOW_TEST_EMAIL")
 	if email == "" {
@@ -126,6 +120,7 @@ func InitServerTestConfig() *ServerTestConfig {
 		Priority:                 priority,
 		HostAddress:              hostAddress,
 		APIVersion:               "v1",
+		APIKey:                   os.Getenv("RAGFLOW_TEST_API_KEY"),
 		ZhipuAPIKey:              zhipuAPIKey,
 		SiliconFlowAPIKey:        siliconFlowAPIKey,
 		Email:                    email,
@@ -165,6 +160,10 @@ func (c *ServerTestConfig) buildHeaders(extra map[string]string) http.Header {
 }
 
 func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
+	return c.RequestJSONContext(context.Background(), method, path, body, params, extraHeaders)
+}
+
+func (c *ServerTestConfig) RequestJSONContext(ctx context.Context, method, path string, body any, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {
 	var bodyReader io.Reader
 	if body != nil {
 		b, err := json.Marshal(body)
@@ -184,12 +183,12 @@ func (c *ServerTestConfig) RequestJSON(method, path string, body, params map[str
 	}
 	u.RawQuery = q.Encode()
 
-	req, err := http.NewRequest(method, u.String(), bodyReader)
+	req, err := http.NewRequestWithContext(ctx, method, u.String(), bodyReader)
 	if err != nil {
 		return nil, err
 	}
 	req.Header = c.buildHeaders(extraHeaders)
-	return http.DefaultClient.Do(req)
+	return (&http.Client{Timeout: 90 * time.Second}).Do(req)
 }
 
 func (c *ServerTestConfig) GetJSON(path string, params map[string]interface{}, extraHeaders map[string]string) (*http.Response, error) {

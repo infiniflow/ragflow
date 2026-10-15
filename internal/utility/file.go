@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileType string
@@ -211,6 +212,24 @@ func GetFileExtension(filename string) string {
 		return strings.ToLower(ext[1:])
 	}
 	return strings.ToLower(ext)
+}
+
+// TruncateFilename shortens name to at most maxBytes bytes. It keeps the
+// extension when it fits and cuts on a rune boundary, so the result stays
+// valid UTF-8 and keeps the file type the extension implies.
+func TruncateFilename(name string, maxBytes int) string {
+	if len(name) <= maxBytes {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if len(ext) >= maxBytes {
+		ext = ""
+	}
+	end := maxBytes - len(ext)
+	for end > 0 && !utf8.RuneStart(name[end]) {
+		end--
+	}
+	return name[:end] + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types

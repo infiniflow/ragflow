@@ -85,7 +85,7 @@ func NewConsumer(scheduler Claimer, opts ...Option) *Consumer {
 	c := &Consumer{
 		scheduler:      scheduler,
 		reader:         engineReader{eng: engine.Get()},
-		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService()},
+		writer:         engineWriter{eng: engine.Get(), commitService: file.NewFileCommitService(), resolveLanguage: datasetLanguageByID},
 		factory:        defaultDeduperFactory,
 		contributions:  newWikiContributionStore(engine.Get()),
 		ttl:            2 * time.Minute,
