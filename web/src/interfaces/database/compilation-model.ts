@@ -147,6 +147,22 @@ export interface ICompilationModelTrial {
  * and a model is compiled by many datasets, so the row also has to say which one
  * it came from.
  */
+/**
+ * One verbatim quote supporting an assertion, and the chunk it was read from.
+ *
+ * The span is what the compiler located, in BYTE offsets, because that is what
+ * the gate can align on. The panel does not slice by it: a JS string index is a
+ * UTF-16 code unit, so a byte offset lands in the wrong place for any text with
+ * CJK or accented characters. It locates the quote by text and uses the span
+ * only as a hint.
+ */
+export interface IOntologyEvidence {
+  quote: string;
+  chunk_id?: string;
+  start?: number;
+  end?: number;
+}
+
 export interface ICompilationModelInstance {
   name?: string;
   type?: string;
@@ -157,6 +173,8 @@ export interface ICompilationModelInstance {
   to?: string;
   source_chunk_ids?: string[];
   document_ids?: string[];
+  /** The quotes this assertion was read from, when the template asked for them. */
+  evidence?: IOntologyEvidence[];
   dataset_id?: string;
   dataset_name?: string;
   /**
@@ -165,6 +183,19 @@ export interface ICompilationModelInstance {
    * since — the row is what an earlier model said, not what this one says.
    */
   version?: number;
+  /** The row's identity inside its dataset; a review has to name the row it judges. */
+  id?: string;
+  /** How far the assertion reaches: one document, or every document of the dataset. */
+  scope?: AssertionScope;
+  review_status?: AssertionReviewVerdict;
+  review_by?: string;
+  /** Epoch milliseconds, as the row records it. */
+  review_at?: number;
+  review_note?: string;
+  /** True when another row of the same class and endpoint disagrees with this one. */
+  conflict?: boolean;
+  conflict_targets?: string[];
+  conflict_types?: string[];
 }
 
 /** One dataset the inspection read. */
@@ -181,7 +212,14 @@ export enum CompilationModelInspectScope {
 }
 
 export interface ICompilationModelInspectParams {
+  /**
+   * Which row kind to read: the panel's two tabs are two kinds, not two
+   * filters, so the tab says it and class/property only narrow within it.
+   */
+  kind?: AssertionKind;
+  /** Omitted means every class of the model, not "nothing". */
   class?: string;
+  /** Omitted means every property of the model, not "nothing". */
   property?: string;
   source_type?: string;
   target_type?: string;
@@ -193,6 +231,12 @@ export interface ICompilationModelInspectParams {
 export interface ICompilationModelInspect {
   template_id: string;
   scope: string;
+  /**
+   * Which of the two row lists this response answers. It is reported because an
+   * unfiltered read names neither a class nor a property, so nothing else would
+   * say which list was populated.
+   */
+  kind: AssertionKind;
   class?: string;
   property?: string;
   source?: string;
@@ -206,6 +250,124 @@ export interface ICompilationModelInspect {
   truncated: boolean;
   entities: ICompilationModelInstance[];
   relations: ICompilationModelInstance[];
+}
+
+/**
+ * What a row asserts, and how far it reaches.
+ *
+ * The two are separate because they change what a conflict means: a class row
+ * and a property row can only conflict with their own kind, and a doc-scope row
+ * disagrees with a dataset-scope one by being narrower, not by being wrong.
+ */
+export type AssertionKind = 'entity' | 'relation';
+
+export type AssertionScope = 'doc' | 'dataset';
+
+/**
+ * The vocabulary a queue is read with, plus the two states a judged row can be in.
+ *
+ * `unreviewed` is not a state a row carries: absence of a review is how the
+ * corpus says "not judged yet", so nothing is written when a row is compiled.
+ * `all` exists because a queue that could only show one verdict at a time would
+ * not answer "what has been settled so far", which is the question a reviewer
+ * asks when deciding whether the corpus can be trusted.
+ */
+export type AssertionReviewStatus =
+  | 'unreviewed'
+  | 'accepted'
+  | 'rejected'
+  | 'all';
+
+/** The state a judged row carries. */
+export type AssertionReviewVerdict = Exclude<
+  AssertionReviewStatus,
+  'unreviewed' | 'all'
+>;
+
+/** What a review does to a row. `reset` takes a verdict back to unreviewed. */
+export type AssertionReviewAction = 'accept' | 'reject' | 'reset';
+
+export interface IAssertionReviewCounts {
+  unreviewed: number;
+  accepted: number;
+  rejected: number;
+}
+
+/**
+ * One assertion waiting to be judged, with what judging it needs.
+ *
+ * It carries the whole row rather than an id because the decision is made from
+ * the row and its source text: a reviewer shown a bare id would have to open a
+ * second panel to find out what they are accepting.
+ */
+export interface IAssertionReviewItem {
+  id: string;
+  dataset_id: string;
+  dataset_name?: string;
+  kind: AssertionKind;
+  scope: AssertionScope;
+  name?: string;
+  type?: string;
+  description?: string;
+  mention_count?: number;
+  from?: string;
+  to?: string;
+  property?: string;
+  source_type?: string;
+  target_type?: string;
+  version?: number;
+  source_chunk_ids?: string[];
+  document_ids?: string[];
+  evidence?: IOntologyEvidence[];
+  /** Absent means unreviewed — the corpus keeps no row for "not judged yet". */
+  review_status?: AssertionReviewVerdict;
+  review_by?: string;
+  /** Epoch milliseconds, like every other timestamp the API returns. */
+  review_at?: number;
+  review_note?: string;
+  conflict?: boolean;
+  /** The rows this one disagrees with, by name. */
+  conflict_targets?: string[];
+  /** What the disagreement is about, e.g. a class admitted by one side only. */
+  conflict_types?: string[];
+}
+
+/**
+ * One page of the review queue.
+ *
+ * `counts` covers the whole queue while `items` is a window of it, so the
+ * progress line stays honest at any page: the reader has to know how much is
+ * left, not how much is on screen.
+ */
+export interface IAssertionReviewQueue {
+  template_id: string;
+  model_version: number;
+  datasets: ICompilationModelInspectDataset[];
+  /** Datasets the read cap left out: "did not look" must not read as "empty". */
+  skipped_dataset_ids: string[];
+  counts: IAssertionReviewCounts;
+  total: number;
+  truncated: boolean;
+  conflicts: number;
+  items: IAssertionReviewItem[];
+}
+
+/**
+ * One row a review could not land on.
+ *
+ * A batch is applied per row, so a partial result is normal and the reasons
+ * have to come back with the ids: a reviewer keeps the failed rows selected and
+ * retries them without guessing which ones they were.
+ */
+export interface IAssertionReviewFailure {
+  id: string;
+  reason: string;
+}
+
+export interface IAssertionReviewResult {
+  updated: number;
+  failed: IAssertionReviewFailure[];
+  counts: IAssertionReviewCounts;
 }
 
 export interface ICompilationModelVersion {

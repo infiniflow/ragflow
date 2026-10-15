@@ -15,6 +15,10 @@
  */
 
 import { ICompilationModelInspectParams } from '@/interfaces/database/compilation-model';
+import {
+  IAssertionReviewRequestBody,
+  IAssertionReviewRequestParams,
+} from '@/interfaces/request/compilation-model';
 import api from '@/utils/api';
 import request from '@/utils/next-request';
 
@@ -68,3 +72,27 @@ export const inspectCompilationModelInstances = (
   id: string,
   params: ICompilationModelInspectParams,
 ) => request.get(api.compilationModelInstances(id), { params });
+
+/**
+ * Reads the assertions of a model that still need a verdict.
+ *
+ * A read like the inspection above, and it shares its shape on purpose: the
+ * queue is the same rows filtered by review state, so a row seen in one panel is
+ * recognisable in the other.
+ */
+export const listAssertionReview = (
+  id: string,
+  params: IAssertionReviewRequestParams,
+) => request.get(api.assertionReview(id), { params });
+
+/**
+ * Records verdicts on the assertions of a model.
+ *
+ * One request carries the whole selection and the server answers per row, which
+ * is why a partial result comes back with the rows it could not write rather
+ * than as a transport failure.
+ */
+export const reviewAssertions = (
+  id: string,
+  data: IAssertionReviewRequestBody,
+) => request.post(api.assertionReview(id), data);

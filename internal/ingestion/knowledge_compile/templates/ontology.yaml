@@ -58,6 +58,27 @@ config:
           the attributes listed on the entity's own `- type:` entry above are
           valid. A list-valued attribute takes a JSON array, one item per value.
           Omit an attribute the source says nothing about.
+      # Every assertion must be traceable to the sentence it came from: an
+      # ontology row a reader cannot check is a claim about the corpus, not
+      # knowledge about it. The gate downstream locates each quote verbatim and
+      # records where it sits in the source, so a quote that was paraphrased
+      # costs the row its evidence rather than being stored as if it were real.
+      - name: evidence
+        type: list
+        required: false
+        description: >-
+          The verbatim source text that states this instance — a CONTIGUOUS
+          substring of the chunk named by `chunk_id`, same words and same order:
+          no paraphrase, no truncation, no added words, kept under 240
+          characters. Quote the source for every instance, including one the
+          source states through a table row, an infobox or a bullet item (quote
+          that raw text, keeping its separators and order). If no single
+          sentence or row states the instance, do not emit it. A quote that
+          cannot be located verbatim is discarded downstream, so never restate,
+          translate or tidy it.
+        shape: >-
+          [{"quote": "<verbatim source sentence, copied exactly>",
+          "chunk_id": "<source chunk id the sentence was taken from>"}]
     # The first field's key set is what the template editor renders, so it lists
     # every key an entity field may carry (label / parent included) even where
     # the value is empty. `parent` is rdfs:subClassOf; it names another class.
@@ -130,6 +151,26 @@ config:
       must declare `domain` and `range` as classes; `kind: datatype` entries give
       an individual a literal and must declare `domain` as a class plus the
       literal's `datatype`.
+    # A relation is the stronger claim of the two — it asserts something about
+    # two individuals at once — so the quote has to name both ends. A quote that
+    # mentions only one of them cannot support the edge, and the row is what a
+    # reader will be asked to believe.
+    output_fields:
+      - name: evidence
+        type: list
+        required: false
+        description: >-
+          The verbatim source text that states this relation — a CONTIGUOUS
+          substring of the chunk named by `chunk_id`, same words and same order:
+          no paraphrase, no truncation, no added words, kept under 240
+          characters. The quote must name BOTH endpoints (the source and the
+          target) and the wording that links them; a sentence naming only one
+          end does not support the edge, so do not emit that edge. Quote raw
+          table rows, infoboxes and list items exactly as they appear. A quote
+          that cannot be located verbatim is discarded downstream.
+        shape: >-
+          [{"quote": "<verbatim source sentence naming both endpoints>",
+          "chunk_id": "<source chunk id the sentence was taken from>"}]
     # The first field's key set drives the template editor, so it lists every
     # key a property field may carry (`datatype` included) even where empty.
     fields:

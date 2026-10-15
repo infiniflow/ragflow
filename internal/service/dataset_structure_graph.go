@@ -36,12 +36,14 @@ const (
 // attribute names, and without the column the ontology's data itself would be
 // unreachable from the UI. Non-ontology rows have no such column, so the cost is
 // paid only where the value exists.
-var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "compilation_template_version_int"}
-var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int"}
+var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "entity_type_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
+var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "prop_kwd", "from_type_kwd", "to_type_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int", "scope_kwd", "review_status_kwd", "review_by_kwd", "review_at_flt", "review_note"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
 	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd", "compilation_template_version_int",
+	"entity_type_kwd", "prop_kwd", "from_type_kwd", "to_type_kwd", "scope_kwd",
+	"review_status_kwd", "review_by_kwd", "review_at_flt", "review_note",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -152,9 +154,18 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 	if name == "" || graphIsInvalidSentinel(name) {
 		return nil
 	}
-	typ := "other"
-	if v, ok := payload["type"].(string); ok && strings.TrimSpace(v) != "" {
-		typ = strings.TrimSpace(v)
+	// The class comes from the column, not the payload: entity_type_kwd is what
+	// the class filter and the class-level counts match on, so a panel that drew
+	// the payload's class could show an instance the filter would never return.
+	// The payload is the fallback for rows that predate the column.
+	typ := strings.TrimSpace(firstStringValue(row["entity_type_kwd"]))
+	if typ == "" {
+		if v, ok := payload["type"].(string); ok && strings.TrimSpace(v) != "" {
+			typ = strings.TrimSpace(v)
+		}
+	}
+	if typ == "" {
+		typ = "other"
 	}
 	var aliases []string
 	switch a := payload["aliases"].(type) {
@@ -203,6 +214,7 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 	if mc, ok := graphMentionCount(row); ok {
 		node["mention_count"] = mc
 	}
+	graphStampRowIdentity(node, row)
 	// The datatype attributes, decoded by the same helper the class-level count
 	// uses — one decoder means "the panel says 52 persons carry birth_date" and
 	// "these rows show birth_date" can never disagree about what counts as a
@@ -399,22 +411,276 @@ func relationNode(src, tgt, typ string, payload, row map[string]interface{}) Str
 	if version := graphTemplateVersion(row); version > 0 {
 		node["version"] = version
 	}
+	// The endpoint classes and the property come off the columns: they are what
+	// the ontology graph groups edges by and what a review decision is made
+	// about, so a projection that only carried the payload's type could not be
+	// placed on the graph and could not be filtered by domain/range.
+	if prop := strings.TrimSpace(firstStringValue(row["prop_kwd"])); prop != "" {
+		node["property"] = prop
+	}
+	if from := strings.TrimSpace(firstStringValue(row["from_type_kwd"])); from != "" {
+		node["source_type"] = from
+	}
+	if to := strings.TrimSpace(firstStringValue(row["to_type_kwd"])); to != "" {
+		node["target_type"] = to
+	}
+	graphStampRowIdentity(node, row)
 	return node
 }
 
-// dedupEntities preserves the first entity for each lowercased name.
-func dedupEntities(entities []StructureGraphNode) []StructureGraphNode {
-	var out []StructureGraphNode
-	seen := map[string]bool{}
+// graphStampRowIdentity stamps the row-level facts a node carries into the
+// response: which row it is, whether that row is the document-level claim or the
+// dataset-level fold, and the review decision recorded on it. The row id matters
+// because a review decision is a write to one row; without it the UI would have
+// to invent a key, and an invented key cannot be written back.
+func graphStampRowIdentity(node map[string]interface{}, row map[string]interface{}) {
+	if id := strings.TrimSpace(firstStringValue(row["id"])); id != "" {
+		node["id"] = id
+	}
+	if scope := strings.TrimSpace(firstStringValue(row["scope_kwd"])); scope != "" {
+		node["scope"] = scope
+	}
+	if docID := strings.TrimSpace(firstStringValue(row["doc_id"])); docID != "" {
+		node["doc_id"] = docID
+	}
+	if status := strings.TrimSpace(firstStringValue(row["review_status_kwd"])); status != "" {
+		node["review_status"] = status
+	}
+	if by := strings.TrimSpace(firstStringValue(row["review_by_kwd"])); by != "" {
+		node["review_by"] = by
+	}
+	if note := strings.TrimSpace(firstStringValue(row["review_note"])); note != "" {
+		node["review_note"] = note
+	}
+	if at, ok := graphFloat(row["review_at_flt"]); ok && at > 0 {
+		node["review_at"] = int64(at)
+	}
+}
+
+// graphFloat reads a float column that the engine may return as a string, a
+// number, or a single-element list.
+func graphFloat(v interface{}) (float64, bool) {
+	if l, ok := v.([]interface{}); ok {
+		if len(l) == 0 {
+			return 0, false
+		}
+		v = l[0]
+	}
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case json.Number:
+		if f, err := n.Float64(); err == nil {
+			return f, true
+		}
+	case string:
+		if f, err := strconv.ParseFloat(strings.TrimSpace(n), 64); err == nil {
+			return f, true
+		}
+	}
+	return 0, false
+}
+
+// mergeEntities folds the rows describing one instance into a single node.
+//
+// Identity is (name, class): two classes that share a name are two instances, and
+// folding them would answer a class filter with the wrong set (ontology2.md §3.2,
+// 同名不同义). The rest of the fields are folded rather than dropped because a
+// dataset row and its document rows both answer the same query — one carries the
+// folded description, the others carry the quotes — so the old "first row wins"
+// rule could hide the evidence that makes an instance checkable (证据级映射).
+func mergeEntities(entities []StructureGraphNode) []StructureGraphNode {
+	out := make([]StructureGraphNode, 0, len(entities))
+	index := map[string]int{}
 	for _, e := range entities {
 		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
-		key := name
-		if name == "" || seen[key] {
+		if name == "" {
 			continue
 		}
-		seen[key] = true
+		key := name + "\x00" + strings.ToLower(strings.TrimSpace(graphStr(e["type"])))
+		if at, ok := index[key]; ok {
+			mergeStructureNode(out[at], e)
+			continue
+		}
+		index[key] = len(out)
 		out = append(out, e)
 	}
+	return out
+}
+
+// mergeRelations folds the rows describing one assertion into a single edge.
+// The document-level rows and the dataset-level fold of one (from, property, to)
+// are the same assertion seen twice: without this the ontology view listed the
+// same edge twice and the class-level counts disagreed with the rows shown.
+func mergeRelations(relations []StructureGraphRelation) []StructureGraphRelation {
+	out := make([]StructureGraphRelation, 0, len(relations))
+	index := map[string]int{}
+	for _, r := range relations {
+		key := strings.ToLower(strings.TrimSpace(graphStr(r["from"]))) + "\x00" +
+			strings.ToLower(strings.TrimSpace(graphStr(r["property"]))) + "\x00" +
+			strings.ToLower(strings.TrimSpace(graphStr(r["to"])))
+		if at, ok := index[key]; ok {
+			mergeStructureNode(out[at], r)
+			continue
+		}
+		index[key] = len(out)
+		out = append(out, r)
+	}
+	return out
+}
+
+// mergeStructureNode folds a second projection of one row into the first.
+//
+// The row id and the review decision stay the first row's: a decision is written
+// to one specific row, and pretending a merged node has one decision would let a
+// reviewer approve a document row and a dataset row at once. The scopes of all
+// folded rows are reported so the UI never has to guess which it is looking at.
+func mergeStructureNode(into, extra map[string]interface{}) {
+	into["source_chunk_ids"] = appendUniqueSorted(append(stringSliceValue(into["source_chunk_ids"]), stringSliceValue(extra["source_chunk_ids"])...))
+	into["document_ids"] = appendUniqueSorted(append(stringSliceValue(into["document_ids"]), stringSliceValue(extra["document_ids"])...))
+	if evidence := mergeEvidence(into["evidence"], extra["evidence"]); len(evidence) > 0 {
+		into["evidence"] = evidence
+	}
+	if graphStr(into["description"]) == "" {
+		if desc := graphStr(extra["description"]); desc != "" {
+			into["description"] = desc
+		}
+	}
+	if cur, ok := graphFloat(into["mention_count"]); ok {
+		if other, ok2 := graphFloat(extra["mention_count"]); ok2 && other > cur {
+			into["mention_count"] = int(other)
+		}
+	} else if other, ok2 := graphFloat(extra["mention_count"]); ok2 {
+		into["mention_count"] = int(other)
+	}
+	if cur, ok := graphFloat(into["version"]); !ok || cur == 0 {
+		if other, ok2 := graphFloat(extra["version"]); ok2 && other > 0 {
+			into["version"] = int64(other)
+		}
+	}
+	scopes := append(stringSliceValue(into["scope"]), stringSliceValue(extra["scope"])...)
+	scopes = appendUniqueSorted(scopes)
+	if len(scopes) > 1 {
+		into["scopes"] = scopes
+	}
+}
+
+// mergeEvidence unions two evidence lists, keeping one entry per (chunk, quote)
+// so a merged node does not repeat the same quote from the same row twice.
+func mergeEvidence(into, extra interface{}) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, 4)
+	seen := map[string]bool{}
+	for _, list := range []interface{}{into, extra} {
+		items, ok := list.([]map[string]interface{})
+		if !ok {
+			continue
+		}
+		for _, item := range items {
+			key := strings.TrimSpace(graphStr(item["chunk_id"])) + "\x00" + strings.TrimSpace(graphStr(item["quote"]))
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// markRelationConflicts tags the assertions that disagree with a sibling of the
+// same subject and property.
+//
+// One relation type between the same subject and different targets is what a
+// conflict looks like in compiled data, and it is usually a fact about the corpus
+// (two documents say different things) rather than a defect: every row is kept
+// and the reader decides which one holds (ontology2.md §3.2 冲突并存，不覆盖).
+// Detection is limited to the rows in this response — the alternative is a scan
+// per page — so the flags are exactly as complete as the page they describe, and
+// the UI must not present them as a corpus-wide verdict.
+func markRelationConflicts(relations []StructureGraphRelation) {
+	targets := map[string]map[string]string{}
+	for _, r := range relations {
+		key := relationSubjectKey(r)
+		if key == "" {
+			continue
+		}
+		target := strings.TrimSpace(graphStr(r["to"]))
+		if target == "" {
+			continue
+		}
+		if targets[key] == nil {
+			targets[key] = map[string]string{}
+		}
+		targets[key][strings.ToLower(target)] = target
+	}
+	for _, r := range relations {
+		set := targets[relationSubjectKey(r)]
+		if len(set) < 2 {
+			continue
+		}
+		r["conflict"] = true
+		r["conflict_targets"] = sortedMapValues(set)
+	}
+}
+
+// relationSubjectKey identifies what a set of assertions agree or disagree about:
+// the subject and the property. The object is what they disagree on, and the
+// domain class is deliberately not part of the key — a disagreement does not stop
+// being one because the documents typed the subject differently.
+func relationSubjectKey(r StructureGraphRelation) string {
+	from := strings.ToLower(strings.TrimSpace(graphStr(r["from"])))
+	prop := strings.ToLower(strings.TrimSpace(graphStr(r["property"])))
+	if prop == "" {
+		prop = strings.ToLower(strings.TrimSpace(graphStr(r["type"])))
+	}
+	if from == "" || prop == "" {
+		return ""
+	}
+	return from + "\x00" + prop
+}
+
+// markEntityClassConflicts tags the instances whose name is claimed by several
+// classes in this response. It is the homonym case the dataset fold now keeps
+// apart (同名不同义): both instances are real rows, and which class a document
+// meant is a judgement about the text, so the conflict is reported rather than
+// resolved.
+func markEntityClassConflicts(entities []StructureGraphNode) {
+	classes := map[string]map[string]string{}
+	for _, e := range entities {
+		name := strings.ToLower(strings.TrimSpace(graphStr(e["name"])))
+		typ := strings.TrimSpace(graphStr(e["type"]))
+		if name == "" || typ == "" {
+			continue
+		}
+		if classes[name] == nil {
+			classes[name] = map[string]string{}
+		}
+		classes[name][strings.ToLower(typ)] = typ
+	}
+	for _, e := range entities {
+		set := classes[strings.ToLower(strings.TrimSpace(graphStr(e["name"])))]
+		if len(set) < 2 {
+			continue
+		}
+		e["conflict"] = true
+		e["conflict_types"] = sortedMapValues(set)
+	}
+}
+
+// sortedMapValues returns the display values of a lowercase-keyed set in a stable
+// order, so a conflict's target/class list does not depend on map iteration.
+func sortedMapValues(values map[string]string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		out = append(out, v)
+	}
+	sort.Strings(out)
 	return out
 }
 
@@ -660,7 +926,7 @@ func (s *DatasetArtifactService) buildBucket(ctx context.Context, tenantID, data
 			}
 		}
 	}
-	entities = dedupEntities(entities)
+	entities = mergeEntities(entities)
 	relations = normalizeRelationEndpoints(entities, relations)
 	return entities, relations, nil
 }
@@ -1718,7 +1984,7 @@ func (s *DatasetArtifactService) keywordSubgraph(ctx context.Context, tenantID, 
 			}
 		}
 	}
-	entities = dedupEntities(entities)
+	entities = mergeEntities(entities)
 	if structureKind == "tree" || structureKind == "page_index" {
 		entityNames := map[string]bool{}
 		for _, e := range entities {

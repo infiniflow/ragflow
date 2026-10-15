@@ -15,6 +15,8 @@
  */
 
 import {
+  IAssertionReviewQueue,
+  IAssertionReviewResult,
   ICompilationModel,
   ICompilationModelImpact,
   ICompilationModelInspect,
@@ -24,17 +26,23 @@ import {
   ICompilationModelVersion,
   ICompilationModelVersionDiff,
 } from '@/interfaces/database/compilation-model';
+import {
+  IAssertionReviewRequestBody,
+  IAssertionReviewRequestParams,
+} from '@/interfaces/request/compilation-model';
 import i18n from '@/locales/config';
 import {
   checkCompilationModel,
   diffCompilationModelVersions,
   inspectCompilationModelInstances,
+  listAssertionReview,
   listCompilationModelDatasets,
   listCompilationModelVersions,
   listCompilationModels,
   publishCompilationModel,
   rejectCompilationModel,
   retireCompilationModel,
+  reviewAssertions,
   submitCompilationModelForReview,
   trialCompilationModel,
 } from '@/services/compilation-model-service';
@@ -53,6 +61,7 @@ export const enum CompilationModelApiAction {
   FetchImpact = 'fetchCompilationModelImpact',
   Trial = 'trialCompilationModel',
   Inspect = 'inspectCompilationModelInstances',
+  ReviewAssertions = 'reviewAssertions',
 }
 
 export const CompilationModelKeys = {
@@ -67,6 +76,15 @@ export const CompilationModelKeys = {
     [CompilationModelApiAction.FetchImpact, id] as const,
   inspect: (id?: string, params?: ICompilationModelInspectParams) =>
     [CompilationModelApiAction.Inspect, id, params] as const,
+  assertionReview: (id?: string, params?: IAssertionReviewRequestParams) =>
+    [CompilationModelApiAction.ReviewAssertions, id, params] as const,
+  /**
+   * The queue regardless of its filters. A verdict changes which rows the
+   * reader is looking at — the accepted one leaves an "unreviewed" queue — so
+   * every filtered view of the same model has to be refetched together.
+   */
+  allAssertionReviews: (id?: string) =>
+    [CompilationModelApiAction.ReviewAssertions, id] as const,
 };
 
 /**
@@ -117,6 +135,33 @@ const normalizeLifecycleResult = (
     ),
     message: result?.message,
   };
+};
+
+/**
+ * A review outcome, normalised.
+ *
+ * Unlike a lifecycle call, a failure here is usually partial: the transport
+ * succeeded and some rows were written. The component needs the per-row reasons
+ * to keep exactly those rows selected, so the payload survives normalisation
+ * instead of being collapsed into a message.
+ */
+export interface IAssertionReviewOutcome {
+  ok: boolean;
+  result?: IAssertionReviewResult;
+  message?: string;
+}
+
+const normalizeAssertionReviewResult = (
+  result: { code?: number; message?: string; data?: unknown } | undefined,
+): IAssertionReviewOutcome => {
+  const payload = result?.data as IAssertionReviewResult | undefined;
+  const normalized = payload
+    ? { ...payload, failed: payload.failed ?? [] }
+    : undefined;
+  if (result?.code === 0) {
+    return { ok: true, result: normalized };
+  }
+  return { ok: false, result: normalized, message: result?.message };
 };
 
 export const useFetchCompilationModels = (kind?: string) => {
@@ -178,6 +223,11 @@ export const useFetchCompilationModelImpact = (id?: string) => {
  * Reads what the model extracted: one class's instances, or one property's
  * assertions, over the datasets that compile with it.
  *
+ * An unfiltered read is the opening state, not an empty one: with nothing
+ * selected the answer is every row of the requested kind, which is what "what
+ * did this model produce at all" means. So the only thing that can hold the
+ * query back is the missing model.
+ *
  * It is a corpus question, not a dataset one — a model is one template over many
  * datasets — so the query fans out server-side and every row comes back labelled
  * with the dataset it came from.
@@ -192,7 +242,7 @@ export const useFetchCompilationModelInstances = (
     error,
   } = useQuery<ICompilationModelInspect>({
     queryKey: CompilationModelKeys.inspect(id, params),
-    enabled: !!id && !!(params?.class || params?.property),
+    enabled: !!id,
     gcTime: 0,
     queryFn: async () => {
       const { data } = await inspectCompilationModelInstances(
@@ -204,6 +254,35 @@ export const useFetchCompilationModelInstances = (
   });
 
   return { inspect: data, loading, error };
+};
+
+/**
+ * Reads the assertions of a model that still need a verdict.
+ *
+ * It is fetch-on-open like the inspection beside it — a queue nobody is reading
+ * is a request nobody needs — but it keeps no cache: a verdict moves rows out of
+ * the queue, so a stale page would show rows that are already settled.
+ */
+export const useFetchAssertionReview = (
+  id?: string,
+  params?: IAssertionReviewRequestParams,
+  enabled = true,
+) => {
+  const {
+    data,
+    isFetching: loading,
+    error,
+  } = useQuery<IAssertionReviewQueue>({
+    queryKey: CompilationModelKeys.assertionReview(id, params),
+    enabled: !!id && enabled,
+    gcTime: 0,
+    queryFn: async () => {
+      const { data } = await listAssertionReview(id!, params ?? {});
+      return data?.data as IAssertionReviewQueue;
+    },
+  });
+
+  return { queue: data, loading, error };
 };
 
 export const useFetchCompilationModelVersionDiff = (
@@ -307,6 +386,40 @@ export const usePublishCompilationModel = () => {
   });
 
   return { loading, publishModel: mutateAsync };
+};
+
+/**
+ * Records verdicts on a batch of assertions.
+ *
+ * It does not use the lifecycle invalidation: judging rows changes no version
+ * and no dataset, only which rows the queue still holds, so refetching the model
+ * library on every accept would be noise.
+ */
+export const useReviewAssertions = () => {
+  const queryClient = useQueryClient();
+  const { mutateAsync, isPending: loading } = useMutation({
+    mutationKey: [CompilationModelApiAction.ReviewAssertions],
+    mutationFn: async ({
+      id,
+      items,
+    }: {
+      id: string;
+      items: IAssertionReviewRequestBody['items'];
+    }) => {
+      const { data } = await reviewAssertions(id, { items });
+      const outcome = normalizeAssertionReviewResult(data);
+      // A partially failed batch still moved the rows that were written, so the
+      // queue is refetched for those even when the rest have to be retried.
+      if ((outcome.result?.updated ?? 0) > 0) {
+        queryClient.invalidateQueries({
+          queryKey: CompilationModelKeys.allAssertionReviews(id),
+        });
+      }
+      return outcome;
+    },
+  });
+
+  return { loading, reviewAssertions: mutateAsync };
 };
 
 export const useRejectCompilationModel = () => {

@@ -42,6 +42,36 @@ func TestNormalizeModelInspectScope(t *testing.T) {
 	}
 }
 
+// TestNormalizeModelInspectKind pins how a request picks the row kind it is
+// answered with: the panel's tab decides, a named dimension can stand in for it,
+// and a request that named neither is answered with the instances.
+func TestNormalizeModelInspectKind(t *testing.T) {
+	cases := []struct {
+		raw, class, property string
+		want                 ModelInspectKind
+	}{
+		{"entity", "", "", ModelInspectKindEntity},
+		{" relation ", "", "", ModelInspectKindRelation},
+		// The panel's own tab names are the same two answers.
+		{"instances", "", "", ModelInspectKindEntity},
+		{"assertions", "", "", ModelInspectKindRelation},
+		// A named dimension says the kind when the caller did not.
+		{"", "person", "", ModelInspectKindEntity},
+		{"", "", "founded_by", ModelInspectKindRelation},
+		// An explicit kind outranks a stray name, and neither name means the
+		// instances — the tab the panel opens on.
+		{"relation", "person", "", ModelInspectKindRelation},
+		{"", "", "", ModelInspectKindEntity},
+		{"nonsense", "", "", ModelInspectKindEntity},
+	}
+	for _, c := range cases {
+		if got := NormalizeModelInspectKind(c.raw, c.class, c.property); got != c.want {
+			t.Errorf("NormalizeModelInspectKind(%q, %q, %q) = %q, want %q",
+				c.raw, c.class, c.property, got, c.want)
+		}
+	}
+}
+
 // TestModelRefsForListsBothWaysIn covers the resolution the panel depends on: a
 // template in a group is reached by naming the group or by naming the template,
 // and both have to be looked up. modelRefOf answers the narrower question ("which

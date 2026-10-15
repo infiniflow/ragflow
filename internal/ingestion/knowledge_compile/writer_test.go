@@ -237,6 +237,48 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+// TestWriteMergedStructureKeepsClassesApart covers the class-agnostic fallback's
+// limit: when a name carries two classes, a stored classless row cannot be
+// resolved onto either of them, so its sources must stay out of both rows rather
+// than being filed under a class the extractor never stated.
+func TestWriteMergedStructureKeepsClassesApart(t *testing.T) {
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            "dataset_structure_classless",
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "Engine",
+			"entity_type_kwd":               "other",
+			"content_with_weight":           `{"name":"Engine","type":"other","description":"existing"}`,
+			"source_doc_ids":                []string{"d1"},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{
+		{Name: "Engine", Type: "component", Description: "as a component", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d2"}},
+		{Name: "Engine", Type: "pump", Description: "as a pump", CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph", SourceDocIDs: []string{"d3"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen int
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		seen++
+		docs := firstStringSlice(row["source_doc_ids"])
+		if len(docs) != 1 || docs[0] == "d1" {
+			t.Fatalf("classless row's sources leaked into %v: %v", row["entity_type_kwd"], docs)
+		}
+	}
+	if seen != 2 {
+		t.Fatalf("want one row per class, got %d entity rows", seen)
+	}
+}
+
 // TestWriteMergedStructureStampsTheModelVersion covers the dataset row's model
 // version: a bucket extracted by a published version carries it, and a bucket
 // with no published version (0) writes no column at all, so "unversioned" stays

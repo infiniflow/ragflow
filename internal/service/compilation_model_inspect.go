@@ -73,13 +73,49 @@ func NormalizeModelInspectScope(raw string) ModelInspectScope {
 	}
 }
 
-// ModelInspectInput asks for the instances of one class, or the assertions of
-// one property, across a model's datasets.
+// ModelInspectKind is which compiled row kind an inspection answers. The panel's
+// two tabs are two kinds, not two filters: instances are entity rows and
+// assertions are relation rows.
+type ModelInspectKind string
+
+const (
+	ModelInspectKindEntity   ModelInspectKind = "entity"
+	ModelInspectKindRelation ModelInspectKind = "relation"
+)
+
+// NormalizeModelInspectKind maps a request onto the kind it answers.
+//
+// The panel says it outright, because a tab is what the reader is looking at. A
+// named class or property also settles it — class names entities, property names
+// relations — so a request that names one is answered even without the kind. A
+// request that names neither gets the instances, the tab the panel opens on.
+func NormalizeModelInspectKind(raw, class, property string) ModelInspectKind {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "relation", "relations", "assertion", "assertions":
+		return ModelInspectKindRelation
+	case "entity", "entities", "instance", "instances":
+		return ModelInspectKindEntity
+	}
+	if strings.TrimSpace(class) == "" && strings.TrimSpace(property) != "" {
+		return ModelInspectKindRelation
+	}
+	return ModelInspectKindEntity
+}
+
+// ModelInspectInput asks what a model produced over its datasets: the instances
+// of one class, the assertions of one property, or — with neither named — every
+// row of the requested kind.
 type ModelInspectInput struct {
 	TenantID   string
 	TemplateID string
-	// Class is a declared class name; Property a declared property name. Exactly
-	// one of them is answered.
+	// Kind is the row kind to answer. Empty is resolved by
+	// NormalizeModelInspectKind.
+	Kind string
+	// Class is a declared class name; Property a declared property name. At most
+	// one of them narrows the answer, and an empty one means "every class" /
+	// "every property" rather than "nothing": the panel opens with nothing
+	// selected, and "what did this model produce at all" is the first question an
+	// author asks of it.
 	Class      string
 	Property   string
 	SourceType string
@@ -107,10 +143,14 @@ type ModelInspectDataset struct {
 type ModelInspectResult struct {
 	TemplateID string `json:"template_id"`
 	Scope      string `json:"scope"`
-	Class      string `json:"class,omitempty"`
-	Property   string `json:"property,omitempty"`
-	Source     string `json:"source,omitempty"`
-	Target     string `json:"target,omitempty"`
+	// Kind says which of the two row lists is the answer. It is reported because
+	// an unfiltered read names neither a class nor a property, so nothing else in
+	// the payload would say which list was populated.
+	Kind     string `json:"kind"`
+	Class    string `json:"class,omitempty"`
+	Property string `json:"property,omitempty"`
+	Source   string `json:"source,omitempty"`
+	Target   string `json:"target,omitempty"`
 	// ModelVersion is the version in force. A row whose own version is lower was
 	// extracted by an earlier one and has not been recompiled since.
 	ModelVersion int `json:"model_version"`
@@ -129,7 +169,8 @@ type ModelInspectResult struct {
 	Relations         []StructureGraphRelation `json:"relations"`
 }
 
-// InspectInstances answers what a model produced, for one class or property,
+// InspectInstances answers what a model produced, for one class or property —
+// or, when the reader has not picked one, everything of the requested kind —
 // over the datasets that compile with it.
 func (s *CompilationTemplateGovernanceService) InspectInstances(ctx context.Context, db *gorm.DB, in ModelInspectInput) (*ModelInspectResult, error) {
 	template, err := s.templateDAO.GetTemplate(ctx, db, in.TenantID, in.TemplateID)
@@ -137,6 +178,7 @@ func (s *CompilationTemplateGovernanceService) InspectInstances(ctx context.Cont
 		return nil, err
 	}
 	scope := NormalizeModelInspectScope(string(in.Scope))
+	kind := NormalizeModelInspectKind(in.Kind, in.Class, in.Property)
 	// Both references, not the preferred one: a dataset that names the template
 	// directly reaches this model just as much as one that names its group, and
 	// resolving only one makes a model in use look unused. Rows are filtered by
@@ -160,8 +202,7 @@ func (s *CompilationTemplateGovernanceService) InspectInstances(ctx context.Cont
 	result := &ModelInspectResult{
 		TemplateID:        template.ID,
 		Scope:             string(scope),
-		Class:             strings.TrimSpace(in.Class),
-		Property:          strings.TrimSpace(in.Property),
+		Kind:              string(kind),
 		ModelVersion:      template.Version,
 		Refs:              refs,
 		Datasets:          datasets,
@@ -170,43 +211,50 @@ func (s *CompilationTemplateGovernanceService) InspectInstances(ctx context.Cont
 		Entities:          []StructureGraphNode{},
 		Relations:         []StructureGraphRelation{},
 	}
-	if result.Property != "" {
+	// Only the dimensions actually answered are echoed. A response that named a
+	// class while carrying assertions would describe a query that never ran.
+	if kind == ModelInspectKindRelation {
+		result.Property = strings.TrimSpace(in.Property)
 		result.Source = strings.TrimSpace(in.SourceType)
 		result.Target = strings.TrimSpace(in.TargetType)
+	} else {
+		result.Class = strings.TrimSpace(in.Class)
 	}
 
 	artifact := NewDatasetArtifactService()
+	documentID := inspectDocumentID(scope, in.DocumentID)
 	for _, ds := range datasets {
-		if result.Class != "" {
-			page, err := artifact.GetOntologyClassEntities(ctx, OntologyClassEntitiesInput{
-				TenantID: in.TenantID, DatasetID: ds.ID, Class: result.Class,
-				TemplateID: template.ID, DocumentID: inspectDocumentID(scope, in.DocumentID),
+		if kind == ModelInspectKindRelation {
+			page, err := artifact.GetOntologyPropertyRelations(ctx, OntologyPropertyRelationsInput{
+				TenantID: in.TenantID, DatasetID: ds.ID, Property: result.Property,
+				// No property named: the reader asked for the whole page, not for
+				// an unnamed one.
+				All:        result.Property == "",
+				SourceType: result.Source, TargetType: result.Target,
+				TemplateID: template.ID, DocumentID: documentID,
 				Limit: limit,
 			})
 			if err != nil {
 				return nil, err
 			}
-			inspectNotePage(result, len(page.Entities), limit)
-			for _, node := range page.Entities {
-				result.Entities = append(result.Entities, inspectAnnotateRow(node, ds))
+			inspectNotePage(result, len(page.Relations), limit)
+			for _, edge := range page.Relations {
+				result.Relations = append(result.Relations, inspectAnnotateRow(edge, ds))
 			}
 			continue
 		}
-		if result.Property == "" {
-			continue
-		}
-		page, err := artifact.GetOntologyPropertyRelations(ctx, OntologyPropertyRelationsInput{
-			TenantID: in.TenantID, DatasetID: ds.ID, Property: result.Property,
-			SourceType: result.Source, TargetType: result.Target,
-			TemplateID: template.ID, DocumentID: inspectDocumentID(scope, in.DocumentID),
+		page, err := artifact.GetOntologyClassEntities(ctx, OntologyClassEntitiesInput{
+			TenantID: in.TenantID, DatasetID: ds.ID, Class: result.Class,
+			All:        result.Class == "",
+			TemplateID: template.ID, DocumentID: documentID,
 			Limit: limit,
 		})
 		if err != nil {
 			return nil, err
 		}
-		inspectNotePage(result, len(page.Relations), limit)
-		for _, edge := range page.Relations {
-			result.Relations = append(result.Relations, inspectAnnotateRow(edge, ds))
+		inspectNotePage(result, len(page.Entities), limit)
+		for _, node := range page.Entities {
+			result.Entities = append(result.Entities, inspectAnnotateRow(node, ds))
 		}
 	}
 

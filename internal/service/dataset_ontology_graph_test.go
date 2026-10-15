@@ -420,9 +420,28 @@ func TestOntologyInstanceFilter(t *testing.T) {
 	}
 }
 
+// A filter narrows to a term when it has one and stays silent when it does not.
+// The two are not the same request: "every class" is the absent key, because an
+// empty term list is read as "match nothing" by the Elasticsearch translation
+// and as "match everything" by Infinity's (see ontologyTermFilter).
+func TestOntologyTermFilterNarrowOrNothing(t *testing.T) {
+	filter := ontologyInstanceFilter("entity", "tpl-1", "")
+	ontologyTermFilter(filter, "entity_type_kwd", " ")
+	if _, ok := filter["entity_type_kwd"]; ok {
+		t.Fatalf("a blank class must add no clause, got %v", filter)
+	}
+
+	ontologyTermFilter(filter, "entity_type_kwd", " person ")
+	classes, _ := filter["entity_type_kwd"].([]string)
+	if len(classes) != 1 || classes[0] != "person" {
+		t.Fatalf("class clause = %v, want the trimmed name", filter["entity_type_kwd"])
+	}
+}
+
 // An empty class or property name must short-circuit to an empty page rather
 // than query the engine for "everything", which is what an empty term filter
-// would become.
+// would become. Widening the read is the model-scope inspection's job, and it
+// asks for it explicitly with All (compilation_model_inspect.go).
 func TestOntologyDrilldownRejectsEmptyName(t *testing.T) {
 	svc := &DatasetArtifactService{}
 	page, err := svc.GetOntologyClassEntities(context.Background(), OntologyClassEntitiesInput{Class: "  "})

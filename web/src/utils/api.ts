@@ -442,6 +442,10 @@ export default {
     `${restAPIv1}/compilation-models/${id}/trial`,
   compilationModelInstances: (id: string) =>
     `${restAPIv1}/compilation-models/${id}/instances`,
+  // The assertion queue and the verdicts on it share a path: a review is a
+  // write to the rows the read just listed, not a separate resource.
+  assertionReview: (id: string) =>
+    `${restAPIv1}/compilation-models/${id}/assertions/review`,
   // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
   compilationTemplateOntologyFix: (id: string) =>
     `${restAPIv1}/compilation-templates/${id}/ontology-fix`,

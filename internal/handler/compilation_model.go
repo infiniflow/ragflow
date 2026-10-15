@@ -317,8 +317,8 @@ func (h *CompilationModelHandler) Impact(c *gin.Context) {
 }
 
 // Instances returns what a model produced: the instances of one declared class,
-// or the assertions of one declared property, merged over the datasets that
-// compile with the model.
+// the assertions of one declared property, or — with neither named — everything
+// of the requested kind, merged over the datasets that compile with the model.
 //
 // It is the model-scope counterpart of the dataset-scope ontology drill-downs
 // (/datasets/<id>/ontology/...). Those answer "what is in this library"; this
@@ -330,8 +330,9 @@ func (h *CompilationModelHandler) Impact(c *gin.Context) {
 //	@Tags compilation model
 //	@Security ApiKeyAuth
 //	@Param template_id path string true "model (template) id"
-//	@Param class query string false "declared class name; answer its instances"
-//	@Param property query string false "declared property name; answer its assertions"
+//	@Param kind query string false "entity (instances) | relation (assertions); default entity, or relation when only property is named"
+//	@Param class query string false "declared class name; omit it for every class"
+//	@Param property query string false "declared property name; omit it for every property"
 //	@Param source_type query string false "property domain class, to pin one polymorphic edge"
 //	@Param target_type query string false "property range class"
 //	@Param scope query string false "doc | dataset | corpus (default dataset)"
@@ -357,6 +358,7 @@ func (h *CompilationModelHandler) Instances(c *gin.Context) {
 	result, err := h.governance.InspectInstances(c.Request.Context(), dao.DB, service.ModelInspectInput{
 		TenantID:   tenantID,
 		TemplateID: c.Param("template_id"),
+		Kind:       c.Query("kind"),
 		Class:      c.Query("class"),
 		Property:   c.Query("property"),
 		SourceType: c.Query("source_type"),
@@ -371,6 +373,129 @@ func (h *CompilationModelHandler) Instances(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, result, "success")
+}
+
+// AssertionReviewQueue lists the assertions of a model by review state.
+//
+//	@Summary List assertions awaiting a review decision
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param status query string false "unreviewed | accepted | rejected | all"
+//	@Param class query string false "entity class"
+//	@Param property query string false "relation property"
+//	@Param source_type query string false "property domain class"
+//	@Param target_type query string false "property range class"
+//	@Param dataset_ids query string false "comma-separated datasets to read"
+//	@Param limit query int false "page size (default 30, max 200)"
+//	@Param offset query int false "page offset"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/compilation-models/{template_id}/assertions/review [get]
+func (h *CompilationModelHandler) AssertionReviewQueue(c *gin.Context) {
+	_, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	limit, offset, ok := h.parseAssertionReviewPaging(c)
+	if !ok {
+		return
+	}
+	queue, err := h.governance.ReviewAssertionQueue(c.Request.Context(), dao.DB, service.ModelAssertionReviewInput{
+		TenantID:   tenantID,
+		TemplateID: c.Param("template_id"),
+		Status:     service.NormalizeAssertionReviewStatus(c.Query("status")),
+		Class:      c.Query("class"),
+		Property:   c.Query("property"),
+		SourceType: c.Query("source_type"),
+		TargetType: c.Query("target_type"),
+		DatasetIDs: splitCSV(c.Query("dataset_ids")),
+		Limit:      limit,
+		Offset:     offset,
+	})
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, queue, "success")
+}
+
+// DecideAssertions records accept/reject/reset decisions on compiled assertions.
+//
+// The bar is tenant membership, not admin: a decision changes what the corpus
+// calls trusted, but it is recorded (who, when, why) and reversible, unlike
+// publishing a model — which changes what every dataset will produce next.
+//
+//	@Summary Accept or reject compiled assertions
+//	@Tags compilation model
+//	@Security ApiKeyAuth
+//	@Param template_id path string true "template id"
+//	@Param request body assertionReviewRequest true "decisions"
+//	@Success 200 {object} map[string]interface{}
+//	@Router /v1/compilation-models/{template_id}/assertions/review [post]
+func (h *CompilationModelHandler) DecideAssertions(c *gin.Context) {
+	user, tenantID, ok := h.resolveReader(c)
+	if !ok {
+		return
+	}
+	var req assertionReviewRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		common.ErrorWithCode(c, common.CodeArgumentError, "invalid review payload")
+		return
+	}
+	items := make([]service.ModelAssertionReviewDecision, 0, len(req.Items))
+	for _, item := range req.Items {
+		items = append(items, service.ModelAssertionReviewDecision{
+			ID:        item.ID,
+			DatasetID: item.DatasetID,
+			Action:    item.Action,
+			Note:      item.Note,
+		})
+	}
+	result, err := h.governance.DecideAssertions(c.Request.Context(), dao.DB, service.ModelAssertionReviewActionInput{
+		TenantID:   tenantID,
+		TemplateID: c.Param("template_id"),
+		ActorID:    user.ID,
+		Items:      items,
+	})
+	if err != nil {
+		common.ResponseWithCodeData(c, common.CodeExceptionError, nil, err.Error())
+		return
+	}
+	common.SuccessWithData(c, result, "success")
+}
+
+// assertionReviewRequest is the decision batch body.
+type assertionReviewRequest struct {
+	Items []assertionReviewItemRequest `json:"items"`
+}
+
+type assertionReviewItemRequest struct {
+	ID        string `json:"id"`
+	DatasetID string `json:"dataset_id"`
+	Action    string `json:"action"`
+	Note      string `json:"note"`
+}
+
+// parseAssertionReviewPaging reads limit/offset, writing the response itself when
+// either is malformed.
+func (h *CompilationModelHandler) parseAssertionReviewPaging(c *gin.Context) (int, int, bool) {
+	limit, offset := 0, 0
+	for _, spec := range []struct {
+		name string
+		into *int
+	}{{"limit", &limit}, {"offset", &offset}} {
+		raw := c.Query(spec.name)
+		if raw == "" {
+			continue
+		}
+		parsed, err := strconv.Atoi(raw)
+		if err != nil {
+			common.ResponseWithCodeData(c, common.CodeExceptionError, nil, spec.name+" must be an integer")
+			return 0, 0, false
+		}
+		*spec.into = parsed
+	}
+	return limit, offset, true
 }
 
 // resolveReader resolves the caller and the tenant a read is scoped to, writing

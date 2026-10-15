@@ -2461,23 +2461,58 @@ Example: Virtual Hosted Style`,
           'No dataset compiles with this model yet, so there is nothing to inspect.',
         instances: 'Instances',
         assertions: 'Assertions',
+        allClasses: 'All classes',
+        allProperties: 'All properties',
         summary:
           '{{count}} in scope · {{datasets}} dataset(s) · model v{{version}}',
         truncated:
-          'Showing a capped window, not everything in scope. Narrow the datasets or the class to see the rest.',
+          'Showing a capped window, not everything in scope. Narrow the datasets or pick one class or property to see the rest.',
         skipped: 'Not read: {{ids}}',
         loading: 'Reading compiled rows…',
         empty: 'Nothing in this scope.',
         emptyHint:
-          'Either these datasets have not been compiled with this model yet, or the model does not extract this one.',
+          'Either these datasets have not been compiled with this model yet, or nothing here matches the current filters.',
         staleVersion:
           'Extracted by v{{version}}; the model is now v{{current}}, so this row predates it',
         evidence: 'Source text ({{count}})',
+        evidenceQuotes: 'Source quotes ({{count}})',
         evidenceMissing: 'No source text recorded for this row',
         evidenceTitle: 'Source text',
+        evidenceQuote: 'Quote',
+        evidenceQuoteFrom: 'Quoted from {{chunk}}',
+        evidenceContextGone:
+          'The surrounding text is no longer available; the quote above is what the model was shown.',
         evidenceLoading: 'Loading…',
         evidenceNone:
           'No source text was recorded for this row. It was extracted before the row kept its chunks, or the text has since been deleted.',
+        review: 'Review',
+        reviewTitle: 'Assertion review',
+        reviewIntro:
+          'What this model extracted, with the text it was read from. A row is only as good as the sentence behind it: accept what the source supports, reject what it does not, and reset a verdict that was made too quickly.',
+        reviewQueueEmpty:
+          'Nothing to review here. Pick another status, or clear the filters.',
+        reviewUnreviewed: 'Unreviewed',
+        reviewAccepted: 'Accepted',
+        reviewRejected: 'Rejected',
+        reviewAll: 'All',
+        reviewAccept: 'Accept',
+        reviewReject: 'Reject',
+        reviewReset: 'Reset',
+        reviewNote: 'Rejection note',
+        reviewNotePlaceholder:
+          'Why these are rejected — recorded on every row the batch rejects.',
+        reviewSucceeded: 'Reviewed {{count}} assertion(s)',
+        reviewFailed: '{{count}} assertion(s) could not be reviewed',
+        reviewNoEvidence:
+          'No source text was recorded for this assertion, so it cannot be judged from here.',
+        reviewProgress:
+          '{{unreviewed}} unreviewed · {{conflicts}} conflict(s) on this page',
+        reviewSelectAll: 'Select all on this page',
+        reviewScopeDoc: 'Document',
+        reviewScopeDataset: 'Dataset',
+        conflict: 'Conflict',
+        conflictTargets: 'Disagrees with: {{targets}}',
+        conflictTypes: 'Over: {{types}}',
       },
       ontologyModel: {
         title: 'Models',

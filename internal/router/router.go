@@ -641,6 +641,11 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
 			v1.GET("/compilation-models/:template_id/instances", r.compilationModelHandler.Instances)
 			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
+			// Assertion review: the actions behind the read-only Inspect panel.
+			// Same scope as Inspect (one model, many datasets), because the
+			// question is "what has this model produced that nobody checked".
+			v1.GET("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.AssertionReviewQueue)
+			v1.POST("/compilation-models/:template_id/assertions/review", r.compilationModelHandler.DecideAssertions)
 
 			connectors := v1.Group("/connectors")
 			{

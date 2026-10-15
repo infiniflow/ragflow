@@ -1570,15 +1570,70 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	common.Info("knowledge_compile: mergeStructureDataset entry",
 		zap.String("kb_id", kb),
 		zap.Int("products", len(products)))
-	// Bucket by (template, lower(name), compile kind) for entities and
-	// (template, lower(from), lower(type), lower(to), compile kind) for relations —
-	// relations have no "name" and must not be silently dropped (review issue 3),
-	// and the relation type + compile kind keep distinct structure kinds and
-	// distinct relation types from collapsing into one dataset row.
-	type ekey struct{ template, name, ckwd string }
-	type rkey struct{ template, from, typ, to, ckwd string }
+	// Bucket by (template, lower(name), class, compile kind) for entities and
+	// (template, lower(from), from class, relation type, lower(to), to class,
+	// compile kind) for relations — relations have no "name" and must not be
+	// silently dropped (review issue 3), and the relation type + compile kind
+	// keep distinct structure kinds and distinct relation types from collapsing
+	// into one dataset row.
+	//
+	// The classes are part of the key. A dataset row carries one
+	// entity_type_kwd / from_type_kwd / to_type_kwd, so folding two classes that
+	// share a name into one row would make the class filter answer with one of
+	// them and lose the other (ontology2.md §3.2). Endpoint classes are keyed for
+	// the same reason on relations: a polymorphic property is drawn and counted
+	// as one edge per domain→range combination, and that distinction cannot
+	// survive being folded into a single row.
+	type ekey struct{ template, name, typ, ckwd string }
+	type rkey struct{ template, from, ftyp, rtyp, to, ttyp, ckwd string }
 	entByKey := make(map[ekey]*StructureBucket, 16)
 	relByKey := make(map[rkey]*StructureBucket, 16)
+	// First bucket seen for one (template, lower(name), compile kind). The
+	// relation pass below uses it to print endpoints in the casing a row actually
+	// stored, and a name may now have several buckets (one per class).
+	entByName := make(map[string]*StructureBucket, 16)
+	// Pass 1: the classes this batch knows each name by. An entity whose class is
+	// the model's fallback ("other" / empty) is a missing answer rather than a
+	// class, so it is resolved onto the name's only class when there is exactly
+	// one — the same instance seen with and without a class must not become two
+	// dataset rows. With two or more classes there is nothing to resolve onto and
+	// the fallback stays unclassified.
+	productTypes := make(map[string]string, 16)
+	productTypesAmbiguous := make(map[string]bool, 4)
+	for _, p := range products {
+		if p.Variant != kccommon.VariantStructure && p.Variant != kccommon.VariantMindmap {
+			continue
+		}
+		nameKey := normalizedStructureEntityName(metaString(p.Meta, "name"))
+		if nameKey == "" {
+			continue
+		}
+		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		if structureEntityTypeKey(typ) == "" {
+			typ = strings.TrimSpace(metaString(p.Meta, "type"))
+		}
+		if structureEntityTypeKey(typ) == "" {
+			continue
+		}
+		if prev, seen := productTypes[nameKey]; seen && structureEntityTypeKey(prev) != structureEntityTypeKey(typ) {
+			productTypesAmbiguous[nameKey] = true
+			continue
+		}
+		productTypes[nameKey] = typ
+	}
+	// resolveProductClass returns the class to key a name+fallback pair under:
+	// the fallback itself when the name has no single class (or several), otherwise
+	// that class. The result is used for both the identity key and the stored
+	// column, so a key and the class it stands for can never disagree.
+	resolveProductClass := func(nameKey, class string) string {
+		if nameKey == "" || structureEntityTypeKey(class) != "" || productTypesAmbiguous[nameKey] {
+			return class
+		}
+		if resolved := productTypes[nameKey]; resolved != "" {
+			return resolved
+		}
+		return class
+	}
 	// The authoritative Python (dataset_structure_merger._do_build) merges EVERY
 	// structure-kind doc row unconditionally — dataset scope is driven by the
 	// task type (structure_graph/timeline/structure_mindmap), NOT by a template
@@ -1614,7 +1669,19 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 			if relType == "" {
 				relType = "related"
 			}
-			k := rkey{template: template, from: normalizedStructureEntityName(from), typ: structureRelationType(relType), to: normalizedStructureEntityName(to), ckwd: ckwd}
+			fromName := normalizedStructureEntityName(from)
+			toName := normalizedStructureEntityName(to)
+			fromType := resolveProductClass(fromName, strings.TrimSpace(metaString(p.Meta, "from_type")))
+			toType := resolveProductClass(toName, strings.TrimSpace(metaString(p.Meta, "to_type")))
+			k := rkey{
+				template: template,
+				from:     fromName,
+				ftyp:     structureEntityTypeKey(fromType),
+				rtyp:     structureRelationType(relType),
+				to:       toName,
+				ttyp:     structureEntityTypeKey(toType),
+				ckwd:     ckwd,
+			}
 			b := relByKey[k]
 			if b == nil {
 				b = &StructureBucket{
@@ -1625,7 +1692,7 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 					// entity buckets when it can. They are what the class-level
 					// ontology graph is drawn and counted from, so a relation
 					// row without them cannot be placed on it.
-					FromType: metaString(p.Meta, "from_type"), ToType: metaString(p.Meta, "to_type"),
+					FromType: fromType, ToType: toType,
 					CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind,
 					CompileType:  metaString(p.Meta, "compile_type"),
 					RelationType: relType,
@@ -1637,52 +1704,67 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 		}
 		// entity bucket
 		name := metaString(p.Meta, "name")
-		typ := metaString(p.Meta, "entity_type")
-		if typ == "" {
-			typ = metaString(p.Meta, "type")
+		typ := strings.TrimSpace(metaString(p.Meta, "entity_type"))
+		if structureEntityTypeKey(typ) == "" {
+			typ = strings.TrimSpace(metaString(p.Meta, "type"))
 		}
 		if name == "" {
 			continue
 		}
-		k := ekey{template: template, name: normalizedStructureEntityName(name), ckwd: ckwd}
+		nameKey := normalizedStructureEntityName(name)
+		typ = resolveProductClass(nameKey, typ)
+		k := ekey{template: template, name: nameKey, typ: structureEntityTypeKey(typ), ckwd: ckwd}
 		b := entByKey[k]
 		if b == nil {
 			b = &StructureBucket{Name: name, Type: typ, CompileKwd: ckwd, TemplateID: p.TemplateID, TemplateKind: p.Kind, CompileType: metaString(p.Meta, "compile_type")}
 			entByKey[k] = b
+			if _, seen := entByName[template+"\x00"+k.name+"\x00"+ckwd]; !seen {
+				entByName[template+"\x00"+k.name+"\x00"+ckwd] = b
+			}
 		} else {
 			b.Type = preferredStructureEntityType(b.Type, typ)
 		}
 		appendBucket(b, p)
 	}
 	for key, bucket := range relByKey {
-		if entity := entByKey[ekey{template: key.template, name: key.from, ckwd: key.ckwd}]; entity != nil {
+		if entity := entByName[key.template+"\x00"+key.from+"\x00"+key.ckwd]; entity != nil {
 			bucket.FromEntity = entity.Name
 		}
-		if entity := entByKey[ekey{template: key.template, name: key.to, ckwd: key.ckwd}]; entity != nil {
+		if entity := entByName[key.template+"\x00"+key.to+"\x00"+key.ckwd]; entity != nil {
 			bucket.ToEntity = entity.Name
 		}
 		bucket.Name = bucket.FromEntity + " -> " + bucket.ToEntity
 	}
-	// Re-resolve each relation bucket's endpoint classes from the dataset-level
-	// entity buckets. The doc-level stamp can go stale once several documents
-	// merge, and the dataset-level entity type is what the dataset-level
-	// ontology graph draws, so the two must agree.
+	// Fill in each relation bucket's endpoint classes from the dataset-level
+	// entity buckets when the doc-level stamp left them empty. Filling only the
+	// blanks is what keeps this safe: the classes are part of the bucket's
+	// identity, so overwriting a non-empty one with another name-mate's class
+	// would rename a key that the row id is derived from. A name that several
+	// classes share cannot be resolved without guessing at all, so it is skipped.
 	datasetEntityTypes := make(map[string]string, len(entByKey))
+	ambiguous := make(map[string]bool, 4)
 	for _, b := range entByKey {
 		name := normalizedStructureEntityName(b.Name)
-		if name == "" || b.Type == "" {
+		typ := strings.TrimSpace(b.Type)
+		if name == "" || typ == "" {
 			continue
 		}
-		if _, seen := datasetEntityTypes[name]; !seen {
-			datasetEntityTypes[name] = b.Type
+		if prev, seen := datasetEntityTypes[name]; seen && !strings.EqualFold(prev, typ) {
+			ambiguous[name] = true
+			continue
 		}
+		datasetEntityTypes[name] = typ
 	}
 	for _, b := range relByKey {
-		if t, ok := datasetEntityTypes[normalizedStructureEntityName(b.FromEntity)]; ok {
-			b.FromType = t
+		if from := normalizedStructureEntityName(b.FromEntity); strings.TrimSpace(b.FromType) == "" && !ambiguous[from] {
+			if t, ok := datasetEntityTypes[from]; ok {
+				b.FromType = t
+			}
 		}
-		if t, ok := datasetEntityTypes[normalizedStructureEntityName(b.ToEntity)]; ok {
-			b.ToType = t
+		if to := normalizedStructureEntityName(b.ToEntity); strings.TrimSpace(b.ToType) == "" && !ambiguous[to] {
+			if t, ok := datasetEntityTypes[to]; ok {
+				b.ToType = t
+			}
 		}
 	}
 	buckets := make([]StructureBucket, 0, len(entByKey)+len(relByKey))
@@ -1711,6 +1793,28 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 
 func normalizedStructureEntityName(name string) string {
 	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+// structureEntityTypeKey normalises an entity or endpoint class for identity
+// keys. The class is part of the identity, not just a display label: folding
+// "apple" the fruit and "apple" the company into one row would leave that row
+// with a single entity_type_kwd, so a class filter would answer with one set and
+// silently drop the other (ontology2.md §3.2, 同名不同义). Case is folded so
+// "Person" and "person" stay the same class.
+//
+// "" and the model's "other" fallback both collapse to the empty key: they mean
+// "no class was assigned", which is a missing answer rather than a class of its
+// own. Keying them apart would give every unclassified instance a second row next
+// to its classified one. mindmap/mind_map are one class spelled two ways.
+func structureEntityTypeKey(typ string) string {
+	typ = strings.ToLower(strings.Join(strings.Fields(typ), " "))
+	if typ == "" || typ == "other" {
+		return ""
+	}
+	if typ == "mindmap" {
+		return "mind_map"
+	}
+	return typ
 }
 
 func preferredStructureEntityType(existing, incoming string) string {

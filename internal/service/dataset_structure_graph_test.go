@@ -160,17 +160,45 @@ func TestGraphSourceDocIDsKeepsDatasetScopeHonest(t *testing.T) {
 	}
 }
 
-// TestDedupEntities_OrderPreserving verifies dedup by lowercased name.
-func TestDedupEntities_OrderPreserving(t *testing.T) {
+// TestMergeEntities_FoldsByNameAndClass covers the identity rule and the fields
+// that must survive the fold: same name + same class is one instance whose
+// sources and quotes are unioned, a different class is a different instance, and
+// an empty name is dropped.
+func TestMergeEntities_FoldsByNameAndClass(t *testing.T) {
 	in := []StructureGraphNode{
-		{"name": "A", "type": "x"},
-		{"name": "a", "type": "other"}, // dup despite case and type differences
-		{"name": "B", "type": "y"},
-		{"name": ""}, // dropped (empty name)
+		{
+			"name": "A", "type": "x", "description": "folded",
+			"source_chunk_ids": []string{"c1"}, "document_ids": []string{"d1"},
+			"evidence": []map[string]interface{}{{"quote": "q1", "chunk_id": "c1"}},
+		},
+		{
+			"name": "a", "type": "x", "description": "",
+			"source_chunk_ids": []string{"c2"}, "document_ids": []string{"d2"},
+			"evidence": []map[string]interface{}{{"quote": "q1", "chunk_id": "c1"}, {"quote": "q2", "chunk_id": "c2"}},
+			"scope":    "dataset",
+		},
+		{"name": "A", "type": "y"}, // same name, other class: a different instance
+		{"name": ""},               // dropped (empty name)
 	}
-	out := dedupEntities(in)
-	if len(out) != 2 || out[0]["name"] != "A" || out[1]["name"] != "B" {
-		t.Errorf("dedupEntities = %v, want [A B]", out)
+	out := mergeEntities(in)
+	if len(out) != 2 {
+		t.Fatalf("mergeEntities = %v, want 2 instances", out)
+	}
+	if out[0]["description"] != "folded" {
+		t.Errorf("description was lost in the fold: %v", out[0])
+	}
+	if got := stringSliceValue(out[0]["source_chunk_ids"]); len(got) != 2 {
+		t.Errorf("source chunks not unioned: %v", got)
+	}
+	if got := stringSliceValue(out[0]["document_ids"]); len(got) != 2 {
+		t.Errorf("documents not unioned: %v", got)
+	}
+	evidence, _ := out[0]["evidence"].([]map[string]interface{})
+	if len(evidence) != 2 {
+		t.Errorf("evidence not unioned without duplicates: %v", out[0]["evidence"])
+	}
+	if out[1]["type"] != "y" {
+		t.Errorf("second class should be its own instance: %v", out[1])
 	}
 }
 

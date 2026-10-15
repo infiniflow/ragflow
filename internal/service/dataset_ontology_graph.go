@@ -1388,8 +1388,14 @@ type OntologyClassEntitiesInput struct {
 	TenantID  string
 	DatasetID string
 	// Class is the class name as the template declares it (a value, never a
-	// column name).
+	// column name). Empty asks for every class, but only when All says so: the
+	// dataset-scope drill-down is always about one named class.
 	Class string
+	// All answers about every class instead of one. It is the model-scope
+	// inspection's opening state — nothing selected yet, asking what the model
+	// produced at all — and the drill-down never sets it, because there an
+	// unnamed class means the caller lost the name rather than widened the read.
+	All bool
 	// TemplateID narrows to one compilation template's rows, DocumentID to one
 	// document. Both empty means the whole dataset scope.
 	TemplateID string
@@ -1412,8 +1418,11 @@ type OntologyEntityPage struct {
 type OntologyPropertyRelationsInput struct {
 	TenantID  string
 	DatasetID string
-	// Property is the declared property name.
+	// Property is the declared property name. Empty asks for every property,
+	// but only when All says so (see OntologyClassEntitiesInput.All).
 	Property string
+	// All answers about every property instead of one.
+	All bool
 	// SourceType / TargetType pin one domain → range combination of a
 	// polymorphic property (the graph draws one edge per combination, and the
 	// drill-down must return that same edge's rows). Empty means every
@@ -1467,23 +1476,66 @@ func ontologyInstanceFilter(kind, templateID, documentID string) map[string]inte
 	return filter
 }
 
+// ontologyTermFilter narrows a filter to one term value, and adds no clause when
+// there is no value to narrow by.
+//
+// "Every value" has to be the absent key. An empty term list does not say that:
+// the two engines read it as opposites — Elasticsearch turns it into a terms
+// clause over no values, which matches nothing (elasticsearch/chunk.go:2324),
+// while Infinity drops the clause, which matches everything
+// (infinity/chunk.go:2716). A wildcard spelled as an empty list would therefore
+// answer differently depending on which engine a deployment runs.
+func ontologyTermFilter(filter map[string]interface{}, key, value string) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return
+	}
+	filter[key] = []string{value}
+}
+
+// ontologyEvidenceOf lifts the verified quotes out of a row's payload.
+//
+// The shared graph projection drops them on purpose: the artifacts tree does not
+// render quotes and claim/evidence compilation keeps its own panel, so carrying
+// the field into every artifacts response would be payload nobody reads
+// (claim_evidence.md §8). The ontology views are the exception, because "where
+// in the source does this come from" is the question they exist to answer — and
+// only the ontology drill-downs call this.
+//
+// Only entries that survived the gate are returned: the writer stores a quote
+// together with the span it was located at, so an entry without one never made
+// it past validation and must not be presented as if it had.
+func ontologyEvidenceOf(row map[string]interface{}) []map[string]interface{} {
+	payload := graphLoadPayload(row)
+	if payload == nil {
+		return nil
+	}
+	kept := keptEvidence(payload["evidence"])
+	if len(kept) == 0 {
+		return nil
+	}
+	return kept
+}
+
 // GetOntologyClassEntities pages the instances of one class (ontology.md §6.5 B1).
 //
 // entity_type_kwd is matched by term, not by text: class names are snake_case
 // single tokens, which is exactly why they are usable as filter values while
-// entity names (which contain spaces) are not (ontology.md §4.5).
+// entity names (which contain spaces) are not (ontology.md §4.5). With All set
+// and no class, the clause is dropped and the page is every class the scope
+// extracted — one page spanning classes, ranked by mentions like any other.
 func (s *DatasetArtifactService) GetOntologyClassEntities(ctx context.Context, in OntologyClassEntitiesInput) (*OntologyEntityPage, error) {
 	class := strings.TrimSpace(in.Class)
 	page := &OntologyEntityPage{
 		Class:    class,
 		Entities: []StructureGraphNode{},
 	}
-	if class == "" {
+	if class == "" && !in.All {
 		return page, nil
 	}
 
 	filter := ontologyInstanceFilter("entity", in.TemplateID, in.DocumentID)
-	filter["entity_type_kwd"] = []string{class}
+	ontologyTermFilter(filter, "entity_type_kwd", class)
 
 	limit, offset := ontologyDrilldownPage(in.Offset, in.Limit)
 	page.Offset, page.Limit = offset, limit
@@ -1498,15 +1550,21 @@ func (s *DatasetArtifactService) GetOntologyClassEntities(ctx context.Context, i
 	page.Total = total
 	for _, row := range rows {
 		if node := projectEntity(row); node != nil {
+			if evidence := ontologyEvidenceOf(row); len(evidence) > 0 {
+				node["evidence"] = evidence
+			}
 			page.Entities = append(page.Entities, node)
 		}
 	}
-	page.Entities = dedupEntities(page.Entities)
+	page.Entities = mergeEntities(page.Entities)
+	markEntityClassConflicts(page.Entities)
 	return page, nil
 }
 
 // GetOntologyPropertyRelations pages the assertions of one property edge
-// (ontology.md §6.5 B3/B4).
+// (ontology.md §6.5 B3/B4). Like the class page above, All with no property
+// answers every edge the scope extracted, and the coarse optional pins
+// (source/target type) still narrow it.
 func (s *DatasetArtifactService) GetOntologyPropertyRelations(ctx context.Context, in OntologyPropertyRelationsInput) (*OntologyRelationPage, error) {
 	prop := strings.TrimSpace(in.Property)
 	page := &OntologyRelationPage{
@@ -1515,18 +1573,14 @@ func (s *DatasetArtifactService) GetOntologyPropertyRelations(ctx context.Contex
 		Target:    strings.TrimSpace(in.TargetType),
 		Relations: []StructureGraphRelation{},
 	}
-	if prop == "" {
+	if prop == "" && !in.All {
 		return page, nil
 	}
 
 	filter := ontologyInstanceFilter("relation", in.TemplateID, in.DocumentID)
-	filter["prop_kwd"] = []string{prop}
-	if page.Source != "" {
-		filter["from_type_kwd"] = []string{page.Source}
-	}
-	if page.Target != "" {
-		filter["to_type_kwd"] = []string{page.Target}
-	}
+	ontologyTermFilter(filter, "prop_kwd", prop)
+	ontologyTermFilter(filter, "from_type_kwd", page.Source)
+	ontologyTermFilter(filter, "to_type_kwd", page.Target)
 
 	limit, offset := ontologyDrilldownPage(in.Offset, in.Limit)
 	page.Offset, page.Limit = offset, limit
@@ -1538,8 +1592,13 @@ func (s *DatasetArtifactService) GetOntologyPropertyRelations(ctx context.Contex
 	page.Total = total
 	for _, row := range rows {
 		if edge := projectRelation(row); edge != nil {
+			if evidence := ontologyEvidenceOf(row); len(evidence) > 0 {
+				edge["evidence"] = evidence
+			}
 			page.Relations = append(page.Relations, edge)
 		}
 	}
+	page.Relations = mergeRelations(page.Relations)
+	markRelationConflicts(page.Relations)
 	return page, nil
 }
