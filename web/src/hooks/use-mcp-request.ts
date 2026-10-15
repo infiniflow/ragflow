@@ -25,6 +25,7 @@ import {
 } from '@/interfaces/database/mcp';
 import {
   IImportMcpServersRequestBody,
+  IMcpServerListRequestBody,
   ITestMcpRequestBody,
 } from '@/interfaces/request/mcp';
 import i18n from '@/locales/config';
@@ -96,19 +97,30 @@ export const useListMcpServer = (
     ? mcpIds.length
     : pagination.pageSize;
 
-  const isSelectedMcpLookup = mcpIds.length > 0;
-  const requestKeywords = isSelectedMcpLookup ? '' : debouncedSearchString;
-  const requestPage = isSelectedMcpLookup ? 1 : pagination.current;
-  const requestPageSize = isSelectedMcpLookup
-    ? mcpIds.length
-    : pagination.pageSize;
-
   const { data, isFetching: loading } = useQuery<IMcpServerListResponse>({
     queryKey: McpKeys.list(
       requestKeywords,
       requestPage,
       requestPageSize,
       tenantId,
+      mcpIds,
+    ),
+    initialData: { total: 0, mcp_servers: [] },
+    gcTime: 0,
+    enabled: queryEnabled,
+    queryFn: async () => {
+      const params: IMcpServerListRequestBody = {
+        keywords: requestKeywords,
+        page_size: requestPageSize,
+        page: requestPage,
+      };
+      if (tenantId) {
+        params.tenant_id = tenantId;
+      }
+      if (mcpIds.length > 0) {
+        params.mcp_ids = mcpIds.join(',');
+      }
+      const { data } = await listMcpServers(params);
       return data?.data;
     },
   });

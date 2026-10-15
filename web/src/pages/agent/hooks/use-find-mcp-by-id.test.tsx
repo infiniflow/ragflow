@@ -1,5 +1,6 @@
 import { renderHook } from '@testing-library/react';
 import { useListMcpServer } from '@/hooks/use-mcp-request';
+import { OwnerTenantIdContext } from '../context';
 import { useFindMcpById } from './use-find-mcp-by-id';
 
 jest.mock('@/hooks/use-mcp-request', () => ({
@@ -7,6 +8,14 @@ jest.mock('@/hooks/use-mcp-request', () => ({
 }));
 
 const mockUseListMcpServer = jest.mocked(useListMcpServer);
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return (
+    <OwnerTenantIdContext.Provider value="owner-tenant">
+      {children}
+    </OwnerTenantIdContext.Provider>
+  );
+}
 
 describe('useFindMcpById', () => {
   it('requests selected MCP ids and resolves shared metadata by id', () => {
@@ -17,9 +26,15 @@ describe('useFindMcpById', () => {
       },
     } as never);
 
-    const { result } = renderHook(() => useFindMcpById(['shared-mcp']));
+    const { result } = renderHook(() => useFindMcpById(['shared-mcp']), {
+      wrapper: Wrapper,
+    });
 
-    expect(mockUseListMcpServer).toHaveBeenCalledWith(['shared-mcp']);
+    expect(mockUseListMcpServer).toHaveBeenCalledWith(
+      'owner-tenant',
+      ['shared-mcp'],
+      true,
+    );
     expect(result.current.findMcpById('shared-mcp')?.name).toBe('Navigo3');
   });
 });

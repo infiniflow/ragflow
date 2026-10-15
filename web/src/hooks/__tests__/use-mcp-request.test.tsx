@@ -27,7 +27,7 @@ jest.mock('ahooks', () => ({
 
 const mockListMcpServers = jest.mocked(listMcpServers);
 
-function Wrapper({ children }: { children: JSX.Element }) {
+function Wrapper({ children }: { children: React.ReactNode }) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -53,8 +53,7 @@ describe('useListMcpServer', () => {
     await waitFor(() => expect(mockListMcpServers).toHaveBeenCalled());
 
     expect(mockListMcpServers).toHaveBeenCalledWith(
-      { keywords: '', page: 1, page_size: 3 },
-      { mcp_ids: 'mcp-1,mcp-2,mcp-3' },
+      { keywords: '', page: 1, page_size: 3, mcp_ids: 'mcp-1,mcp-2,mcp-3' },
     );
   });
 
@@ -65,7 +64,6 @@ describe('useListMcpServer', () => {
 
     expect(mockListMcpServers).toHaveBeenCalledWith(
       { keywords: 'ignored search', page: 4, page_size: 10 },
-      undefined,
     );
   });
 });
