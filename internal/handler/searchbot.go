@@ -558,14 +558,12 @@ func toRetrievalServiceRequest(h *SearchBotRetrievalTestRequest) *service.Retrie
 	}
 }
 
-// ptrFloat64 returns a pointer to a float64 value.
-func ptrFloat64(v float64) *float64 { return &v }
-
-func intPtr(v int) *int           { return &v }
-func floatPtr(v float64) *float64 { return &v }
-
 // applyRetrievalDefaults fills in default values for optional fields,
 // matching Python bot_api.py retrieval_test endpoint.
+//
+// similarity_threshold, vector_similarity_weight and top_k are left nil:
+// ChunkService.RetrievalTest resolves them against the search app's saved
+// search_config, which a default here would hide.
 func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Page == nil {
 		v := 1
@@ -575,10 +573,6 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 		v := 30
 		req.Size = &v
 	}
-	if req.TopK == nil {
-		v := 1024
-		req.TopK = &v
-	}
 	if req.UseKG == nil {
 		v := false
 		req.UseKG = &v
@@ -586,13 +580,5 @@ func applyRetrievalDefaults(req *SearchBotRetrievalTestRequest) {
 	if req.Keyword == nil {
 		v := false
 		req.Keyword = &v
-	}
-	if req.SimilarityThreshold == nil {
-		v := 0.0
-		req.SimilarityThreshold = &v
-	}
-	if req.VectorSimilarityWeight == nil {
-		v := 0.3
-		req.VectorSimilarityWeight = &v
 	}
 }

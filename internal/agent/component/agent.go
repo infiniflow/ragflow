@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/dao"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -493,6 +494,21 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 	return strings.TrimSpace(resp.Content), nil
 }
 
+// citationGroundingMarkerRe matches canonical [ID:…] / [ID: …] markers that
+// the grounding call is asked to insert. IDs may be numeric or non-numeric
+// (e.g. "simple-0", "ck-1"). Used only to decide whether a grounding
+// response still has answer text after the markers are removed. The ID:
+// prefix is required so bare brackets like [2026] are not treated as markers.
+var citationGroundingMarkerRe = regexp.MustCompile(`\[ID:\s*[^\]]+\]`)
+
+// citationGroundingHasSubstantiveText reports whether s contains any
+// non-whitespace text once citation markers are stripped. Marker-only
+// responses such as "[ID:0] [ID:1]" must not replace the first-pass answer.
+func citationGroundingHasSubstantiveText(s string) bool {
+	stripped := citationGroundingMarkerRe.ReplaceAllString(s, "")
+	return strings.TrimSpace(stripped) != ""
+}
+
 // applyCitationGrounding is the post-stream citation grounding
 // call. It reads the chunks recorded in state.Retrieval["chunks"]
 // (populated by the Retrieval tool), renders
@@ -502,7 +518,9 @@ func addToolCallMemory(ctx context.Context, db *gorm.DB, p AgentParam, msg *sche
 //
 // Streams grounded deltas when the invoker supports streaming. Returns the
 // original content when no chunks are available or the call fails before
-// emitting anything.
+// emitting anything. Marker-only grounding responses fall back to the
+// original answer; if invalid deltas were already streamed, an error is
+// returned so the caller does not append the first-pass text afterward.
 func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, content string, chunks []prompts.CitationSource) (string, error) {
 	if !p.Cite {
 		return content, nil
@@ -528,6 +546,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 	}
 	var resp *ChatInvokeResponse
 	var err error
+	emittedVisible := false
 	if streamer, ok := inv.(chat.StreamingInvoker); ok {
 		var leadingWhitespace strings.Builder
 		emitting := false
@@ -546,6 +565,7 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 				delta = leadingWhitespace.String()
 				emitting = true
 			}
+			emittedVisible = true
 			runtime.EmitAgentMessage(ctx, delta, "")
 			return nil
 		})
@@ -562,6 +582,16 @@ func applyCitationGrounding(ctx context.Context, db *gorm.DB, p AgentParam, cont
 		return content, fmt.Errorf("citation grounding returned no response")
 	}
 	if strings.TrimSpace(resp.Content) == "" {
+		return content, nil
+	}
+	// Marker-only grounding must not silently replace the first-pass answer
+	// (#20613). Non-stream (or stream that never emitted) can fall back.
+	// Once invalid deltas have already been streamed, surface an error so the
+	// caller does not append the original answer after the bad markers.
+	if !citationGroundingHasSubstantiveText(resp.Content) {
+		if emittedVisible {
+			return content, fmt.Errorf("citation grounding returned markers without answer text")
+		}
 		return content, nil
 	}
 	return resp.Content, nil
@@ -1031,12 +1061,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
-		// Python's LLM layer turns model/tool execution failures into an
-		// ``**ERROR**`` response, which Agent exposes as the `_ERROR`
-		// component output.  Preserve cancellation as a real graph error,
-		// but keep ordinary ReAct failures in the component data flow so
-		// Canvas exception branches can handle them.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
+		// Only step exhaustion is an _ERROR output. Model/tool failures must
+		// stop execution before downstream nodes read an absent content output.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
 		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
@@ -1108,18 +1135,6 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
-}
-
-// isAgentGraphRunError identifies ReAct graph failures that Python exposes
-// through the Agent component's _ERROR output. Construction/configuration
-// errors must remain real component errors so invalid canvases still fail
-// fast; only the graph execution limit/error is routed to exception branches.
-func isAgentGraphRunError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "[graphrunerror]") || strings.Contains(msg, "exceeds max steps")
 }
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the

@@ -71,7 +71,8 @@ func trimCells(row []string) []string {
 // loses column names) and carries a row-aligned position matrix — one tuple
 // per row in strict order, header included — so row-level consumers index
 // positions by row number with no side channel. The chunker reads the rows
-// directly; no HTML markup is emitted.
+// directly and renders each emitted chunk's Text as an HTML <table> (see
+// tableutil.RenderTableHTML); no HTML markup is emitted here at the parser.
 //
 // An image lands after the last row whose (row, colStart) sorts at or before
 // its anchor; rows before the header's anchor keep the header in front of
