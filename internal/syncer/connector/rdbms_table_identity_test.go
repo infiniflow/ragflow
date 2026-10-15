@@ -132,15 +132,41 @@ func TestRDBMSTableIdentity(t *testing.T) {
 				t.Fatalf("prune EOF = %v", err)
 			}
 
-			t.Run("table-less checkpoint restarts window", func(t *testing.T) {
-				old := tc.dialect + ":mydb:orders:1"
-				connector := tc.fixture(t, config, expectSync)
-				session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: encodeRDBMSCursor("orders", "id", old), SourceID: old}})
+			for _, anchor := range []struct {
+				name string
+				id   string
+			}{
+				{"table-less checkpoint", tc.dialect + ":mydb:1"},
+				{"table-less checkpoint with colon in row ID", tc.dialect + ":mydb:orders:1"},
+				{"checkpoint for another table", tc.dialect + "-table:mydb:products:1"},
+				{"checkpoint for another database", tc.dialect + "-table:otherdb:orders:1"},
+			} {
+				t.Run(anchor.name+" restarts before reading rows", func(t *testing.T) {
+					connector := tc.fixture(t, config, func(mock sqlmock.Sqlmock) {
+						expectTables(mock)
+						mock.ExpectClose()
+					})
+					session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: encodeRDBMSCursor("orders", "id", anchor.id), SourceID: anchor.id}})
+					if !errors.Is(err, ErrSyncResumeInvalid) {
+						t.Fatalf("OpenSync error = %v, want ErrSyncResumeInvalid", err)
+					}
+					if session != nil {
+						t.Fatal("OpenSync returned a session for an invalid anchor")
+					}
+				})
+			}
+			t.Run("escaped table checkpoint is accepted", func(t *testing.T) {
+				connector := tc.fixture(t, config, func(mock sqlmock.Sqlmock) {
+					mock.ExpectQuery(regexp.QuoteMeta(tc.listSQL)).WillReturnRows(sqlmock.NewRows([]string{"table"}).AddRow("orders:archive"))
+					mock.ExpectClose()
+				})
+				anchor := tc.dialect + "-table:mydb:orders%3Aarchive:1"
+				session, err := connector.OpenSync(t.Context(), SyncRequest{FromBeginning: true, Resume: &SyncCheckpoint{Cursor: encodeRDBMSCursor("orders:archive", "id", anchor), SourceID: anchor}})
 				if err != nil {
 					t.Fatal(err)
 				}
-				if _, err := session.NextBatch(t.Context()); !errors.Is(err, ErrSyncResumeInvalid) {
-					t.Fatalf("old checkpoint error = %v", err)
+				if err := session.Close(); err != nil {
+					t.Fatal(err)
 				}
 			})
 		})

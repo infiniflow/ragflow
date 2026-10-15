@@ -705,8 +705,8 @@ func (s *mysqlSyncSession) closeRows() {
 }
 
 // applyResume positions the session after the last committed batch. The
-// cursor's query and ordering column must still exist, otherwise the runner
-// restarts the task window.
+// cursor's query, ordering column, and table namespace must still match,
+// otherwise the runner restarts the task window before reading rows.
 func (s *mysqlSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	if checkpoint == nil {
 		return nil
@@ -727,6 +727,9 @@ func (s *mysqlSyncSession) applyResume(checkpoint *SyncCheckpoint) error {
 	}
 	if idx < 0 {
 		return fmt.Errorf("MySQL sync resume query %q no longer exists: %w", cursor.Query, ErrSyncResumeInvalid)
+	}
+	if cursor.Query != "" && !strings.HasPrefix(cursor.SourceID, "mysql-table:"+s.connector.database+":"+url.QueryEscape(cursor.Query)+":") {
+		return fmt.Errorf("MySQL sync resume anchor %q does not match table %q: %w", cursor.SourceID, cursor.Query, ErrSyncResumeInvalid)
 	}
 	s.queryIndex = idx
 	s.resume = &cursor
