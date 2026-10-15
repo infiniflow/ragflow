@@ -325,12 +325,11 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	if opts.Name != "" {
 		query = query.Where(column("name")+" = ?", opts.Name)
 	}
-	if opts.DocIDFilterApplied {
-		if len(opts.DocIDs) == 0 {
-			query = query.Where("1 = 0")
-		} else {
-			query = query.Where(column("id")+" IN ?", opts.DocIDs)
-		}
+	// The document ID clause is not gated on DocIDFilterApplied here: with the
+	// flag false and IDs present, applying them narrows the query instead of
+	// silently widening it, which is the safe direction to fail in.
+	if len(opts.DocIDs) > 0 {
+		query = query.Where(column("id")+" IN ?", opts.DocIDs)
 	}
 	// Note: create_time_from / create_time_to are NOT applied at DB level.
 	// They are filtered post-query in the handler so total reflects the
