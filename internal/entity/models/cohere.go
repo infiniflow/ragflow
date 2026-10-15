@@ -133,6 +133,21 @@ func decodeCohereStreamUsage(event map[string]interface{}) (*TokenUsage, bool, e
 	return buildCohereTokenUsage(tokens.InputTokens, tokens.OutputTokens), true, nil
 }
 
+func buildCohereRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
+	body := buildRequestBody(cfg, modelName, messages, stream)
+	// Cohere uses p and stop_sequences, not the OpenAI parameter names.
+	if value, ok := body["top_p"]; ok {
+		body["p"] = value
+		delete(body, "top_p")
+	}
+	if value, ok := body["stop"]; ok {
+		body["stop_sequences"] = value
+		delete(body, "stop")
+	}
+	delete(body, "do_sample")
+	return body
+}
+
 func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := c.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
@@ -147,13 +162,9 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 	}
 
 	// Build request body
-	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
+	reqBody := buildCohereRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
-		if chatModelConfig.TopP != nil {
-			reqBody["p"] = *chatModelConfig.TopP
-		}
-
 		if chatModelConfig.Thinking != nil {
 			if *chatModelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
@@ -242,13 +253,9 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
+	reqBody := buildCohereRequestBody(modelConfig, modelName, messages, true)
 
 	if modelConfig != nil {
-		if modelConfig.TopP != nil {
-			reqBody["p"] = *modelConfig.TopP
-		}
-
 		if modelConfig.Thinking != nil {
 			if *modelConfig.Thinking {
 				reqBody["thinking"] = map[string]interface{}{
