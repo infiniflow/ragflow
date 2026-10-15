@@ -20,7 +20,6 @@ import (
 	"encoding/base64"
 	"encoding/xml"
 	"fmt"
-	"ragflow/internal/parser/tableutil"
 	"regexp"
 	"sort"
 	"strconv"
@@ -31,6 +30,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/tableutil"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
@@ -398,12 +398,8 @@ func xlsxImageMIMEType(extension string) (string, bool) {
 	}
 }
 
-// maxMergeExtentCols caps how far a merged range may widen the header row.
-// excelize's GetRows truncates each row at its last valued cell, so a merged
-// slave beyond that point is absent and cannot inherit its master's text; we
-// pad the header row to the furthest merged column to recover it. A pathological
-// far merge (e.g. A1:XFD1) must not be allowed to allocate one cell per column
-// for every row, so the width is capped here.
+// maxMergeExtentCols bounds grid widening when restoring covered cells omitted
+// by GetRows. Merged ranges beyond this width retain only bounded geometry.
 const maxMergeExtentCols = 1024
 
 // cleanIllegalControlChars replaces illegal control characters in all cells

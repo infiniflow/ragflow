@@ -121,7 +121,6 @@ func parseWithTCADP(
 	result := pdfItemsToResult(filename, items, outputFormat, pageCount)
 	if result.Err == nil {
 		result.predictedTableHeaders = true
-		result.JSON = result.NormalizeTableHeaders(result.JSON)
 	}
 	return result
 }

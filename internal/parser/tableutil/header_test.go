@@ -42,10 +42,10 @@ func TestDetectHeaderEvidence(t *testing.T) {
 		{"native numeric column names", `<table><tr><th>2024</th><th>2025</th></tr><tr><td>10</td><td>20</td></tr></table>`, HeaderEvidence{Explicit: &Header{Rows: 1}}, Header{Rows: 1}},
 		{"explicit absence", `<table><tr><td>Name</td><td>Age</td></tr><tr><td>Alice</td><td>18</td></tr></table>`, HeaderEvidence{Explicit: &Header{}}, Header{}},
 		{"uniform style is not a header", `<table><tr><td>Alice</td><td>18</td></tr><tr><td>Bob</td><td>20</td></tr></table>`, HeaderEvidence{Styled: [][]bool{{true, true}, {true, true}}}, Header{}},
-		{"predicted data row", `<table><tr><th>Alice</th><th>18</th></tr><tr><td>Bob</td><td>20</td></tr></table>`, HeaderEvidence{PredictedRows: 1}, Header{}},
+		{"untrusted markup data row", `<table><tr><th>Alice</th><th>18</th></tr><tr><td>Bob</td><td>20</td></tr></table>`, HeaderEvidence{}, Header{}},
 		{"multi level", `<table><tr><td colspan="2">Sales</td></tr><tr><td>Quantity</td><td>Amount</td></tr><tr><td>2</td><td>30</td></tr></table>`, HeaderEvidence{}, Header{Rows: 2}},
 		{"multiple samples reject a one row contrast", `<table><tr><td>alpha</td><td>beta</td></tr><tr><td>1</td><td>2</td></tr><tr><td>gamma</td><td>delta</td></tr><tr><td>epsilon</td><td>zeta</td></tr></table>`, HeaderEvidence{}, Header{}},
-		{"single row prediction", `<table><tr><th>Alice</th><th>18</th></tr></table>`, HeaderEvidence{PredictedRows: 1}, Header{}},
+		{"single row untrusted markup", `<table><tr><th>Alice</th><th>18</th></tr></table>`, HeaderEvidence{}, Header{}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			td := mustParse(t, tt.html)

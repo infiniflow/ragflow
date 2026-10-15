@@ -356,9 +356,8 @@ func (p *PDFParser) validateParseMethod() error {
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
 func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) (result ParseResult) {
 	defer func() {
-		if result.Err == nil && !result.predictedTableHeaders {
+		if result.Err == nil {
 			result.predictedTableHeaders = true
-			result.JSON = result.NormalizeTableHeaders(result.JSON)
 		}
 	}()
 	if err := p.validateParseMethod(); err != nil {

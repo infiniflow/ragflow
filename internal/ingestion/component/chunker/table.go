@@ -14,18 +14,9 @@
 //  limitations under the License.
 //
 
-// TableChunker emits one chunk per upstream table row. It is the faithful
-// Go port of the Python `table` chunk method, whose docstring states:
-// "Every row in table will be treated as a chunk."
-//
-// Unlike TokenChunker (which token-shreds a row's text into multiple
-// pieces) or OneChunker (which merges many rows into a single chunk),
-// TableChunker keeps the row as the unit of chunking. Every table arrives as
-// structured TableData on ChunkDoc.TableData — the parsers emit captioned
-// table segments — and each data row becomes one chunk whose text repeats the
-// column names in the Python "- field: value" line format, carrying its own
-// position tuple when the item is a spreadsheet item with a row-aligned
-// matrix. A table whose only row is the header stays one whole chunk.
+// TableChunker emits one HTML table per data row, repeating the parser's
+// confirmed column headers. Spreadsheet rows carry their own position tuple
+// when the source matrix is row-aligned. A header-only table stays one chunk.
 package chunker
 
 import (
@@ -261,7 +252,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	for i, row := range rows[headerCount:] {
 		// Skip empty rows (no cell content); the HTML render of an empty row
 		// would be a header-only table that duplicates the header-only chunk.
-		if tableRowRecordText(nil, row) == "" {
+		if !tableRowHasText(row) {
 			continue
 		}
 		doc := item
@@ -315,27 +306,13 @@ func tableDataOf(item schema.ChunkDoc) *entity.TableData {
 	return item.TableData
 }
 
-// tableRowRecordText renders one row in the Python table chunker's line format:
-// "- {field}: {value}" per non-empty cell, newline joined. A cell whose
-// column has no header name keeps its value alone rather than being dropped.
-func tableRowRecordText(names, cells []string) string {
-	lines := make([]string, 0, len(cells))
-	for j, cell := range cells {
-		value := strings.TrimSpace(cell)
-		if value == "" {
-			continue
+func tableRowHasText(cells []string) bool {
+	for _, cell := range cells {
+		if strings.TrimSpace(cell) != "" {
+			return true
 		}
-		name := ""
-		if j < len(names) {
-			name = strings.TrimSpace(names[j])
-		}
-		if name != "" {
-			lines = append(lines, "- "+name+": "+value)
-			continue
-		}
-		lines = append(lines, "- "+value)
 	}
-	return strings.Join(lines, "\n")
+	return false
 }
 
 func init() {

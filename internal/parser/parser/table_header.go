@@ -69,7 +69,7 @@ func resolveSpreadsheetTable(grid [][]entity.TableCell, rowNumbers []int, eviden
 	}
 }
 
-// resolveTableHeader runs once on source HTML, never on rendered chunks.
+// resolveTableHeader classifies source tables before segmentation.
 // Markup returned by recognition backends is a prediction, not native schema.
 func resolveTableHeader(td *entity.TableData, predicted bool) {
 	if td == nil {
@@ -80,9 +80,7 @@ func resolveTableHeader(td *entity.TableData, predicted bool) {
 		return
 	}
 	evidence := tableutil.HeaderEvidence{}
-	if predicted {
-		evidence.PredictedRows = td.HeaderRows
-	} else if td.HeaderRows > 0 {
+	if !predicted && td.HeaderRows > 0 {
 		evidence.Explicit = &tableutil.Header{Rows: td.HeaderRows}
 	}
 	h := tableutil.DetectHeader(td.Grid, evidence)

@@ -17,11 +17,9 @@ type Header struct {
 
 // HeaderEvidence contains source-only evidence, never persisted on TableData.
 // Explicit includes a format's confirmed absence of a header (Rows == 0).
-// PredictedRows is weaker evidence from a table recognition backend.
 type HeaderEvidence struct {
-	Explicit      *Header
-	Styled        [][]bool
-	PredictedRows int
+	Explicit *Header
+	Styled   [][]bool
 }
 
 // DetectHeader is shared by source parsers. Ambiguous text and ordinary data
@@ -91,8 +89,7 @@ func DetectHeader(grid [][]entity.TableCell, evidence HeaderEvidence) Header {
 			contrast := changed > 0 && changed == typed
 			styled := hasStyleBoundary(evidence.Styled, grid, start, end)
 			known, values := countColumnLabels(labels)
-			predicted := start == 0 && evidence.PredictedRows == count
-			if !(contrast || (known > 0 && (styled || start == 0 && known == values)) || (predicted && styled)) {
+			if !(contrast || (known > 0 && (styled || start == 0 && known == values))) {
 				continue
 			}
 			if start > 0 && !styled {
