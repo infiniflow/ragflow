@@ -24,6 +24,8 @@ import (
 	"testing"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/common"
+	modelModule "ragflow/internal/entity/models"
 )
 
 func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
@@ -412,5 +414,51 @@ func TestHistoryMessageContent(t *testing.T) {
 				t.Fatalf("historyMessageContent(%q, %q) = %q, want %q", c.role, c.in, got, c.want)
 			}
 		})
+	}
+}
+
+// promptRecordingDriver records the system prompt FullQuestion sends.
+type promptRecordingDriver struct {
+	*modelModule.DummyModel
+	system string
+}
+
+func (d *promptRecordingDriver) ChatWithMessages(
+	ctx context.Context,
+	modelName string,
+	messages []modelModule.Message,
+	apiConfig *modelModule.APIConfig,
+	chatModelConfig *modelModule.ChatConfig,
+	modelUsage *common.ModelUsage,
+) (*modelModule.ChatResponse, error) {
+	if len(messages) > 0 {
+		d.system, _ = messages[0].Content.(string)
+	}
+	answer := "refined question"
+	return &modelModule.ChatResponse{Answer: &answer}, nil
+}
+
+// TestFullQuestionStripsCitationMarkersFromHistory pins that the multi-turn
+// refinement prompt carries prior answers without their [ID:n] or ##n$$
+// citation markers, which would otherwise leak into the rewritten question.
+func TestFullQuestionStripsCitationMarkersFromHistory(t *testing.T) {
+	driver := &promptRecordingDriver{DummyModel: modelModule.NewDummyModel(nil, modelModule.URLSuffix{})}
+	modelName := "dummy"
+	chatModel := &modelModule.ChatModel{ModelDriver: driver, ModelName: &modelName, APIConfig: &modelModule.APIConfig{}}
+	messages := []map[string]interface{}{
+		{"role": "user", "content": "Which acts were approved?"},
+		{"role": "assistant", "content": "Act 12 [ID:0] and act 14 [ID:3] ##1$$ were approved."},
+		{"role": "user", "content": "And who signed them?"},
+	}
+	if _, err := FullQuestion(t.Context(), chatModel, messages, ""); err != nil {
+		t.Fatalf("FullQuestion: %v", err)
+	}
+	for _, marker := range []string{"[ID:0]", "[ID:3]", "##1$$"} {
+		if strings.Contains(driver.system, marker) {
+			t.Errorf("refinement prompt still contains %q:\n%s", marker, driver.system)
+		}
+	}
+	if !strings.Contains(driver.system, "Act 12") || !strings.Contains(driver.system, "act 14") {
+		t.Errorf("refinement prompt lost the answer text:\n%s", driver.system)
 	}
 }
