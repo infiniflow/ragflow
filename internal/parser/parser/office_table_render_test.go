@@ -615,9 +615,22 @@ func TestXLSXParser_StripsInvisibleFormatChars(t *testing.T) {
 
 // TestCleanIllegalControlChars_StripsInvisibleFormatChars pins the shared
 // cleaner directly, covering the xls/csv paths that reuse it.
+// TestCleanIllegalControlChars_PreservesInternalJoiners asserts format
+// characters that are meaningful inside a word survive cleaning: U+200D in
+// an emoji ZWJ sequence and U+200C as the Persian half-space.
+func TestCleanIllegalControlChars_PreservesInternalJoiners(t *testing.T) {
+	emoji := "\U0001F469\u200d\U0001F4BB" // woman technologist
+	persian := "\u0645\u06cc\u200c\u0631\u0648\u0645"
+	in := [][]string{{emoji, persian}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("cleanIllegalControlChars = %q, want internal joiners kept %q", got, in)
+	}
+}
+
 func TestCleanIllegalControlChars_StripsInvisibleFormatChars(t *testing.T) {
 	in := [][]string{{"\u200cA\u200c", "B\u200bC D", "D\ufeff"}}
-	want := [][]string{{"A", "BC D", "D"}}
+	want := [][]string{{"A", "B\u200bC D", "D"}}
 	got := cleanIllegalControlChars(in)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("cleanIllegalControlChars = %q, want %q", got, want)

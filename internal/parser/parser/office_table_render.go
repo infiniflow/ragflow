@@ -36,18 +36,14 @@ import (
 // except TAB (0x09), LF (0x0A) and CR (0x0D).
 var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
 
-// invisibleFormatReplacer strips invisible Unicode format characters that
-// survive TrimSpace and pollute cell text, tokenization and search. Real-world
-// sheets (e.g. a workbook whose group labels are wrapped in U+200C) carry
-// these around otherwise-clean labels. Go string literals (not the regexp
-// engine) interpret the \u escapes, so each entry names its code point.
-var invisibleFormatReplacer = strings.NewReplacer(
-	"\u200b", "", // ZERO WIDTH SPACE
-	"\u200c", "", // ZERO WIDTH NON-JOINER
-	"\u200d", "", // ZERO WIDTH JOINER
-	"\u2060", "", // WORD JOINER
-	"\ufeff", "", // ZERO WIDTH NO-BREAK SPACE / BOM
-)
+// invisibleFormatCutset lists invisible Unicode format characters stripped
+// from the EDGES of cell text only (see cleanIllegalControlChars): ZERO
+// WIDTH SPACE / NON-JOINER / JOINER, WORD JOINER and the BOM. The same code
+// points are meaningful INSIDE a word — U+200D joins emoji ZWJ sequences
+// (e.g. woman technologist), U+200C is the Persian half-space — so they must
+// survive mid-cell and only accidental wrappers come off. The escapes below
+// are Go string literals naming each code point explicitly.
+const invisibleFormatCutset = "\u200b\u200c\u200d\u2060\ufeff"
 
 // numericCellRe recognises number-like cell text (integers, decimals, comma
 // thousands separators, optional leading sign/$ and trailing %). It is a
@@ -419,15 +415,15 @@ func xlsxImageMIMEType(extension string) (string, bool) {
 const maxMergeExtentCols = 1024
 
 // cleanIllegalControlChars replaces illegal control characters in all cells
-// with a single space and strips invisible Unicode format characters (see
-// invisibleFormatReplacer), which otherwise survive TrimSpace and pollute
-// search text.
+// with a single space and trims invisible Unicode format characters from
+// cell edges (see invisibleFormatCutset), which otherwise survive TrimSpace
+// and pollute search text.
 func cleanIllegalControlChars(records [][]string) [][]string {
 	out := make([][]string, len(records))
 	for i, row := range records {
 		out[i] = make([]string, len(row))
 		for j, cell := range row {
-			cell = invisibleFormatReplacer.Replace(cell)
+			cell = strings.Trim(cell, invisibleFormatCutset)
 			out[i][j] = tableIllegalCharsRe.ReplaceAllString(cell, " ")
 		}
 	}
