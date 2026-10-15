@@ -36,6 +36,15 @@ import (
 // except TAB (0x09), LF (0x0A) and CR (0x0D).
 var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
 
+// invisibleFormatCutset lists invisible Unicode format characters stripped
+// from the EDGES of cell text only (see cleanIllegalControlChars): ZERO
+// WIDTH SPACE / NON-JOINER / JOINER, WORD JOINER and the BOM. The same code
+// points are meaningful INSIDE a word — U+200D joins emoji ZWJ sequences
+// (e.g. woman technologist), U+200C is the Persian half-space — so they must
+// survive mid-cell and only accidental wrappers come off. The escapes below
+// are Go string literals naming each code point explicitly.
+const invisibleFormatCutset = "\u200b\u200c\u200d\u2060\ufeff"
+
 // numericCellRe recognises number-like cell text (integers, decimals, comma
 // thousands separators, optional leading sign/$ and trailing %). It is a
 // deliberately loose heuristic used only for header-vs-data contrast, not for
@@ -168,9 +177,21 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		matrix := make([][]float64, 0, len(body)+1)
 		matrix = append(matrix, headerTuple)
 		rowsOut := make([][]string, 0, len(body)+1)
-		rowsOut = append(rowsOut, trimCells(header))
+		headerCells := trimCells(header)
+		rowsOut = append(rowsOut, headerCells)
 		for _, r := range body {
-			rowsOut = append(rowsOut, trimCells(r.cells))
+			cells := trimCells(r.cells)
+			// Pad short rows to the header width so every row renders the
+			// full column set with dataless cells left empty. excelize
+			// truncates each row at its last valued cell, so without this a
+			// trailing dataless column (kept as schema by
+			// trimTrailingEmptyColumns) would vanish from data rows while
+			// its <th> stays. Padding is empty-only, so the row-aligned
+			// position tuple computed above is unaffected.
+			for len(cells) < len(headerCells) {
+				cells = append(cells, "")
+			}
+			rowsOut = append(rowsOut, cells)
 			matrix = append(matrix, r.tuple)
 		}
 		grid := make([][]entity.TableCell, 0, len(rowsOut))
@@ -394,16 +415,49 @@ func xlsxImageMIMEType(extension string) (string, bool) {
 const maxMergeExtentCols = 1024
 
 // cleanIllegalControlChars replaces illegal control characters in all cells
-// with a single space.
+// with a single space and trims invisible Unicode format characters from
+// cell edges (see invisibleFormatCutset), which otherwise survive TrimSpace
+// and pollute search text.
 func cleanIllegalControlChars(records [][]string) [][]string {
 	out := make([][]string, len(records))
 	for i, row := range records {
 		out[i] = make([]string, len(row))
 		for j, cell := range row {
+			cell = strings.Trim(cell, invisibleFormatCutset)
 			out[i][j] = tableIllegalCharsRe.ReplaceAllString(cell, " ")
 		}
 	}
 	return out
+}
+
+// trimTrailingEmptyColumns drops trailing columns that are blank in every
+// row, header included. Only truncation happens here: remaining column
+// indices are untouched, so row-aligned position tuples built downstream stay
+// valid. A trailing column that carries a header label but no data (e.g. an
+// unfilled score column) is intentionally kept — it is real schema, and its
+// cells render empty. A header-only sheet is therefore left unchanged, and
+// so is any sheet whose trailing columns all have labels.
+func trimTrailingEmptyColumns(records [][]string) [][]string {
+	if len(records) == 0 {
+		return records
+	}
+	width := 0
+	for _, row := range records {
+		for c, cell := range row {
+			if strings.TrimSpace(cell) != "" && c+1 > width {
+				width = c + 1
+			}
+		}
+	}
+	if width == 0 {
+		return records
+	}
+	for i, row := range records {
+		if len(row) > width {
+			records[i] = row[:width]
+		}
+	}
+	return records
 }
 
 // ──────────────────────────────────────────────────────────── axis helpers
@@ -534,6 +588,53 @@ func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]
 		val := records[master[0]-1][master[1]-1]
 		if strings.TrimSpace(val) != "" {
 			row[c] = val
+		}
+	}
+}
+
+// inheritMergedDataCells fills empty cells of non-header rows with the value
+// of their merge master, so a vertically merged group label (e.g. A2:A4) is
+// visible on every data row instead of only the first. Unlike the header-row
+// path above, data rows are never widened: only cells already present in the
+// row slice are filled, so a far merge cannot allocate a sea of empty <td>
+// cells (see padRowToWidth for the blow-up this avoids). Call with absolute
+// sheet row numbers, before records are reordered around the header row.
+func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange) {
+	for _, r := range ranges {
+		// Vertical merges only: a horizontally merged data cell is already
+		// visible via its master column, while copying its text into every
+		// slave column would render the same value twice.
+		if r.sc != r.ec {
+			continue
+		}
+		if r.sr == headerRow {
+			continue
+		}
+		// A merge mastered on the header row carries a column label, not
+		// data: copying it down would stamp the header text into every
+		// data row it spans.
+		if r.sr < 1 || r.sr > len(rows) || r.sc < 1 {
+			continue
+		}
+		masterRow := rows[r.sr-1]
+		if r.sc > len(masterRow) {
+			continue
+		}
+		master := masterRow[r.sc-1]
+		if strings.TrimSpace(master) == "" {
+			continue
+		}
+		// Start past the master row: its own cell already holds the value.
+		for row := r.sr + 1; row <= r.er && row <= len(rows); row++ {
+			if row == headerRow {
+				continue
+			}
+			if r.sc > len(rows[row-1]) {
+				continue
+			}
+			if strings.TrimSpace(rows[row-1][r.sc-1]) == "" {
+				rows[row-1][r.sc-1] = master
+			}
 		}
 	}
 }
@@ -785,6 +886,9 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 		padRowToWidth(&rows[headerRow-1], mergeExtentCol(ranges))
 	}
 	inheritMergedHeader(rows, headerRow, mm)
+	// Data rows inherit their own vertical merge masters in place (no
+	// widening); see inheritMergedDataCells.
+	inheritMergedDataCells(rows, headerRow, ranges)
 
 	// Reorder so the detected header row becomes records[0]; every other row is
 	// data. For the common case (header on row 1) this is a no-op.
@@ -798,6 +902,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 		records = append(records, r)
 		absDataRows = append(absDataRows, i+1)
 	}
+	records = trimTrailingEmptyColumns(records)
 
 	return records, absDataRows, headerRow, warnings, nil
 }

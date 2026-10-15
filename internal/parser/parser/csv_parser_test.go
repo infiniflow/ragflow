@@ -277,3 +277,26 @@ func TestCSVParser_KeepsAnEmptyTabSeparatedField(t *testing.T) {
 		t.Errorf("empty tab-separated field not kept: %q", text)
 	}
 }
+
+// TestCSVParser_PreservesInternalJoiners asserts format characters that are
+// meaningful inside a word survive CSV parsing end to end: U+200D in an
+// emoji ZWJ sequence and U+200C as the Persian half-space.
+func TestCSVParser_PreservesInternalJoiners(t *testing.T) {
+	emoji := "\U0001F469\u200d\U0001F4BB" // woman technologist
+	persian := "\u0645\u06cc\u200c\u0631\u0648\u0645"
+	data := []byte("Name,Note\nA," + emoji + "\nB," + persian + "\n")
+	res := NewCSVParser().ParseWithResult(context.Background(), "t.csv", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult failed: %v", res.Err)
+	}
+	if len(res.JSON) != 1 {
+		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
+	}
+	text := tableItemHTML(t, res.JSON[0])
+	if !strings.Contains(text, "<td>"+emoji+"</td>") {
+		t.Errorf("emoji ZWJ sequence broken: %q", text)
+	}
+	if !strings.Contains(text, "<td>"+persian+"</td>") {
+		t.Errorf("Persian half-space lost: %q", text)
+	}
+}

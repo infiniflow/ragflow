@@ -33,7 +33,6 @@ interface IAgentLogReferenceChunk {
   vector_similarity?: number;
   term_similarity?: number;
   doc_type?: string;
-  document_metadata?: Record<string, any>;
   url?: string;
 }
 
@@ -68,7 +67,6 @@ const buildReferenceObject = (
       term_similarity: chunk.term_similarity ?? 0,
       positions: (chunk.positions ?? []) as IReferenceChunk['positions'],
       doc_type: chunk.doc_type,
-      document_metadata: chunk.document_metadata,
     };
 
     if (!docAggMap[chunk.document_id]) {

@@ -1022,6 +1022,40 @@ func TestCleanComponentParams_TitleFamilyKeepsSchemaParamsWithoutBakedKeys(t *te
 	}
 }
 
+// TestBuildParserConfig_KeepsTitleChunkerPerMethodKeys locks the persistence
+// contract for the title-chunker family: the frontend stores each method's
+// rules, hierarchy value and token cap under its own key so the dataset
+// config keeps Hierarchy and Group independent; CleanComponentParams must not
+// drop them.
+func TestBuildParserConfig_KeepsTitleChunkerPerMethodKeys(t *testing.T) {
+	dslJSON := titleFamilyDSL(t)
+	overrides := map[string]any{
+		"TitleChunker:StaleSnapshot": map[string]any{
+			"method":                 "group",
+			"levels":                 []any{[]any{"第[0-9]+章"}},
+			"hierarchy":              0,
+			"hierarchyRules":         []any{map[string]any{"levels": []any{map[string]any{"expression": "^#[^#]"}}}},
+			"groupRules":             []any{map[string]any{"levels": []any{map[string]any{"expression": "第[0-9]+章"}}}},
+			"hierarchyHierarchy":     "3",
+			"hierarchyGroup":         "2",
+			"hierarchyChunkTokenCap": 1024,
+			"groupChunkTokenCap":     2048,
+		},
+	}
+	params, ok := BuildParserConfig(dslJSON, overrides)["TitleChunker:StaleSnapshot"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected TitleChunker params to survive, got %#v", params)
+	}
+	for _, key := range []string{
+		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
+		"hierarchyChunkTokenCap", "groupChunkTokenCap",
+	} {
+		if _, ok := params[key]; !ok {
+			t.Errorf("per-method persistence key %q dropped by BuildParserConfig: %#v", key, params)
+		}
+	}
+}
+
 // TestBuildParserConfig_TitleFamilyParamsSurviveBuiltinTemplates locks the
 // dataset/document save path for the title-chunker family: both params must
 // survive BuildParserConfig for every builtin template that carries a
@@ -1083,8 +1117,17 @@ var operatorFormParamKeys = map[string][]string{
 	"TitleChunker": {
 		"method", "levels", "hierarchy", "include_heading_content",
 		"root_chunk_as_heading", "chunk_token_cap",
+		// Per-method persistence keys: each method's rules, hierarchy value
+		// and token cap are stored under their own key so the dataset config
+		// keeps them independent of the active method (the runtime reads only
+		// levels/hierarchy/chunk_token_cap).
+		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
+		"hierarchyChunkTokenCap", "groupChunkTokenCap",
 	},
-	"ManualChunker": {"method", "levels", "hierarchy", "root_chunk_as_heading"},
+	"ManualChunker": {
+		"method", "levels", "hierarchy", "root_chunk_as_heading",
+		"hierarchyRules", "groupRules", "hierarchyHierarchy", "hierarchyGroup",
+	},
 	"TokenChunker": {
 		"chunk_token_size", "overlapped_percent", "delimiters", "delimiter_mode",
 		"children_delimiters", "enable_children", "table_context_size", "image_context_size",

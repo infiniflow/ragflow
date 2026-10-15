@@ -129,6 +129,10 @@ Do not continue until `v0.27.2` passes all checks. The older GraphRAG and RAPTOR
 
 This mandatory step is different from the earlier checkpoints. It introduces the v1 runtime and performs an irreversible data migration.
 
+:::warning Tag datasets are not migrated
+In the Python backend, tag files are bound to a dedicated dataset. The Go backend does not bind tag files to datasets. After the migration, existing Tag datasets from the Python backend are no longer valid. Reconfigure the tag files in the Go backend after the upgrade.
+:::
+
 ### 3.1. Stop and back up v0.27.2
 
 Make sure that document parsing, synchronization, and Agent tasks have finished. From the `v0.27.2` repository root, stop the deployment:
@@ -205,6 +209,8 @@ First verify that `v1.0.0-rc1` started successfully and that its migration compl
 ## 5. Verify the upgraded deployment
 
 Sign in to RAGFlow and confirm that existing data and configuration are present, then test document retrieval, a new document upload, one Chat, and one Agent run.
+
+If the Python deployment used Tag datasets, confirm that they are no longer treated as datasets, reconfigure their tag files in the Go backend, and verify tag extraction on a representative document.
 
 Keep the `v0.27.2` backup until the upgraded deployment has completed acceptance testing and operated successfully under normal workload.
 
