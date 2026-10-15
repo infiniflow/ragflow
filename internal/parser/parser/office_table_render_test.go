@@ -767,6 +767,84 @@ func TestDetectHeaderRow_PlainSheetKeepsRow1(t *testing.T) {
 	}
 }
 
+// TestDetectHeaderRow_PlainSixColumnSheetKeepsRow1 exercises the fallback gate
+// with a median width >= 4: a wide plain sheet still keeps row 1 because no
+// styled metadata row triggers the width-based recovery.
+func TestDetectHeaderRow_PlainSixColumnSheetKeepsRow1(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: plain text header, no styling.
+		mustSetCell(t, f, "Sheet1", "A1", "Name")
+		mustSetCell(t, f, "Sheet1", "B1", "Unit")
+		mustSetCell(t, f, "Sheet1", "C1", "Qty")
+		mustSetCell(t, f, "Sheet1", "D1", "Cost")
+		mustSetCell(t, f, "Sheet1", "E1", "Tax")
+		mustSetCell(t, f, "Sheet1", "F1", "Total")
+		// Rows 2–18: data beginning immediately so median width is 6.
+		for r := 2; r <= 18; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "m")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 1)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 2)
+			mustSetCell(t, f, "Sheet1", cellRef('E', r), 0.2)
+			mustSetCell(t, f, "Sheet1", cellRef('F', r), 2.2)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "plain-wide.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Name</th><th>Unit</th><th>Qty</th><th>Cost</th><th>Tax</th><th>Total</th>") {
+		t.Fatalf("wide plain sheet must keep row 1 header:\n%s", text)
+	}
+	if strings.Contains(text, "<th>item</th>") {
+		t.Fatalf("data row must not be promoted to header:\n%s", text)
+	}
+}
+
+// TestDetectHeaderRow_FourColumnForm skips a narrow bold metadata row and
+// finds the real column header below it (OP#1342 review boundary case).
+func TestDetectHeaderRow_FourColumnForm(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		// Row 1: one-cell title.
+		mustSetCell(t, f, "Sheet1", "A1", "Project budget")
+		// Rows 2–4: two-cell bold metadata labels.
+		bold := mustNewStyle(t, f, &excelize.Style{
+			Font: &excelize.Font{Bold: true},
+		})
+		for r := 2; r <= 4; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "Label")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "Value")
+			mustSetCellStyle(t, f, "Sheet1", cellRef('A', r), cellRef('B', r), bold)
+		}
+		// Row 5: real column header.
+		mustSetCell(t, f, "Sheet1", "A5", "Name")
+		mustSetCell(t, f, "Sheet1", "B5", "Unit")
+		mustSetCell(t, f, "Sheet1", "C5", "Qty")
+		mustSetCell(t, f, "Sheet1", "D5", "Cost")
+		// Rows 6–20: data.
+		for r := 6; r <= 20; r++ {
+			mustSetCell(t, f, "Sheet1", cellRef('A', r), "item")
+			mustSetCell(t, f, "Sheet1", cellRef('B', r), "m")
+			mustSetCell(t, f, "Sheet1", cellRef('C', r), 1)
+			mustSetCell(t, f, "Sheet1", cellRef('D', r), 2)
+		}
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "form-4col.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<th>Name</th><th>Unit</th><th>Qty</th><th>Cost</th>") {
+		t.Fatalf("four-column form must select row 5 header:\n%s", text)
+	}
+	if strings.Contains(text, "<th>Label</th><th>Value</th>") {
+		t.Fatalf("narrow metadata row must not be promoted to header:\n%s", text)
+	}
+}
+
 // TestInheritMergedHeader unit-tests the merge inheritance helper directly.
 func TestInheritMergedHeader(t *testing.T) {
 	records := [][]string{

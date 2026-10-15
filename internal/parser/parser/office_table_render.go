@@ -719,7 +719,7 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 				// column header. Remember it as fallback and keep scanning.
 				// Use the same trimmed non-empty count as medianRowWidth so
 				// the two figures do not diverge on whitespace-only cells.
-				if medWidth >= 4 && rowNonEmpty(row)*2 < medWidth {
+				if medWidth >= 4 && rowNonEmpty(row)*2 <= medWidth {
 					if bestCandidate == 0 {
 						bestCandidate = k + 1
 					}
@@ -743,8 +743,10 @@ func detectHeaderRow(f *excelize.File, sheet string, records [][]string, tables 
 		for k := 0; k < wideScan; k++ {
 			row := records[k]
 			ne := rowNonEmpty(row)
-			// Accept rows within ±2 of the median data width.
-			if ne < medWidth-2 || ne > medWidth+2 {
+			// Accept rows within ±2 of the median data width, but reject rows
+			// that are half as wide (or narrower) — they are still metadata
+			// labels, not the real column header.
+			if ne < medWidth-2 || ne > medWidth+2 || ne*2 <= medWidth {
 				continue
 			}
 			// Reject numeric-majority rows (data, not a header).
