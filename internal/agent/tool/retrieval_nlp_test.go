@@ -454,6 +454,51 @@ func TestNLPRetrievalAdapter_SearchRequiresDatasetUsePermission(t *testing.T) {
 	}
 }
 
+func TestNLPRetrievalAdapter_SearchUsesCallerIdentityWithoutCanvasState(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+		t.Fatalf("migrate permission tables: %v", err)
+	}
+	status := string(entity.StatusValid)
+	dataset := entity.Knowledgebase{
+		ID: "kb-private", TenantID: "tenant-1", Name: "private", EmbdID: "embedding@provider",
+		Permission: string(entity.TenantPermissionMe), CreatedBy: "owner", Status: &status,
+	}
+	if err := db.Create(&dataset).Error; err != nil {
+		t.Fatalf("create dataset: %v", err)
+	}
+	memberships := []entity.UserTenant{
+		{ID: "owner-membership", UserID: "owner", TenantID: "tenant-1", Role: string(permission.RoleOwner), InvitedBy: "owner", Status: &status},
+		{ID: "member-membership", UserID: "member", TenantID: "tenant-1", Role: string(permission.RoleNormal), InvitedBy: "owner", Status: &status},
+	}
+	if err := db.Create(&memberships).Error; err != nil {
+		t.Fatalf("create memberships: %v", err)
+	}
+
+	adapter := &NLPRetrievalAdapter{
+		svc:   &nlp.RetrievalService{},
+		kbDAO: fakeKnowledgebaseLookup{kbs: []*entity.Knowledgebase{&dataset}},
+	}
+	ctx := runtime.WithCallerUserID(t.Context(), " member ")
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "owner",
+	})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("Search error = %v, want permission denial for caller despite req.UserID=owner", err)
+	}
+
+	ctx = runtime.WithCallerUserID(t.Context(), "owner")
+	_, err = adapter.Search(ctx, db, RetrievalRequest{
+		Query: "hello", DatasetIDs: []string{dataset.ID}, UserID: "member",
+	})
+	if errors.Is(err, permission.ErrPermissionDenied) || errors.Is(err, permission.ErrUnauthenticated) {
+		t.Fatalf("authorized caller was rejected: %v", err)
+	}
+}
+
 func TestNLPRetrievalAdapter_ResolveDatasetsFromDatasetIDs(t *testing.T) {
 	a := &NLPRetrievalAdapter{
 		kbDAO: fakeKnowledgebaseLookup{

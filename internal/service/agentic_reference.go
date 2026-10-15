@@ -38,7 +38,7 @@ import (
 // With no resolvable citations both come back unchanged: an empty reference
 // keeps the SSE shape the UI expects, and the untouched text is the honest state
 // of an answer whose sources could not be loaded.
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry) (map[string]interface{}, string) {
+func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string, registry *agentic_rag.EvidenceRegistry, promptConfig, kwargs map[string]interface{}) (map[string]interface{}, string) {
 	// Normalize the answer's markers BEFORE anything reads them. A reasoning
 	// model parks the whole answer inside <think>, so the normalization covers
 	// the entire text rather than a post-`</think>` tail: a handle sitting in
@@ -129,6 +129,7 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 	for _, id := range resolved {
 		ordered = append(ordered, byID[id])
 	}
+	s.enrichAgenticReferenceChunks(ctx, ordered, tenantID, promptConfig, kwargs)
 	marked := normalized
 	if byHandles {
 		// Compact the run-level handles ("[ID:265]") into the answer's own
@@ -145,6 +146,12 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 		"chunks":   chunksFormat(ordered),
 		"doc_aggs": agenticDocAggs(ordered),
 	}, marked
+}
+
+func (s *ChatPipelineService) enrichAgenticReferenceChunks(ctx context.Context, chunks []map[string]interface{}, tenantID string, promptConfig, kwargs map[string]interface{}) {
+	if include, fields := s.resolveReferenceMetadata(promptConfig, kwargs); include {
+		s.MetadataSvc.EnrichChunksWithDocMetadata(ctx, chunks, tenantID, fields)
+	}
 }
 
 // fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the

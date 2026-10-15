@@ -208,6 +208,8 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	userID := ""
 	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
 		userID, _ = state.Sys["user_id"].(string)
+	} else {
+		userID = runtime.CallerUserIDFromContext(ctx)
 	}
 	userID = strings.TrimSpace(userID)
 	checker := permission.NewDatabaseChecker(db)

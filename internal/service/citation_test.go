@@ -24,7 +24,48 @@ import (
 	"testing"
 
 	"ragflow/internal/agentic_rag"
+	"ragflow/internal/engine/types"
 )
+
+type agenticReferenceMetadataEngine struct {
+	fakeChatDocEngine
+	calls int
+}
+
+func (e *agenticReferenceMetadataEngine) SearchMetadata(_ context.Context, _ *types.SearchMetadataRequest) (*types.SearchMetadataResult, error) {
+	e.calls++
+	return &types.SearchMetadataResult{MetadataRecords: []map[string]interface{}{
+		{"id": "doc-1", "meta_fields": map[string]interface{}{"author": "Alice", "source": "test"}},
+	}}, nil
+}
+
+func TestEnrichAgenticReferenceChunksUsesResolvedMetadataPreference(t *testing.T) {
+	engine := &agenticReferenceMetadataEngine{}
+	s := &ChatPipelineService{MetadataSvc: NewMetadataServiceForTest(nil, engine)}
+	chunks := []map[string]interface{}{{"doc_id": "doc-1", "kb_id": "kb-1"}}
+	s.enrichAgenticReferenceChunks(t.Context(), chunks, "tenant", map[string]interface{}{
+		"reference_metadata": map[string]interface{}{"include": false},
+	}, map[string]interface{}{
+		"reference_metadata": map[string]interface{}{"include": true, "fields": []string{"author"}},
+	})
+	metadata, ok := chunks[0]["document_metadata"].(map[string]interface{})
+	if !ok || len(metadata) != 1 || metadata["author"] != "Alice" {
+		t.Fatalf("document_metadata = %v, want only the requested author field", chunks[0]["document_metadata"])
+	}
+	if engine.calls != 1 {
+		t.Fatalf("metadata searches = %d, want 1", engine.calls)
+	}
+
+	chunks = []map[string]interface{}{{"doc_id": "doc-1", "kb_id": "kb-1"}}
+	s.enrichAgenticReferenceChunks(t.Context(), chunks, "tenant", map[string]interface{}{
+		"reference_metadata": map[string]interface{}{"include": true},
+	}, map[string]interface{}{
+		"reference_metadata": map[string]interface{}{"include": false},
+	})
+	if _, ok := chunks[0]["document_metadata"]; ok || engine.calls != 1 {
+		t.Fatalf("request opt-out was ignored: metadata=%v searches=%d", chunks[0]["document_metadata"], engine.calls)
+	}
+}
 
 func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
 	for _, answer := range []string{
@@ -38,7 +79,7 @@ func TestBuildAgenticReferenceRetainsWebChunkCitations(t *testing.T) {
 			registry.StampWebResult(web)
 			registry.StampWebResult(agentic_rag.WebResult{URL: "https://example.com/uncited", Content: "Other facts."})
 			s := &ChatPipelineService{}
-			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry)
+			reference, marked := s.buildAgenticReference(t.Context(), "tenant", []string{"kb"}, answer, registry, nil, nil)
 			if !strings.Contains(marked, "[ID:0]") || strings.Contains(marked, "[ID:1]") {
 				t.Errorf("citation was not compacted to its reference position: %q", marked)
 			}

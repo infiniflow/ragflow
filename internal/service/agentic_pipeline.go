@@ -25,6 +25,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 
+	agentruntime "ragflow/internal/agent/runtime"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -90,6 +91,7 @@ func (s *ChatPipelineService) agenticRag(
 
 		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
 		defer cancel()
+		runCtx = agentruntime.WithCallerUserID(runCtx, userID)
 		// The run's evidence registry: every tool result stamps its passages with
 		// the [ID:n] handle the model cites, and buildAgenticReference resolves
 		// those handles against the same numbering.
@@ -235,7 +237,10 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(
+				ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry,
+				map[string]interface{}(chat.PromptConfig), kwargs,
+			)
 		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
