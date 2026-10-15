@@ -261,7 +261,8 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 		version string
 		skip    bool
 	}{
-		{"", false}, {"v1.0.0-rc2.dev1", false}, {"v1.0.0-rc2.dev2", false},
+		{"", false}, {"v0.27.2", false}, {"v1.0.0-rc1", false},
+		{"v1.0.0-rc2.dev2", true},
 		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
@@ -408,3 +409,45 @@ func TestMigrateExtractorConfig(t *testing.T) {
 }
 
 func ptrString(value string) *string { return &value }
+
+func TestMigrateIngestionParserConfigsSharesDev1Cleanup(t *testing.T) {
+	if ingestionParserConfigTargetVersion != "v1.0.0-rc2.dev1" {
+		t.Fatalf("migration version = %s, want project version v1.0.0-rc2.dev1", ingestionParserConfigTargetVersion)
+	}
+	db := openIngestionMigrationDB(t)
+	writeDatabaseVersion(t, db, "v1.0.0-rc1")
+	for _, table := range []string{"knowledgebase", "document"} {
+		insertIngestionConfig(t, db, table, "mixed", "general", `{"raptor":{"use_raptor":true},"graphrag":{"use_graphrag":true},"auto_keywords":8,"chunk_token_num":256}`)
+		insertIngestionConfig(t, db, table, "retired-only", "unsupported", `{"raptor":{},"graphrag":{},"topn_tags":3}`)
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"knowledgebase", "document"} {
+		var rows []ingestionConfigMigrationRow
+		if err := db.Table(table).Order("id").Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		for _, row := range rows {
+			config := decodeIngestionConfig(t, *row.ParserConfig)
+			_, hasRaptor := config["raptor"]
+			_, hasGraph := config["graphrag"]
+			if hasRaptor != (table == "document") || hasGraph != (table == "document") {
+				t.Fatalf("%s.%s: retired sections = %v", table, row.ID, config)
+			}
+			if row.ID == "mixed" {
+				if _, ok := config[builtinExtractorNodeID]; !ok {
+					t.Fatalf("%s: extractor conversion skipped", table)
+				}
+				if _, ok := config["GeneralChunker:SixApplesFall"]; !ok {
+					t.Fatalf("%s: chunker conversion skipped", table)
+				}
+			} else if config["topn_tags"] != float64(3) {
+				t.Fatalf("%s: unrelated setting changed", table)
+			}
+		}
+	}
+	if got := databaseVersion(t, db); got != "v1.0.0-rc2.dev1" {
+		t.Fatalf("version = %s", got)
+	}
+}

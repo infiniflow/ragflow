@@ -33,9 +33,9 @@ import (
 	"ragflow/internal/utility"
 )
 
-// Convert all ingestion components after the rc2.dev1 cleanup.
+// Convert ingestion settings and retire dataset sections in one versioned step.
 const (
-	ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev3"
+	ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev1"
 	builtinExtractorNodeID             = "Extractor:AutoExtractDefault"
 )
 
@@ -296,7 +296,8 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
-					if !extractorChanged && !ingestionChanged {
+					cleaned := table == "knowledgebase" && dropRemovedParserConfigKeys(config)
+					if !extractorChanged && !ingestionChanged && !cleaned {
 						continue
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).

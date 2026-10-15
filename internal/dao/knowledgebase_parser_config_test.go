@@ -73,8 +73,8 @@ func TestMigrateKnowledgebaseParserConfigDropsRaptorAndGraphrag(t *testing.T) {
 	db := setupKnowledgebaseParserConfigDB(t)
 	insertKnowledgebase(t, db, "kb1", legacyParserConfig)
 
-	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
-		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("migrateIngestionParserConfigs: %v", err)
 	}
 
 	config := knowledgebaseParserConfig(t, db, "kb1")
@@ -86,42 +86,45 @@ func TestMigrateKnowledgebaseParserConfigDropsRaptorAndGraphrag(t *testing.T) {
 	if got := config["llm_id"]; got != "Qwen/Qwen3-8B@qq@SILICONFLOW" {
 		t.Fatalf("llm_id = %v, want the original value", got)
 	}
-	if got := config["chunk_token_num"]; got != float64(512) {
-		t.Fatalf("chunk_token_num = %v, want 512", got)
+	chunker := config["GeneralChunker:SixApplesFall"].(map[string]any)
+	if got := chunker["chunk_token_size"]; got != float64(512) {
+		t.Fatalf("chunk_token_size = %v, want 512", got)
 	}
-	if got := config["layout_recognize"]; got != "DeepDOC" {
-		t.Fatalf("layout_recognize = %v, want DeepDOC", got)
+	parser := config["Parser:HipSignsRhyme"].(map[string]any)
+	pdf := parser["pdf"].(map[string]any)
+	if got := pdf["parse_method"]; got != "deepdoc" {
+		t.Fatalf("parse_method = %v, want deepdoc", got)
 	}
-	if got := databaseVersion(t, db); got != knowledgebaseParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, knowledgebaseParserConfigTargetVersion)
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("database version = %q, want %q", got, ingestionParserConfigTargetVersion)
 	}
 }
 
 func TestMigrateKnowledgebaseParserConfigKeepsCleanConfig(t *testing.T) {
-	clean := `{"llm_id":"model","chunk_token_num":128}`
+	clean := `{"llm_id":"model","topn_tags":3}`
 	db := setupKnowledgebaseParserConfigDB(t)
 	insertKnowledgebase(t, db, "kb1", clean)
 
-	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
-		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("migrateIngestionParserConfigs: %v", err)
 	}
 
 	config := knowledgebaseParserConfig(t, db, "kb1")
 	if len(config) != 2 || config["llm_id"] != "model" {
 		t.Fatalf("clean config changed: %#v", config)
 	}
-	if got := databaseVersion(t, db); got != knowledgebaseParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, knowledgebaseParserConfigTargetVersion)
+	if got := databaseVersion(t, db); got != ingestionParserConfigTargetVersion {
+		t.Fatalf("database version = %q, want %q", got, ingestionParserConfigTargetVersion)
 	}
 }
 
 func TestMigrateKnowledgebaseParserConfigSkipsMigratedDatabase(t *testing.T) {
 	db := setupKnowledgebaseParserConfigDB(t)
 	insertKnowledgebase(t, db, "kb1", legacyParserConfig)
-	writeDatabaseVersion(t, db, knowledgebaseParserConfigTargetVersion)
+	writeDatabaseVersion(t, db, ingestionParserConfigTargetVersion)
 
-	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
-		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("migrateIngestionParserConfigs: %v", err)
 	}
 
 	config := knowledgebaseParserConfig(t, db, "kb1")
@@ -130,29 +133,23 @@ func TestMigrateKnowledgebaseParserConfigSkipsMigratedDatabase(t *testing.T) {
 	}
 }
 
-func TestMigrateKnowledgebaseParserConfigToleratesMalformedPayload(t *testing.T) {
+func TestMigrateKnowledgebaseParserConfigRejectsMalformedPayload(t *testing.T) {
 	db := setupKnowledgebaseParserConfigDB(t)
+	insertKnowledgebase(t, db, "kb0", legacyParserConfig)
 	insertKnowledgebase(t, db, "kb1", "not-json")
 	insertKnowledgebase(t, db, "kb2", legacyParserConfig)
 	insertKnowledgebase(t, db, "kb3", "")
 
-	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
-		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
+	if err := migrateIngestionParserConfigs(t.Context(), db); err == nil {
+		t.Fatal("malformed payload did not stop migration")
 	}
-
-	// A payload the step cannot parse is left exactly as it was stored.
-	if got := knowledgebaseParserConfigRaw(t, db, "kb1"); got != "not-json" {
-		t.Fatalf("malformed config rewritten as %q", got)
+	for id, want := range map[string]string{"kb0": legacyParserConfig, "kb1": "not-json", "kb2": legacyParserConfig, "kb3": ""} {
+		if got := knowledgebaseParserConfigRaw(t, db, id); got != want {
+			t.Fatalf("%s: failed batch changed config to %q", id, got)
+		}
 	}
-	if got := knowledgebaseParserConfigRaw(t, db, "kb3"); got != "" {
-		t.Fatalf("empty config rewritten as %q", got)
-	}
-	config := knowledgebaseParserConfig(t, db, "kb2")
-	if _, ok := config["graphrag"]; ok {
-		t.Fatalf("graphrag survived the migration: %#v", config)
-	}
-	if got := databaseVersion(t, db); got != knowledgebaseParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, knowledgebaseParserConfigTargetVersion)
+	if got := databaseVersion(t, db); got != "" {
+		t.Fatalf("failed migration advanced version to %q", got)
 	}
 }
 
@@ -165,8 +162,8 @@ func TestMigrateKnowledgebaseParserConfigWithoutTable(t *testing.T) {
 		t.Fatalf("failed to migrate: %v", err)
 	}
 
-	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
-		t.Fatalf("migrateKnowledgebaseParserConfig: %v", err)
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatalf("migrateIngestionParserConfigs: %v", err)
 	}
 	if got := databaseVersion(t, db); got != "" {
 		t.Fatalf("database version = %q, want it left unset", got)
