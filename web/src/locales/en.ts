@@ -999,7 +999,8 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     chunk: {
       type: 'Type',
-      showingRetrievedChunk: 'Showing only the chunk you opened from retrieval testing.',
+      showingRetrievedChunk:
+        'Showing only the chunk you opened from retrieval testing.',
       showAllChunks: 'Show all chunks',
       docType: {
         image: 'Image',

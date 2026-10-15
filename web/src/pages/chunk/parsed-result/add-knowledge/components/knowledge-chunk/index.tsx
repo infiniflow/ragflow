@@ -156,6 +156,13 @@ function Chunk() {
     [pagination],
   );
 
+  // The artifact view can replace the filter while the target stays in the
+  // query string, so the banner is tied to the target's own filter.
+  const showingRetrievedChunk =
+    !!targetChunkId &&
+    filterChunkIds.length === 1 &&
+    filterChunkIds[0] === targetChunkId;
+
   const showAllChunks = useCallback(() => {
     setFilterChunkIds([]);
     clearTargetChunkId();
@@ -379,7 +386,7 @@ function Chunk() {
                       />
                     </div>
 
-                    {targetChunkId && filterChunkIds.length > 0 && (
+                    {showingRetrievedChunk && (
                       <div className="mb-4 flex items-center justify-between gap-4 rounded-lg border-0.5 border-border-button bg-bg-card px-4 py-2.5">
                         <span className="text-sm text-text-secondary">
                           {t('chunk.showingRetrievedChunk')}
