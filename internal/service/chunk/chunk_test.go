@@ -340,6 +340,10 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	if _, ok := resp.Chunks[0]["available_int"]; ok {
 		t.Fatal("available_int should not be returned in chunk lists")
 	}
+	// Stored available_int (0 here) is surfaced as the `available` boolean.
+	if got := resp.Chunks[0]["available"]; got != false {
+		t.Fatalf("available = %#v, want false for a chunk stored with available_int=0", got)
+	}
 
 	if engine.searchReq == nil {
 		t.Fatal("expected Search to be called")
@@ -365,6 +369,59 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	}
 	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
 		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
+	}
+}
+
+// TestListReportsChunkAvailability pins that stored available_int is surfaced as
+// the `available` boolean (0 → false, missing → true).
+func TestListReportsChunkAvailability(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{
+		chunks: []map[string]interface{}{
+			{"id": "parent-1", "content_with_weight": "parent", "available_int": 0, "doc_id": documentID},
+			{"id": "child-1", "content_with_weight": "child", "doc_id": documentID},
+		},
+	}
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}
+
+	page := 1
+	size := 30
+	resp, err := svc.List(t.Context(), &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(resp.Chunks) != 2 {
+		t.Fatalf("chunks = %v, want two chunks", resp.Chunks)
+	}
+	if got := resp.Chunks[0]["available"]; got != false {
+		t.Fatalf("parent available = %#v, want false (stored available_int=0)", got)
+	}
+	if got := resp.Chunks[1]["available"]; got != true {
+		t.Fatalf("child available = %#v, want true (column absent)", got)
+	}
+	for i, chunk := range resp.Chunks {
+		if _, ok := chunk["available_int"]; ok {
+			t.Fatalf("chunk %d leaks the raw available_int column: %#v", i, chunk)
+		}
 	}
 }
 
@@ -2197,6 +2254,8 @@ func (e *addChunkTestEngine) Search(_ context.Context, req *types.SearchRequest)
 type listChunksSearchEngine struct {
 	parseTestDocEngine
 	searchReq *types.SearchRequest
+	// chunks optionally overrides the canned list rows.
+	chunks []map[string]interface{}
 }
 
 type getChunkTestEngine struct {
@@ -2223,8 +2282,9 @@ func (e *getChunkTestEngine) GetChunk(_ context.Context, baseName, chunkID strin
 
 func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchReq = req
-	return &types.SearchResult{
-		Chunks: []map[string]interface{}{
+	chunks := e.chunks
+	if chunks == nil {
+		chunks = []map[string]interface{}{
 			{
 				"id":                  "chunk-1",
 				"content":             "plain invoice terms body",
@@ -2232,8 +2292,11 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 				"available_int":       0,
 				"doc_id":              "doc-1",
 			},
-		},
-		Total: 1,
+		}
+	}
+	return &types.SearchResult{
+		Chunks: chunks,
+		Total:  int64(len(chunks)),
 	}, nil
 }
 

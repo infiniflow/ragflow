@@ -875,6 +875,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"content_with_weight",
 			"img_id",
 			"position_int",
+			// Read back only to emit the `available` boolean.
+			"available_int",
 			// Call for the ES field names: Elasticsearch does not translate
 			// SelectFields (see elasticsearch/chunk.go), while Infinity's
 			// convertSelectFields maps these names onto its own docnm /
@@ -920,6 +922,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	for _, chunk := range searchResp.Chunks {
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
+		// `available`: available_int=0 → false, missing → true; the frontend uses
+		// it to render disabled chunks, incl. parent rows.
+		availableInt := 1
+		if stored, ok := common.GetInt(chunk["available_int"]); ok {
+			availableInt = stored
+		}
+		result["available"] = availableInt != 0
 		skipFields := map[string]bool{
 			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
