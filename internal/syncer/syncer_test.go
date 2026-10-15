@@ -208,11 +208,17 @@ func (l closingLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bo
 func (l closingLocker) Unlock(connectorID, kbID string) {}
 
 type cancelingErrorLocker struct {
-	cancel context.CancelFunc
+	cancel      context.CancelFunc
+	beforeError func()
 }
 
 func (l cancelingErrorLocker) TryLock(connectorID, kbID string) (ConnectorLockLease, bool, error) {
-	l.cancel()
+	if l.cancel != nil {
+		l.cancel()
+	}
+	if l.beforeError != nil {
+		l.beforeError()
+	}
 	return ConnectorLockLease{}, false, errors.New("lock backend unavailable")
 }
 
@@ -776,12 +782,25 @@ func TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation(t *testing.T) {
 	scheduler := NewNATSScheduler(make(chan TaskEnvelope, 1), taskDAO, broker)
 	t.Cleanup(scheduler.stopTimers)
 	ctx, cancel := context.WithCancel(t.Context())
+	failedReschedule := false
 	worker := NewTaskWorker(
 		make(chan TaskEnvelope, 1),
 		taskDAO,
 		taskService,
 		nil,
-		cancelingErrorLocker{cancel: cancel},
+		cancelingErrorLocker{
+			cancel: cancel,
+			beforeError: func() {
+				if err := db.Callback().Update().Before("gorm:update").Register("test:fail_first_reschedule", func(tx *gorm.DB) {
+					if !failedReschedule && tx.Statement.Table == "sync_logs" {
+						failedReschedule = true
+						tx.AddError(errors.New("temporary reschedule failure"))
+					}
+				}); err != nil {
+					t.Fatalf("register reschedule failure callback: %v", err)
+				}
+			},
+		},
 	).WithScheduler(scheduler)
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 
@@ -789,6 +808,16 @@ func TestNATSTaskWorkerPublishesLockErrorRetryAfterCancellation(t *testing.T) {
 
 	if handle.acks != 1 || handle.nacks != 0 {
 		t.Fatalf("settlement acks=%d nacks=%d, want ack without nack", handle.acks, handle.nacks)
+	}
+	if !failedReschedule {
+		t.Fatal("reschedule failure callback was not exercised")
+	}
+	var task entity.SyncLogs
+	if err := db.First(&task, "id = ?", "task-1").Error; err != nil {
+		t.Fatalf("load restored task: %v", err)
+	}
+	if task.Status != dao.SyncStatusSchedule {
+		t.Fatalf("task status = %s, want schedule", task.Status)
 	}
 	scheduler.timerMu.Lock()
 	timer := scheduler.timers["task-1"]
