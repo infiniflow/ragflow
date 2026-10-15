@@ -171,13 +171,17 @@ const SettingModelV2: FC = () => {
   //      saved card's baseline so the next save short-circuits, and
   //      invalidate the instance query so the new/updated cards appear.
   const handleSaveAll = useCallback(async () => {
-    const refs = Array.from(cardRefs.current.values()).filter(
-      (r): r is ProviderInstanceCardRef => r !== null,
+    // Keep each card's registry key alongside its ref: for drafts the
+    // key is the draft id, so a successfully-saved draft can be removed
+    // from `draftIds` individually even when a later card in the batch
+    // fails (the early return must not strand already-persisted drafts).
+    const refs = Array.from(cardRefs.current.entries()).flatMap(([key, ref]) =>
+      ref ? [{ key, ref }] : [],
     );
     if (refs.length === 0) return;
 
     const dirty = refs
-      .map((r) => ({ ref: r, payload: r.getSavePayload() }))
+      .map(({ key, ref }) => ({ key, ref, payload: ref.getSavePayload() }))
       .filter((e) => e.payload !== null);
     if (dirty.length === 0) return;
 
@@ -210,21 +214,27 @@ const SettingModelV2: FC = () => {
     // `addDraft()`).
     cancelledRef.current = true;
     try {
-      // 3. Dispatch one API call per dirty card. Sequential so any
+      // 3. Dispatch one API call per dirty card. Sequential so a
       //    backend error stops the batch and the user can retry the
-      //    remaining cards after fixing the issue.
-      for (const { ref, payload } of validations) {
+      //    remaining cards after fixing the issue. Each successfully
+      //    persisted draft is removed immediately so it never lingers
+      //    beside its now-saved card when a later card in the batch
+      //    fails.
+      for (const { key, ref, payload } of validations) {
         if (!payload) continue;
         if (payload.apiKind === 'add') {
           const ret = await addProviderInstance(payload.payload as any);
           if (ret?.code !== 0) {
             // Stop on the first failure so the user can see the error.
+            // Drafts already persisted above were removed individually.
             return;
           }
-          // Remember the just-saved name so the persisted card mounts
-          // expanded once it surfaces via the invalidated instances
-          // query below.
           if (payload.isDraft) {
+            // This draft is now persisted - drop its card right away.
+            setDraftIds((prev) => prev.filter((id) => id !== key));
+            // Remember the just-saved name so the persisted card mounts
+            // expanded once it surfaces via the invalidated instances
+            // query.
             setNewlySavedInstanceName(payload.instanceName);
           }
         } else {
@@ -233,15 +243,12 @@ const SettingModelV2: FC = () => {
             return;
           }
           // Saved card: update its dirty baseline so the next save
-          // short-circuits. Drafts are removed below so they don't
-          // need this.
+          // short-circuits.
           ref.markSaved();
         }
       }
-      // 4. Clear drafts (all valid drafts were just persisted) and
-      //    invalidate the instance query so the newly-saved cards
-      //    appear in the persisted list.
-      setDraftIds([]);
+      // 4. Refresh the persisted instance list (covers updates; adds are
+      //    already invalidated by the add mutation) so saved cards show.
       queryClient.invalidateQueries({
         queryKey: LlmKeys.providerInstances(providerQueryName),
       });
