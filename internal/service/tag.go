@@ -60,11 +60,8 @@ func tagSourceRefs(kbs []*Knowledgebase) ([]component.TagSourceRef, *Knowledgeba
 	return refs, last
 }
 
-// topnTagsFromKB reads the tag count from the dataset's parser_config. The
-// migration folds Python's flat topn_tags into the Extractor node's tags.top_n
-// (and deletes the flat key), so the node-scoped block is authoritative; the
-// flat form survives only inside TagTopNFromParserConfig as a fallback for
-// rows the migration has not rewritten. Unset means Python's default of 3.
+// topnTagsFromKB reads the migrated dataset's tag count. Node groups take
+// precedence over dataset-level tags; an absent count defaults to three.
 func topnTagsFromKB(kb *Knowledgebase) int {
 	if kb == nil || kb.ParserConfig == nil {
 		return component.DefaultTagTopN

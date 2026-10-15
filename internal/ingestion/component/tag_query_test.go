@@ -17,6 +17,7 @@
 package component
 
 import (
+	"encoding/json"
 	"fmt"
 	"math"
 	"testing"
@@ -62,6 +63,19 @@ func TestTagFileIDFromParserConfig(t *testing.T) {
 				"tags": entity.JSONMap{"tag_file_id": "file-4"},
 			},
 			want: "file-4",
+		},
+		{
+			name: "node tag file wins over dataset value",
+			parserConfig: map[string]any{
+				"tags":                         map[string]any{"tag_file_id": "dataset-file"},
+				"Extractor:AutoExtractDefault": map[string]any{"tags": map[string]any{"tag_file_id": "node-file"}},
+			},
+			want: "node-file",
+		},
+		{
+			name:         "underscore node",
+			parserConfig: map[string]any{"extractor_saved": map[string]any{"tags": map[string]any{"tag_file_id": "saved-file"}}},
+			want:         "saved-file",
 		},
 		{
 			name:         "no tag file id",
@@ -144,14 +158,14 @@ func TestTagTopNFromParserConfig(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name: "flat tags map wins over node",
+			name: "node wins over flat tags map",
 			parserConfig: map[string]any{
 				"tags": map[string]any{"top_n": float64(7)},
 				"Extractor:AutoExtractDefault": map[string]any{
 					"tags": map[string]any{"top_n": float64(5)},
 				},
 			},
-			want:   7,
+			want:   5,
 			wantOK: true,
 		},
 		{
@@ -165,14 +179,28 @@ func TestTagTopNFromParserConfig(t *testing.T) {
 			wantOK: true,
 		},
 		{
-			name: "zero and negative are absent",
+			name: "zero disables retrieval tags",
 			parserConfig: map[string]any{
 				"Extractor:AutoExtractDefault": map[string]any{
 					"tags": map[string]any{"top_n": float64(0)},
 				},
 			},
 			want:   0,
-			wantOK: false,
+			wantOK: true,
+		},
+		{
+			name:         "json number count",
+			parserConfig: map[string]any{"tags": map[string]any{"top_n": json.Number("5")}},
+			want:         5, wantOK: true,
+		},
+		{
+			name:         "negative is absent",
+			parserConfig: map[string]any{"tags": map[string]any{"top_n": -1}},
+		},
+		{
+			name:         "underscore node count",
+			parserConfig: map[string]any{"extractor_saved": map[string]any{"tags": map[string]any{"top_n": 6}}},
+			want:         6, wantOK: true,
 		},
 		{
 			name: "stable across nodes",

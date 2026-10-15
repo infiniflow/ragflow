@@ -205,14 +205,13 @@ var builtinExtractorPipelines = map[string]struct{}{
 	"presentation": {},
 }
 
-// flatMetadataKeys are the Python 0.27.2 top-level parser_config keys that
+// flatExtractorConfigKeys are the top-level parser_config keys that
 // describe extraction behavior. On the Go backend they live as modular groups
 // on the Extractor node, so the migration folds them there and deletes them.
 var flatExtractorConfigKeys = []string{
 	"auto_keywords",
 	"auto_questions",
 	"topn_tags",
-	"tag_kb_ids",
 	"enable_metadata",
 	"metadata",
 	"built_in_metadata",
@@ -298,9 +297,22 @@ func migrateExtractorConfigRows(ctx context.Context, db *gorm.DB, model any) (in
 				for _, row := range rows {
 					config, ok := parseParserConfig(row.ParserConfig)
 					if !ok {
+						if row.ParserConfig != nil && strings.TrimSpace(*row.ParserConfig) != "" {
+							common.Warn("Skipping invalid extractor parser config",
+								zap.String("table", tx.Statement.Table), zap.String("id", row.ID))
+						}
 						continue
 					}
-					if !migrateExtractorConfig(config, row.ParserID, row.PipelineID) {
+					if ids, ok := config["tag_kb_ids"].([]interface{}); ok && len(ids) > 0 {
+						common.Warn("Tag dataset references require conversion to a tag source file; retaining references",
+							zap.String("table", tx.Statement.Table), zap.String("id", row.ID), zap.Int("tag_datasets", len(ids)))
+					}
+					changed := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
+					if len(extractorNodeParams(config)) == 0 && collectFlatExtractorValues(config).hasValues() {
+						common.Warn("Retaining extraction settings without an Extractor target",
+							zap.String("table", tx.Statement.Table), zap.String("id", row.ID), zap.String("parser_id", row.ParserID))
+					}
+					if !changed {
 						continue
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).
@@ -331,18 +343,19 @@ func migrateExtractorConfigRows(ctx context.Context, db *gorm.DB, model any) (in
 //   - metadata.enabled falls back to "any field declared", matching the
 //     dataset metadata API's default in metadata.go.
 //
-// Legacy keys that have no Go counterpart are dropped: tag_kb_ids (Go has no
-// tag datasets; tagging reads tags.tag_file_id instead), llm-less prompts
-// (prompt/prompts) and the pre-modular field_name switch.
+// Tag dataset references are retained because a database JSON rewrite cannot
+// convert their indexed content into a tag source file. Configs without an
+// Extractor target retain extraction settings that cannot be applied.
 func migrateExtractorConfig(config map[string]interface{}, parserID string, pipelineID *string) bool {
 	if config == nil {
 		return false
 	}
 	changed := false
-
+	flat := collectFlatExtractorValues(config)
+	flatTags, hasFlatTags := config["tags"].(map[string]interface{})
 	nodes := extractorNodeParams(config)
 	targets := nodes
-	if len(targets) == 0 && builtinExtractorNodeIDFor(parserID, pipelineID) != "" {
+	if len(targets) == 0 && (flat.hasValues() || len(flatTags) > 0) && builtinExtractorNodeIDFor(parserID, pipelineID) != "" {
 		nodeID := builtinExtractorNodeIDFor(parserID, pipelineID)
 		params := map[string]interface{}{}
 		config[nodeID] = params
@@ -358,7 +371,15 @@ func migrateExtractorConfig(config map[string]interface{}, parserID string, pipe
 		}
 	}
 
-	flat := collectFlatExtractorValues(config)
+	if hasFlatTags && len(targets) > 0 {
+		for _, params := range targets {
+			if len(flatTags) > 0 && ensureExtractorGroup(params, "tags", cloneFlatMap(flatTags)) {
+				changed = true
+			}
+		}
+		delete(config, "tags")
+		changed = true
+	}
 	if len(targets) > 0 && flat.hasValues() {
 		for _, params := range targets {
 			if applyFlatExtractorValues(params, flat) {
@@ -366,49 +387,23 @@ func migrateExtractorConfig(config map[string]interface{}, parserID string, pipe
 			}
 		}
 	}
-	for _, key := range flatExtractorConfigKeys {
-		if _, ok := config[key]; ok {
-			delete(config, key)
-			changed = true
-		}
-	}
-	// A top-level "tags" map is an early-Go shape with no runtime reader; fold
-	// it onto the nodes as well (tag_file_id especially must not be lost).
-	if flatTags, ok := config["tags"].(map[string]interface{}); ok {
-		if len(targets) > 0 {
-			for _, params := range targets {
-				if group, ok := params["tags"].(map[string]interface{}); ok {
-					if _, exists := group["tag_file_id"]; !exists {
-						if fileID, ok := flatTags["tag_file_id"].(string); ok && strings.TrimSpace(fileID) != "" {
-							group["tag_file_id"] = fileID
-							changed = true
-						}
-					}
-					if _, exists := group["top_n"]; !exists {
-						if topN, ok := extractorTopN(flatTags["top_n"]); ok {
-							group["top_n"] = topN
-							changed = true
-						}
-					}
-				}
+	if len(targets) > 0 {
+		for _, key := range flatExtractorConfigKeys {
+			if _, ok := config[key]; ok {
+				delete(config, key)
+				changed = true
 			}
 		}
-		delete(config, "tags")
-		changed = true
-	}
-	// A top-level modular "metadata" object is the Go dataset-level transport
-	// shape; the Extractor node carries its own copy, so fold it there and
-	// drop the flat key the same way ApplyComponentScopedParserConfig does.
-	if metaObj, ok := config["metadata"].(map[string]interface{}); ok && isModularMetadataGroup(metaObj) {
-		if len(targets) > 0 {
-			for _, params := range targets {
-				if _, exists := params["metadata"]; !exists {
-					params["metadata"] = cloneFlatMap(metaObj)
-					changed = true
-				}
-			}
+	} else if flat.tagsTopN != nil {
+		// Retrieval can use a dataset-level tag source without an Extractor.
+		if !hasFlatTags {
+			flatTags = map[string]interface{}{}
+			config["tags"] = flatTags
 		}
-		delete(config, "metadata")
+		if _, exists := flatTags["top_n"]; !exists {
+			flatTags["top_n"] = *flat.tagsTopN
+		}
+		delete(config, "topn_tags")
 		changed = true
 	}
 	return changed
@@ -530,23 +525,53 @@ func ensureExtractorGroup(params map[string]interface{}, name string, defaults m
 
 // buildMigratedMetadataGroup assembles the modular metadata group from the
 // Python flat trio (enable_metadata + metadata/built_in_metadata field
-// lists), unless the node already carries a group. It reports false when
-// there is nothing to migrate or the node already has a group.
+// lists) or a modular transport object. Existing group fields win; missing
+// fields are filled from the source. It reports whether the group changed.
 func buildMigratedMetadataGroup(existing, enabled, metadata, builtIn any) (map[string]interface{}, bool) {
-	if _, ok := existing.(map[string]interface{}); ok {
-		return nil, false
-	}
 	if enabled == nil && metadata == nil && builtIn == nil {
 		return nil, false
 	}
-	fields := legacyMetadataFieldList(metadata)
-	builtInFields := legacyMetadataFieldList(builtIn)
-	group := map[string]interface{}{
-		"enabled":           migrateMetadataEnabled(enabled, len(fields)+len(builtInFields) > 0),
-		"metadata":          fields,
-		"built_in_metadata": builtInFields,
+	var defaults map[string]interface{}
+	if source, ok := metadata.(map[string]interface{}); ok && isModularMetadataGroup(source) {
+		defaults = cloneFlatMap(source)
+		if _, exists := defaults["metadata"]; !exists {
+			defaults["metadata"] = []interface{}{}
+		}
+		if _, exists := defaults["built_in_metadata"]; !exists {
+			defaults["built_in_metadata"] = legacyMetadataFieldList(builtIn)
+		}
+	} else {
+		defaults = map[string]interface{}{
+			"metadata":          legacyMetadataFieldList(metadata),
+			"built_in_metadata": legacyMetadataFieldList(builtIn),
+		}
 	}
-	return group, true
+	group, hasGroup := existing.(map[string]interface{})
+	if _, exists := defaults["enabled"]; !exists {
+		fields, builtInFields := defaults["metadata"], defaults["built_in_metadata"]
+		if hasGroup {
+			if value, exists := group["metadata"]; exists {
+				fields = value
+			}
+			if value, exists := group["built_in_metadata"]; exists {
+				builtInFields = value
+			}
+		}
+		defaults["enabled"] = migrateMetadataEnabled(enabled,
+			len(legacyMetadataFieldList(fields))+len(legacyMetadataFieldList(builtInFields)) > 0)
+	}
+	if !hasGroup {
+		return defaults, true
+	}
+	merged := cloneFlatMap(group)
+	changed := false
+	for key, value := range defaults {
+		if _, exists := merged[key]; !exists {
+			merged[key] = value
+			changed = true
+		}
+	}
+	return merged, changed
 }
 
 // migrateMetadataEnabled resolves the metadata "enabled" switch the same way
@@ -683,6 +708,9 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 		if !ok || strings.TrimSpace(prompt) == "" {
 			return
 		}
+		if ensureExtractorGroup(params, groupName, map[string]interface{}{}) {
+			changed = true
+		}
 		if group, ok := params[groupName].(map[string]interface{}); ok {
 			if _, exists := group["system_prompt"]; !exists {
 				group["system_prompt"] = prompt
@@ -708,6 +736,9 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 	if strings.TrimSpace(sysPrompt) == "" {
 		sysPrompt, _ = params["sys_prompt"].(string)
 	}
+	if hasSummaryFlag && ensureExtractorGroup(params, "summary", map[string]interface{}{"enabled": migrateMetadataEnabled(summaryEnabled, false)}) {
+		changed = true
+	}
 	if strings.TrimSpace(sysPrompt) != "" {
 		if group, ok := params["summary"].(map[string]interface{}); ok {
 			if _, exists := group["system_prompt"]; !exists {
@@ -724,11 +755,6 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 		delete(params, "system_prompt")
 		delete(params, "sys_prompt")
 		changed = true
-	} else if hasSummaryFlag {
-		if _, hasGroup := params["summary"].(map[string]interface{}); !hasGroup {
-			params["summary"] = map[string]interface{}{"enabled": migrateMetadataEnabled(summaryEnabled, false)}
-			changed = true
-		}
 	}
 	if fileID, ok := params["tag_file_id"].(string); ok && strings.TrimSpace(fileID) != "" {
 		if ensureExtractorGroup(params, "tags", map[string]interface{}{}) {
@@ -751,39 +777,29 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 	}
 	// metadata_config is the transitional group name; rename it to metadata.
 	if metaConf, ok := params["metadata_config"].(map[string]interface{}); ok {
-		if _, exists := params["metadata"]; !exists {
-			params["metadata"] = metaConf
+		if group, changedGroup := buildMigratedMetadataGroup(params["metadata"], params["enable_metadata"], metaConf, params["built_in_metadata"]); changedGroup {
+			params["metadata"] = group
 			changed = true
 		}
 		delete(params, "metadata_config")
 		changed = true
 	}
 	// Flat node-level enable_metadata/metadata/built_in_metadata predate the
-	// group object; fold them like the top-level trio. A flat "metadata"
-	// array is distinguished from the group object by its type.
-	if _, isGroup := params["metadata"].(map[string]interface{}); !isGroup {
-		if group, ok := buildMigratedMetadataGroup(nil, params["enable_metadata"], params["metadata"], params["built_in_metadata"]); ok {
-			params["metadata"] = group
+	// group object; fold both field lists and JSON Schema objects.
+	meta, isMap := params["metadata"].(map[string]interface{})
+	var existing any
+	fields := params["metadata"]
+	if isMap && isModularMetadataGroup(meta) {
+		existing, fields = meta, nil
+	}
+	if group, changedGroup := buildMigratedMetadataGroup(existing, params["enable_metadata"], fields, params["built_in_metadata"]); changedGroup {
+		params["metadata"] = group
+		changed = true
+	}
+	for _, key := range []string{"enable_metadata", "built_in_metadata"} {
+		if _, ok := params[key]; ok {
+			delete(params, key)
 			changed = true
-		}
-		for _, key := range []string{"enable_metadata", "built_in_metadata"} {
-			if _, ok := params[key]; ok {
-				delete(params, key)
-				changed = true
-			}
-		}
-		if _, ok := params["metadata"]; ok {
-			if _, isGroup := params["metadata"].(map[string]interface{}); !isGroup {
-				delete(params, "metadata")
-				changed = true
-			}
-		}
-	} else {
-		for _, key := range []string{"enable_metadata", "built_in_metadata", "metadata_config"} {
-			if _, ok := params[key]; ok {
-				delete(params, key)
-				changed = true
-			}
 		}
 	}
 	return changed
@@ -820,6 +836,9 @@ func extractorTopN(value any) (int, bool) {
 // Go dataset-level transport object ({enabled, metadata, built_in_metadata})
 // rather than a Python field list or JSON-Schema dict.
 func isModularMetadataGroup(value map[string]interface{}) bool {
+	if len(value) == 0 {
+		return true
+	}
 	for _, key := range []string{"enabled", "metadata", "built_in_metadata"} {
 		if _, ok := value[key]; ok {
 			return true

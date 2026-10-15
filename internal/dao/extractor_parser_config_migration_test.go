@@ -17,8 +17,10 @@ package dao
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -27,6 +29,10 @@ import (
 
 	"ragflow/internal/entity"
 )
+
+// MigrateExtractorParserConfigsForTest lets external tests verify the migration
+// through the pipeline and component packages without adding a production API.
+var MigrateExtractorParserConfigsForTest = migrateExtractorParserConfigs
 
 // python027ParserConfig is a knowledgebase/document parser config as written
 // by the Python 0.27.2 backend: extraction settings are top-level flat keys
@@ -265,7 +271,12 @@ func TestMigrateExtractorParserConfigsCanvasRowKeepsNoNode(t *testing.T) {
 	}
 
 	config := extractorRowParserConfig(t, db, "knowledgebase", "kb1")
-	assertNoFlatExtractorKeys(t, config)
+	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
+		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
+	}
+	if tags, ok := config["tags"].(map[string]interface{}); !ok || tags["top_n"] != float64(5) {
+		t.Fatalf("retrieval tag count was discarded: %#v", config)
+	}
 	for key := range config {
 		if strings.HasPrefix(strings.ToLower(key), "extractor:") {
 			t.Fatalf("fabricated an extractor node on a canvas row: %#v", config)
@@ -282,7 +293,12 @@ func TestMigrateExtractorParserConfigsQaTemplateKeepsNoNode(t *testing.T) {
 	}
 
 	config := extractorRowParserConfig(t, db, "knowledgebase", "kb1")
-	assertNoFlatExtractorKeys(t, config)
+	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
+		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
+	}
+	if tags, ok := config["tags"].(map[string]interface{}); !ok || tags["top_n"] != float64(5) {
+		t.Fatalf("retrieval tag count was discarded: %#v", config)
+	}
 	for key := range config {
 		if strings.HasPrefix(strings.ToLower(key), "extractor:") {
 			t.Fatalf("fabricated an extractor node for the qa template: %#v", config)
@@ -398,6 +414,132 @@ func TestMigrateExtractorConfigIsIdempotent(t *testing.T) {
 	}
 	if string(snapshot) != string(resnapshot) {
 		t.Fatalf("config changed between runs:\nfirst:  %s\nsecond: %s", snapshot, resnapshot)
+	}
+}
+
+func TestMigrateExtractorConfigPreservesSettings(t *testing.T) {
+	tests := []struct {
+		name, parserID, input, want string
+	}{
+		{
+			name: "modular metadata transport", parserID: "general",
+			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
+		},
+		{
+			name: "modular metadata with flat builtin fields", parserID: "general",
+			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author"}]},"built_in_metadata":[{"name":"file_name"}]}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
+		},
+		{
+			name: "empty node metadata accepts flat fields", parserID: "general",
+			input: `{"enable_metadata":true,"metadata":[{"name":"author"}],"Extractor:AutoExtractDefault":{"metadata":{}}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
+		},
+		{
+			name: "metadata config respects flat disable", parserID: "general",
+			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":false,"metadata_config":{"metadata":[{"key":"author"}]}}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
+		},
+		{
+			name: "metadata fills missing group fields", parserID: "general",
+			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]},"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
+		},
+		{
+			name: "tag source creates group", parserID: "general",
+			input: `{"tags":{"top_n":5,"tag_file_id":"file-1","enabled":false}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"file-1","enabled":false}}}`,
+		},
+		{
+			name: "tag group beats flat count", parserID: "general",
+			input: `{"topn_tags":9,"tags":{"top_n":5,"tag_file_id":"file-1"}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"file-1"}}}`,
+		},
+		{
+			name: "qa retrieval tags", parserID: "qa",
+			input: `{"topn_tags":5,"tags":{"tag_file_id":"file-1"}}`,
+			want:  `{"tags":{"top_n":5,"tag_file_id":"file-1"}}`,
+		},
+		{
+			name: "unconverted extraction settings", parserID: "table",
+			input: `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
+			want:  `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
+		},
+		{
+			name: "tag dataset references", parserID: "general",
+			input: `{"topn_tags":5,"tag_kb_ids":["tag-kb-1"]}`,
+			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5}},"tag_kb_ids":["tag-kb-1"]}`,
+		},
+		{
+			name: "prompt before flat count", parserID: "general",
+			input: `{"auto_keywords":8,"auto_questions":2,"Extractor:AutoExtractDefault":{"keywords_sys_prompt":"keywords prompt","questions_sys_prompt":"questions prompt"}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"keywords":{"top_n":8,"system_prompt":"keywords prompt"},"questions":{"top_n":2,"system_prompt":"questions prompt"}}}`,
+		},
+		{
+			name: "node schema metadata", parserID: "general",
+			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":true,"metadata":{"type":"object","properties":{"author":{"type":"string"}}},"built_in_metadata":[{"name":"file_name"}]}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
+		},
+		{
+			name: "node partial metadata", parserID: "general",
+			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":true,"metadata":{"metadata":[{"key":"author"}]},"built_in_metadata":[{"name":"file_name"}]}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
+		},
+		{
+			name: "summary fills enabled", parserID: "general",
+			input: `{"Extractor:AutoExtractDefault":{"enable_summary":true,"summary":{"system_prompt":"saved prompt"},"sys_prompt":"old prompt"}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"summary":{"enabled":true,"system_prompt":"saved prompt"}}}`,
+		},
+		{
+			name: "empty row stays empty", parserID: "general", input: `{}`, want: `{}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config, want map[string]interface{}
+			if err := json.Unmarshal([]byte(tt.input), &config); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tt.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			migrateExtractorConfig(config, tt.parserID, nil)
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]interface{}
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("migrated config = %s, want %s", raw, tt.want)
+			}
+			if migrateExtractorConfig(config, tt.parserID, nil) {
+				t.Fatal("second migration changed config")
+			}
+		})
+	}
+}
+
+func TestMigrateExtractorParserConfigsAcrossBatches(t *testing.T) {
+	db := setupExtractorMigrationDB(t)
+	for i := 0; i < 257; i++ {
+		id := fmt.Sprintf("%032d", i)
+		insertExtractorKB(t, db, id, "general", `{"auto_keywords":8}`)
+		insertExtractorDocument(t, db, id, "general", `{"auto_questions":2}`)
+	}
+	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 257; i++ {
+		id := fmt.Sprintf("%032d", i)
+		kbNode := extractorNode(t, extractorRowParserConfig(t, db, "knowledgebase", id))
+		docNode := extractorNode(t, extractorRowParserConfig(t, db, "document", id))
+		if kbNode["keywords"].(map[string]interface{})["top_n"] != float64(8) || docNode["questions"].(map[string]interface{})["top_n"] != float64(2) {
+			t.Fatalf("row %s was not migrated", id)
+		}
 	}
 }
 
