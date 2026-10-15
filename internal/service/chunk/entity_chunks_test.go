@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"testing"
 
 	"ragflow/internal/common"
@@ -77,17 +78,106 @@ func TestListEntityChunks(t *testing.T) {
 type entityChunksTestEngine struct {
 	parseTestDocEngine
 	entity  map[string]interface{}
+	sources []string
+	matches []string
 	queries []*types.SearchRequest
 }
 
 func (e *entityChunksTestEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.queries = append(e.queries, req)
-	if len(e.queries) == 1 {
+	if req.Filter["knowledge_graph_kwd"] == "entity" {
 		return &types.SearchResult{Chunks: []map[string]interface{}{e.entity}}, nil
 	}
-	chunks := make([]map[string]interface{}, 25)
-	for i := range chunks {
-		chunks[i] = map[string]interface{}{"id": fmt.Sprintf("c%d", i)}
+	ids := e.sources
+	if filterIDs, ok := req.Filter["id"].([]string); ok {
+		ids = filterIDs
 	}
-	return &types.SearchResult{Chunks: chunks, Total: 125}, nil
+	if len(req.MatchExprs) == 0 && req.OrderBy == nil {
+		ids = ids[:min(len(ids), 128)] // An unsorted Infinity scan stops after its first batch.
+	}
+	if len(req.MatchExprs) > 0 {
+		if e.matches != nil {
+			ids = slices.DeleteFunc(slices.Clone(ids), func(id string) bool { return !slices.Contains(e.matches, id) })
+		}
+		match := req.MatchExprs[0].(*types.MatchTextExpr)
+		ids = ids[:min(len(ids), match.TopN)]
+	}
+	total := int64(len(ids))
+	start := min(req.Offset, len(ids))
+	end := min(start+req.Limit, len(ids))
+	if req.Offset > 0 && start == len(ids) {
+		total = 0 // Infinity loses total when Offset skips every candidate.
+	}
+	chunks := make([]map[string]interface{}, end-start)
+	for i := range chunks {
+		chunks[i] = map[string]interface{}{"id": ids[start+i]}
+	}
+	return &types.SearchResult{Chunks: chunks, Total: total}, nil
+}
+
+func TestListKeywordChunksCompletePagination(t *testing.T) {
+	pushChunkTestDB(t, setupChunkTestDB(t))
+	insertChunkTestUserTenant(t, "user-1", "tenant-1")
+	insertChunkTestKB(t, "kb-1", "tenant-1")
+	insertChunkTestDoc(t, "doc-1", "kb-1")
+	setChunkTestStats(t, "doc-1", "kb-1", 0, 1, 0, 1) // Deliberately stale document count.
+	ids := make([]string, 500)
+	for i := range ids {
+		ids[i] = fmt.Sprintf("%016x", i+1)
+	}
+	payload, _ := json.Marshal(map[string]interface{}{"source_chunk_ids": ids})
+	for _, tt := range []struct {
+		name, entityID string
+		page           int
+		sources        []string
+	}{
+		{"entity first page", "entity-1", 1, ids},
+		{"entity last page", "entity-1", 5, ids},
+		{"entity beyond last page", "entity-1", 6, ids},
+		{"document count", "", 1, ids},
+		{"empty document", "", 1, nil},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			engine := &entityChunksTestEngine{
+				entity: map[string]interface{}{
+					"id": "entity-1", "kb_id": "kb-1", "doc_id": "doc-1", "type_kwd": "entity",
+					"content_with_weight": string(payload),
+				},
+				sources: tt.sources,
+				matches: ids[:450],
+			}
+			svc := &ChunkService{docEngine: engine, kbDAO: dao.NewKnowledgebaseDAO()}
+			size, available := 100, 0
+			response, err := svc.List(t.Context(), &service.ListChunksRequest{
+				DatasetID: "kb-1", DocID: "doc-1", EntityID: tt.entityID, Page: &tt.page, Size: &size,
+				Keywords: "invoice", AvailableInt: &available,
+			}, "user-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantTotal := min(len(tt.sources), 450)
+			start := min((tt.page-1)*size, wantTotal)
+			end := min(start+size, wantTotal)
+			if response.Total != int64(wantTotal) || len(response.Chunks) != end-start {
+				t.Fatalf("total=%d chunks=%d, want %d/%d", response.Total, len(response.Chunks), wantTotal, end-start)
+			}
+			for i, chunk := range response.Chunks {
+				if chunk["chunk_id"] != ids[start+i] {
+					t.Errorf("chunk %d = %v, want %s", i, chunk["chunk_id"], ids[start+i])
+				}
+			}
+			if wantTotal == 0 && (len(engine.queries) != 1 || len(engine.queries[0].MatchExprs) != 0) {
+				t.Fatalf("empty scope queried keyword candidates: %#v", engine.queries)
+			}
+			for _, query := range engine.queries {
+				if query.Filter["doc_id"] != "doc-1" || !reflect.DeepEqual(query.KbIDs, []string{"kb-1"}) {
+					t.Fatalf("query escaped document/dataset: %#v", query)
+				}
+				if query.Filter["knowledge_graph_kwd"] != "entity" &&
+					(query.Filter["available_int"] != 0 || query.Filter["must_not"].(map[string]interface{})["exists"] != "compile_kwd") {
+					t.Errorf("query changed chunk filters: %#v", query.Filter)
+				}
+			}
+		})
+	}
 }

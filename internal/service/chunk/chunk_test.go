@@ -673,8 +673,8 @@ func TestListBuildsMatchTextExprForKeywords(t *testing.T) {
 	if matchText.MatchingText == "invoice terms" || !strings.Contains(matchText.MatchingText, "invoice") || !strings.Contains(matchText.MatchingText, "terms") {
 		t.Fatalf("MatchingText = %q, want a tokenized query containing invoice and terms", matchText.MatchingText)
 	}
-	if matchText.TopN != 100 {
-		t.Fatalf("TopN = %d, want 100", matchText.TopN)
+	if matchText.TopN != 2 {
+		t.Fatalf("TopN = %d, want complete ID scope of 2", matchText.TopN)
 	}
 	if got := matchText.ExtraOptions["original_query"]; got != "invoice terms" {
 		t.Fatalf("original_query = %#v, want %q", got, "invoice terms")

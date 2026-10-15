@@ -845,11 +845,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			return nil, err
 		}
 	}
+	chunkIDs = common.Deduplicate(chunkIDs)
 
 	page := common.CoalesceInt(req.Page, 1)
 	size := common.CoalesceInt(req.Size, 30)
 	keywords := strings.TrimSpace(req.Keywords)
 	var orderBy *types.OrderByExpr
+	var keywordMatch *types.MatchTextExpr
 	matchExprs := make([]interface{}, 0, 1)
 	if keywords == "" {
 		orderBy = (&types.OrderByExpr{}).
@@ -863,6 +865,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			queryBuilder = nlp.NewQueryBuilder()
 		}
 		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+			keywordMatch = matchText
 			matchExprs = append(matchExprs, matchText)
 		}
 	}
@@ -922,10 +925,35 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 
 	// An entity with no sources is an empty result, never an unfiltered list.
 	searchResp := &types.SearchResult{}
-	if req.EntityID == "" || len(chunkIDs) > 0 {
+	hasCandidates := req.EntityID == "" || len(chunkIDs) > 0
+	if hasCandidates && keywordMatch != nil {
+		candidateLimit := len(chunkIDs)
+		if candidateLimit == 0 {
+			scopeReq := *searchReq
+			scopeReq.MatchExprs = nil
+			total, countErr := s.countListChunks(ctx, &scopeReq)
+			if countErr != nil {
+				return nil, countErr
+			}
+			candidateLimit = int(total)
+		}
+		// MatchText ranks candidates before applying Offset/Limit. Include the
+		// complete scope so later pages and total are not capped by retrieval TopN.
+		keywordMatch.TopN = candidateLimit
+		hasCandidates = candidateLimit > 0
+	}
+	if hasCandidates {
 		searchResp, err = s.docEngine.Search(ctx, searchReq)
 		if err != nil {
 			return nil, fmt.Errorf("search failed: %w", err)
+		}
+		if keywordMatch != nil && searchReq.Offset > 0 && len(searchResp.Chunks) == 0 && searchResp.Total == 0 {
+			// Infinity's Limit operator loses the count when Offset skips every
+			// candidate. Count the same keyword matches from the beginning.
+			searchResp.Total, err = s.countListChunks(ctx, searchReq)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
 
@@ -1046,6 +1074,21 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		Chunks: chunks,
 		Doc:    docInfo,
 	}, nil
+}
+
+func (s *ChunkService) countListChunks(ctx context.Context, req *types.SearchRequest) (int64, error) {
+	countReq := *req
+	countReq.Offset = 0
+	countReq.Limit = 1
+	countReq.SelectFields = []string{"id"}
+	// Sorting makes Infinity accumulate all input batches; an unsorted Limit
+	// can stop after the first batch and undercount the candidate scope.
+	countReq.OrderBy = (&types.OrderByExpr{}).Asc("id")
+	result, err := s.docEngine.Search(ctx, &countReq)
+	if err != nil {
+		return 0, fmt.Errorf("count matching chunks: %w", err)
+	}
+	return result.Total, nil
 }
 
 func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
