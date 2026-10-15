@@ -63,12 +63,10 @@ func (g *GPUStackModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := g.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -98,12 +96,10 @@ func (g *GPUStackModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return err
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -125,12 +121,10 @@ func (g *GPUStackModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	baseURL, err := g.baseModel.GetBaseURL(apiConfig)
+	url, err := g.baseModel.EndpointURL(apiConfig, g.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, g.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -210,7 +204,7 @@ func (g *GPUStackModel) Embed(
 	if g.baseModel.URLSuffix.Embedding == "" {
 		return nil, fmt.Errorf("gpustack: embedding URL suffix is not configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimPrefix(g.baseModel.URLSuffix.Embedding, "/"))
+	url := joinURL(baseURL, g.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,

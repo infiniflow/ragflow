@@ -46,6 +46,8 @@ export default {
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -1316,12 +1318,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
-      showChunkMetadata: 'Show chunk metadata',
-      showChunkMetadataTip:
-        'Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks',
-      metadataFields: 'Metadata fields',
-      metadataFieldsTip:
-        'Select which metadata fields to display with each chunk',
     },
     setting: {
       Verify: 'Verify',
@@ -3565,6 +3561,8 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
+      apiKeyRequired: 'Please enter the API Key',
+      apiKeyMissing: 'No API key configured, please enter one first',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
       extractorKeywordsTopNMissing:
@@ -3907,6 +3905,8 @@ Important structured information may include: names, dates, locations, events, k
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
     },
     pagination: {
       total: 'Total {{total}}',

@@ -31,7 +31,7 @@ import (
 // delete-then-insert upsert: legacy tables carry no PRIMARY KEY, so ON
 // CONFLICT is not an option. The delete and the grouped inserts share one
 // transaction, keeping a failed batch from leaving half-replaced rows.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName, datasetID, language string) ([]string, error) {
 	if len(chunks) == 0 {
 		return []string{}, nil
 	}
@@ -63,7 +63,7 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		if !tablePresent && vectorSize == 0 {
 			return nil, fmt.Errorf("cannot infer vector size from documents")
 		}
-		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, ""); err != nil {
+		if err := e.CreateChunkStore(ctx, baseName, datasetID, vectorSize, "", ""); err != nil {
 			return nil, err
 		}
 	} else if vectorSize > 0 {

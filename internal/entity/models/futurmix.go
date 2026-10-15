@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // FuturMixModel implements ModelDriver for FuturMix
@@ -53,8 +52,7 @@ func (f *FuturMixModel) endpointURL(region, suffix string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 // ChatWithMessages sends a non-streaming chat completion
@@ -67,11 +65,10 @@ func (f *FuturMixModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil {
@@ -104,11 +101,10 @@ func (f *FuturMixModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{

@@ -257,18 +257,18 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
-	// A structured table carries no markup text of its own. Derive a plain
-	// (tag-free) text from its cells so consumers that read Text — TokenChunker
-	// and the embed path — still receive a searchable body when the producer
-	// emitted only the TableData contract (decision 1-B: no HTML in Text).
+	// A structured table (e.g. the office/xlsx producer) carries no Text of its
+	// own. Derive its HTML <table> rendering on Text so every chunker that
+	// consumes it (token/group/hierarchy/one/page/qa) stores and displays a real
+	// table, and the chunk id (a hash of Text) matches the stored content.
 	for i := range out.JSONResult {
 		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
-			out.JSONResult[i].Text = tableutil.RenderTableText(out.JSONResult[i].TableData)
+			out.JSONResult[i].Text = tableutil.RenderTableHTML(out.JSONResult[i].TableData)
 		}
 	}
 	for i := range out.Chunks {
 		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
-			out.Chunks[i].Text = tableutil.RenderTableText(out.Chunks[i].TableData)
+			out.Chunks[i].Text = tableutil.RenderTableHTML(out.Chunks[i].TableData)
 		}
 	}
 	return out, nil

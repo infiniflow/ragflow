@@ -338,6 +338,9 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 		}
 		if ck, _ := cm["compile_kwd"].(string); ck != "" {
 			seenCompiled = true
+			if cm["scope_kwd"] != "doc" {
+				t.Fatalf("Invoke(%s): scope_kwd = %v, want doc", variant, cm["scope_kwd"])
+			}
 			if _, ok := cm["q_8_vec"]; !ok {
 				t.Fatalf("Invoke(%s): compiled chunk missing vector: %v", variant, cm)
 			}
@@ -1460,7 +1463,7 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 		Content: "Section body", ParentID: "page-id",
 		Meta: map[string]any{"kind": "section", "slug": "overview", "page_slug": "entity/alpha", "section_level": 1, "source_chunk_ids": []string{"c1"}},
 	}
-	docs, err := productsToChunkDocs([]common.Product{page, section})
+	docs, err := productsToChunkDocs([]common.Product{page, section}, "")
 	if err != nil {
 		t.Fatalf("productsToChunkDocs: %v", err)
 	}

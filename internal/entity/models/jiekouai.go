@@ -102,11 +102,10 @@ func (j *JieKouAIModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -144,11 +143,10 @@ func (j *JieKouAIModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		modelConfig.UsageResult = nil
 	}
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -179,11 +177,10 @@ func (j *JieKouAIModel) Embed(ctx context.Context, modelName *string, request Em
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -265,11 +262,10 @@ func (j *JieKouAIModel) Rerank(ctx context.Context, modelName *string, request R
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), j.baseModel.URLSuffix.Rerank)
 
 	reqBody := map[string]interface{}{
 		"model":     model,
@@ -364,11 +360,10 @@ func (j *JieKouAIModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := j.baseModel.GetBaseURL(apiConfig)
+	url, err := j.baseModel.EndpointURL(apiConfig, j.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, j.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

@@ -448,13 +448,15 @@ func TestAgentStructuredOutputFinalizesOnlyValidatedAnswer(t *testing.T) {
 }
 
 func TestAgentStructuredOutputErrorShortcutsFailClosed(t *testing.T) {
-	for _, failure := range []string{"No dataset is selected.", "[GraphRunError] exceeds max steps"} {
-		t.Run(failure, func(t *testing.T) {
+	for _, failure := range []error{errors.New("No dataset is selected."), fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps)} {
+		t.Run(failure.Error(), func(t *testing.T) {
 			runnerCalls := 0
 			withAgentRunner(t, func(context.Context, AgentParam) (*schema.Message, error) {
 				runnerCalls++
-				return nil, errors.New(failure)
+				return nil, failure
 			})
+			stub := &stubInvoker{}
+			withStubInvoker(t, stub)
 			var published strings.Builder
 			finalizations := 0
 			ctx := runtime.WithState(t.Context(), runtime.NewCanvasState("run", "task"))
@@ -463,16 +465,37 @@ func TestAgentStructuredOutputErrorShortcutsFailClosed(t *testing.T) {
 				func() bool { finalizations++; return true },
 			)
 			inputs := map[string]any{"user_prompt": "count"}
-			if failure == "No dataset is selected." {
-				inputs["_ERROR"] = failure
+			if failure.Error() == "No dataset is selected." {
+				inputs["_ERROR"] = failure.Error()
 			}
 			c := NewAgentComponent(AgentParam{ModelID: "stub", OutputStructure: agentCountOutputSchema()})
 			out, err := c.Invoke(ctx, nil, inputs)
-			if err == nil || !strings.Contains(err.Error(), failure) || out != nil || published.Len() != 0 || finalizations != 0 {
+			if err == nil || !strings.Contains(err.Error(), failure.Error()) || out != nil || published.Len() != 0 || finalizations != 0 {
 				t.Fatalf("out=%#v err=%v published=%q finalizations=%d", out, err, published.String(), finalizations)
 			}
-			if failure == "No dataset is selected." && runnerCalls != 0 {
+			if errors.Is(failure, compose.ErrExceedMaxSteps) && !errors.Is(err, compose.ErrExceedMaxSteps) {
+				t.Fatalf("step exhaustion error identity was lost: %v", err)
+			}
+			if stub.calls != 0 {
+				t.Fatalf("model calls=%d, want 0", stub.calls)
+			}
+			if failure.Error() == "No dataset is selected." && runnerCalls != 0 {
 				t.Fatalf("runner calls=%d, want 0", runnerCalls)
+			}
+		})
+	}
+}
+
+func TestAgentRunnerFailuresRemainErrors(t *testing.T) {
+	for _, failure := range []error{errors.New("provider failed"), fmt.Errorf("[GraphRunError] tool failed: %w", errors.New("connection reset"))} {
+		t.Run(failure.Error(), func(t *testing.T) {
+			withAgentRunner(t, func(context.Context, AgentParam) (*schema.Message, error) {
+				return nil, failure
+			})
+			c := NewAgentComponent(AgentParam{ModelID: "stub"})
+			out, err := c.Invoke(t.Context(), nil, map[string]any{"user_prompt": "count"})
+			if !errors.Is(err, failure) || out != nil {
+				t.Fatalf("out=%#v err=%v, want original runner error", out, err)
 			}
 		})
 	}
