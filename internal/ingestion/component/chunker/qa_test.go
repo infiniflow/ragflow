@@ -417,11 +417,10 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 		t.Fatalf("Invoke failed: %v", err)
 	}
 	chunks, _ := out["chunks"].([]map[string]any)
-	if len(chunks) != 3 {
-		t.Fatalf("expected 3 chunks, got %d", len(chunks))
+	if len(chunks) != 2 {
+		t.Fatalf("expected 2 data chunks, got %d", len(chunks))
 	}
 	expected := []string{
-		"Question: question\tAnswer: answer",
 		// rmQAPrefix strips a leading "A " answer marker from "A RAG engine."
 		"Question: What is RAGFlow?\tAnswer: RAG engine.",
 		"Question: Where are the docs?\tAnswer: On the website.",
@@ -434,7 +433,7 @@ func TestQAChunker_XLSXJSONRegression(t *testing.T) {
 	}
 }
 
-func TestQAChunkerSpreadsheetWireTreatsFirstRowAsQAData(t *testing.T) {
+func TestQAChunkerSpreadsheetWireSkipsConfirmedHeader(t *testing.T) {
 	comp, err := NewQAChunker(map[string]any{"lang": "english"})
 	if err != nil {
 		t.Fatal(err)
@@ -451,24 +450,21 @@ func TestQAChunkerSpreadsheetWireTreatsFirstRowAsQAData(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	chunks, ok := out["chunks"].([]map[string]any)
-	if !ok || len(chunks) != 2 {
-		t.Fatalf("chunks = %#v, want both QA rows", out["chunks"])
+	if !ok || len(chunks) != 1 {
+		t.Fatalf("chunks = %#v, want only the data row", out["chunks"])
 	}
-	if got, _ := chunks[0]["text"].(string); got != "Question: ID\tAnswer: Status" {
-		t.Fatalf("first-row QA = %q", got)
-	}
-	if got, _ := chunks[1]["text"].(string); got != "Question: A-100\tAnswer: paid" {
-		t.Fatalf("second-row QA = %q", got)
+	if got, _ := chunks[0]["text"].(string); got != "Question: A-100\tAnswer: paid" {
+		t.Fatalf("data-row QA = %q", got)
 	}
 	// top_int keeps the legacy 0-based record index: rowStart - 1.
-	for i, want := range []any{float64(0), float64(1)} {
+	for i, want := range []any{float64(1)} {
 		top, _ := chunks[i]["top_int"].([]any)
 		if len(top) != 1 || top[0] != want {
 			t.Errorf("chunk[%d] top_int = %v, want [%v]", i, chunks[i]["top_int"], want)
 		}
 	}
 	// R1: each pair carries only its own row's tuple, not the segment matrix.
-	for i, wantRow := range []float64{1, 2} {
+	for i, wantRow := range []float64{2} {
 		raw, _ := json.Marshal(chunks[i]["positions"])
 		var matrix [][]float64
 		if err := json.Unmarshal(raw, &matrix); err != nil {
@@ -544,7 +540,7 @@ func TestQAChunker_RowlessTableTextStaysProse(t *testing.T) {
 // must not panic the pair builder, and a matrix without identity must not move
 // the row numbers (PDF items write layout boxes into the same field).
 func TestQAChunkerPositionsRequireSpreadsheetIdentityAndFiveFields(t *testing.T) {
-	table := "<table><tr><th>q</th><th>a</th></tr></table>"
+	table := "<table><tr><td>q</td><td>a</td></tr></table>"
 	cases := []struct {
 		name       string
 		positions  string

@@ -20,6 +20,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"ragflow/internal/parser/tableutil"
 	"strings"
 	"time"
 
@@ -133,11 +134,11 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 		if err := ctx.Err(); err != nil {
 			return nil, sheetCount, err
 		}
-		records, dataRows, headerRow := readBIFF8Records(ctx, reader)
+		records, rowNumbers := readBIFF8Records(ctx, reader)
 		if err := ctx.Err(); err != nil {
 			return nil, sheetCount, err
 		}
-		items = append(items, buildSheetItems(records, reader.SheetName(), sheetIndex+1, headerRow, dataRows, nil)...)
+		items = append(items, buildSheetItems(newSpreadsheetTable(records, rowNumbers, tableutil.HeaderEvidence{}), reader.SheetName(), sheetIndex+1, nil)...)
 	}
 	if err := reader.Err(); err != nil {
 		return nil, sheetCount, fmt.Errorf("read BIFF workbook: %w", err)
@@ -145,7 +146,7 @@ func parseBIFF8Bytes(ctx context.Context, data []byte) ([]map[string]any, int, e
 	return items, sheetCount, nil
 }
 
-func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int, int) {
+func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []int) {
 	type numberedRow struct {
 		number int
 		cells  []string
@@ -154,7 +155,7 @@ func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []i
 	rows := make([]numberedRow, 0)
 	for reader.Read() {
 		if ctx.Err() != nil {
-			return nil, nil, 0
+			return nil, nil
 		}
 		cells := make([]string, reader.FieldCount())
 		for col := range cells {
@@ -166,17 +167,16 @@ func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []i
 		rows = append(rows, numberedRow{number: reader.RowIndex() + 1, cells: cells})
 	}
 	if len(rows) == 0 {
-		return nil, nil, 0
+		return nil, nil
 	}
 
 	records := make([][]string, 0, len(rows))
-	dataRows := make([]int, 0, len(rows)-1)
-	records = append(records, rows[0].cells)
-	for _, row := range rows[1:] {
+	rowNumbers := make([]int, 0, len(rows))
+	for _, row := range rows {
 		records = append(records, row.cells)
-		dataRows = append(dataRows, row.number)
+		rowNumbers = append(rowNumbers, row.number)
 	}
-	return cleanIllegalControlChars(records), dataRows, rows[0].number
+	return cleanIllegalControlChars(records), rowNumbers
 }
 
 func spreadsheetCellString(value any) string {

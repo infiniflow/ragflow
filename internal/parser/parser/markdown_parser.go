@@ -445,6 +445,7 @@ func walkMarkdownBlocksWithImages(ctx context.Context, doc ast.Node, out *[]map[
 				// infallible, so the parse always yields a non-nil TableData
 				// and no legacy HTML `text` is kept.
 				td, _ := tableutil.ParseTableHTML(txt)
+				resolveTableHeader(td, false)
 				table := map[string]any{
 					"doc_type_kwd": "table",
 					"ck_type":      "table",

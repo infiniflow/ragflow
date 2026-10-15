@@ -113,12 +113,15 @@ func parseMinerUMarkdownResult(ctx context.Context, filename, markdown, outputFo
 			return res
 		}
 		res.File = fileMeta
+		res.predictedTableHeaders = true
+		res.JSON = res.NormalizeTableHeaders(res.JSON)
 		return res
 	case "markdown":
 		return ParseResult{
-			OutputFormat: "markdown",
-			File:         fileMeta,
-			Markdown:     markdown,
+			predictedTableHeaders: true,
+			OutputFormat:          "markdown",
+			File:                  fileMeta,
+			Markdown:              markdown,
 		}
 	default:
 		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", outputFormat)}

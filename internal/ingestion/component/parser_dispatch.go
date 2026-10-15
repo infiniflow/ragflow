@@ -320,7 +320,11 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = "json"
-		out["json"] = normalizeParserJSON(ctx, name, dispatched)
+		items := normalizeParserJSON(ctx, name, dispatched)
+		if len(dispatched.JSON) == 0 {
+			items = dispatched.NormalizeTableHeaders(items)
+		}
+		out["json"] = items
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
 		}

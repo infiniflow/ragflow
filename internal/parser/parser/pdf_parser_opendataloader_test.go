@@ -147,8 +147,8 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	if len(rows) != 1 || len(rows[0]) != 2 || rows[0][0] != "a" || rows[0][1] != "b" {
 		t.Fatalf("table rows = %#v, want [[a b]]", rows)
 	}
-	if td.HeaderRows != 1 {
-		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)
+	if td.HeaderRows != 0 {
+		t.Fatalf("HeaderRows = %d, want 0 for a single data row", td.HeaderRows)
 	}
 }
 

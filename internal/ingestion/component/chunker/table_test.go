@@ -278,23 +278,20 @@ func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 	}
 }
 
-// TestTableChunker_HeaderlessHTMLFirstRowIsHeader: with no <th> row the
-// first row names the columns, matching splitLargeTable's convention.
-func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
+// Headerless rows remain data and are never repeated as column names.
+func TestTableChunker_HeaderlessHTMLKeepsBothRows(t *testing.T) {
 	table := "<table><tr><td>k</td><td>v</td></tr><tr><td>a</td><td>b</td></tr></table>"
-	chunks := tableChunksOf(t, map[string]any{
-		"name":          "kv.csv",
-		"output_format": "json",
-		"json": []map[string]any{
-			tableItem(t, table),
-		},
-	})
-	if len(chunks) != 1 {
-		t.Fatalf("got %d chunks, want the single data row", len(chunks))
+	chunks := tableChunksOf(t, map[string]any{"name": "kv.csv", "output_format": "json", "json": []map[string]any{tableItem(t, table)}})
+	if len(chunks) != 2 {
+		t.Fatalf("got %d chunks, want both data rows", len(chunks))
 	}
-	txt, _ := chunks[0]["text"].(string)
-	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") ||
-		!strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
-		t.Errorf("text = %v", chunks[0]["text"])
+	for i, c := range chunks {
+		text := c["text"].(string)
+		if strings.Contains(text, "<th>") {
+			t.Errorf("chunk %d invented header: %s", i, text)
+		}
+	}
+	if !strings.Contains(chunks[0]["text"].(string), "<td>k</td>") || !strings.Contains(chunks[1]["text"].(string), "<td>a</td>") {
+		t.Fatalf("rows lost: %v", chunks)
 	}
 }

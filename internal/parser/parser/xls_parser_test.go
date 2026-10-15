@@ -229,9 +229,9 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 		t.Errorf("table item ck_type = %v, want table", item["ck_type"])
 	}
 	text := tableItemHTML(t, item)
-	if !strings.Contains(text, "<tr><th>Header1</th><th>Header2</th></tr>") ||
+	if !strings.Contains(text, "<tr><td>Header1</td><td>Header2</td></tr>") ||
 		!strings.Contains(text, "<tr><td>Val1</td><td>Val2</td></tr>") {
-		t.Errorf("table markup = %q, want captioned header and data row", text)
+		t.Errorf("table markup = %q, want both ambiguous text rows preserved", text)
 	}
 	if item["doc_type_kwd"] != "table" {
 		t.Errorf("doc_type_kwd = %v, want 'table'", item["doc_type_kwd"])

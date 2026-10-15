@@ -46,9 +46,7 @@ func TestCSVTypedRowsFoldMalformedRowIntoPreviousAnswer(t *testing.T) {
 		"name":          "qa.csv",
 		"file_type":     "csv",
 		"output_format": "json",
-		"json": []map[string]any{spreadsheetSegmentItem("Sheet1",
-			[]string{"q1", "a1"},
-			[][]string{{"question", "", "extra"}}, 1, 2)},
+		"json":          []map[string]any{tableItem(t, "<table><tr><td>q1</td><td>a1</td></tr><tr><td>question</td><td></td><td>extra</td></tr></table>")},
 	})
 	if err != nil {
 		t.Fatal(err)

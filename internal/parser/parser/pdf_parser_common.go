@@ -354,7 +354,13 @@ func (p *PDFParser) validateParseMethod() error {
 // method is the facade that wires strategies and post-processing. It is
 // build-tag agnostic: under !cgo the deepdoc path transparently reports
 // ErrPDFEngineUnavailable while plain_text falls back to the pure-Go engine.
-func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) ParseResult {
+func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data []byte) (result ParseResult) {
+	defer func() {
+		if result.Err == nil && !result.predictedTableHeaders {
+			result.predictedTableHeaders = true
+			result.JSON = result.NormalizeTableHeaders(result.JSON)
+		}
+	}()
 	if err := p.validateParseMethod(); err != nil {
 		return ParseResult{Err: err}
 	}
@@ -962,6 +968,7 @@ func projectPDFTable(item map[string]any) {
 	if err != nil || td == nil {
 		return
 	}
+	resolveTableHeader(td, true)
 	if page := numberValue(item["page_number"]); page > 0 {
 		td.Page = int(page)
 	}

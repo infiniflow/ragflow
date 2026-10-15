@@ -238,7 +238,6 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 		out.TableData = nil
 		return []schema.ChunkDoc{out}
 	}
-	names := rows[0]
 	// R1: a row chunk must carry only its own tuple. That is only sound when
 	// the item carries spreadsheet identity and its matrix was built
 	// row-aligned (one five-field tuple per row, header included); a
@@ -262,7 +261,7 @@ func expandHTMLTableRows(item schema.ChunkDoc) []schema.ChunkDoc {
 	for i, row := range rows[headerCount:] {
 		// Skip empty rows (no cell content); the HTML render of an empty row
 		// would be a header-only table that duplicates the header-only chunk.
-		if tableRowRecordText(names, row) == "" {
+		if tableRowRecordText(nil, row) == "" {
 			continue
 		}
 		doc := item
