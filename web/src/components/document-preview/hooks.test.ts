@@ -76,9 +76,9 @@ describe('applyExcelSourceLocate', () => {
       bgcolor: '#ffe58f',
       color: '#1a1a1a',
     });
-    expect(
-      previewer.xs.sheet.horizontalScrollbar.move,
-    ).toHaveBeenCalledWith({ left: 0 });
+    expect(previewer.xs.sheet.horizontalScrollbar.move).toHaveBeenCalledWith({
+      left: 0,
+    });
     // r1 = 2 rows above at 20px each -> y = 40, and scrolly() needs y - 1.
     expect(previewer.xs.sheet.verticalScrollbar.move).toHaveBeenCalledWith({
       top: 39,
@@ -106,8 +106,7 @@ describe('applyExcelSourceLocate', () => {
 
   it('falls back to resetData when clickSwap2 is missing', () => {
     const previewer = mockPreviewer();
-    (previewer.xs.bottombar as { clickSwap2?: unknown }).clickSwap2 =
-      undefined;
+    (previewer.xs.bottombar as { clickSwap2?: unknown }).clickSwap2 = undefined;
     applyExcelSourceLocate(previewer as never, [1, 2, 2, 1, 1]);
     expect(previewer.xs.sheet.resetData).toHaveBeenCalledWith(
       previewer.xs.datas[0],
