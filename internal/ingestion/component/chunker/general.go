@@ -264,6 +264,18 @@ func (c *GeneralChunkerComponent) chunkPDF(ctx context.Context, db *gorm.DB, ups
 			flushBody()
 			media := cloneChunkDoc(unit)
 			media.Text = normalizeGeneralNewlines(media.Text)
+			// A parsed table arrives with empty Text: the parser projects the
+			// HTML into the structured `table` field and deletes the redundant
+			// markup (see projectPDFTable in internal/parser/parser). With no
+			// Text the retention filter in finalizeGeneralChunks would drop the
+			// chunk and the table would vanish from the document. Mirror
+			// splitSpreadsheetTable (#20918): render the structured table as
+			// HTML into Text and drop TableData, so the chunk is retained and
+			// displayable and stays byte-consistent with the spreadsheet path.
+			if media.Text == "" && media.TableData != nil {
+				media.Text = tableutil.RenderTableHTML(media.TableData)
+				media.TableData = nil
+			}
 			media.DocType = itemDocType(media)
 			media.CKType = media.DocType
 			chunks = append(chunks, media)
