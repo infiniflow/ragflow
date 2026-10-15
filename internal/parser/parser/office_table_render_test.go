@@ -29,7 +29,7 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one segmented HTML table item", len(res.JSON))
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
 		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
 	}
@@ -81,7 +81,7 @@ func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table" || res.JSON[0]["table"] == nil {
+	if res.JSON[0].ToMap()["ck_type"] != "table" || res.JSON[0].ToMap()["table"] == nil {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -105,7 +105,7 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item (parser must not pre-split rows)", len(res.JSON))
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != dataRows+1 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr> (header plus %d rows)", len(positions), dataRows)
 	}
@@ -113,7 +113,7 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if last[1] != float64(dataRows+1) || last[2] != float64(dataRows+1) {
 		t.Fatalf("last tuple = %v, want source row %d", last, dataRows+1)
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<td>258</td>") {
 		t.Fatalf("last data row missing from markup:\n%s", text)
 	}
@@ -138,7 +138,7 @@ func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
 	if len(res.JSON) != 2 {
 		t.Fatalf("items = %d, want one HTML table per sheet", len(res.JSON))
 	}
-	first, second := res.JSON[0], res.JSON[1]
+	first, second := res.JSON[0].ToMap(), res.JSON[1].ToMap()
 	if first["sheet"] != "Sheet1" || first["sheet_index"] != 1 {
 		t.Fatalf("first sheet identity = %#v", first)
 	}
@@ -168,7 +168,7 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one header-only segment", len(res.JSON))
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>Name</th><th>Amount</th></tr>\n" +
 		"</table>\n"
@@ -233,7 +233,7 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 		if res.Err != nil {
 			t.Fatalf("ParseWithResult: %v", res.Err)
 		}
-		return res.JSON
+		return ItemsToMaps(res.JSON)
 	}
 
 	assertSegments := func(t *testing.T, items []map[string]any, wantFirst, wantSecond []string) {
@@ -332,7 +332,7 @@ func renderedText(item map[string]any) string {
 
 func spreadsheetText(res ParseResult) string {
 	var out strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if td, ok := item["table"].(*entity.TableData); ok {
 			out.WriteString(tableutil.RenderTableHTML(td))
 		}
@@ -344,7 +344,7 @@ func spreadsheetText(res ParseResult) string {
 // joined by "; " — the rendered <th> cells of its first <tr> — or "" when no
 // table item exists.
 func spreadsheetHeaderText(res ParseResult) string {
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		td, ok := item["table"].(*entity.TableData)
 		if !ok {
 			continue
@@ -534,7 +534,7 @@ func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
 	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
 		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != 3 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
 	}

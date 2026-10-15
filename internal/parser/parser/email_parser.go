@@ -199,13 +199,13 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 	content["doc_type_kwd"] = "text"
 	items := []map[string]any{content}
 	if headerText := searchableEmailHeaders(content); headerText != "" {
-		items = append(items, NewTextJSONItem(headerText))
+		items = append(items, NewTextJSONItem(headerText).ToMap())
 	}
 	items = append(items, extraItems...)
 	return ParseResult{
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename},
-		JSON:         items,
+		JSON:         MapsToItems(items),
 	}
 }
 
@@ -845,7 +845,7 @@ func (p *EmailParser) rechunkEmailAttachments(ctx context.Context, content map[s
 		var texts []string
 		if res.OutputFormat == "json" && len(res.JSON) > 0 {
 			for _, it := range res.JSON {
-				if t, ok := it["text"].(string); ok {
+				if t, ok := it.ToMap()["text"].(string); ok {
 					if t = strings.TrimSpace(t); t != "" {
 						texts = append(texts, t)
 					}

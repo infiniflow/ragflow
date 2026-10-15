@@ -235,15 +235,16 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		if len(res.JSON) > 0 {
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
-				if text, ok := item["text"].(string); ok {
+				m := item.ToMap()
+				if text, ok := m["text"].(string); ok {
 					parts = append(parts, text)
 					continue
 				}
-				if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
 					parts = append(parts, tableutil.RenderTableHTML(td))
 					continue
 				}
-				raw, err := json.Marshal(item)
+				raw, err := json.Marshal(m)
 				if err != nil {
 					return "", err
 				}

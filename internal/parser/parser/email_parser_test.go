@@ -68,7 +68,7 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 	if len(result.JSON) != 2 {
 		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	if v, ok := item["from"].(string); !ok || v != "sender@example.com" {
 		t.Errorf("from: got %q", v)
@@ -93,7 +93,7 @@ func TestEmailParser_EmlJSON(t *testing.T) {
 		t.Errorf("doc_type_kwd: got %q", v)
 	}
 
-	header := result.JSON[1]
+	header := result.JSON[1].ToMap()
 	headerText, ok := header["text"].(string)
 	if !ok {
 		t.Fatalf("header item text missing: %#v", header)
@@ -235,7 +235,7 @@ func TestEmailParser_EmlTextChunkText(t *testing.T) {
 	if jres.Err != nil {
 		t.Fatalf("unexpected error: %v", jres.Err)
 	}
-	item := jres.JSON[0]
+	item := jres.JSON[0].ToMap()
 	if _, ok := item["metadata"].(map[string]any); !ok {
 		t.Errorf("json output must keep metadata: %#v", item)
 	}
@@ -271,7 +271,7 @@ func TestEmailParser_MsgSupported(t *testing.T) {
 	if len(result.JSON) != 2 {
 		t.Fatalf("expected body and header JSON items, got %d", len(result.JSON))
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	if v, ok := item["from"].(string); !ok || v != "<christoph@freiraum.xyz>" {
 		t.Errorf("from: got %q", v)
@@ -359,7 +359,7 @@ func TestEmailParser_MsgMetadataAlwaysPresent(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	if _, ok := item["metadata"].(map[string]any); !ok {
 		t.Fatalf("metadata must always be present for .msg, got %T", item["metadata"])
@@ -405,7 +405,7 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	// concatenated item text so the test survives the json-path Text removal.
 	var sb strings.Builder
 	for _, it := range result.JSON {
-		if txt, _ := it["text"].(string); txt != "" {
+		if txt, _ := it.ToMap()["text"].(string); txt != "" {
 			sb.WriteString(txt)
 			sb.WriteString("\n")
 		}
@@ -463,7 +463,7 @@ func TestEmailParser_Base64Attachment(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	// attachments are dropped from the final ParseResult (consumed by
 	// rechunk, then deleted); verify the high-level result is clean...
@@ -541,7 +541,7 @@ func TestEmailParser_Base64AttachmentInMixedMultipart(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	// Verify body text was extracted from nested multipart/alternative
 	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain text body") {
@@ -598,7 +598,7 @@ func TestEmailParser_Multipart(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain text body") {
 		t.Errorf("text: got %q", v)
 	}
@@ -636,7 +636,7 @@ func TestEmailParser_MetadataAlwaysPresent(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	// metadata must exist even though it is not in fields (Python contract).
 	meta, ok := item["metadata"].(map[string]any)
@@ -696,7 +696,7 @@ func TestEmailParser_TextHTMLAlwaysPresent(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	if v, ok := item["text"].(string); !ok || !strings.Contains(v, "Plain body") {
 		t.Errorf("text: got %q", v)
@@ -760,13 +760,13 @@ func TestEmailParser_AttachmentSearchableJSON(t *testing.T) {
 	}
 
 	// Body must remain on the main item.
-	if v, ok := result.JSON[0]["text"].(string); !ok || !strings.Contains(v, "Email body text") {
-		t.Errorf("body missing on main item: %v", result.JSON[0]["text"])
+	if v, ok := result.JSON[0].ToMap()["text"].(string); !ok || !strings.Contains(v, "Email body text") {
+		t.Errorf("body missing on main item: %v", result.JSON[0].ToMap()["text"])
 	}
 
 	// Attachment text must appear as a separate retrievable JSON item.
 	found := false
-	for _, it := range result.JSON {
+	for _, it := range ItemsToMaps(result.JSON) {
 		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "quick brown fox") {
 			found = true
 		}
@@ -866,7 +866,7 @@ func TestEmailParser_AttachmentEmptyPayloadSkipped(t *testing.T) {
 	}
 
 	found := false
-	for _, it := range result.JSON {
+	for _, it := range ItemsToMaps(result.JSON) {
 		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "VALID attachment payload") {
 			found = true
 		}
@@ -922,7 +922,7 @@ func TestEmailParser_AttachmentUnknownExtSkipped(t *testing.T) {
 	}
 
 	found := false
-	for _, it := range result.JSON {
+	for _, it := range ItemsToMaps(result.JSON) {
 		if txt, ok := it["text"].(string); ok && strings.Contains(txt, "KNOWN attachment payload") {
 			found = true
 		}
@@ -967,7 +967,7 @@ func TestEmailParser_AttachmentsWithoutBody(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("unexpected error: %v", result.Err)
 	}
-	item := result.JSON[0]
+	item := result.JSON[0].ToMap()
 
 	// text/text_html must be absent (gated by "body"), matching Python.
 	if _, ok := item["text"]; ok {
@@ -1054,7 +1054,7 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 		// result.JSON; text populates result.Text).
 		var indexed strings.Builder
 		if format == "json" {
-			for _, it := range result.JSON {
+			for _, it := range ItemsToMaps(result.JSON) {
 				if txt, ok := it["text"].(string); ok {
 					indexed.WriteString(txt)
 					indexed.WriteString("\n")
@@ -1077,7 +1077,7 @@ func TestEmailParser_NestedEMLAttachmentRechunk(t *testing.T) {
 			// metadata key (the old bug leaked a "metadata:{...}" string as
 			// its text).
 			found := false
-			for _, it := range result.JSON {
+			for _, it := range ItemsToMaps(result.JSON) {
 				if txt, ok := it["text"].(string); ok && strings.Contains(txt, "INNER BODY SECRET") {
 					found = true
 					if _, hasMeta := it["metadata"]; hasMeta {
@@ -1420,7 +1420,7 @@ func TestParseEML_SinglePartTransferEncoding(t *testing.T) {
 			if result.Err != nil {
 				t.Fatalf("unexpected error: %v", result.Err)
 			}
-			item := result.JSON[0]
+			item := result.JSON[0].ToMap()
 
 			text, _ := item["text"].(string)
 			if strings.TrimRight(text, "\r\n") != strings.TrimRight(tt.wantText, "\r\n") {

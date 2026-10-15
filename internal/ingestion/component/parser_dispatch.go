@@ -320,6 +320,10 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = "json"
+		// Emit the parser's typed []DocItem directly. The chunker consumes
+		// it via schema.ChunkDocsFromDocItem (no ToMap round-trip); other
+		// consumers that still need the map form convert at their own
+		// boundary via parser.ItemsToMaps.
 		out["json"] = normalizeParserJSON(ctx, name, dispatched)
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
@@ -331,7 +335,7 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	if len(rawPages) == 0 {
 		rawPages = [][]byte{nil}
 	}
-	fallbackItems := make([]map[string]any, 0, len(rawPages))
+	fallbackItems := make([]parser.DocItem, 0, len(rawPages))
 	for _, pageBytes := range rawPages {
 		txt := string(pageBytes)
 		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
@@ -341,7 +345,11 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	return out
 }
 
-func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []map[string]any {
+// normalizeParserJSON returns the parser output as the typed []DocItem. It no
+// longer round-trips through map[string]any (the historical ItemsToMaps call),
+// so the downstream chunker receives structured items and converts them via
+// schema.ChunkDocsFromDocItem without ever calling DocItem.ToMap.
+func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []parser.DocItem {
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}
@@ -349,9 +357,9 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
 	if dispatched.Text != "" {
-		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
+		return []parser.DocItem{parser.NewTextJSONItem(dispatched.Text)}
 	}
-	return []map[string]any{}
+	return []parser.DocItem{}
 }
 
 func warnParserNormalizationFallback(filename, source string, err error) {

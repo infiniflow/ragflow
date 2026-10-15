@@ -82,7 +82,8 @@ func requireJSONText(t *testing.T, out map[string]any, want string) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	items, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
@@ -124,7 +125,8 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 
 			requireJSONText(t, out, tt.wantText)
 			if tt.name == "markdown" {
-				items, ok := out["json"].([]map[string]any)
+				jsonDocs, ok := out["json"].([]parser.DocItem)
+				items := parser.ItemsToMaps(jsonDocs)
 				if !ok {
 					t.Fatalf("json = %T, want []map[string]any", out["json"])
 				}
@@ -169,7 +171,7 @@ func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
 func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
 	out := buildParserOutputs(t.Context(), parser.ParseResult{
 		OutputFormat: "json",
-		JSON:         []map[string]any{},
+		JSON:         parser.MapsToItems([]map[string]any{}),
 		Markdown:     "# Recovered title",
 	}, "sample.md", nil, "")
 
@@ -184,7 +186,7 @@ func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 			"name":    "report.pdf",
 			"outline": wantOutline,
 		},
-		JSON: []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+		JSON: parser.MapsToItems([]map[string]any{{"text": "body", "doc_type_kwd": "text"}}),
 	}, "report.pdf", nil, "")
 	file, ok := out["file"].(map[string]any)
 	if !ok {
@@ -235,7 +237,7 @@ func TestLogParserOutputReportsNormalizationSource(t *testing.T) {
 	logParserOutput(parser.ParseResult{
 		OutputFormat: "markdown",
 		Markdown:     "# Title\n\nBody",
-	}, []map[string]any{{"text": "Title"}, {"text": "Body"}})
+	}, []parser.DocItem{parser.NewTextJSONItem("Title"), parser.NewTextJSONItem("Body")})
 
 	entries := logs.FilterMessage("parser stage output").All()
 	if len(entries) != 1 {
@@ -292,7 +294,8 @@ func TestDispatch_JSONOutput(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v", got, want)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json payload missing or wrong type: %T", out["json"])
 	}
@@ -321,7 +324,9 @@ func TestDispatchNormalizesConfiguredOutputFormatToJSON(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
@@ -346,7 +351,8 @@ func TestDispatch_TextPageMode_NoFileType(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Errorf("output_format = %v, want %v (raw-text mode)", got, want)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) == 0 {
 		t.Fatalf("json items missing or empty: %T", out["json"])
 	}
@@ -478,7 +484,9 @@ func TestDispatch_PDFLegacyMarkdownConfigurationEmitsJSON(t *testing.T) {
 	if got := out["output_format"]; got != "json" {
 		t.Fatalf("output_format = %v, want json", got)
 	}
-	if items, ok := out["json"].([]map[string]any); !ok || len(items) == 0 {
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
+	if !ok || len(items) == 0 {
 		t.Fatalf("json = %T/%v, want non-empty structured items", out["json"], out["json"])
 	}
 }
@@ -510,7 +518,8 @@ func TestDispatch_PDFPlainText_UsesConfiguredBackend(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Invoke: %v", err)
 			}
-			jsonItems, ok := out["json"].([]map[string]any)
+			jsonDocs, ok := out["json"].([]parser.DocItem)
+			jsonItems := parser.ItemsToMaps(jsonDocs)
 			if !ok || len(jsonItems) == 0 {
 				t.Fatalf("json payload missing or empty: %T", out["json"])
 			}
@@ -603,7 +612,8 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		"tenant_id": "tenant-1",
 	})
 	if err == nil {
-		jsonItems, ok := out["json"].([]map[string]any)
+		jsonDocs, ok := out["json"].([]parser.DocItem)
+		jsonItems := parser.ItemsToMaps(jsonDocs)
 		if !ok || len(jsonItems) != 2 {
 			t.Fatalf("json payload = %#v, want 2 items", out["json"])
 		}
@@ -670,7 +680,8 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(jsonItems) != 2 {
 		t.Fatalf("json payload = %#v, want 2 items", out["json"])
 	}
@@ -727,7 +738,8 @@ func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Invoke: %v", err)
 	}
-	jsonItems, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	jsonItems := parser.ItemsToMaps(jsonDocs)
 	if !ok {
 		t.Fatalf("json payload = %T, want []map[string]any", out["json"])
 	}
@@ -862,7 +874,8 @@ func TestDispatch_PDFMinerUJSON_ParsesMarkdownToStructuredItems(t *testing.T) {
 	if got, want := out["output_format"], "json"; got != want {
 		t.Fatalf("output_format = %v, want %v", got, want)
 	}
-	items, ok := out["json"].([]map[string]any)
+	jsonDocs, ok := out["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(items) == 0 {
 		t.Fatalf("json payload = %#v, want non-empty structured items", out["json"])
 	}

@@ -49,12 +49,12 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 			factory func(map[string]any) (runtime.Component, error)
 		}{{"QA", NewQAChunker}, {"Token", NewTokenChunker}, {"One", NewOneChunker}} {
 			t.Run(source.name+"/"+tc.name, func(t *testing.T) {
-				batches := [][]map[string]any{source.result.JSON}
+				batches := [][]map[string]any{parser.ItemsToMaps(source.result.JSON)}
 				// One preserves positions only for a single source item.
 				if tc.name == "One" {
 					batches = nil
 					for _, item := range source.result.JSON {
-						batches = append(batches, []map[string]any{item})
+						batches = append(batches, []map[string]any{item.ToMap()})
 					}
 				}
 				for _, items := range batches {
@@ -147,7 +147,9 @@ func TestQAChunkerSheetNameOnlyPreservesSourceRows(t *testing.T) {
 		t.Fatalf("parser items=%d, want 1", len(parsed.JSON))
 	}
 	// Keep real parser selections, but exercise the supported name-only identity.
-	delete(parsed.JSON[0], "sheet_index")
+	m := parsed.JSON[0].ToMap()
+	delete(m, "sheet_index")
+	parsed.JSON[0] = parser.RawItem{M: m}
 	comp, err := NewQAChunker(nil)
 	if err != nil {
 		t.Fatal(err)

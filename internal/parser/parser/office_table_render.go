@@ -203,9 +203,9 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 			grid = append(grid, cells)
 		}
 		td := &entity.TableData{Grid: grid, HeaderRows: 1, Caption: sheet}
-		item := NewTableDataJSONItem(td, sheet, matrix)
-		item["sheet_index"] = sheetIndex
-		return item
+		ti := NewTableDataJSONItem(td, sheet, matrix).(TableItem)
+		ti.Extra = map[string]any{"sheet_index": sheetIndex}
+		return ti.ToMap()
 	}
 
 	prev := 0

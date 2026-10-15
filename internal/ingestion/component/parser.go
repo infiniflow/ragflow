@@ -591,7 +591,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	items, _ := out["json"].([]map[string]any)
+	items, _ := out["json"].([]parser.DocItem)
 	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
@@ -599,7 +599,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),

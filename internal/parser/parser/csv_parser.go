@@ -155,7 +155,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			"format":   "csv",
 			"sheets":   1,
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 

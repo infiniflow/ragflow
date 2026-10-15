@@ -30,21 +30,22 @@ func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
 		Caption:    "Sheet1",
 	}
 	item := NewTableDataJSONItem(td, "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+	m := item.ToMap()
 
-	if got, want := item[DocTypeKey], DocTypeTable; got != want {
+	if got, want := m[DocTypeKey], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
 	}
-	if got, want := item["ck_type"], DocTypeTable; got != want {
+	if got, want := m["ck_type"], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
 	}
-	got, ok := item["table"].(*entity.TableData)
+	got, ok := m["table"].(*entity.TableData)
 	if !ok {
-		t.Fatalf("item[%q] = %T, want *entity.TableData", "table", item["table"])
+		t.Fatalf("item[%q] = %T, want *entity.TableData", "table", m["table"])
 	}
 	if got.Caption != "Sheet1" || len(got.Grid) != 2 {
 		t.Fatalf("item table = %+v, want caption Sheet1 and 2 rows", got)
 	}
-	if _, ok := item["positions"].([][]float64); !ok {
+	if _, ok := m["positions"].([][]float64); !ok {
 		t.Fatalf("item[%q] missing positions matrix", "positions")
 	}
 }
@@ -72,9 +73,9 @@ func TestParseResult_Contract(t *testing.T) {
 			name: "json family only",
 			in: ParseResult{
 				OutputFormat: "json",
-				JSON: []map[string]any{
+				JSON: MapsToItems([]map[string]any{
 					{"text": "hello", "doc_type_kwd": "text"},
-				},
+				}),
 			},
 			wantFmt: "json",
 		},
@@ -170,14 +171,14 @@ func TestMarkdownParser_ParseWithResult(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON len = %d, want 3 (heading, paragraph, list)", len(res.JSON))
 	}
-	heading := res.JSON[0]
+	heading := res.JSON[0].ToMap()
 	if txt, _ := heading["text"].(string); !strings.Contains(txt, "Title") {
 		t.Errorf("JSON[0].text = %q, want contains 'Title'", txt)
 	}
 	if got, _ := heading["ck_type"].(string); got != "heading" {
 		t.Errorf("JSON[0].ck_type = %q, want heading", got)
 	}
-	for i, it := range res.JSON {
+	for i, it := range ItemsToMaps(res.JSON) {
 		if _, ok := it["doc_type_kwd"]; !ok {
 			t.Errorf("JSON[%d] missing doc_type_kwd: %+v", i, it)
 		}
