@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"sort"
 	"strings"
@@ -594,7 +595,7 @@ func TestCompareValuesDirectly(t *testing.T) {
 // (["-999"]), because the returned slice is applied as a hard document scope.
 func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
 	base := []string{"doc-1", "doc-2"}
-	metas := common.MetaData{"author": {"Zhang San": {"doc-1"}}}
+	metas := common.MetaData{"author": {"Zhang San": {"doc-1"}, "Li Si": {"doc-3"}}}
 
 	// The generator answering with no conditions is the common case: the
 	// question names no metadata. That does not mean "no such document".
@@ -613,6 +614,40 @@ func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
 			}
 			if got != nil {
 				t.Fatalf("got %v, want nil so the caller keeps its own document scope", got)
+			}
+		})
+	}
+
+	// A generated filter is applied as a hard scope, and an empty result cannot
+	// tell "outside this scope" from a wrong or invented value, so it leaves
+	// the caller's scope unnarrowed rather than matching nothing.
+	for _, tc := range []struct {
+		name   string
+		answer string
+		want   []string
+	}{
+		{
+			name:   "generated conditions selecting only documents outside the scope return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Li Si"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting nothing return no scope",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Wang Wu"}], "logic": "and"}`,
+		},
+		{
+			name:   "generated conditions selecting documents in the scope return them",
+			answer: `{"conditions": [{"key": "author", "op": "=", "value": "Zhang San"}], "logic": "and"}`,
+			want:   []string{"doc-1"},
+		},
+	} {
+		t.Run("auto "+tc.name, func(t *testing.T) {
+			chatModel, driver := newCapturingFilterModel(t)
+			driver.answer = tc.answer
+
+			got := ApplyMetaDataFilter(t.Context(), map[string]interface{}{"method": "auto"}, metas, "who wrote it?", chatModel, base, nil)
+
+			if !reflect.DeepEqual(got, tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
 			}
 		})
 	}
@@ -647,11 +682,13 @@ func TestApplyMetaDataFilter_SeparatesNoNarrowingFromNoMatch(t *testing.T) {
 }
 
 // capturingFilterDriver records the system prompt gen_meta_filter sends and
-// answers with an empty filter, so a test can assert what the model was shown.
+// answers with answer, or an empty filter when it is unset, so a test can
+// assert what the model was shown and choose what it generates.
 type capturingFilterDriver struct {
 	*modelModule.DummyModel
 	calls  int
 	system string
+	answer string
 }
 
 func (d *capturingFilterDriver) ChatWithMessages(
@@ -668,7 +705,10 @@ func (d *capturingFilterDriver) ChatWithMessages(
 			d.system = s
 		}
 	}
-	answer := `{"conditions": [], "logic": "and"}`
+	answer := d.answer
+	if answer == "" {
+		answer = `{"conditions": [], "logic": "and"}`
+	}
 	return &modelModule.ChatResponse{Answer: &answer}, nil
 }
 
