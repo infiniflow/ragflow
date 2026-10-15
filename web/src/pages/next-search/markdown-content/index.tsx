@@ -209,7 +209,7 @@ const MarkdownContent = ({
               }}
               className={classNames(styles.chunkContentText)}
             ></div>
-            {documentId && (
+            {documentId && documentId !== chunkItem?.dataset_id && (
               <div className="flex gap-2">
                 {fileThumbnail ? (
                   <AuthenticatedImg

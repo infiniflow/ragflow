@@ -105,9 +105,9 @@ const ComponentNameTokenizer = "Tokenizer"
 // `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// Table content is no longer carried as HTML markup (the parser emits the
-// structured entity.TableData contract), so there is no table markup to strip
-// from the embedded text. The legacy htmlTableRE was removed.
+// Table chunks carry their row rendered as an HTML <table> on Text (produced
+// by the chunker), so the embedding input intentionally includes the table
+// markup — there is no markup to strip. The legacy htmlTableRE stays removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
@@ -904,7 +904,8 @@ func declaredTitleTokens(chunks []schema.ChunkDoc) []string {
 // Mirrors python tokenizer.py:130-185 and rag/nlp/__init__.py tokenize() /
 // tokenize_chunks().
 //
-// language sets the Snowball stemmer language, matching Python's
+// language selects the analyzer language (Snowball stemmer, or diacritics
+// folding without stemming for Slovak/Czech), matching Python's
 // rag_tokenizer.tokenizer.set_language(language) call inside tokenize().
 func tokenizeChunks(chunks []schema.ChunkDoc, titleStem string, language string) error {
 	tok := tokenizer.New(language)

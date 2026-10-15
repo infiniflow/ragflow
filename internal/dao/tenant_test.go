@@ -44,39 +44,44 @@ func useTenantDAOTestDB(t *testing.T, db *gorm.DB) {
 	t.Cleanup(func() { DB = orig })
 }
 
-func TestTenantDAODeleteSoftDeletesTenant(t *testing.T) {
+// TestTenantDAOGetByIDSkipsInactiveTenant pins the behaviour GetByID relies on:
+// it filters status = "1", so a tenant row that is still present but inactive is
+// reported as not found. This is the part of the old soft-delete test that
+// covered live code; it no longer needs a delete helper to set up.
+func TestTenantDAOGetByIDSkipsInactiveTenant(t *testing.T) {
 	db := setupTenantDAOTestDB(t)
 	useTenantDAOTestDB(t, db)
 	ctx := t.Context()
 
-	active := "1"
-	tenant := &entity.Tenant{
-		ID:        "tenant-delete",
-		LLMID:     "llm",
-		EmbdID:    "embd",
-		ASRID:     "asr",
-		Img2TxtID: "img2txt",
-		RerankID:  "rerank",
-		ParserIDs: "naive",
-		Status:    &active,
+	seed := func(id, status string) {
+		t.Helper()
+		tenant := &entity.Tenant{
+			ID:        id,
+			LLMID:     "llm",
+			EmbdID:    "embd",
+			ASRID:     "asr",
+			Img2TxtID: "img2txt",
+			RerankID:  "rerank",
+			ParserIDs: "naive",
+			Status:    &status,
+		}
+		if err := NewTenantDAO().Create(ctx, db, tenant); err != nil {
+			t.Fatalf("Create(%s) error = %v", id, err)
+		}
 	}
-	if err := NewTenantDAO().Create(ctx, db, tenant); err != nil {
-		t.Fatalf("Create() error = %v", err)
+	seed("tenant-active", "1")
+	seed("tenant-inactive", "0")
+
+	got, err := NewTenantDAO().GetByID(ctx, db, "tenant-active")
+	if err != nil {
+		t.Fatalf("GetByID(active) error = %v", err)
+	}
+	if got.ID != "tenant-active" {
+		t.Fatalf("GetByID(active) = %+v", got)
 	}
 
-	if err := NewTenantDAO().Delete(ctx, db, tenant.ID); err != nil {
-		t.Fatalf("Delete() error = %v", err)
-	}
-
-	var got entity.Tenant
-	if err := db.WithContext(ctx).Where("id = ?", tenant.ID).First(&got).Error; err != nil {
-		t.Fatalf("failed to reload tenant: %v", err)
-	}
-	if got.Status == nil || *got.Status != "0" {
-		t.Fatalf("status = %v, want 0", got.Status)
-	}
-	if _, err := NewTenantDAO().GetByID(ctx, db, tenant.ID); err == nil {
-		t.Fatalf("GetByID() after Delete() error = nil, want not found")
+	if _, err := NewTenantDAO().GetByID(ctx, db, "tenant-inactive"); err == nil {
+		t.Fatal("GetByID(inactive) error = nil, want not found")
 	}
 }
 

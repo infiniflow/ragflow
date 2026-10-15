@@ -50,7 +50,7 @@ func TestHTMLParser_RemoveHeaderFooter(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		for _, banned := range []string{"Site Navigation", "Copyright 2024", "Ad banner", "Legal info"} {
 			if strings.Contains(text, banned) {
@@ -60,7 +60,7 @@ func TestHTMLParser_RemoveHeaderFooter(t *testing.T) {
 	}
 	// Main content must survive.
 	found := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if text, _ := item["text"].(string); strings.Contains(text, "Main content here") {
 			found = true
 		}
@@ -82,7 +82,7 @@ func TestHTMLParser_RemoveHeaderFooter_DisabledByDefault(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	found := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if text, _ := item["text"].(string); strings.Contains(text, "Nav") {
 			found = true
 		}
@@ -113,7 +113,7 @@ func TestHTMLParser_RemoveTOC(t *testing.T) {
 	}
 	// "目录" heading and "第一章 概述" (first entry after heading)
 	// should be removed by removeContentsTable.
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if text == "目录" {
 			t.Errorf("TOC heading %q was not removed", text)
@@ -124,7 +124,7 @@ func TestHTMLParser_RemoveTOC(t *testing.T) {
 	}
 	// "前言" and "正文开始" should survive.
 	wantTexts := map[string]bool{"前言": false, "正文开始": false}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if _, ok := wantTexts[text]; ok {
 			wantTexts[text] = true

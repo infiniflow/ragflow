@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // AstraflowModel implements ModelDriver for Astraflow (UCloud
@@ -76,12 +75,10 @@ func (a *AstraflowModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -112,12 +109,10 @@ func (a *AstraflowModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return err
 	}
 
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{
@@ -134,12 +129,10 @@ func (a *AstraflowModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, err
 	}
 
-	baseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -190,11 +183,10 @@ func (a *AstraflowModel) Embed(ctx context.Context, modelName *string, request E
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -269,11 +261,10 @@ func (a *AstraflowModel) Rerank(ctx context.Context, modelName *string, request 
 		return &RerankResponse{}, nil
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN != 0 {
@@ -359,11 +350,10 @@ func (a *AstraflowModel) AudioSpeech(ctx context.Context, modelName *string, aud
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	url, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,

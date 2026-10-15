@@ -23,6 +23,10 @@ package chunker
 // chunks are atomic and never split. Every sub-chunk keeps the source chunk's
 // merged PDF position matrix so each one still gets its page-region preview
 // image and position highlight.
+//
+// Hierarchy sub-chunks additionally re-prepend the source chunk's leading
+// segment, so a split never strips the parent headings from the continuation
+// pieces (see splitTitleChunkByCap).
 
 import (
 	"strings"
@@ -149,12 +153,22 @@ func hardSplitByTokens(text string, cap int) []string {
 //   - non-text chunks (table/image) are atomic and skipped;
 //   - a text chunk already within cap is kept;
 //   - an over-cap text chunk is re-split via splitTitleChunkByCap.
-func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
+//
+// prefixes is aligned 1:1 with chunks (nil outside the hierarchy strategy):
+// prefixes[i] is the leading segment chunk i starts with (ancestor headings
+// and any ancestor body text folded in). Every sub-chunk of a split
+// re-prepends it (see splitTitleChunkByCap), so a split does not strip the
+// parent headings from the continuation pieces.
+func enforceTitleTokenCap(chunks []map[string]any, prefixes []string, cap int) []map[string]any {
 	if cap <= 0 {
 		return chunks
 	}
 	out := make([]map[string]any, 0, len(chunks))
-	for _, chunk := range chunks {
+	for i, chunk := range chunks {
+		prefix := ""
+		if prefixes != nil {
+			prefix = prefixes[i]
+		}
 		if toStringOrDefault(chunk["doc_type_kwd"], "text") != "text" {
 			out = append(out, chunk)
 			continue
@@ -164,7 +178,7 @@ func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
 			out = append(out, chunk)
 			continue
 		}
-		out = append(out, splitTitleChunkByCap(chunk, cap)...)
+		out = append(out, splitTitleChunkByCap(chunk, prefix, cap)...)
 	}
 	return out
 }
@@ -175,9 +189,33 @@ func enforceTitleTokenCap(chunks []map[string]any, cap int) []map[string]any {
 // merged PDF position matrix (the coordinates are coarse, source-chunk
 // level), so the on-demand crop pass can attach a preview image to each
 // sub-chunk.
-func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
+//
+// prefix is the leading segment the source chunk starts with (empty outside
+// the hierarchy strategy): the ancestor headings plus any ancestor body text
+// folded in, up to and including the leaf's own heading. It is detached from
+// the text before grouping and re-prepended to every piece: without that,
+// only the first piece would keep the parent headings and every continuation
+// piece would be a bare body fragment. The grouping budget subtracts the
+// prefix so each piece still fits the cap; a prefix that would leave the
+// body less than half the cap disables re-attachment (plain split) instead
+// of multiplying near-empty pieces that each repeat it.
+func splitTitleChunkByCap(chunk map[string]any, prefix string, cap int) []map[string]any {
 	text := toString(chunk["text"])
-	sentences := titleSentenceSplit(text)
+	body := text
+	if prefix != "" {
+		// Re-attaching the prefix only pays off while the body keeps at
+		// least half the cap: a larger prefix would multiply near-empty
+		// pieces that each repeat it, so fall back to a plain split. The
+		// HasPrefix check is a safety net (the prefix is the text's leading
+		// segment by construction).
+		if !strings.HasPrefix(text, prefix) || titleTokenCount(prefix) > cap/2 {
+			prefix = ""
+		} else {
+			body = text[len(prefix):]
+		}
+	}
+	budget := cap - titleTokenCount(prefix)
+	sentences := titleSentenceSplit(body)
 	if len(sentences) == 0 {
 		return []map[string]any{chunk}
 	}
@@ -188,7 +226,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		if current != "" {
 			cand = current + s
 		}
-		if current != "" && titleTokenCount(cand) > cap {
+		if current != "" && titleTokenCount(cand) > budget {
 			groups = append(groups, current)
 			current = s
 		} else {
@@ -200,10 +238,10 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 	}
 	finalGroups := []string{}
 	for _, g := range groups {
-		if titleTokenCount(g) <= cap {
+		if titleTokenCount(g) <= budget {
 			finalGroups = append(finalGroups, g)
 		} else {
-			finalGroups = append(finalGroups, hardSplitByTokens(g, cap)...)
+			finalGroups = append(finalGroups, hardSplitByTokens(g, budget)...)
 		}
 	}
 	if len(finalGroups) == 0 {
@@ -219,7 +257,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		out := make([]map[string]any, 0, len(finalGroups))
 		for _, g := range finalGroups {
 			sub := shallowCopyChunk(chunk)
-			sub["text"] = g
+			sub["text"] = prefix + g
 			out = append(out, sub)
 		}
 		return out
@@ -229,7 +267,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		out := make([]map[string]any, 0, len(finalGroups))
 		for _, g := range finalGroups {
 			sub := shallowCopyChunk(chunk)
-			sub["text"] = g
+			sub["text"] = prefix + g
 			out = append(out, sub)
 		}
 		return out
@@ -241,7 +279,7 @@ func splitTitleChunkByCap(chunk map[string]any, cap int) []map[string]any {
 		startRatio := float64(cum) / float64(total)
 		endRatio := float64(cum+pcRunes) / float64(total)
 		sub := shallowCopyChunk(chunk)
-		sub["text"] = g
+		sub["text"] = prefix + g
 		if hasPDF {
 			if sliced := sliceAnyPositions(chunk["_pdf_positions"], startRatio, endRatio); sliced != nil {
 				sub["_pdf_positions"] = sliced

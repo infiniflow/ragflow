@@ -23,6 +23,8 @@ import (
 	"ragflow/internal/engine/kvrocks"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ConnectorLocker serializes work for one connector and knowledge base.
@@ -67,7 +69,19 @@ func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, b
 
 	if client := kvrocks.Get(); client != nil {
 		lock := kvrocks.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
-		if lock == nil || !lock.Acquire(context.Background()) {
+		if lock != nil {
+			acquired, err := lock.Acquire(context.Background())
+			if err != nil {
+				common.Warn("connector lock acquire transport error",
+					zap.String("key", key), zap.Error(err))
+			}
+			if !acquired {
+				l.mu.Lock()
+				delete(l.local, key)
+				l.mu.Unlock()
+				return ConnectorLockLease{}, false
+			}
+		} else {
 			l.mu.Lock()
 			delete(l.local, key)
 			l.mu.Unlock()

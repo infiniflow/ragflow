@@ -67,18 +67,6 @@ var mistralOCRLinkPattern = regexp.MustCompile(`(!?)\[[^\]]*\]\(([^)\s]+)\)`)
 
 var mistralOCRBlankLines = regexp.MustCompile(`\n{3,}`)
 
-// mistralOCREndpoint joins a base URL and a "v1/..." suffix. Base URLs that
-// already end in /v1 (the documented https://api.mistral.ai/v1 form) are
-// accepted without producing /v1/v1.
-func mistralOCREndpoint(baseURL, suffix string) string {
-	base := strings.TrimRight(baseURL, "/")
-	suffix = strings.TrimLeft(suffix, "/")
-	if strings.HasPrefix(suffix, "v1/") && strings.HasSuffix(base, "/v1") {
-		base = strings.TrimSuffix(base, "/v1")
-	}
-	return base + "/" + suffix
-}
-
 // mistralOCRPageIndexes converts 1-indexed inclusive page ranges into the
 // zero-based page selector /v1/ocr expects. The selector is bounded by the
 // API's page limit; a selection lying entirely past it is an error rather
@@ -178,7 +166,7 @@ func (m *MistralModel) OCRFile(ctx context.Context, modelName *string, content [
 		payload["pages"] = pages
 	}
 
-	req, err := m.baseModel.newJSONPostRequest(ctx, mistralOCREndpoint(baseURL, m.baseModel.URLSuffix.OCR), auth, payload)
+	req, err := m.baseModel.newJSONPostRequest(ctx, joinURL(baseURL, m.baseModel.URLSuffix.OCR), auth, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -286,7 +274,7 @@ func (m *MistralModel) mistralOCRUpload(ctx context.Context, baseURL string, aut
 	if m.baseModel.URLSuffix.Files == "" {
 		return "", nil, fmt.Errorf("Mistral OCR: document exceeds %d bytes and the provider has no files endpoint", mistralOCRInlineMaxBytes)
 	}
-	filesURL := mistralOCREndpoint(baseURL, m.baseModel.URLSuffix.Files)
+	filesURL := joinURL(baseURL, m.baseModel.URLSuffix.Files)
 
 	filename := "document"
 	if extensions, _ := mime.ExtensionsByType(mistralOCRMimeType(content)); len(extensions) > 0 {
