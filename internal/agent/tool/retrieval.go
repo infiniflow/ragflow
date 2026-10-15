@@ -129,9 +129,14 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
+	extra := map[string]any{}
+	if len(r.defaults.DatasetIDs) > 0 {
+		extra["dataset_ids"] = r.defaults.DatasetIDs
+	}
 	return &schema.ToolInfo{
-		Name: r.name,
-		Desc: r.desc,
+		Name:  r.name,
+		Desc:  r.desc,
+		Extra: extra,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
@@ -209,9 +214,6 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 	// ErrRetrievalServiceMissing; once a real impl is installed
 	// via SetRetrievalService (or SetSimpleRetrievalService for
 	// dev), the chunks flow through normally.
-	//
-	// Agentic: no dense-only rescue — a row the query's own words never
-	// matched is not evidence the model asked for.
 	searchReq := RetrievalRequest{
 		Query:                    args.Query,
 		DatasetIDs:               args.DatasetIDs,
@@ -222,7 +224,6 @@ func (r *RetrievalTool) InvokableRun(ctx context.Context, argumentsInJSON string
 		KeywordsSimilarityWeight: args.KeywordsSimilarityWeight,
 		UseKG:                    args.UseKG,
 		SimilarityThreshold:      args.SimilarityThreshold,
-		AllowDenseFallback:       new(false),
 		RerankID:                 args.RerankID,
 		CrossLanguages:           append([]string(nil), args.CrossLanguages...),
 		MetaDataFilter:           cloneStringAnyMap(args.MetaDataFilter),
