@@ -598,6 +598,31 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 	}
 }
 
+// TestIsSupportedPDFParseMethod pins the writer-facing validity check against
+// the two vocabulary tables it is derived from.
+func TestIsSupportedPDFParseMethod(t *testing.T) {
+	for spelling, canonical := range pdfParseMethodSpellings {
+		if !IsSupportedPDFParseMethod(canonical) {
+			t.Errorf("IsSupportedPDFParseMethod(%q) = false for spelling %q", canonical, spelling)
+		}
+	}
+	// "tcadp" has no spelling of its own (it is reachable through "tcadp
+	// parser"), and "monkeyocrv2" is dispatcher-handled rather than executable
+	// by the parser switch; both must still be accepted.
+	for _, token := range []string{"tcadp", "monkeyocrv2", " deepdoc ", "PLAIN_TEXT"} {
+		if !IsSupportedPDFParseMethod(token) {
+			t.Errorf("IsSupportedPDFParseMethod(%q) = false", token)
+		}
+	}
+	// The unset sentinel means "no method chosen", and a VLM model selector or
+	// an engine this build does not implement are not storeable methods.
+	for _, token := range []string{"", "mistral ocr", "foo@mineru", "MagicOCR", "not a method"} {
+		if IsSupportedPDFParseMethod(token) {
+			t.Errorf("IsSupportedPDFParseMethod(%q) = true, want false", token)
+		}
+	}
+}
+
 type mockPDFEngineForCommonTest struct {
 	closed bool
 }

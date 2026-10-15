@@ -322,6 +322,30 @@ func IsPDFParseMethod(raw string) bool {
 	return ok
 }
 
+// IsSupportedPDFParseMethod reports whether raw is a canonical parse_method the
+// Go PDF path can actually run: a token supportedPDFParseMethods accepts, or
+// "monkeyocrv2", which the ingestion vision dispatcher handles before PDFParser
+// is reached. raw is expected to be a canonical token (the output of
+// pdfParseMethodSpellings); map a user-facing spelling through that table first.
+//
+// Writers that must store a parse_method — the Python-era parser_config
+// migration, for instance — use this rather than keeping their own copy of the
+// vocabulary, so a token this build cannot execute is never persisted.
+func IsSupportedPDFParseMethod(raw string) bool {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	if method == "" {
+		// "" is supportedPDFParseMethods' unset sentinel: the parser reads it as
+		// "no method chosen" and falls back to its DeepDOC default. It is not a
+		// method a caller can store, so it reports false here.
+		return false
+	}
+	if method == "monkeyocrv2" {
+		return true
+	}
+	_, ok := supportedPDFParseMethods[method]
+	return ok
+}
+
 func normalizePDFParseMethod(raw string) string {
 	method := strings.ToLower(strings.TrimSpace(raw))
 	switch {

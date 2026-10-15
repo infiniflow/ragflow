@@ -252,6 +252,12 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateExtractorParserConfigs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate extractor parser configs: %w", err)
 		}
+		// The Python-era Parser / Chunker / Tokenizer settings move onto the
+		// components of the pipeline each row runs. It reads the same rows as the
+		// extractor step, so it follows rc2.dev2.
+		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
+		}
 
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
