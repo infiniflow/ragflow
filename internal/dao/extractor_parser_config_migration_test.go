@@ -105,7 +105,7 @@ func keysOf(config map[string]interface{}) []string {
 
 func assertNoFlatExtractorKeys(t *testing.T, config map[string]interface{}) {
 	t.Helper()
-	for _, key := range append(flatExtractorConfigKeys, "tags") {
+	for _, key := range []string{"auto_keywords", "auto_questions", "enable_metadata", "metadata", "built_in_metadata"} {
 		if _, ok := config[key]; ok {
 			t.Fatalf("flat key %q survived the migration: %#v", key, config)
 		}
@@ -137,8 +137,8 @@ func TestMigrateExtractorParserConfigsPythonFlatKBRow(t *testing.T) {
 	if got := node["questions"].(map[string]interface{})["top_n"]; got != float64(3) {
 		t.Fatalf("questions.top_n = %v, want 3", got)
 	}
-	if got := node["tags"].(map[string]interface{})["top_n"]; got != float64(5) {
-		t.Fatalf("tags.top_n = %v, want 5", got)
+	if config["topn_tags"] != float64(5) || !reflect.DeepEqual(config["tag_kb_ids"], []interface{}{"kb-tag-1"}) {
+		t.Fatalf("dataset tag settings changed: %#v", config)
 	}
 	meta := node["metadata"].(map[string]interface{})
 	if enabled, _ := meta["enabled"].(bool); !enabled {
@@ -231,7 +231,7 @@ func TestMigrateExtractorParserConfigsLegacyNodeFields(t *testing.T) {
 
 	node := extractorNode(t, extractorRowParserConfig(t, db, "knowledgebase", "kb1"))
 	for _, key := range []string{"auto_keywords", "keywords_sys_prompt", "auto_questions",
-		"questions_sys_prompt", "auto_tags", "tag_file_id", "enable_summary",
+		"questions_sys_prompt", "enable_summary",
 		"sys_prompt", "metadata_config", "field_name"} {
 		if _, ok := node[key]; ok {
 			t.Fatalf("legacy node field %q survived: %#v", key, node)
@@ -245,9 +245,8 @@ func TestMigrateExtractorParserConfigsLegacyNodeFields(t *testing.T) {
 	if q["top_n"] != float64(2) || q["system_prompt"] != "q prompt" {
 		t.Fatalf("questions = %#v", q)
 	}
-	tags := node["tags"].(map[string]interface{})
-	if tags["top_n"] != float64(6) || tags["tag_file_id"] != "file-9" {
-		t.Fatalf("tags = %#v", tags)
+	if node["auto_tags"] != float64(6) || node["tag_file_id"] != "file-9" {
+		t.Fatalf("node tag settings changed: %#v", node)
 	}
 	sum := node["summary"].(map[string]interface{})
 	if enabled, _ := sum["enabled"].(bool); !enabled || sum["system_prompt"] != "sum prompt" {
@@ -274,7 +273,7 @@ func TestMigrateExtractorParserConfigsCanvasRowKeepsNoNode(t *testing.T) {
 	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
 		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
 	}
-	if tags, ok := config["tags"].(map[string]interface{}); !ok || tags["top_n"] != float64(5) {
+	if config["topn_tags"] != float64(5) {
 		t.Fatalf("retrieval tag count was discarded: %#v", config)
 	}
 	for key := range config {
@@ -296,7 +295,7 @@ func TestMigrateExtractorParserConfigsQaTemplateKeepsNoNode(t *testing.T) {
 	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
 		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
 	}
-	if tags, ok := config["tags"].(map[string]interface{}); !ok || tags["top_n"] != float64(5) {
+	if config["topn_tags"] != float64(5) {
 		t.Fatalf("retrieval tag count was discarded: %#v", config)
 	}
 	for key := range config {
@@ -447,29 +446,9 @@ func TestMigrateExtractorConfigPreservesSettings(t *testing.T) {
 			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
 		},
 		{
-			name: "tag source creates group", parserID: "general",
-			input: `{"tags":{"top_n":5,"tag_file_id":"file-1","enabled":false}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"file-1","enabled":false}}}`,
-		},
-		{
-			name: "tag group beats flat count", parserID: "general",
-			input: `{"topn_tags":9,"tags":{"top_n":5,"tag_file_id":"file-1"}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"file-1"}}}`,
-		},
-		{
-			name: "qa retrieval tags", parserID: "qa",
-			input: `{"topn_tags":5,"tags":{"tag_file_id":"file-1"}}`,
-			want:  `{"tags":{"top_n":5,"tag_file_id":"file-1"}}`,
-		},
-		{
 			name: "unconverted extraction settings", parserID: "table",
 			input: `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
 			want:  `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
-		},
-		{
-			name: "tag dataset references", parserID: "general",
-			input: `{"topn_tags":5,"tag_kb_ids":["tag-kb-1"]}`,
-			want:  `{"Extractor:AutoExtractDefault":{"tags":{"top_n":5}},"tag_kb_ids":["tag-kb-1"]}`,
 		},
 		{
 			name: "prompt before flat count", parserID: "general",
@@ -518,6 +497,49 @@ func TestMigrateExtractorConfigPreservesSettings(t *testing.T) {
 			}
 			if migrateExtractorConfig(config, tt.parserID, nil) {
 				t.Fatal("second migration changed config")
+			}
+		})
+	}
+}
+
+func TestMigrateExtractorConfigLeavesTagsUnchanged(t *testing.T) {
+	tests := []struct{ name, input, want string }{
+		{
+			name:  "dataset tag settings only",
+			input: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"top_n":7,"tag_file_id":"file-1"}}`,
+			want:  `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"top_n":7,"tag_file_id":"file-1"}}`,
+		},
+		{
+			name:  "node tag settings only",
+			input: `{"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-1","tags":{"enabled":false,"top_n":3,"tag_file_id":"file-2"}}}`,
+			want:  `{"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-1","tags":{"enabled":false,"top_n":3,"tag_file_id":"file-2"}}}`,
+		},
+		{
+			name:  "keywords migrate independently",
+			input: `{"auto_keywords":8,"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file-1"},"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-2","tags":{"top_n":3}}}`,
+			want:  `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file-1"},"Extractor:AutoExtractDefault":{"keywords":{"top_n":8},"auto_tags":6,"tag_file_id":"file-2","tags":{"top_n":3}}}`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var config, want map[string]interface{}
+			if err := json.Unmarshal([]byte(tt.input), &config); err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal([]byte(tt.want), &want); err != nil {
+				t.Fatal(err)
+			}
+			migrateExtractorConfig(config, "general", nil)
+			raw, err := json.Marshal(config)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got map[string]interface{}
+			if err := json.Unmarshal(raw, &got); err != nil {
+				t.Fatal(err)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("migrated config = %s, want %s", raw, tt.want)
 			}
 		})
 	}

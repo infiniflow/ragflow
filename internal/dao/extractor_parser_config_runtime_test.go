@@ -23,7 +23,7 @@ func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
 	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.SystemSettings{}); err != nil {
 		t.Fatal(err)
 	}
-	input := `{"auto_keywords":8,"auto_questions":2,"tags":{"top_n":5,"tag_file_id":"tag-file"},"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}]},"Extractor:AutoExtractDefault":{"keywords_sys_prompt":"custom keywords","enable_summary":true,"summary":{"system_prompt":"custom summary"}}}`
+	input := `{"auto_keywords":8,"auto_questions":2,"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}]},"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"tag-file"},"keywords_sys_prompt":"custom keywords","enable_summary":true,"summary":{"system_prompt":"custom summary"}}}`
 	if err := db.Exec(`INSERT INTO knowledgebase (id, tenant_id, name, embd_id, created_by, parser_id, parser_config) VALUES (?, ?, ?, ?, ?, ?, ?)`,
 		"kb-1", "tenant-1", "dataset", "embedding", "user-1", "general", input).Error; err != nil {
 		t.Fatal(err)

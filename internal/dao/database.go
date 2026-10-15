@@ -249,7 +249,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
 		}
 		// Fold the Python-era flat extraction settings (auto_keywords,
-		// auto_questions, topn_tags, the metadata trio) into the Go modular
+		// auto_questions, the metadata trio) into the Go modular
 		// Extractor groups. Same shared version marker: this step's version
 		// sorts above the raptor/graphrag cleanup's v1.0.0-rc2.dev1, so it
 		// runs after it and before anything newer.

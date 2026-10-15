@@ -211,22 +211,21 @@ var builtinExtractorPipelines = map[string]struct{}{
 var flatExtractorConfigKeys = []string{
 	"auto_keywords",
 	"auto_questions",
-	"topn_tags",
 	"enable_metadata",
 	"metadata",
 	"built_in_metadata",
 }
 
 // migrateExtractorParserConfigs folds the Python 0.27.2-era extraction
-// settings (top-level auto_keywords/auto_questions/topn_tags/tag_kb_ids and
+// settings (top-level auto_keywords/auto_questions and
 // the flat metadata trio) into the Go modular Extractor groups
-// (Extractor:<name>.{keywords,questions,tags,metadata}) on knowledgebase and
+// (Extractor:<name>.{keywords,questions,metadata}) on knowledgebase and
 // document parser configs, then deletes the legacy keys.
 //
 // Background: the Python task executor read those flat keys directly
 // (auto_keywords -> important_kwd, auto_questions -> question_kwd,
-// enable_metadata+metadata/built_in_metadata -> metadata extraction,
-// tag_kb_ids -> tag datasets). The Go backend only reads the component-scoped
+// enable_metadata+metadata/built_in_metadata -> metadata extraction).
+// The Go backend only reads the component-scoped
 // groups (schema.ExtractorParam; NewExtractorComponent), and the write/read
 // paths drop flat keys silently, so rows upgraded from Python keep parsing
 // while every extraction silently falls back to "disabled".
@@ -303,10 +302,6 @@ func migrateExtractorConfigRows(ctx context.Context, db *gorm.DB, model any) (in
 						}
 						continue
 					}
-					if ids, ok := config["tag_kb_ids"].([]interface{}); ok && len(ids) > 0 {
-						common.Warn("Tag dataset references require conversion to a tag source file; retaining references",
-							zap.String("table", tx.Statement.Table), zap.String("id", row.ID), zap.Int("tag_datasets", len(ids)))
-					}
 					changed := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
 					if len(extractorNodeParams(config)) == 0 && collectFlatExtractorValues(config).hasValues() {
 						common.Warn("Retaining extraction settings without an Extractor target",
@@ -337,25 +332,23 @@ func migrateExtractorConfigRows(ctx context.Context, db *gorm.DB, model any) (in
 // legacy keys (the migration is idempotent and never clobbers a setting the
 // Go backend already wrote). The "enabled" switches the groups require are
 // derived the same way the runtime does:
-//   - keywords/questions/tags carry no "enabled" in old rows, so enabled is
+//   - keywords/questions carry no "enabled" in old rows, so enabled is
 //     derived from top_n > 0, matching NewExtractorComponent's
 //     resolveExtractToggle fallback for legacy DSLs.
 //   - metadata.enabled falls back to "any field declared", matching the
 //     dataset metadata API's default in metadata.go.
 //
-// Tag dataset references are retained because a database JSON rewrite cannot
-// convert their indexed content into a tag source file. Configs without an
-// Extractor target retain extraction settings that cannot be applied.
+// Only keyword, question, summary, and metadata fields are rewritten. Configs
+// without an Extractor target retain settings that cannot be applied.
 func migrateExtractorConfig(config map[string]interface{}, parserID string, pipelineID *string) bool {
 	if config == nil {
 		return false
 	}
 	changed := false
 	flat := collectFlatExtractorValues(config)
-	flatTags, hasFlatTags := config["tags"].(map[string]interface{})
 	nodes := extractorNodeParams(config)
 	targets := nodes
-	if len(targets) == 0 && (flat.hasValues() || len(flatTags) > 0) && builtinExtractorNodeIDFor(parserID, pipelineID) != "" {
+	if len(targets) == 0 && flat.hasValues() && builtinExtractorNodeIDFor(parserID, pipelineID) != "" {
 		nodeID := builtinExtractorNodeIDFor(parserID, pipelineID)
 		params := map[string]interface{}{}
 		config[nodeID] = params
@@ -371,15 +364,6 @@ func migrateExtractorConfig(config map[string]interface{}, parserID string, pipe
 		}
 	}
 
-	if hasFlatTags && len(targets) > 0 {
-		for _, params := range targets {
-			if len(flatTags) > 0 && ensureExtractorGroup(params, "tags", cloneFlatMap(flatTags)) {
-				changed = true
-			}
-		}
-		delete(config, "tags")
-		changed = true
-	}
 	if len(targets) > 0 && flat.hasValues() {
 		for _, params := range targets {
 			if applyFlatExtractorValues(params, flat) {
@@ -394,17 +378,6 @@ func migrateExtractorConfig(config map[string]interface{}, parserID string, pipe
 				changed = true
 			}
 		}
-	} else if flat.tagsTopN != nil {
-		// Retrieval can use a dataset-level tag source without an Extractor.
-		if !hasFlatTags {
-			flatTags = map[string]interface{}{}
-			config["tags"] = flatTags
-		}
-		if _, exists := flatTags["top_n"]; !exists {
-			flatTags["top_n"] = *flat.tagsTopN
-		}
-		delete(config, "topn_tags")
-		changed = true
 	}
 	return changed
 }
@@ -448,14 +421,13 @@ func extractorNodeParams(config map[string]interface{}) []map[string]interface{}
 type flatExtractorValues struct {
 	keywords  *int
 	questions *int
-	tagsTopN  *int
 	enabled   any
 	metadata  any
 	builtIn   any
 }
 
 func (v flatExtractorValues) hasValues() bool {
-	return v.keywords != nil || v.questions != nil || v.tagsTopN != nil ||
+	return v.keywords != nil || v.questions != nil ||
 		v.enabled != nil || v.metadata != nil || v.builtIn != nil
 }
 
@@ -466,9 +438,6 @@ func collectFlatExtractorValues(config map[string]interface{}) flatExtractorValu
 	}
 	if topN, ok := extractorTopN(config["auto_questions"]); ok {
 		out.questions = &topN
-	}
-	if topN, ok := extractorTopN(config["topn_tags"]); ok {
-		out.tagsTopN = &topN
 	}
 	if enabled, ok := config["enable_metadata"]; ok && enabled != nil {
 		out.enabled = enabled
@@ -491,9 +460,6 @@ func applyFlatExtractorValues(params map[string]interface{}, flat flatExtractorV
 		changed = true
 	}
 	if flat.questions != nil && ensureExtractorGroup(params, "questions", map[string]interface{}{"top_n": *flat.questions}) {
-		changed = true
-	}
-	if flat.tagsTopN != nil && ensureExtractorGroup(params, "tags", map[string]interface{}{"top_n": *flat.tagsTopN}) {
 		changed = true
 	}
 	if metaGroup, ok := buildMigratedMetadataGroup(params["metadata"], flat.enabled, flat.metadata, flat.builtIn); ok {
@@ -677,8 +643,8 @@ func legacyMetadataFieldList(value any) []interface{} {
 
 // foldLegacyExtractorNodeFields folds the pre-modular per-node fields (the
 // early-Go extractor form NewExtractorComponent used to read: auto_keywords,
-// keywords_sys_prompt, auto_questions, questions_sys_prompt, auto_tags,
-// tag_file_id, enable_summary, sys_prompt, metadata_config, enable_metadata,
+// keywords_sys_prompt, auto_questions, questions_sys_prompt,
+// enable_summary, sys_prompt, metadata_config, enable_metadata,
 // flat metadata/built_in_metadata arrays, field_name) into the modular
 // groups. Keys already present in a group win. It reports whether the node
 // changed.
@@ -695,14 +661,6 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 	}
 	moveInt("keywords", "auto_keywords")
 	moveInt("questions", "auto_questions")
-	// auto_tags has no keywords-style prompt sibling; tag_file_id moves below.
-	if topN, ok := extractorTopN(params["auto_tags"]); ok {
-		if ensureExtractorGroup(params, "tags", map[string]interface{}{"top_n": topN}) {
-			changed = true
-		}
-		delete(params, "auto_tags")
-		changed = true
-	}
 	movePrompt := func(groupName, legacyKey string) {
 		prompt, ok := params[legacyKey].(string)
 		if !ok || strings.TrimSpace(prompt) == "" {
@@ -754,19 +712,6 @@ func foldLegacyExtractorNodeFields(params map[string]interface{}) bool {
 		}
 		delete(params, "system_prompt")
 		delete(params, "sys_prompt")
-		changed = true
-	}
-	if fileID, ok := params["tag_file_id"].(string); ok && strings.TrimSpace(fileID) != "" {
-		if ensureExtractorGroup(params, "tags", map[string]interface{}{}) {
-			changed = true
-		}
-		if group, ok := params["tags"].(map[string]interface{}); ok {
-			if _, exists := group["tag_file_id"]; !exists {
-				group["tag_file_id"] = fileID
-				changed = true
-			}
-		}
-		delete(params, "tag_file_id")
 		changed = true
 	}
 	for _, key := range []string{"enable_summary", "field_name", "prompt", "prompts", "system_prompt", "sys_prompt"} {

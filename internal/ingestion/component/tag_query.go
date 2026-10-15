@@ -18,7 +18,6 @@ package component
 
 import (
 	"context"
-	"encoding/json"
 	"math"
 	"sort"
 	"strings"
@@ -72,42 +71,45 @@ type TagSourceRef struct {
 }
 
 // TagFileIDFromParserConfig returns the tag source file id declared in a
-// dataset's parser_config. Extractor nodes take precedence over dataset-level
-// tags. Several nodes are searched in sorted component ID order.
+// dataset's parser_config. Two persisted shapes are supported:
+//
+//   - Legacy / flat form: parser_config["tags"]["tag_file_id"].
+//   - Go pipeline scoped form: parser_config["Extractor:<name>"]["tags"]
+//     ["tag_file_id"], mirroring how NewExtractorComponent reads its params.
 //
 // Returns "" when unset.
 func TagFileIDFromParserConfig(parserConfig map[string]any) string {
 	if parserConfig == nil {
 		return ""
 	}
-	for _, tags := range parserConfigTagGroups(parserConfig) {
-		if v := tagFileIDFromTagsMap(tags); v != "" {
-			return v
-		}
+	if v := tagFileIDFromTagsMap(parserConfig["tags"]); v != "" {
+		return v
 	}
-	return ""
-}
-
-// parserConfigTagGroups orders node groups before dataset-level tags so both
-// tag source and count lookups use the same precedence and component IDs.
-func parserConfigTagGroups(parserConfig map[string]any) []any {
+	// Several Extractor nodes can each declare their own tags block, so the
+	// winner has to be picked in a stable order: Go randomizes map iteration,
+	// and an unstable pick would let the dataset's tag source change between
+	// process restarts (different chunks tagged, different retrieval
+	// features). Sorting makes it deterministic; "Extractor" sorts before
+	// "Extractor:<name>" because it is a prefix, so the unscoped node wins.
 	keys := make([]string, 0, len(parserConfig))
 	for key := range parserConfig {
-		lower := strings.ToLower(key)
-		if lower == "extractor" || strings.HasPrefix(lower, "extractor:") || strings.HasPrefix(lower, "extractor_") {
+		if key == "Extractor" || strings.HasPrefix(key, "Extractor:") {
 			keys = append(keys, key)
 		}
 	}
 	sort.Strings(keys)
-	groups := make([]any, 0, len(keys)+1)
 	for _, key := range keys {
 		extractorMap, ok := asStringAnyMap(parserConfig[key])
 		if !ok {
 			continue
 		}
-		groups = append(groups, extractorMap["tags"])
+		// The tags config sits at the top level of the Extractor node value,
+		// i.e. parser_config["Extractor:<name>"]["tags"].
+		if v := tagFileIDFromTagsMap(extractorMap["tags"]); v != "" {
+			return v
+		}
 	}
-	return append(groups, parserConfig["tags"])
+	return ""
 }
 
 // tagFileIDFromTagsMap pulls tag_file_id out of a raw "tags" config value,
@@ -121,60 +123,6 @@ func tagFileIDFromTagsMap(raw any) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
-}
-
-// DefaultTagTopN mirrors Python's parser_config.get("topn_tags", 3): the tag
-// count to return when the dataset declares no tags block.
-const DefaultTagTopN = 3
-
-// TagTopNFromParserConfig returns the tag count declared in a dataset's
-// parser_config. Node groups take precedence over dataset-level tags, matching
-// TagFileIDFromParserConfig. Zero is an explicit request for no retrieval tags;
-// false means no group declares a valid count.
-func TagTopNFromParserConfig(parserConfig map[string]any) (int, bool) {
-	if parserConfig == nil {
-		return 0, false
-	}
-	for _, tags := range parserConfigTagGroups(parserConfig) {
-		if topN, ok := tagTopNFromTagsMap(tags); ok {
-			return topN, true
-		}
-	}
-	return 0, false
-}
-
-// tagTopNFromTagsMap pulls top_n out of a raw "tags" config value, tolerating
-// every numeric shape JSON decoding produces.
-func tagTopNFromTagsMap(raw any) (int, bool) {
-	tags, ok := asStringAnyMap(raw)
-	if !ok {
-		return 0, false
-	}
-	switch v := tags["top_n"].(type) {
-	case float64:
-		if v < 0 || v != float64(int(v)) {
-			return 0, false
-		}
-		return int(v), true
-	case int:
-		if v < 0 {
-			return 0, false
-		}
-		return v, true
-	case int64:
-		if v < 0 {
-			return 0, false
-		}
-		return int(v), true
-	case json.Number:
-		n, err := v.Int64()
-		if err != nil || n < 0 {
-			return 0, false
-		}
-		return int(n), true
-	default:
-		return 0, false
-	}
 }
 
 // asStringAnyMap accepts both plain and entity.JSONMap values, which is how

@@ -17,7 +17,6 @@
 package component
 
 import (
-	"encoding/json"
 	"fmt"
 	"math"
 	"testing"
@@ -65,19 +64,6 @@ func TestTagFileIDFromParserConfig(t *testing.T) {
 			want: "file-4",
 		},
 		{
-			name: "node tag file wins over dataset value",
-			parserConfig: map[string]any{
-				"tags":                         map[string]any{"tag_file_id": "dataset-file"},
-				"Extractor:AutoExtractDefault": map[string]any{"tags": map[string]any{"tag_file_id": "node-file"}},
-			},
-			want: "node-file",
-		},
-		{
-			name:         "underscore node",
-			parserConfig: map[string]any{"extractor_saved": map[string]any{"tags": map[string]any{"tag_file_id": "saved-file"}}},
-			want:         "saved-file",
-		},
-		{
 			name:         "no tag file id",
 			parserConfig: map[string]any{"tags": map[string]any{"top_n": 3}},
 			want:         "",
@@ -123,113 +109,6 @@ func TestTagFileIDFromParserConfigPicksStableExtractorNode(t *testing.T) {
 		if got := TagFileIDFromParserConfig(parserConfig); got != "file-0" {
 			t.Fatalf("TagFileIDFromParserConfig across scoped nodes = %q, want %q", got, "file-0")
 		}
-	}
-}
-
-func TestTagTopNFromParserConfig(t *testing.T) {
-	tests := []struct {
-		name         string
-		parserConfig map[string]any
-		want         int
-		wantOK       bool
-	}{
-		{
-			name:         "nil config",
-			parserConfig: nil,
-			want:         0,
-			wantOK:       false,
-		},
-		{
-			name: "extractor scoped form",
-			parserConfig: map[string]any{
-				"Extractor:AutoExtractDefault": map[string]any{
-					"tags": map[string]any{"top_n": float64(5)},
-				},
-			},
-			want:   5,
-			wantOK: true,
-		},
-		{
-			name: "flat tags map fallback",
-			parserConfig: map[string]any{
-				"tags": map[string]any{"top_n": float64(7)},
-			},
-			want:   7,
-			wantOK: true,
-		},
-		{
-			name: "node wins over flat tags map",
-			parserConfig: map[string]any{
-				"tags": map[string]any{"top_n": float64(7)},
-				"Extractor:AutoExtractDefault": map[string]any{
-					"tags": map[string]any{"top_n": float64(5)},
-				},
-			},
-			want:   5,
-			wantOK: true,
-		},
-		{
-			name: "int and int64 shapes",
-			parserConfig: map[string]any{
-				"Extractor:A": map[string]any{
-					"tags": map[string]any{"top_n": 4},
-				},
-			},
-			want:   4,
-			wantOK: true,
-		},
-		{
-			name: "zero disables retrieval tags",
-			parserConfig: map[string]any{
-				"Extractor:AutoExtractDefault": map[string]any{
-					"tags": map[string]any{"top_n": float64(0)},
-				},
-			},
-			want:   0,
-			wantOK: true,
-		},
-		{
-			name:         "json number count",
-			parserConfig: map[string]any{"tags": map[string]any{"top_n": json.Number("5")}},
-			want:         5, wantOK: true,
-		},
-		{
-			name:         "negative is absent",
-			parserConfig: map[string]any{"tags": map[string]any{"top_n": -1}},
-		},
-		{
-			name:         "underscore node count",
-			parserConfig: map[string]any{"extractor_saved": map[string]any{"tags": map[string]any{"top_n": 6}}},
-			want:         6, wantOK: true,
-		},
-		{
-			name: "stable across nodes",
-			parserConfig: map[string]any{
-				"Extractor:B": map[string]any{
-					"tags": map[string]any{"top_n": float64(9)},
-				},
-				"Extractor:A": map[string]any{
-					"tags": map[string]any{"top_n": float64(3)},
-				},
-			},
-			want:   3,
-			wantOK: true,
-		},
-		{
-			name:         "no tags block",
-			parserConfig: map[string]any{"chunk_token_num": 128},
-			want:         0,
-			wantOK:       false,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, ok := TagTopNFromParserConfig(tt.parserConfig)
-			if got != tt.want || ok != tt.wantOK {
-				t.Fatalf("TagTopNFromParserConfig(%v) = (%d, %v), want (%d, %v)",
-					tt.parserConfig, got, ok, tt.want, tt.wantOK)
-			}
-		})
 	}
 }
 
