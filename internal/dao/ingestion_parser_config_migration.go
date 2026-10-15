@@ -33,8 +33,8 @@ import (
 	"ragflow/internal/utility"
 )
 
-// Use the project version shared with the dataset parser config cleanup.
-const ingestionParserConfigTargetVersion = knowledgebaseParserConfigTargetVersion
+// The dev1 cleanup marker does not prove ingestion settings were converted.
+const ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev2"
 
 // Python v0.27.2 stored component settings at the parser_config root. Convert
 // them to Go's component-scoped shape before the API discards unscoped keys.
@@ -275,7 +275,7 @@ func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
 	if !found {
 		return nil
 	}
-	// Cleanup shares this version: run it only after both conversions succeed.
+	// Keep cleanup after conversion so a failure cannot mark conversion complete.
 	if err := migrateKnowledgebaseParserConfig(ctx, db); err != nil {
 		return err
 	}
