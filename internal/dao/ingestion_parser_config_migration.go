@@ -33,9 +33,9 @@ import (
 	"ragflow/internal/utility"
 )
 
-// Convert ingestion settings and retire dataset sections in one versioned step.
+// Use the project version shared with the dataset parser config cleanup.
 const (
-	ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev1"
+	ingestionParserConfigTargetVersion = knowledgebaseParserConfigTargetVersion
 	builtinExtractorNodeID             = "Extractor:AutoExtractDefault"
 )
 
@@ -267,6 +267,10 @@ func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
 	if !found {
 		return nil
 	}
+	// Cleanup shares this version: run it only after both conversions succeed.
+	if err := migrateKnowledgebaseParserConfig(ctx, db); err != nil {
+		return err
+	}
 	return setDatabaseMigrationVersion(ctx, db, ingestionParserConfigTargetVersion)
 }
 
@@ -296,8 +300,7 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
-					cleaned := table == "knowledgebase" && dropRemovedParserConfigKeys(config)
-					if !extractorChanged && !ingestionChanged && !cleaned {
+					if !extractorChanged && !ingestionChanged {
 						continue
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).
