@@ -611,6 +611,12 @@ func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange)
 		if r.sc != r.ec {
 			continue
 		}
+		if r.sr == headerRow {
+			continue
+		}
+		// A merge mastered on the header row carries a column label, not
+		// data: copying it down would stamp the header text into every
+		// data row it spans.
 		if r.sr < 1 || r.sr > len(rows) || r.sc < 1 {
 			continue
 		}

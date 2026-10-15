@@ -566,6 +566,29 @@ func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
 	}
 }
 
+// TestXLSXParser_MergedHeaderDownIntoDataUntouched asserts a vertical merge
+// mastered on the header row does not leak the header label into data rows.
+func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "H")
+		mustMergeCell(t, f, "Sheet1", "A1", "A2")
+		mustSetCell(t, f, "Sheet1", "B1", "Name")
+		mustSetCell(t, f, "Sheet1", "B2", "Alice")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><th>H</th><th>Name</th></tr>") {
+		t.Fatalf("want header row untouched, got:\n%s", text)
+	}
+	if strings.Contains(text, "<td>H</td>") {
+		t.Fatalf("header merge master leaked into data row, got:\n%s", text)
+	}
+}
+
 // TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
 // characters around cell text are removed, so labels wrapped in U+200C match
 // their clean form in search text.
