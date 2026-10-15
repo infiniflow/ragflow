@@ -1262,15 +1262,18 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
 
-	if req.DocID == "" {
-		return 0, fmt.Errorf("doc_id is required")
+	if req.DatasetID == "" || req.DocID == "" {
+		return 0, fmt.Errorf("dataset_id and doc_id are required")
 	}
 
-	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
+	// Bind deletion to the dataset and document named in the route.
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return 0, permission.ErrResourceNotFound
 	}
 
 	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
