@@ -513,6 +513,118 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	}
 }
 
+// TestXLSXParser_MergedDataCellInheritance asserts a vertically merged data
+// cell's slave rows inherit the master text, so every row chunk keeps its
+// group label instead of rendering an empty first cell.
+func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+		mustSetCell(t, f, "Sheet1", "B3", "y")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
+		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
+	}
+	positions := res.JSON[0]["positions"].([][]float64)
+	if len(positions) != 3 {
+		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
+	}
+	if got := positions[2]; !reflect.DeepEqual(got, []float64{1, 3, 3, 1, 2}) {
+		t.Fatalf("row 3 tuple = %v, want [1 3 3 1 2]", got)
+	}
+}
+
+// TestXLSXParser_MergedDataCellHorizontalUntouched asserts a horizontally
+// merged data cell is NOT duplicated: the slave column stays empty because
+// the master column already shows the value.
+func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "C1", "Note")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "B2", "wide")
+		mustMergeCell(t, f, "Sheet1", "B2", "C2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "<td>wide</td><td>wide</td>") {
+		t.Fatalf("horizontal merge master duplicated into slave cell, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
+// characters around cell text are removed, so labels wrapped in U+200C match
+// their clean form in search text.
+func TestXLSXParser_StripsInvisibleFormatChars(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "\u200cG1\u200c")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "\u200c") {
+		t.Fatalf("invisible format char survived cleaning, got:\n%q", text)
+	}
+	if !strings.Contains(text, "<tr><td>G1</td><td>x</td></tr>") {
+		t.Fatalf("want cleaned cell text, got:\n%s", text)
+	}
+}
+
+// TestCleanIllegalControlChars_StripsInvisibleFormatChars pins the shared
+// cleaner directly, covering the xls/csv paths that reuse it.
+func TestCleanIllegalControlChars_StripsInvisibleFormatChars(t *testing.T) {
+	in := [][]string{{"\u200cA\u200c", "B\u200bC D", "D\ufeff"}}
+	want := [][]string{{"A", "BC D", "D"}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanIllegalControlChars = %q, want %q", got, want)
+	}
+}
+
+// TestXLSXParser_DropsTrailingEmptyColumn asserts a trailing column with a
+// header label but no data in any row is dropped, instead of rendering an
+// empty <th>/<td> pair in every chunk.
+func TestXLSXParser_DropsTrailingEmptyColumn(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Score")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "A3", "G2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "Score") {
+		t.Fatalf("trailing dataless column was not dropped, got:\n%s", text)
+	}
+	if !strings.Contains(text, "<tr><th>Group</th></tr>") {
+		t.Fatalf("want single-column header, got:\n%s", text)
+	}
+}
+
 // TestDetectHeaderRow_ListObject asserts a ListObject whose top row is > 1 is
 // detected as the header row.
 func TestDetectHeaderRow_ListObject(t *testing.T) {
