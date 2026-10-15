@@ -1200,11 +1200,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
-      showChunkMetadata: '显示块元数据',
-      showChunkMetadataTip:
-        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
-      metadataFields: '元数据字段',
-      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',

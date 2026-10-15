@@ -81,10 +81,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         parameters: [],
         reasoning: false,
         cross_languages: [],
-        reference_metadata: {
-          include: false,
-          fields: undefined,
-        },
       },
       top_n: 8,
       rerank_candidates_count: 64,
@@ -102,14 +98,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
       values,
       'llm_setting.',
     );
-    const referenceMetadata = nextValues?.prompt_config?.reference_metadata;
-    if (
-      referenceMetadata &&
-      Array.isArray(referenceMetadata.fields) &&
-      referenceMetadata.fields.length === 0
-    ) {
-      referenceMetadata.fields = undefined;
-    }
 
     // Add model_type to llm_setting based on the selected llm_id
     if (nextValues.llm_id) {
@@ -144,13 +132,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
     const llmSettingEnabledValues = setLLMSettingEnabledValues(
       data.llm_setting,
     );
-    const referenceMetadata = data?.prompt_config?.reference_metadata;
-    const normalizedReferenceMetadata =
-      referenceMetadata &&
-      Array.isArray(referenceMetadata.fields) &&
-      referenceMetadata.fields.length === 0
-        ? { ...referenceMetadata, fields: undefined }
-        : referenceMetadata;
 
     const keywordsSimilarityWeight = data.keywords_similarity_weight ?? 0.7;
     const nextData = {
@@ -159,7 +140,6 @@ export function ChatSettings({ hasSingleChatBox }: ChatSettingsProps) {
         ...data.prompt_config,
         // reset() skips undefined values, so fall back to '' to clear the field
         web_search_provider: getWebSearchProvider(data.prompt_config) ?? '',
-        reference_metadata: normalizedReferenceMetadata,
       },
       ...llmSettingEnabledValues,
       keywords_similarity_weight: keywordsSimilarityWeight,

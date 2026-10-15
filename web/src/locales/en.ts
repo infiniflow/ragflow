@@ -1318,12 +1318,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
-      showChunkMetadata: 'Show chunk metadata',
-      showChunkMetadataTip:
-        'Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks',
-      metadataFields: 'Metadata fields',
-      metadataFieldsTip:
-        'Select which metadata fields to display with each chunk',
     },
     setting: {
       Verify: 'Verify',
