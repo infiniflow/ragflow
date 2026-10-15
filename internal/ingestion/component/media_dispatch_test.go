@@ -130,7 +130,8 @@ func TestMaybeDispatchImageOCRIndependentOfVision(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			items, _ := result["json"].([]map[string]any)
+			jsonDocs := result["json"].([]parser.DocItem)
+			items := parser.ItemsToMaps(jsonDocs)
 			if len(items) != 1 || items[0]["text"] != tc.want {
 				t.Fatalf("items = %+v, want text %q", items, tc.want)
 			}

@@ -235,18 +235,88 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 		}
 		return out, true, nil
 	case []parser.DocItem:
-		out := make([]ChunkDoc, 0, len(t))
-		for _, item := range t {
-			doc, err := ChunkDocFromMap(item.ToMap())
-			if err != nil {
-				return nil, true, err
-			}
-			out = append(out, doc)
-		}
-		return out, true, nil
+		return ChunkDocsFromDocItem(t)
 	default:
 		return nil, false, nil
 	}
+}
+
+// ChunkDocsFromDocItem converts a parser-produced []DocItem directly into a
+// typed chunk slice, without routing through DocItem.ToMap. It reads the
+// typed fields of each item and feeds the canonical wire map to ChunkDocFromMap,
+// so the resulting []ChunkDoc is identical to what the historical
+// ChunkDocsFromAny([]DocItem) path produced (which round-tripped via ToMap).
+// This is the consumer-side entry the chunker uses once parsers emit DocItems
+// directly; other callers that still pass []map[string]any / []any / []ChunkDoc
+// keep using ChunkDocsFromAny.
+func ChunkDocsFromDocItem(items []parser.DocItem) ([]ChunkDoc, bool, error) {
+	if items == nil {
+		return nil, false, nil
+	}
+	out := make([]ChunkDoc, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		doc, err := chunkDocFromDocItem(it)
+		if err != nil {
+			return nil, true, err
+		}
+		out = append(out, doc)
+	}
+	return out, true, nil
+}
+
+func chunkDocFromDocItem(it parser.DocItem) (ChunkDoc, error) {
+	return ChunkDocFromMap(docItemWireMap(it))
+}
+
+// docItemWireMap reconstructs the historical wire shape of an item from its
+// typed fields (not via DocItem.ToMap), so the conversion is driven by the
+// item's semantic API. For RawItem the map is passed through unchanged.
+func docItemWireMap(it parser.DocItem) map[string]any {
+	switch t := it.(type) {
+	case parser.RawItem:
+		return t.M
+	case parser.TextItem:
+		return docItemWireMapFromFields(t.Text, parser.DocTypeText, t.CKType, "", nil, "", nil, t.Extra)
+	case parser.TableItem:
+		return docItemWireMapFromFields("", parser.DocTypeTable, t.CKType, "", t.Table, t.Sheet, t.Positions, t.Extra)
+	case parser.ImageItem:
+		return docItemWireMapFromFields(t.Text, parser.DocTypeImage, t.CKType, t.Image, nil, t.Sheet, t.Positions, t.Extra)
+	default:
+		return it.ToMap()
+	}
+}
+
+func docItemWireMapFromFields(text, docType, ckType, image string, table *entity.TableData, sheet string, positions [][]float64, extra map[string]any) map[string]any {
+	m := map[string]any{parser.DocTypeKey: docType}
+	if text != "" {
+		m["text"] = text
+	}
+	if image != "" {
+		m["image"] = image
+	}
+	if ckType != "" {
+		m["ck_type"] = ckType
+	} else if docType == parser.DocTypeTable {
+		m["ck_type"] = parser.DocTypeTable
+	}
+	if table != nil {
+		m["table"] = table
+	}
+	if sheet != "" {
+		m["sheet"] = sheet
+	}
+	if len(positions) > 0 {
+		m["positions"] = positions
+	}
+	for k, v := range extra {
+		if _, ok := m[k]; !ok {
+			m[k] = v
+		}
+	}
+	return m
 }
 
 // ToMap converts a typed chunk back to the generic map form used by

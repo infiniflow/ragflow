@@ -246,11 +246,11 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	return buildMarkdownOCRDispatchResult(md), nil
 }
 
-func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
+func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
 	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
 	if err != nil {
 		warnParserNormalizationFallback(filename, "markdown", err)
-		return []map[string]any{parser.NewTextJSONItem(mdText).ToMap()}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	// OCR Markdown is an untrusted backend response. Keep normalization
 	// deterministic and local: embedded data URIs remain available, while
@@ -259,13 +259,13 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
 	if res.Err != nil {
 		warnParserNormalizationFallback(filename, "markdown", res.Err)
-		return []map[string]any{parser.NewTextJSONItem(mdText).ToMap()}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	if len(res.JSON) == 0 {
 		warnParserNormalizationFallback(filename, "markdown", fmt.Errorf("parser returned no JSON items"))
-		return []map[string]any{parser.NewTextJSONItem(mdText).ToMap()}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
-	return parser.ItemsToMaps(res.JSON)
+	return res.JSON
 }
 
 func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {

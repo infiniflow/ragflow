@@ -186,7 +186,8 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 	if resolverCalls != 0 || len(invoker.images) != 0 {
 		t.Fatalf("default-off enhancement used model: %d resolves, %d VLM calls", resolverCalls, len(invoker.images))
 	}
-	withoutItems, ok := withoutVision["json"].([]map[string]any)
+	jsonDocs, ok := withoutVision["json"].([]parser.DocItem)
+	withoutItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(withoutItems) == 0 {
 		t.Fatalf("default JSON = %T/%v", withoutVision["json"], withoutVision["json"])
 	}
@@ -202,7 +203,8 @@ func TestParserComponent_VisionEnhancementSwitchGatesEmbeddedImage(t *testing.T)
 	if resolverCalls != 1 || len(invoker.images) != 1 {
 		t.Fatalf("enabled enhancement used model %d/%d times, want 1/1", resolverCalls, len(invoker.images))
 	}
-	withItems, ok := withVision["json"].([]map[string]any)
+	jsonDocs, ok = withVision["json"].([]parser.DocItem)
+	withItems := parser.ItemsToMaps(jsonDocs)
 	if !ok || len(withItems) == 0 {
 		t.Fatalf("enabled JSON = %T/%v", withVision["json"], withVision["json"])
 	}
