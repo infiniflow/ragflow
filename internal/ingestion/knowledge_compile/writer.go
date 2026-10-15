@@ -529,6 +529,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		}
 		payload := string(payloadBytes)
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent("", kccommon.PayloadDescription(payloadMap, nil))
 		row := map[string]interface{}{
 			// Stable dataset-level id keyed on the template-scoped entity name or
 			// relation identity plus the raw compile kind.
@@ -539,6 +540,8 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			"compile_kwd":          types.CanonicalCompilationKind(kccommon.FirstNonEmpty(b.TemplateKind, ckwd)),
 			"scope_kwd":            "dataset",
 			"content_with_weight":  payload,
+			"content_ltks":         contentLTKS,
+			"content_sm_ltks":      contentSMLTKS,
 			"source_doc_ids":       b.SourceDocIDs,
 			"source_chunk_ids":     b.SourceChunkIDs,
 			"create_time":          now.Format("2006-01-02 15:04:05"),
@@ -1791,6 +1794,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 			"available_int":       1,
 			"compile_kwd":         "wiki",
 			"type_kwd":            compileKwdWikiEntity,
+			"scope_kwd":           "dataset",
 			"entity_type_kwd":     p.PageType,
 			"slug_kwd":            p.Slug,
 			"title_kwd":           p.Title,
@@ -1847,6 +1851,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 				"available_int":       1,
 				"compile_kwd":         "wiki",
 				"type_kwd":            compileKwdWikiRelation,
+				"scope_kwd":           "dataset",
 				"from_kwd":            p.Slug,
 				"to_kwd":              tgt,
 				"source_doc_ids":      srcDocs,

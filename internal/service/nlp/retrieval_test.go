@@ -12,8 +12,10 @@ import (
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 
+	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -115,6 +117,85 @@ func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	if _, ok := result.Chunks[1]["highlight"]; ok {
 		t.Fatalf("unmatched chunk received fallback highlight: %#v", result.Chunks[1])
 	}
+}
+
+func TestRetrievalPreservesDatasetCompilationChunks(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer sqlDB.Close()
+	if err := db.AutoMigrate(&entity.Document{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.Create(&entity.Document{ID: "doc-1", KbID: "kb-1", ParserConfig: entity.JSONMap{}}).Error; err != nil {
+		t.Fatal(err)
+	}
+	oldDB, oldQueryBuilder := dao.DB, globalQueryBuilder
+	dao.DB, globalQueryBuilder = db, NewQueryBuilder()
+	defer func() { dao.DB, globalQueryBuilder = oldDB, oldQueryBuilder }()
+
+	artifact := map[string]interface{}{"id": "artifact", "doc_id": "kb-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "available_int": 1, "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.9}
+	for _, tt := range []struct {
+		name string
+		rows []map[string]interface{}
+		want []string
+	}{
+		{name: "dataset only", rows: []map[string]interface{}{artifact}, want: []string{"artifact"}},
+		{name: "mixed with deleted documents", rows: []map[string]interface{}{
+			artifact,
+			{"id": "document", "doc_id": "doc-1", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.8},
+			{"id": "deleted", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "doc", "content_ltks": "alpha", "_score": 0.7},
+			{"id": "wrong identity", "doc_id": "deleted-doc", "kb_id": "kb-1", "compile_kwd": "graph", "scope_kwd": "dataset", "content_ltks": "alpha", "_score": 0.6},
+		}, want: []string{"artifact", "document"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			eng := &projectedRetrievalEngine{retrievalCountEngine: retrievalCountEngine{rows: tt.rows}}
+			result, err := NewRetrievalService(eng, &dao.DocumentDAO{}).Retrieval(t.Context(), &RetrievalRequest{
+				Question: "alpha", TenantIDs: []string{"tenant-1"}, KbIDs: []string{"kb-1"}, Page: 1, PageSize: 10,
+				VectorSimilarityWeight: new(1.0), SimilarityThreshold: new(0.0), Aggs: new(true),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, chunk := range result.Chunks {
+				got = append(got, chunk["chunk_id"].(string))
+				if _, ok := chunk["available_int"]; ok {
+					t.Fatal("available_int should not be returned in retrieval results")
+				}
+			}
+			if !slices.Equal(got, tt.want) || result.Total != int64(len(tt.want)) {
+				t.Fatalf("chunks=%v total=%d want %v", got, result.Total, tt.want)
+			}
+			if len(result.DocAggs) != len(tt.want)-1 {
+				t.Fatalf("doc_aggs=%v, want only source documents", result.DocAggs)
+			}
+			if len(result.DocAggs) > 0 && (result.DocAggs[0]["doc_id"] != "doc-1" || result.DocAggs[0]["count"] != 1) {
+				t.Fatalf("doc_aggs=%v, want doc-1 with count 1", result.DocAggs)
+			}
+		})
+	}
+}
+
+type projectedRetrievalEngine struct{ retrievalCountEngine }
+
+func (e *projectedRetrievalEngine) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	result := make(map[string]map[string]interface{}, len(chunks))
+	for _, chunk := range chunks {
+		projected := make(map[string]interface{}, len(fields))
+		for _, field := range fields {
+			if value, ok := chunk[field]; ok {
+				projected[field] = value
+			}
+		}
+		result[chunk["id"].(string)] = projected
+	}
+	return result
 }
 
 type retrievalCountEngine struct {
@@ -252,10 +333,14 @@ func (parentChunkMissingEngine) Search(context.Context, *types.SearchRequest) (*
 type parentChunkScopeEngine struct {
 	engine.DocEngine
 	parentSearch *types.SearchRequest
+	parentChunk  map[string]interface{}
 }
 
 func (e *parentChunkScopeEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.parentSearch = req
+	if e.parentChunk != nil {
+		return &types.SearchResult{Chunks: []map[string]interface{}{e.parentChunk}}, nil
+	}
 	return &types.SearchResult{}, nil
 }
 
@@ -289,6 +374,20 @@ func TestRetrievalByChildrenScopesParentLookupToChildDocument(t *testing.T) {
 	}
 	if !engine.parentSearch.IncludeUnavailable {
 		t.Fatal("parent lookup must include hidden parent chunks")
+	}
+	engine.parentChunk = map[string]interface{}{
+		"id": "legacy-shared-parent-id", "doc_id": "doc-a", "kb_id": "kb-1",
+		"available_int": 0, "content_with_weight": "parent text",
+	}
+	got = RetrievalByChildren([]map[string]interface{}{child}, []string{"tenant-1", "tenant-2"}, engine, t.Context())
+	if len(got) != 1 || got[0]["chunk_id"] != "legacy-shared-parent-id" || got[0]["content_with_weight"] != "parent text" {
+		t.Fatalf("retrieval result = %#v, want aggregated parent", got)
+	}
+	if _, ok := got[0]["available_int"]; ok {
+		t.Fatal("available_int should not be returned in aggregated retrieval results")
+	}
+	if engine.parentChunk["available_int"] != 0 {
+		t.Fatal("stored parent availability should remain unchanged")
 	}
 }
 
