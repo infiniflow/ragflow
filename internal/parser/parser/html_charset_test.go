@@ -62,7 +62,7 @@ func htmlEncodedFixture(t *testing.T, src string, enc encoding.Encoding) []byte 
 // itemsText concatenates the text of every item in res, newline separated.
 func itemsText(res ParseResult) string {
 	var sb strings.Builder
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		sb.WriteString(renderedText(it))
 		sb.WriteString("\n")
 	}
@@ -159,7 +159,7 @@ func TestHTMLParser_DecodeTableSurvivesGBK(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var tableText string
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		if it["doc_type_kwd"] == "table" {
 			tableText = renderedText(it)
 		}

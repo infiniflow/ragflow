@@ -2127,17 +2127,16 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		state.Sys["query"] = query
 		state.AppendCurrentUser(query)
 		state.AppendSysHistory("user: " + renderUserHistoryValue(query))
-		if uid, ok := root["user_id"].(string); ok && uid != "" {
-			state.Sys["user_id"] = uid
-		}
+		// Trusted caller identity is seeded through the same entry the debug
+		// endpoint uses, so both paths agree on sys.user_id / sys.tenant_id.
+		seedUserID, _ := root["user_id"].(string)
+		seedTenantID, _ := root["tenant_id"].(string)
+		state.SeedIdentity(seedUserID, seedTenantID)
 		if canvasID != "" {
 			state.Sys["canvas_id"] = canvasID
 		}
 		if sessionID != "" {
 			state.Sys["session_id"] = sessionID
-		}
-		if tid, ok := root["tenant_id"].(string); ok && tid != "" {
-			state.Sys["tenant_id"] = tid
 		}
 		if rawFiles, ok := root["files"].([]map[string]interface{}); ok && len(rawFiles) > 0 {
 			// Only used for ParseAgentUploads (read-only); nil DocRemover means
