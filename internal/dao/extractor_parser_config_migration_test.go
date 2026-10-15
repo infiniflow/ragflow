@@ -1,638 +1,211 @@
-//
-//  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
-//
-//  Licensed under the Apache License, Version 2.0 (the "License");
-//  you may not use this file except in compliance with the License.
-//  You may obtain a copy of the License at
-//
-//      http://www.apache.org/licenses/LICENSE-2.0
-//
-//  Unless required by applicable law or agreed to in writing, software
-//  distributed under the License is distributed on an "AS IS" BASIS,
-//  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-//  See the License for the specific language governing permissions and
-//  limitations under the License.
-
 package dao
 
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-
 	"ragflow/internal/entity"
 )
 
-// MigrateExtractorParserConfigsForTest lets external tests verify the migration
-// through the pipeline and component packages without adding a production API.
+// Test bridges keep migration internals out of the production API.
 var MigrateExtractorParserConfigsForTest = migrateExtractorParserConfigs
+var MigrateExtractorConfigForTest = migrateExtractorConfig
 
-// python027ParserConfig is a knowledgebase/document parser config as written
-// by the Python 0.27.2 backend: extraction settings are top-level flat keys
-// (auto_keywords, auto_questions, topn_tags, tag_kb_ids, enable_metadata plus
-// the metadata/built_in_metadata field lists in {name,...} shape).
-const python027ParserConfig = `{"layout_recognize":"DeepDOC","chunk_token_num":512,"delimiter":"\n",` +
-	`"auto_keywords":8,"auto_questions":3,"topn_tags":5,"tag_kb_ids":["kb-tag-1"],` +
-	`"enable_metadata":true,` +
-	`"metadata":[{"name":"author","type":"string","description":"who wrote it","examples":[],"restrict_values":false}],` +
-	`"built_in_metadata":[{"name":"update_time","type":"time"}]}`
+const python027ParserConfig = `{"auto_keywords":8,"auto_questions":3,"enable_metadata":true,"metadata":[{"key":"author","description":"who wrote it"}],"built_in_metadata":[{"key":"update_time"}],"topn_tags":5,"tag_kb_ids":["tag-kb"]}`
 
-func setupExtractorMigrationDB(t *testing.T) *gorm.DB {
-	t.Helper()
-
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
-	if err != nil {
-		t.Fatalf("failed to open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.SystemSettings{}); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-	return db
-}
-
-func insertExtractorKB(t *testing.T, db *gorm.DB, id, parserID, parserConfig string) {
-	t.Helper()
-	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, created_by, parser_id, parser_config) VALUES (?, ?, ?, ?, ?, ?, ?)",
-		id, "tenant-"+id, "kb-"+id, "embd-"+id, "user-"+id, parserID, parserConfig).Error; err != nil {
-		t.Fatalf("failed to insert knowledgebase %s: %v", id, err)
-	}
-}
-
-func insertExtractorDocument(t *testing.T, db *gorm.DB, id, parserID, parserConfig string) {
-	t.Helper()
-	if err := db.Exec("INSERT INTO document (id, kb_id, created_by, parser_id, parser_config, source_type, type, suffix) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		id, "kb-doc", "user-"+id, parserID, parserConfig, "local", "doc", "pdf").Error; err != nil {
-		t.Fatalf("failed to insert document %s: %v", id, err)
-	}
-}
-
-func extractorRowParserConfig(t *testing.T, db *gorm.DB, table, id string) map[string]interface{} {
-	t.Helper()
-	var raw string
-	if err := db.Table(table).Where("id = ?", id).Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatalf("failed to read parser config %s.%s: %v", table, id, err)
-	}
-	config := make(map[string]interface{})
-	if err := json.Unmarshal([]byte(raw), &config); err != nil {
-		t.Fatalf("failed to parse parser config %s.%s: %v", table, id, err)
-	}
-	return config
-}
-
-func extractorNode(t *testing.T, config map[string]interface{}) map[string]interface{} {
-	t.Helper()
-	node, ok := config[builtinExtractorNodeID].(map[string]interface{})
-	if !ok {
-		t.Fatalf("expected %s node, got keys %v", builtinExtractorNodeID, keysOf(config))
-	}
-	return node
-}
-
-func keysOf(config map[string]interface{}) []string {
-	keys := make([]string, 0, len(config))
-	for key := range config {
-		keys = append(keys, key)
-	}
-	return keys
-}
-
-func assertNoFlatExtractorKeys(t *testing.T, config map[string]interface{}) {
-	t.Helper()
-	for _, key := range []string{"auto_keywords", "auto_questions", "enable_metadata", "metadata", "built_in_metadata"} {
-		if _, ok := config[key]; ok {
-			t.Fatalf("flat key %q survived the migration: %#v", key, config)
-		}
-	}
-}
-
-func TestMigrateExtractorParserConfigsPythonFlatKBRow(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	insertExtractorKB(t, db, "kb1", "naive", python027ParserConfig)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	config := extractorRowParserConfig(t, db, "knowledgebase", "kb1")
-	assertNoFlatExtractorKeys(t, config)
-	// Non-extraction flat keys are out of scope and must be preserved.
-	if got := config["chunk_token_num"]; got != float64(512) {
-		t.Fatalf("chunk_token_num = %v, want 512", got)
-	}
-	if got := config["layout_recognize"]; got != "DeepDOC" {
-		t.Fatalf("layout_recognize = %v, want DeepDOC", got)
-	}
-
-	node := extractorNode(t, config)
-	if got := node["keywords"].(map[string]interface{})["top_n"]; got != float64(8) {
-		t.Fatalf("keywords.top_n = %v, want 8", got)
-	}
-	if got := node["questions"].(map[string]interface{})["top_n"]; got != float64(3) {
-		t.Fatalf("questions.top_n = %v, want 3", got)
-	}
-	if config["topn_tags"] != float64(5) || !reflect.DeepEqual(config["tag_kb_ids"], []interface{}{"kb-tag-1"}) {
-		t.Fatalf("dataset tag settings changed: %#v", config)
-	}
-	meta := node["metadata"].(map[string]interface{})
-	if enabled, _ := meta["enabled"].(bool); !enabled {
-		t.Fatalf("metadata.enabled = %v, want true", meta["enabled"])
-	}
-	fields := meta["metadata"].([]interface{})
-	if len(fields) != 1 {
-		t.Fatalf("metadata.metadata = %#v, want 1 field", meta["metadata"])
-	}
-	field := fields[0].(map[string]interface{})
-	if field["key"] != "author" || field["type"] != "string" || field["description"] != "who wrote it" {
-		t.Fatalf("metadata field = %#v, want key/type/description preserved", field)
-	}
-	if _, ok := field["examples"]; ok {
-		t.Fatalf("examples survived the migration: %#v", field)
-	}
-	if _, ok := field["restrict_values"]; ok {
-		t.Fatalf("restrict_values survived the migration: %#v", field)
-	}
-	builtIn := meta["built_in_metadata"].([]interface{})
-	if len(builtIn) != 1 || builtIn[0].(map[string]interface{})["key"] != "update_time" {
-		t.Fatalf("built_in_metadata = %#v, want the update_time field", meta["built_in_metadata"])
-	}
-	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, extractorParserConfigTargetVersion)
-	}
-}
-
-func TestMigrateExtractorParserConfigsDocumentRow(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	insertExtractorDocument(t, db, "doc1", "general", python027ParserConfig)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	config := extractorRowParserConfig(t, db, "document", "doc1")
-	assertNoFlatExtractorKeys(t, config)
-	node := extractorNode(t, config)
-	if got := node["keywords"].(map[string]interface{})["top_n"]; got != float64(8) {
-		t.Fatalf("keywords.top_n = %v, want 8", got)
-	}
-	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, extractorParserConfigTargetVersion)
-	}
-}
-
-func TestMigrateExtractorParserConfigsRespectsExistingGroups(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	row := `{"auto_keywords":8,"topn_tags":5,"enable_metadata":true,` +
-		`"metadata":[{"name":"fresh","type":"string"}],` +
-		`"Extractor:AutoExtractDefault":{"keywords":{"top_n":2},"tags":{"top_n":7,"tag_file_id":"file-1"}}}`
-	insertExtractorKB(t, db, "kb1", "general", row)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	node := extractorNode(t, extractorRowParserConfig(t, db, "knowledgebase", "kb1"))
-	if got := node["keywords"].(map[string]interface{})["top_n"]; got != float64(2) {
-		t.Fatalf("keywords.top_n = %v, want the existing 2, not the flat 8", got)
-	}
-	tags := node["tags"].(map[string]interface{})
-	if got := tags["top_n"]; got != float64(7) {
-		t.Fatalf("tags.top_n = %v, want the existing 7, not the flat 5", got)
-	}
-	if tags["tag_file_id"] != "file-1" {
-		t.Fatalf("tags.tag_file_id = %v, want file-1", tags["tag_file_id"])
-	}
-	// No metadata group preset: the flat metadata trio still migrates.
-	if _, ok := node["metadata"].(map[string]interface{}); !ok {
-		t.Fatalf("metadata group missing: %#v", node)
-	}
-}
-
-func TestMigrateExtractorParserConfigsLegacyNodeFields(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	row := `{"Extractor:AutoExtractDefault":{` +
-		`"auto_keywords":4,"keywords_sys_prompt":"kw prompt",` +
-		`"auto_questions":2,"questions_sys_prompt":"q prompt",` +
-		`"auto_tags":6,"tag_file_id":"file-9",` +
-		`"enable_summary":true,"sys_prompt":"sum prompt",` +
-		`"metadata_config":{"enabled":true,"metadata":[{"key":"k","type":"string"}],"built_in_metadata":[]},` +
-		`"field_name":"summary"}}`
-	insertExtractorKB(t, db, "kb1", "general", row)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	node := extractorNode(t, extractorRowParserConfig(t, db, "knowledgebase", "kb1"))
-	for _, key := range []string{"auto_keywords", "keywords_sys_prompt", "auto_questions",
-		"questions_sys_prompt", "enable_summary",
-		"sys_prompt", "metadata_config", "field_name"} {
-		if _, ok := node[key]; ok {
-			t.Fatalf("legacy node field %q survived: %#v", key, node)
-		}
-	}
-	kw := node["keywords"].(map[string]interface{})
-	if kw["top_n"] != float64(4) || kw["system_prompt"] != "kw prompt" {
-		t.Fatalf("keywords = %#v", kw)
-	}
-	q := node["questions"].(map[string]interface{})
-	if q["top_n"] != float64(2) || q["system_prompt"] != "q prompt" {
-		t.Fatalf("questions = %#v", q)
-	}
-	if node["auto_tags"] != float64(6) || node["tag_file_id"] != "file-9" {
-		t.Fatalf("node tag settings changed: %#v", node)
-	}
-	sum := node["summary"].(map[string]interface{})
-	if enabled, _ := sum["enabled"].(bool); !enabled || sum["system_prompt"] != "sum prompt" {
-		t.Fatalf("summary = %#v", sum)
-	}
-	meta := node["metadata"].(map[string]interface{})
-	if enabled, _ := meta["enabled"].(bool); !enabled {
-		t.Fatalf("metadata.enabled = %v, want true", meta["enabled"])
-	}
-}
-
-func TestMigrateExtractorParserConfigsCanvasRowKeepsNoNode(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	if err := db.Exec("INSERT INTO knowledgebase (id, tenant_id, name, embd_id, created_by, parser_id, pipeline_id, parser_config) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-		"kb1", "tenant-kb1", "kb-kb1", "embd-kb1", "user-kb1", "", "abc123abc123abc123abc123abc12345", python027ParserConfig).Error; err != nil {
-		t.Fatalf("failed to insert canvas knowledgebase: %v", err)
-	}
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	config := extractorRowParserConfig(t, db, "knowledgebase", "kb1")
-	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
-		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
-	}
-	if config["topn_tags"] != float64(5) {
-		t.Fatalf("retrieval tag count was discarded: %#v", config)
-	}
-	for key := range config {
-		if strings.HasPrefix(strings.ToLower(key), "extractor:") {
-			t.Fatalf("fabricated an extractor node on a canvas row: %#v", config)
-		}
-	}
-}
-
-func TestMigrateExtractorParserConfigsQaTemplateKeepsNoNode(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	insertExtractorKB(t, db, "kb1", "qa", python027ParserConfig)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	config := extractorRowParserConfig(t, db, "knowledgebase", "kb1")
-	if config["auto_keywords"] != float64(8) || config["enable_metadata"] != true {
-		t.Fatalf("settings without an Extractor target were discarded: %#v", config)
-	}
-	if config["topn_tags"] != float64(5) {
-		t.Fatalf("retrieval tag count was discarded: %#v", config)
-	}
-	for key := range config {
-		if strings.HasPrefix(strings.ToLower(key), "extractor:") {
-			t.Fatalf("fabricated an extractor node for the qa template: %#v", config)
-		}
-	}
-}
-
-func TestMigrateExtractorParserConfigsKeepsCleanRowUntouched(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	clean := `{"GeneralChunker:SixApplesFall":{"chunk_token_size":512},` +
-		`"Extractor:AutoExtractDefault":{"keywords":{"top_n":0},"metadata":{"enabled":false,"metadata":[],"built_in_metadata":[]}}}`
-	insertExtractorKB(t, db, "kb1", "general", clean)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	var raw string
-	if err := db.Table("knowledgebase").Where("id = ?", "kb1").Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatalf("failed to read parser config: %v", err)
-	}
-	if raw != clean {
-		t.Fatalf("clean row rewritten:\n got: %s\nwant: %s", raw, clean)
-	}
-	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, extractorParserConfigTargetVersion)
-	}
-}
-
-func TestMigrateExtractorParserConfigsSkipsMigratedDatabase(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	insertExtractorKB(t, db, "kb1", "general", python027ParserConfig)
-	writeDatabaseVersion(t, db, extractorParserConfigTargetVersion)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	var raw string
-	if err := db.Table("knowledgebase").Where("id = ?", "kb1").Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatalf("failed to read parser config: %v", err)
-	}
-	if raw != python027ParserConfig {
-		t.Fatalf("migrated row rewritten on an already migrated database:\n got: %s\nwant: %s", raw, python027ParserConfig)
-	}
-}
-
-func TestMigrateExtractorParserConfigsToleratesMalformedPayload(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
-	insertExtractorKB(t, db, "kb1", "general", "not-json")
-	insertExtractorKB(t, db, "kb2", "general", "")
-	insertExtractorKB(t, db, "kb3", "general", python027ParserConfig)
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-
-	var raw string
-	if err := db.Table("knowledgebase").Where("id = ?", "kb1").Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatalf("failed to read parser config kb1: %v", err)
-	}
-	if raw != "not-json" {
-		t.Fatalf("malformed config rewritten as %q", raw)
-	}
-	if err := db.Table("knowledgebase").Where("id = ?", "kb2").Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatalf("failed to read parser config kb2: %v", err)
-	}
-	if raw != "" {
-		t.Fatalf("empty config rewritten as %q", raw)
-	}
-	config := extractorRowParserConfig(t, db, "knowledgebase", "kb3")
-	assertNoFlatExtractorKeys(t, config)
-	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
-		t.Fatalf("database version = %q, want %q", got, extractorParserConfigTargetVersion)
-	}
-}
-
-func TestMigrateExtractorParserConfigsWithoutTables(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{TranslateError: true})
-	if err != nil {
-		t.Fatalf("failed to open sqlite: %v", err)
-	}
-	if err := db.AutoMigrate(&entity.SystemSettings{}); err != nil {
-		t.Fatalf("failed to migrate: %v", err)
-	}
-
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatalf("migrateExtractorParserConfigs: %v", err)
-	}
-	if got := databaseVersion(t, db); got != "" {
-		t.Fatalf("database version = %q, want it left unset", got)
-	}
-}
-
-func TestMigrateExtractorConfigIsIdempotent(t *testing.T) {
-	config := map[string]interface{}{}
-	if err := json.Unmarshal([]byte(python027ParserConfig), &config); err != nil {
-		t.Fatalf("failed to parse fixture: %v", err)
-	}
-	if !migrateExtractorConfig(config, "general", nil) {
-		t.Fatalf("first run reported no change on a legacy config")
-	}
-	snapshot, err := json.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to snapshot: %v", err)
-	}
-	if migrateExtractorConfig(config, "general", nil) {
-		t.Fatalf("second run reported a change; migration is not idempotent: %#v", config)
-	}
-	resnapshot, err := json.Marshal(config)
-	if err != nil {
-		t.Fatalf("failed to re-snapshot: %v", err)
-	}
-	if string(snapshot) != string(resnapshot) {
-		t.Fatalf("config changed between runs:\nfirst:  %s\nsecond: %s", snapshot, resnapshot)
-	}
-}
-
-func TestMigrateExtractorConfigPreservesSettings(t *testing.T) {
-	tests := []struct {
-		name, parserID, input, want string
+func TestMigrateExtractorConfig(t *testing.T) {
+	cases := []struct {
+		name, parser, input, want string
+		pipeline                  *string
 	}{
-		{
-			name: "modular metadata transport", parserID: "general",
-			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
-		},
-		{
-			name: "modular metadata with flat builtin fields", parserID: "general",
-			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author"}]},"built_in_metadata":[{"name":"file_name"}]}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
-		},
-		{
-			name: "empty node metadata accepts flat fields", parserID: "general",
-			input: `{"enable_metadata":true,"metadata":[{"name":"author"}],"Extractor:AutoExtractDefault":{"metadata":{}}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
-		},
-		{
-			name: "metadata config respects flat disable", parserID: "general",
-			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":false,"metadata_config":{"metadata":[{"key":"author"}]}}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
-		},
-		{
-			name: "metadata fills missing group fields", parserID: "general",
-			input: `{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]},"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`,
-		},
-		{
-			name: "unconverted extraction settings", parserID: "table",
-			input: `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
-			want:  `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"name":"author"}]}`,
-		},
-		{
-			name: "prompt before flat count", parserID: "general",
-			input: `{"auto_keywords":8,"auto_questions":2,"Extractor:AutoExtractDefault":{"keywords_sys_prompt":"keywords prompt","questions_sys_prompt":"questions prompt"}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"keywords":{"top_n":8,"system_prompt":"keywords prompt"},"questions":{"top_n":2,"system_prompt":"questions prompt"}}}`,
-		},
-		{
-			name: "node schema metadata", parserID: "general",
-			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":true,"metadata":{"type":"object","properties":{"author":{"type":"string"}}},"built_in_metadata":[{"name":"file_name"}]}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
-		},
-		{
-			name: "node partial metadata", parserID: "general",
-			input: `{"Extractor:AutoExtractDefault":{"enable_metadata":true,"metadata":{"metadata":[{"key":"author"}]},"built_in_metadata":[{"name":"file_name"}]}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[{"key":"file_name"}]}}}`,
-		},
-		{
-			name: "summary fills enabled", parserID: "general",
-			input: `{"Extractor:AutoExtractDefault":{"enable_summary":true,"summary":{"system_prompt":"saved prompt"},"sys_prompt":"old prompt"}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"summary":{"enabled":true,"system_prompt":"saved prompt"}}}`,
-		},
-		{
-			name: "empty row stays empty", parserID: "general", input: `{}`, want: `{}`,
-		},
+		{name: "Python fields", parser: "naive", input: python027ParserConfig, want: `{"Extractor:AutoExtractDefault":{"keywords":{"top_n":8},"questions":{"top_n":3},"metadata":{"enabled":true,"metadata":[{"key":"author","description":"who wrote it"}],"built_in_metadata":[{"key":"update_time"}]}},"topn_tags":5,"tag_kb_ids":["tag-kb"]}`},
+		{name: "missing metadata toggle stays disabled", input: `{"metadata":[{"key":"author"}]}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`},
+		{name: "explicit zero and false", input: `{"auto_keywords":0,"enable_metadata":false,"metadata":[]}`, want: `{"Extractor:AutoExtractDefault":{"keywords":{"top_n":0},"metadata":{"enabled":false,"metadata":[],"built_in_metadata":[]}}}`},
+		{name: "existing node values win over Python fields", input: `{"auto_keywords":8,"enable_metadata":true,"metadata":[{"key":"author"}],"Extractor:AutoExtractDefault":{"keywords":{"top_n":2,"enabled":false},"metadata":{"enabled":false,"metadata":[],"built_in_metadata":[]}}}`, want: `{"Extractor:AutoExtractDefault":{"keywords":{"top_n":2,"enabled":false},"metadata":{"enabled":false,"metadata":[],"built_in_metadata":[]}}}`},
+		{name: "modular transport is authoritative", input: `{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]},"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author"}],"built_in_metadata":[]}}}`},
+		{name: "empty modular transport disables metadata", input: `{"metadata":{},"Extractor:AutoExtractDefault":{"metadata":{"enabled":true}}}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false,"metadata":[],"built_in_metadata":[]}}}`},
+		{name: "flat schema", input: `{"enable_metadata":true,"metadata":{"type":"object","properties":{"author":{"type":"string","description":"who","enum":["A"]}},"additionalProperties":false}}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string","description":"who","enum":["A"]}],"built_in_metadata":[]}}}`},
+		{name: "description alias", input: `{"enable_metadata":true,"metadata":[{"key":"author","descriptions":"who"}]}`, want: `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":true,"metadata":[{"key":"author","description":"who"}],"built_in_metadata":[]}}}`},
+		{name: "tag settings untouched", input: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file"}}`, want: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file"}}`},
+		{name: "early Go nodes untouched", input: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`, want: `{"Extractor:AutoExtractDefault":{"auto_keywords":8,"keywords_sys_prompt":"saved","enable_summary":true,"sys_prompt":"saved summary","auto_tags":5,"tag_file_id":"file","metadata_config":{"enabled":true}}}`},
+		{name: "custom node", input: `{"auto_questions":2,"Extractor:Custom":{"summary":{"enabled":true}}}`, want: `{"Extractor:Custom":{"questions":{"top_n":2},"summary":{"enabled":true}}}`},
+		{name: "QA has no target", parser: "qa", input: python027ParserConfig, want: python027ParserConfig},
+		{name: "table has no target", parser: "table", input: python027ParserConfig, want: python027ParserConfig},
+		{name: "canvas has no target", pipeline: ptrString("canvas-1"), input: python027ParserConfig, want: python027ParserConfig},
+		{name: "empty row", input: `{}`, want: `{}`},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var config, want map[string]interface{}
-			if err := json.Unmarshal([]byte(tt.input), &config); err != nil {
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			config, want := decodeExtractorConfig(t, tc.input), decodeExtractorConfig(t, tc.want)
+			parser := tc.parser
+			if parser == "" {
+				parser = "general"
+			}
+			if _, err := migrateExtractorConfig(config, parser, tc.pipeline); err != nil {
 				t.Fatal(err)
 			}
-			if err := json.Unmarshal([]byte(tt.want), &want); err != nil {
-				t.Fatal(err)
+			if got := decodeExtractorConfig(t, encodeExtractorConfig(t, config)); !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %s; want %s", encodeExtractorConfig(t, config), tc.want)
 			}
-			migrateExtractorConfig(config, tt.parserID, nil)
-			raw, err := json.Marshal(config)
-			if err != nil {
-				t.Fatal(err)
+			snapshot := encodeExtractorConfig(t, config)
+			if changed, err := migrateExtractorConfig(config, parser, tc.pipeline); err != nil || changed {
+				t.Fatalf("second run changed=%v, err=%v", changed, err)
 			}
-			var got map[string]interface{}
-			if err := json.Unmarshal(raw, &got); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("migrated config = %s, want %s", raw, tt.want)
-			}
-			if migrateExtractorConfig(config, tt.parserID, nil) {
-				t.Fatal("second migration changed config")
+			if encodeExtractorConfig(t, config) != snapshot {
+				t.Fatal("second run changed config")
 			}
 		})
 	}
 }
 
-func TestMigrateExtractorConfigLeavesTagsUnchanged(t *testing.T) {
-	tests := []struct{ name, input, want string }{
-		{
-			name:  "dataset tag settings only",
-			input: `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"top_n":7,"tag_file_id":"file-1"}}`,
-			want:  `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"top_n":7,"tag_file_id":"file-1"}}`,
-		},
-		{
-			name:  "node tag settings only",
-			input: `{"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-1","tags":{"enabled":false,"top_n":3,"tag_file_id":"file-2"}}}`,
-			want:  `{"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-1","tags":{"enabled":false,"top_n":3,"tag_file_id":"file-2"}}}`,
-		},
-		{
-			name:  "keywords migrate independently",
-			input: `{"auto_keywords":8,"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file-1"},"Extractor:AutoExtractDefault":{"auto_tags":6,"tag_file_id":"file-2","tags":{"top_n":3}}}`,
-			want:  `{"topn_tags":5,"tag_kb_ids":["tag-kb"],"tags":{"tag_file_id":"file-1"},"Extractor:AutoExtractDefault":{"keywords":{"top_n":8},"auto_tags":6,"tag_file_id":"file-2","tags":{"top_n":3}}}`,
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			var config, want map[string]interface{}
-			if err := json.Unmarshal([]byte(tt.input), &config); err != nil {
-				t.Fatal(err)
-			}
-			if err := json.Unmarshal([]byte(tt.want), &want); err != nil {
-				t.Fatal(err)
-			}
-			migrateExtractorConfig(config, "general", nil)
-			raw, err := json.Marshal(config)
-			if err != nil {
-				t.Fatal(err)
-			}
-			var got map[string]interface{}
-			if err := json.Unmarshal(raw, &got); err != nil {
-				t.Fatal(err)
-			}
-			if !reflect.DeepEqual(got, want) {
-				t.Fatalf("migrated config = %s, want %s", raw, tt.want)
-			}
-		})
-	}
-}
-
-func TestMigrateExtractorParserConfigsAcrossBatches(t *testing.T) {
-	db := setupExtractorMigrationDB(t)
+func TestMigrateExtractorParserConfigsBatches(t *testing.T) {
+	db := openExtractorMigrationDB(t)
 	for i := 0; i < 257; i++ {
-		id := fmt.Sprintf("%032d", i)
-		insertExtractorKB(t, db, id, "general", `{"auto_keywords":8}`)
-		insertExtractorDocument(t, db, id, "general", `{"auto_questions":2}`)
+		for _, table := range []string{"knowledgebase", "document"} {
+			insertExtractorConfig(t, db, table, fmt.Sprintf("%032d", i), python027ParserConfig)
+		}
 	}
 	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	for i := 0; i < 257; i++ {
-		id := fmt.Sprintf("%032d", i)
-		kbNode := extractorNode(t, extractorRowParserConfig(t, db, "knowledgebase", id))
-		docNode := extractorNode(t, extractorRowParserConfig(t, db, "document", id))
-		if kbNode["keywords"].(map[string]interface{})["top_n"] != float64(8) || docNode["questions"].(map[string]interface{})["top_n"] != float64(2) {
-			t.Fatalf("row %s was not migrated", id)
+	for _, table := range []string{"knowledgebase", "document"} {
+		var rows []extractorConfigMigrationRow
+		if err := db.Table(table).Find(&rows).Error; err != nil {
+			t.Fatal(err)
 		}
+		if len(rows) != 257 {
+			t.Fatalf("%s rows=%d", table, len(rows))
+		}
+		for _, row := range rows {
+			config := decodeExtractorConfig(t, *row.ParserConfig)
+			node, ok := config["Extractor:AutoExtractDefault"].(map[string]any)
+			if !ok || node["keywords"].(map[string]any)["top_n"] != float64(8) || config["topn_tags"] != float64(5) {
+				t.Fatalf("%s.%s not migrated correctly: %v", table, row.ID, config)
+			}
+		}
+	}
+	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
+		t.Fatalf("version=%s", got)
 	}
 }
 
-// TestBuiltinExtractorNodeMatchesTemplates pins the migration's Extractor
-// node assumptions to the builtin pipeline templates: every builtin parser
-// with an Extractor node must resolve to that exact node id, and every
-// builtin parser without one must resolve to no node.
-func TestBuiltinExtractorNodeMatchesTemplates(t *testing.T) {
-	templateDir := filepath.Join("..", "ingestion", "pipeline", "template")
-	entries, err := os.ReadDir(templateDir)
-	if err != nil {
-		t.Fatalf("failed to list templates: %v", err)
-	}
-	type templateInfo struct {
-		ParserIDs []string `json:"parser_ids"`
-		DSL       struct {
-			Components map[string]struct {
-				Obj struct {
-					ComponentName string `json:"component_name"`
-				} `json:"obj"`
-			} `json:"components"`
-		} `json:"dsl"`
-	}
-	checked := 0
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		raw, err := os.ReadFile(filepath.Join(templateDir, entry.Name()))
-		if err != nil {
-			t.Fatalf("failed to read %s: %v", entry.Name(), err)
-		}
-		var info templateInfo
-		if err := json.Unmarshal(raw, &info); err != nil {
-			t.Fatalf("failed to parse %s: %v", entry.Name(), err)
-		}
-		var extractorNodeID string
-		for cpnID, comp := range info.DSL.Components {
-			if comp.Obj.ComponentName == "Extractor" {
-				if extractorNodeID != "" {
-					t.Fatalf("%s carries two extractor nodes (%q and %q); the migration targets one",
-						entry.Name(), extractorNodeID, cpnID)
-				}
-				extractorNodeID = cpnID
+func TestMigrateExtractorParserConfigsRejectsInvalidRows(t *testing.T) {
+	for _, raw := range []string{
+		`not-json`,
+		`{"auto_keywords":"8","auto_questions":2}`,
+		`{"enable_metadata":true,"metadata":[{"name":"author"}]}`,
+		`{"enable_metadata":true,"metadata":{"type":"object","required":["author"],"properties":{"author":{"type":"object","properties":{"name":{"type":"string"}}}}}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			db := openExtractorMigrationDB(t)
+			insertExtractorConfig(t, db, "knowledgebase", "a", python027ParserConfig)
+			insertExtractorConfig(t, db, "knowledgebase", "b", raw)
+			if err := migrateExtractorParserConfigs(t.Context(), db); err == nil {
+				t.Fatal("invalid input was marked as migrated")
 			}
-		}
-		for _, parserID := range info.ParserIDs {
-			checked++
-			if extractorNodeID == "" {
-				if got := builtinExtractorNodeIDFor(parserID, nil); got != "" {
-					t.Fatalf("template %s (parser %q) has no extractor node, but the migration would create %q",
-						entry.Name(), parserID, got)
-				}
-				continue
+			var rows []extractorConfigMigrationRow
+			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
+				t.Fatal(err)
 			}
-			if extractorNodeID != builtinExtractorNodeID {
-				t.Fatalf("template %s extractor node is %q, want %q",
-					entry.Name(), extractorNodeID, builtinExtractorNodeID)
+			if *rows[0].ParserConfig != python027ParserConfig || *rows[1].ParserConfig != raw {
+				t.Fatal("failed batch modified source configs")
 			}
-			if got := builtinExtractorNodeIDFor(parserID, nil); got != builtinExtractorNodeID {
-				t.Fatalf("parser %q has extractor node %q but the migration resolves %q",
-					parserID, extractorNodeID, got)
+			if databaseVersion(t, db) != "" {
+				t.Fatal("failed migration advanced version")
 			}
-		}
-	}
-	// "general" is the canonical builtin id rows carry (the Go default); it is
-	// not listed in any template's parser_ids, so it needs its own assertion.
-	if got := builtinExtractorNodeIDFor("general", nil); got != builtinExtractorNodeID {
-		t.Fatalf("builtinExtractorNodeIDFor(general) = %q, want %q", got, builtinExtractorNodeID)
-	}
-	if checked == 0 {
-		t.Fatalf("no templates checked; template dir layout changed?")
+		})
 	}
 }
+
+func TestMigrateExtractorParserConfigsVersionAndEmptyRows(t *testing.T) {
+	for _, version := range []string{"", extractorParserConfigTargetVersion, "v1.0.0"} {
+		t.Run(version, func(t *testing.T) {
+			db := openExtractorMigrationDB(t)
+			if version != "" {
+				writeDatabaseVersion(t, db, version)
+			}
+			for i, raw := range []string{``, `null`, `{}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`} {
+				insertExtractorConfig(t, db, "knowledgebase", fmt.Sprint(i), raw)
+			}
+			if version != "" {
+				insertExtractorConfig(t, db, "knowledgebase", "old", python027ParserConfig)
+			}
+			if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
+				t.Fatal(err)
+			}
+			var rows []extractorConfigMigrationRow
+			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			for i, raw := range []string{``, `null`, `{}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`} {
+				if *rows[i].ParserConfig != raw {
+					t.Fatal("untouched row rewritten")
+				}
+			}
+			wantVersion := version
+			if version == "" {
+				wantVersion = extractorParserConfigTargetVersion
+			} else if *rows[4].ParserConfig != python027ParserConfig {
+				t.Fatal("version gate did not skip")
+			}
+			if databaseVersion(t, db) != wantVersion {
+				t.Fatal("unexpected version")
+			}
+		})
+	}
+}
+
+func openExtractorMigrationDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.SystemSettings{}); err != nil {
+		t.Fatal(err)
+	}
+	return db
+}
+func insertExtractorConfig(t *testing.T, db *gorm.DB, table, id, raw string) {
+	t.Helper()
+	values := map[string]any{"id": id, "parser_id": "general", "parser_config": raw, "created_by": "user"}
+	if table == "knowledgebase" {
+		values["tenant_id"] = "tenant"
+		values["name"] = "dataset"
+		values["embd_id"] = "embedding"
+	} else {
+		values["kb_id"] = "dataset"
+		values["source_type"] = "local"
+		values["type"] = "doc"
+		values["suffix"] = "pdf"
+	}
+	if err := db.Table(table).Create(values).Error; err != nil {
+		t.Fatal(err)
+	}
+}
+func decodeExtractorConfig(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	var config map[string]any
+	if err := json.Unmarshal([]byte(raw), &config); err != nil {
+		t.Fatal(err)
+	}
+	return config
+}
+func encodeExtractorConfig(t *testing.T, config map[string]any) string {
+	t.Helper()
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(raw)
+}
+func ptrString(value string) *string { return &value }

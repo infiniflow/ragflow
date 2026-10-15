@@ -2,12 +2,10 @@ package dao_test
 
 import (
 	"encoding/json"
-	"os"
 	"testing"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
-
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component"
@@ -20,12 +18,16 @@ func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
 	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.SystemSettings{}); err != nil {
 		t.Fatal(err)
 	}
-	input := `{"auto_keywords":8,"auto_questions":2,"metadata":{"enabled":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}]},"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"tag-file"},"keywords_sys_prompt":"custom keywords","enable_summary":true,"summary":{"system_prompt":"custom summary"}}}`
-	if err := db.Exec(`INSERT INTO knowledgebase (id, tenant_id, name, embd_id, created_by, parser_id, parser_config) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		"kb-1", "tenant-1", "dataset", "embedding", "user-1", "general", input).Error; err != nil {
+	input := `{"auto_keywords":8,"auto_questions":2,"enable_metadata":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}],"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"tag-file"},"keywords":{"system_prompt":"custom keywords"},"summary":{"enabled":true,"system_prompt":"custom summary"}}}`
+	if err := db.Exec(`INSERT INTO knowledgebase (id,tenant_id,name,embd_id,created_by,parser_id,parser_config) VALUES (?,?,?,?,?,?,?)`, "kb-1", "tenant-1", "dataset", "embedding", "user-1", "general", input).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := dao.MigrateExtractorParserConfigsForTest(t.Context(), db); err != nil {
@@ -35,43 +37,67 @@ func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
 	if err := db.Table("knowledgebase").Where("id = ?", "kb-1").Pluck("parser_config", &raw).Error; err != nil {
 		t.Fatal(err)
 	}
-	var config map[string]interface{}
+	var config map[string]any
 	if err := json.Unmarshal([]byte(raw), &config); err != nil {
 		t.Fatal(err)
 	}
-	template, err := os.ReadFile("../ingestion/pipeline/template/ingestion_pipeline_general.json")
+	registry, err := pipeline.DefaultRegistry()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var envelope struct {
-		DSL json.RawMessage `json:"dsl"`
+	template, ok := registry.Get("general")
+	if !ok {
+		t.Fatal("general template missing")
 	}
-	if err := json.Unmarshal(template, &envelope); err != nil {
-		t.Fatal(err)
-	}
-	cleaned := service.ApplyComponentScopedParserConfig(pipeline.BuildParserConfig(envelope.DSL, config), "tenant-llm")
-	params := cleaned["Extractor:AutoExtractDefault"].(map[string]interface{})
-	runtimeComponent, err := component.NewExtractorComponent(params)
+	dsl, err := json.Marshal(template.DSL)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got := runtimeComponent.(*component.ExtractorComponent).Param
-	if !got.Keywords.Enabled || got.Keywords.TopN != 8 || got.Keywords.SystemPrompt != "custom keywords" {
-		t.Fatalf("keywords = %#v", got.Keywords)
+	cleaned := service.ApplyComponentScopedParserConfig(pipeline.BuildParserConfig(dsl, config), "tenant-llm")
+	c, err := component.NewExtractorComponent(cleaned["Extractor:AutoExtractDefault"].(map[string]any))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !got.Questions.Enabled || got.Questions.TopN != 2 {
-		t.Fatalf("questions = %#v", got.Questions)
-	}
-	if !got.Tags.Enabled || got.Tags.TopN != 5 || got.Tags.TagFileID != "tag-file" {
-		t.Fatalf("tags = %#v", got.Tags)
-	}
-	if !got.Summary.Enabled || got.Summary.SystemPrompt != "custom summary" {
-		t.Fatalf("summary = %#v", got.Summary)
+	got := c.(*component.ExtractorComponent).Param
+	if !got.Keywords.Enabled || got.Keywords.TopN != 8 || got.Keywords.SystemPrompt != "custom keywords" || !got.Questions.Enabled || got.Questions.TopN != 2 {
+		t.Fatalf("keyword/question settings lost: %#v", got)
 	}
 	if !got.Metadata.Enabled || len(got.Metadata.Metadata) != 1 || got.Metadata.Metadata[0].Key != "author" || len(got.Metadata.BuiltInMetadata) != 1 || got.Metadata.BuiltInMetadata[0].Key != "file_name" {
-		t.Fatalf("metadata = %#v", got.Metadata)
+		t.Fatalf("metadata=%#v", got.Metadata)
 	}
-	if got.LLMID != "tenant-llm" {
-		t.Fatalf("llm_id = %q", got.LLMID)
+	if !got.Tags.Enabled || got.Tags.TagFileID != "tag-file" || got.Tags.TopN != 5 || !got.Summary.Enabled || got.Summary.SystemPrompt != "custom summary" || got.LLMID != "tenant-llm" {
+		t.Fatalf("existing scoped settings lost: %#v", got)
+	}
+}
+
+func TestExtractorMigrationMatchesBuiltinTemplates(t *testing.T) {
+	registry, err := pipeline.DefaultRegistry()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ref := range append(registry.Refs(), "naive") {
+		t.Run(ref, func(t *testing.T) {
+			template, ok := registry.Get(ref)
+			if !ok {
+				t.Fatal("template missing")
+			}
+			components := template.DSL["components"].(map[string]any)
+			_, hasExtractor := components["Extractor:AutoExtractDefault"]
+			config := map[string]any{"auto_keywords": float64(8)}
+			changed, err := dao.MigrateExtractorConfigForTest(config, ref, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changed != hasExtractor {
+				t.Fatalf("changed=%v; template has Extractor=%v", changed, hasExtractor)
+			}
+			if hasExtractor {
+				if node, ok := config["Extractor:AutoExtractDefault"].(map[string]any); !ok || node["keywords"].(map[string]any)["top_n"] != 8 {
+					t.Fatalf("config=%v", config)
+				}
+			} else if config["auto_keywords"] != float64(8) {
+				t.Fatal("settings without target were discarded")
+			}
+		})
 	}
 }
