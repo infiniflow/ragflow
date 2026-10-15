@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	_ "image/jpeg"
@@ -1635,6 +1636,44 @@ func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
 	}
 }
 
+func TestRemoveChunksRejectsInvalidDatasetBeforeMutation(t *testing.T) {
+	for _, datasetID := range []string{"", "kb-2"} {
+		for _, deleteAll := range []bool{false, true} {
+			t.Run(fmt.Sprintf("dataset=%s/delete_all=%t", datasetID, deleteAll), func(t *testing.T) {
+				db := setupChunkTestDB(t)
+				pushChunkTestDB(t, db)
+				insertChunkTestKB(t, "kb-1", "owner")
+				insertChunkTestDoc(t, "doc-1", "kb-1")
+				engine := &parseTestDocEngine{deleteChunksCount: 1}
+				svc := &ChunkService{
+					docEngine: engine,
+					decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
+						t.Fatal("rejected deletion must not change statistics")
+						return nil
+					},
+					markWikiDirtyFunc: func(string, string, string, []string) {
+						t.Fatal("rejected deletion must not schedule wiki updates")
+					},
+				}
+				req := &service.RemoveChunksRequest{DatasetID: datasetID, DocID: "doc-1", DeleteAll: deleteAll}
+				if !deleteAll {
+					req.ChunkIDs = []string{"chunk-1"}
+				}
+				count, err := svc.RemoveChunks(t.Context(), req, "owner")
+				if err == nil || count != 0 {
+					t.Fatalf("invalid dataset deletion = (%d, %v), want error and zero count", count, err)
+				}
+				if datasetID != "" && !errors.Is(err, permission.ErrResourceNotFound) {
+					t.Fatalf("error = %v, want resource not found", err)
+				}
+				if engine.deleteChunksCalls != 0 {
+					t.Fatalf("rejected deletion reached the engine %d times", engine.deleteChunksCalls)
+				}
+			})
+		}
+	}
+}
+
 func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -1650,8 +1689,9 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
-		DocID:    "doc-1",
-		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
+		DatasetID: "kb-1",
+		DocID:     "doc-1",
+		ChunkIDs:  []string{"chunk-1", "chunk-2", "chunk-3"},
 	}, "user-1")
 	if err != nil {
 		t.Fatalf("RemoveChunks() error = %v", err)
@@ -1714,6 +1754,7 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
+		DatasetID: "kb-1",
 		DocID:     "doc-1",
 		DeleteAll: true,
 	}, "user-1")
@@ -1747,8 +1788,9 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
-		DocID:    "doc-1",
-		ChunkIDs: []string{"chunk-1", "chunk-2"},
+		DatasetID: "kb-1",
+		DocID:     "doc-1",
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
 	}, "user-1")
 	if err == nil || !strings.Contains(err.Error(), "failed to update chunk stats") {
 		t.Fatalf("expected stats update error, got count=%d err=%v", deletedCount, err)

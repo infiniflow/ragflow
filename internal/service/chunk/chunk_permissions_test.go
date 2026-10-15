@@ -85,7 +85,7 @@ func TestChunkManagementDatasetPermissions(t *testing.T) {
 				}},
 				{"remove", func(s *ChunkService) error {
 					s.docEngine = &parseTestDocEngine{}
-					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DocID: "doc-1", DeleteAll: true}, tt.userID)
+					_, err := s.RemoveChunks(ctx, &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", DeleteAll: true}, tt.userID)
 					return err
 				}},
 			} {
