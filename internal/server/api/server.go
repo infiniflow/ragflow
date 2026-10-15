@@ -43,7 +43,6 @@ import (
 	"ragflow/internal/service/nlp"
 	"ragflow/internal/service/wikisearch"
 	"ragflow/internal/tokenizer"
-	goruntime "runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -571,31 +570,3 @@ func configureTTSSynthesizer(modelCallService *service.ModelCallService) {
 	audio.SetModelProviderSynthesizer(audio.NewTTSDispatchFunc(modelCallService))
 	common.Info("agent: TTS model-call dispatch installed (audio.Synthesize → ModelCallService.AudioSpeech)")
 }
-
-// inferenceTotalCores returns the CPU budget the DeepDoc inference config is
-// validated against. It uses runtime.GOMAXPROCS(0) instead of runtime.NumCPU()
-// so the budget reflects the cgroup CPU quota inside containers: Go 1.25+ derives
-// GOMAXPROCS from the quota (CGroups v2 cpu.max / v1 cpu.cfs_quota_us), whereas
-// runtime.NumCPU() reports the host's affinity-mask core count and ignores a
-// container's CPU limit. Without this, a 2-CPU-limit pod on a 64-core host would
-// "resolve" inference_cpu_cores: 0 to 64 and let inference_concurrency: 16 pass
-// validation, oversubscribing the box the fail-fast guard in
-// native.ValidateInferenceConfig exists to prevent.
-func inferenceTotalCores() int {
-	n := goruntime.GOMAXPROCS(0)
-	if n < 1 {
-		return 1
-	}
-	return n
-}
-
-// registerNativeDeepDoc wires the in-process (Go) DeepDoc backend as the local
-// inference backend. The server is built with -tags cgo and links ONNX Runtime
-// statically (libonnxruntime.a, resolved at runtime via dlopen(NULL) from the
-// running binary — see github.com/infiniflow/onnxruntime_go, the org mirror of
-// yalue/onnxruntime_go), so there is no external
-// DeepDoc HTTP service and no dynamic .so deployment.
-//
-// Fail-fast contract (P0): the in-process backend must be available at startup
-// (ORT + models present). There is NO silent degradation to an empty analyzer:
-// if the backend is not serving, the server aborts.

@@ -341,13 +341,10 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Temporary logger initialization
-	var serverName string
-	if arguments.Name != nil {
-		serverName = *arguments.Name
-	} else {
-		serverName = fmt.Sprintf("%s_server", *arguments.Mode)
-	}
+	// Temporary logger name (pre-config): explicit --name wins, else
+	// "<mode>_server". The final name (with the resolved port for api/admin)
+	// is derived below after the configuration is loaded.
+	serverName := bootstrap.TempServerName(*arguments.Mode, arguments.Name)
 
 	logLevel := bootstrap.SelectedLogLevel(arguments, "")
 	if higherThanInfo := common.LogLevelHigherThanInfo(logLevel); higherThanInfo {
@@ -383,13 +380,16 @@ func main() {
 	}
 	globalConfig.SetLogLevel(resolvedLogLevel)
 
-	// Resolve the effective server port (CLI > config/env > default) and
-	// validate it.
-	// NOTE: this switch must stay side-effect-free on the LOG (no
-	// registerNativeDeepDoc here): it runs while only the temporary
-	// stdout-only logger exists, so anything it logs is lost from the file.
-	// Side effects that log (DeepDoc registration) move below, after the
-	// real file-backed logger is up.
+	// Resolve the effective server port (CLI > config/env > default) and set it
+	// on the config so the server binds the right port. This block must stay
+	// side-effect-free on the LOG (no registerNativeDeepDoc here): it runs
+	// while only the temporary stdout-only logger exists, so anything it logs is
+	// lost from the file. Side effects that log (DeepDoc registration) move
+	// below, after the real file-backed logger is up. The dead UUID branch for
+	// ingestor/syncer/deepdoc (serverName was already pre-filled above) is
+	// dropped: ResolveServerName resolves them to "<mode>_server", matching the
+	// original no-name behavior.
+	var resolvedPort int
 	switch *arguments.Mode {
 	case "api":
 		port, portErr := globalConfig.ResolvePort(globalConfig.GetAPIServerConfig().HTTPPort, arguments.Port)
@@ -398,12 +398,7 @@ func main() {
 			os.Exit(1)
 		}
 		globalConfig.SetAPIServerHTTPPort(port)
-		// Disambiguate the log file per bound port when no explicit --name
-		// is given (e.g. two API servers on the same host on different
-		// ports). Restored after the precedence refactor dropped it.
-		if arguments.Name == nil {
-			serverName = fmt.Sprintf("api_server_%d", port)
-		}
+		resolvedPort = port
 	case "admin":
 		port, portErr := globalConfig.ResolvePort(globalConfig.GetAdminServerConfig().HTTPPort, arguments.Port)
 		if portErr != nil {
@@ -411,33 +406,24 @@ func main() {
 			os.Exit(1)
 		}
 		globalConfig.SetAdminHTTPPort(port)
-		if arguments.Name == nil {
-			serverName = fmt.Sprintf("admin_server_%d", port)
-		}
-	case "ingestor":
-		if serverName == "" {
-			uuid := common.GenerateUUID()
-			serverName = fmt.Sprintf("ingestor_server_%s", uuid)
-		}
-	case "syncer":
-		if serverName == "" {
-			uuid := common.GenerateUUID()
-			serverName = fmt.Sprintf("syncer_server_%s", uuid)
-		}
-	case "deepdoc":
-		if serverName == "" {
-			uuid := common.GenerateUUID()
-			serverName = fmt.Sprintf("deepdoc_server_%s", uuid)
-		}
-	case "migrate":
-		if arguments.Name == nil {
-			serverName = "migrate"
-		}
+		resolvedPort = port
+	case "ingestor", "syncer", "deepdoc", "migrate":
+		// No port embedding; the final name is derived below.
 	default:
 		err = errors.New(*arguments.Mode)
 		common.Error("invalid server mode", err)
 		os.Exit(1)
 	}
+
+	// Final server name: explicit --name wins; api/admin embed the resolved
+	// port; ingestor/syncer/deepdoc/migrate use their fixed forms. An unknown
+	// mode is rejected by the switch above.
+	finalName, nameErr := bootstrap.ResolveServerName(*arguments.Mode, arguments.Name, resolvedPort)
+	if nameErr != nil {
+		common.Error("invalid server mode", nameErr)
+		os.Exit(1)
+	}
+	serverName = finalName
 
 	// set server name and log file path
 	server.SetServerName(serverName)

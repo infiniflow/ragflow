@@ -17,6 +17,7 @@
 package bootstrap
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -107,6 +108,29 @@ func TestResolveServerNameUnknownModeErrors(t *testing.T) {
 	// Empty mode is also invalid.
 	if _, err := ResolveServerName("", nil, 0); err == nil {
 		t.Error("ResolveServerName(\"\") error = nil, want error")
+	}
+}
+
+// TestResolveServerNameWorkerModesStableNoUUID guards the contract that
+// ingestor/syncer/deepdoc without --name resolve to the stable "<mode>_server"
+// literal. The historical code had a UUID branch keyed on `if serverName == ""`
+// that was dead (the name was already pre-filled), so those servers must never
+// get a per-boot UUID suffix in their log filename. This test fails (and must
+// stay failing) if anyone reintroduces UUID generation for these modes.
+func TestResolveServerNameWorkerModesStableNoUUID(t *testing.T) {
+	for _, mode := range []string{"ingestor", "syncer", "deepdoc"} {
+		got, err := ResolveServerName(mode, nil, 0)
+		if err != nil {
+			t.Fatalf("ResolveServerName(%q, nil, 0) error = %v", mode, err)
+		}
+		want := mode + "_server"
+		if got != want {
+			t.Errorf("ResolveServerName(%q, nil, 0) = %q, want stable literal %q", mode, got, want)
+		}
+		// A UUID suffix looks like a 8-4-4-4-12 hex run; assert it is absent.
+		if strings.Contains(got, "-") {
+			t.Errorf("ResolveServerName(%q, nil, 0) = %q contains '-' (UUID suffix leaked into worker server name)", mode, got)
+		}
 	}
 }
 
