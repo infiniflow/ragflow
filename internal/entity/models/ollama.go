@@ -56,6 +56,19 @@ func (o *OllamaModel) Name() string {
 func buildOllamaRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
 	reqBody := buildRequestBody(cfg, modelName, messages, stream)
 	reqBody["messages"] = buildOllamaMessages(messages)
+	for _, key := range []string{"temperature", "top_p", "max_tokens", "stop", "do_sample"} {
+		delete(reqBody, key)
+	}
+	if cfg != nil {
+		options := make(map[string]any)
+		setOpt(options, "temperature", cfg.Temperature)
+		setOpt(options, "top_p", cfg.TopP)
+		setOpt(options, "num_predict", cfg.MaxTokens)
+		setOpt(options, "stop", cfg.Stop)
+		if len(options) > 0 {
+			reqBody["options"] = options
+		}
+	}
 	if cfg != nil && cfg.Thinking != nil {
 		reqBody["think"] = *cfg.Thinking
 	}
