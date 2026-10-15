@@ -32,7 +32,7 @@ func TestMigrateIngestionConfig(t *testing.T) {
 		},
 		{name: "engine off", input: `{"layout_recognize":false}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`},
 		{name: "engine spellings", input: `{"layout_recognize":"plain text"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`},
-		{name: "tcadp reaches both families", input: `{"layout_recognize":"TCADP Parser"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"tcadp"},"spreadsheet":{"parse_method":"tcadp"}}}`},
+		{name: "tcadp reaches both families", input: `{"layout_recognize":"TCADP Parser"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"tcadp parser"},"spreadsheet":{"parse_method":"tcadp"}}}`},
 		{name: "tcadp on a spreadsheet-only pipeline", parser: "table", input: `{"layout_recognize":"TCADP Parser"}`, want: `{"Parser:HipSignsRhyme":{"spreadsheet":{"parse_method":"tcadp"}}}`},
 		{name: "tcadp result options follow the engine", parser: "table", input: `{"layout_recognize":"TCADP Parser","table_result_type":"2","markdown_image_response_type":"2"}`, want: `{"Parser:HipSignsRhyme":{"spreadsheet":{"markdown_image_response_type":"2","parse_method":"tcadp","table_result_type":"2"}}}`},
 		{name: "tcadp result options without the engine", parser: "table", input: `{"layout_recognize":"DeepDOC","table_result_type":"2"}`, want: `{}`},
@@ -365,7 +365,7 @@ func TestMigrateExtractorConfig(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			config, want := decodeExtractorConfig(t, tc.input), decodeExtractorConfig(t, tc.want)
+			config, want := decodeIngestionConfig(t, tc.input), decodeIngestionConfig(t, tc.want)
 			parser := tc.parser
 			if parser == "" {
 				parser = "general"
@@ -373,14 +373,14 @@ func TestMigrateExtractorConfig(t *testing.T) {
 			if _, err := migrateExtractorConfig(config, parser, tc.pipeline); err != nil {
 				t.Fatal(err)
 			}
-			if got := decodeExtractorConfig(t, encodeExtractorConfig(t, config)); !reflect.DeepEqual(got, want) {
-				t.Fatalf("got %s; want %s", encodeExtractorConfig(t, config), tc.want)
+			if got := decodeIngestionConfig(t, encodeIngestionConfig(t, config)); !reflect.DeepEqual(got, want) {
+				t.Fatalf("got %s; want %s", encodeIngestionConfig(t, config), tc.want)
 			}
-			snapshot := encodeExtractorConfig(t, config)
+			snapshot := encodeIngestionConfig(t, config)
 			if changed, err := migrateExtractorConfig(config, parser, tc.pipeline); err != nil || changed {
 				t.Fatalf("second run changed=%v, err=%v", changed, err)
 			}
-			if encodeExtractorConfig(t, config) != snapshot {
+			if encodeIngestionConfig(t, config) != snapshot {
 				t.Fatal("second run changed config")
 			}
 		})
@@ -388,17 +388,17 @@ func TestMigrateExtractorConfig(t *testing.T) {
 }
 
 func TestMigrateExtractorParserConfigsBatches(t *testing.T) {
-	db := openExtractorMigrationDB(t)
+	db := openIngestionMigrationDB(t)
 	for i := 0; i < 257; i++ {
 		for _, table := range []string{"knowledgebase", "document"} {
-			insertExtractorConfig(t, db, table, fmt.Sprintf("%032d", i), python027ParserConfig)
+			insertIngestionConfig(t, db, table, fmt.Sprintf("%032d", i), "general", python027ParserConfig)
 		}
 	}
 	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
 	for _, table := range []string{"knowledgebase", "document"} {
-		var rows []extractorConfigMigrationRow
+		var rows []ingestionConfigMigrationRow
 		if err := db.Table(table).Find(&rows).Error; err != nil {
 			t.Fatal(err)
 		}
@@ -406,7 +406,7 @@ func TestMigrateExtractorParserConfigsBatches(t *testing.T) {
 			t.Fatalf("%s rows=%d", table, len(rows))
 		}
 		for _, row := range rows {
-			config := decodeExtractorConfig(t, *row.ParserConfig)
+			config := decodeIngestionConfig(t, *row.ParserConfig)
 			node, ok := config["Extractor:AutoExtractDefault"].(map[string]any)
 			if !ok || node["keywords"].(map[string]any)["top_n"] != float64(8) || config["topn_tags"] != float64(5) {
 				t.Fatalf("%s.%s not migrated correctly: %v", table, row.ID, config)
@@ -426,13 +426,13 @@ func TestMigrateExtractorParserConfigsRejectsInvalidRows(t *testing.T) {
 		`{"enable_metadata":true,"metadata":{"type":"object","required":["author"],"properties":{"author":{"type":"object","properties":{"name":{"type":"string"}}}}}}`,
 	} {
 		t.Run(raw, func(t *testing.T) {
-			db := openExtractorMigrationDB(t)
-			insertExtractorConfig(t, db, "knowledgebase", "a", python027ParserConfig)
-			insertExtractorConfig(t, db, "knowledgebase", "b", raw)
+			db := openIngestionMigrationDB(t)
+			insertIngestionConfig(t, db, "knowledgebase", "a", "general", python027ParserConfig)
+			insertIngestionConfig(t, db, "knowledgebase", "b", "general", raw)
 			if err := migrateExtractorParserConfigs(t.Context(), db); err == nil {
 				t.Fatal("invalid input was marked as migrated")
 			}
-			var rows []extractorConfigMigrationRow
+			var rows []ingestionConfigMigrationRow
 			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -449,20 +449,20 @@ func TestMigrateExtractorParserConfigsRejectsInvalidRows(t *testing.T) {
 func TestMigrateExtractorParserConfigsVersionAndEmptyRows(t *testing.T) {
 	for _, version := range []string{"", extractorParserConfigTargetVersion, "v1.0.0"} {
 		t.Run(version, func(t *testing.T) {
-			db := openExtractorMigrationDB(t)
+			db := openIngestionMigrationDB(t)
 			if version != "" {
 				writeDatabaseVersion(t, db, version)
 			}
 			for i, raw := range []string{``, `null`, `{}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`} {
-				insertExtractorConfig(t, db, "knowledgebase", fmt.Sprint(i), raw)
+				insertIngestionConfig(t, db, "knowledgebase", fmt.Sprint(i), "general", raw)
 			}
 			if version != "" {
-				insertExtractorConfig(t, db, "knowledgebase", "old", python027ParserConfig)
+				insertIngestionConfig(t, db, "knowledgebase", "old", "general", python027ParserConfig)
 			}
 			if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
 				t.Fatal(err)
 			}
-			var rows []extractorConfigMigrationRow
+			var rows []ingestionConfigMigrationRow
 			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
 				t.Fatal(err)
 			}
@@ -484,53 +484,4 @@ func TestMigrateExtractorParserConfigsVersionAndEmptyRows(t *testing.T) {
 	}
 }
 
-func openExtractorMigrationDB(t *testing.T) *gorm.DB {
-	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.Document{}, &entity.SystemSettings{}); err != nil {
-		t.Fatal(err)
-	}
-	return db
-}
-func insertExtractorConfig(t *testing.T, db *gorm.DB, table, id, raw string) {
-	t.Helper()
-	values := map[string]any{"id": id, "parser_id": "general", "parser_config": raw, "created_by": "user"}
-	if table == "knowledgebase" {
-		values["tenant_id"] = "tenant"
-		values["name"] = "dataset"
-		values["embd_id"] = "embedding"
-	} else {
-		values["kb_id"] = "dataset"
-		values["source_type"] = "local"
-		values["type"] = "doc"
-		values["suffix"] = "pdf"
-	}
-	if err := db.Table(table).Create(values).Error; err != nil {
-		t.Fatal(err)
-	}
-}
-func decodeExtractorConfig(t *testing.T, raw string) map[string]any {
-	t.Helper()
-	var config map[string]any
-	if err := json.Unmarshal([]byte(raw), &config); err != nil {
-		t.Fatal(err)
-	}
-	return config
-}
-func encodeExtractorConfig(t *testing.T, config map[string]any) string {
-	t.Helper()
-	raw, err := json.Marshal(config)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(raw)
-}
 func ptrString(value string) *string { return &value }

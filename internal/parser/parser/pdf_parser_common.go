@@ -310,7 +310,6 @@ var pdfParseMethodSpellings = map[string]string{
 	"docling":        "docling",
 	"opendataloader": "opendataloader",
 	"tcadp parser":   "tcadp",
-	"tcadp":          "tcadp",
 	"paddleocr":      "paddleocr",
 	"somark":         "somark",
 }
@@ -319,15 +318,8 @@ var pdfParseMethodSpellings = map[string]string{
 // a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
 // layout_recognizer selectors resolved separately, so they report false.
 func IsPDFParseMethod(raw string) bool {
-	_, ok := CanonicalPDFParseMethod(raw)
+	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
 	return ok
-}
-
-// CanonicalPDFParseMethod resolves a recognized engine spelling to its stored
-// token. Model references are resolved by the ingestion dispatcher separately.
-func CanonicalPDFParseMethod(raw string) (string, bool) {
-	method, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
-	return method, ok
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -342,7 +334,7 @@ func normalizePDFParseMethod(raw string) string {
 	case strings.HasSuffix(method, "@opendataloader"):
 		return "opendataloader"
 	}
-	if canonical, ok := CanonicalPDFParseMethod(method); ok {
+	if canonical, ok := pdfParseMethodSpellings[method]; ok {
 		return canonical
 	}
 	return method

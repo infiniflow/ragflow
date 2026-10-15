@@ -33,60 +33,38 @@ import (
 	"ragflow/internal/utility"
 )
 
-// This step follows rc2.dev2 (the extractor migration): database migrations
-// share one version marker, so each step's target sorts above the previous one.
-const ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev3"
+// These steps follow rc2.dev1 and advance the shared version marker in order.
+const (
+	extractorParserConfigTargetVersion = "v1.0.0-rc2.dev2"
+	ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev3"
+	builtinExtractorNodeID             = "Extractor:AutoExtractDefault"
+)
 
-// Python v0.27.2 kept a dataset's Parser / Chunker / Tokenizer settings at the
-// top level of parser_config, where rag/app/<parser>.py read them. Go reads
-// component-scoped params only: internal/service/dataset/helpers.go
-// DropUnscopedParserConfigKeys drops every flat key at the API boundary and
-// internal/ingestion/pipeline.CleanComponentParams warns and drops them again on
-// the write path. A row that still carries flat keys therefore silently loses
-// its engine choice, page range, chunk size/delimiters/overlap, parent-child
-// split and filename weight the next time it is written through the API.
-//
-// This step converts those keys into the components of the pipeline the row
-// itself runs, producing the same component-scoped shape the current API would
-// have stored for the equivalent request: the same derivations
-// (parserchunk.ParseDelimiterField for delimiter lists,
-// utility.NormalizePDFPages for page ranges, parent_child -> children_delimiters)
-// and the same "an existing param wins" rule.
-//
-// The DAO layer cannot read the builtin templates to find those node ids:
-// internal/ingestion/pipeline transitively imports this package, so importing it
-// here would be an import cycle. The target table below is therefore literal and
-// TestIngestionMigrationTargetsMatchBuiltinTemplates pins it against the
-// embedded templates, so a renamed node, a changed file family or a new
-// template-baked key fails a test instead of silently skipping or thinning rows.
-
-// builtinIngestionTarget is where one builtin pipeline keeps the components the
-// Python-era flat settings move to.
+// Python v0.27.2 stored component settings at the parser_config root. Convert
+// them to Go's component-scoped shape before the API discards unscoped keys.
+// Target IDs are literal because importing the pipeline registry into DAO would
+// introduce a dependency cycle; runtime tests check them against the templates.
 type builtinIngestionTarget struct {
-	parserNode     string
-	parserFamilies map[string]struct{}
-	// parserFamilyCarried holds template-baked family params that the migration
-	// must re-state whenever it writes that family. A run-level component
-	// override replaces a whole family map (internal/agent/canvas
-	// applyOverrideParams wins on the top-level key, then
-	// component.NewParserComponent re-derives only its own defaults), so a
-	// migration that wrote {"pdf": {"parse_method": ...}} onto a row whose
-	// Parser node does not exist yet would drop everything else the template
-	// bakes for that family. Only keys whose value differs from
-	// component.defaultSetups() AND changes behaviour are listed; the rest are
-	// either re-derived here, equal to the runtime default, or read by nobody.
-	// TestIngestionMigrationTargetsMatchBuiltinTemplates asserts each entry
-	// still matches its template and that no template key is left unaccounted
-	// for.
-	parserFamilyCarried map[string]map[string]any
-	chunker             string
-	chunkerNode         string
-	tokenizerNode       string
+	parserNode  string
+	pdf         bool
+	spreadsheet bool
+	// Overrides replace an entire family; carry template PDF values that differ
+	// from the Parser constructor's defaults.
+	pdfDefaults   map[string]any
+	chunker       string
+	chunkerNode   string
+	tokenizerNode string
 }
 
 func (t builtinIngestionTarget) hasFamily(family string) bool {
-	_, ok := t.parserFamilies[family]
-	return ok
+	switch family {
+	case "pdf":
+		return t.pdf
+	case "spreadsheet":
+		return t.spreadsheet
+	default:
+		return false
+	}
 }
 
 // acceptsChunkParams reports whether the chunker accepts delimiter, overlap,
@@ -95,121 +73,100 @@ func (t builtinIngestionTarget) acceptsChunkParams() bool {
 	return t.chunker == "GeneralChunker" || t.chunker == "TokenChunker"
 }
 
-func ingestionFamilies(names ...string) map[string]struct{} {
-	out := make(map[string]struct{}, len(names))
-	for _, name := range names {
-		out[name] = struct{}{}
-	}
-	return out
-}
-
-// removeTOCDefault is the pdf-family value the book and laws templates bake;
-// component.defaultSetups() has remove_toc=false, so it must be carried or a
-// migrated book/laws row would start indexing its table of contents.
-func removeTOCDefault() map[string]any { return map[string]any{"remove_toc": true} }
-
-// multiColumnDefault is the pdf-family value the paper template bakes;
-// defaultSetups() has no enable_multi_column at all, so losing it would parse
-// two-column papers in the wrong reading order.
-func multiColumnDefault() map[string]any { return map[string]any{"enable_multi_column": true} }
-
-// ingestionTargets maps a builtin parser_id to its component nodes. The family
-// list mirrors the Parser node's params in each embedded template: writing into
-// a family the template does not carry would be dropped by CleanComponentParams
-// and never reach the parser.
+// Only PDF and spreadsheet settings are migrated from the Parser's flat keys.
 var ingestionTargets = func() map[string]builtinIngestionTarget {
 	// "naive" is the historical name of the general pipeline: the embedded
 	// general template declares parser_ids ["naive"] and the registry aliases
 	// "general" onto it.
 	general := builtinIngestionTarget{
-		parserNode:     "Parser:HipSignsRhyme",
-		parserFamilies: ingestionFamilies("doc", "docx", "html", "markdown", "pdf", "spreadsheet", "text&code"),
-		chunker:        "GeneralChunker",
-		chunkerNode:    "GeneralChunker:SixApplesFall",
-		tokenizerNode:  "Tokenizer:LegalReadersDecide",
+		parserNode:    "Parser:HipSignsRhyme",
+		pdf:           true,
+		spreadsheet:   true,
+		chunker:       "GeneralChunker",
+		chunkerNode:   "GeneralChunker:SixApplesFall",
+		tokenizerNode: "Tokenizer:LegalReadersDecide",
 	}
 	return map[string]builtinIngestionTarget{
 		"general": general,
 		"naive":   general,
 		"qa": {
-			parserNode:     "Parser:HipSignsRhyme",
-			parserFamilies: ingestionFamilies("docx", "markdown", "pdf", "spreadsheet", "text&code"),
-			chunker:        "QAChunker",
-			chunkerNode:    "QAChunker:TidyCloudsThink",
-			tokenizerNode:  "Tokenizer:ColdCloudsDream",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			spreadsheet:   true,
+			chunker:       "QAChunker",
+			chunkerNode:   "QAChunker:TidyCloudsThink",
+			tokenizerNode: "Tokenizer:ColdCloudsDream",
 		},
 		"manual": {
-			parserNode:     "Parser:HipSignsRhyme",
-			parserFamilies: ingestionFamilies("doc", "docx", "pdf"),
-			chunker:        "ManualChunker",
-			chunkerNode:    "ManualChunker:NineInsectsFind",
-			tokenizerNode:  "Tokenizer:FunnyBalloonsGrin",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			chunker:       "ManualChunker",
+			chunkerNode:   "ManualChunker:NineInsectsFind",
+			tokenizerNode: "Tokenizer:FunnyBalloonsGrin",
 		},
 		"table": {
-			parserNode:     "Parser:HipSignsRhyme",
-			parserFamilies: ingestionFamilies("spreadsheet", "text&code"),
-			chunker:        "TableChunker",
-			chunkerNode:    "TableChunker:FastFoxesJump",
-			tokenizerNode:  "Tokenizer:DeepLakesShine",
+			parserNode:    "Parser:HipSignsRhyme",
+			spreadsheet:   true,
+			chunker:       "TableChunker",
+			chunkerNode:   "TableChunker:FastFoxesJump",
+			tokenizerNode: "Tokenizer:DeepLakesShine",
 		},
 		"paper": {
-			parserNode:          "Parser:HipSignsRhyme",
-			parserFamilies:      ingestionFamilies("pdf"),
-			parserFamilyCarried: map[string]map[string]any{"pdf": multiColumnDefault()},
-			chunker:             "TitleChunker",
-			chunkerNode:         "TitleChunker:SparklySchoolsTravel",
-			tokenizerNode:       "Tokenizer:GreatCarsWash",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			pdfDefaults:   map[string]any{"enable_multi_column": true},
+			chunker:       "TitleChunker",
+			chunkerNode:   "TitleChunker:SparklySchoolsTravel",
+			tokenizerNode: "Tokenizer:GreatCarsWash",
 		},
 		"book": {
-			parserNode:          "Parser:HipSignsRhyme",
-			parserFamilies:      ingestionFamilies("doc", "docx", "html", "pdf", "text&code"),
-			parserFamilyCarried: map[string]map[string]any{"pdf": removeTOCDefault()},
-			chunker:             "TitleChunker",
-			chunkerNode:         "TitleChunker:GrumpyGarlicsBake",
-			tokenizerNode:       "Tokenizer:HotDonutsRing",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			pdfDefaults:   map[string]any{"remove_toc": true},
+			chunker:       "TitleChunker",
+			chunkerNode:   "TitleChunker:GrumpyGarlicsBake",
+			tokenizerNode: "Tokenizer:HotDonutsRing",
 		},
 		"laws": {
-			parserNode:          "Parser:HipSignsRhyme",
-			parserFamilies:      ingestionFamilies("doc", "docx", "html", "markdown", "pdf", "text&code"),
-			parserFamilyCarried: map[string]map[string]any{"pdf": removeTOCDefault()},
-			chunker:             "TitleChunker",
-			chunkerNode:         "TitleChunker:SpicyKeysKick",
-			tokenizerNode:       "Tokenizer:PublicJobsTake",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			pdfDefaults:   map[string]any{"remove_toc": true},
+			chunker:       "TitleChunker",
+			chunkerNode:   "TitleChunker:SpicyKeysKick",
+			tokenizerNode: "Tokenizer:PublicJobsTake",
 		},
 		"presentation": {
-			parserNode:     "Parser:HipSignsRhyme",
-			parserFamilies: ingestionFamilies("pdf", "slides"),
-			chunker:        "PageChunker",
-			chunkerNode:    "PageChunker:HappyHillsGlow",
-			tokenizerNode:  "Tokenizer:TallTreesDance",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			chunker:       "PageChunker",
+			chunkerNode:   "PageChunker:HappyHillsGlow",
+			tokenizerNode: "Tokenizer:TallTreesDance",
 		},
 		"picture": {
-			parserNode:     "Parser:ViewsCaptureLight",
-			parserFamilies: ingestionFamilies("image", "video"),
-			chunker:        "OneChunker",
-			chunkerNode:    "OneChunker:BrightColorsGlow",
-			tokenizerNode:  "Tokenizer:SharpLensFocus",
+			parserNode:    "Parser:ViewsCaptureLight",
+			chunker:       "OneChunker",
+			chunkerNode:   "OneChunker:BrightColorsGlow",
+			tokenizerNode: "Tokenizer:SharpLensFocus",
 		},
 		"one": {
-			parserNode:     "Parser:HipSignsRhyme",
-			parserFamilies: ingestionFamilies("doc", "docx", "html", "markdown", "pdf", "spreadsheet", "text&code"),
-			chunker:        "OneChunker",
-			chunkerNode:    "OneChunker:DryDrinksVisit",
-			tokenizerNode:  "Tokenizer:FrankWeeksListen",
+			parserNode:    "Parser:HipSignsRhyme",
+			pdf:           true,
+			spreadsheet:   true,
+			chunker:       "OneChunker",
+			chunkerNode:   "OneChunker:DryDrinksVisit",
+			tokenizerNode: "Tokenizer:FrankWeeksListen",
 		},
 		"audio": {
-			parserNode:     "Parser:SongsFillAir",
-			parserFamilies: ingestionFamilies("audio"),
-			chunker:        "OneChunker",
-			chunkerNode:    "OneChunker:BlueSkiesLaugh",
-			tokenizerNode:  "Tokenizer:KindEyesWatch",
+			parserNode:    "Parser:SongsFillAir",
+			chunker:       "OneChunker",
+			chunkerNode:   "OneChunker:BlueSkiesLaugh",
+			tokenizerNode: "Tokenizer:KindEyesWatch",
 		},
 		"email": {
-			parserNode:     "Parser:BirdsFlutterHigh",
-			parserFamilies: ingestionFamilies("email"),
-			chunker:        "TokenChunker",
-			chunkerNode:    "TokenChunker:WarmBreadSmells",
-			tokenizerNode:  "Tokenizer:NiceWordsSpoken",
+			parserNode:    "Parser:BirdsFlutterHigh",
+			chunker:       "TokenChunker",
+			chunkerNode:   "TokenChunker:WarmBreadSmells",
+			tokenizerNode: "Tokenizer:NiceWordsSpoken",
 		},
 	}
 }()
@@ -283,36 +240,57 @@ type ingestionConfigMigrationRow struct {
 }
 
 func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
+	return migrateIngestionConfigStep(ctx, db, ingestionParserConfigTargetVersion,
+		func(config map[string]any, row ingestionConfigMigrationRow, table string) (bool, error) {
+			return migrateIngestionConfig(config, row.ParserID, row.PipelineID, table, row.ID)
+		})
+}
+
+func migrateExtractorParserConfigs(ctx context.Context, db *gorm.DB) error {
+	return migrateIngestionConfigStep(ctx, db, extractorParserConfigTargetVersion,
+		func(config map[string]any, row ingestionConfigMigrationRow, _ string) (bool, error) {
+			return migrateExtractorConfig(config, row.ParserID, row.PipelineID)
+		})
+}
+
+// Each version step shares batching and persistence, with its own conversion.
+func migrateIngestionConfigStep(ctx context.Context, db *gorm.DB, targetVersion string,
+	convert func(map[string]any, ingestionConfigMigrationRow, string) (bool, error),
+) error {
 	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
 		return err
 	}
-	if shouldSkipMigration(version, ingestionParserConfigTargetVersion) {
+	if shouldSkipMigration(version, targetVersion) {
 		return nil
 	}
 	found := false
 	for _, target := range []struct {
 		table string
 		model any
-	}{{"knowledgebase", &entity.Knowledgebase{}}, {"document", &entity.Document{}}} {
+	}{
+		{"knowledgebase", &entity.Knowledgebase{}}, {"document", &entity.Document{}},
+	} {
 		if !db.WithContext(ctx).Migrator().HasTable(target.model) {
 			continue
 		}
 		found = true
-		count, err := migrateIngestionConfigRows(ctx, db, target.model, target.table)
+		count, err := migrateIngestionConfigRows(ctx, db, target.model, target.table, convert)
 		if err != nil {
-			return fmt.Errorf("migrate %s ingestion parser configs: %w", target.table, err)
+			return fmt.Errorf("migrate %s parser configs: %w", target.table, err)
 		}
-		common.Info("Migrated Python ingestion parser configs",
-			zap.String("table", target.table), zap.Int("rows", count))
+		common.Info("Migrated Python parser configs", zap.String("table", target.table),
+			zap.String("version", targetVersion), zap.Int("rows", count))
 	}
 	if !found {
 		return nil
 	}
-	return setDatabaseMigrationVersion(ctx, db, ingestionParserConfigTargetVersion)
+	return setDatabaseMigrationVersion(ctx, db, targetVersion)
 }
 
-func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
+func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string,
+	convert func(map[string]any, ingestionConfigMigrationRow, string) (bool, error),
+) (int, error) {
 	count := 0
 	var rows []ingestionConfigMigrationRow
 	result := db.WithContext(ctx).Model(model).
@@ -330,7 +308,7 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 						}
 						return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
 					}
-					changed, err := migrateIngestionConfig(config, row.ParserID, row.PipelineID, table, row.ID)
+					changed, err := convert(config, row, table)
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
@@ -356,8 +334,7 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 func migrateIngestionConfig(config map[string]any, parserID string, pipelineID *string, table, rowID string) (bool, error) {
 	// A custom canvas reads component-scoped params on the Python side too, and
 	// a canvas can hold several nodes of the same kind, so no ownership rule for
-	// a flat setting is safe: leave the row alone (the same call the extractor
-	// migration makes).
+	// a flat setting is safe.
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
 		return false, nil
 	}
@@ -486,11 +463,7 @@ func applyNodeWrites(config map[string]any, writes nodeWrites) (bool, error) {
 				changed = true
 				continue
 			}
-			// A derived map is a Parser file family or the parent_child group;
-			// merging it one level deep lets the migration add the param it
-			// derived to a family the row already carries without replacing the
-			// params that family already has. A sub-key the row carries wins,
-			// like every other existing value.
+			// Merge missing fields within Parser families and parent_child groups.
 			derivedMap, derivedIsMap := value.(map[string]any)
 			existingMap, existingIsMap := existing.(map[string]any)
 			if !derivedIsMap || !existingIsMap {
@@ -511,13 +484,10 @@ func applyNodeWrites(config map[string]any, writes nodeWrites) (bool, error) {
 // convertIngestionParser moves the flat PDF-parser settings onto the row's
 // Parser node. An unsupported engine stops migration before the source is lost.
 func convertIngestionParser(config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) error {
-	engine := ""
 	if raw, ok := config["layout_recognize"]; ok {
-		derived, err := convertIngestionLayoutRecognize(raw, config, target, writes, row)
-		if err != nil {
+		if err := convertIngestionLayoutRecognize(raw, config, target, writes, row); err != nil {
 			return err
 		}
-		engine = derived
 	}
 	for _, key := range []string{"mineru_parse_method", "mineru_lang"} {
 		if raw, exists := config[key]; exists && raw != nil {
@@ -535,7 +505,7 @@ func convertIngestionParser(config map[string]any, target builtinIngestionTarget
 	if err := convertIngestionParserPages(config, target, writes, row); err != nil {
 		return err
 	}
-	if err := convertIngestionTCADPOptions(config, target, writes, row, engine); err != nil {
+	if err := convertIngestionTCADPOptions(config, target, writes, row); err != nil {
 		return err
 	}
 	if err := convertIngestionTableColumns(config, target, writes, row); err != nil {
@@ -545,32 +515,39 @@ func convertIngestionParser(config map[string]any, target builtinIngestionTarget
 	return nil
 }
 
-// seedCarriedParserFamilyDefaults re-states the template's behavioural family
-// params on every family the migration is about to write. Without it a run-level
-// override would drop them: the override replaces the whole family map
-// (internal/agent/canvas applyOverrideParams wins on the top-level key) and
-// component.NewParserComponent then re-derives only its own defaults. A value the
-// row already carries still wins, because applyNodeWrites skips present keys.
+// Carry PDF template defaults whenever an override replaces that family.
 func seedCarriedParserFamilyDefaults(target builtinIngestionTarget, writes nodeWrites) {
-	for family, carried := range target.parserFamilyCarried {
-		derived, ok := writes[target.parserNode][family].(map[string]any)
-		if !ok {
-			// This family is not being written, so the row keeps the template's
-			// own map untouched.
-			continue
-		}
-		for key, value := range carried {
-			if _, exists := derived[key]; !exists {
-				derived[key] = value
-			}
+	pdf, ok := writes[target.parserNode]["pdf"].(map[string]any)
+	if !ok {
+		return
+	}
+	for key, value := range target.pdfDefaults {
+		if _, exists := pdf[key]; !exists {
+			pdf[key] = value
 		}
 	}
 }
 
-// convertIngestionLayoutRecognize resolves the flat engine setting. It returns
-// the canonical token it selected for the PDF family ("" when none), which the
-// TCADP option keys key off.
-func convertIngestionLayoutRecognize(raw any, config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) (string, error) {
+// Normalize Python engine spellings using the existing Go runtime vocabulary.
+func ingestionPDFParseMethod(raw string) (string, bool) {
+	method := strings.ToLower(strings.TrimSpace(raw))
+	if method == "tcadp" {
+		method = "tcadp parser"
+	}
+	if !parserpkg.IsPDFParseMethod(method) {
+		return "", false
+	}
+	switch method {
+	case "tcadp parser":
+		method = "tcadp"
+	case "plaintext", "plain text":
+		method = "plain_text"
+	}
+	return method, true
+}
+
+// Resolve the flat engine choice without overriding an existing selector.
+func convertIngestionLayoutRecognize(raw any, config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) error {
 	// An existing selector owns the engine choice as a whole: filling its
 	// sibling could change which dispatcher wins, even if the old value stays.
 	if node, ok := config[target.parserNode].(map[string]any); ok {
@@ -580,19 +557,19 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 			if hasMethod || hasModel {
 				// A PDF selector does not own the spreadsheet family's engine.
 				if value, ok := raw.(string); ok && target.hasFamily("spreadsheet") {
-					if method, known := parserpkg.CanonicalPDFParseMethod(value); known && method == "tcadp" {
+					if method, known := ingestionPDFParseMethod(value); known && method == "tcadp" {
 						writes.setSetup(target.parserNode, "spreadsheet", "parse_method", method)
-						return method, nil
+						return nil
 					}
 				}
-				return "", nil
+				return nil
 			}
 		}
 	}
 	switch value := raw.(type) {
 	case nil:
 		// A null engine means "unset": nothing to derive, nothing lost.
-		return "", nil
+		return nil
 	case bool:
 		// The dataset UI stored the DeepDOC toggle as a boolean.
 		method := "plain_text"
@@ -601,38 +578,43 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 		}
 		if !target.hasFamily("pdf") {
 			row.retire("layout_recognize", "the targeted pipeline has no PDF file family")
-			return "", nil
+			return nil
 		}
 		writes.setSetup(target.parserNode, "pdf", "parse_method", method)
-		return method, nil
+		return nil
 	case string:
 		trimmed := strings.TrimSpace(value)
 		if trimmed == "" {
 			// Python's ParserConfig declares layout_recognize str with
 			// min_length 1, so an empty string is malformed rather than unset.
-			return "", fmt.Errorf("layout_recognize must not be empty")
+			return fmt.Errorf("layout_recognize must not be empty")
 		}
 		if ingestionLayoutModelReference(trimmed) {
 			if !target.hasFamily("pdf") {
 				row.retire("layout_recognize", "the targeted pipeline has no PDF file family")
-				return "", nil
+				return nil
 			}
 			// These OCR selectors cannot be resolved by the Go ingestion dispatcher.
 			// Preserve them by stopping rather than sending them to generic VLM chat.
 			switch ingestionModelReferenceEngine(trimmed) {
 			case "mistral ocr", "somark", "opendataloader", "paddleocr":
-				return "", fmt.Errorf("layout_recognize %q has no supported Go model-reference dispatch", trimmed)
+				return fmt.Errorf("layout_recognize %q has no supported Go model-reference dispatch", trimmed)
 			}
 			// Keep supported OCR and VLM model references whole.
 			writes.setSetup(target.parserNode, "pdf", "layout_recognizer", trimmed)
-			return "", nil
+			return nil
 		}
-		method, known := parserpkg.CanonicalPDFParseMethod(trimmed)
+		method, known := ingestionPDFParseMethod(trimmed)
 		if !known {
-			return "", fmt.Errorf("layout_recognize %q is not a supported Go parse method", trimmed)
+			return fmt.Errorf("layout_recognize %q is not a supported Go parse method", trimmed)
 		}
-		if target.hasFamily("pdf") {
-			writes.setSetup(target.parserNode, "pdf", "parse_method", method)
+		if target.pdf {
+			pdfMethod := method
+			// The existing PDF dispatcher recognizes the full TCADP spelling.
+			if method == "tcadp" {
+				pdfMethod = "tcadp parser"
+			}
+			writes.setSetup(target.parserNode, "pdf", "parse_method", pdfMethod)
 		}
 		if method == "tcadp" && target.hasFamily("spreadsheet") {
 			// Python applied one layout_recognizer to every file type, and
@@ -642,9 +624,9 @@ func convertIngestionLayoutRecognize(raw any, config map[string]any, target buil
 		if !target.hasFamily("pdf") && !(method == "tcadp" && target.hasFamily("spreadsheet")) {
 			row.retire("layout_recognize", "the targeted pipeline has no file family this engine serves")
 		}
-		return method, nil
+		return nil
 	default:
-		return "", fmt.Errorf("layout_recognize must be a string or a boolean, got %T", raw)
+		return fmt.Errorf("layout_recognize must be a string or a boolean, got %T", raw)
 	}
 }
 
@@ -682,7 +664,7 @@ func convertIngestionParserPages(config map[string]any, target builtinIngestionT
 // setup a parser configures itself with
 // (internal/parser/parser/{csv,xls,xlsx,ppt,pptx}_parser.go and
 // pdf_parser_common.go), so they follow the engine rather than the file type.
-func convertIngestionTCADPOptions(config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow, derivedEngine string) error {
+func convertIngestionTCADPOptions(config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) error {
 	keys := []string{"table_result_type", "markdown_image_response_type"}
 	present := make(map[string]string, len(keys))
 	for _, key := range keys {
@@ -706,7 +688,7 @@ func convertIngestionTCADPOptions(config map[string]any, target builtinIngestion
 		if !target.hasFamily(family) {
 			continue
 		}
-		if ingestionEffectiveFamilyEngine(config, writes, target.parserNode, family, derivedEngine) == "tcadp" {
+		if ingestionEffectiveFamilyEngine(config, writes, target.parserNode, family) == "tcadp" {
 			families = append(families, family)
 		}
 	}
@@ -727,11 +709,11 @@ func convertIngestionTCADPOptions(config map[string]any, target builtinIngestion
 // ingestionEffectiveFamilyEngine resolves the engine a family will actually run
 // with, mirroring the runtime precedence: an explicit param on the row wins over
 // the value this migration derives.
-func ingestionEffectiveFamilyEngine(config map[string]any, writes nodeWrites, parserNode, family, derivedEngine string) string {
+func ingestionEffectiveFamilyEngine(config map[string]any, writes nodeWrites, parserNode, family string) string {
 	if node, ok := config[parserNode].(map[string]any); ok {
 		if setup, ok := node[family].(map[string]any); ok {
 			if existing, ok := setup["parse_method"].(string); ok && existing != "" {
-				if canonical, known := parserpkg.CanonicalPDFParseMethod(existing); known {
+				if canonical, known := ingestionPDFParseMethod(existing); known {
 					return canonical
 				}
 				return strings.ToLower(existing)
@@ -743,10 +725,13 @@ func ingestionEffectiveFamilyEngine(config map[string]any, writes nodeWrites, pa
 	}
 	if setup, ok := writes[parserNode][family].(map[string]any); ok {
 		if derived, ok := setup["parse_method"].(string); ok && derived != "" {
+			if method, known := ingestionPDFParseMethod(derived); known {
+				return method
+			}
 			return strings.ToLower(derived)
 		}
 	}
-	return strings.ToLower(derivedEngine)
+	return ""
 }
 
 // convertIngestionTableColumns moves the table column role settings onto the
@@ -963,13 +948,8 @@ func convertIngestionOverlappedPercent(config map[string]any, target builtinInge
 		return
 	}
 	if _, ok := common.ToFloat(raw); !ok {
-		if text, isText := raw.(string); !isText {
-			row.retire("overlapped_percent", fmt.Sprintf("%v is not a number", raw))
-			return
-		} else if _, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err != nil {
-			row.retire("overlapped_percent", fmt.Sprintf("%q is not a number", text))
-			return
-		}
+		row.retire("overlapped_percent", fmt.Sprintf("%v is not a number", raw))
+		return
 	}
 	writes.set(target.chunkerNode, "overlapped_percent", raw)
 }
@@ -1119,11 +1099,7 @@ func convertIngestionTokenizer(config map[string]any, target builtinIngestionTar
 	}
 	weight, ok := common.ToFloat(raw)
 	if !ok {
-		if text, isText := raw.(string); !isText {
-			return fmt.Errorf("filename_embd_weight must be a number, got %T", raw)
-		} else if _, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err != nil {
-			return fmt.Errorf("filename_embd_weight %q is not a number", text)
-		}
+		return fmt.Errorf("filename_embd_weight must be a number, got %T", raw)
 	}
 	if _, isText := raw.(string); isText {
 		// A numeric string reached the field; store the number the runtime will
@@ -1134,10 +1110,6 @@ func convertIngestionTokenizer(config map[string]any, target builtinIngestionTar
 	writes.set(target.tokenizerNode, "filename_embd_weight", raw)
 	return nil
 }
-
-// This step follows rc2.dev1 because database migrations share one version marker.
-const extractorParserConfigTargetVersion = "v1.0.0-rc2.dev2"
-const builtinExtractorNodeID = "Extractor:AutoExtractDefault"
 
 var builtinExtractorPipelines = map[string]struct{}{
 	"general":      {},
@@ -1153,73 +1125,6 @@ var builtinExtractorPipelines = map[string]struct{}{
 	"presentation": {},
 }
 var extractorFlatKeys = []string{"auto_keywords", "auto_questions", "enable_metadata", "metadata", "built_in_metadata"}
-
-type extractorConfigMigrationRow struct {
-	ID           string  `gorm:"column:id"`
-	ParserID     string  `gorm:"column:parser_id"`
-	PipelineID   *string `gorm:"column:pipeline_id"`
-	ParserConfig *string `gorm:"column:parser_config"`
-}
-
-func migrateExtractorParserConfigs(ctx context.Context, db *gorm.DB) error {
-	version, err := GetDatabaseMigrationVersion(ctx, db)
-	if err != nil {
-		return err
-	}
-	if shouldSkipMigration(version, extractorParserConfigTargetVersion) {
-		return nil
-	}
-	found := false
-	for _, target := range []struct {
-		table string
-		model any
-	}{{"knowledgebase", &entity.Knowledgebase{}}, {"document", &entity.Document{}}} {
-		if !db.WithContext(ctx).Migrator().HasTable(target.model) {
-			continue
-		}
-		found = true
-		count, err := migrateExtractorConfigRows(ctx, db, target.model)
-		if err != nil {
-			return fmt.Errorf("migrate %s extractor configs: %w", target.table, err)
-		}
-		common.Info("Migrated Python extractor configs", zap.String("table", target.table), zap.Int("rows", count))
-	}
-	if !found {
-		return nil
-	}
-	return setDatabaseMigrationVersion(ctx, db, extractorParserConfigTargetVersion)
-}
-
-func migrateExtractorConfigRows(ctx context.Context, db *gorm.DB, model any) (int, error) {
-	count := 0
-	var rows []extractorConfigMigrationRow
-	result := db.WithContext(ctx).Model(model).Select("id", "parser_id", "pipeline_id", "parser_config").Order("id").FindInBatches(&rows, parserConfigMigrationBatchSize, func(batch *gorm.DB, _ int) error {
-		return batch.Transaction(func(tx *gorm.DB) error {
-			for _, row := range rows {
-				if row.ParserConfig == nil || strings.TrimSpace(*row.ParserConfig) == "" {
-					continue
-				}
-				config, ok := parseParserConfig(row.ParserConfig)
-				if !ok {
-					return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
-				}
-				changed, err := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
-				if err != nil {
-					return fmt.Errorf("row %s: %w", row.ID, err)
-				}
-				if !changed {
-					continue
-				}
-				if err := tx.Model(model).Where("id = ?", row.ID).Update("parser_config", entity.JSONMap(config)).Error; err != nil {
-					return err
-				}
-				count++
-			}
-			return nil
-		})
-	})
-	return count, result.Error
-}
 
 // migrateExtractorConfig rewrites only Python's top-level extraction settings.
 // Existing node fields win over flat Python values. A modular metadata transport

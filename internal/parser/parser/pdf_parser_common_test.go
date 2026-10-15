@@ -505,7 +505,7 @@ func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
 func TestIsPDFParseMethod(t *testing.T) {
 	named := []string{
 		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
-		"monkeyocrv2", "docling", "opendataloader", "tcadp parser", "tcadp",
+		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
 		"paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -517,8 +517,10 @@ func TestIsPDFParseMethod(t *testing.T) {
 		}
 	}
 
-	// Empty values are rejected separately; other names are model selectors.
+	// Anything else is a VLM model name: the UI never writes the bare
+	// "tcadp" abbreviation, and empty values are rejected separately.
 	notNamed := []string{
+		"tcadp",
 		"CustomVLM", "some_vlm", "gpt-4o",
 		"", "  ",
 	}
@@ -593,24 +595,6 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 	}
 	if !IsPDFParseMethod(dispatcherHandled) {
 		t.Errorf("IsPDFParseMethod(%q) = false; the ingestion dispatcher relies on it being recognized (Check() must not demand lang for it)", dispatcherHandled)
-	}
-}
-
-func TestCanonicalPDFParseMethod(t *testing.T) {
-	for _, tc := range []struct{ input, want string }{
-		{"TCADP Parser", "tcadp"}, {"tcadp", "tcadp"},
-		{" Plain Text ", "plain_text"}, {"PLAIN_TEXT", "plain_text"},
-		{"monkeyocrv2", "monkeyocrv2"},
-	} {
-		got, ok := CanonicalPDFParseMethod(tc.input)
-		if !ok || got != tc.want || !IsPDFParseMethod(got) {
-			t.Errorf("%q: canonical=%q recognized=%v", tc.input, got, ok)
-		}
-	}
-	for _, input := range []string{"", "mistral ocr", "foo@mineru", "MagicOCR"} {
-		if _, ok := CanonicalPDFParseMethod(input); ok {
-			t.Errorf("model or unsupported engine accepted: %q", input)
-		}
 	}
 }
 

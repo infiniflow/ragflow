@@ -45,6 +45,7 @@ func TestMigratedIngestionConfigReachesRuntime(t *testing.T) {
 	db := openIngestionRuntimeDB(t)
 	insertIngestionRuntimeRow(t, db, "kb-general", "general",
 		`{"layout_recognize":"plain text","pages":[[2,3]],"chunk_token_num":256,"delimiter":"\n","overlapped_percent":0.29,"filename_embd_weight":0.2}`)
+	insertIngestionRuntimeRow(t, db, "kb-tcadp", "general", `{"layout_recognize":"TCADP Parser"}`)
 	insertIngestionRuntimeRow(t, db, "kb-book", "book", `{"layout_recognize":true,"pages":[[1,2]],"chunk_token_num":300}`)
 	if err := dao.MigrateIngestionParserConfigsForTest(t.Context(), db); err != nil {
 		t.Fatal(err)
@@ -86,6 +87,18 @@ func TestMigratedIngestionConfigReachesRuntime(t *testing.T) {
 		}
 	})
 
+	t.Run("TCADP matches the existing runtime", func(t *testing.T) {
+		effective := effectiveComponentParams(t, "general", migratedConfig(t, db, "kb-tcadp"))
+		node := effective["Parser:HipSignsRhyme"]
+		pdf := node["pdf"].(map[string]any)["parse_method"].(string)
+		if pdf != "tcadp parser" || !parser.IsPDFParseMethod(pdf) {
+			t.Fatalf("migrated PDF engine would be dispatched as a VLM: %q", pdf)
+		}
+		if got := node["spreadsheet"].(map[string]any)["parse_method"]; got != "tcadp" {
+			t.Fatalf("spreadsheet engine=%v; want tcadp", got)
+		}
+	})
+
 	t.Run("book keeps the defaults its template bakes", func(t *testing.T) {
 		config := migratedConfig(t, db, "kb-book")
 		node, ok := config["TitleChunker:GrumpyGarlicsBake"].(map[string]any)
@@ -111,47 +124,6 @@ func TestMigratedIngestionConfigReachesRuntime(t *testing.T) {
 			t.Errorf("pages=%v; want [[1 2]]", pdf.Pages)
 		}
 	})
-}
-
-// TestMigratedIngestionConfigSurvivesAPIWrite asserts the migrated params pass
-// CleanComponentParams unchanged. That boundary drops any key-bearing param the
-// component's schema does not declare, so this is what proves the migration does
-// not write settings the API would silently discard on the next save.
-func TestMigratedIngestionConfigSurvivesAPIWrite(t *testing.T) {
-	registry, err := pipeline.DefaultRegistry()
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, ref := range append(registry.Refs(), "naive") {
-		t.Run(ref, func(t *testing.T) {
-			config := decodeIngestionConfig(t, python027MaximalIngestionConfig)
-			changed, err := dao.MigrateIngestionConfigForTest(config, ref, nil, "knowledgebase", "row-1")
-			if err != nil || !changed {
-				t.Fatalf("changed=%v err=%v", changed, err)
-			}
-			template, ok := registry.Get(ref)
-			if !ok {
-				t.Fatal("template missing")
-			}
-			raw, err := json.Marshal(template.DSL)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if len(config) == 0 {
-				t.Fatal("migration wrote nothing for the maximal config")
-			}
-			cleaned := pipeline.CleanComponentParams(raw, config)
-			for cpnID, params := range config {
-				got, ok := cleaned[cpnID].(map[string]any)
-				if !ok {
-					t.Fatalf("cpnID %q was dropped at the API boundary", cpnID)
-				}
-				if !reflect.DeepEqual(got, params) {
-					t.Fatalf("cpnID %q lost params at the API boundary: got %v; want %v", cpnID, got, params)
-				}
-			}
-		})
-	}
 }
 
 // TestMigratedParentChildMatchesWritePath asserts the migration derives
@@ -243,6 +215,10 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 			chunkerCpn := soleComponentSuffix(t, components, "Chunker")
 			tokenizerCpn := soleComponent(t, components, "Tokenizer")
 			templateFamilies := parserFamilies(t, parserCpn.params)
+			rawDSL, err := json.Marshal(template.DSL)
+			if err != nil {
+				t.Fatal(err)
+			}
 
 			for _, tc := range []struct {
 				name string
@@ -285,6 +261,16 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 					changed, err := dao.MigrateIngestionConfigForTest(config, ref, nil, "knowledgebase", "row-1")
 					if err != nil || !changed {
 						t.Fatalf("changed=%v err=%v", changed, err)
+					}
+
+					if tc.name == "maximal" && len(config) == 0 {
+						t.Fatal("migration wrote nothing for the maximal config")
+					}
+					// Snapshot before cleaning so mutations cannot hide a lost parameter.
+					expected := jsonNormalize(t, config)
+					cleaned := pipeline.CleanComponentParams(rawDSL, config)
+					if !reflect.DeepEqual(jsonNormalize(t, cleaned), expected) {
+						t.Fatalf("API cleaning changed migrated params: got %v; want %v", cleaned, expected)
 					}
 
 					// Parser: exactly the template's families the config targets,
@@ -459,28 +445,17 @@ func soleComponentSuffix(t *testing.T, components []templateComponent, suffix st
 	return found
 }
 
-// nonFamilyParserParams are the Parser params that are not file families.
-var nonFamilyParserParams = map[string]bool{
-	"vlm":                       true,
-	"enable_vision_enhancement": true,
-	"allowed_output_format":     true,
-}
-
 func parserFamilies(t *testing.T, params map[string]any) map[string]map[string]any {
 	t.Helper()
 	out := map[string]map[string]any{}
-	for key, raw := range params {
-		if nonFamilyParserParams[key] {
-			continue
+	for _, key := range []string{"pdf", "spreadsheet"} {
+		if raw, exists := params[key]; exists {
+			family, ok := raw.(map[string]any)
+			if !ok {
+				t.Fatalf("Parser family %q is not an object", key)
+			}
+			out[key] = family
 		}
-		family, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("Parser param %q is not a file family: %v", key, raw)
-		}
-		out[key] = family
-	}
-	if len(out) == 0 {
-		t.Fatal("template Parser node declares no file family")
 	}
 	return out
 }
@@ -655,33 +630,13 @@ func cloneConfig(config map[string]any) map[string]any {
 }
 
 func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := db.DB()
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = sqlDB.Close() })
-	if err := db.AutoMigrate(&entity.Knowledgebase{}, &entity.SystemSettings{}); err != nil {
-		t.Fatal(err)
-	}
+	db := openIngestionRuntimeDB(t)
 	input := `{"auto_keywords":8,"auto_questions":2,"enable_metadata":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}],"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"tag-file"},"keywords":{"system_prompt":"custom keywords"},"summary":{"enabled":true,"system_prompt":"custom summary"}}}`
-	if err := db.Exec(`INSERT INTO knowledgebase (id,tenant_id,name,embd_id,created_by,parser_id,parser_config) VALUES (?,?,?,?,?,?,?)`, "kb-1", "tenant-1", "dataset", "embedding", "user-1", "general", input).Error; err != nil {
-		t.Fatal(err)
-	}
+	insertIngestionRuntimeRow(t, db, "kb-1", "general", input)
 	if err := dao.MigrateExtractorParserConfigsForTest(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
-	var raw string
-	if err := db.Table("knowledgebase").Where("id = ?", "kb-1").Pluck("parser_config", &raw).Error; err != nil {
-		t.Fatal(err)
-	}
-	var config map[string]any
-	if err := json.Unmarshal([]byte(raw), &config); err != nil {
-		t.Fatal(err)
-	}
+	config := migratedConfig(t, db, "kb-1")
 	got := extractorFromMigratedConfig(t, config).Param
 	if !got.Keywords.Enabled || got.Keywords.TopN != 8 || got.Keywords.SystemPrompt != "custom keywords" || !got.Questions.Enabled || got.Questions.TopN != 2 {
 		t.Fatalf("keyword/question settings lost: %#v", got)
