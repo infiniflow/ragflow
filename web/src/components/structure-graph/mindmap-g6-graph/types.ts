@@ -18,6 +18,7 @@ import { type IStructureGraphTemplate } from '@/interfaces/database/document-str
 
 export interface MindMapNodeValue {
   id: string;
+  entity_id?: string;
   name: string;
   source_chunk_ids?: string[];
 }

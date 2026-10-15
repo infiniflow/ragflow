@@ -33,6 +33,21 @@ import {
   useSetPaginationParams,
 } from './route-hook';
 
+const ChunkKeys = {
+  lists: () => ['fetchChunkList'] as const,
+  list: (
+    ...params: [
+      knowledgeId: string,
+      documentId: string,
+      page: number,
+      pageSize: number,
+      keywords: string,
+      available: number | undefined,
+      entityId?: string,
+    ]
+  ) => [...ChunkKeys.lists(), ...params] as const,
+};
+
 export interface IChunkListResult {
   searchString?: string;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
@@ -49,7 +64,7 @@ export const useSelectChunkList = () => {
     data: IChunk[];
     total: number;
     documentInfo: IKnowledgeFile;
-  }>({ queryKey: ['fetchChunkList'] });
+  }>({ queryKey: ChunkKeys.lists() });
 
   return data?.at(-1)?.[1];
 };
@@ -71,7 +86,7 @@ export const useDeleteChunk = () => {
       });
       if (data.code === 0) {
         setPaginationParams(1);
-        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+        queryClient.invalidateQueries({ queryKey: ChunkKeys.lists() });
       }
       return data?.code;
     },
@@ -114,7 +129,7 @@ export const useCreateChunk = () => {
           );
         }
         setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+          queryClient.invalidateQueries({ queryKey: ChunkKeys.lists() });
         }, 1000); // Delay to ensure the list is updated
       }
       return data?.code;
@@ -150,14 +165,14 @@ export const useFetchChunk = (
 
 export const useFetchNextChunkList = (
   enabled = true,
-  options?: { chunkIds?: string[] },
+  options?: { entityId?: string },
 ): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds?.slice(0, 100);
+  const entityId = options?.entityId;
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
@@ -169,34 +184,36 @@ export const useFetchNextChunkList = (
     isFetching: loading,
     dataUpdatedAt,
   } = useQuery({
-    queryKey: [
-      'fetchChunkList',
+    queryKey: ChunkKeys.list(
       knowledgeId,
       documentId,
       pagination.current,
       pagination.pageSize,
       debouncedSearchString,
       available,
-      chunkIds,
-    ],
+      entityId,
+    ),
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
     enabled: enabled && !!knowledgeId && !!documentId,
     queryFn: async () => {
-      const { data } = await kbService.chunkList({
-        kb_id: knowledgeId,
-        doc_id: documentId,
-        // page: pagination.current,
-        size: Math.min(pagination.pageSize, 100),
-        page: chunkIds?.length ? 1 : pagination.current,
-        // size: chunkIds?.length
-        //   ? chunkIds.length
-        //   : Math.min(pagination.pageSize, 100),
-        available_int: available,
-        keywords: searchString,
-        chunk_ids: chunkIds,
-      });
+      const pageSize = Math.min(pagination.pageSize, 100);
+      const { data } = await (entityId
+        ? kbService.entityChunkList(knowledgeId, documentId, entityId, {
+            page: pagination.current,
+            page_size: pageSize,
+            keywords: searchString,
+            available: available === undefined ? undefined : available === 1,
+          })
+        : kbService.chunkList({
+            kb_id: knowledgeId,
+            doc_id: documentId,
+            page: pagination.current,
+            size: pageSize,
+            available_int: available,
+            keywords: searchString,
+          }));
       if (data.code === 0) {
         const res = data.data;
         return {

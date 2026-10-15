@@ -4,6 +4,7 @@ import {
 } from '@/hooks/use-chunk-request';
 import type { IChunk } from '@/interfaces/database/dataset';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useMemoizedFn } from 'ahooks';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
@@ -50,7 +51,7 @@ import { getExtension } from '@/utils/document-util';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
-  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
+  const [filterEntityId, setFilterEntityId] = useState<string>();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   // The artifact tree publishes its claims / evidence content upward; the page
   // renders it as a resizable column between the tree and the chunk list, and
@@ -69,7 +70,7 @@ function Chunk() {
     available,
     handleSetAvailable,
     dataUpdatedAt,
-  } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
+  } = useFetchNextChunkList(true, { entityId: filterEntityId });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
   const { t } = useTranslation();
@@ -131,15 +132,11 @@ function Chunk() {
     [],
   );
 
-  const handleChunkIdsChange = useCallback(
-    (chunkIds: string[]) => {
-      setFilterChunkIds(chunkIds);
-      if (chunkIds.length === 0) {
-        pagination.onChange?.(1, pagination.pageSize);
-      }
-    },
-    [pagination],
-  );
+  const handleSelectedEntityChange = useMemoizedFn((entityId?: string) => {
+    setFilterEntityId(entityId);
+    clearSelectedChunkIds();
+    pagination.onChange?.(1, pagination.pageSize);
+  });
 
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
@@ -270,7 +267,7 @@ function Chunk() {
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
                   positions={positions}
-                  onChunkIdsChange={handleChunkIdsChange}
+                  onNodeChange={handleSelectedEntityChange}
                   onClaimsPanelChange={handleClaimsPanelChange}
                   onEvidencePanelChange={handleEvidencePanelChange}
                 />

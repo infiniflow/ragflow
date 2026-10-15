@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import { type IStructureGraphEntity } from '@/interfaces/database/document-structure';
 import { DagreLayout } from '@antv/layout';
 import { Graph, type EdgeMetadata, type NodeMetadata } from '@antv/x6';
 import { useEffect, useRef } from 'react';
@@ -44,13 +45,13 @@ export function useX6Graph(
     });
 
     graph.on('node:click', ({ node }) => {
-      const entity = node.getData<Record<string, unknown> | undefined>();
-      const chunkIds = entity?.source_chunk_ids as string[] | undefined;
-      if (chunkIds?.length) {
+      const entity = node.getData<IStructureGraphEntity | undefined>();
+      if (entity) {
         onNodeClick?.({
           id: node.id,
-          name: (entity?.name as string) || node.id,
-          source_chunk_ids: chunkIds,
+          entity_id: entity.entity_id,
+          name: entity.name || node.id,
+          source_chunk_ids: entity.source_chunk_ids,
         });
       }
     });

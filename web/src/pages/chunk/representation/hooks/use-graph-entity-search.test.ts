@@ -10,7 +10,10 @@ const mockFetchDocumentStructureGraph = jest.mocked(
   useFetchDocumentStructureGraph,
 );
 
-function setupHook(entities: Array<Record<string, unknown>>) {
+function setupHook(
+  entities: Array<Record<string, unknown>>,
+  onNodeClick = jest.fn(),
+) {
   mockFetchDocumentStructureGraph.mockReturnValue({
     data: {
       templates: [
@@ -26,7 +29,7 @@ function setupHook(entities: Array<Record<string, unknown>>) {
     loading: false,
   } as never);
 
-  return renderHook(() => useGraphEntitySearch());
+  return renderHook(() => useGraphEntitySearch(onNodeClick));
 }
 
 describe('useGraphEntitySearch handleNoMatchEnter', () => {
@@ -96,10 +99,14 @@ describe('useGraphEntitySearch handleSelectEntity', () => {
   });
 
   it('refetches the keyword subgraph for the picked entity and keeps it highlighted', () => {
-    const { result } = setupHook([
-      { id: 'e1', name: 'swallow' },
-      { id: 'e2', name: 'owl tree' },
-    ]);
+    const onNodeClick = jest.fn();
+    const { result } = setupHook(
+      [
+        { id: 'e1', name: 'swallow' },
+        { id: 'e2', entity_id: 'row-e2', name: 'owl tree' },
+      ],
+      onNodeClick,
+    );
 
     act(() => {
       result.current.handleSelectEntity('owl tree');
@@ -109,6 +116,9 @@ describe('useGraphEntitySearch handleSelectEntity', () => {
     expect(result.current.graphSelectValue).toBe('owl tree');
     expect(mockFetchDocumentStructureGraph).toHaveBeenLastCalledWith(
       'owl tree',
+    );
+    expect(onNodeClick).toHaveBeenLastCalledWith(
+      expect.objectContaining({ id: 'e2', entity_id: 'row-e2' }),
     );
   });
 

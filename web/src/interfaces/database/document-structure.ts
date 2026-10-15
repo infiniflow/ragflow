@@ -4,6 +4,8 @@ export type StructureTemplateKind = CompilationTemplateKind | 'raptor';
 
 export interface IStructureGraphEntity {
   id?: string;
+  /** Indexed entity row ID used for chunk filtering. */
+  entity_id?: string;
   name?: string;
   aliases?: string[];
   description?: string;

@@ -39,6 +39,7 @@ import TimelineX6Graph from './timeline-x6-graph';
 
 export interface ClickableNode {
   id: string;
+  entity_id?: string;
   name?: string;
   source_chunk_ids?: string[];
   /** Tree leaves only: whether this node has child clusters. */
@@ -82,13 +83,12 @@ export function RepresentationRenderer({
 }: RepresentationRendererProps) {
   const handleTreeItemClick = useCallback(
     (item: TreeDataItem | undefined) => {
-      if (item?.source_chunk_ids?.length) {
+      if (item) {
         onNodeClick?.({
           id: item.id,
+          entity_id: item.entity_id,
           name: item.name,
           source_chunk_ids: item.source_chunk_ids,
-          // Tree leaves are where the claims UI attaches; branches are pure
-          // structure and clicking them keeps the old behaviour.
           hasChildren: !!item.children?.length,
           badge: item.badge,
           description: item.description,
@@ -101,31 +101,12 @@ export function RepresentationRenderer({
 
   const handleArtifactNodeClick = useCallback(
     (node: IArtifactGraphEntity) => {
-      if (node.source_chunk_ids?.length) {
-        onNodeClick?.({
-          id: node.slug,
-          name: node.name,
-          source_chunk_ids: node.source_chunk_ids,
-        });
-      }
-    },
-    [onNodeClick],
-  );
-
-  const handleTimelineNodeClick = useCallback(
-    (node: { id: string; name: string; source_chunk_ids?: string[] }) => {
-      if (node.source_chunk_ids?.length) {
-        onNodeClick?.(node);
-      }
-    },
-    [onNodeClick],
-  );
-
-  const handleMindMapNodeClick = useCallback(
-    (node: ClickableNode) => {
-      if (node.source_chunk_ids?.length) {
-        onNodeClick?.(node);
-      }
+      onNodeClick?.({
+        id: node.slug,
+        entity_id: node.entity_id,
+        name: node.name,
+        source_chunk_ids: node.source_chunk_ids,
+      });
     },
     [onNodeClick],
   );
@@ -201,18 +182,14 @@ export function RepresentationRenderer({
           <TimelineX6Graph
             data={adaptTimelineToX6Data(template)}
             show
-            onNodeClick={handleTimelineNodeClick}
+            onNodeClick={onNodeClick}
           />
         </div>
       );
     case CompilationTemplateKind.MindMap:
       return (
         <div className="mt-6 flex-1 min-h-0">
-          <MindMapG6Graph
-            template={template}
-            show
-            onNodeClick={handleMindMapNodeClick}
-          />
+          <MindMapG6Graph template={template} show onNodeClick={onNodeClick} />
         </div>
       );
     case CompilationTemplateKind.SessionGraph:
@@ -231,11 +208,7 @@ export function RepresentationRenderer({
     case CompilationTemplateKind.SessionEssence:
       return (
         <div className="mt-6 flex-1 min-h-0">
-          <MindMapG6Graph
-            template={template}
-            show
-            onNodeClick={handleMindMapNodeClick}
-          />
+          <MindMapG6Graph template={template} show onNodeClick={onNodeClick} />
         </div>
       );
     case CompilationTemplateKind.Empty:

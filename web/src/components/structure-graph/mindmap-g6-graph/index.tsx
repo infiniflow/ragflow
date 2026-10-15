@@ -26,6 +26,7 @@ import {
 import { type MindMapG6GraphProps, type MindMapNodeValue } from './types';
 
 interface MindMapNodeData {
+  entity_id?: string;
   name?: string;
   source_chunk_ids?: string[];
 }
@@ -117,9 +118,10 @@ function MindMapG6Graph({
         if (nodeId === SyntheticMindMapRootId) return;
         const nodeData = graph!.getNodeData(nodeId);
         const data = nodeData.data as MindMapNodeData | undefined;
-        if (data?.source_chunk_ids?.length) {
+        if (data) {
           const payload: MindMapNodeValue = {
             id: nodeId,
+            entity_id: data.entity_id,
             name: data.name || nodeId,
             source_chunk_ids: data.source_chunk_ids,
           };

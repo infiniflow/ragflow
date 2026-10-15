@@ -11,7 +11,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { useSelectedTemplate } from './use-selected-template';
 
 export function useGraphEntitySearch(
-  onNodeClick?: (node: ClickableNode) => void,
+  onNodeClick?: (node: ClickableNode | null) => void,
 ) {
   const [graphKeywords, setGraphKeywords] = useState('');
   const [searchKeyword, setSearchKeyword] = useState(''); // ExpandableSearchInput value
@@ -65,6 +65,7 @@ export function useGraphEntitySearch(
         setGraphKeywords('');
         setSearchKeyword('');
         setSelectedNodeId('');
+        onNodeClick?.(null);
         return;
       }
       setSelectedNodeId(name);
@@ -73,9 +74,10 @@ export function useGraphEntitySearch(
       const entity = (selectedTemplate?.entities ?? []).find(
         (item) => getEntityDisplayName(item) === name,
       );
-      if (entity?.source_chunk_ids?.length) {
+      if (entity) {
         onNodeClick?.({
           id: entity.id ?? name,
+          entity_id: entity.entity_id,
           name,
           source_chunk_ids: entity.source_chunk_ids,
         });
@@ -100,8 +102,9 @@ export function useGraphEntitySearch(
       setGraphKeywords(keywords);
       setSearchKeyword('');
       setSelectedNodeId('');
+      onNodeClick?.(null);
     },
-    [selectedTemplate?.entities, handleSelectEntity],
+    [selectedTemplate?.entities, handleSelectEntity, onNodeClick],
   );
 
   const handleSearchKeywordChange = useCallback((value: string) => {
@@ -115,7 +118,6 @@ export function useGraphEntitySearch(
       if (isGraphKind && node.name) {
         setSelectedNodeId(node.name);
       }
-      if (!node.source_chunk_ids?.length) return;
       onNodeClick?.(node);
     },
     [isGraphKind, onNodeClick],
@@ -127,8 +129,9 @@ export function useGraphEntitySearch(
       setGraphKeywords('');
       setSearchKeyword('');
       setSelectedNodeId('');
+      onNodeClick?.(null);
     },
-    [setSelectedTemplateId],
+    [setSelectedTemplateId, onNodeClick],
   );
 
   return {

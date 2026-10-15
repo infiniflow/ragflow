@@ -22,7 +22,7 @@ export type {
 } from './components/claim-list';
 
 interface RepresentationProps {
-  onNodeClick?: (node: ClickableNode) => void;
+  onNodeClick?: (node: ClickableNode | null) => void;
   // The claims / evidence panels belong to the artifact page's middle column,
   // not inside this tree view. The selection still lives here (it is driven by
   // node clicks), but the resolved content is published upward and the page
@@ -42,6 +42,16 @@ function Representation({
   const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
     null,
   );
+  const handleNodeSelection = useCallback(
+    (node: ClickableNode | null) => {
+      if (!node) {
+        setClaimsLeaf(null);
+        setEvidenceDetail(null);
+      }
+      onNodeClick?.(node);
+    },
+    [onNodeClick],
+  );
 
   const {
     data,
@@ -59,7 +69,7 @@ function Representation({
     handleSearchKeywordChange,
     handleTemplateChange,
     handleNodeClick,
-  } = useGraphEntitySearch(onNodeClick);
+  } = useGraphEntitySearch(handleNodeSelection);
 
   // Tree leaves carry a claim-count badge: clicking one opens its claims in the
   // artifact page's middle column, in addition to the usual chunk navigation.
