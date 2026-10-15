@@ -601,10 +601,10 @@ func TestCleanIllegalControlChars_StripsInvisibleFormatChars(t *testing.T) {
 	}
 }
 
-// TestXLSXParser_DropsTrailingEmptyColumn asserts a trailing column with a
-// header label but no data in any row is dropped, instead of rendering an
-// empty <th>/<td> pair in every chunk.
-func TestXLSXParser_DropsTrailingEmptyColumn(t *testing.T) {
+// TestXLSXParser_KeepsTrailingDatalessColumn asserts a trailing column with
+// a header label but no data in any row is kept as real schema: the header
+// renders and its cells stay empty.
+func TestXLSXParser_KeepsTrailingDatalessColumn(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Group")
 		mustSetCell(t, f, "Sheet1", "B1", "Score")
@@ -617,11 +617,31 @@ func TestXLSXParser_DropsTrailingEmptyColumn(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if strings.Contains(text, "Score") {
-		t.Fatalf("trailing dataless column was not dropped, got:\n%s", text)
+	if !strings.Contains(text, "<tr><th>Group</th><th>Score</th></tr>") {
+		t.Fatalf("trailing labeled column was dropped, got:\n%s", text)
 	}
-	if !strings.Contains(text, "<tr><th>Group</th></tr>") {
-		t.Fatalf("want single-column header, got:\n%s", text)
+	if !strings.Contains(text, "<tr><td>G1</td><td></td></tr>") {
+		t.Fatalf("dataless cell must render empty, got:\n%s", text)
+	}
+}
+
+// TestTrimTrailingEmptyColumns_DropsFullyBlankColumn pins the helper
+// directly: a trailing column blank in every row, header included (e.g. a
+// CSV with trailing commas), is truncated.
+func TestTrimTrailingEmptyColumns_DropsFullyBlankColumn(t *testing.T) {
+	in := [][]string{
+		{"Group", "Score", ""},
+		{"G1", "", ""},
+		{"G2", "", ""},
+	}
+	got := trimTrailingEmptyColumns(in)
+	want := [][]string{
+		{"Group", "Score"},
+		{"G1", ""},
+		{"G2", ""},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("trimTrailingEmptyColumns = %q, want %q", got, want)
 	}
 }
 

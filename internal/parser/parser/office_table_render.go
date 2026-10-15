@@ -181,9 +181,21 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 		matrix := make([][]float64, 0, len(body)+1)
 		matrix = append(matrix, headerTuple)
 		rowsOut := make([][]string, 0, len(body)+1)
-		rowsOut = append(rowsOut, trimCells(header))
+		headerCells := trimCells(header)
+		rowsOut = append(rowsOut, headerCells)
 		for _, r := range body {
-			rowsOut = append(rowsOut, trimCells(r.cells))
+			cells := trimCells(r.cells)
+			// Pad short rows to the header width so every row renders the
+			// full column set with dataless cells left empty. excelize
+			// truncates each row at its last valued cell, so without this a
+			// trailing dataless column (kept as schema by
+			// trimTrailingEmptyColumns) would vanish from data rows while
+			// its <th> stays. Padding is empty-only, so the row-aligned
+			// position tuple computed above is unaffected.
+			for len(cells) < len(headerCells) {
+				cells = append(cells, "")
+			}
+			rowsOut = append(rowsOut, cells)
 			matrix = append(matrix, r.tuple)
 		}
 		grid := make([][]entity.TableCell, 0, len(rowsOut))
@@ -422,20 +434,19 @@ func cleanIllegalControlChars(records [][]string) [][]string {
 	return out
 }
 
-// trimTrailingEmptyColumns drops trailing columns that hold no data in any
-// data row (records[0] is the header and is excluded from the width scan).
-// Only truncation happens here: remaining column indices are untouched, so
-// row-aligned position tuples built downstream stay valid. This removes noise
-// like an entirely unfilled trailing "self score" column, whose header would
-// otherwise render as <th> plus an empty <td> in every chunk. A header-only
-// sheet (no data rows, or no data at all) is left unchanged so the column
-// schema stays searchable.
+// trimTrailingEmptyColumns drops trailing columns that are blank in every
+// row, header included. Only truncation happens here: remaining column
+// indices are untouched, so row-aligned position tuples built downstream stay
+// valid. A trailing column that carries a header label but no data (e.g. an
+// unfilled score column) is intentionally kept — it is real schema, and its
+// cells render empty. A header-only sheet is therefore left unchanged, and
+// so is any sheet whose trailing columns all have labels.
 func trimTrailingEmptyColumns(records [][]string) [][]string {
 	if len(records) == 0 {
 		return records
 	}
 	width := 0
-	for _, row := range records[1:] {
+	for _, row := range records {
 		for c, cell := range row {
 			if strings.TrimSpace(cell) != "" && c+1 > width {
 				width = c + 1
