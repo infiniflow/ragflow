@@ -14,16 +14,25 @@
  *  limitations under the License.
  */
 
-import { deleteDocument, documentFilter } from '@/services/knowledge-service';
+import kbService, {
+  createDocument,
+  deleteDocument,
+  documentFilter,
+} from '@/services/knowledge-service';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router';
 import {
+  useCreateDocument,
   useGetDocumentFilter,
   useRemoveDocument,
+  useRunDocument,
 } from '../use-document-request';
 
 jest.mock('@/services/knowledge-service', () => ({
+  __esModule: true,
+  default: { documentIngest: jest.fn() },
+  createDocument: jest.fn(),
   deleteDocument: jest.fn(),
   documentFilter: jest.fn(),
 }));
@@ -36,11 +45,15 @@ jest.mock('@/routes', () => ({
 
 const mockDocumentFilter = jest.mocked(documentFilter);
 const mockDeleteDocument = jest.mocked(deleteDocument);
+const mockCreateDocument = jest.mocked(createDocument);
+const mockDocumentIngest = jest.mocked(kbService.documentIngest);
 
 const createTestQueryClient = () =>
   new QueryClient({ defaultOptions: { queries: { retry: false } } });
 
 let queryClient = createTestQueryClient();
+
+let initialEntry = '/dataset/files/dataset-id';
 
 let navigate: ((to: string) => void) | undefined;
 
@@ -53,7 +66,7 @@ function NavigationProbe() {
 
 const wrapper = ({ children }: { children: React.ReactNode }) => {
   return (
-    <MemoryRouter initialEntries={['/dataset/files/dataset-id']}>
+    <MemoryRouter initialEntries={[initialEntry]}>
       <Routes>
         <Route
           path="/dataset/files/:id"
@@ -72,6 +85,7 @@ const wrapper = ({ children }: { children: React.ReactNode }) => {
 describe('useGetDocumentFilter', () => {
   beforeEach(() => {
     queryClient = createTestQueryClient();
+    initialEntry = '/dataset/files/dataset-id';
     mockDocumentFilter.mockReset();
     mockDocumentFilter.mockResolvedValue({
       data: { code: 0, data: { filter: { suffix: { pdf: 1 } } } },
@@ -180,13 +194,13 @@ describe('useGetDocumentFilter', () => {
     }
   });
 
-  it('refreshes the counts on the next open after the documents changed', async () => {
-    mockDeleteDocument.mockResolvedValue({ data: { code: 0 } } as never);
+  // Opens the popover, closes it, applies a change to the documents, then
+  // checks the counts stay unfetched until the popover is reopened.
+  async function expectRefreshOnReopenAfter(
+    useChange: () => () => Promise<unknown>,
+  ) {
     const { result } = renderHook(
-      () => ({
-        filter: useGetDocumentFilter(),
-        remove: useRemoveDocument(),
-      }),
+      () => ({ filter: useGetDocumentFilter(), change: useChange() }),
       { wrapper },
     );
 
@@ -199,7 +213,7 @@ describe('useGetDocumentFilter', () => {
       result.current.filter.onOpenChange(false);
     });
     await act(async () => {
-      await result.current.remove.removeDocument('doc-1');
+      await result.current.change();
     });
 
     // The counts are only marked stale: nothing is fetched while the popover
@@ -210,5 +224,30 @@ describe('useGetDocumentFilter', () => {
       result.current.filter.onOpenChange(true);
     });
     await waitFor(() => expect(mockDocumentFilter).toHaveBeenCalledTimes(2));
+  }
+
+  it('refreshes the counts on the next open after the documents changed', async () => {
+    mockDeleteDocument.mockResolvedValue({ data: { code: 0 } } as never);
+    await expectRefreshOnReopenAfter(() => {
+      const { removeDocument } = useRemoveDocument();
+      return () => removeDocument('doc-1');
+    });
+  });
+
+  it('refreshes the counts on the next open after a parse was started', async () => {
+    mockDocumentIngest.mockResolvedValue({ data: { code: 0 } } as never);
+    await expectRefreshOnReopenAfter(() => {
+      const { runDocumentByIds } = useRunDocument();
+      return () => runDocumentByIds({ documentIds: ['doc-1'], run: 1 });
+    });
+  });
+
+  it('refreshes the counts on the next open after a document was created on a later page', async () => {
+    initialEntry = '/dataset/files/dataset-id?page=2';
+    mockCreateDocument.mockResolvedValue({ code: 0 } as never);
+    await expectRefreshOnReopenAfter(() => {
+      const { createDocument } = useCreateDocument();
+      return () => createDocument('new.txt');
+    });
   });
 });
