@@ -228,7 +228,7 @@ func runEinoReActAgent(ctx context.Context, p AgentParam) (*schema.Message, erro
 	// started signal (closed by the graph onStart callback), so starting
 	// the collector first lets non-citation deltas stream out in real time
 	// while the checker runs, instead of buffering the entire round.
-	emitDone := emitAgentModelStreams(ctx, future, p.Cite)
+	emitDone := emitAgentModelStreams(ctx, future, p.Cite, len(p.OutputStructure) > 0)
 	stream, err := agent.Stream(ctx, input, opt)
 	if err != nil {
 		// Drain the collector so its goroutine exits before we return.
@@ -401,7 +401,7 @@ func buildAgentInputMessages(ctx context.Context, p AgentParam) []*schema.Messag
 	return input
 }
 
-func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool) <-chan error {
+func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite bool, holdContent bool) <-chan error {
 	done := make(chan error, 1)
 	go func() {
 		var firstErr error
@@ -450,7 +450,17 @@ func emitAgentModelStreams(ctx context.Context, future react.MessageFuture, cite
 				if runtime.AgentMessageEventsEmitted(ctx) && !runtime.HasDeferredAgentMessageSink(ctx) {
 					continue
 				}
-				runtime.EmitAgentMessage(ctx, msg.Content, msg.ReasoningContent)
+				content := msg.Content
+				if holdContent {
+					// Structured outputs are normalized (fence-stripped) after the
+					// model finishes. Do not stream the raw body; invokeNow emits
+					// the cleaned content once so SSE matches outputs["content"].
+					content = ""
+				}
+				if content == "" && msg.ReasoningContent == "" {
+					continue
+				}
+				runtime.EmitAgentMessage(ctx, content, msg.ReasoningContent)
 			}
 			msgStream.Close()
 		}
@@ -1127,11 +1137,12 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 	if groundingStatus != "" {
 		out["grounding_status"] = groundingStatus
 	}
-	if len(p.OutputStructure) > 0 {
+	structuredHeld := len(p.OutputStructure) > 0
+	if structuredHeld {
 		cleaned := cleanFormattedAnswer(content)
-		parsed, ok := matchOutputStructure(cleaned, p.OutputStructure)
+		parsed, ok := matchAgentOutputStructure(cleaned, p.OutputStructure)
 		if !ok {
-			parsed, ok = matchOutputStructure(content, p.OutputStructure)
+			parsed, ok = matchAgentOutputStructure(content, p.OutputStructure)
 		}
 		if ok {
 			out["structured"] = parsed
@@ -1139,11 +1150,15 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 			content = cleaned
 		} else {
 			common.Warn("component: Agent: outputs.structured set but no parseable JSON matching schema",
-				zap.Strings("expected_keys", sortedMapKeys(p.OutputStructure)))
+				zap.Strings("expected_keys", sortedMapKeys(structuredExpectedKeySet(p.OutputStructure))))
 		}
 	}
 	streamed := runtime.AgentMessageEventsEmitted(ctx) || runtime.DeferredAgentMessageEventsEmitted(ctx)
 	switch {
+	case structuredHeld:
+		// Content deltas were held above; emit the normalized body once so the
+		// live stream matches outputs["content"] (no fenced/raw mismatch).
+		runtime.EmitAgentMessage(ctx, content+artifactMD, "")
 	case !streamed:
 		runtime.EmitAgentMessage(ctx, content+artifactMD, thinking)
 	case artifactMD != "":
@@ -1672,10 +1687,11 @@ func mergeAgentParam(base AgentParam, inputs map[string]any) AgentParam {
 
 // agentOutputStructureFrom reads the Agent's structured-output schema from
 // either the LLM-style output_structure map or the canvas outputs.structured
-// JSON Schema, and returns the expected top-level response key set.
+// JSON Schema. The raw map is preserved so matchAgentOutputStructure can honor
+// required vs properties and declared property types.
 func agentOutputStructureFrom(inputs map[string]any) map[string]any {
 	if v, ok := mapFrom(inputs, "output_structure"); ok {
-		return structuredExpectedKeySet(v)
+		return v
 	}
 	outputs, ok := mapFrom(inputs, "outputs")
 	if !ok {
@@ -1685,35 +1701,117 @@ func agentOutputStructureFrom(inputs map[string]any) map[string]any {
 	if !ok || len(structured) == 0 {
 		return nil
 	}
-	return structuredExpectedKeySet(structured)
+	return structured
+}
+
+// matchAgentOutputStructure parses content against a flat key hint or a JSON
+// Schema object. Flat hints require every listed key. JSON Schema requires only
+// `required` keys (properties alone do not imply required) and checks declared
+// top-level property types when present.
+func matchAgentOutputStructure(content string, structure map[string]any) (map[string]any, bool) {
+	expected := structuredExpectedKeySet(structure)
+	parsed, ok := matchOutputStructure(content, expected)
+	if !ok {
+		return nil, false
+	}
+	if props, ok := structure["properties"].(map[string]any); ok && len(props) > 0 {
+		if !matchStructuredPropertyTypes(parsed, props) {
+			return nil, false
+		}
+	}
+	return parsed, true
 }
 
 // structuredExpectedKeySet turns a JSON Schema (properties/required) or a
 // flat key map into the key set matchOutputStructure checks against.
 func structuredExpectedKeySet(schema map[string]any) map[string]any {
-	if req, ok := schema["required"].([]any); ok && len(req) > 0 {
-		keys := make(map[string]any, len(req))
-		for _, item := range req {
-			if s, ok := item.(string); ok && s != "" {
-				keys[s] = true
+	if isJSONSchemaObject(schema) {
+		keys := make(map[string]any)
+		if req, ok := schema["required"].([]any); ok {
+			for _, item := range req {
+				if s, ok := item.(string); ok && s != "" {
+					keys[s] = true
+				}
 			}
 		}
-		if len(keys) > 0 {
-			return keys
-		}
-	}
-	if props, ok := schema["properties"].(map[string]any); ok && len(props) > 0 {
-		keys := make(map[string]any, len(props))
-		for k := range props {
-			keys[k] = true
-		}
+		// No required → empty key set: any JSON object passes the presence check.
 		return keys
 	}
-	if _, hasType := schema["type"]; hasType {
-		// JSON Schema without properties/required — not a flat key hint.
-		return nil
-	}
 	return schema
+}
+
+func isJSONSchemaObject(schema map[string]any) bool {
+	if _, ok := schema["type"]; ok {
+		return true
+	}
+	if _, ok := schema["properties"]; ok {
+		return true
+	}
+	if _, ok := schema["required"]; ok {
+		return true
+	}
+	return false
+}
+
+func matchStructuredPropertyTypes(parsed map[string]any, props map[string]any) bool {
+	for k, propSchema := range props {
+		v, present := parsed[k]
+		if !present {
+			continue
+		}
+		ps, ok := propSchema.(map[string]any)
+		if !ok {
+			continue
+		}
+		typ, _ := ps["type"].(string)
+		if typ == "" {
+			continue
+		}
+		if !jsonValueMatchesSchemaType(v, typ) {
+			return false
+		}
+	}
+	return true
+}
+
+func jsonValueMatchesSchemaType(v any, typ string) bool {
+	switch typ {
+	case "string":
+		_, ok := v.(string)
+		return ok
+	case "number":
+		switch v.(type) {
+		case float64, json.Number, int, int32, int64:
+			return true
+		default:
+			return false
+		}
+	case "integer":
+		switch x := v.(type) {
+		case float64:
+			return x == float64(int64(x))
+		case json.Number:
+			_, err := x.Int64()
+			return err == nil
+		case int, int32, int64:
+			return true
+		default:
+			return false
+		}
+	case "boolean":
+		_, ok := v.(bool)
+		return ok
+	case "object":
+		_, ok := v.(map[string]any)
+		return ok
+	case "array":
+		_, ok := v.([]any)
+		return ok
+	case "null":
+		return v == nil
+	default:
+		return true
+	}
 }
 
 func sortedMapKeys(m map[string]any) []string {
