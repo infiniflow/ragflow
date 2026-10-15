@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"ragflow/internal/agent/canvas"
@@ -343,11 +344,7 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 		case runtime.PhaseExit:
 			msg = componentName + " Done"
 		case runtime.PhaseError:
-			if ev.Err != nil {
-				msg = componentName + ": " + ev.Err.Error()
-			} else {
-				msg = componentName + " Error"
-			}
+			msg = formatComponentFailure(componentName, ev.Err)
 		}
 		// Surface every component lifecycle event as a structured log line so
 		// a component failure (e.g. an LLM/client error) is captured in
@@ -395,6 +392,25 @@ func (p *Pipeline) componentProgressCallback(ctx context.Context) runtime.Progre
 			Phase:      int(ev.Phase),
 		})
 	}
+}
+
+func formatComponentFailure(componentName string, err error) string {
+	if err == nil {
+		return componentName + " Error"
+	}
+	if componentName == "Extractor" && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error())) {
+		return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
+	}
+
+	message := err.Error()
+	prefix := componentName + ":"
+	for componentName != "" && strings.HasPrefix(strings.ToLower(message), strings.ToLower(prefix)) {
+		message = strings.TrimSpace(message[len(prefix):])
+	}
+	if componentName == "" {
+		return message
+	}
+	return componentName + ": " + message
 }
 
 type detailedProgressSink interface {

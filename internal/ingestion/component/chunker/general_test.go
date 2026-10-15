@@ -34,30 +34,25 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/parser/tableutil"
 )
 
 // spreadsheetSegmentItem builds one wire-format spreadsheet table segment:
 // the markup the parser renders (captioned <table>, <th> header, <td> rows)
 // plus the row-aligned positions matrix (one tuple per <tr>, header first).
 // firstRow is the sheet row of the first DATA row; the header tuple covers
-// firstRow-1.
+// firstRow-1. It emits the structured TableData contract a post-migration
+// producer writes (caption = sheet name, header rows, data rows), not HTML
+// markup.
 func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, sheetIndex, firstRow int) map[string]any {
-	var markup strings.Builder
-	markup.WriteString("<table><caption>" + sheet + "</caption>\n<tr>")
-	for _, cell := range header {
-		markup.WriteString("<th>" + cell + "</th>")
+	allRows := make([][]string, 0, len(rows)+1)
+	if len(header) > 0 {
+		allRows = append(allRows, header)
 	}
-	markup.WriteString("</tr>\n")
-	for _, row := range rows {
-		markup.WriteString("<tr>")
-		for _, cell := range row {
-			markup.WriteString("<td>" + cell + "</td>")
-		}
-		markup.WriteString("</tr>\n")
-	}
-	markup.WriteString("</table>\n")
+	allRows = append(allRows, rows...)
 
 	tuple := func(row int) []float64 {
 		return []float64{float64(sheetIndex), float64(row), float64(row), 1, float64(len(header))}
@@ -66,8 +61,24 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 	for i := range rows {
 		matrix = append(matrix, tuple(firstRow+i))
 	}
+	tdGrid := make([][]entity.TableCell, 0, len(allRows))
+	for _, r := range allRows {
+		cells := make([]entity.TableCell, 0, len(r))
+		for _, c := range r {
+			cells = append(cells, entity.TableCell{Text: c})
+		}
+		tdGrid = append(tdGrid, cells)
+	}
+	td := &entity.TableData{Grid: tdGrid, HeaderRows: 1, Caption: sheet}
 	return map[string]any{
-		"text":         markup.String(),
+		"table": map[string]any{
+			"grid":        tdGrid,
+			"header_rows": 1,
+			"caption":     sheet,
+		},
+		// Mirror what the chunker derives from TableData (its HTML rendering)
+		// so text-bound assertions (e.g. TokenChunker boundary tests) stay valid.
+		"text":         tableutil.RenderTableHTML(td),
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
@@ -799,10 +810,10 @@ func TestGeneralMediaContextSeparatesAdjacentSourceUnits(t *testing.T) {
 		{Text: "after two", DocType: "text", CKType: "text", TKNums: intPtr(1)},
 	}
 
-	if got, want := collectGeneralMediaContext(units, 2, 10, true), "before one\nbefore two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, true, contextSentencePattern), "before one\nbefore two"; got != want {
 		t.Fatalf("above context = %q, want %q", got, want)
 	}
-	if got, want := collectGeneralMediaContext(units, 2, 10, false), "after one\nafter two"; got != want {
+	if got, want := collectGeneralMediaContext(units, 2, 10, false, contextSentencePattern), "after one\nafter two"; got != want {
 		t.Fatalf("below context = %q, want %q", got, want)
 	}
 }
@@ -983,7 +994,8 @@ func TestGeneralChunkerSpreadsheetHeaderOnlyPreservesHeaderChunk(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("chunks = %#v, want one header-only chunk", chunks)
 	}
-	if chunks[0]["text"] != item["text"] || chunks[0]["ck_type"] != "table" {
+	text, _ := chunks[0]["text"].(string)
+	if chunks[0]["ck_type"] != "table" || text == "" || !strings.Contains(text, "Name") || !strings.Contains(text, "Amount") {
 		t.Fatalf("header-only chunk = %#v", chunks[0])
 	}
 }
@@ -1074,9 +1086,21 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 	}
 	covered := 0
 	for i, chunk := range chunks {
+		// New contract: Text is the sub-table rendered as HTML (replicated
+		// header + this part's data rows); the structured TableData is dropped
+		// and never indexed; positions are sliced to this sub-table when the
+		// matrix is row-aligned.
+		if _, ok := chunk["table"]; ok {
+			t.Fatalf("chunk %d still carries structured table", i)
+		}
 		text, _ := chunk["text"].(string)
-		if !strings.Contains(text, "<th>Name</th>") {
-			t.Errorf("chunk %d lost the replicated header", i)
+		if !strings.Contains(text, "<table>") || !strings.Contains(text, "<th>Name</th>") {
+			t.Fatalf("chunk %d text lost the header cell: %q", i, text)
+		}
+		// Single-column table: each data row is one <td>value-…</td> cell.
+		dataRows := strings.Count(text, "<td>value-")
+		if dataRows == 0 {
+			t.Fatalf("chunk %d has no data rows: %q", i, text)
 		}
 		var matrix [][]float64
 		raw, _ := json.Marshal(chunk["positions"])
@@ -1091,11 +1115,10 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if matrix[0][1] != 1 {
 			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
 		}
-		trCount := strings.Count(text, "<tr>")
-		if trCount != len(matrix) {
-			t.Errorf("chunk %d has %d rows but %d position tuples", i, trCount, len(matrix))
+		if dataRows != len(matrix)-1 {
+			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
 		}
-		covered += len(matrix) - 1
+		covered += dataRows
 	}
 	if covered != len(rows) {
 		t.Errorf("sub-tables cover %d data rows, want %d", covered, len(rows))

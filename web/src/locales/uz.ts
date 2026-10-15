@@ -419,7 +419,7 @@ export default {
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): joriy parser konfiguratsiyasi tomonidan qo‘llab-quvvatlanmaydi',
       reselectParserAfterUploadHint:
-        'Yuklashni davom ettiring, so‘ng fayl ro‘yxatida bu fayllar uchun tahlil usulini qayta tanlang.',
+        'Yuklashni davom ettiring; tizim bu fayllarni avtomatik ravishda qo‘llab-quvvatlanadigan ichki tahlil konfiguratsiyasiga o‘tkazadi.',
       reselectParserToParseHint:
         'Ta’sirlangan fayllar uchun tahlil usulini qayta tanlang, so‘ng qayta tahlil qiling.',
       addModelAfterUploadHint:
@@ -671,6 +671,7 @@ export default {
       reRankModelWaring: 'Rerank modeli juda ko‘p vaqt oladi.',
     },
     knowledgeConfiguration: {
+      builtInSuffix: ' (built in)',
       randomSeedTip:
         'Urug‘ — bir xil natijalarning turli ishga tushirishlarda takrorlanuvchanligini ta’minlovchi psevdo-tasodifiy algoritmdir.',
       datasetDescription: 'Ma’lumotlar to‘plamingizni tasvirlab bering',
@@ -1085,14 +1086,6 @@ export default {
       thinkingEnabled: 'Yoqilgan',
       thinkingDisabled: 'O‘chirilgan',
       thinkingLevelNone: 'Oddiy',
-      thinkingLevelLow: 'Past',
-      thinkingLevelLowDescription: 'Tez javoblar',
-      thinkingLevelMedium: 'O‘rta',
-      thinkingLevelMediumDescription: 'Tezlik va chuqurlik muvozanati',
-      thinkingLevelHigh: 'Yuqori',
-      thinkingLevelHighDescription: 'Chuqur fikrlash',
-      thinkingLevelUltra: 'Eng yuqori',
-      thinkingLevelUltraDescription: 'Maksimal aqliy kuch-g‘ayrat',
       thinkingTip:
         'Faqat rasmiy Qwen, Kimi va GLM model provayderlarining fikrlash rejimini boshqaradi. Tizim standarti uzoq vazifalardan qochish uchun Qwen fikrlashini o‘chiradi.',
       quote: 'Iqtiboslarni ko‘rsatish',
@@ -2103,19 +2096,19 @@ export default {
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini https://ragflow.io/docs/dev/supported_models’dan tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini “Model provayderlari” sahifasidan tekshiring.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart ASR modeli. Ovozni mos matnga ko‘chirish uchun shu modeldan foydalaning.',
       rerankModel: 'Rerank',
       rerankModelTip:
-        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       ttsModel: 'TTS',
       ttsModelTip:
-        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       workspace: 'ish maydoni',
       upgrade: 'Yangilash',
       addLlmTitle: 'LLM qo‘shish',
@@ -2762,7 +2755,7 @@ export default {
       dataManipulation: 'Ma’lumotlar bilan ishlash',
       flow: 'Flow',
       dialog: 'Dialog',
-      cite: 'Iqtibos',
+      cite: 'Iqtiboslarni koʻrsatish',
       citeTip: 'Iqtibos',
       name: 'Nomi',
       nameMessage: 'Iltimos, nomni kiriting',
@@ -2901,8 +2894,6 @@ export default {
       watermarkText: 'Filigran matni',
       headerText: 'Yuqori kolontitul matni',
       footerText: 'Quyi kolontitul matni',
-      includeDownloadInfoInContent:
-        'Kontentga yuklab olish ma’lumotini qo‘shish',
       contentPlaceholder: 'Markdown kontentini kiriting...',
       filenamePlaceholder: 'document.ext (bo‘sh bo‘lsa avtomatik yaratiladi)',
       contentRequired: 'Kontent majburiy',

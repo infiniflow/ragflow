@@ -37,7 +37,6 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
   getMetaKeys,
   retrievalTestShare,
@@ -63,10 +62,6 @@ const methods = {
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
-  },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -211,7 +206,6 @@ const chunkService = {
       use_kg: rest.use_kg,
       toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
-      reference_metadata: rest.reference_metadata,
     };
     const response = await request.post(api.retrievalTest, {
       data,
@@ -358,14 +352,14 @@ export const listDataset = (params?: IFetchKnowledgeListRequestParams) =>
 
 // Fetch datasets by a set of IDs via the `ids` query param (comma-joined).
 // Used to echo back already-selected datasets whose names are not present
-// in the first page of the paginated list. `ownerTenantId` scopes the lookup
-// to the canvas owner's tenant when viewing a shared canvas.
-export const listDatasetByIds = (ids: string[], ownerTenantId?: string) =>
+// in the first page of the paginated list. `canvasID` limits results to
+// datasets usable by both the canvas owner and the current user.
+export const listDatasetByIds = (ids: string[], canvasID?: string) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
       page_size: ids.length,
-      ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
+      ...(canvasID ? { canvas_id: canvasID } : {}),
     },
   });
 

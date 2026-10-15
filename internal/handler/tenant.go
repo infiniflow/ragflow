@@ -28,6 +28,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"ragflow/internal/common"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 
@@ -159,7 +160,7 @@ func (h *TenantHandler) TenantInfo(c *gin.Context) {
 // @Tags tenants
 // @Security ApiKeyAuth
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/tenant/list [get]
+// @Router /api/v1/tenants [get]
 func (h *TenantHandler) TenantList(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -265,8 +266,8 @@ func (h *TenantHandler) CreateChunkStore(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	// Check authorization - user must have access to this kb
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 
@@ -313,8 +314,8 @@ func (h *TenantHandler) DeleteChunkStore(c *gin.Context) {
 	}
 
 	// Check authorization
-	if !h.datasetService.Accessible(ctx, req.KBID, user.ID) {
-		common.ResponseWithCodeData(c, common.CodeAuthenticationError, nil, "no authorization")
+	if err := h.datasetService.CheckAccess(ctx, permission.Subject{UserID: user.ID}, req.KBID, permission.OperationUpdate); err != nil {
+		respondPermissionError(c, err, false)
 		return
 	}
 

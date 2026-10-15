@@ -243,14 +243,18 @@ func insertTaskContext(t *testing.T, db *gorm.DB, connectorID, kbID, taskID, tas
 	}
 	if existingConnector == 0 {
 		if err := db.Create(&entity.Connector{
-			ID:          connectorID,
-			TenantID:    "tenant-1",
-			Name:        connectorID,
-			Source:      "mock",
-			InputType:   "poll",
-			Config:      entity.JSONMap{"sync_deleted_files": true},
-			RefreshFreq: 0,
-			PruneFreq:   0,
+			ID:        connectorID,
+			TenantID:  "tenant-1",
+			Name:      connectorID,
+			Source:    "mock",
+			InputType: "poll",
+			Config:    entity.JSONMap{"sync_deleted_files": true},
+			// Keep frequencies positive: taskDelay treats freq <= 0 as
+			// "no periodic reschedule" (fail-closed against hot-loop
+			// republishing), so a zero fixture would silently suppress
+			// every startup-publish expectation below.
+			RefreshFreq: 5,
+			PruneFreq:   5,
 			TimeoutSecs: 60,
 			Status:      dao.SyncStatusSchedule,
 			BaseModel:   entity.BaseModel{UpdateDate: &now, UpdateTime: &ts},

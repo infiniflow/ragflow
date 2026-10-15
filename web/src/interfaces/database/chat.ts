@@ -26,15 +26,12 @@ export interface PromptConfig {
   linkup_api_key?: string;
   parallel_api_key?: string;
   querit_api_key?: string;
+  search1api_api_key?: string;
   serply_api_key?: string;
   tavily_api_key?: string;
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
-  reference_metadata?: {
-    include?: boolean;
-    fields?: string[];
-  };
 }
 
 export interface Parameter {
@@ -142,7 +139,6 @@ export interface IReferenceChunk {
   term_similarity: number;
   positions: number[][];
   doc_type?: string;
-  document_metadata?: Record<string, any>;
 }
 
 export interface IReference {
@@ -220,6 +216,7 @@ export interface IExternalChatInfo {
 
 export interface IMessage extends Message {
   id: string;
+  awaitingServerId?: boolean;
   reference?: IReference; // the latest news has reference
   conversationId?: string; // To distinguish which conversation the message belongs to
 }

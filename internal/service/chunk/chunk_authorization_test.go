@@ -2,12 +2,12 @@ package chunk
 
 import (
 	"context"
-	"strings"
 	"testing"
 
 	"ragflow/internal/dao"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service"
 )
 
@@ -38,7 +38,7 @@ func TestChunkManagementAuthorization(t *testing.T) {
 			return s.UpdateChunk(t.Context(), &service.UpdateChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1", Available: &available}, userID)
 		}},
 		{"remove", func(s *ChunkService, userID string) error {
-			_, err := s.RemoveChunks(t.Context(), &service.RemoveChunksRequest{DocID: "doc-1", ChunkIDs: []string{"chunk-1"}}, userID)
+			_, err := s.RemoveChunks(t.Context(), &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", ChunkIDs: []string{"chunk-1"}}, userID)
 			return err
 		}},
 	}
@@ -79,7 +79,7 @@ func TestChunkManagementAuthorization(t *testing.T) {
 					downstreamCalls := 0
 					svc := &ChunkService{
 						docEngine: docEngine, kbDAO: dao.NewKnowledgebaseDAO(),
-						userTenantDAO: dao.NewUserTenantDAO(), documentDAO: dao.NewDocumentDAO(),
+						documentDAO: dao.NewDocumentDAO(),
 						decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
 							downstreamCalls++
 							return nil
@@ -101,7 +101,7 @@ func TestChunkManagementAuthorization(t *testing.T) {
 					if err == nil {
 						t.Fatal("expected unauthorized operation to be rejected")
 					}
-					if tc.datasetStatus == "1" && !strings.Contains(err.Error(), "access") {
+					if !permissionresponse.IsPermissionError(err) {
 						t.Fatalf("expected an authorization error, got %v", err)
 					}
 					if docEngine.calls != 0 || downstreamCalls != 0 {

@@ -19,10 +19,12 @@ package syncer
 import (
 	"context"
 	"fmt"
+	"ragflow/internal/common"
 	"ragflow/internal/engine/kvrocks"
-	"ragflow/internal/utility"
 	"sync"
 	"time"
+
+	"go.uber.org/zap"
 )
 
 // ConnectorLocker serializes work for one connector and knowledge base.
@@ -48,7 +50,7 @@ type ConnectorLock struct {
 
 // NewConnectorLock creates an empty connector/KB lock.
 func NewConnectorLock() *ConnectorLock {
-	return &ConnectorLock{holder: utility.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*kvrocks.DistributedLock{}}
+	return &ConnectorLock{holder: common.GenerateUUID(), local: map[string]struct{}{}, redis: map[string]*kvrocks.DistributedLock{}}
 }
 
 // TryLock attempts to acquire the connector/KB lock without blocking.
@@ -67,7 +69,19 @@ func (l *ConnectorLock) TryLock(connectorID, kbID string) (ConnectorLockLease, b
 
 	if client := kvrocks.Get(); client != nil {
 		lock := kvrocks.NewDistributedLock(key, l.holder, connectorLockTTL, 0)
-		if lock == nil || !lock.Acquire(context.Background()) {
+		if lock != nil {
+			acquired, err := lock.Acquire(context.Background())
+			if err != nil {
+				common.Warn("connector lock acquire transport error",
+					zap.String("key", key), zap.Error(err))
+			}
+			if !acquired {
+				l.mu.Lock()
+				delete(l.local, key)
+				l.mu.Unlock()
+				return ConnectorLockLease{}, false
+			}
+		} else {
 			l.mu.Lock()
 			delete(l.local, key)
 			l.mu.Unlock()

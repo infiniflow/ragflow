@@ -18,6 +18,7 @@ package sandbox
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"ragflow/internal/common"
@@ -56,10 +57,14 @@ func TestLocal_ExecuteCode_OutputLimit(t *testing.T) {
 	}
 	defer p.DestroyInstance(t.Context(), inst)
 
-	code := "import sys\n\ndef main():\n    sys.stdout.write('x' * 65536)\n    sys.stderr.write('y' * 65536)\n    return 1"
-	result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
-	if result != nil || err == nil || !strings.Contains(err.Error(), "local: output exceeds 1024 bytes (got ") {
-		t.Fatalf("ExecuteCode returned result=%t, err=%v; want output limit error", result != nil, err)
+	for _, size := range []string{"65536", "600"} {
+		t.Run(size, func(t *testing.T) {
+			code := "import sys\n\ndef main():\n    sys.stdout.write('x' * " + size + ")\n    sys.stderr.write('y' * " + size + ")\n    return 1"
+			result, err := p.ExecuteCode(t.Context(), inst, code, "python", 10, nil)
+			if result != nil || err == nil || !strings.Contains(err.Error(), "local: output exceeds 1024 bytes (got ") {
+				t.Fatalf("ExecuteCode returned result=%t, err=%v; want output limit error", result != nil, err)
+			}
+		})
 	}
 }
 
@@ -192,6 +197,42 @@ func TestLocal_Initialize_CreatesWorkDir(t *testing.T) {
 	}
 	if !info.IsDir() {
 		t.Errorf("workDir is not a directory: %v", info)
+	}
+}
+
+func TestLocal_Initialize_OutputLimit(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		limit     any
+		wantError bool
+	}{
+		{"default", nil, false},
+		{"positive", 1024, false},
+		{"positive_below_schema_minimum", 1, false},
+		{"zero", 0, true},
+		{"negative", -1, true},
+		{"string_zero", "0", true},
+		{"string_negative", "-1", true},
+		{"json_zero", float64(0), true},
+		{"json_negative", float64(-1), true},
+		{"json_number_zero", json.Number("0"), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := newLocalProviderFromConfig(map[string]any{
+				"work_dir":         t.TempDir(),
+				"max_output_bytes": tc.limit,
+			})
+			err := p.Initialize(t.Context())
+			if (err != nil) != tc.wantError {
+				t.Fatalf("Initialize = %v, wantError = %v", err, tc.wantError)
+			}
+			if err != nil && !strings.Contains(err.Error(), "max_output_bytes") {
+				t.Fatalf("Initialize error does not identify invalid limit: %v", err)
+			}
+			if p.isInitialized() == tc.wantError {
+				t.Fatalf("initialized = %v, want %v", p.isInitialized(), !tc.wantError)
+			}
+		})
 	}
 }
 

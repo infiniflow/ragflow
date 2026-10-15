@@ -453,6 +453,95 @@ func TestExtractorComponent_NewExtractorComponent_Happy(t *testing.T) {
 	}
 }
 
+// TestExtractorComponent_ToggleDerivation covers the enabled-switch contract
+// for keywords/questions/tags: an explicit "enabled" key is authoritative,
+// a group without the key (legacy DSL) derives enabled from top_n > 0.
+func TestExtractorComponent_ToggleDerivation(t *testing.T) {
+	c, err := NewExtractorComponent(map[string]any{
+		// legacy group: no enabled key, top_n > 0 → on
+		"keywords": map[string]any{"top_n": 3},
+		// legacy group: no enabled key, top_n = 0 → off
+		"questions": map[string]any{"top_n": 0},
+		// new contract: explicit switch wins over a positive top_n
+		"tags": map[string]any{"enabled": false, "top_n": 5},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	ext := c.(*ExtractorComponent)
+	if !ext.Param.Keywords.Enabled {
+		t.Errorf("legacy keywords top_n=3 should derive Enabled=true: %+v", ext.Param.Keywords)
+	}
+	if ext.Param.Questions.Enabled {
+		t.Errorf("legacy questions top_n=0 should derive Enabled=false: %+v", ext.Param.Questions)
+	}
+	if ext.Param.Tags.Enabled || ext.Param.Tags.TopN != 5 {
+		t.Errorf("explicit enabled=false must win over top_n=5 (kept for re-enable): %+v", ext.Param.Tags)
+	}
+
+	// Numeric enabled values are accepted like summary/metadata do.
+	c, err = NewExtractorComponent(map[string]any{
+		"keywords": map[string]any{"enabled": 1, "top_n": 2},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent numeric enabled: %v", err)
+	}
+	if !c.(*ExtractorComponent).Param.Keywords.Enabled {
+		t.Error("enabled: 1 should parse as true")
+	}
+}
+
+// TestExtractorComponent_ToggleOnWithoutTopNFails covers the contradictory
+// new-contract config: enabled=true with top_n < 1 must fail at canvas build
+// time for keywords/questions/tags alike.
+func TestExtractorComponent_ToggleOnWithoutTopNFails(t *testing.T) {
+	for _, group := range []string{"keywords", "questions", "tags"} {
+		for _, topN := range []any{0, -2} {
+			_, err := NewExtractorComponent(map[string]any{
+				group: map[string]any{"enabled": true, "top_n": topN},
+			})
+			if err == nil {
+				t.Errorf("%s enabled=true top_n=%v: expected error, got nil", group, topN)
+			} else if !strings.Contains(err.Error(), group+".enabled requires top_n >= 1") {
+				t.Errorf("%s enabled=true top_n=%v: unexpected error: %v", group, topN, err)
+			}
+		}
+		// enabled=true with top_n absent entirely is the same contradiction.
+		if _, err := NewExtractorComponent(map[string]any{
+			group: map[string]any{"enabled": true},
+		}); err == nil {
+			t.Errorf("%s enabled=true without top_n: expected error, got nil", group)
+		}
+	}
+}
+
+// TestExtractorComponent_Invoke_ToggleOffSkipsExtraction verifies a group
+// switched off (enabled=false) performs no LLM call even when top_n is set.
+func TestExtractorComponent_Invoke_ToggleOffSkipsExtraction(t *testing.T) {
+	stub := withStubChatInvoker(t, stubResponse{Content: "kw1, kw2"})
+
+	c, err := NewExtractorComponent(map[string]any{
+		"llm_id":   "gpt-4o-mini",
+		"keywords": map[string]any{"enabled": false, "top_n": 3},
+	})
+	if err != nil {
+		t.Fatalf("NewExtractorComponent: %v", err)
+	}
+	out, err := c.(*ExtractorComponent).Invoke(t.Context(), nil, map[string]any{
+		"chunks": []map[string]any{{"text": "first doc"}},
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	if calls := stub.Calls(); calls != 0 {
+		t.Errorf("LLM calls = %d, want 0 for a switched-off keywords group", calls)
+	}
+	chunks := out["chunks"].([]map[string]any)
+	if _, exists := chunks[0]["important_kwd"]; exists {
+		t.Errorf("switched-off keywords should not enrich the chunk: %#v", chunks[0])
+	}
+}
+
 // TestExtractorComponent_InputsOutputs_NonEmpty verifies Inputs and Outputs shapes.
 func TestExtractorComponent_InputsOutputs_NonEmpty(t *testing.T) {
 	c := &ExtractorComponent{}
@@ -896,7 +985,7 @@ func TestExtractorComponent_Invoke_TemperatureSet(t *testing.T) {
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:    "gpt-4o-mini",
-		Keywords: schema.KeywordExtractConfig{TopN: 3},
+		Keywords: schema.KeywordExtractConfig{Enabled: true, TopN: 3},
 	}}
 	_, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{{"text": "document content"}},
@@ -1089,8 +1178,8 @@ func TestExtractorComponent_Invoke_ConcurrentKeywordsAndQuestions(t *testing.T) 
 
 	c := &ExtractorComponent{Param: schema.ExtractorParam{
 		LLMID:     "gpt-4o-mini",
-		Keywords:  schema.KeywordExtractConfig{TopN: 2},
-		Questions: schema.QuestionExtractConfig{TopN: 2},
+		Keywords:  schema.KeywordExtractConfig{Enabled: true, TopN: 2},
+		Questions: schema.QuestionExtractConfig{Enabled: true, TopN: 2},
 	}}
 	out, err := c.Invoke(t.Context(), nil, map[string]any{
 		"chunks": []map[string]any{

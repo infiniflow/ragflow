@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"strconv"
 	"strings"
 	"time"
@@ -29,30 +30,30 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/utility"
-
-	"gorm.io/gorm"
 )
 
 const (
 	mcpServerTypeSSE            = "sse"
 	mcpServerTypeStreamableHTTP = "streamable-http"
 	mcpServerNameLimit          = 255
+	mcpServerPreviewID          = "preview"
 	defaultMCPFetchTimeoutSec   = 10
 	mcpServerDateFormat         = "2006-01-02T15:04:05"
+	maskedMCPSecret             = "********"
 )
 
 // MCPService handles MCP server operations.
 type MCPService struct {
 	mcpServerDAO *dao.MCPServerDAO
-	tenantDAO    *dao.TenantDAO
 }
 
 // NewMCPService creates an MCP service.
 func NewMCPService() *MCPService {
 	return &MCPService{
 		mcpServerDAO: dao.NewMCPServerDAO(),
-		tenantDAO:    dao.NewTenantDAO(),
 	}
 }
 
@@ -102,8 +103,8 @@ type ListMCPServersResponse struct {
 
 const maxMCPFetchTimeoutSec = 60
 
-// CreateMCPServer creates an MCP server owned by a tenant.
-func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
+// CreateMCPServer creates an MCP server in the caller's owned tenant.
+func (s *MCPService) CreateMCPServer(ctx context.Context, userID string, req CreateMCPServerRequest) (*CreateMCPServerResponse, common.ErrorCode, error) {
 	if req.Timeout < 0 || req.Timeout > maxMCPFetchTimeoutSec {
 		return nil, common.CodeDataError, errors.New("invalid timeout")
 	}
@@ -114,22 +115,23 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 	if req.Name == "" || len([]byte(req.Name)) > mcpServerNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(req.Name)))
 	}
-
-	exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, req.Name, tenantID)
-	if err != nil {
-		return nil, common.CodeServerError, err
-	}
-	if exists {
-		return nil, common.CodeDataError, errors.New("duplicated MCP server name")
-	}
-
 	if req.URL == "" {
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	if _, err = s.tenantDAO.GetByID(ctx, dao.DB, tenantID); err != nil {
-		return nil, common.CodeDataError, errors.New("tenant not found")
+	tenantID, err := requireOwnedTenantID(ctx, userID)
+	if err != nil {
+		code, normalized := permissionresponse.Normalize(err)
+		return nil, code, normalized
 	}
+
+	name, err := common.UniqueName(req.Name, mcpServerNameLimit, func(candidate string) (bool, error) {
+		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+	})
+	if err != nil {
+		return nil, common.CodeServerError, err
+	}
+	req.Name = name
 
 	headers := safeJSONMap(req.Headers)
 	variables := safeJSONMap(req.Variables)
@@ -142,7 +144,7 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 	variables["tools"] = tools
 
 	server := &entity.MCPServer{
-		ID:          utility.GenerateUUID(),
+		ID:          common.GenerateUUID(),
 		Name:        req.Name,
 		TenantID:    tenantID,
 		URL:         req.URL,
@@ -163,8 +165,8 @@ func (s *MCPService) CreateMCPServer(ctx context.Context, tenantID string, req C
 		URL:         server.URL,
 		ServerType:  server.ServerType,
 		Description: server.Description,
-		Variables:   server.Variables,
-		Headers:     server.Headers,
+		Variables:   MCPVariablesForResponse(server.Variables),
+		Headers:     MCPHeadersForResponse(server.Headers),
 	}, common.CodeSuccess, nil
 }
 
@@ -227,6 +229,51 @@ func jsonMapHeaderValues(values entity.JSONMap) map[string]string {
 		}
 	}
 	return out
+}
+
+// MCPVariablesForResponse masks managed authentication while preserving tool metadata.
+func MCPVariablesForResponse(values entity.JSONMap) entity.JSONMap {
+	result := entity.JSONMap{}
+	for key, value := range values {
+		result[key] = value
+	}
+	if value, exists := result["authorization_token"]; exists {
+		if token, ok := jsonValueString(value); ok && token != "" {
+			result["authorization_token"] = maskedMCPSecret
+		}
+	}
+	return result
+}
+
+// MCPHeadersForResponse masks all nonempty header values because custom headers
+// can carry credentials under arbitrary names.
+func MCPHeadersForResponse(values entity.JSONMap) entity.JSONMap {
+	result := entity.JSONMap{}
+	for key, value := range values {
+		if text, ok := value.(string); ok && text != "" {
+			value = maskedMCPSecret
+		}
+		result[key] = value
+	}
+	return result
+}
+
+func restoreMCPMaskedCredentials(server *entity.MCPServer, url string, headers, variables entity.JSONMap) error {
+	if variables["authorization_token"] == maskedMCPSecret {
+		if url != server.URL {
+			return fmt.Errorf("%w: provide explicit credentials when changing the MCP URL", ErrMCPInvalidURL)
+		}
+		variables["authorization_token"] = server.Variables["authorization_token"]
+	}
+	for key, value := range headers {
+		if value == maskedMCPSecret {
+			if url != server.URL {
+				return fmt.Errorf("%w: provide explicit headers when changing the MCP URL", ErrMCPInvalidURL)
+			}
+			headers[key] = server.Headers[key]
+		}
+	}
+	return nil
 }
 
 // jsonValueString renders the scalar JSON values that can occur in an MCP
@@ -307,16 +354,18 @@ func importedMCPHeaders(raw interface{}) (map[string]string, map[string]interfac
 	return headers, values, true
 }
 
-func (s *MCPService) GetMCPServer(ctx context.Context, tenantID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
-	server, err := s.mcpServerDAO.GetByIDAndTenant(ctx, dao.DB, mcpID, tenantID)
+func (s *MCPService) GetMCPServer(ctx context.Context, userID, mcpID string) (*entity.MCPServer, common.ErrorCode, error) {
+	if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationRead); err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return nil, code, normalized
+	}
+	server, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
 	if err != nil {
-		if isMCPServerNotFound(err) {
-			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
-		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
 	}
 	if server == nil {
-		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		code, normalized := normalizeMCPServerPermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 	return server, common.CodeSuccess, nil
 }
@@ -329,17 +378,19 @@ func (s *MCPService) ExportMCPServer(ctx context.Context, userID, mcpID string) 
 	return newExportMCPServerResponse(server), common.CodeSuccess, nil
 }
 
-// UpdateMCPServer updates an MCP server owned by a tenant.
-func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
-	server, err := s.mcpServerDAO.GetByIDAndTenant(ctx, dao.DB, mcpID, tenantID)
+// UpdateMCPServer updates an MCP server the caller can manage.
+func (s *MCPService) UpdateMCPServer(ctx context.Context, userID, mcpID string, req UpdateMCPServerRequest) (*entity.MCPServer, common.ErrorCode, error) {
+	if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationUpdate); err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return nil, code, normalized
+	}
+	server, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
 	if err != nil {
-		if isMCPServerNotFound(err) {
-			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
-		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
 	}
 	if server == nil {
-		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		code, normalized := normalizeMCPServerPermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 
 	serverType := server.ServerType
@@ -365,12 +416,14 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 	if serverName != "" && len([]byte(serverName)) > mcpServerNameLimit {
 		return nil, common.CodeDataError, fmt.Errorf("Invalid MCP name or length is %d which is large than 255.", len([]byte(serverName)))
 	}
-	if serverNameProvided && serverName != server.Name {
-		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, serverName, tenantID)
+	if serverNameProvided {
+		available, err := common.NameAvailable(server.Name, serverName, func(candidate string) (bool, error) {
+			return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, server.TenantID)
+		})
 		if err != nil {
 			return nil, common.CodeServerError, err
 		}
-		if exists {
+		if !available {
 			return nil, common.CodeDataError, errors.New("duplicated MCP server name")
 		}
 	}
@@ -390,7 +443,7 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 		return nil, common.CodeDataError, errors.New("invalid url")
 	}
 
-	headers := server.Headers
+	headers := MCPHeadersForResponse(server.Headers)
 	if raw, ok := req["headers"]; ok {
 		headers = safeJSONMap(raw)
 	}
@@ -398,12 +451,15 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 		headers = entity.JSONMap{}
 	}
 
-	variables := server.Variables
+	variables := MCPVariablesForResponse(server.Variables)
 	if raw, ok := req["variables"]; ok {
 		variables = safeJSONMap(raw)
 	}
 	if variables == nil {
 		variables = entity.JSONMap{}
+	}
+	if err := restoreMCPMaskedCredentials(server, serverURL, headers, variables); err != nil {
+		return nil, common.CodeDataError, err
 	}
 	existingTools := server.Variables["tools"]
 	delete(variables, "tools")
@@ -424,7 +480,7 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 
 	updates := map[string]interface{}{
 		"id":        mcpID,
-		"tenant_id": tenantID,
+		"tenant_id": server.TenantID,
 		"headers":   headers,
 		"variables": variables,
 	}
@@ -445,19 +501,17 @@ func (s *MCPService) UpdateMCPServer(ctx context.Context, tenantID, mcpID string
 		updates["description"] = description
 	}
 
-	if _, err = s.mcpServerDAO.UpdateMCPServer(ctx, dao.DB, mcpID, tenantID, updates); err != nil {
+	if _, err = s.mcpServerDAO.UpdateMCPServer(ctx, dao.DB, mcpID, server.TenantID, updates); err != nil {
 		return nil, common.CodeServerError, err
 	}
 
-	updatedServer, err := s.mcpServerDAO.GetByIDAndTenant(ctx, dao.DB, mcpID, tenantID)
+	updatedServer, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
 	if err != nil {
-		if isMCPServerNotFound(err) {
-			return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
-		}
 		return nil, common.CodeServerError, fmt.Errorf("failed to fetch updated MCP server %s: %w", mcpID, err)
 	}
 	if updatedServer == nil {
-		return nil, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		code, normalized := normalizeMCPServerPermissionError(permission.ErrResourceNotFound)
+		return nil, code, normalized
 	}
 	return updatedServer, common.CodeSuccess, nil
 }
@@ -472,12 +526,24 @@ func headerOrVariablesChanged(req UpdateMCPServerRequest) bool {
 	return false
 }
 
-func isMCPServerNotFound(err error) bool {
-	return errors.Is(err, gorm.ErrRecordNotFound)
-}
+// ListMCPServers lists MCP servers belonging to a tenant the caller can use.
+func (s *MCPService) ListMCPServers(ctx context.Context, userID, requestedTenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
+	tenantID := strings.TrimSpace(requestedTenantID)
+	if tenantID == "" {
+		var err error
+		tenantID, err = requireOwnedTenantID(ctx, userID)
+		if errors.Is(err, permission.ErrMembershipNotFound) {
+			return &ListMCPServersResponse{MCPServers: []*MCPServerListItem{}}, common.CodeSuccess, nil
+		}
+		if err != nil {
+			code, normalized := normalizeMCPServerPermissionError(err)
+			return nil, code, normalized
+		}
+	} else if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, permission.TenantMember); err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return nil, code, normalized
+	}
 
-// ListMCPServers lists MCP servers owned by a tenant.
-func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []string, keywords string, page, pageSize int, orderby string, desc bool) (*ListMCPServersResponse, common.ErrorCode, error) {
 	servers, total, err := s.mcpServerDAO.ListMCPServers(ctx, dao.DB, tenantID, ids, keywords, orderby, desc)
 	if err != nil {
 		var orderbyErr *dao.InvalidMCPServerOrderByError
@@ -503,7 +569,7 @@ func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []
 			ServerType:  server.ServerType,
 			URL:         server.URL,
 			Description: server.Description,
-			Variables:   variables,
+			Variables:   MCPVariablesForResponse(variables),
 			CreateDate:  formatMCPServerDate(server.CreateDate),
 			UpdateDate:  formatMCPServerDate(server.UpdateDate),
 		})
@@ -515,31 +581,32 @@ func (s *MCPService) ListMCPServers(ctx context.Context, tenantID string, ids []
 	}, common.CodeSuccess, nil
 }
 
-// DeleteMCPServer deletes an MCP server owned by a tenant.
-func (s *MCPService) DeleteMCPServer(ctx context.Context, tenantID, mcpID string) (bool, common.ErrorCode, error) {
+// DeleteMCPServer deletes an MCP server the caller can manage.
+func (s *MCPService) DeleteMCPServer(ctx context.Context, userID, mcpID string) (bool, common.ErrorCode, error) {
+	if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationDelete); err != nil {
+		code, normalized := normalizeMCPServerPermissionError(err)
+		return false, code, normalized
+	}
 	server, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
 	if err != nil {
 		return false, common.CodeServerError, fmt.Errorf("failed to get MCP server %s: %w", mcpID, err)
 	}
-	if server == nil || server.TenantID != tenantID {
-		return false, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+	if server == nil {
+		code, normalized := normalizeMCPServerPermissionError(permission.ErrResourceNotFound)
+		return false, code, normalized
 	}
 
-	deleted, err := s.mcpServerDAO.DeleteMCPServer(ctx, dao.DB, mcpID, tenantID)
+	deleted, err := s.mcpServerDAO.DeleteMCPServer(ctx, dao.DB, mcpID, server.TenantID)
 	if err != nil {
 		return false, common.CodeServerError, err
 	}
 	if !deleted {
-		return false, common.CodeDataError, mcpServerNotFoundError(mcpID, tenantID)
+		code, normalized := normalizeMCPServerPermissionError(permission.ErrResourceNotFound)
+		return false, code, normalized
 	}
 
 	return true, common.CodeSuccess, nil
 }
-
-func mcpServerNotFoundError(mcpID, tenantID string) error {
-	return fmt.Errorf("cannot find MCP server %s for user %s", mcpID, tenantID)
-}
-
 func isValidMCPServerType(serverType string) bool {
 	return serverType == mcpServerTypeSSE || serverType == mcpServerTypeStreamableHTTP
 }
@@ -614,7 +681,12 @@ type ImportResult struct {
 }
 
 // ImportServers bulk-imports MCP servers from a {"mcpServers": {name: config}} map.
-func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+func (s *MCPService) ImportServers(ctx context.Context, userID string, servers map[string]map[string]interface{}, timeoutSeconds float64) ([]ImportResult, error) {
+	tenantID, err := requireOwnedTenantID(ctx, userID)
+	if err != nil {
+		_, normalized := permissionresponse.Normalize(err)
+		return nil, normalized
+	}
 	if timeoutSeconds <= 0 {
 		timeoutSeconds = defaultMCPFetchTimeoutSec
 	}
@@ -703,7 +775,7 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 		variables["tools"] = toolsAsMap(tools)
 
 		server := &entity.MCPServer{
-			ID:         utility.GenerateUUID(),
+			ID:         common.GenerateUUID(),
 			TenantID:   tenantID,
 			Name:       newName,
 			URL:        url,
@@ -726,25 +798,13 @@ func (s *MCPService) ImportServers(ctx context.Context, tenantID string, servers
 }
 
 func (s *MCPService) nextAvailableMCPName(ctx context.Context, base, tenantID string) (string, error) {
-	name := base
-	counter := 0
-	for {
-		exists, err := s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, name, tenantID)
-		if err != nil {
-			return "", err
-		}
-		if !exists {
-			return name, nil
-		}
-		name = fmt.Sprintf("%s_%d", base, counter)
-		counter++
-	}
+	return common.UniqueName(base, mcpServerNameLimit, func(candidate string) (bool, error) {
+		return s.mcpServerDAO.ExistsByNameAndTenant(ctx, dao.DB, candidate, tenantID)
+	})
 }
 
-// TestServerRequest is the body of POST /mcp/servers/:mcp_id/test. The mcp_id
-// from the URL path is threaded through to the connect call for log
-// correlation; the connection itself is opened from the request body so the
-// user can preview unsaved edits — matching Python's test_mcp.
+// TestServerRequest previews unsaved connection settings. A masked token is
+// resolved from the tenant-owned server identified by the request path.
 type TestServerRequest struct {
 	URL        string                 `json:"url"`
 	ServerType string                 `json:"server_type"`
@@ -754,12 +814,38 @@ type TestServerRequest struct {
 }
 
 // TestServer opens a live MCP session and returns the tools the server advertises.
-func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
+func (s *MCPService) TestServer(ctx context.Context, userID, mcpID string, req *TestServerRequest) ([]map[string]interface{}, error) {
 	if req == nil || req.URL == "" {
 		return nil, fmt.Errorf("%w: Invalid MCP url", ErrMCPInvalidURL)
 	}
 	if !isValidMCPServerType(req.ServerType) {
 		return nil, ErrMCPInvalidType
+	}
+	if mcpID != mcpServerPreviewID {
+		if err := checkMCPServerPermission(ctx, userID, mcpID, permission.OperationUpdate); err != nil {
+			_, normalized := normalizeMCPServerPermissionError(err)
+			return nil, normalized
+		}
+	}
+	hasMask := req.Variables["authorization_token"] == maskedMCPSecret
+	for _, value := range req.Headers {
+		hasMask = hasMask || value == maskedMCPSecret
+	}
+	if hasMask {
+		server, err := s.mcpServerDAO.GetByID(ctx, dao.DB, mcpID)
+		if err != nil {
+			return nil, err
+		}
+		if server == nil {
+			return nil, permission.ErrResourceNotFound
+		}
+		preview := *req
+		preview.Variables = maps.Clone(req.Variables)
+		preview.Headers = maps.Clone(req.Headers)
+		req = &preview
+		if err := restoreMCPMaskedCredentials(server, req.URL, req.Headers, req.Variables); err != nil {
+			return nil, err
+		}
 	}
 
 	// Run the SSRF guard up front so URL-shape failures (disallowed
@@ -767,7 +853,7 @@ func (s *MCPService) TestServer(ctx context.Context, mcpID string, req *TestServ
 	// ErrMCPInvalidURL data errors instead of being swallowed inside the
 	// generic FetchTools error and re-classified by the handler as a 500.
 	// FetchTools repeats the check internally; the second call is cheap.
-	if _, _, err := common.AssertURLSafe(req.URL); err != nil {
+	if _, _, err := utility.AssertMCPURLSafe(req.URL); err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrMCPInvalidURL, err)
 	}
 

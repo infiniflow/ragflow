@@ -15,6 +15,7 @@ package handler
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	dataset "ragflow/internal/service/dataset"
 	"ragflow/internal/service/file"
@@ -71,8 +73,8 @@ func (h *DatasetArtifactHandler) datasetOwner(c *gin.Context, datasetID string) 
 		common.ErrorWithCode(c, common.CodeNotFound, "dataset not found")
 		return nil, "", ""
 	}
-	if !h.datasetSvc.Accessible(c.Request.Context(), datasetID, user.ID) {
-		common.ErrorWithCode(c, common.CodeForbidden, "no permission to access this dataset")
+	if err := h.datasetSvc.CheckAccess(c.Request.Context(), permission.Subject{UserID: user.ID}, datasetID, permission.OperationRead); err != nil {
+		respondPermissionFailure(c, err, false)
 		return nil, "", ""
 	}
 	return user, kb.TenantID, msg
@@ -269,9 +271,17 @@ func (h *DatasetArtifactHandler) GetArtifactGraph(c *gin.Context) {
 	}
 	var topN *int
 	if topNValue != "" {
-		if value, parseErr := strconv.Atoi(topNValue); parseErr == nil {
-			topN = &value
+		// A non-empty but non-integer top_n must surface as an argument error
+		// (matches the validation pattern used elsewhere in this package):
+		// silently coercing to the default makes a malformed request
+		// indistinguishable from an omitted one and lets callers rely on a
+		// budget the route never actually applied.
+		value, parseErr := strconv.Atoi(topNValue)
+		if parseErr != nil {
+			common.ErrorWithCode(c, common.CodeArgumentError, fmt.Sprintf("top_n must be an integer (got %q)", topNValue))
+			return
 		}
+		topN = &value
 	}
 	graph, err := h.svc.GetWikiGraph(c.Request.Context(), tenantID, datasetID, keywords, topN)
 	if err != nil {

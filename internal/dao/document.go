@@ -20,6 +20,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/common"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 	"strings"
 
@@ -55,7 +56,7 @@ func (dao *DocumentDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*e
 // transaction and perform no external I/O while holding the lock.
 func (dao *DocumentDAO) GetByIDForUpdate(ctx context.Context, db *gorm.DB, id string) (*entity.Document, error) {
 	var document entity.Document
-	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).First(&document, "id = ?", id).Error
+	err := db.WithContext(ctx).Clauses(clause.Locking{Strength: "UPDATE"}).Take(&document, "id = ?", id).Error
 	if err != nil {
 		return nil, err
 	}
@@ -177,8 +178,18 @@ func buildDocumentListIngestionStatusExpression(db *gorm.DB) string {
 	END`
 }
 
+// documentCircuit projects opts onto the query circuit so every document query
+// agrees on what "this request can match nothing" means.
+func (opts DocumentListOptions) documentCircuit() transaction.DocumentQueryCircuit {
+	return transaction.NewDocumentQueryCircuit(opts.DocIDFilterApplied, opts.DocIDs)
+}
+
 // ListByKBIDWithOptions lists documents by knowledge base ID with filters.
 func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]*entity.DocumentListItem, int64, error) {
+	if opts.documentCircuit().IsCircuitOpen() {
+		return nil, 0, nil
+	}
+
 	var documents []*entity.DocumentListItem
 	var total int64
 	ingestionStatus := buildDocumentListIngestionStatusExpression(db)
@@ -225,6 +236,10 @@ func (dao *DocumentDAO) ListByKBIDWithOptions(ctx context.Context, db *gorm.DB, 
 
 // GetFilterByKBID returns aggregate filter counts for documents in a dataset.
 func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts DocumentListOptions) (map[string]interface{}, int64, error) {
+	if circuit := opts.documentCircuit(); circuit.IsCircuitOpen() {
+		return circuit.CircuitOpenFilters(), 0, nil
+	}
+
 	var rows []struct {
 		ID              string  `gorm:"column:id"`
 		IngestionStatus *string `gorm:"column:ingestion_status"`
@@ -265,6 +280,10 @@ func (dao *DocumentDAO) GetFilterByKBID(ctx context.Context, db *gorm.DB, opts D
 
 // ListIDsByKBIDWithOptions lists matching document IDs without pagination.
 func (dao *DocumentDAO) ListIDsByKBIDWithOptions(ctx context.Context, db *gorm.DB, opts DocumentListOptions) ([]string, error) {
+	if opts.documentCircuit().IsCircuitOpen() {
+		return nil, nil
+	}
+
 	var ids []string
 	var ingestionStatus string
 	query := db.WithContext(ctx).Table("document").
@@ -306,12 +325,11 @@ func applyDocumentListFilters(query *gorm.DB, opts DocumentListOptions, qualifie
 	if opts.Name != "" {
 		query = query.Where(column("name")+" = ?", opts.Name)
 	}
-	if opts.DocIDFilterApplied {
-		if len(opts.DocIDs) == 0 {
-			query = query.Where("1 = 0")
-		} else {
-			query = query.Where(column("id")+" IN ?", opts.DocIDs)
-		}
+	// The document ID clause is not gated on DocIDFilterApplied here: with the
+	// flag false and IDs present, applying them narrows the query instead of
+	// silently widening it, which is the safe direction to fail in.
+	if len(opts.DocIDs) > 0 {
+		query = query.Where(column("id")+" IN ?", opts.DocIDs)
 	}
 	// Note: create_time_from / create_time_to are NOT applied at DB level.
 	// They are filtered post-query in the handler so total reflects the
@@ -577,19 +595,12 @@ func (dao *DocumentDAO) GetParsingStatusByKBID(ctx context.Context, db *gorm.DB,
 	return result, nil
 }
 
-func (dao *DocumentDAO) GetByNameAndKBID(ctx context.Context, db *gorm.DB, name, kbID string) ([]*entity.Document, error) {
-	var docs []*entity.Document
-	err := db.WithContext(ctx).Where("name = ? AND kb_id = ?", name, kbID).Find(&docs).Error
-	return docs, err
-}
-
-// ListNamesByKbID returns every document name in a dataset, used to compute a
-// non-colliding upload filename (mirrors Python duplicate_name).
-func (dao *DocumentDAO) ListNamesByKbID(ctx context.Context, db *gorm.DB, kbID string) ([]string, error) {
-	var names []string
-	err := db.WithContext(ctx).Model(&entity.Document{}).Where("kb_id = ?", kbID).Pluck("name", &names).Error
-	if err != nil {
-		return nil, err
-	}
-	return names, nil
+// NameExistsInKB reports whether a document with the given name already
+// exists in the dataset, comparing names case-insensitively.
+func (dao *DocumentDAO) NameExistsInKB(ctx context.Context, db *gorm.DB, kbID, name string) (bool, error) {
+	var count int64
+	err := db.WithContext(ctx).Model(&entity.Document{}).
+		Where("LOWER(name) = LOWER(?) AND kb_id = ?", name, kbID).
+		Count(&count).Error
+	return count > 0, err
 }

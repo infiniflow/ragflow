@@ -17,17 +17,31 @@
 package service
 
 import (
+	"context"
 	"strings"
 	"testing"
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 )
+
+type emptyChatSessionScopeChecker struct {
+	checkErr error
+}
+
+func (c emptyChatSessionScopeChecker) CheckResource(context.Context, permission.Subject, permission.ResourceRef, permission.Operation) error {
+	return c.checkErr
+}
+
+func (emptyChatSessionScopeChecker) Scope(context.Context, permission.Subject, permission.ScopeQuery) (permission.Scope, error) {
+	return permission.Scope{Mode: permission.ScopeNone}, nil
+}
 
 // ---------------------------------------------------------------------------
 // CreateSession contract — mirrors the assertions in
 // test_session_create_validation_and_deleted_chat_contract that exercise the
-// Go service layer (name validation -> 102, auth -> 109, truncation, success).
+// Go service layer (name validation, permission denial, truncation, success).
 // ---------------------------------------------------------------------------
 
 func TestCreateSession_Success(t *testing.T) {
@@ -36,9 +50,9 @@ func TestCreateSession_Success(t *testing.T) {
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1", PromptConfig: entity.JSONMap{"prologue": "hi"}}
 
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
@@ -66,9 +80,9 @@ func TestCreateSession_RejectsEmptyOrNonStringName(t *testing.T) {
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1"}
 
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
@@ -89,9 +103,9 @@ func TestCreateSession_TruncatesLongName(t *testing.T) {
 	store.dialogs["chat-1"] = &entity.Chat{ID: "chat-1"}
 
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
@@ -111,18 +125,33 @@ func TestCreateSession_TruncatesLongName(t *testing.T) {
 func TestCreateSession_NotOwner(t *testing.T) {
 	store := newFakeSessionStore()
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
 	_, code, err := svc.CreateSession(ctx, "user-1", "chat-1", map[string]interface{}{"name": "x"})
-	if err == nil || err.Error() != "no authorization" {
+	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("err=%v", err)
 	}
-	if code != common.CodeAuthenticationError {
+	if code != common.CodeNotFound {
 		t.Fatalf("code=%v", code)
+	}
+}
+
+func TestListChatSessionsChecksChatPermissionWhenThereAreNoSessions(t *testing.T) {
+	svc := &ChatSessionService{
+		chatSessionDAO:    newFakeSessionStore(),
+		permissionChecker: emptyChatSessionScopeChecker{checkErr: permission.ErrPermissionDenied},
+	}
+
+	result, err := svc.ListChatSessions(t.Context(), "outsider", "chat-1", "", "", nil, 1, 20)
+	if result != nil {
+		t.Fatalf("expected no response for unauthorized chat, got %+v", result)
+	}
+	if err == nil || err.Error() != "Resource not found" {
+		t.Fatalf("expected hidden permission error, got %v", err)
 	}
 }
 
@@ -138,9 +167,9 @@ func TestDeleteSessions_SuccessByIDs(t *testing.T) {
 	store.sessions["s2"] = &entity.ChatSession{ID: "s2", DialogID: "chat-1"}
 
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
@@ -167,9 +196,9 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 	store.dialogExists["user-1|chat-1"] = true
 
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	// Empty payload -> success with empty result map.
@@ -201,17 +230,17 @@ func TestDeleteSessions_DeleteAllAndInvalidID(t *testing.T) {
 func TestDeleteSessions_NotOwner(t *testing.T) {
 	store := newFakeSessionStore()
 	svc := &ChatSessionService{
-		chatSessionDAO: store,
-		userTenantDAO:  &fakeTenantStore{},
-		pipeline:       &fakePipeline{},
+		chatSessionDAO:    store,
+		permissionChecker: store,
+		pipeline:          &fakePipeline{},
 	}
 
 	ctx := t.Context()
 	_, _, code, err := svc.DeleteSessions(ctx, "user-1", "chat-1", map[string]interface{}{"ids": []interface{}{"s1"}})
-	if err == nil || err.Error() != "no authorization" {
+	if err == nil || err.Error() != "Resource not found" {
 		t.Fatalf("err=%v", err)
 	}
-	if code != common.CodeAuthenticationError {
+	if code != common.CodeNotFound {
 		t.Fatalf("code=%v", code)
 	}
 }
