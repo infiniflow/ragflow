@@ -127,6 +127,7 @@ func IndexName(uid string) string {
 type ListChunksRequest struct {
 	DatasetID    string   `json:"dataset_id,omitempty"`
 	DocID        string   `json:"doc_id" binding:"required"`
+	EntityID     string   `json:"entity_id,omitempty"`
 	ChunkIDs     []string `json:"chunk_ids,omitempty"`
 	Page         *int     `json:"page,omitempty"`
 	Size         *int     `json:"size,omitempty"`

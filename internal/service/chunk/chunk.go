@@ -816,6 +816,9 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	if req.DocID == "" {
 		return nil, fmt.Errorf("doc_id is required")
 	}
+	if req.EntityID != "" && len(req.ChunkIDs) > 0 {
+		return nil, common.NewCodedError(common.CodeArgumentError, "entity_id and chunk_ids are mutually exclusive")
+	}
 
 	// Get document to find its tenant
 	docDAO := dao.NewDocumentDAO()
@@ -834,6 +837,14 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	targetTenantID := kb.TenantID
 
 	indexName := fmt.Sprintf("ragflow_%s", targetTenantID)
+
+	chunkIDs := req.ChunkIDs
+	if req.EntityID != "" {
+		chunkIDs, err = s.entityChunkIDs(ctx, indexName, doc.KbID, doc.ID, req.EntityID)
+		if err != nil {
+			return nil, err
+		}
+	}
 
 	page := common.CoalesceInt(req.Page, 1)
 	size := common.CoalesceInt(req.Size, 30)
@@ -900,8 +911,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"must_not": map[string]interface{}{"exists": "compile_kwd"},
 		},
 	}
-	if len(req.ChunkIDs) > 0 {
-		searchReq.Filter["id"] = req.ChunkIDs
+	if len(chunkIDs) > 0 {
+		searchReq.Filter["id"] = chunkIDs
 	}
 
 	// Add available_int filter if specified
@@ -909,10 +920,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		searchReq.Filter["available_int"] = *req.AvailableInt
 	}
 
-	// Execute search through unified engine interface
-	searchResp, err := s.docEngine.Search(ctx, searchReq)
-	if err != nil {
-		return nil, fmt.Errorf("search failed: %w", err)
+	// An entity with no sources is an empty result, never an unfiltered list.
+	searchResp := &types.SearchResult{}
+	if req.EntityID == "" || len(chunkIDs) > 0 {
+		searchResp, err = s.docEngine.Search(ctx, searchReq)
+		if err != nil {
+			return nil, fmt.Errorf("search failed: %w", err)
+		}
 	}
 
 	chunks := make([]map[string]interface{}, 0, len(searchResp.Chunks))

@@ -1989,6 +1989,33 @@ Failure:
 
 ---
 
+### List chunks for a structure entity
+
+**GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/structure/entities/{entity_id}/chunks`
+
+Lists a page of chunks associated with one entity in the document's structure graph. Use the entity's `entity_id` returned by `GET /api/v1/datasets/{dataset_id}/documents/{document_id}/structure/graph`.
+
+The server resolves the entity's associated chunk IDs, applies the filters and ordering to the complete set, and returns the requested page. `total` counts all matching chunks for the entity.
+
+```bash
+curl --request GET \
+     --url 'http://{address}/api/v1/datasets/{dataset_id}/documents/{document_id}/structure/entities/{entity_id}/chunks?page=2&page_size=30' \
+     --header 'Authorization: Bearer <YOUR_API_KEY>'
+```
+
+Path parameters are `dataset_id`, `document_id`, and `entity_id`. The entity must belong to that document.
+
+Optional query parameters:
+
+- `page`: Positive integer, defaults to `1`.
+- `page_size`: Positive integer, defaults to `30`.
+- `keywords`: Keywords used to match chunk content.
+- `available`: Filter by availability (`true`/`1` or `false`/`0`).
+
+The response has the same `chunks`, `total`, and `doc` fields as [List chunks](#list-chunks). An entity with no associated chunks returns an empty list and `total: 0`. An unknown entity or an entity outside the document returns HTTP 404. Combining this endpoint with `chunk_ids` returns HTTP 400.
+
+---
+
 ### Get chunk
 
 **GET** `/api/v1/datasets/{dataset_id}/documents/{document_id}/chunks/{chunk_id}`
