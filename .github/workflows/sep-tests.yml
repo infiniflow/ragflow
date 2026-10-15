@@ -202,6 +202,7 @@ jobs:
               "$file" == docker/docker-compose.yml ||
               "$file" == docker/.env ||
               "$file" == docker/service_conf.yaml.template ||
+              "$file" == conf/service_conf.yaml ||
               "$file" == .github/workflows/sep-tests.yml ||
               "$file" == go.mod ||
               "$file" == go.sum ]]; then
@@ -269,11 +270,29 @@ jobs:
           uv run --python 3.13 --extra dev pytest -q
 
   oceanbase_go_integration:
-    name: oceanbase_go_integration
+    name: ${{ matrix.name }}
     needs: ragflow_preflight
     if: ${{ (github.event_name != 'pull_request' && github.event_name != 'pull_request_target' || (github.event.pull_request.draft == false && contains(github.event.pull_request.labels.*.name, 'ci') && (github.event.action != 'labeled' || github.event.label.name == 'ci'))) && needs.ragflow_preflight.outputs.has_oceanbase_seekdb_changes == 'true' }}
     runs-on: [ "self-hosted", "ragflow-test" ]
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: oceanbase_go_integration (OceanBase CE 4.4.1.0)
+            backend: oceanbase
+            profile: oceanbase
+            service: oceanbase
+            port_variable: OCEANBASE_PORT
+            user: root@ragflow
+            dbname: ragflow_doc
+          - name: oceanbase_go_integration (SeekDB latest)
+            backend: seekdb
+            profile: seekdb
+            service: seekdb
+            port_variable: SEEKDB_PORT
+            user: root
+            dbname: ragflow_doc
     steps:
       - name: Ensure workspace ownership
         run: |
@@ -309,7 +328,7 @@ jobs:
         working-directory: docker
         run: |
           set -euo pipefail
-          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-oceanbase-go"
+          COMPOSE_PROJECT_NAME="${GITHUB_RUN_ID}-${{ matrix.backend }}-go"
           echo "COMPOSE_PROJECT_NAME=${COMPOSE_PROJECT_NAME}" >> "${GITHUB_ENV}"
           PORT_RESERVATION=""
           release_port_guard() {
@@ -347,7 +366,7 @@ jobs:
               # Publish the guard immediately so the always-run teardown step
               # can release it even if a later setup command fails.
               echo "PORT_RESERVATION=${PORT_RESERVATION}" >> "${GITHUB_ENV}"
-              echo "OCEANBASE_PORT=${OCEANBASE_PORT}" >> "${GITHUB_ENV}"
+              echo "${{ matrix.port_variable }}=${OCEANBASE_PORT}" >> "${GITHUB_ENV}"
               break
             fi
           done
@@ -361,48 +380,48 @@ jobs:
           {
             echo "RAGFLOW_TEST_OCEANBASE_HOST=host.docker.internal"
             echo "RAGFLOW_TEST_OCEANBASE_PORT=${OCEANBASE_PORT}"
-            echo "RAGFLOW_TEST_OCEANBASE_DBNAME=ragflow_doc"
-            echo "RAGFLOW_TEST_OCEANBASE_USER=root@ragflow"
+            echo "RAGFLOW_TEST_OCEANBASE_DBNAME=${{ matrix.dbname }}"
+            echo "RAGFLOW_TEST_OCEANBASE_USER=${{ matrix.user }}"
             echo "RAGFLOW_TEST_OCEANBASE_PASSWORD=infini_rag_flow"
-            echo "RAGFLOW_TEST_OCEANBASE_ENGINE_TYPE=oceanbase"
+            echo "RAGFLOW_TEST_OCEANBASE_ENGINE_TYPE=${{ matrix.backend }}"
           } >> "${GITHUB_ENV}"
           trap - EXIT
-          echo "Reserved OceanBase host port ${OCEANBASE_PORT}"
+          echo "Reserved ${{ matrix.backend }} host port ${OCEANBASE_PORT}"
 
-      - name: Start OceanBase service
+      - name: Start ${{ matrix.name }} service
         run: |
           set -euo pipefail
           sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
-            --profile oceanbase up -d oceanbase
+            --profile "${{ matrix.profile }}" up -d "${{ matrix.service }}"
 
-      - name: Wait for OceanBase to become ready
+      - name: Wait for ${{ matrix.name }} to become ready
         run: |
           set -euo pipefail
           container=$(sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
-            --profile oceanbase ps -q oceanbase)
+            --profile "${{ matrix.profile }}" ps -q "${{ matrix.service }}")
           if [[ -z "${container}" ]]; then
-            echo "::error::OceanBase container was not created"
+            echo "::error::${{ matrix.backend }} container was not created"
             exit 1
           fi
           status="starting"
           for i in $(seq 1 180); do
             status=$(sudo docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}no-healthcheck{{end}}' "${container}")
             if [[ "${status}" == "healthy" ]]; then
-              echo "OceanBase is healthy after ${i} checks"
+              echo "${{ matrix.backend }} is healthy after ${i} checks"
               exit 0
             fi
             if [[ "${status}" == "unhealthy" || "${status}" == "no-healthcheck" ]]; then
-              echo "::error::OceanBase did not become ready (status: ${status})"
+              echo "::error::${{ matrix.backend }} did not become ready (status: ${status})"
               sudo docker logs --tail 100 "${container}" || true
               exit 1
             fi
             sleep 5
           done
-          echo "::error::OceanBase did not become healthy within 15 minutes (last status: ${status})"
+          echo "::error::${{ matrix.backend }} did not become healthy within 15 minutes (last status: ${status})"
           sudo docker logs --tail 100 "${container}" || true
           exit 1
 
-      - name: Run OceanBase Go integration test
+      - name: Run ${{ matrix.name }} Go integration test
         env:
           CGO_ENABLED: '1'
         run: |
@@ -424,13 +443,13 @@ jobs:
             exit 1
           fi
 
-      - name: Tear down OceanBase service
+      - name: Tear down ${{ matrix.name }} service
         if: always()
         run: |
           set -euo pipefail
           if [[ -n "${COMPOSE_PROJECT_NAME:-}" ]]; then
             sudo docker compose --env-file docker/.env -f docker/docker-compose.yml -p "${COMPOSE_PROJECT_NAME}" \
-              --profile oceanbase down -v --remove-orphans || true
+              --profile "${{ matrix.profile }}" down -v --remove-orphans || true
             sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q \
               | xargs -r sudo docker rm -f
           fi
