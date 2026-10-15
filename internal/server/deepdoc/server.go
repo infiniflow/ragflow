@@ -20,7 +20,6 @@
 package deepdoc
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	goruntime "runtime"
@@ -188,12 +187,4 @@ func resolveDeepDocDropScore() float64 {
 // dirHasModels reports whether dir contains every required model files.
 func dirHasModels(dir string) bool {
 	return common.HasModelFiles(dir)
-}
-
-// Run starts the RAGFlow DeepDoc server dispatch. The in-process (Go) DeepDoc
-// backend is the only production backend and is wired by RegisterNativeDeepDoc,
-// so this dispatch path is currently a no-op placeholder.
-func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) error {
-	common.Info("DeepDoc server is not implemented")
-	return nil
 }

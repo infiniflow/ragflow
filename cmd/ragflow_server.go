@@ -534,7 +534,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "deepdoc":
-		if err = deepdocpkg.Run(ctx, serverName, arguments); err != nil {
+		if err = runDeepDoc(ctx, serverName, arguments); err != nil {
 			fmt.Printf("Failed to start DEEPDOC: %v\n", err)
 			os.Exit(1)
 		}
