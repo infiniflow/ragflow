@@ -139,11 +139,17 @@ func isCompilerComponent(cpnID string) bool {
 		strings.HasPrefix(lowerID, "compiler_")
 }
 
+// IsParserComponentID reports whether a component ID names a Parser component.
+// A parser_config map is keyed by component ID, where the component name is not
+// available, so this is the config-side half of isParserComponent.
+func IsParserComponentID(cpnID string) bool {
+	return strings.HasPrefix(strings.ToLower(cpnID), "parser:")
+}
+
 // isParserComponent returns true if the component name or component ID
 // indicates a Parser component.
 func isParserComponent(cpnID, componentName string) bool {
-	return strings.EqualFold(componentName, "parser") ||
-		strings.HasPrefix(strings.ToLower(cpnID), "parser:")
+	return strings.EqualFold(componentName, "parser") || IsParserComponentID(cpnID)
 }
 
 // NormalizeParserConfigSetups lifts legacy nested Parser "setups" entries in
