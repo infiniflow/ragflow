@@ -158,11 +158,6 @@ func (dao *KnowledgebaseDAO) UpdateByID(ctx context.Context, db *gorm.DB, id str
 	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete soft deletes a knowledge base by setting status to invalid
-func (dao *KnowledgebaseDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Update("status", string(entity.StatusInvalid)).Error
-}
-
 // GetByID retrieves a knowledge base by ID
 func (dao *KnowledgebaseDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Knowledgebase, error) {
 	var kb entity.Knowledgebase
@@ -495,12 +490,6 @@ func (dao *KnowledgebaseDAO) GetByNameInUserTenants(ctx context.Context, db *gor
 		Order("knowledgebase.create_time ASC").
 		Find(&kbs).Error
 	return kbs, err
-}
-
-// DeleteByTenantID deletes all knowledge bases by tenant ID (hard delete)
-func (dao *KnowledgebaseDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Knowledgebase{})
-	return result.RowsAffected, result.Error
 }
 
 // GetKBIDsByTenantIDSimple GetKBIDsByTenantID gets all knowledge base IDs by tenant ID
