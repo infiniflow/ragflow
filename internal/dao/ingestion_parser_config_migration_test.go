@@ -200,7 +200,7 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 		}
 		for _, row := range rows {
 			config := decodeIngestionConfig(t, *row.ParserConfig)
-			extractor, _ := config[builtinExtractorNodeID].(map[string]any)
+			extractor, _ := config[ingestionTargets["general"].extractorNode].(map[string]any)
 			keywords, _ := extractor["keywords"].(map[string]any)
 			if keywords["top_n"] != float64(8) {
 				t.Fatalf("%s.%s: extractor settings not migrated: %v", table, row.ID, config)
@@ -427,7 +427,7 @@ func TestMigrateIngestionParserConfigsSharesDev1Cleanup(t *testing.T) {
 	if _, remains := config["raptor"]; remains {
 		t.Fatal("dataset cleanup was skipped")
 	}
-	if _, migrated := config[builtinExtractorNodeID]; !migrated {
+	if _, migrated := config[ingestionTargets["general"].extractorNode]; !migrated {
 		t.Fatal("component conversion was skipped")
 	}
 }

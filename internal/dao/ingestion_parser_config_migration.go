@@ -34,10 +34,7 @@ import (
 )
 
 // Use the project version shared with the dataset parser config cleanup.
-const (
-	ingestionParserConfigTargetVersion = knowledgebaseParserConfigTargetVersion
-	builtinExtractorNodeID             = "Extractor:AutoExtractDefault"
-)
+const ingestionParserConfigTargetVersion = knowledgebaseParserConfigTargetVersion
 
 // Python v0.27.2 stored component settings at the parser_config root. Convert
 // them to Go's component-scoped shape before the API discards unscoped keys.
@@ -53,6 +50,7 @@ type builtinIngestionTarget struct {
 	chunker       string
 	chunkerNode   string
 	tokenizerNode string
+	extractorNode string
 }
 
 func (t builtinIngestionTarget) hasFamily(family string) bool {
@@ -84,6 +82,7 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 		chunker:       "GeneralChunker",
 		chunkerNode:   "GeneralChunker:SixApplesFall",
 		tokenizerNode: "Tokenizer:LegalReadersDecide",
+		extractorNode: "Extractor:AutoExtractDefault",
 	}
 	return map[string]builtinIngestionTarget{
 		"general": general,
@@ -102,6 +101,7 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "ManualChunker",
 			chunkerNode:   "ManualChunker:NineInsectsFind",
 			tokenizerNode: "Tokenizer:FunnyBalloonsGrin",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"table": {
 			parserNode:    "Parser:HipSignsRhyme",
@@ -117,6 +117,7 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "TitleChunker",
 			chunkerNode:   "TitleChunker:SparklySchoolsTravel",
 			tokenizerNode: "Tokenizer:GreatCarsWash",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"book": {
 			parserNode:    "Parser:HipSignsRhyme",
@@ -125,6 +126,7 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "TitleChunker",
 			chunkerNode:   "TitleChunker:GrumpyGarlicsBake",
 			tokenizerNode: "Tokenizer:HotDonutsRing",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"laws": {
 			parserNode:    "Parser:HipSignsRhyme",
@@ -133,6 +135,7 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "TitleChunker",
 			chunkerNode:   "TitleChunker:SpicyKeysKick",
 			tokenizerNode: "Tokenizer:PublicJobsTake",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"presentation": {
 			parserNode:    "Parser:HipSignsRhyme",
@@ -140,12 +143,14 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "PageChunker",
 			chunkerNode:   "PageChunker:HappyHillsGlow",
 			tokenizerNode: "Tokenizer:TallTreesDance",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"picture": {
 			parserNode:    "Parser:ViewsCaptureLight",
 			chunker:       "OneChunker",
 			chunkerNode:   "OneChunker:BrightColorsGlow",
 			tokenizerNode: "Tokenizer:SharpLensFocus",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"one": {
 			parserNode:    "Parser:HipSignsRhyme",
@@ -154,18 +159,21 @@ var ingestionTargets = func() map[string]builtinIngestionTarget {
 			chunker:       "OneChunker",
 			chunkerNode:   "OneChunker:DryDrinksVisit",
 			tokenizerNode: "Tokenizer:FrankWeeksListen",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"audio": {
 			parserNode:    "Parser:SongsFillAir",
 			chunker:       "OneChunker",
 			chunkerNode:   "OneChunker:BlueSkiesLaugh",
 			tokenizerNode: "Tokenizer:KindEyesWatch",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 		"email": {
 			parserNode:    "Parser:BirdsFlutterHigh",
 			chunker:       "TokenChunker",
 			chunkerNode:   "TokenChunker:WarmBreadSmells",
 			tokenizerNode: "Tokenizer:NiceWordsSpoken",
+			extractorNode: "Extractor:AutoExtractDefault",
 		},
 	}
 }()
@@ -1099,19 +1107,6 @@ func convertIngestionTokenizer(config map[string]any, target builtinIngestionTar
 	return nil
 }
 
-var builtinExtractorPipelines = map[string]struct{}{
-	"general":      {},
-	"naive":        {},
-	"audio":        {},
-	"book":         {},
-	"email":        {},
-	"laws":         {},
-	"manual":       {},
-	"one":          {},
-	"paper":        {},
-	"picture":      {},
-	"presentation": {},
-}
 var extractorFlatKeys = []string{"auto_keywords", "auto_questions", "enable_metadata", "metadata", "built_in_metadata"}
 
 // migrateExtractorConfig rewrites only Python's top-level extraction settings.
@@ -1131,15 +1126,17 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 	}
 	var targets []map[string]any
 	var newNode map[string]any
+	var extractorNode string
 	if pipelineID == nil || strings.TrimSpace(*pipelineID) == "" {
-		_, builtin := builtinExtractorPipelines[strings.ToLower(strings.TrimSpace(parserID))]
-		if !builtin {
+		target, ok := ingestionTargets[strings.ToLower(strings.TrimSpace(parserID))]
+		if !ok || target.extractorNode == "" {
 			return false, nil
 		}
-		if raw, exists := config[builtinExtractorNodeID]; exists {
+		extractorNode = target.extractorNode
+		if raw, exists := config[extractorNode]; exists {
 			node, ok := raw.(map[string]any)
 			if !ok {
-				return false, fmt.Errorf("%s is not an object", builtinExtractorNodeID)
+				return false, fmt.Errorf("%s is not an object", extractorNode)
 			}
 			targets = append(targets, node)
 		} else {
@@ -1187,7 +1184,7 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 		}
 	}
 	if newNode != nil {
-		config[builtinExtractorNodeID] = newNode
+		config[extractorNode] = newNode
 	}
 	for _, key := range extractorFlatKeys {
 		delete(config, key)
