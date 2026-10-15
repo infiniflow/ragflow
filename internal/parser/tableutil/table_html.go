@@ -40,6 +40,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	var rows [][]cellInput
 	var headerFlags []bool
 	var caption string
+	firstRowHasRowScope := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -61,6 +62,9 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 						if a.Key == "scope" {
 							scope = strings.ToLower(a.Val)
 						}
+					}
+					if len(rows) == 0 && isHTMLElement(c, "th") && (scope == "row" || scope == "rowgroup") {
+						firstRowHasRowScope = true
 					}
 					if isHTMLElement(c, "th") && scope != "row" && scope != "rowgroup" {
 						columnHeaders++
@@ -96,9 +100,10 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		headerCount++
 	}
 	return &entity.TableData{
-		Grid:       buildGrid(rows),
-		HeaderRows: headerCount,
-		Caption:    caption,
+		Grid:           buildGrid(rows),
+		HeaderRows:     headerCount,
+		RowHeadersOnly: headerCount == 0 && firstRowHasRowScope,
+		Caption:        caption,
 	}, nil
 }
 

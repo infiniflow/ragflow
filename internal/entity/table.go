@@ -14,6 +14,8 @@
 
 package entity
 
+import "encoding/json"
+
 // TableData is the canonical structured table contract shared by every parser
 // (office / markdown / html / pdf) and consumed by the ingestion chunkers.
 //
@@ -41,10 +43,53 @@ type TableData struct {
 	// Zero keeps every row as data. Parsers decide this before segmentation;
 	// renderers and chunkers never infer a header from the first data row.
 	HeaderRows int `json:"header_rows"`
+	// RowHeadersOnly records source markup that explicitly scopes the first
+	// row's headings to rows. It prevents source inference from promoting
+	// that row to column names and is discarded after parser normalization.
+	RowHeadersOnly bool `json:"-"`
 	// Caption is the table caption (pdf emits it; office uses the sheet name).
 	Caption string `json:"caption,omitempty"`
 	// Page is the pdf 0-based page number, used for layout retrieval.
 	Page int `json:"page,omitempty"`
+}
+
+// UnmarshalJSON reconstructs covered-cell origins from the serialized span
+// geometry. Chunkers need these pointers when slicing a header rowspan across
+// sub-tables; storing a second copy of the geometry on the wire is unnecessary.
+func (td *TableData) UnmarshalJSON(data []byte) error {
+	type tableData TableData
+	var decoded tableData
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	*td = TableData(decoded)
+	for r, row := range td.Grid {
+		for c, cell := range row {
+			if cell.Covered {
+				continue
+			}
+			rows, cols := cell.RowSpan, cell.ColSpan
+			if rows < 1 {
+				rows = 1
+			}
+			if cols < 1 {
+				cols = 1
+			}
+			if rows == 1 && cols == 1 {
+				continue
+			}
+			for rr := r; rr < len(td.Grid) && rr-r < rows; rr++ {
+				for cc := c; cc < len(td.Grid[rr]) && cc-c < cols; cc++ {
+					covered := &td.Grid[rr][cc]
+					if covered.Covered {
+						covered.OriginRow = r
+						covered.OriginCol = c
+					}
+				}
+			}
+		}
+	}
+	return nil
 }
 
 // TableCell is one position in TableData.Grid.
@@ -60,7 +105,7 @@ type TableCell struct {
 	// empty; readers must skip it (the real content is at the origin slot).
 	Covered bool `json:"covered,omitempty"`
 	// OriginRow / OriginCol name the slot whose span produced this Covered
-	// marker. They are diagnostic only and are not serialized.
+	// marker. They are derived from span geometry when JSON is decoded.
 	OriginRow int `json:"-"`
 	OriginCol int `json:"-"`
 }

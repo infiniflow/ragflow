@@ -75,6 +75,10 @@ func resolveTableHeader(td *entity.TableData, predicted bool) {
 	if td == nil {
 		return
 	}
+	if td.RowHeadersOnly {
+		td.HeaderRows = 0
+		return
+	}
 	evidence := tableutil.HeaderEvidence{}
 	if predicted {
 		evidence.PredictedRows = td.HeaderRows

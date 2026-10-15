@@ -68,3 +68,25 @@ func TestGeneralHeaderlessSubtablesKeepEveryRow(t *testing.T) {
 		t.Fatalf("got %d rows, want 3", rows)
 	}
 }
+
+func TestGeneralTableHeaderRowspanSurvivesWire(t *testing.T) {
+	td, err := tableutil.ParseTableHTML(`<table><tr><th>Name</th><th rowspan="2">Group</th></tr><tr><td>Alice</td></tr><tr><td>Bob</td><td>B</td></tr><tr><td>Carol</td><td>C</td></tr></table>`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := NewGeneralChunker(map[string]any{"chunk_token_size": 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Invoke(t.Context(), nil, map[string]any{"name": "merged.xlsx", "file_type": "xlsx", "output_format": "json", "json": []map[string]any{{"doc_type_kwd": "table", "table": td}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	chunks := outputChunks(t, out)
+	if len(chunks) != 3 {
+		t.Fatalf("got %d chunks, want 3 data rows", len(chunks))
+	}
+	if text := chunks[0]["text"].(string); !strings.Contains(text, `rowspan="2"`) {
+		t.Fatalf("header/data merge lost across parser wire: %s", text)
+	}
+}

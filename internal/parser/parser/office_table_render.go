@@ -540,6 +540,7 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 	}
 	// Bound malformed far merges and preserve their geometry instead of copying
 	// a title's text into every covered column.
+	mergeCellBudget := 1 << 20
 	for _, m := range ranges {
 		if m.sr > len(grid) || m.sc > maxMergeExtentCols {
 			continue
@@ -551,6 +552,20 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 		if endCol > maxMergeExtentCols {
 			endCol = maxMergeExtentCols
 		}
+		added := 0
+		for r := m.sr - 1; r < endRow; r++ {
+			if endCol > len(grid[r]) {
+				added += endCol - len(grid[r])
+			}
+			if added > mergeCellBudget {
+				break
+			}
+		}
+		if added > mergeCellBudget {
+			warnings = append(warnings, fmt.Sprintf("XLSX sheet %q merge %s:%s exceeds the cell expansion budget; kept source values without merge geometry", sheet, cellAxis(m.sr, m.sc), cellAxis(m.er, m.ec)))
+			continue
+		}
+		mergeCellBudget -= added
 		for r := m.sr - 1; r < endRow; r++ {
 			for len(grid[r]) < endCol {
 				grid[r] = append(grid[r], entity.TableCell{})

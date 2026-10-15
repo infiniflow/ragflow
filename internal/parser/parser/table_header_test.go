@@ -1,7 +1,11 @@
 package parser
 
 import (
+	"archive/zip"
+	"bytes"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/xuri/excelize/v2"
@@ -204,5 +208,85 @@ func TestPDFGeneratedMarkdownHeaderIsPrediction(t *testing.T) {
 		if td.HeaderRows != 0 || len(td.Grid) != 2 {
 			t.Fatalf("%s conversion promoted a data row: %+v", format, td)
 		}
+	}
+}
+
+func TestHTMLRowHeaderSemanticsSurviveInference(t *testing.T) {
+	markup := `<table><tr><th scope="row">Price</th><td>Unknown</td></tr><tr><th scope="row">Quantity</th><td>10</td></tr><tr><th scope="row">Amount</th><td>20</td></tr></table>`
+	res := NewHTMLParser().ParseWithResult(t.Context(), "metrics.html", []byte(markup))
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	td := res.JSON[0]["table"].(*entity.TableData)
+	if td.HeaderRows != 0 {
+		t.Fatalf("row headers promoted to column headers: %d", td.HeaderRows)
+	}
+	// Backend normalization must preserve the same explicit row semantics.
+	res.predictedTableHeaders = true
+	res.NormalizeTableHeaders(res.JSON)
+	if td.HeaderRows != 0 {
+		t.Fatalf("normalization promoted row headers: %d", td.HeaderRows)
+	}
+}
+
+func TestXLSXSparseMergeExpansionIsBounded(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Report")
+		mustSetCell(t, f, "Sheet1", "A1101", "tail")
+	})
+	// Write sparse OOXML directly: Excelize's MergeCell editor itself
+	// materializes large rectangles before our parser can inspect them.
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for _, file := range zr.File {
+		r, err := file.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		content, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if file.Name == "xl/worksheets/sheet1.xml" {
+			content = []byte(strings.Replace(string(content), "</worksheet>", `<mergeCells count="1"><mergeCell ref="A1:AMJ1100"/></mergeCells></worksheet>`, 1))
+		}
+		w, err := zw.Create(file.Name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = w.Write(content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	data = buf.Bytes()
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "sparse.xlsx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	var slots int
+	for _, item := range res.JSON {
+		if td, ok := item["table"].(*entity.TableData); ok {
+			for _, row := range td.Grid {
+				slots += len(row)
+			}
+		}
+	}
+	if slots > 1<<20 {
+		t.Fatalf("sparse merge expanded to %d grid slots", slots)
+	}
+	if !strings.Contains(spreadsheetText(res), "tail") {
+		t.Fatal("bounded merge lost source values")
+	}
+	if len(res.Warnings) == 0 {
+		t.Fatal("oversized merge geometry must be reported")
 	}
 }
