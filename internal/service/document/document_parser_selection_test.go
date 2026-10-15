@@ -7,7 +7,6 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
-	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/service"
 	"ragflow/internal/storage"
 	syncerconnector "ragflow/internal/syncer/connector"
@@ -45,7 +44,7 @@ func TestDedicatedDocumentParserID(t *testing.T) {
 	}
 }
 
-func TestParserConfigFamilySupport(t *testing.T) {
+func TestConfigDeclaredFamily(t *testing.T) {
 	flat := entity.JSONMap{
 		"Parser:HipSignsRhyme": map[string]any{
 			"pdf":                       map[string]any{"suffix": []any{"pdf"}},
@@ -62,27 +61,103 @@ func TestParserConfigFamilySupport(t *testing.T) {
 			},
 		},
 	}
+	// A config never carries two Parser components today; the union keeps the
+	// answer independent of map iteration order if one ever does.
+	multiple := entity.JSONMap{
+		"Parser:One": map[string]any{"pdf": map[string]any{}},
+		"Parser:Two": map[string]any{"slides": map[string]any{}},
+	}
 
 	cases := []struct {
-		name   string
-		config entity.JSONMap
-		family string
-		want   familySupport
+		name         string
+		config       entity.JSONMap
+		family       string
+		wantDeclared bool
+		wantFound    bool
 	}{
-		{"flat declares the family", flat, "pdf", familySupportYes},
-		{"flat misses the family", flat, "slides", familySupportNo},
-		{"nested legacy setups are lifted", nested, "slides", familySupportYes},
-		{"nested legacy setups miss the family", nested, "text&code", familySupportNo},
-		{"unmappable family is undetermined", flat, "", familySupportUnknown},
-		{"no parser entry is undetermined", entity.JSONMap{"File": map[string]any{}}, "pdf", familySupportUnknown},
-		{"nil config is undetermined", nil, "pdf", familySupportUnknown},
-		{"non-map parser entry is undetermined", entity.JSONMap{"Parser:X": "oops"}, "pdf", familySupportUnknown},
+		{"flat declares the family", flat, "pdf", true, true},
+		{"flat misses the family", flat, "slides", false, true},
+		{"nested legacy setups are lifted", nested, "slides", true, true},
+		{"nested legacy setups miss the family", nested, "text&code", false, true},
+		{"any parser entry declaring the family wins", multiple, "slides", true, true},
+		{"an entry missing the family still answers", multiple, "audio", false, true},
+		{"no parser entry cannot answer", entity.JSONMap{"File": map[string]any{}}, "pdf", false, false},
+		{"nil config cannot answer", nil, "pdf", false, false},
+		{"non-map parser entry cannot answer", entity.JSONMap{"Parser:X": "oops"}, "pdf", false, false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := parserConfigFamilySupport(tc.config, tc.family); got != tc.want {
-				t.Fatalf("parserConfigFamilySupport(%#v, %q) = %d, want %d", tc.config, tc.family, got, tc.want)
+			declared, found := configDeclaredFamily(tc.config, tc.family)
+			if declared != tc.wantDeclared || found != tc.wantFound {
+				t.Fatalf("configDeclaredFamily(%#v, %q) = (%v, %v), want (%v, %v)",
+					tc.config, tc.family, declared, found, tc.wantDeclared, tc.wantFound)
+			}
+		})
+	}
+}
+
+func TestSelectionGovernsFamily(t *testing.T) {
+	canvasID := "canvas-1"
+	legacyConfig := entity.JSONMap{"llm_id": "ministral", "chunk_token_num": 512}
+	canvasWithoutParser := entity.JSONMap{"File": map[string]any{}}
+
+	cases := []struct {
+		name   string
+		sel    *service.ParserSelection
+		config entity.JSONMap
+		family string
+		want   bool
+	}{
+		{
+			name:   "config declares the family",
+			sel:    service.CurrentSelection("presentation", nil),
+			config: presentationParserConfig(),
+			family: "slides",
+			want:   true,
+		},
+		{
+			name:   "config misses the family",
+			sel:    service.CurrentSelection("presentation", nil),
+			config: presentationParserConfig(),
+			family: "text&code",
+			want:   false,
+		},
+		{
+			name:   "legacy flat config is judged by its template",
+			sel:    service.CurrentSelection("naive", nil),
+			config: legacyConfig,
+			family: "text&code",
+			want:   true,
+		},
+		{
+			name:   "legacy flat config still excludes an owned family",
+			sel:    service.CurrentSelection("naive", nil),
+			config: legacyConfig,
+			family: "slides",
+			want:   false,
+		},
+		{
+			name:   "canvas without a parser node keeps the selection",
+			sel:    service.CurrentSelection("presentation", &canvasID),
+			config: canvasWithoutParser,
+			family: "text&code",
+			want:   true,
+		},
+		{
+			name:   "unmappable family keeps the selection",
+			sel:    service.CurrentSelection("presentation", nil),
+			config: presentationParserConfig(),
+			family: "",
+			want:   true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := selectionGovernsFamily(t.Context(), tc.sel, tc.config, tc.family); got != tc.want {
+				t.Fatalf("selectionGovernsFamily(%q, %#v, %q) = %v, want %v",
+					tc.sel.ParserID, tc.config, tc.family, got, tc.want)
 			}
 		})
 	}
@@ -586,20 +661,10 @@ func TestInsertSyncDocument_FallsBackWhenSelectionLacksFamily(t *testing.T) {
 }
 
 // configHasParserFamily reports whether the config's Parser entry declares the
-// given family, accepting both the flat Go shape and the nested legacy shape.
+// given family, read through the production declaration reader.
 func configHasParserFamily(config entity.JSONMap, family string) bool {
-	for cpnID, raw := range config {
-		if !strings.HasPrefix(strings.ToLower(cpnID), "parser:") {
-			continue
-		}
-		params, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		_, declared := schema.FlattenLegacyParserSetups(params)[family]
-		return declared
-	}
-	return false
+	declared, _ := configDeclaredFamily(config, family)
+	return declared
 }
 
 // parserFamilySetup returns the family setup of the document's Parser node, the

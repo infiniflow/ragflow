@@ -51,97 +51,88 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	return ""
 }
 
-// familySupport is the three-state answer to "does this parser_config declare
-// a file family".
-type familySupport int
-
-const (
-	// familySupportYes: the Parser entry declares the family.
-	familySupportYes familySupport = iota
-	// familySupportNo: a Parser entry exists and does not declare the family.
-	familySupportNo
-	// familySupportUnknown: no Parser entry (legacy flat configs, canvases
-	// without a Parser node), a malformed entry, or an unmappable family.
-	familySupportUnknown
-)
-
-// parserConfigFamilySupport reports whether a parser_config declares the given
-// Parser file family ("pdf", "text&code", "slides", ...).
-//
-// The Parser entry is the same declaration the web parser-gap validation reads
-// (transformParserConfigSetups), so the backend resolves against the contract
-// the front end validates. Both a dataset's built-in parser config and its
-// canvas-derived config land in this shape; a config without a Parser entry
-// leaves support undetermined.
-func parserConfigFamilySupport(config entity.JSONMap, family string) familySupport {
-	if family == "" {
-		return familySupportUnknown
+// fallbackDocumentParserID returns the builtin pipeline that takes over a file
+// whose family the dataset's selection does not declare: the pipeline owning
+// the file type, else the catch-all general pipeline.
+func fallbackDocumentParserID(filetype utility.FileType, filename string) string {
+	if owner := dedicatedDocumentParserID(filetype, filename); owner != "" {
+		return owner
 	}
+	return generalParserID
+}
+
+// parserParamsDeclaresFamily reports whether a Parser component's params
+// declare the given file family ("pdf", "text&code", "slides", ...). The
+// declaration is the one the web parser-gap validation reads
+// (transformParserConfigSetups), so both sides judge files by one contract.
+func parserParamsDeclaresFamily(params map[string]any, family string) bool {
+	_, declared := schema.FlattenLegacyParserSetups(params)[family]
+	return declared
+}
+
+// configDeclaredFamily reports whether a parser_config declares the family.
+// found is false when the config has no readable Parser entry (a legacy flat
+// config, or a malformed one): the config cannot answer then.
+func configDeclaredFamily(config entity.JSONMap, family string) (declared, found bool) {
 	for cpnID, raw := range config {
-		if !strings.HasPrefix(strings.ToLower(cpnID), "parser:") {
+		if !pipelinepkg.IsParserComponentID(cpnID) {
 			continue
 		}
 		params, ok := raw.(map[string]any)
 		if !ok {
-			return familySupportUnknown
+			return false, false
 		}
-		if _, declared := schema.FlattenLegacyParserSetups(params)[family]; declared {
-			return familySupportYes
-		}
-		return familySupportNo
+		declared = declared || parserParamsDeclaresFamily(params, family)
+		found = true
 	}
-	return familySupportUnknown
+	return declared, found
 }
 
-// selectionFamilySupport reports whether the dataset's selection declares the
-// given file family.
-//
-// The dataset config is the declaration the web parser-gap validation reads, so
-// a config that carries a Parser entry decides on its own. A config without one
-// (legacy flat configs such as parser_id="naive", or a canvas without a Parser
-// node) cannot answer from the config: a builtin selection still has its
-// template, which is what the pipeline actually runs, while a canvas has no
-// registry entry and stays undetermined.
-func selectionFamilySupport(ctx context.Context, sel *service.ParserSelection, config entity.JSONMap, family string) familySupport {
-	if family == "" {
-		return familySupportUnknown
-	}
-	switch parserConfigFamilySupport(config, family) {
-	case familySupportYes:
-		return familySupportYes
-	case familySupportNo:
-		return familySupportNo
-	}
-	if sel != nil && sel.IsBuiltIn() {
-		return builtinTemplateFamilySupport(ctx, sel.ParserID, family)
-	}
-	return familySupportUnknown
-}
-
-// builtinTemplateFamilySupport reads a builtin template's declared families.
-// The registry resolves legacy aliases ("naive" -> "general"), so a dataset
-// row storing a historical parser_id is judged by the template it actually
-// runs. Undetermined when the template cannot be loaded or declares no Parser
-// node.
-func builtinTemplateFamilySupport(ctx context.Context, parserID, family string) familySupport {
+// templateDeclaredFamily reports whether a builtin template declares the family.
+// found is false when the template cannot be loaded or carries no Parser
+// component. The registry resolves legacy aliases ("naive" -> "general"), so a
+// dataset row storing a historical parser_id is judged by the template it
+// actually runs.
+func templateDeclaredFamily(ctx context.Context, parserID, family string) (declared, found bool) {
 	dslJSON, err := service.LoadPipelineDSL(ctx, false, parserID, nil)
 	if err != nil {
-		return familySupportUnknown
+		return false, false
 	}
 	defaults, err := pipelinepkg.ComponentParamsDefaults(dslJSON)
 	if err != nil {
-		return familySupportUnknown
+		return false, false
 	}
 	for cpnID, params := range defaults {
-		if !strings.HasPrefix(strings.ToLower(cpnID), "parser:") {
+		if !pipelinepkg.IsParserComponentID(cpnID) {
 			continue
 		}
-		if _, declared := schema.FlattenLegacyParserSetups(params)[family]; declared {
-			return familySupportYes
-		}
-		return familySupportNo
+		return parserParamsDeclaresFamily(params, family), true
 	}
-	return familySupportUnknown
+	return false, false
+}
+
+// selectionGovernsFamily reports whether the dataset's selection should keep
+// governing a file of this family.
+//
+// The saved config carries the declaration the web gap validation reads, so it
+// decides whenever it has a Parser entry. A legacy flat config has none, and a
+// builtin selection is then judged by the template its parser_id actually runs;
+// a canvas has no template to consult. An unmappable extension, and a
+// declaration that cannot be read, keep the selection too: a choice that cannot
+// be judged is honored rather than overridden.
+func selectionGovernsFamily(ctx context.Context, sel *service.ParserSelection, config entity.JSONMap, family string) bool {
+	if family == "" {
+		return true
+	}
+	if declared, found := configDeclaredFamily(config, family); found {
+		return declared
+	}
+	if sel != nil && sel.IsBuiltIn() {
+		if declared, found := templateDeclaredFamily(ctx, sel.ParserID, family); found {
+			return declared
+		}
+	}
+	return true
 }
 
 // parserSelectionColumns maps a resolved parser selection onto the document
@@ -162,33 +153,24 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // resolveDocumentParser returns the parser selection and parser_config a newly
 // created document should carry.
 //
-// The dataset's selection (a built-in parser or a user canvas) governs every
-// file family its config declares. A file the selection does not declare is
-// handed to the built-in pipeline that owns its family (picture / audio /
-// presentation / email), and failing that to the catch-all general pipeline, so
-// the row always matches the pipeline that actually runs it: document
-// parser_config drives both the parser-gap validation and the runtime override
-// params, and a row left on a parser that cannot run its file would be reported
-// as unsupported by its own type.
-//
-// A config without a Parser entry (legacy flat configs) is judged by the
-// builtin template it runs; a canvas without a Parser node, and a filename
-// whose extension maps to no family, leave the selection untouched: support
-// cannot be determined there, and the user's choice is kept. On a DSL failure
-// the selection and config are kept too: a registry lookup must not fail an
-// upload, and a half-switched row (new parser, old config) is the inconsistent
-// state this function exists to avoid.
+// The dataset's selection governs every file family its config declares; a file
+// the selection does not declare is handed to the pipeline that owns its family
+// (picture / audio / presentation / email), and failing that to the catch-all
+// general pipeline, with the config reseeded from that template. The row then
+// matches the pipeline that actually runs it: document parser_config drives
+// both the parser-gap validation and the runtime override params, and a row
+// left on a parser that cannot run its file is reported as unsupported by its
+// own type. On a DSL failure the selection and config are kept: a registry
+// lookup must not fail an upload, and a half-switched row (new parser, old
+// config) is the inconsistent state this function exists to avoid.
 func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap) (*service.ParserSelection, entity.JSONMap) {
 	selection := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	family := componentpkg.ParserFileFamily(utility.GetFileExtension(filename))
-	if selectionFamilySupport(ctx, selection, kb.ParserConfig, family) != familySupportNo {
+	if selectionGovernsFamily(ctx, selection, kb.ParserConfig, family) {
 		return selection, base
 	}
 
-	target := dedicatedDocumentParserID(filetype, filename)
-	if target == "" {
-		target = generalParserID
-	}
+	target := fallbackDocumentParserID(filetype, filename)
 	if rebuilt, ok := rebuildParserConfig(ctx, kb, target, filename, base); ok {
 		return &service.ParserSelection{Mode: service.ParseModeBuiltIn, ParserID: target}, rebuilt
 	}
