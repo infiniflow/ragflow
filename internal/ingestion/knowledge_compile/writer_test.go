@@ -61,13 +61,13 @@ func TestWriteMergedRecordsGeneratedPageCommitOnly(t *testing.T) {
 
 // TestMergedChunkMapKeepsWikiFields locks the fix for the merged-row metadata
 // gap: the dataset-level merged row written by mergedChunkMap must carry the
-// wiki page fields (page_type_kwd/topic_kwd/title_kwd/slug_kwd/...) that the
+// wiki page fields (entity_type_kwd/topic_kwd/title_kwd/slug_kwd/...) that the
 // artifact API (ListArtifacts/ListWikiTopics) and page renderers read. Without
 // them the compilation page surfaces no wiki pages from the merged products.
 func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 	p := kccommon.Product{
 		ID: "merged-1", DocID: "kb1", TenantID: "t1", Variant: kccommon.VariantWiki,
-		Content: "# Alpha\n\nBody",
+		Content: "# Alpha\n\n**Body** links to [Beta](entity/beta).",
 		Vector:  []float32{0.1, 0.2, 0.3},
 		Meta: map[string]any{
 			"kind":             "page",
@@ -91,12 +91,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		"entity_type_kwd":     "entity",
 		"topic_kwd":           "Knowledge/Core/Alpha",
 		"summary_with_weight": "A page about Alpha",
-		// The wiki page body goes to md_with_weight, the column Python writes
-		// and reads (wiki_incremental.py:2190); artifact_slug_kwd was a Go-only
-		// column that exists in no engine mapping.
-		"md_with_weight": "# Alpha\n\nBody",
-		"plan_kwd":       "run-abc",
-		"input_hash_kwd": "hash-123",
+		"content_with_weight": p.Content,
+		"plan_kwd":            "run-abc",
+		"input_hash_kwd":      "hash-123",
 	}
 	// The wall-clock audit fields must be stamped from `now`, not omitted.
 	if m["create_time"] != now.Format("2006-01-02 15:04:05") {
@@ -109,6 +106,9 @@ func TestMergedChunkMapKeepsWikiFields(t *testing.T) {
 		if got, _ := m[k].(string); got != want {
 			t.Errorf("merged row[%q] = %q, want %q", k, got, want)
 		}
+	}
+	if _, ok := m["md_with_weight"]; ok {
+		t.Fatal("merged Wiki rows must not duplicate the body in md_with_weight")
 	}
 	if v, _ := m["entity_names_kwd"].([]string); len(v) != 1 || v[0] != "Alpha" {
 		t.Errorf("entity_names_kwd = %#v, want [Alpha]", m["entity_names_kwd"])
@@ -234,6 +234,69 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	ids, ok := eng.lastDeleteCond["id"].([]string)
 	if !ok || len(ids) != 1 || ids[0] != oldID {
 		t.Fatalf("superseded id was not deleted: %v", eng.lastDeleteCond)
+	}
+}
+
+func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Acme Corp", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph",
+	}}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		if row["name_kwd"] != "acme corp" {
+			t.Errorf("name_kwd = %v, want normalized keyword acme corp", row["name_kwd"])
+		}
+		payload, _ := row["content_with_weight"].(string)
+		if !strings.Contains(payload, `"name":"Acme Corp"`) {
+			t.Errorf("entity payload = %s, want extracted spelling Acme Corp", payload)
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(text, "company") || !strings.Contains(strings.ToLower(text), "acme corp") || strings.Contains(text, `"name":`) {
+				t.Errorf("%s = %q, want searchable entity payload text", field, text)
+			}
+		}
+		return
+	}
+	t.Fatal("inserted rows contain no entity")
+}
+
+func TestWriteMergedStructurePreservesDistinctRelationTypes(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	buckets := []StructureBucket{
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "supplies", Description: "supply", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+		{Name: "Acme Corp -> Beta Ltd", Type: "relation", FromEntity: "Acme Corp", ToEntity: "Beta Ltd", RelationType: "owns", Description: "ownership", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph"},
+	}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", buckets); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	relations := map[string]bool{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "relation" {
+			continue
+		}
+		for _, field := range []string{"content_ltks", "content_sm_ltks"} {
+			text, _ := row[field].(string)
+			if !strings.Contains(strings.ToLower(text), "acme corp") || !strings.Contains(strings.ToLower(text), "beta ltd") || strings.Contains(text, `"from":`) {
+				t.Errorf("%s = %q, want searchable relation payload text", field, text)
+			}
+		}
+		payload, _ := row["content_with_weight"].(string)
+		for _, relationType := range []string{"supplies", "owns"} {
+			if strings.Contains(payload, `"type":"`+relationType+`"`) {
+				relations[relationType] = true
+			}
+		}
+	}
+	if len(relations) != 2 || !relations["supplies"] || !relations["owns"] {
+		t.Errorf("stored relation types = %v, want separate supplies and owns rows", relations)
 	}
 }
 

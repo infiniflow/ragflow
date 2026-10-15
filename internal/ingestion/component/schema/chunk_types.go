@@ -16,7 +16,12 @@
 
 package schema
 
-import "encoding/json"
+import (
+	"encoding/json"
+
+	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
+)
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
 // wire payloads.
@@ -99,34 +104,39 @@ func (m ChunkerFileMeta) MarshalJSON() ([]byte, error) {
 // boundaries. Common fields are explicit; dynamic enrichments are
 // preserved in Extra for forward compatibility.
 type ChunkDoc struct {
-	Text          string                     `json:"text,omitempty"`
-	DocType       string                     `json:"doc_type_kwd,omitempty"`
-	CKType        string                     `json:"ck_type,omitempty"`
-	TKNums        *int                       `json:"tk_nums,omitempty"`
-	Mom           string                     `json:"mom,omitempty"`
-	ImgID         string                     `json:"img_id,omitempty"`
-	ID            string                     `json:"id,omitempty"`
-	Layout        string                     `json:"layout,omitempty"`
-	LayoutType    string                     `json:"layout_type,omitempty"`
-	LayoutNo      string                     `json:"layoutno,omitempty"`
-	Image         string                     `json:"image,omitempty"`
-	ContextAbove  string                     `json:"context_above,omitempty"`
-	ContextBelow  string                     `json:"context_below,omitempty"`
-	Questions     string                     `json:"questions,omitempty"`
-	Keywords      string                     `json:"keywords,omitempty"`
-	Summary       string                     `json:"summary,omitempty"`
-	ChunkOrderInt *int                       `json:"chunk_order_int,omitempty"`
-	TitleTks      string                     `json:"title_tks,omitempty"`
-	TitleSmTks    string                     `json:"title_sm_tks,omitempty"`
-	ContentLtks   string                     `json:"content_ltks,omitempty"`
-	ContentSmLtks string                     `json:"content_sm_ltks,omitempty"`
-	PageNumber    *int                       `json:"page_number,omitempty"`
-	TopInt        []int                      `json:"top_int,omitempty"`
-	PDFPositions  json.RawMessage            `json:"_pdf_positions,omitempty"`
-	Positions     json.RawMessage            `json:"positions,omitempty"`
-	Sheet         string                     `json:"sheet,omitempty"`
-	SheetIndex    *int                       `json:"sheet_index,omitempty"`
-	Extra         map[string]json.RawMessage `json:"-"`
+	Text          string          `json:"text,omitempty"`
+	DocType       string          `json:"doc_type_kwd,omitempty"`
+	CKType        string          `json:"ck_type,omitempty"`
+	TKNums        *int            `json:"tk_nums,omitempty"`
+	Mom           string          `json:"mom,omitempty"`
+	ImgID         string          `json:"img_id,omitempty"`
+	ID            string          `json:"id,omitempty"`
+	Layout        string          `json:"layout,omitempty"`
+	LayoutType    string          `json:"layout_type,omitempty"`
+	LayoutNo      string          `json:"layoutno,omitempty"`
+	Image         string          `json:"image,omitempty"`
+	ContextAbove  string          `json:"context_above,omitempty"`
+	ContextBelow  string          `json:"context_below,omitempty"`
+	Questions     string          `json:"questions,omitempty"`
+	Keywords      string          `json:"keywords,omitempty"`
+	Summary       string          `json:"summary,omitempty"`
+	ChunkOrderInt *int            `json:"chunk_order_int,omitempty"`
+	TitleTks      string          `json:"title_tks,omitempty"`
+	TitleSmTks    string          `json:"title_sm_tks,omitempty"`
+	ContentLtks   string          `json:"content_ltks,omitempty"`
+	ContentSmLtks string          `json:"content_sm_ltks,omitempty"`
+	PageNumber    *int            `json:"page_number,omitempty"`
+	TopInt        []int           `json:"top_int,omitempty"`
+	PDFPositions  json.RawMessage `json:"_pdf_positions,omitempty"`
+	Positions     json.RawMessage `json:"positions,omitempty"`
+	Sheet         string          `json:"sheet,omitempty"`
+	SheetIndex    *int            `json:"sheet_index,omitempty"`
+	// TableData is the structured table contract. When a chunk carries it
+	// the table content is consumed directly from here instead of being
+	// re-parsed from Text markup. It must stay out of Extra (see the
+	// deletion list in UnmarshalJSON).
+	TableData *entity.TableData          `json:"table,omitempty"`
+	Extra     map[string]json.RawMessage `json:"-"`
 }
 
 func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
@@ -149,7 +159,7 @@ func (d *ChunkDoc) UnmarshalJSON(data []byte) error {
 		"context_above", "context_below", "questions", "keywords", "summary",
 		"chunk_order_int", "title_tks", "title_sm_tks", "content_ltks",
 		"content_sm_ltks", "tag_kwd", "page_number", "top_int", "_pdf_positions", "positions",
-		"sheet", "sheet_index",
+		"sheet", "sheet_index", "table",
 	} {
 		delete(raw, key)
 	}
@@ -224,9 +234,48 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 			out = append(out, doc)
 		}
 		return out, true, nil
+	case []parser.DocItem:
+		return ChunkDocsFromDocItem(t)
 	default:
 		return nil, false, nil
 	}
+}
+
+// ChunkDocsFromDocItem converts a parser-produced []DocItem directly into a
+// typed chunk slice, without routing through DocItem.ToMap. It reads the
+// typed fields of each item and feeds the canonical wire map to ChunkDocFromMap,
+// so the resulting []ChunkDoc is identical to what the historical
+// ChunkDocsFromAny([]DocItem) path produced (which round-tripped via ToMap).
+// This is the consumer-side entry the chunker uses once parsers emit DocItems
+// directly; other callers that still pass []map[string]any / []any / []ChunkDoc
+// keep using ChunkDocsFromAny.
+func ChunkDocsFromDocItem(items []parser.DocItem) ([]ChunkDoc, bool, error) {
+	if items == nil {
+		return nil, false, nil
+	}
+	out := make([]ChunkDoc, 0, len(items))
+	for _, it := range items {
+		if it == nil {
+			continue
+		}
+		doc, err := chunkDocFromDocItem(it)
+		if err != nil {
+			return nil, true, err
+		}
+		out = append(out, doc)
+	}
+	return out, true, nil
+}
+
+// chunkDocFromDocItem converts a parser DocItem directly into a typed chunk by
+// projecting it through its canonical ToMap wire shape and decoding that via
+// ChunkDocFromMap. Using ToMap — the parser package's single canonical
+// projection, with mergeExtra semantics — instead of a second, divergent wire
+// map builder keeps the conversion identical to the historical []map path and
+// prevents an Extra key from shadowing an empty canonical field (e.g. a stray
+// Extra["text"] must never override TextItem.Text == "").
+func chunkDocFromDocItem(it parser.DocItem) (ChunkDoc, error) {
+	return ChunkDocFromMap(it.ToMap())
 }
 
 // ToMap converts a typed chunk back to the generic map form used by

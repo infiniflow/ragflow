@@ -25,20 +25,15 @@ import (
 	"testing"
 )
 
-// TestHarnessWebSearchFuncGatedByProvider pins that the harness web_search seam
-// is produced only when a provider is configured (mirroring Python's
-// RAGTools.web_search provider gate). A nil callback is what keeps the tool off
-// the agentic surface.
-func TestHarnessWebSearchFuncGatedByProvider(t *testing.T) {
+func TestWebSearchFuncGatedByProvider(t *testing.T) {
 	s := &ChatPipelineService{}
-	if fn := s.harnessWebSearchFunc(nil); fn != nil {
-		t.Error("nil prompt config must yield no web-search callback")
+	for _, config := range []map[string]interface{}{nil, {}, {"tavily_api_key": "   "}} {
+		if s.webSearchFunc(config) != nil {
+			t.Errorf("missing provider must yield no agentic web-search callback: %v", config)
+		}
 	}
-	if fn := s.harnessWebSearchFunc(map[string]interface{}{}); fn != nil {
-		t.Error("empty prompt config must yield no web-search callback")
-	}
-	if fn := s.harnessWebSearchFunc(map[string]interface{}{"tavily_api_key": "tvly-test"}); fn == nil {
-		t.Error("configured provider must yield a web-search callback")
+	if s.webSearchFunc(map[string]interface{}{"tavily_api_key": "tvly-test"}) == nil {
+		t.Error("configured provider must yield an agentic web-search callback")
 	}
 }
 
@@ -680,6 +675,7 @@ func TestResolveWebSearchProviderSelectsKeyedProviders(t *testing.T) {
 		{provider: "firecrawl", apiKeyName: "firecrawl_api_key", apiKey: "firecrawl-test"},
 		{provider: "linkup", apiKeyName: "linkup_api_key", apiKey: "linkup-test"},
 		{provider: "parallel", apiKeyName: "parallel_api_key", apiKey: "parallel-test"},
+		{provider: "search1api", apiKeyName: "search1api_api_key", apiKey: "search1api-test"},
 	}
 
 	for _, tc := range cases {
@@ -918,6 +914,86 @@ func TestRetrieveFirecrawlWebSearchUsesSearchSnippets(t *testing.T) {
 		t.Fatalf("limit = %#v, want 6", requestBody["limit"])
 	}
 	assertWebSearchChunk(t, result, "firecrawl-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveSearch1APIWebSearchSendsBearerKeyAndUsesSnippets(t *testing.T) {
+	var requestBody map[string]interface{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want POST", r.Method)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer search1api-test" {
+			t.Errorf("Authorization = %q, want %q", got, "Bearer search1api-test")
+		}
+		if err := json.NewDecoder(r.Body).Decode(&requestBody); err != nil {
+			t.Errorf("decode request: %v", err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"searchParameters": {"query": "What is RAGFlow?", "max_results": 6},
+			"results": [
+				{"title": "No snippet", "link": "https://example.com/empty", "snippet": " \t\n"},
+				{"title": "RAGFlow", "link": "https://example.com/ragflow", "snippet": "An open-source RAG engine."}
+			]
+		}`))
+	}))
+	defer server.Close()
+
+	result, err := retrieveSearch1APIWebSearch(t.Context(), server.Client(), server.URL, "search1api-test", "What is RAGFlow?")
+	if err != nil {
+		t.Fatalf("retrieve Search1API web search: %v", err)
+	}
+	if requestBody["query"] != "What is RAGFlow?" {
+		t.Fatalf("query = %#v", requestBody["query"])
+	}
+	if requestBody["max_results"] != float64(6) {
+		t.Fatalf("max_results = %#v, want 6", requestBody["max_results"])
+	}
+	assertWebSearchChunk(t, result, "search1api-https://example.com/ragflow", "RAGFlow", "An open-source RAG engine.")
+}
+
+func TestRetrieveSearch1APIWebSearchRejectsErrorStatuses(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"error": "Unauthorized", "message": "Invalid bearer credential"}`))
+	}))
+	defer server.Close()
+
+	if _, err := retrieveSearch1APIWebSearch(t.Context(), server.Client(), server.URL, "bad-key", "ragflow"); err == nil {
+		t.Fatal("error is nil")
+	}
+}
+
+func TestDecodeSearch1APIWebSearchResultsRejectsMalformedContainers(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "null response", body: `null`},
+		{name: "null results", body: `{"results":null}`},
+		{name: "object results", body: `{"results":{}}`},
+		{name: "string results", body: `{"results":"nope"}`},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := decodeSearch1APIWebSearchResults([]byte(tc.body)); err == nil {
+				t.Fatal("error is nil")
+			}
+		})
+	}
+}
+
+func TestDecodeSearch1APIWebSearchResultsAcceptsMissingResults(t *testing.T) {
+	results, err := decodeSearch1APIWebSearchResults([]byte(`{"searchParameters": {"query": "ragflow"}}`))
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(results) != 0 {
+		t.Fatalf("results = %#v, want empty", results)
+	}
 }
 
 // A hit with no text is dropped rather than shipped as an empty citation.

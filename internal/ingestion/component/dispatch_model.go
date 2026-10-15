@@ -45,16 +45,8 @@ var resolveTenantModelByType = defaultResolveTenantModelByType
 // per-call model-selection tests can inject a fake without a live MySQL.
 var resolveModelConfig = defaultResolveModelConfig
 
-// configuredMediaModelID extracts a per-call model reference from a parser setup.
-// Image parsing stores the VLM model reference in parse_method when it is not
-// an OCR method. OCR backend selection is independent of the VLM model.
-// Other media families use vlm.llm_id, matching the frontend parser form.
-func configuredMediaModelID(setup schema.ParserSetup, family string) string {
-	if family == "image" {
-		if ref := getStringOr(setup, "parse_method", ""); ref != "" && !strings.EqualFold(ref, "ocr") {
-			return ref
-		}
-	}
+// configuredAudioModelID reads the audio setup's ASR model reference.
+func configuredAudioModelID(setup schema.ParserSetup) string {
 	if vlm, ok := setup["vlm"].(map[string]any); ok {
 		if ref, _ := vlm["llm_id"].(string); ref != "" {
 			return ref

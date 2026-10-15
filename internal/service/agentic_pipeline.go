@@ -19,6 +19,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/cloudwego/eino/schema"
@@ -26,8 +27,6 @@ import (
 
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
-	"ragflow/internal/engine"
-	enginetypes "ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 )
@@ -62,10 +61,13 @@ func (s *ChatPipelineService) agenticRag(
 	messages []map[string]interface{},
 	stream bool,
 	kwargs map[string]interface{},
-	useWebSearch bool,
 	quote bool,
 ) (<-chan AsyncChatResult, error) {
 	out := make(chan AsyncChatResult, 16)
+	// Wire the document-metadata resolver the metadata_search tool needs. The
+	// eino agentic_rag package must not import service (service imports it), so
+	// the concrete *service.MetadataService is injected here, per turn.
+	agentic_rag.SetMetadataService(NewMetadataService())
 	// agent_mode selects the template id for this run (validated non-empty by
 	// AsyncChat before dispatch). Resolved per-run so conf/agentic_rag.yaml
 	// edits take effect without restart.
@@ -88,6 +90,11 @@ func (s *ChatPipelineService) agenticRag(
 
 		runCtx, cancel := context.WithTimeout(ctx, agenticRunTimeout)
 		defer cancel()
+		// The run's evidence registry: every tool result stamps its passages with
+		// the [ID:n] handle the model cites, and buildAgenticReference resolves
+		// those handles against the same numbering.
+		registry := agentic_rag.NewEvidenceRegistry()
+		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:
@@ -102,6 +109,25 @@ func (s *ChatPipelineService) agenticRag(
 			common.ErrorCtx(runCtx, "agentic_rag: resolve chat model", chainErr)
 			emitResult(AsyncChatResult{Answer: fmt.Sprintf("**ERROR**: %s", chainErr.Error()), Final: true})
 			return
+		}
+		docIDs := s.chatMetadataDocIDs(runCtx, chat, lastUserQuestion(messages), chain[0], nil, chatDatasetIDs(chat))
+		modelType := "chat"
+		if info := chain[0].Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+			modelType = "image2text"
+		}
+		agentMessages := s.convertMessagesToEino(runCtx, userID, modelType, messages)
+		// Image-bearing turns cannot fail over to a text-only model.
+		for _, msg := range agentMessages {
+			if len(msg.UserInputMultiContent) > 0 {
+				visionChain := chain[:0]
+				for _, candidate := range chain {
+					if info := candidate.Info(); info != nil && entity.ModelTypeFromStrings(info.ModelTypes).Has(entity.ModelTypeImage2Text) {
+						visionChain = append(visionChain, candidate)
+					}
+				}
+				chain = visionChain
+				break
+			}
 		}
 
 		// Apply the dialog's LLM settings with per-request overrides exactly
@@ -133,12 +159,6 @@ func (s *ChatPipelineService) agenticRag(
 			return
 		}
 
-		if useWebSearch {
-			if web := s.agenticWebSearch(chat.PromptConfig); web != nil {
-				runCtx = agentic_rag.WithWebSearch(runCtx, web)
-			}
-		}
-
 		// Per-turn tool accounting, logged (not shipped on the result: the
 		// channel contract here is the naive pipeline's answer/reference one).
 		toolCounts := map[string]int{}
@@ -148,17 +168,21 @@ func (s *ChatPipelineService) agenticRag(
 		// StartToThink marker is emitted once and EndToThink fires when the
 		// agent's final answer arrives.
 		thinking := false
+		var reasoning strings.Builder
 		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
-			Model:          model,
-			SynthModel:     synth,
-			Messages:       convertMessagesToEino(messages),
-			TemplateID:     mode,
-			TenantID:       chat.TenantID,
-			DatasetIDs:     chatDatasetIDs(chat),
-			Stream:         stream,
-			ToolCallCounts: toolCounts,
-			ToolCallErrors: toolErrors,
+			Model:           model,
+			SynthModel:      synth,
+			Messages:        agentMessages,
+			TemplateID:      mode,
+			TenantID:        chat.TenantID,
+			DatasetIDs:      chatDatasetIDs(chat),
+			DocIDs:          docIDs,
+			ConversationKey: chat.ID,
+			Stream:          stream,
+			ToolCallCounts:  toolCounts,
+			ToolCallErrors:  toolErrors,
 			OnDelta: func(contentDelta, thinkingDelta string) {
+				reasoning.WriteString(thinkingDelta)
 				startToThink, endToThink := false, false
 				if thinkingDelta != "" {
 					if !thinking {
@@ -176,15 +200,15 @@ func (s *ChatPipelineService) agenticRag(
 				if startToThink {
 					emitResult(AsyncChatResult{Final: false, StartToThink: true})
 				}
+				if endToThink {
+					emitResult(AsyncChatResult{Final: false, EndToThink: true})
+				}
 				if contentDelta != "" || thinkingDelta != "" {
 					emitResult(AsyncChatResult{
 						Answer:    contentDelta,
 						Reasoning: thinkingDelta,
 						Final:     false,
 					})
-				}
-				if endToThink {
-					emitResult(AsyncChatResult{Final: false, EndToThink: true})
 				}
 			},
 		})
@@ -206,13 +230,23 @@ func (s *ChatPipelineService) agenticRag(
 		// payload, matching what the regular pipeline ships when quote is
 		// false. The answer text is still whatever the agent wrote.
 		answer := final
+		if reasoning.Len() > 0 {
+			answer = agentSessionMessageContent("\n\n"+final, reasoning.String())
+		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), final)
-		} else if len(agentic_rag.ExtractCitedChunkIDs(final)) > 0 {
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
 		}
-		emitResult(AsyncChatResult{Answer: answer, Reference: reference, Final: true})
+		// Persist the same thinking and final answer the stream renders, with
+		// the final answer's citation handles compacted against its reference.
+		emitResult(AsyncChatResult{
+			Answer:                answer,
+			Reference:             reference,
+			Final:                 true,
+			AnswerIsAuthoritative: true,
+		})
 	}()
 
 	return out, nil
@@ -301,43 +335,31 @@ func agenticFailoverModelIDs(chat *entity.Chat) []string {
 	return out
 }
 
-// agenticWebSearch adapts the pipeline's configured provider to the agent's
-// per-query web_search tool. nil hides the tool entirely (the same rule the
-// harness path applies).
-func (s *ChatPipelineService) agenticWebSearch(promptConfig map[string]interface{}) agentic_rag.WebSearchFunc {
-	provider := resolveWebSearchProvider(promptConfig)
-	if provider == nil {
-		return nil
-	}
-	return func(ctx context.Context, query string) ([]agentic_rag.WebResult, error) {
-		res, err := s.retrieveWebSearch(ctx, provider, query)
-		if err != nil {
-			return nil, err
-		}
-		chunks, _ := res["chunks"].([]map[string]interface{})
-		out := make([]agentic_rag.WebResult, 0, len(chunks))
-		for _, c := range chunks {
-			out = append(out, agentic_rag.WebResult{
-				Title:   stringValue(c["docnm_kwd"]),
-				URL:     stringValue(c["url"]),
-				Content: stringValue(c["content_with_weight"]),
-			})
-		}
-		return out, nil
-	}
-}
-
 // convertMessagesToEino converts pre-filtered user/assistant messages into
-// eino schema messages. Only string content is supported; multimodal parts are
-// not carried into the ReAct loop.
-func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message {
+// eino schema messages, resolving uploaded attachments throughout the history.
+func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
 		switch role {
 		case "user":
-			out = append(out, schema.UserMessage(content))
+			text, images := s.splitChatAttachments(ctx, userID, m["files"])
+			if text != "" {
+				content += "\n\n" + text
+			}
+			msg := schema.UserMessage(content)
+			images, _ = gateImageAttachments("", modelType, images)
+			if len(images) > 0 {
+				msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{Type: schema.ChatMessagePartTypeText, Text: content})
+				for _, uri := range images {
+					msg.UserInputMultiContent = append(msg.UserInputMultiContent, schema.MessageInputPart{
+						Type:  schema.ChatMessagePartTypeImageURL,
+						Image: &schema.MessageInputImage{MessagePartCommon: schema.MessagePartCommon{URL: new(uri)}},
+					})
+				}
+			}
+			out = append(out, msg)
 		case "assistant":
 			out = append(out, schema.AssistantMessage(content, nil))
 		default:
@@ -348,11 +370,7 @@ func convertMessagesToEino(messages []map[string]interface{}) []*schema.Message 
 	return out
 }
 
-// buildAgenticReference turns the answer's own chunk_id citations into the
-// reference payload the naive pipeline ships, and rewrites the answer with
-// [ID:N] markers. With no resolvable citations both come back unchanged: an
-// empty reference keeps the SSE shape the UI expects, and unmarked chunk_id
-// text is the honest state of an answer whose sources could not be loaded.
+// chatDatasetIDs reads the conversation's bound dataset ids.
 func chatDatasetIDs(chat *entity.Chat) []string {
 	if chat == nil {
 		return nil
@@ -364,100 +382,4 @@ func chatDatasetIDs(chat *entity.Chat) []string {
 		}
 	}
 	return ids
-}
-
-func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantID string, datasetIDs []string, final string) (map[string]interface{}, string) {
-	cited := agentic_rag.ExtractCitedChunkIDs(final)
-	if len(cited) == 0 {
-		return map[string]interface{}{}, final
-	}
-	rows := fetchChunksByIDs(ctx, tenantID, datasetIDs, cited)
-	if len(rows) == 0 {
-		return map[string]interface{}{}, final
-	}
-	// Keep only ids that actually resolved, preserving first-appearance
-	// order: the marker number IS the chunk's position in the payload array.
-	byID := make(map[string]map[string]interface{}, len(rows))
-	for _, r := range rows {
-		if id, ok := r["id"].(string); ok {
-			byID[id] = r
-		}
-	}
-	resolved := make([]string, 0, len(cited))
-	for _, id := range cited {
-		if _, ok := byID[id]; ok {
-			resolved = append(resolved, id)
-		}
-	}
-	if len(resolved) == 0 {
-		return map[string]interface{}{}, final
-	}
-	ordered := make([]map[string]interface{}, 0, len(resolved))
-	for _, id := range resolved {
-		ordered = append(ordered, byID[id])
-	}
-	marked := agentic_rag.InsertCitationMarkers(final, resolved)
-	common.InfoCtx(ctx, "agentic citations built",
-		zap.Int("cited", len(cited)),
-		zap.Int("resolved", len(resolved)),
-		zap.Int("final_bytes", len(marked)))
-	return map[string]interface{}{
-		"chunks":   chunksFormat(ordered),
-		"doc_aggs": agenticDocAggs(ordered),
-	}, marked
-}
-
-// fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
-// engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
-// kb_id / img_id / positions) so chunksFormat can normalize it. The index is
-// the chat's OWNING tenant's - the same scoping the agent's retrieval tools
-// use.
-func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
-	de := engine.Get()
-	if de == nil || len(ids) == 0 {
-		return nil
-	}
-	req := &enginetypes.SearchRequest{
-		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
-		KbIDs:        datasetIDs,
-		Filter:       map[string]interface{}{"id": ids},
-		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "positions"},
-		Limit:        len(ids),
-	}
-	res, err := de.Search(ctx, req)
-	if err != nil {
-		common.WarnCtx(ctx, "agentic citation chunk fetch failed", zap.Error(err))
-		return nil
-	}
-	return res.Chunks
-}
-
-// agenticDocAggs aggregates the fetched chunks per document - the doc_aggs
-// shape the UI's citation popover resolves documents from (doc_id + doc_name,
-// plus a chunk count for parity with the naive payload).
-func agenticDocAggs(chunks []map[string]interface{}) []interface{} {
-	order := make([]string, 0, len(chunks))
-	agg := make(map[string]map[string]interface{}, len(chunks))
-	for _, ck := range chunks {
-		docID, _ := ck["doc_id"].(string)
-		if docID == "" {
-			continue
-		}
-		if _, ok := agg[docID]; !ok {
-			order = append(order, docID)
-			agg[docID] = map[string]interface{}{
-				"doc_id":   docID,
-				"doc_name": ck["docnm_kwd"],
-				"count":    0,
-			}
-		}
-		if n, ok := agg[docID]["count"].(int); ok {
-			agg[docID]["count"] = n + 1
-		}
-	}
-	out := make([]interface{}, 0, len(order))
-	for _, docID := range order {
-		out = append(out, agg[docID])
-	}
-	return out
 }

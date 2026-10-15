@@ -19,7 +19,6 @@ package parser
 import (
 	"encoding/base64"
 	"fmt"
-	"html"
 	"regexp"
 	"sort"
 	"strconv"
@@ -29,12 +28,22 @@ import (
 	"go.uber.org/zap"
 
 	"ragflow/internal/common"
+	"ragflow/internal/entity"
 )
 
 // tableIllegalCharsRe replaces illegal control characters (everything except
 // TAB/LF/CR) with a single space. The pattern matches all C0 control chars
 // except TAB (0x09), LF (0x0A) and CR (0x0D).
 var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`)
+
+// invisibleFormatCutset lists invisible Unicode format characters stripped
+// from the EDGES of cell text only (see cleanIllegalControlChars): ZERO
+// WIDTH SPACE / NON-JOINER / JOINER, WORD JOINER and the BOM. The same code
+// points are meaningful INSIDE a word — U+200D joins emoji ZWJ sequences
+// (e.g. woman technologist), U+200C is the Persian half-space — so they must
+// survive mid-cell and only accidental wrappers come off. The escapes below
+// are Go string literals naming each code point explicitly.
+const invisibleFormatCutset = "\u200b\u200c\u200d\u2060\ufeff"
 
 // numericCellRe recognises number-like cell text (integers, decimals, comma
 // thousands separators, optional leading sign/$ and trailing %). It is a
@@ -51,47 +60,33 @@ type spreadsheetSegmentRow struct {
 	colStart int
 }
 
-// renderTableHTML renders one sheet segment in the spreadsheet wire format: a
-// captioned <table> whose header row is <th> cells and whose data rows are
-// <td> cells, one row per line. It is the byte contract every consumer reads —
-// the chunkers parse this shape back row by row (see
-// internal/ingestion/component/chunker/html_rows.go), and the positions matrix
-// emitted next to it is aligned one tuple per <tr>, header included.
-func renderSpreadsheetTable(sheet string, header []string, rows [][]string) string {
-	var builder strings.Builder
-	builder.WriteString("<table><caption>")
-	builder.WriteString(html.EscapeString(sheet))
-	builder.WriteString("</caption>\n<tr>")
-	for _, cell := range header {
-		builder.WriteString("<th>")
-		builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-		builder.WriteString("</th>")
+// trimCells returns a copy of row with every cell TrimSpace'd. The legacy
+// spreadsheet producer HTML-escaped each TrimSpace'd cell; the structured
+// TableData contract stores the already-TrimSpace'd text, which the chunker
+// re-escapes when it renders chunk text (see tableutil.RenderTableHTML), so
+// the rendered text matches the legacy HTML byte for byte.
+func trimCells(row []string) []string {
+	out := make([]string, len(row))
+	for i, c := range row {
+		out[i] = strings.TrimSpace(c)
 	}
-	builder.WriteString("</tr>\n")
-	for _, row := range rows {
-		builder.WriteString("<tr>")
-		for _, cell := range row {
-			builder.WriteString("<td>")
-			builder.WriteString(html.EscapeString(strings.TrimSpace(cell)))
-			builder.WriteString("</td>")
-		}
-		builder.WriteString("</tr>\n")
-	}
-	builder.WriteString("</table>\n")
-	return builder.String()
+	return out
 }
 
-// buildSheetItems renders one sheet into its wire items: HTML <table>
-// segments split at image anchor boundaries, interleaved with the anchored
-// image items in document order. Every segment repeats the header row (so
-// segment 2+ never loses column names) and carries a row-aligned position
-// matrix — one tuple per <tr> in strict markup order, header included — so
-// row-level consumers index positions by <tr> number with no side channel.
+// buildSheetItems renders one sheet into its wire items: the structured
+// TableData contract (captioned table with a header row and data rows) split
+// at image anchor boundaries, interleaved with the anchored image items in
+// document order. Every segment repeats the header row (so segment 2+ never
+// loses column names) and carries a row-aligned position matrix — one tuple
+// per row in strict order, header included — so row-level consumers index
+// positions by row number with no side channel. The chunker reads the rows
+// directly and renders each emitted chunk's Text as an HTML <table> (see
+// tableutil.RenderTableHTML); no HTML markup is emitted here at the parser.
 //
 // An image lands after the last row whose (row, colStart) sorts at or before
 // its anchor; rows before the header's anchor keep the header in front of
 // the image (a header-only lead segment); fully empty rows are skipped from
-// both markup and matrix.
+// both rows and matrix.
 //
 // Segmentation is semantic only — sheet boundaries and image anchors, never a
 // size budget. The legacy html4excel path pre-cut a fixed 12 rows here, which
@@ -179,16 +174,38 @@ func buildSheetItems(records [][]string, sheet string, sheetIndex, headerRow int
 
 	items := make([]map[string]any, 0, len(rows)+len(images))
 	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
-		cells := make([][]string, 0, len(body))
 		matrix := make([][]float64, 0, len(body)+1)
 		matrix = append(matrix, headerTuple)
+		rowsOut := make([][]string, 0, len(body)+1)
+		headerCells := trimCells(header)
+		rowsOut = append(rowsOut, headerCells)
 		for _, r := range body {
-			cells = append(cells, r.cells)
+			cells := trimCells(r.cells)
+			// Pad short rows to the header width so every row renders the
+			// full column set with dataless cells left empty. excelize
+			// truncates each row at its last valued cell, so without this a
+			// trailing dataless column (kept as schema by
+			// trimTrailingEmptyColumns) would vanish from data rows while
+			// its <th> stays. Padding is empty-only, so the row-aligned
+			// position tuple computed above is unaffected.
+			for len(cells) < len(headerCells) {
+				cells = append(cells, "")
+			}
+			rowsOut = append(rowsOut, cells)
 			matrix = append(matrix, r.tuple)
 		}
-		item := NewTableJSONItem(renderSpreadsheetTable(sheet, header, cells), sheet, matrix)
-		item["sheet_index"] = sheetIndex
-		return item
+		grid := make([][]entity.TableCell, 0, len(rowsOut))
+		for _, r := range rowsOut {
+			cells := make([]entity.TableCell, 0, len(r))
+			for _, c := range r {
+				cells = append(cells, entity.TableCell{Text: c})
+			}
+			grid = append(grid, cells)
+		}
+		td := &entity.TableData{Grid: grid, HeaderRows: 1, Caption: sheet}
+		ti := NewTableDataJSONItem(td, sheet, matrix).(TableItem)
+		ti.Extra = map[string]any{"sheet_index": sheetIndex}
+		return ti.ToMap()
 	}
 
 	prev := 0
@@ -398,16 +415,49 @@ func xlsxImageMIMEType(extension string) (string, bool) {
 const maxMergeExtentCols = 1024
 
 // cleanIllegalControlChars replaces illegal control characters in all cells
-// with a single space.
+// with a single space and trims invisible Unicode format characters from
+// cell edges (see invisibleFormatCutset), which otherwise survive TrimSpace
+// and pollute search text.
 func cleanIllegalControlChars(records [][]string) [][]string {
 	out := make([][]string, len(records))
 	for i, row := range records {
 		out[i] = make([]string, len(row))
 		for j, cell := range row {
+			cell = strings.Trim(cell, invisibleFormatCutset)
 			out[i][j] = tableIllegalCharsRe.ReplaceAllString(cell, " ")
 		}
 	}
 	return out
+}
+
+// trimTrailingEmptyColumns drops trailing columns that are blank in every
+// row, header included. Only truncation happens here: remaining column
+// indices are untouched, so row-aligned position tuples built downstream stay
+// valid. A trailing column that carries a header label but no data (e.g. an
+// unfilled score column) is intentionally kept — it is real schema, and its
+// cells render empty. A header-only sheet is therefore left unchanged, and
+// so is any sheet whose trailing columns all have labels.
+func trimTrailingEmptyColumns(records [][]string) [][]string {
+	if len(records) == 0 {
+		return records
+	}
+	width := 0
+	for _, row := range records {
+		for c, cell := range row {
+			if strings.TrimSpace(cell) != "" && c+1 > width {
+				width = c + 1
+			}
+		}
+	}
+	if width == 0 {
+		return records
+	}
+	for i, row := range records {
+		if len(row) > width {
+			records[i] = row[:width]
+		}
+	}
+	return records
 }
 
 // ──────────────────────────────────────────────────────────── axis helpers
@@ -538,6 +588,53 @@ func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]
 		val := records[master[0]-1][master[1]-1]
 		if strings.TrimSpace(val) != "" {
 			row[c] = val
+		}
+	}
+}
+
+// inheritMergedDataCells fills empty cells of non-header rows with the value
+// of their merge master, so a vertically merged group label (e.g. A2:A4) is
+// visible on every data row instead of only the first. Unlike the header-row
+// path above, data rows are never widened: only cells already present in the
+// row slice are filled, so a far merge cannot allocate a sea of empty <td>
+// cells (see padRowToWidth for the blow-up this avoids). Call with absolute
+// sheet row numbers, before records are reordered around the header row.
+func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange) {
+	for _, r := range ranges {
+		// Vertical merges only: a horizontally merged data cell is already
+		// visible via its master column, while copying its text into every
+		// slave column would render the same value twice.
+		if r.sc != r.ec {
+			continue
+		}
+		if r.sr == headerRow {
+			continue
+		}
+		// A merge mastered on the header row carries a column label, not
+		// data: copying it down would stamp the header text into every
+		// data row it spans.
+		if r.sr < 1 || r.sr > len(rows) || r.sc < 1 {
+			continue
+		}
+		masterRow := rows[r.sr-1]
+		if r.sc > len(masterRow) {
+			continue
+		}
+		master := masterRow[r.sc-1]
+		if strings.TrimSpace(master) == "" {
+			continue
+		}
+		// Start past the master row: its own cell already holds the value.
+		for row := r.sr + 1; row <= r.er && row <= len(rows); row++ {
+			if row == headerRow {
+				continue
+			}
+			if r.sc > len(rows[row-1]) {
+				continue
+			}
+			if strings.TrimSpace(rows[row-1][r.sc-1]) == "" {
+				rows[row-1][r.sc-1] = master
+			}
 		}
 	}
 }
@@ -789,6 +886,9 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 		padRowToWidth(&rows[headerRow-1], mergeExtentCol(ranges))
 	}
 	inheritMergedHeader(rows, headerRow, mm)
+	// Data rows inherit their own vertical merge masters in place (no
+	// widening); see inheritMergedDataCells.
+	inheritMergedDataCells(rows, headerRow, ranges)
 
 	// Reorder so the detected header row becomes records[0]; every other row is
 	// data. For the common case (header on row 1) this is a no-op.
@@ -802,6 +902,7 @@ func readSpreadsheetRecords(f *excelize.File, sheet string) ([][]string, []int, 
 		records = append(records, r)
 		absDataRows = append(absDataRows, i+1)
 	}
+	records = trimTrailingEmptyColumns(records)
 
 	return records, absDataRows, headerRow, warnings, nil
 }

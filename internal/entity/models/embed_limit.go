@@ -28,6 +28,8 @@ import (
 // and retries with a smaller budget if the provider still rejects an input as over
 // its window. It is the embedding counterpart of RerankModel.Rerank, which cuts its
 // documents the same way for the same reason.
+// A successful response must contain exactly one embedding per input text;
+// a count mismatch is an error, not a partial result or an over-limit rejection.
 //
 // Callers use it instead of ModelDriver.Embed because a provider does NOT truncate
 // an over-window input: it rejects the whole request (SiliconFlow answers 400 with
@@ -72,6 +74,9 @@ func (m *EmbeddingModel) Embed(ctx context.Context, req EmbedRequest, embeddingC
 	for _, budget := range tokenizer.OverLimitLadder(window) {
 		embeds, err := m.embedCut(ctx, req, embeddingConfig, usage, counter, budget)
 		if err == nil {
+			if len(embeds) != len(req.Texts) {
+				return nil, fmt.Errorf("embedding model: unexpected embedding count: got %d, want %d", len(embeds), len(req.Texts))
+			}
 			return embeds, nil
 		}
 		if !tokenizer.IsOverLimitError(err) {

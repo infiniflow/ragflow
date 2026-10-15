@@ -14,8 +14,8 @@ import (
 // parsePDFWithTCADP sends PDF binary data to the TCADP cloud reconstruction
 // service. Thin wrapper over the shared parseWithTCADP core — env-fallbacks
 // and request construction live there.
-func parsePDFWithTCADP(filename string, data []byte, parser *PDFParser) ParseResult {
-	return parseWithTCADP(context.Background(), filename, data, "PDF",
+func parsePDFWithTCADP(ctx context.Context, filename string, data []byte, parser *PDFParser) ParseResult {
+	return parseWithTCADP(ctx, filename, data, "PDF",
 		parser.TCADPAPIServer, parser.TCADPAPIKey,
 		parser.TCADPTableResultType, parser.TCADPMarkdownImageResponseType,
 		parser.OutputFormat)
@@ -100,7 +100,11 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			if text == "" {
 				return nil
 			}
-			return emit(text, pdfTableDocType(text), "table")
+			items := emit(text, pdfTableDocType(text), "table")
+			for _, it := range items {
+				projectPDFTable(it)
+			}
+			return items
 		case "image":
 			caption := strings.TrimSpace(stringValue(v["caption"]))
 			if caption == "" {

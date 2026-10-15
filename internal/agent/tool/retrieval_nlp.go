@@ -73,6 +73,8 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/permission"
+	permissionresponse "ragflow/internal/permission/response"
 	"ragflow/internal/service/nlp"
 
 	"go.uber.org/zap"
@@ -201,6 +203,26 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	if len(datasets.tenantIDs) != 1 {
 		return nil, fmt.Errorf("retrieval: datasets span multiple tenants")
 	}
+	// Dataset authorization must use the caller identity established by the
+	// agent run, not req.UserID, which is a configurable per-user memory filter.
+	userID := ""
+	if state, stateErr := runtime.GetStateFromContext(ctx); stateErr == nil && state != nil {
+		userID, _ = state.Sys["user_id"].(string)
+	}
+	userID = strings.TrimSpace(userID)
+	checker := permission.NewDatabaseChecker(db)
+	if err := CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasets.kbIDs); err != nil {
+		_, permissionErr := permissionresponse.Normalize(err)
+		return nil, permissionErr
+	}
+	for _, datasetID := range datasets.kbIDs {
+		if err := checker.CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+			Kind: permission.ResourceKindDataset, ID: datasetID,
+		}, permission.OperationUse); err != nil {
+			_, permissionErr := permissionresponse.Normalize(err)
+			return nil, permissionErr
+		}
+	}
 	if err := validateEmbeddingModels(ctx, db, datasets.kbs); err != nil {
 		return nil, err
 	}
@@ -263,6 +285,7 @@ func (a *NLPRetrievalAdapter) Search(ctx context.Context, db *gorm.DB, req Retri
 	preparedReq.DocScope = docIDs
 	preparedReq.DatasetIDs = append([]string(nil), datasets.kbIDs...)
 	nlpReq := nlpRequestFromRetrieval(preparedReq, datasets.tenantIDs, topN, embeddingModel, preparedReq.ExcludeCompiled)
+	nlpReq.Language = entity.KnowledgebasesLanguage(datasets.kbs)
 	nlpReq.RerankModel = rerankModel
 	if rankFeature != nil {
 		nlpReq.RankFeature = &rankFeature

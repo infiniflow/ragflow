@@ -22,6 +22,9 @@ import (
 	"testing"
 
 	"ragflow/internal/common"
+	"ragflow/internal/dao"
+	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/storage"
 
 	"go.uber.org/zap"
@@ -59,7 +62,7 @@ func TestDeleteFolderLeavesNonemptyBucket(t *testing.T) {
 	t.Cleanup(func() { common.Logger = previousLogger })
 
 	service := testFileService()
-	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err != nil {
+	if err := service.deleteFolderRecursive(t.Context(), folder); err != nil {
 		t.Fatalf("delete folder with nonempty bucket: %v", err)
 	}
 	if !store.ObjExist(t.Context(), folder.ID, "untracked") {
@@ -90,7 +93,7 @@ func TestDeleteFolderStopsOnStorageCheckError(t *testing.T) {
 	previous := factory.GetStorage()
 	factory.SetStorage(failingObjectCheckStorage{storage.NewMemoryStorage()})
 	t.Cleanup(func() { factory.SetStorage(previous) })
-	if err := testFileService().deleteFolderRecursive(t.Context(), folder, "tenant-1"); err == nil {
+	if err := testFileService().deleteFolderRecursive(t.Context(), folder); err == nil {
 		t.Fatal("expected storage check error")
 	}
 	if _, err := testFileService().fileDAO.GetByID(t.Context(), db, "file-1"); err != nil {
@@ -110,10 +113,32 @@ func TestDeleteFolderContinuesWhenStorageIsMissing(t *testing.T) {
 	previous := factory.GetStorage()
 	factory.SetStorage(storage.NewMemoryStorage())
 	t.Cleanup(func() { factory.SetStorage(previous) })
-	if err := service.deleteFolderRecursive(t.Context(), folder, "tenant-1"); err != nil {
+	if err := service.deleteFolderRecursive(t.Context(), folder); err != nil {
 		t.Fatalf("delete folder with missing storage: %v", err)
 	}
 	if _, err := service.fileDAO.GetByID(t.Context(), db, folder.ID); err == nil {
 		t.Fatal("folder record retained after missing storage")
+	}
+}
+
+func TestDeleteFilesAuthorizesEveryDescendantBeforeDeleting(t *testing.T) {
+	db := setupFolderTestDB(t)
+	for _, file := range []*entity.File{
+		{ID: "folder", ParentID: "root", TenantID: "user-1", Name: "folder", Type: FileTypeFolder},
+		{ID: "foreign-child", ParentID: "folder", TenantID: "user-2", Name: "private.pdf", Type: "pdf"},
+	} {
+		if err := db.Create(file).Error; err != nil {
+			t.Fatalf("seed %s: %v", file.ID, err)
+		}
+	}
+
+	err := testFileService().DeleteFiles(t.Context(), "user-1", []string{"folder"})
+	if !errors.Is(err, permission.ErrPermissionDenied) {
+		t.Fatalf("DeleteFiles error = %v, want permission denied", err)
+	}
+	for _, id := range []string{"folder", "foreign-child"} {
+		if _, err := dao.NewFileDAO().GetByID(t.Context(), db, id); err != nil {
+			t.Fatalf("file %q was removed before authorization completed: %v", id, err)
+		}
 	}
 }

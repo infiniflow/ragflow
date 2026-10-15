@@ -14,7 +14,7 @@ The current page supports the following `Provider` options:
 
 | Provider | Description |
 | --- | --- |
-| `Self-Managed` | Use Daytona or Docker for localized deployment. |
+| `Self-Managed` | Connect to the external [Sandbox executor manager](https://github.com/infiniflow/sandbox). |
 | `SSH` | Execute code on a remote machine through SSH. |
 | `AliyunCodeInterpreter` | Use Alibaba Cloud Function Compute Code Interpreter. |
 | `E2B` | Use E2B Cloud Code Execution Sandboxes. |
@@ -48,11 +48,12 @@ When configuring a sandbox, first fill in the connection information and runtime
 | Parameter | Description | Recommendation |
 | --- | --- | --- |
 | `Executor Manager Endpoint` | Access address of the `SandboxExecutorManager` service. | Enter the HTTP address of the code execution service, such as `http://sandbox-executor-manager:9385` or `http://<SERVER_IP>:9385`. Make sure RAGFlow can access this address. |
+| `Executor Manager API Token` | Shared secret authenticating RAGFlow to the executor manager. | Set the same strong token on the service; a blank field falls back to `SANDBOX_EXECUTOR_MANAGER_API_TOKEN`. |
 | `Request Timeout (seconds)` | Timeout for requests to the code execution service. | Configure according to the network environment and code execution duration. The default 30 seconds is sufficient for most cases; increase it for large tasks. |
 
 `Executor Manager Endpoint` must be the address of a deployed and normally running `SandboxExecutorManager` service.
 
-`Deployment Defaults` displays the current default deployment parameters of `SandboxExecutorManager`.
+The standalone Sandbox repository owns runtime images, pool sizing, isolation, and execution limits. RAGFlow's optional Compose profile runs a published image; it does not build it. Admin settings do not reconfigure or report the state of an independently hosted service. See [Sandbox quickstart](../../configurations/sandbox_quickstart.md).
 
 ## SSH Configuration
 

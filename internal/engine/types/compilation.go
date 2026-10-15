@@ -75,6 +75,16 @@ func WikiPageCategory(row map[string]any) string {
 	return compilationString(row["page_type_kwd"])
 }
 
+// WikiPageContent prefers content_with_weight and falls back to md_with_weight.
+func WikiPageContent(row map[string]any) string {
+	for _, field := range []string{"content_with_weight", "md_with_weight"} {
+		if values := compilationValues(row[field]); len(values) > 0 && values[0] != "" {
+			return values[0]
+		}
+	}
+	return ""
+}
+
 func IsNavigationRow(row map[string]any) bool {
 	role := compilationString(row["type_kwd"])
 	return role == "nav_doc" || role == "nav_cluster" || compilationString(row["compile_kwd"]) == "dataset_nav"

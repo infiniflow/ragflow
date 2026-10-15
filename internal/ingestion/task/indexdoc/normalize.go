@@ -20,6 +20,7 @@ import (
 	"fmt"
 
 	"ragflow/internal/common"
+	"ragflow/internal/parser/parser"
 )
 
 // NormalizeChunks converts pipeline output into a uniform []map[string]any slice.
@@ -37,6 +38,9 @@ func NormalizeChunks(output map[string]any) []map[string]any {
 	}
 	if json, ok := output["json"].([]map[string]any); ok {
 		return DeepCopyChunks(json)
+	}
+	if docs, ok := output["json"].([]parser.DocItem); ok {
+		return DeepCopyChunks(parser.ItemsToMaps(docs))
 	}
 	if json, ok := toChunkMaps(output["json"]); ok {
 		return DeepCopyChunks(json)

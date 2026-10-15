@@ -25,19 +25,23 @@ import (
 
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 )
 
 // GenerateRelatedQuestions generates related search questions for chat/searchbot endpoints.
-func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelFactory *ModelFactory) ([]string, error) {
+func GenerateRelatedQuestions(ctx context.Context, userID, question, searchID string, searchSvc *SearchService, tenantSvc *TenantService, modelFactory *ModelFactory) ([]string, error) {
 	if modelFactory == nil {
 		return nil, fmt.Errorf("model factory not configured")
 	}
-	searchConfig := relatedQuestionsSearchConfig(ctx, searchID, searchSvc)
-	modelID := relatedQuestionsModelID(ctx, tenantID, searchConfig, tenantSvc)
+	searchConfig, err := relatedQuestionsSearchConfig(ctx, userID, searchID, searchSvc)
+	if err != nil {
+		return nil, err
+	}
+	modelID := relatedQuestionsModelID(ctx, userID, searchConfig, tenantSvc)
 	if modelID == "" {
 		return nil, fmt.Errorf("no chat model configured")
 	}
-	prompt, err := LoadPrompt("related_question")
+	prompt, err := (prompts.EmbeddedPromptLoader{}).Load("related_question")
 	if err != nil {
 		return nil, err
 	}
@@ -45,7 +49,7 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 		{Role: "system", Content: prompt},
 		{Role: "user", Content: "\nKeywords: " + question + "\nRelated search terms:\n    "},
 	}
-	chatModel, err := modelFactory.NewChatModel(ctx, ModelAccess{TenantID: tenantID}, modelID)
+	chatModel, err := modelFactory.NewChatModel(ctx, ModelAccess{TenantID: userID}, modelID)
 	if err != nil {
 		return nil, err
 	}
@@ -59,14 +63,18 @@ func GenerateRelatedQuestions(ctx context.Context, tenantID, question, searchID 
 	return []string{}, nil
 }
 
-func relatedQuestionsSearchConfig(ctx context.Context, searchID string, searchSvc *SearchService) map[string]interface{} {
-	if searchID == "" || searchSvc == nil {
-		return map[string]interface{}{}
+func relatedQuestionsSearchConfig(ctx context.Context, userID, searchID string, searchSvc *SearchService) (map[string]interface{}, error) {
+	if searchID == "" {
+		return map[string]interface{}{}, nil
 	}
-	if detail, err := searchSvc.GetDetail(ctx, searchID); err == nil && detail != nil {
-		return relatedQuestionsSearchConfigFromDetail(detail)
+	if searchSvc == nil {
+		return nil, fmt.Errorf("search service not configured")
 	}
-	return map[string]interface{}{}
+	detail, err := searchSvc.GetDetail(ctx, userID, searchID)
+	if err != nil {
+		return nil, err
+	}
+	return relatedQuestionsSearchConfigFromDetail(detail), nil
 }
 
 func relatedQuestionsSearchConfigFromDetail(detail map[string]interface{}) map[string]interface{} {

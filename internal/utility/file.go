@@ -23,6 +23,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 type FileType string
@@ -68,6 +69,8 @@ func normalizeFilename(filename string) (string, bool) {
 	return strings.ToLower(base), true
 }
 
+// GetFileType classifies a filename by its case-insensitive extension.
+// It returns FileTypeOTHER when the extension is missing or unsupported.
 func GetFileType(filename string) FileType {
 
 	ext := filepath.Ext(filename)
@@ -125,6 +128,9 @@ func GetFileType(filename string) FileType {
 	}
 }
 
+// FilenameType returns the upload category for a filename.
+// It classifies supported extensions and returns FileTypeOTHER for invalid
+// filenames or unsupported extensions.
 func FilenameType(filename string) FileType {
 	normalized, ok := normalizeFilename(filename)
 	if !ok {
@@ -138,7 +144,7 @@ func FilenameType(filename string) FileType {
 	docExtensions := []string{
 		"msg", "eml", "doc", "docx", "ppt", "pptx", "yml", "xml", "htm", "json", "jsonl", "ldjson",
 		"csv", "txt", "ini", "xls", "xlsx", "wps", "rtf", "hlp", "pages", "numbers", "key",
-		"md", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
+		"md", "markdown", "mdx", "py", "js", "java", "c", "cpp", "h", "php", "go", "ts", "sh", "cs", "kt",
 		"html", "sql", "epub",
 	}
 	for _, ext := range docExtensions {
@@ -206,6 +212,24 @@ func GetFileExtension(filename string) string {
 		return strings.ToLower(ext[1:])
 	}
 	return strings.ToLower(ext)
+}
+
+// TruncateFilename shortens name to at most maxBytes bytes. It keeps the
+// extension when it fits and cuts on a rune boundary, so the result stays
+// valid UTF-8 and keeps the file type the extension implies.
+func TruncateFilename(name string, maxBytes int) string {
+	if len(name) <= maxBytes {
+		return name
+	}
+	ext := filepath.Ext(name)
+	if len(ext) >= maxBytes {
+		ext = ""
+	}
+	end := maxBytes - len(ext)
+	for end > 0 && !utf8.RuneStart(name[end]) {
+		end--
+	}
+	return name[:end] + ext
 }
 
 // CONTENT_TYPE_MAP maps file extensions to MIME content types
@@ -404,8 +428,7 @@ func ResolveAttachmentContentType(ext string, mimeType string) (string, string) 
 		normalizedType := strings.ToLower(stripContentTypeParams(mimeType))
 		contentType = normalizedType
 		// Reverse-lookup extension from CONTENT_TYPE_MAP only when
-		// no explicit ext was provided. Never overwrite a caller-
-		// supplied extension (e.g. ext=svg&mime_type=image/png must
+		// no explicit ext was provided. Never overwrite a caller-supplied extension (e.g. ext=svg&mime_type=image/png must
 		// stay ext=svg for the force-attachment check).
 		if ext == "" {
 			for knownExt, knownType := range CONTENT_TYPE_MAP {

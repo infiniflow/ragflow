@@ -24,7 +24,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // UpstageModel implements ModelDriver for Upstage (Solar models).
@@ -61,12 +60,10 @@ func (u *UpstageModel) ChatWithMessages(ctx context.Context, modelName string, m
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	url, err := u.baseModel.EndpointURL(apiConfig, u.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -97,12 +94,10 @@ func (u *UpstageModel) ChatStreamlyWithSender(ctx context.Context, modelName str
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	url, err := u.baseModel.EndpointURL(apiConfig, u.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
@@ -149,12 +144,10 @@ func (u *UpstageModel) Embed(ctx context.Context, modelName *string, request Emb
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	url, err := u.baseModel.EndpointURL(apiConfig, u.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -227,12 +220,10 @@ func (u *UpstageModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]
 		return nil, err
 	}
 
-	baseURL, err := u.baseModel.GetBaseURL(apiConfig)
+	url, err := u.baseModel.EndpointURL(apiConfig, u.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, u.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

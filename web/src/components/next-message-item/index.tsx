@@ -50,7 +50,6 @@ import { useTheme } from '../theme-provider';
 import { Button } from '../ui/button';
 import { AssistantGroupButton, UserGroupButton } from './group-button';
 import styles from './index.module.less';
-import { ReferenceDocumentList } from './reference-document-list';
 import { ReferenceImageList } from './reference-image-list';
 import { UploadedMessageFiles } from './uploaded-message-files';
 
@@ -109,12 +108,6 @@ function MessageItem({
       setLastSendLoadingFunc(loading, item.id);
     }
   }, [loading, setLastSendLoadingFunc, item.id]);
-
-  const referenceDocuments = useMemo(() => {
-    const docs = reference?.doc_aggs ?? {};
-
-    return Object.values(docs);
-  }, [reference?.doc_aggs]);
 
   const documentDownloadInfos = useMemo(
     () => item.downloads ?? [],
@@ -309,12 +302,6 @@ function MessageItem({
                 referenceChunks={reference?.chunks}
                 messageContent={messageContent}
               ></ReferenceImageList>
-            )}
-
-            {isAssistant && referenceDocuments.length > 0 && (
-              <ReferenceDocumentList
-                list={referenceDocuments}
-              ></ReferenceDocumentList>
             )}
 
             {isUser && (

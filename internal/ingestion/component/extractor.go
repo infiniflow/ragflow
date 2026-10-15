@@ -54,6 +54,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
 	"ragflow/internal/utility"
@@ -126,7 +127,7 @@ func SetExtractorConcurrency(n int) {
 }
 
 // extractorTopNPattern matches the {{ topn }} placeholder accepted in
-// keyword/question system prompts (same convention as rag/prompts/*.md).
+// keyword/question system prompts.
 // It is replaced with the configured top_n so the count slider stays
 // authoritative even when a prompt was pre-filled by the frontend.
 var extractorTopNPattern = regexp.MustCompile(`\{\{\s*topn\s*\}\}`)
@@ -216,6 +217,11 @@ type ExtractorComponent struct {
 //	  "metadata":       map[string]any,   — optional auto metadata extraction config
 //	}
 //
+// The keywords/questions/tags groups accept an "enabled" switch. A group
+// without the key is a legacy DSL: enabled derives from top_n > 0, matching
+// the pre-switch behavior of saved canvases. A group carrying an explicit
+// "enabled": true with top_n < 1 is a contradictory config and fails here.
+//
 // errors here surface as canvas compile failures so a malformed
 // param is caught at build time rather than mid-run.
 func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
@@ -233,6 +239,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := kwRaw["system_prompt"].(string); ok {
 				p.Keywords.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(kwRaw, "keywords", p.Keywords.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Keywords.Enabled = enabled
 		}
 
 		// 2. Questions
@@ -243,6 +254,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := qRaw["system_prompt"].(string); ok {
 				p.Questions.SystemPrompt = v
 			}
+			enabled, err := resolveExtractToggle(qRaw, "questions", p.Questions.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Questions.Enabled = enabled
 		}
 
 		// 3. Tags
@@ -253,6 +269,11 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 			if v, ok := tagRaw["tag_file_id"].(string); ok {
 				p.Tags.TagFileID = v
 			}
+			enabled, err := resolveExtractToggle(tagRaw, "tags", p.Tags.TopN)
+			if err != nil {
+				return nil, err
+			}
+			p.Tags.Enabled = enabled
 		}
 
 		// 4. Summary
@@ -287,6 +308,36 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
 	}
 	return &ExtractorComponent{Param: p}, nil
+}
+
+// resolveExtractToggle resolves the enabled switch of one extraction group
+// (keywords / questions / tags).
+//
+// The presence of the "enabled" key distinguishes the contract version:
+//   - key present: it is authoritative. enabled=true with top_n < 1 is a
+//     contradictory config (nothing could be extracted) and fails fast, so
+//     the canvas run dies at build time with a clear message instead of
+//     silently skipping the extraction.
+//   - key absent: legacy DSL saved before the switch existed — enabled
+//     derives from top_n > 0, preserving the saved canvas's behavior.
+//
+// Accepts bool and numeric "enabled" values, mirroring the summary/metadata
+// parsing below.
+func resolveExtractToggle(group map[string]any, name string, topN int) (bool, error) {
+	v, ok := group["enabled"]
+	if !ok {
+		return topN > 0, nil
+	}
+	enabled := false
+	if b, ok := v.(bool); ok {
+		enabled = b
+	} else {
+		enabled = mapInt(v) == 1
+	}
+	if enabled && topN < 1 {
+		return false, fmt.Errorf("extractor: %s.enabled requires top_n >= 1", name)
+	}
+	return enabled, nil
 }
 
 // Inputs returns the parameter metadata. Matches the python
@@ -624,20 +675,20 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}, nil
 	}
 
-	keywordsOn := c.Param.Keywords.TopN > 0
-	tagsOn := c.Param.Tags.TopN > 0
-	remainingOn := c.Param.Questions.TopN > 0 || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
-	phaseWindows := newFractionSplit(keywordsOn, tagsOn, remainingOn)
+	keywordsOn := c.Param.Keywords.Enabled
+	tagsOn := c.Param.Tags.Enabled
+	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
+	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
 
 	if err := runtime.WithTimeout(ctx, extractorTimeout, func(timeoutCtx context.Context) error {
 		// Phase 1: Keywords extraction (if enabled), running across chunks via extractorPool.
-		if err := c.runAutoKeywordsPool(timeoutCtx, db, in, phaseWindows.take(keywordsOn)); err != nil {
+		if err := c.runAutoKeywordsPool(timeoutCtx, db, in, phaseWindows.Take(keywordsOn)); err != nil {
 			return err
 		}
 
 		// Phase 2: Tag phase (if enabled), benefiting from title and freshly extracted keywords.
 		if tagsOn {
-			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in, phaseWindows.take(tagsOn))
+			tagged, tagErr := c.runAutoTags(timeoutCtx, db, in, phaseWindows.Take(tagsOn))
 			if tagErr != nil {
 				return tagErr
 			}
@@ -645,7 +696,7 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 		}
 
 		// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
-		return c.runRemainingExtractions(timeoutCtx, db, in, phaseWindows.take(remainingOn))
+		return c.runRemainingExtractions(timeoutCtx, db, in, phaseWindows.Take(remainingOn))
 	}); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
 	}
@@ -726,10 +777,10 @@ func (c *ExtractorComponent) runAutoKeywords(ctx context.Context, db *gorm.DB, i
 	if _, exists := ck["important_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Keywords.TopN
-	if topN <= 0 {
+	if !c.Param.Keywords.Enabled {
 		return nil
 	}
+	topN := c.Param.Keywords.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Keywords.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoKeywordPrompt
@@ -771,10 +822,10 @@ func (c *ExtractorComponent) runAutoQuestions(ctx context.Context, db *gorm.DB, 
 	if _, exists := ck["question_kwd"]; exists {
 		return nil
 	}
-	topN := c.Param.Questions.TopN
-	if topN <= 0 {
+	if !c.Param.Questions.Enabled {
 		return nil
 	}
+	topN := c.Param.Questions.TopN
 	systemPrompt := strings.TrimSpace(c.Param.Questions.SystemPrompt)
 	if systemPrompt == "" {
 		systemPrompt = autoQuestionPrompt
@@ -849,54 +900,10 @@ func (c *ExtractorComponent) runAutoSummary(ctx context.Context, db *gorm.DB, in
 	return nil
 }
 
-// fractionWindow is the slice of a component's 0..1 fraction budget owned by one
-// sequential phase. Splitting the budget keeps the reported fraction climbing
-// across phases: the run-level progress tracker keeps a high-water mark, so a
-// second phase restarting from zero would freeze the bar until the component
-// exits.
-type fractionWindow struct{ base, span float64 }
-
-// report maps a phase completion ratio into the window and forwards it to the
-// run-level fraction channel. The zero window reports nothing, which keeps
-// disabled phases free of budget arithmetic.
-func (w fractionWindow) report(ctx context.Context, ratio float64) {
-	if w.span <= 0 {
-		return
-	}
-	ratio = min(max(ratio, 0), 1)
-	runtime.ReportComponentFraction(ctx, w.base+w.span*ratio)
-}
-
-// fractionSplit hands out one equal window per enabled phase, in phase order.
-type fractionSplit struct {
-	phases int
-	next   int
-}
-
-func newFractionSplit(enabled ...bool) *fractionSplit {
-	s := &fractionSplit{}
-	for _, on := range enabled {
-		if on {
-			s.phases++
-		}
-	}
-	return s
-}
-
-func (s *fractionSplit) take(enabled bool) fractionWindow {
-	if !enabled {
-		return fractionWindow{}
-	}
-	span := 1 / float64(s.phases)
-	w := fractionWindow{base: float64(s.next) * span, span: span}
-	s.next++
-	return w
-}
-
 // runAutoKeywordsPool dispatches keyword extraction across all chunks concurrently
 // using extractorPool before the tagging stage.
-func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
-	if c.Param.Keywords.TopN <= 0 || len(in.chunks) == 0 {
+func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
+	if !c.Param.Keywords.Enabled || len(in.chunks) == 0 {
 		return nil
 	}
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
@@ -923,8 +930,8 @@ func (c *ExtractorComponent) runAutoKeywordsPool(ctx context.Context, db *gorm.D
 
 // runRemainingExtractions dispatches auto questions / summary / metadata
 // extractions across all chunks concurrently using extractorPool.
-func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w fractionWindow) error {
-	if c.Param.Questions.TopN <= 0 && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
+func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *gorm.DB, in extractorInputs, w progress.Window) error {
+	if !c.Param.Questions.Enabled && !c.Param.Summary.Enabled && !c.Param.Metadata.Enabled {
 		return nil
 	}
 	futs := make([]utility.WorkerPoolFuture[extractorJob, struct{}], 0, len(in.chunks))
@@ -946,7 +953,7 @@ func (c *ExtractorComponent) runRemainingExtractions(ctx context.Context, db *go
 
 func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gorm.DB, in extractorInputs, idx int, ck map[string]any, chunkText string) extractorJob {
 	return func() error {
-		if c.Param.Questions.TopN > 0 {
+		if c.Param.Questions.Enabled {
 			if err := c.runAutoQuestions(ctx, db, in, ck, chunkText); err != nil {
 				return fmt.Errorf("chunk %d questions: %w", idx, err)
 			}
@@ -969,7 +976,7 @@ func (c *ExtractorComponent) remainingExtractionJob(ctx context.Context, db *gor
 // Each settled future advances the phase's fraction window, so a chunk-heavy
 // LLM extraction reports in-flight progress instead of going quiet until the
 // whole phase is done.
-func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}], w fractionWindow) error {
+func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractorJob, struct{}], w progress.Window) error {
 	if len(futs) == 0 {
 		return nil
 	}
@@ -982,7 +989,7 @@ func awaitFutures(ctx context.Context, futs []utility.WorkerPoolFuture[extractor
 		wg.Add(1)
 		go func(f utility.WorkerPoolFuture[extractorJob, struct{}]) {
 			defer wg.Done()
-			defer func() { w.report(ctx, float64(done.Add(1))/float64(total)) }()
+			defer func() { w.Report(ctx, float64(done.Add(1))/float64(total)) }()
 			res, werr := f.Wait(ctx)
 			if werr != nil {
 				emu.Lock()

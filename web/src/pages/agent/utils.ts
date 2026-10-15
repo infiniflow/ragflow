@@ -205,10 +205,8 @@ function transformObjectArrayToPureArray(
 }
 
 export function transformParserParams(params: ParserFormSchemaType) {
-  // The vision options (enable_vision_enhancement / vlm.llm_id) live at the
-  // params top level alongside the per-family setups — the backend reads them
-  // there, so they pass through as-is. normalizeParserFormValues also lifts
-  // legacy per-setup values of nodes saved before the move.
+  // Save global vision options from the normalized form alongside the
+  // per-family setups, including nodes whose form has not been opened.
   const normalizedParams = normalizeParserFormValues(params);
   const setups = normalizedParams.setups.reduce<
     Record<string, ParserFormSchemaType['setups'][0]>
@@ -272,9 +270,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Image:
           filteredSetup = {
             ...filteredSetup,
-            parse_method: cur.parse_method,
-            lang: cur.lang,
-            system_prompt: cur.system_prompt,
+            ocr_enabled: cur.ocr_enabled,
           };
           break;
         case FileType.Email:
@@ -286,28 +282,19 @@ export function transformParserParams(params: ParserFormSchemaType) {
         case FileType.Doc:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Docx:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
           };
           break;
         case FileType.Html:
           filteredSetup = {
             ...filteredSetup,
-            remove_toc: cur.remove_toc,
             remove_header_footer: cur.remove_header_footer || false,
-          };
-          break;
-        case FileType.TextMarkdown:
-          filteredSetup = {
-            ...filteredSetup,
-            remove_toc: cur.remove_toc,
           };
           break;
         case FileType.Audio:
@@ -331,7 +318,7 @@ export function transformParserParams(params: ParserFormSchemaType) {
   }, {});
 
   // Flatten the setups map into the top-level params.
-  return { ...omit(params, ['setups']), ...setups };
+  return { ...omit(normalizedParams, ['setups']), ...setups };
 }
 
 // Decides whether an empty delimiter list should be re-seeded with the
@@ -452,21 +439,36 @@ export function transformTitleChunkerParams(
       ? params.hierarchyGroup
       : params.hierarchyHierarchy) ?? params.hierarchy;
 
+  // The token cap is split per method like rules/hierarchy above; the runtime
+  // components read the shared chunk_token_cap, so resolve the active
+  // method's value into it. Snapshots stored before the split carry only the
+  // shared key — fall back to it. When no cap key exists at all (the manual
+  // chunker strips them), write none.
+  const chunkTokenCap =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupChunkTokenCap
+      : params.hierarchyChunkTokenCap) ?? params.chunk_token_cap;
+
+  // Persist each method's rules, hierarchy value and token cap under its own
+  // key so the stored config keeps them independent (the shared
+  // `levels`/`hierarchy`/`chunk_token_cap` keys carry only the active
+  // method's values for the backend components). The load side
+  // (`transformTitleChunkerConfigToForm` and `transformApiResponseToForm`)
+  // reads these split keys first and only falls back to migrating the shared
+  // keys when they are absent.
   return {
     ...omit(params, [
-      'hierarchyRules',
-      'groupRules',
-      'hierarchyHierarchy',
-      'hierarchyGroup',
       // Legacy pre-split rules field. The active rules have already been
-      // resolved (with `rules` as fallback) into `levels` above; keep the
-      // serialized params identical to the template's obj.params shape.
+      // resolved (with `rules` as fallback) into `levels` above.
       'rules',
     ]),
     method: params.method,
     hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    ...(chunkTokenCap === undefined || chunkTokenCap === null
+      ? {}
+      : { chunk_token_cap: Number(chunkTokenCap) }),
     levels,
   };
 }
@@ -496,7 +498,7 @@ export const LlmSettingParamKeys = [
 // the transitional "metadata_config", ...). Accept them as read
 // fallbacks — flat "metadata" is an array, which distinguishes it from
 // the group object — but never re-emit them.
-function transformExtractorParamsGo(
+export function transformExtractorParams(
   params: ExtractorFormSchemaType,
 ): Record<string, any> {
   const raw = params as Record<string, any>;
@@ -537,6 +539,22 @@ function transformExtractorParamsGo(
   const tagsTopN = params.tags?.top_n ?? raw.auto_tags ?? 0;
   const tagFileId = params.tags?.tag_file_id ?? raw.tag_file_id ?? '';
 
+  // The enabled switch is authoritative when the form carries it; an unopened
+  // legacy node (flat keys only) derives it from top_n > 0, matching the Go
+  // extractor's resolveExtractToggle.
+  const isKeywordsEnabled =
+    params.keywords?.enabled !== undefined
+      ? Boolean(params.keywords.enabled)
+      : keywordsTopN > 0;
+  const isQuestionsEnabled =
+    params.questions?.enabled !== undefined
+      ? Boolean(params.questions.enabled)
+      : questionsTopN > 0;
+  const isTagsEnabled =
+    params.tags?.enabled !== undefined
+      ? Boolean(params.tags.enabled)
+      : tagsTopN > 0;
+
   // The Go extractor (schema.ExtractorParam) reads only llm_id plus the
   // nested per-feature groups, so emit exactly that whitelist along with
   // the LLM settings the form defines — no legacy flat mirrors, no
@@ -544,14 +562,17 @@ function transformExtractorParamsGo(
   return {
     ...pick(params, LlmSettingParamKeys),
     keywords: {
+      enabled: isKeywordsEnabled,
       top_n: keywordsTopN,
       system_prompt: keywordsSysPrompt,
     },
     questions: {
+      enabled: isQuestionsEnabled,
       top_n: questionsTopN,
       system_prompt: questionsSysPrompt,
     },
     tags: {
+      enabled: isTagsEnabled,
       top_n: tagsTopN,
       tag_file_id: tagFileId,
     },
@@ -565,12 +586,6 @@ function transformExtractorParamsGo(
       built_in_metadata: builtInMetadataList,
     },
   };
-}
-
-export function transformExtractorParams(
-  params: ExtractorFormSchemaType,
-): Record<string, any> {
-  return transformExtractorParamsGo(params);
 }
 
 // The Compiler reads the compilation template group plus the same LLM runtime
@@ -725,7 +740,12 @@ export const buildDslComponentsByGraph = (
           // by the backend ManualChunker component (manual.go pins method=group,
           // ignores the token cap).
           params = transformTitleChunkerParams(
-            omit(params, ['include_heading_content', 'chunk_token_cap']) as any,
+            omit(params, [
+              'include_heading_content',
+              'chunk_token_cap',
+              'hierarchyChunkTokenCap',
+              'groupChunkTokenCap',
+            ]) as any,
           );
           break;
         case Operator.Extractor:

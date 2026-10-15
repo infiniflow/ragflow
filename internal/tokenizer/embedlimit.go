@@ -555,6 +555,11 @@ var OverLimitMarkers = []string{
 	"token limit",
 	"reduce the length",
 	"maximum allowed",
+	// llama-server's other embedding rejection: a 400 with type
+	// "exceed_context_size_error" when the input fits the physical batch but not the
+	// slot's context. Its wording ("larger than the max context size") matches none of
+	// the phrases above, so the 4xx status alone would not classify it.
+	"max context size",
 }
 
 // OverLimitCodes are the provider error codes that mean the same thing. 20015 is
@@ -566,9 +571,46 @@ var OverLimitCodes = []string{"20015"}
 // Request" matches, "1400" and "4000" do not.
 var overLimitStatus = regexp.MustCompile(`\b(?:400|413|422)\b`)
 
+// serverOverLimitStatus matches an HTTP 500 as a delimited number. It must be
+// applied to statusField(msg), not the whole message: a token count inside the
+// response body ("input (500 tokens) is too large to process") is not a status.
+var serverOverLimitStatus = regexp.MustCompile(`\b500\b`)
+
+// statusField returns the part of a driver error that carries the HTTP status:
+// everything before the response body. Drivers format the error as
+// "<provider> API error: <status>, body: <body>" (or "... API error: status <N>,
+// body: <body>"), so the status is always in the head. Matching the whole message
+// would read a token count in <body> as the status — e.g. a 503 whose body says
+// "input (500 tokens) is too large to process" would be treated as a 500.
+// A message without a body marker is returned unchanged.
+func statusField(msg string) string {
+	if i := strings.Index(msg, "body:"); i >= 0 {
+		return msg[:i]
+	}
+	return msg
+}
+
+// serverOverLimitMarkers are the wordings that make a 5xx an over-limit rejection
+// after all. They are matched ONLY together with serverOverLimitStatus, so a genuine
+// server failure (500 without this wording, or any other 5xx) still returns at once.
+//
+// llama-server reports an embedding input over its physical batch (-ub) as HTTP 500
+// (llama.cpp maps ERROR_TYPE_SERVER to a server error) even though a shorter input
+// succeeds. Its message carries one of these phrases. Treating it as over-limit is
+// what lets the calibration learn from it and the input be re-cut; the generic "a
+// 5xx is the provider's problem" rule would fail the whole document instead.
+var serverOverLimitMarkers = []string{
+	"is too large to process",
+}
+
 // IsOverLimitError reports whether err is an over-limit rejection rather than a
-// rate limit or a genuine failure. Only 4xx rejections qualify: a 5xx is the
-// provider's problem and a shorter input would not fix it.
+// rate limit or a genuine failure.
+//
+// A 4xx (400/413/422) qualifies when its message carries a known phrase or provider
+// code. A 5xx does NOT, with one narrow exception: llama-server answers an input over
+// its physical batch with 500 plus a specific phrase, and a shorter input does fix it
+// (see serverOverLimitMarkers). The 500 is matched only in the status field, and any
+// other 5xx is still the provider's problem.
 //
 // Status codes and provider codes are matched as DELIMITED numbers. A substring test
 // would read provider code 120015 as SiliconFlow's 20015 (and 1400 as 400), and the
@@ -580,14 +622,25 @@ func IsOverLimitError(err error) bool {
 	}
 	msg := strings.ToLower(err.Error())
 	if !overLimitStatus.MatchString(msg) {
-		return false
+		if !serverOverLimitStatus.MatchString(statusField(msg)) {
+			return false
+		}
+		return containsAnyMarker(msg, serverOverLimitMarkers)
 	}
-	for _, marker := range OverLimitMarkers {
+	return containsAnyMarker(msg, OverLimitMarkers) || containsAnyCode(msg, OverLimitCodes)
+}
+
+func containsAnyMarker(msg string, markers []string) bool {
+	for _, marker := range markers {
 		if strings.Contains(msg, marker) {
 			return true
 		}
 	}
-	for _, code := range OverLimitCodes {
+	return false
+}
+
+func containsAnyCode(msg string, codes []string) bool {
+	for _, code := range codes {
 		if hasDelimitedNumber(msg, code) {
 			return true
 		}

@@ -21,7 +21,7 @@ Configuration steps:
 3. Open CompilerOperator and select the target CompilationTemplate from the template list.
 4. Check node connections and required parameters, and then save the Pipeline.
 
-![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-configure-ingestion-pipeline.png)
+![Configure Ingestion Pipeline with CompilerOperator](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/configure_ingestion_pipeline_apply_knowledge_compilation_template.jpg)
 
 Note: CompilationTemplate only defines "how to compile". A KnowledgeArtifact is generated only after the template is referenced in CompilerOperator and the document actually executes this Pipeline.
 
@@ -49,7 +49,7 @@ Knowledge artifacts can be divided by generation scope into document-level and k
 
 - **Knowledge-base-level knowledge artifacts**: Some knowledge artifacts support further generation of knowledge-base-level results based on documents in the knowledge base. After executing a knowledge-base-level generation task, you can view the generated results in Artifacts. Wiki is generated as a knowledge-base-level artifact. After knowledge compilation for related documents is complete, you need to go to the Artifacts page of the knowledge base and click generate. The system then generates Wiki based on the compilation results in the current knowledge base.
 
-![Generate Wiki from Knowledge Artifacts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-view-knowledge-artifacts.png)
+![Generate Wiki from Knowledge Artifacts](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/view_knowledge_artifacts_apply_knowledge_compilation_template.jpg)
 
 
 When a knowledge-base-level knowledge artifact generation task is executed, the system generates corresponding knowledge-base-level logs. You can use the logs to view the task execution status and related runtime information. When a generation task fails or the result is abnormal, check it together with the log information.
@@ -92,7 +92,7 @@ After knowledge artifacts are generated, the system continuously detects documen
 
 When document changes are detected, an **Update** button appears in the upper-left corner of the knowledge artifact page, and the number of documents to update is displayed next to the button.
 
-![Update Knowledge Artifacts prompt](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/apply-knowledge-compilation-template-update-knowledge-artifacts.png)
+![Update Knowledge Artifacts prompt](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/update_knowledge_artifacts_apply_knowledge_compilation_template.jpg)
 
 Hover over the update prompt area to view the specific document changes:
 

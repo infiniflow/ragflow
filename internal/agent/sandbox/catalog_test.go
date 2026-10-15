@@ -107,7 +107,7 @@ func TestCatalogValidationBoundaries(t *testing.T) {
 }
 
 func TestCatalogDynamicDeploymentDefaults(t *testing.T) {
-	for env, field := range map[string]string{"SANDBOX_EXECUTOR_MANAGER_IMAGE": "executor_manager_image", "SANDBOX_BASE_PYTHON_IMAGE": "base_python_image", "SANDBOX_BASE_NODEJS_IMAGE": "base_nodejs_image", "SANDBOX_MAX_MEMORY": "max_memory", "SANDBOX_CONTAINER_NETWORK": "container_network", "SANDBOX_TIMEOUT": "sandbox_timeout"} {
+	for env, field := range map[string]string{"SANDBOX_BASE_PYTHON_IMAGE": "base_python_image", "SANDBOX_BASE_NODEJS_IMAGE": "base_nodejs_image"} {
 		t.Setenv(env, "custom")
 		schema, err := ConfigSchema("self_managed")
 		if err != nil {
@@ -125,17 +125,9 @@ func TestCatalogDynamicDeploymentDefaults(t *testing.T) {
 			t.Errorf("%s empty env lost", field)
 		}
 	}
-	t.Setenv("SANDBOX_ENABLE_SECCOMP", "TRUE")
-	t.Setenv("SANDBOX_EXECUTOR_MANAGER_POOL_SIZE", "9")
-	t.Setenv("SANDBOX_EXECUTOR_MANAGER_PORT", "9999")
 	schema, err := ConfigSchema("self_managed")
 	if err != nil {
 		t.Fatal(err)
-	}
-	for field, want := range map[string]any{"enable_seccomp": true, "executor_manager_pool_size": int64(9), "executor_manager_port": int64(9999)} {
-		if got := schema[field].(map[string]any)["default"]; got != want {
-			t.Errorf("%s=%v want %v", field, got, want)
-		}
 	}
 	providers := ListProviders()
 	providers[0]["tags"].([]any)[0] = "changed"
@@ -180,13 +172,19 @@ func TestValidateConfigTypesRangesAndProviderRules(t *testing.T) {
 	}
 }
 
-func TestSelfManagedPoolValidationUsesSelectedField(t *testing.T) {
-	cfg := map[string]any{"endpoint": "http://localhost", "executor_manager_pool_size": 3, "pool_size": -1}
-	if err := ValidateConfig("self_managed", cfg); err != nil {
+func TestSelfManagedRetiredSettingsAreTolerated(t *testing.T) {
+	schema, err := ConfigSchema("self_managed")
+	if err != nil {
 		t.Fatal(err)
 	}
-	delete(cfg, "executor_manager_pool_size")
-	if err := ValidateConfig("self_managed", cfg); err == nil {
-		t.Fatal("invalid fallback pool accepted")
+	cfg := map[string]any{"endpoint": "http://localhost", "timeout": 30, "api_token": "secret"}
+	for _, key := range []string{"executor_manager_image", "executor_manager_pool_size", "executor_manager_port", "enable_seccomp", "max_memory", "container_network", "sandbox_timeout", "pool_size", "max_retries"} {
+		if _, exists := schema[key]; exists {
+			t.Errorf("retired field %q remains exposed", key)
+		}
+		cfg[key] = "retired value"
+	}
+	if err := ValidateConfig("self_managed", cfg); err != nil {
+		t.Fatal(err)
 	}
 }

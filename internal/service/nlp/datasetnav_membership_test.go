@@ -42,6 +42,13 @@ func assertNavMembership(t *testing.T, engine *memNavEngine, want int, compileKi
 		if kind := firstStringValue(row["compile_kwd"]); kind != compileKind {
 			t.Errorf("row %s compile_kwd=%q, want %q", firstStringValue(row["id"]), kind, compileKind)
 		}
+		wantScope := "doc"
+		if row["type_kwd"] == "nav_cluster" {
+			wantScope = "dataset"
+		}
+		if scope := firstStringValue(row["scope_kwd"]); scope != wantScope {
+			t.Errorf("row %s scope_kwd=%q, want %q", firstStringValue(row["id"]), scope, wantScope)
+		}
 		if row["type_kwd"] != "nav_cluster" {
 			continue
 		}
@@ -142,6 +149,7 @@ func TestNavAppendMemberRetryDoesNotIncrement(t *testing.T) {
 					if row["type_kwd"] == "nav_cluster" {
 						cluster = firstStringValue(row["title_kwd"])
 						row["compile_kwd"] = "dataset_nav"
+						row["scope_kwd"] = "doc"
 						if wrapped {
 							row["doc_ids_kwd"] = []interface{}{"member"}
 						}
