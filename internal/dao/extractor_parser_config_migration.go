@@ -116,22 +116,34 @@ func migrateExtractorConfig(config map[string]any, parserID string, pipelineID *
 		return false, nil
 	}
 	var targets []map[string]any
-	for id, raw := range config {
-		id = strings.ToLower(id)
-		if strings.HasPrefix(id, "extractor:") || strings.HasPrefix(id, "extractor_") {
-			if node, ok := raw.(map[string]any); ok {
-				targets = append(targets, node)
-			}
-		}
-	}
 	var newNode map[string]any
-	if len(targets) == 0 {
+	if pipelineID == nil || strings.TrimSpace(*pipelineID) == "" {
 		_, builtin := builtinExtractorPipelines[strings.ToLower(strings.TrimSpace(parserID))]
-		if !builtin || (pipelineID != nil && strings.TrimSpace(*pipelineID) != "") {
+		if !builtin {
 			return false, nil
 		}
-		newNode = map[string]any{}
-		targets = append(targets, newNode)
+		if raw, exists := config[builtinExtractorNodeID]; exists {
+			node, ok := raw.(map[string]any)
+			if !ok {
+				return false, fmt.Errorf("%s is not an object", builtinExtractorNodeID)
+			}
+			targets = append(targets, node)
+		} else {
+			newNode = map[string]any{}
+			targets = append(targets, newNode)
+		}
+	} else {
+		for id, raw := range config {
+			id = strings.ToLower(id)
+			if strings.HasPrefix(id, "extractor:") || strings.HasPrefix(id, "extractor_") {
+				if node, ok := raw.(map[string]any); ok {
+					targets = append(targets, node)
+				}
+			}
+		}
+		if len(targets) == 0 {
+			return false, nil
+		}
 	}
 	groups, replaceMetadata, err := convertPythonExtractorGroups(config)
 	if err != nil {
@@ -185,8 +197,11 @@ func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]
 	}
 	source := config
 	replaceMetadata := false
+	_, hasToggle := config["enable_metadata"]
+	_, hasFields := config["metadata"]
+	_, hasBuiltIn := config["built_in_metadata"]
 	if obj, ok := config["metadata"].(map[string]any); ok {
-		if len(obj) == 0 {
+		if len(obj) == 0 && !hasToggle && !hasBuiltIn {
 			source, replaceMetadata = obj, true
 		}
 		for _, key := range []string{"enabled", "metadata", "built_in_metadata"} {
@@ -197,9 +212,6 @@ func convertPythonExtractorGroups(config map[string]any) (map[string]map[string]
 			}
 		}
 	}
-	_, hasToggle := config["enable_metadata"]
-	_, hasFields := config["metadata"]
-	_, hasBuiltIn := config["built_in_metadata"]
 	if hasToggle || hasFields || hasBuiltIn {
 		flag := source["enable_metadata"]
 		if replaceMetadata {
@@ -236,6 +248,9 @@ func convertExtractorMetadataFields(raw any) ([]common.MetadataFieldDef, error) 
 		return []common.MetadataFieldDef{}, nil
 	}
 	if schema, ok := raw.(map[string]any); ok {
+		if len(schema) == 0 {
+			return []common.MetadataFieldDef{}, nil
+		}
 		for key := range schema {
 			if key != "type" && key != "properties" && key != "additionalProperties" {
 				return nil, fmt.Errorf("unsupported JSON Schema keyword %s", key)
