@@ -405,7 +405,7 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 	// concatenated item text so the test survives the json-path Text removal.
 	var sb strings.Builder
 	for _, it := range result.JSON {
-		if txt, _ := it["text"].(string); txt != "" {
+		if txt, _ := it.ToMap()["text"].(string); txt != "" {
 			sb.WriteString(txt)
 			sb.WriteString("\n")
 		}

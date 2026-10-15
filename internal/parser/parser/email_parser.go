@@ -206,7 +206,6 @@ func (p *EmailParser) parseEmail(ctx context.Context, filename string, data []by
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename},
 		JSON:         MapsToItems(items),
-		Text:         text,
 	}
 }
 

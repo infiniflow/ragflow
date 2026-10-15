@@ -292,7 +292,7 @@ func TestCSVParser_PreservesInternalJoiners(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item", len(res.JSON))
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<td>"+emoji+"</td>") {
 		t.Errorf("emoji ZWJ sequence broken: %q", text)
 	}

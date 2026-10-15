@@ -356,18 +356,6 @@ func normalizeParserJSON(ctx context.Context, filename string, dispatched parser
 	if dispatched.Markdown != "" {
 		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
-	if dispatched.HTML != "" {
-		res := parser.NewHTMLParser().ParseWithResult(ctx, filename, []byte(dispatched.HTML))
-		if res.Err == nil && len(res.JSON) > 0 {
-			return res.JSON
-		}
-		if res.Err != nil {
-			warnParserNormalizationFallback(filename, "html", res.Err)
-		} else {
-			warnParserNormalizationFallback(filename, "html", fmt.Errorf("parser returned no JSON items"))
-		}
-		return []parser.DocItem{parser.NewTextJSONItem(dispatched.HTML)}
-	}
 	if dispatched.Text != "" {
 		return []parser.DocItem{parser.NewTextJSONItem(dispatched.Text)}
 	}

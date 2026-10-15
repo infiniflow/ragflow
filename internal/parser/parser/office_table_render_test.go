@@ -534,7 +534,7 @@ func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
 	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
 		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != 3 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
 	}
