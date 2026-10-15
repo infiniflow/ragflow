@@ -1398,3 +1398,93 @@ func TestAgentDisabledTemperatureAndTopP(t *testing.T) {
 		}
 	}
 }
+
+// TestAgent_IdenticalToolDuplicatesDropped verifies that two tool definitions
+// with the same model-facing name and identical configuration are collapsed to
+// a single entry.
+func TestAgent_IdenticalToolDuplicatesDropped(t *testing.T) {
+	p := AgentParam{
+		Tools: []string{"retrieval", "retrieval"},
+		ToolParams: map[string]map[string]any{
+			"retrieval": {"kb_ids": []any{"kb-a"}},
+		},
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 1 {
+		t.Fatalf("len(tools) = %d, want 1", len(tools))
+	}
+	info, err := tools[0].Info(t.Context())
+	if err != nil {
+		t.Fatalf("tool.Info: %v", err)
+	}
+	if info.Name != "search_my_dateset" {
+		t.Fatalf("tool name = %q, want search_my_dateset", info.Name)
+	}
+}
+
+// TestAgent_DifferentToolDefaultsRenamed verifies that two tool definitions
+// resolving to the same model-facing name but with different configuration
+// (e.g. different retrieval datasets) are kept with unique names rather than
+// silently dropping the second one.
+func TestAgent_DifferentToolDefaultsRenamed(t *testing.T) {
+	p := AgentParam{
+		Tools: []string{"retrieval", "search_my_dateset"},
+		ToolParams: map[string]map[string]any{
+			"retrieval":         {"kb_ids": []any{"kb-a"}},
+			"search_my_dateset": {"kb_ids": []any{"kb-b"}},
+		},
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if !names["search_my_dateset"] {
+		t.Fatalf("missing base name, got %v", names)
+	}
+	if !names["search_my_dateset_2"] {
+		t.Fatalf("missing renamed tool, got %v", names)
+	}
+}
+
+// TestAgent_SubAgentNameCollisionRenamed verifies that two sub-agents whose
+// names normalize to the same identifier receive distinct tool names.
+func TestAgent_SubAgentNameCollisionRenamed(t *testing.T) {
+	p := AgentParam{
+		SubAgents: []SubAgentTool{
+			{Name: "Data Analyst"},
+			{Name: "data-analyst"},
+		},
+	}
+	tools, err := buildAgentTools(t.Context(), p)
+	if err != nil {
+		t.Fatalf("buildAgentTools: %v", err)
+	}
+	if len(tools) != 2 {
+		t.Fatalf("len(tools) = %d, want 2", len(tools))
+	}
+	names := make(map[string]bool)
+	for _, tool := range tools {
+		info, err := tool.Info(t.Context())
+		if err != nil {
+			t.Fatalf("tool.Info: %v", err)
+		}
+		names[info.Name] = true
+	}
+	if len(names) != 2 {
+		t.Fatalf("expected 2 distinct names, got %v", names)
+	}
+}

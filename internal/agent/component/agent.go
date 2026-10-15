@@ -12,6 +12,7 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -784,6 +785,8 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 	}
 	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	toolInfoByName := make(map[string][]byte, len(tools))
+	var deduped []einotool.BaseTool
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
 		if err != nil {
@@ -792,22 +795,71 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		if info == nil || strings.TrimSpace(info.Name) == "" {
 			return nil, fmt.Errorf("agent tool info: missing name")
 		}
-		if _, exists := toolNames[info.Name]; exists {
-			return nil, fmt.Errorf("duplicate agent tool name %q", info.Name)
+		infoJSON, err := json.Marshal(info)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: marshal: %w", err)
 		}
-		toolNames[info.Name] = struct{}{}
+		name := info.Name
+		if _, exists := toolNames[name]; exists {
+			if bytes.Equal(toolInfoByName[name], infoJSON) {
+				// Identical tool definition registered more than once (e.g.
+				// agent-level tools and canvas nodes). The model cannot
+				// distinguish them, so keep the first occurrence.
+				common.Warn("agent: dropping identical duplicate tool", zap.String("name", name))
+				continue
+			}
+			// Same name but different configuration: assign a unique name
+			// rather than silently dropping the second definition.
+			name = uniqueAgentToolName(name, toolNames)
+			common.Warn("agent: renamed tool with duplicate name to keep distinct configuration",
+				zap.String("original", info.Name), zap.String("assigned", name))
+		}
+		toolNames[name] = struct{}{}
+		toolInfoByName[name] = infoJSON
+		if name != info.Name {
+			deduped = append(deduped, &renamedTool{BaseTool: tool, name: name})
+		} else {
+			deduped = append(deduped, tool)
+		}
 	}
 	for _, subAgent := range p.SubAgents {
 		name := uniqueAgentToolName(subAgent.Name, toolNames)
 		toolNames[name] = struct{}{}
-		tools = append(tools, &subAgentTool{name: name, spec: subAgent})
+		deduped = append(deduped, &subAgentTool{name: name, spec: subAgent})
 	}
-	return tools, nil
+	return deduped, nil
 }
 
 type subAgentTool struct {
 	name string
 	spec SubAgentTool
+}
+
+// renamedTool wraps a tool whose declared name collided with another tool
+// that has a different configuration, so the model sees a unique name.
+type renamedTool struct {
+	einotool.BaseTool
+	name string
+}
+
+func (t *renamedTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	info, err := t.BaseTool.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, nil
+	}
+	name := t.name
+	if name == "" {
+		name = info.Name
+	}
+	return &schema.ToolInfo{
+		Name:        name,
+		Desc:        info.Desc,
+		Extra:       info.Extra,
+		ParamsOneOf: info.ParamsOneOf,
+	}, nil
 }
 
 func (t *subAgentTool) Info(_ context.Context) (*schema.ToolInfo, error) {
