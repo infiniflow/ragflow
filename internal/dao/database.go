@@ -248,13 +248,7 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
 		}
-		// The shared version marker requires this step to follow rc2.dev1.
-		if err = migrateExtractorParserConfigs(ctx, DB); err != nil {
-			return fmt.Errorf("failed to migrate extractor parser configs: %w", err)
-		}
-		// The Python-era Parser / Chunker / Tokenizer settings move onto the
-		// components of the pipeline each row runs. It reads the same rows as the
-		// extractor step, so it follows rc2.dev2.
+		// Convert Python-era ingestion settings after the rc2.dev1 cleanup.
 		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
 		}

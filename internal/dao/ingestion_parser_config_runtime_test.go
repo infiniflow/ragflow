@@ -633,7 +633,7 @@ func TestMigratedExtractorConfigReachesRuntime(t *testing.T) {
 	db := openIngestionRuntimeDB(t)
 	input := `{"auto_keywords":8,"auto_questions":2,"enable_metadata":true,"metadata":[{"key":"author","type":"string"}],"built_in_metadata":[{"key":"file_name","type":"string"}],"Extractor:AutoExtractDefault":{"tags":{"top_n":5,"tag_file_id":"tag-file"},"keywords":{"system_prompt":"custom keywords"},"summary":{"enabled":true,"system_prompt":"custom summary"}}}`
 	insertIngestionRuntimeRow(t, db, "kb-1", "general", input)
-	if err := dao.MigrateExtractorParserConfigsForTest(t.Context(), db); err != nil {
+	if err := dao.MigrateIngestionParserConfigsForTest(t.Context(), db); err != nil {
 		t.Fatal(err)
 	}
 	config := migratedConfig(t, db, "kb-1")

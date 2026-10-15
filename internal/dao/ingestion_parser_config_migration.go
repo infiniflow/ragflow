@@ -33,9 +33,8 @@ import (
 	"ragflow/internal/utility"
 )
 
-// These steps follow rc2.dev1 and advance the shared version marker in order.
+// Convert all ingestion components after the rc2.dev1 cleanup.
 const (
-	extractorParserConfigTargetVersion = "v1.0.0-rc2.dev2"
 	ingestionParserConfigTargetVersion = "v1.0.0-rc2.dev3"
 	builtinExtractorNodeID             = "Extractor:AutoExtractDefault"
 )
@@ -240,28 +239,11 @@ type ingestionConfigMigrationRow struct {
 }
 
 func migrateIngestionParserConfigs(ctx context.Context, db *gorm.DB) error {
-	return migrateIngestionConfigStep(ctx, db, ingestionParserConfigTargetVersion,
-		func(config map[string]any, row ingestionConfigMigrationRow, table string) (bool, error) {
-			return migrateIngestionConfig(config, row.ParserID, row.PipelineID, table, row.ID)
-		})
-}
-
-func migrateExtractorParserConfigs(ctx context.Context, db *gorm.DB) error {
-	return migrateIngestionConfigStep(ctx, db, extractorParserConfigTargetVersion,
-		func(config map[string]any, row ingestionConfigMigrationRow, _ string) (bool, error) {
-			return migrateExtractorConfig(config, row.ParserID, row.PipelineID)
-		})
-}
-
-// Each version step shares batching and persistence, with its own conversion.
-func migrateIngestionConfigStep(ctx context.Context, db *gorm.DB, targetVersion string,
-	convert func(map[string]any, ingestionConfigMigrationRow, string) (bool, error),
-) error {
 	version, err := GetDatabaseMigrationVersion(ctx, db)
 	if err != nil {
 		return err
 	}
-	if shouldSkipMigration(version, targetVersion) {
+	if shouldSkipMigration(version, ingestionParserConfigTargetVersion) {
 		return nil
 	}
 	found := false
@@ -275,22 +257,20 @@ func migrateIngestionConfigStep(ctx context.Context, db *gorm.DB, targetVersion 
 			continue
 		}
 		found = true
-		count, err := migrateIngestionConfigRows(ctx, db, target.model, target.table, convert)
+		count, err := migrateIngestionConfigRows(ctx, db, target.model, target.table)
 		if err != nil {
 			return fmt.Errorf("migrate %s parser configs: %w", target.table, err)
 		}
 		common.Info("Migrated Python parser configs", zap.String("table", target.table),
-			zap.String("version", targetVersion), zap.Int("rows", count))
+			zap.String("version", ingestionParserConfigTargetVersion), zap.Int("rows", count))
 	}
 	if !found {
 		return nil
 	}
-	return setDatabaseMigrationVersion(ctx, db, targetVersion)
+	return setDatabaseMigrationVersion(ctx, db, ingestionParserConfigTargetVersion)
 }
 
-func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string,
-	convert func(map[string]any, ingestionConfigMigrationRow, string) (bool, error),
-) (int, error) {
+func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, table string) (int, error) {
 	count := 0
 	var rows []ingestionConfigMigrationRow
 	result := db.WithContext(ctx).Model(model).
@@ -308,11 +288,15 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 						}
 						return fmt.Errorf("row %s: invalid parser_config JSON", row.ID)
 					}
-					changed, err := convert(config, row, table)
+					extractorChanged, err := migrateExtractorConfig(config, row.ParserID, row.PipelineID)
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
-					if !changed {
+					ingestionChanged, err := migrateIngestionConfig(config, row.ParserID, row.PipelineID, table, row.ID)
+					if err != nil {
+						return fmt.Errorf("row %s: %w", row.ID, err)
+					}
+					if !extractorChanged && !ingestionChanged {
 						continue
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).

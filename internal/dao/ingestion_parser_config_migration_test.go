@@ -17,7 +17,6 @@ import (
 // Test bridges keep migration internals out of the production API.
 var MigrateIngestionParserConfigsForTest = migrateIngestionParserConfigs
 var MigrateIngestionConfigForTest = migrateIngestionConfig
-var MigrateExtractorParserConfigsForTest = migrateExtractorParserConfigs
 var MigrateExtractorConfigForTest = migrateExtractorConfig
 
 func TestMigrateIngestionConfig(t *testing.T) {
@@ -201,6 +200,11 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 		}
 		for _, row := range rows {
 			config := decodeIngestionConfig(t, *row.ParserConfig)
+			extractor, _ := config[builtinExtractorNodeID].(map[string]any)
+			keywords, _ := extractor["keywords"].(map[string]any)
+			if keywords["top_n"] != float64(8) {
+				t.Fatalf("%s.%s: extractor settings not migrated: %v", table, row.ID, config)
+			}
 			parserNode, ok := config["Parser:HipSignsRhyme"].(map[string]any)
 			if !ok {
 				t.Fatalf("%s.%s: parser node missing: %v", table, row.ID, config)
@@ -224,38 +228,52 @@ func TestMigrateIngestionParserConfigsBatches(t *testing.T) {
 }
 
 func TestMigrateIngestionParserConfigsRejectsInvalidRows(t *testing.T) {
-	db := openIngestionMigrationDB(t)
-	insertIngestionConfig(t, db, "knowledgebase", "a", "general", python027IngestionConfig)
-	insertIngestionConfig(t, db, "knowledgebase", "b", "general", `{"pages":[[9,2]]}`)
-	if err := migrateIngestionParserConfigs(t.Context(), db); err == nil {
-		t.Fatal("invalid input was marked as migrated")
-	}
-	var rows []ingestionConfigMigrationRow
-	if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
-		t.Fatal(err)
-	}
-	if *rows[0].ParserConfig != python027IngestionConfig || *rows[1].ParserConfig != `{"pages":[[9,2]]}` {
-		t.Fatal("failed batch modified source configs")
-	}
-	if databaseVersion(t, db) != "" {
-		t.Fatal("failed migration advanced version")
+	for _, raw := range []string{
+		`{"pages":[[9,2]]}`,
+		`not-json`,
+		`{"auto_keywords":"8","auto_questions":2}`,
+		`{"enable_metadata":true,"metadata":[{"name":"author"}]}`,
+		`{"enable_metadata":true,"metadata":{"type":"object","required":["author"],"properties":{"author":{"type":"object","properties":{"name":{"type":"string"}}}}}}`,
+	} {
+		t.Run(raw, func(t *testing.T) {
+			db := openIngestionMigrationDB(t)
+			insertIngestionConfig(t, db, "knowledgebase", "a", "general", python027IngestionConfig)
+			insertIngestionConfig(t, db, "knowledgebase", "b", "general", raw)
+			if err := migrateIngestionParserConfigs(t.Context(), db); err == nil {
+				t.Fatal("invalid input was marked as migrated")
+			}
+			var rows []ingestionConfigMigrationRow
+			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			if *rows[0].ParserConfig != python027IngestionConfig || *rows[1].ParserConfig != raw {
+				t.Fatal("failed batch modified source configs")
+			}
+			if databaseVersion(t, db) != "" {
+				t.Fatal("failed migration advanced version")
+			}
+		})
 	}
 }
 
 func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
-	for _, version := range []string{"", ingestionParserConfigTargetVersion, "v1.0.0"} {
-		t.Run(version, func(t *testing.T) {
+	for _, tc := range []struct {
+		version string
+		skip    bool
+	}{
+		{"", false}, {"v1.0.0-rc2.dev1", false}, {"v1.0.0-rc2.dev2", false},
+		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
 			db := openIngestionMigrationDB(t)
-			if version != "" {
-				writeDatabaseVersion(t, db, version)
+			if tc.version != "" {
+				writeDatabaseVersion(t, db, tc.version)
 			}
-			untouched := []string{``, `null`, `{}`, `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"somark"}}}`}
+			untouched := []string{``, `null`, `{}`, `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"somark"}}}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`}
 			for i, raw := range untouched {
 				insertIngestionConfig(t, db, "knowledgebase", fmt.Sprint(i), "general", raw)
 			}
-			if version != "" {
-				insertIngestionConfig(t, db, "knowledgebase", "old", "general", python027IngestionConfig)
-			}
+			insertIngestionConfig(t, db, "knowledgebase", "old", "general", python027IngestionConfig)
 			if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
 				t.Fatal(err)
 			}
@@ -268,11 +286,13 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 					t.Fatalf("untouched row %d rewritten: %s", i, *rows[i].ParserConfig)
 				}
 			}
-			wantVersion := version
-			if version == "" {
-				wantVersion = ingestionParserConfigTargetVersion
-			} else if *rows[4].ParserConfig != python027IngestionConfig {
-				t.Fatal("version gate did not skip")
+			unchanged := *rows[len(untouched)].ParserConfig == python027IngestionConfig
+			if unchanged != tc.skip {
+				t.Fatalf("version gate: skipped=%v; want %v", unchanged, tc.skip)
+			}
+			wantVersion := ingestionParserConfigTargetVersion
+			if tc.skip {
+				wantVersion = tc.version
 			}
 			if databaseVersion(t, db) != wantVersion {
 				t.Fatal("unexpected version")
@@ -283,7 +303,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 
 // python027IngestionConfig is a dataset parser_config as Python v0.27.2 stored
 // it: every value differs from the Go default so a lost field is visible.
-const python027IngestionConfig = `{"layout_recognize":"plain text","chunk_token_num":256,"delimiter":"\n","overlapped_percent":0.29,"filename_embd_weight":0.2,"pages":[[1,3]],"table_context_size":10,"image_context_size":20,"html4excel":false}`
+const python027IngestionConfig = `{"auto_keywords":8,"layout_recognize":"plain text","chunk_token_num":256,"delimiter":"\n","overlapped_percent":0.29,"filename_embd_weight":0.2,"pages":[[1,3]],"table_context_size":10,"image_context_size":20,"html4excel":false}`
 
 func openIngestionMigrationDB(t *testing.T) *gorm.DB {
 	t.Helper()
@@ -382,103 +402,6 @@ func TestMigrateExtractorConfig(t *testing.T) {
 			}
 			if encodeIngestionConfig(t, config) != snapshot {
 				t.Fatal("second run changed config")
-			}
-		})
-	}
-}
-
-func TestMigrateExtractorParserConfigsBatches(t *testing.T) {
-	db := openIngestionMigrationDB(t)
-	for i := 0; i < 257; i++ {
-		for _, table := range []string{"knowledgebase", "document"} {
-			insertIngestionConfig(t, db, table, fmt.Sprintf("%032d", i), "general", python027ParserConfig)
-		}
-	}
-	if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-		t.Fatal(err)
-	}
-	for _, table := range []string{"knowledgebase", "document"} {
-		var rows []ingestionConfigMigrationRow
-		if err := db.Table(table).Find(&rows).Error; err != nil {
-			t.Fatal(err)
-		}
-		if len(rows) != 257 {
-			t.Fatalf("%s rows=%d", table, len(rows))
-		}
-		for _, row := range rows {
-			config := decodeIngestionConfig(t, *row.ParserConfig)
-			node, ok := config["Extractor:AutoExtractDefault"].(map[string]any)
-			if !ok || node["keywords"].(map[string]any)["top_n"] != float64(8) || config["topn_tags"] != float64(5) {
-				t.Fatalf("%s.%s not migrated correctly: %v", table, row.ID, config)
-			}
-		}
-	}
-	if got := databaseVersion(t, db); got != extractorParserConfigTargetVersion {
-		t.Fatalf("version=%s", got)
-	}
-}
-
-func TestMigrateExtractorParserConfigsRejectsInvalidRows(t *testing.T) {
-	for _, raw := range []string{
-		`not-json`,
-		`{"auto_keywords":"8","auto_questions":2}`,
-		`{"enable_metadata":true,"metadata":[{"name":"author"}]}`,
-		`{"enable_metadata":true,"metadata":{"type":"object","required":["author"],"properties":{"author":{"type":"object","properties":{"name":{"type":"string"}}}}}}`,
-	} {
-		t.Run(raw, func(t *testing.T) {
-			db := openIngestionMigrationDB(t)
-			insertIngestionConfig(t, db, "knowledgebase", "a", "general", python027ParserConfig)
-			insertIngestionConfig(t, db, "knowledgebase", "b", "general", raw)
-			if err := migrateExtractorParserConfigs(t.Context(), db); err == nil {
-				t.Fatal("invalid input was marked as migrated")
-			}
-			var rows []ingestionConfigMigrationRow
-			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
-				t.Fatal(err)
-			}
-			if *rows[0].ParserConfig != python027ParserConfig || *rows[1].ParserConfig != raw {
-				t.Fatal("failed batch modified source configs")
-			}
-			if databaseVersion(t, db) != "" {
-				t.Fatal("failed migration advanced version")
-			}
-		})
-	}
-}
-
-func TestMigrateExtractorParserConfigsVersionAndEmptyRows(t *testing.T) {
-	for _, version := range []string{"", extractorParserConfigTargetVersion, "v1.0.0"} {
-		t.Run(version, func(t *testing.T) {
-			db := openIngestionMigrationDB(t)
-			if version != "" {
-				writeDatabaseVersion(t, db, version)
-			}
-			for i, raw := range []string{``, `null`, `{}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`} {
-				insertIngestionConfig(t, db, "knowledgebase", fmt.Sprint(i), "general", raw)
-			}
-			if version != "" {
-				insertIngestionConfig(t, db, "knowledgebase", "old", "general", python027ParserConfig)
-			}
-			if err := migrateExtractorParserConfigs(t.Context(), db); err != nil {
-				t.Fatal(err)
-			}
-			var rows []ingestionConfigMigrationRow
-			if err := db.Table("knowledgebase").Order("id").Find(&rows).Error; err != nil {
-				t.Fatal(err)
-			}
-			for i, raw := range []string{``, `null`, `{}`, `{"Extractor:AutoExtractDefault":{"metadata":{"enabled":false}}}`} {
-				if *rows[i].ParserConfig != raw {
-					t.Fatal("untouched row rewritten")
-				}
-			}
-			wantVersion := version
-			if version == "" {
-				wantVersion = extractorParserConfigTargetVersion
-			} else if *rows[4].ParserConfig != python027ParserConfig {
-				t.Fatal("version gate did not skip")
-			}
-			if databaseVersion(t, db) != wantVersion {
-				t.Fatal("unexpected version")
 			}
 		})
 	}
