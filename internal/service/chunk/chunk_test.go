@@ -347,6 +347,13 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	if !engine.searchReq.IncludeUnavailable {
 		t.Fatal("management chunk list must include disabled parent chunks")
 	}
+	// Parent rows must not be filtered out: they are listed after their children
+	// on every engine (MaterializeParentChunks numbers them past the source
+	// chunks), and excluding them by doc_type_kwd made the list engine-agnostic
+	// but no longer showed the parent-child structure users see on ES.
+	if _, exists := engine.searchReq.Filter["exists"]; exists {
+		t.Fatalf("unexpected existence filter on the chunk list: %#v", engine.searchReq.Filter)
+	}
 	if engine.searchReq.OrderBy == nil {
 		t.Fatal("expected OrderBy to be set")
 	}
@@ -1066,7 +1073,18 @@ func TestAddChunkSuccess(t *testing.T) {
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
 
-	engine := &addChunkTestEngine{}
+	// The document already holds source chunks whose highest order is 9; the
+	// lookup page also carries rows the lookup must ignore (a parent-range value
+	// and a row without any order), so the added chunk still continues from 9.
+	engine := &addChunkTestEngine{
+		searchResp: &types.SearchResult{
+			Chunks: []map[string]interface{}{
+				{"id": "parent-1", "chunk_order_int": float64(common.ParentChunkOrderBase + 3)},
+				{"id": "raptor-1"},
+				{"id": "chunk-9", "chunk_order_int": float64(9)},
+			},
+		},
+	}
 	var incrementTokenNum, incrementChunkNum int64
 	language := "Slovak"
 	var tokenizeLanguages []string
@@ -1163,6 +1181,36 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 	if engine.insertLanguage != language {
 		t.Fatalf("InsertChunks language = %q, want %q", engine.insertLanguage, language)
+	}
+
+	// A manually added text chunk must carry doc_type_kwd (Python chunk_api.py:1225):
+	// the management chunk list selects source chunks by that field, so a missing
+	// value would hide the chunk from the list.
+	if inserted["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", inserted["doc_type_kwd"])
+	}
+	// The added chunk continues the document's source ordering (highest source
+	// order + 1) and stays inside [0, common.ParentChunkOrderBase), so it lists
+	// after the ingested chunks and still before the document's parent rows.
+	if got := inserted["chunk_order_int"]; got != 10 {
+		t.Fatalf("chunk_order_int = %#v, want 10 (highest source order + 1)", got)
+	}
+	if engine.searchReq == nil {
+		t.Fatal("expected the document's highest source order to be looked up")
+	}
+	if got := engine.searchReq.Filter["exists"]; got != "doc_type_kwd" {
+		t.Fatalf("order lookup exists filter = %#v, want doc_type_kwd", got)
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("order lookup doc_id = %#v, want %q", got, documentID)
+	}
+	if !engine.searchReq.IncludeUnavailable {
+		t.Fatal("order lookup must count disabled source chunks")
+	}
+	if engine.searchReq.OrderBy == nil || len(engine.searchReq.OrderBy.Fields) != 1 ||
+		engine.searchReq.OrderBy.Fields[0].Field != "chunk_order_int" ||
+		engine.searchReq.OrderBy.Fields[0].Type != types.SortDesc {
+		t.Fatalf("order lookup OrderBy = %#v, want descending chunk_order_int", engine.searchReq.OrderBy)
 	}
 	vec, ok := inserted["q_2_vec"].([]float64)
 	if !ok {
@@ -2129,6 +2177,8 @@ type addChunkTestEngine struct {
 	insertDataset  string
 	insertLanguage string
 	insertErr      error
+	searchReq      *types.SearchRequest
+	searchResp     *types.SearchResult
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
@@ -2137,6 +2187,11 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	e.insertDataset = datasetID
 	e.insertLanguage = language
 	return nil, e.insertErr
+}
+
+func (e *addChunkTestEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return e.searchResp, nil
 }
 
 type listChunksSearchEngine struct {
