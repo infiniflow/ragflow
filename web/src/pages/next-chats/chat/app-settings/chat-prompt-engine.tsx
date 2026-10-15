@@ -15,15 +15,11 @@ import {
   FormLabel,
   FormMessage,
 } from '@/components/ui/form';
-import { MultiSelect } from '@/components/ui/multi-select';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { WebSearchFormField } from '@/components/web-search-form-field';
-import { useFetchKnowledgeMetadataKeys } from '@/hooks/use-knowledge-request';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
-import { useEffect, useMemo } from 'react';
-import { useFormContext, useWatch } from 'react-hook-form';
+import { useFormContext } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DynamicVariableForm } from './dynamic-variable';
 
@@ -47,54 +43,6 @@ export function ChatPromptEngine({
   const emptyResponseValue = form.watch(
     prefixName(prefix, 'prompt_config.empty_response'),
   );
-  const rawDatasetIds = useWatch({
-    control: form.control,
-    name: prefixName(prefix, 'dataset_ids'),
-  });
-  const kbIds = useMemo(
-    () => (rawDatasetIds || []) as string[],
-    [rawDatasetIds],
-  );
-  const metadataInclude = useWatch({
-    control: form.control,
-    name: prefixName(prefix, 'prompt_config.reference_metadata.include'),
-  });
-  const { data: metadataKeys, loading: metadataKeysLoading } =
-    useFetchKnowledgeMetadataKeys(kbIds);
-  const metadataFieldOptions = useMemo(() => {
-    return (metadataKeys || []).map((key) => ({
-      label: key,
-      value: key,
-    }));
-  }, [metadataKeys]);
-
-  useEffect(() => {
-    const currentFields = form.getValues(
-      prefixName(prefix, 'prompt_config.reference_metadata.fields'),
-    );
-    if (
-      metadataInclude &&
-      Array.isArray(currentFields) &&
-      currentFields.length > 0 &&
-      metadataKeys
-    ) {
-      const validFields = currentFields.filter((field) =>
-        metadataKeys.includes(field),
-      );
-      if (validFields.length !== currentFields.length) {
-        form.setValue(
-          prefixName(prefix, 'prompt_config.reference_metadata.fields'),
-          validFields,
-        );
-      }
-    } else if (!metadataInclude) {
-      form.setValue(
-        prefixName(prefix, 'prompt_config.reference_metadata.fields'),
-        undefined,
-      );
-    }
-  }, [kbIds, metadataKeys, metadataKeysLoading, metadataInclude, form, prefix]);
-
   return (
     <Collapse
       title={t('flow.advancedSettings')}
@@ -138,62 +86,6 @@ export function ChatPromptEngine({
         ></SwitchFormField>
         <WebSearchFormField prefix={prefix} />
         <MetadataFilter></MetadataFilter>
-        <FormField
-          control={form.control}
-          name={prefixName(prefix, 'prompt_config.reference_metadata.include')}
-          render={({ field }) => (
-            <FormItem className="flex flex-row items-start space-x-3 space-y-0">
-              <FormControl>
-                <Switch
-                  checked={field.value}
-                  onCheckedChange={(value) => {
-                    field.onChange(value);
-                    if (!value) {
-                      form.setValue(
-                        prefixName(
-                          prefix,
-                          'prompt_config.reference_metadata.fields',
-                        ),
-                        undefined,
-                      );
-                    }
-                  }}
-                />
-              </FormControl>
-              <FormLabel tooltip={t('chat.showChunkMetadataTip')}>
-                {t('chat.showChunkMetadata')}
-              </FormLabel>
-            </FormItem>
-          )}
-        />
-        {metadataInclude && (
-          <FormField
-            control={form.control}
-            name={prefixName(prefix, 'prompt_config.reference_metadata.fields')}
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel tooltip={t('chat.metadataFieldsTip')}>
-                  {t('chat.metadataFields')}
-                </FormLabel>
-                <FormControl className="bg-bg-input">
-                  <MultiSelect
-                    options={metadataFieldOptions}
-                    onValueChange={field.onChange}
-                    showSelectAll={false}
-                    placeholder={t('common.pleaseSelect')}
-                    maxCount={20}
-                    defaultValue={Array.isArray(field.value) ? field.value : []}
-                    value={Array.isArray(field.value) ? field.value : []}
-                    name={field.name}
-                    ref={field.ref}
-                    onBlur={field.onBlur}
-                  />
-                </FormControl>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-        )}
         <FormField
           control={form.control}
           name={prefixName(prefix, 'prompt_config.system')}
