@@ -304,7 +304,7 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
-					ingestionChanged, err := migrateIngestionConfig(config, row.ParserID, row.PipelineID, table, row.ID)
+					ingestionChanged, err := migrateParserChunkerTokenizerConfig(config, row.ParserID, row.PipelineID, table, row.ID)
 					if err != nil {
 						return fmt.Errorf("row %s: %w", row.ID, err)
 					}
@@ -313,7 +313,7 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 					}
 					if err := tx.Model(model).Where("id = ?", row.ID).
 						Update("parser_config", entity.JSONMap(config)).Error; err != nil {
-						return err
+						return fmt.Errorf("row %s: update parser_config: %w", row.ID, err)
 					}
 					count++
 				}
@@ -323,11 +323,11 @@ func migrateIngestionConfigRows(ctx context.Context, db *gorm.DB, model any, tab
 	return count, result.Error
 }
 
-// migrateIngestionConfig rewrites one row's Python-era flat Parser / Chunker /
+// migrateParserChunkerTokenizerConfig rewrites one row's Python-era flat Parser / Chunker /
 // Tokenizer settings into the components of the pipeline that row runs. Params
 // the row already carries win; a setting with no Go consumer is deleted and
 // logged.
-func migrateIngestionConfig(config map[string]any, parserID string, pipelineID *string, table, rowID string) (bool, error) {
+func migrateParserChunkerTokenizerConfig(config map[string]any, parserID string, pipelineID *string, table, rowID string) (bool, error) {
 	// A custom canvas reads component-scoped params on the Python side too, and
 	// a canvas can hold several nodes of the same kind, so no ownership rule for
 	// a flat setting is safe.

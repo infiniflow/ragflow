@@ -145,7 +145,7 @@ func TestMigratedParentChildMatchesWritePath(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			config := decodeIngestionConfig(t, tc.input)
-			if _, err := dao.MigrateIngestionConfigForTest(config, "general", nil, "knowledgebase", "row-1"); err != nil {
+			if _, err := dao.MigrateParserChunkerTokenizerConfigForTest(config, "general", nil, "knowledgebase", "row-1"); err != nil {
 				t.Fatal(err)
 			}
 			node, ok := config[nodeID].(map[string]any)
@@ -179,7 +179,7 @@ func TestMigratedParentChildMatchesWritePath(t *testing.T) {
 // preserves the children the Python-era run produced.
 func TestMigratedParentChildEnabledWithoutDelimiterDefaultsToNewline(t *testing.T) {
 	config := decodeIngestionConfig(t, `{"parent_child":{"use_parent_child":true}}`)
-	if _, err := dao.MigrateIngestionConfigForTest(config, "general", nil, "knowledgebase", "row-1"); err != nil {
+	if _, err := dao.MigrateParserChunkerTokenizerConfigForTest(config, "general", nil, "knowledgebase", "row-1"); err != nil {
 		t.Fatal(err)
 	}
 	node := config["GeneralChunker:SixApplesFall"].(map[string]any)
@@ -258,7 +258,7 @@ func TestIngestionMigrationMatchesBuiltinTemplates(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					config := decodeIngestionConfig(t, tc.config)
-					changed, err := dao.MigrateIngestionConfigForTest(config, ref, nil, "knowledgebase", "row-1")
+					changed, err := dao.MigrateParserChunkerTokenizerConfigForTest(config, ref, nil, "knowledgebase", "row-1")
 					if err != nil || !changed {
 						t.Fatalf("changed=%v err=%v", changed, err)
 					}

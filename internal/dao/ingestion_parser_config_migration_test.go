@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
@@ -16,10 +17,10 @@ import (
 
 // Test bridges keep migration internals out of the production API.
 var MigrateIngestionParserConfigsForTest = migrateIngestionParserConfigs
-var MigrateIngestionConfigForTest = migrateIngestionConfig
+var MigrateParserChunkerTokenizerConfigForTest = migrateParserChunkerTokenizerConfig
 var MigrateExtractorConfigForTest = migrateExtractorConfig
 
-func TestMigrateIngestionConfig(t *testing.T) {
+func TestMigrateParserChunkerTokenizerConfig(t *testing.T) {
 	cases := []struct {
 		name, parser, input, want string
 		pipeline                  *string
@@ -110,14 +111,14 @@ func TestMigrateIngestionConfig(t *testing.T) {
 			if parser == "" {
 				parser = "general"
 			}
-			if _, err := migrateIngestionConfig(config, parser, tc.pipeline, "knowledgebase", "row-1"); err != nil {
+			if _, err := migrateParserChunkerTokenizerConfig(config, parser, tc.pipeline, "knowledgebase", "row-1"); err != nil {
 				t.Fatal(err)
 			}
 			if got := decodeIngestionConfig(t, encodeIngestionConfig(t, config)); !reflect.DeepEqual(got, want) {
 				t.Fatalf("got %s; want %s", encodeIngestionConfig(t, config), tc.want)
 			}
 			snapshot := encodeIngestionConfig(t, config)
-			if changed, err := migrateIngestionConfig(config, parser, tc.pipeline, "knowledgebase", "row-1"); err != nil || changed {
+			if changed, err := migrateParserChunkerTokenizerConfig(config, parser, tc.pipeline, "knowledgebase", "row-1"); err != nil || changed {
 				t.Fatalf("second run changed=%v, err=%v", changed, err)
 			}
 			if encodeIngestionConfig(t, config) != snapshot {
@@ -127,7 +128,7 @@ func TestMigrateIngestionConfig(t *testing.T) {
 	}
 }
 
-func TestMigrateIngestionConfigRejectsMalformedValues(t *testing.T) {
+func TestMigrateParserChunkerTokenizerConfigRejectsMalformedValues(t *testing.T) {
 	for _, raw := range []string{
 		`{"layout_recognize":"MagicOCR"}`,
 		`{"layout_recognize":"foo@mistral ocr"}`,
@@ -153,7 +154,7 @@ func TestMigrateIngestionConfigRejectsMalformedValues(t *testing.T) {
 		t.Run(raw, func(t *testing.T) {
 			config := decodeIngestionConfig(t, raw)
 			before := encodeIngestionConfig(t, config)
-			if _, err := migrateIngestionConfig(config, "general", nil, "knowledgebase", "row-1"); err == nil {
+			if _, err := migrateParserChunkerTokenizerConfig(config, "general", nil, "knowledgebase", "row-1"); err == nil {
 				t.Fatalf("malformed value was accepted: %s", before)
 			}
 			if encodeIngestionConfig(t, config) != before {
@@ -163,13 +164,13 @@ func TestMigrateIngestionConfigRejectsMalformedValues(t *testing.T) {
 	}
 }
 
-func TestMigrateIngestionConfigLogsRetiredFields(t *testing.T) {
+func TestMigrateParserChunkerTokenizerConfigLogsRetiredFields(t *testing.T) {
 	core, logs := observer.New(zap.WarnLevel)
 	previous := common.Logger
 	common.Logger = zap.New(core)
 	t.Cleanup(func() { common.Logger = previous })
 	config := decodeIngestionConfig(t, `{"html4excel":true,"task_page_size":12,"mineru_formula_enable":false}`)
-	if _, err := migrateIngestionConfig(config, "general", nil, "document", "doc-1"); err != nil {
+	if _, err := migrateParserChunkerTokenizerConfig(config, "general", nil, "document", "doc-1"); err != nil {
 		t.Fatal(err)
 	}
 	for _, field := range []string{"html4excel", "task_page_size", "mineru_formula_enable"} {
@@ -429,5 +430,43 @@ func TestMigrateIngestionParserConfigsSharesDev1Cleanup(t *testing.T) {
 	}
 	if _, migrated := config[ingestionTargets["general"].extractorNode]; !migrated {
 		t.Fatal("component conversion was skipped")
+	}
+}
+
+func TestMigrateIngestionParserConfigsUpdateError(t *testing.T) {
+	for _, table := range []string{"knowledgebase", "document"} {
+		t.Run(table, func(t *testing.T) {
+			db := openIngestionMigrationDB(t)
+			for _, id := range []string{"row-a", "row-b"} {
+				insertIngestionConfig(t, db, table, id, "general", python027IngestionConfig)
+			}
+			trigger := fmt.Sprintf(`CREATE TRIGGER reject_parser_config_update
+				BEFORE UPDATE OF parser_config ON %s WHEN OLD.id = 'row-b'
+				BEGIN SELECT RAISE(FAIL, 'forced parser config update failure'); END`, table)
+			if err := db.Exec(trigger).Error; err != nil {
+				t.Fatal(err)
+			}
+			err := migrateIngestionParserConfigs(t.Context(), db)
+			if err == nil {
+				t.Fatal("expected update failure")
+			}
+			for _, detail := range []string{table, "row-b", "forced parser config update failure"} {
+				if !strings.Contains(err.Error(), detail) {
+					t.Errorf("error %q does not identify %q", err, detail)
+				}
+			}
+			var rows []ingestionConfigMigrationRow
+			if err := db.Table(table).Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			for _, row := range rows {
+				if *row.ParserConfig != python027IngestionConfig {
+					t.Fatalf("failed batch changed row %s", row.ID)
+				}
+			}
+			if got := databaseVersion(t, db); got != "" {
+				t.Fatalf("failed migration advanced version to %q", got)
+			}
+		})
 	}
 }
