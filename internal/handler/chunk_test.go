@@ -12,6 +12,7 @@ import (
 
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 
 	"github.com/gin-gonic/gin"
@@ -25,6 +26,7 @@ type mockChunkSvc struct {
 	switchChunksFn func(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error
 	updateChunkFn  func(ctx context.Context, req *service.UpdateChunkRequest, userID string) error
 	stopParsingFn  func(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error)
+	removeChunksFn func(context.Context, *service.RemoveChunksRequest, string) (int64, error)
 }
 
 type codedTestError struct {
@@ -61,8 +63,56 @@ func (m *mockChunkSvc) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 	}
 	panic("not implemented")
 }
-func (m *mockChunkSvc) RemoveChunks(context.Context, *service.RemoveChunksRequest, string) (int64, error) {
+func (m *mockChunkSvc) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
+	if m.removeChunksFn != nil {
+		return m.removeChunksFn(ctx, req, userID)
+	}
 	panic("not implemented")
+}
+
+func TestChunkRemoveUsesRouteIDs(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		code int
+	}{
+		{name: "success", code: 0},
+		{name: "mismatched dataset", err: permission.ErrResourceNotFound, code: 404},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			mock := &mockChunkSvc{removeChunksFn: func(_ context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
+				called = true
+				if req.DatasetID != "kb-1" || req.DocID != "doc-1" || userID != "user-1" {
+					t.Fatalf("unexpected delete target: %#v, user %q", req, userID)
+				}
+				if !reflect.DeepEqual(req.ChunkIDs, []string{"chunk-1"}) {
+					t.Fatalf("unexpected chunk IDs: %v", req.ChunkIDs)
+				}
+				return 1, tc.err
+			}}
+			r, h := setupChunkHandlerWithUser("user-1", mock)
+			r.DELETE("/api/v1/datasets/:dataset_id/documents/:document_id/chunks", h.RemoveChunks)
+			request := httptest.NewRequest(http.MethodDelete, "/api/v1/datasets/kb-1/documents/doc-1/chunks",
+				strings.NewReader(`{"dataset_id":"body-kb","doc_id":"body-doc","chunk_ids":["chunk-1"]}`))
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, request)
+			if !called {
+				t.Fatal("delete service was not called")
+			}
+			var payload map[string]interface{}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatal(err)
+			}
+			if response.Code != http.StatusOK || payload["code"] != float64(tc.code) {
+				t.Fatalf("unexpected response: HTTP %d, %s", response.Code, response.Body.String())
+			}
+			if tc.err != nil && (payload["message"] != "Resource not found" || payload["data"] != nil) {
+				t.Fatalf("unexpected resource error: %s", response.Body.String())
+			}
+		})
+	}
 }
 func (m *mockChunkSvc) StopParsing(ctx context.Context, userID, datasetID string, req service.StopParsingRequest) (*service.StopParsingResponse, common.ErrorCode, error) {
 	if m.stopParsingFn != nil {
