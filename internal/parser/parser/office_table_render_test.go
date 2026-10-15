@@ -513,6 +513,174 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	}
 }
 
+// TestXLSXParser_MergedDataCellInheritance asserts a vertically merged data
+// cell's slave rows inherit the master text, so every row chunk keeps its
+// group label instead of rendering an empty first cell.
+func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+		mustSetCell(t, f, "Sheet1", "B3", "y")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
+		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
+	}
+	positions := res.JSON[0]["positions"].([][]float64)
+	if len(positions) != 3 {
+		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
+	}
+	if got := positions[2]; !reflect.DeepEqual(got, []float64{1, 3, 3, 1, 2}) {
+		t.Fatalf("row 3 tuple = %v, want [1 3 3 1 2]", got)
+	}
+}
+
+// TestXLSXParser_MergedDataCellHorizontalUntouched asserts a horizontally
+// merged data cell is NOT duplicated: the slave column stays empty because
+// the master column already shows the value.
+func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "C1", "Note")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "B2", "wide")
+		mustMergeCell(t, f, "Sheet1", "B2", "C2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "<td>wide</td><td>wide</td>") {
+		t.Fatalf("horizontal merge master duplicated into slave cell, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_MergedHeaderDownIntoDataUntouched asserts a vertical merge
+// mastered on the header row does not leak the header label into data rows.
+func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "H")
+		mustMergeCell(t, f, "Sheet1", "A1", "A2")
+		mustSetCell(t, f, "Sheet1", "B1", "Name")
+		mustSetCell(t, f, "Sheet1", "B2", "Alice")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><th>H</th><th>Name</th></tr>") {
+		t.Fatalf("want header row untouched, got:\n%s", text)
+	}
+	if strings.Contains(text, "<td>H</td>") {
+		t.Fatalf("header merge master leaked into data row, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
+// characters around cell text are removed, so labels wrapped in U+200C match
+// their clean form in search text.
+func TestXLSXParser_StripsInvisibleFormatChars(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "\u200cG1\u200c")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "\u200c") {
+		t.Fatalf("invisible format char survived cleaning, got:\n%q", text)
+	}
+	if !strings.Contains(text, "<tr><td>G1</td><td>x</td></tr>") {
+		t.Fatalf("want cleaned cell text, got:\n%s", text)
+	}
+}
+
+// TestCleanIllegalControlChars_StripsInvisibleFormatChars pins the shared
+// cleaner directly, covering the xls/csv paths that reuse it.
+// TestCleanIllegalControlChars_PreservesInternalJoiners asserts format
+// characters that are meaningful inside a word survive cleaning: U+200D in
+// an emoji ZWJ sequence and U+200C as the Persian half-space.
+func TestCleanIllegalControlChars_PreservesInternalJoiners(t *testing.T) {
+	emoji := "\U0001F469\u200d\U0001F4BB" // woman technologist
+	persian := "\u0645\u06cc\u200c\u0631\u0648\u0645"
+	in := [][]string{{emoji, persian}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("cleanIllegalControlChars = %q, want internal joiners kept %q", got, in)
+	}
+}
+
+func TestCleanIllegalControlChars_StripsInvisibleFormatChars(t *testing.T) {
+	in := [][]string{{"\u200cA\u200c", "B\u200bC D", "D\ufeff"}}
+	want := [][]string{{"A", "B\u200bC D", "D"}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanIllegalControlChars = %q, want %q", got, want)
+	}
+}
+
+// TestXLSXParser_KeepsTrailingDatalessColumn asserts a trailing column with
+// a header label but no data in any row is kept as real schema: the header
+// renders and its cells stay empty.
+func TestXLSXParser_KeepsTrailingDatalessColumn(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Score")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "A3", "G2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><th>Group</th><th>Score</th></tr>") {
+		t.Fatalf("trailing labeled column was dropped, got:\n%s", text)
+	}
+	if !strings.Contains(text, "<tr><td>G1</td><td></td></tr>") {
+		t.Fatalf("dataless cell must render empty, got:\n%s", text)
+	}
+}
+
+// TestTrimTrailingEmptyColumns_DropsFullyBlankColumn pins the helper
+// directly: a trailing column blank in every row, header included (e.g. a
+// CSV with trailing commas), is truncated.
+func TestTrimTrailingEmptyColumns_DropsFullyBlankColumn(t *testing.T) {
+	in := [][]string{
+		{"Group", "Score", ""},
+		{"G1", "", ""},
+		{"G2", "", ""},
+	}
+	got := trimTrailingEmptyColumns(in)
+	want := [][]string{
+		{"Group", "Score"},
+		{"G1", ""},
+		{"G2", ""},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("trimTrailingEmptyColumns = %q, want %q", got, want)
+	}
+}
+
 // TestDetectHeaderRow_ListObject asserts a ListObject whose top row is > 1 is
 // detected as the header row.
 func TestDetectHeaderRow_ListObject(t *testing.T) {
