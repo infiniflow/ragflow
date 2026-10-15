@@ -232,9 +232,3 @@ func TestMigrateGeneralChunkerParserConfigsUpdatesBuiltinRows(t *testing.T) {
 		t.Fatalf("custom pipeline parser config was unexpectedly migrated: %#v", gotCustomKB.ParserConfig)
 	}
 }
-
-// Test bridges allow runtime tests to use the migration without an import cycle.
-var MigrateExtractorParserConfigsForTest = migrateExtractorParserConfigs
-var MigrateExtractorConfigForTest = migrateExtractorConfig
-var ExtractorDatabaseVersionForTest = databaseVersion
-var WriteExtractorDatabaseVersionForTest = writeDatabaseVersion
