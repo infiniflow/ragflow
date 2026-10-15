@@ -16,7 +16,18 @@
 
 package config
 
-import "github.com/spf13/viper"
+import (
+	"fmt"
+
+	"github.com/spf13/viper"
+)
+
+// MinPort / MaxPort are the inclusive bounds for a server HTTP port. They
+// are shared by the API and admin server modes.
+const (
+	MinPort = 1
+	MaxPort = 65535
+)
 
 type AuthenticationConfig struct {
 	DisablePasswordLogin bool `mapstructure:"disable_password_login"`
@@ -43,28 +54,33 @@ func (c *Config) ParseAPIServerConfig(v *viper.Viper) error {
 		return err
 	}
 
-	// Default Admin config
+	// Defaults; each is overridden from the ROOT viper using the FULL dotted
+	// key. The previous guard `if !v.IsSet("ragflow") { return }` checked the
+	// PARENT key, which an env var maps to the child key, so the guard was false
+	// for a lone env override and the server kept binding 9380. Reading the full
+	// key from the root viper (which carries the RAGFLOW prefix/replacer/
+	// AutomaticEnv from server.Init) honours both the YAML file and the env
+	// layer — including the env-only case — and stays consistent with the
+	// env-merge fix in ParseLogConfig.
+	//
+	// The section is named `api:`, so viper's AutomaticEnv derives
+	// RAGFLOW_API_HTTP_PORT for the port, mirroring RAGFLOW_ADMIN_HTTP_PORT on
+	// the admin section. The legacy `ragflow:` section name collided with the
+	// RAGFLOW env prefix and produced a doubled RAGFLOW_RAGFLOW_HTTP_PORT, so no
+	// BindEnv is needed and no doubled variable is accepted.
 	c.apiServer.Host = "localhost"
 	c.apiServer.HTTPPort = 9380
 
-	if !v.IsSet("ragflow") {
-		return nil
-	}
-	sub := v.Sub("ragflow")
-	if sub == nil {
-		return nil
+	if v.IsSet("api.host") {
+		c.apiServer.Host = v.GetString("api.host")
 	}
 
-	if sub.IsSet("host") {
-		c.apiServer.Host = sub.GetString("host")
+	if v.IsSet("api.http_port") {
+		c.apiServer.HTTPPort = v.GetInt("api.http_port")
 	}
 
-	if sub.IsSet("http_port") {
-		c.apiServer.HTTPPort = sub.GetInt("http_port")
-	}
-
-	if sub.IsSet("trusted_proxies") {
-		proxies := sub.GetStringSlice("trusted_proxies")
+	if v.IsSet("api.trusted_proxies") {
+		proxies := v.GetStringSlice("api.trusted_proxies")
 		if proxies == nil {
 			proxies = []string{}
 		}
@@ -114,4 +130,35 @@ func (c *Config) EnableRegister() bool {
 
 func (c *Config) GetAPIServerConfig() APIServerConfig {
 	return c.apiServer
+}
+
+// SetAPIServerHTTPPort stores a resolved API server port in the global
+// config. GetAPIServerConfig returns a copy, so this setter (not a write
+// into the returned struct) is how a CLI/env override reaches the config
+// the API server actually binds.
+func (c *Config) SetAPIServerHTTPPort(port int) {
+	c.apiServer.HTTPPort = port
+}
+
+// ResolvePort resolves the effective HTTP port from the precedence
+// CLI flag > the configured port (config file / viper, already merged with
+// env) > the built-in default, and validates the final value against
+// [MinPort, MaxPort]. The configured port is passed by the caller so the
+// SAME validation serves both the API server (apiServer.HTTPPort) and the
+// admin server (admin.HTTPPort) — reading a single receiver field here would
+// make the admin server resolve to the API port and collide with it at
+// startup. The CLI parser still rejects an out-of-range --port up front; this
+// guard owns the config/env layers, where a non-integer value used to reach
+// viper's GetInt as a silent 0 (the server would then listen on a random
+// port).
+func (c *Config) ResolvePort(configured int, cli *int) (int, error) {
+	port := configured
+	if cli != nil {
+		port = *cli
+	}
+	if port < MinPort || port > MaxPort {
+		return 0, fmt.Errorf("invalid port %d: must be in [%d, %d] (check --port or the http_port config key and its environment override)",
+			port, MinPort, MaxPort)
+	}
+	return port, nil
 }

@@ -17,8 +17,6 @@
 package chunker
 
 import (
-	"strings"
-
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
@@ -27,7 +25,8 @@ import (
 // splitting it into sub-tables that fit. Splitting is row-granular: every
 // emitted sub-table is a whole number of complete rows (never a partial row),
 // so the per-row chunk produced downstream keeps full row semantics. The token
-// budget is counted on the real cell text of each row, not on any HTML markup.
+// budget is counted on the HTML rendering of each row — the text actually
+// stored on the chunk — so a rendered part never exceeds the budget.
 //
 // Splitting is also span-safe: a cut never falls inside a merged cell's
 // rowspan, so an origin and every row it covers stay in the same part, and a
@@ -57,9 +56,14 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 
 	headerGrid := append([][]entity.TableCell{}, td.Grid[:headerRows]...)
 
-	// Base tokens: header rows + caption, replicated into every sub-table.
+	// Base tokens: header rows + caption, replicated into every sub-table,
+	// counted on the HTML rendering — the text actually stored on the chunk —
+	// so a rendered part never exceeds the budget. The <table> wrapper + caption
+	// appear once per part; emptyWrapper isolates them so each data row below is
+	// charged only its own <tr> contribution.
 	base := &entity.TableData{Grid: headerGrid, Caption: td.Caption}
-	baseTokens := countTokens(tableutil.RenderTableText(base))
+	baseTokens := countTokens(tableutil.RenderTableHTML(base))
+	emptyWrapper := countTokens(tableutil.RenderTableHTML(&entity.TableData{Caption: td.Caption}))
 
 	// spanThrough[i] is the last data-row index any rowspan originating at or
 	// before row i still covers (-1 while no span is active). Header-origin
@@ -115,7 +119,7 @@ func splitLargeTable(td *entity.TableData, maxTokens int, countTokens func(strin
 		if i < start {
 			continue // already belongs to a flushed part
 		}
-		rowTokens := countTokens(rowTokenText(row))
+		rowTokens := countTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: [][]entity.TableCell{row}, Caption: td.Caption})) - emptyWrapper
 		// Flush the running batch before this row if adding it would exceed the
 		// budget. A single row that alone exceeds the budget still becomes its
 		// own chunk (row integrity wins over the budget).
@@ -193,17 +197,4 @@ func partDataRows(dataRows [][]entity.TableCell, start, end, headerRows int) [][
 		out = append(out, row)
 	}
 	return out
-}
-
-// rowTokenText joins the non-covered cell texts of a grid row for token
-// counting, mirroring how the row is later rendered.
-func rowTokenText(row []entity.TableCell) string {
-	texts := make([]string, 0, len(row))
-	for _, c := range row {
-		if c.Covered {
-			continue
-		}
-		texts = append(texts, c.Text)
-	}
-	return strings.Join(texts, " ")
 }

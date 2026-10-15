@@ -54,6 +54,7 @@ var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 // baseName is the table name prefix (e.g., "ragflow_<tenant_id>")
 // The full table name is built as "{baseName}_{datasetID}"
 // For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
+// For memory message indexes (baseName prefixed "memory_"), uses message_infinity_mapping.json
 func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
 	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
@@ -64,6 +65,29 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID)
 }
 
+// memoryIndexPrefix marks per-memory message indexes (MemoryIndexName).
+const memoryIndexPrefix = "memory_"
+
+// isMemoryIndexName reports whether name is a memory message index.
+func isMemoryIndexName(name string) bool {
+	return strings.HasPrefix(name, memoryIndexPrefix)
+}
+
+// chunkMappingFileName picks the schema an index is created from. Memory message
+// tables need message_infinity_mapping.json: their rows carry user_id,
+// message_id, ... which the chunk mapping does not declare, so creating them
+// from the chunk mapping made every insert fail with 3013.
+func chunkMappingFileName(baseName, datasetID, configured string) string {
+	switch {
+	case datasetID == "skill":
+		return "skill_infinity_mapping.json"
+	case isMemoryIndexName(baseName):
+		return "message_infinity_mapping.json"
+	default:
+		return configured
+	}
+}
+
 func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID string) error {
 	vecSize := vectorSize
 
@@ -72,13 +96,11 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	var mappingFile string
 
 	tableName = buildChunkTableName(baseName, datasetID)
-	if datasetID == "skill" {
-		mappingFile = "skill_infinity_mapping.json"
-		common.Info("Creating skill index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
-	} else {
-		mappingFile = e.mappingFileName
-		common.Info("Creating regular index table", zap.String("tableName", tableName), zap.String("mappingFile", mappingFile))
-	}
+	mappingFile = chunkMappingFileName(baseName, datasetID, e.mappingFileName)
+	common.Info("Creating table",
+		zap.String("tableName", tableName),
+		zap.String("mappingFile", mappingFile),
+		zap.Bool("memoryIndex", isMemoryIndexName(baseName)))
 
 	fpMapping, err := utility.FindConfFileInProject(mappingFile)
 	if err != nil {
@@ -402,7 +424,14 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 
 	// Transform chunks using helper function
 	insertChunks := make([]map[string]interface{}, len(chunks))
+	memoryIndex := isMemoryIndexName(baseName)
 	for i, chunk := range chunks {
+		if memoryIndex {
+			// Memory rows keep the message mapping's columns; kb_id and
+			// doc_id are not message columns.
+			insertChunks[i] = shapeMemoryMessageRow(chunk, embeddingCols)
+			continue
+		}
 		insertChunks[i] = transformChunkFields(chunk, embeddingCols)
 		// kb_id is owned by the engine at the write boundary (mirrors ES
 		// chunk.go InsertChunks). The ingestion producer no longer stamps it,
@@ -587,6 +616,13 @@ func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interfac
 	transformed := transformChunkFields(newValue, nil)
 	for k, v := range transformed {
 		newValue[k] = v
+	}
+
+	// Project the update the way an insert is projected, so the logical fields
+	// reach the message mapping's columns (status -> status_int). Without it the
+	// status API failed with 3013 "Column status doesn't exist".
+	if isMemoryIndexName(baseName) {
+		mapMemoryMessageStorageFields(newValue)
 	}
 
 	// Remove original fields that were transformed (they're now in transformed with new names/types)
@@ -873,13 +909,21 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		}
 	}
 
+	isMemoryIndex := false
+	for _, idx := range req.IndexNames {
+		if isMemoryIndexName(idx) {
+			isMemoryIndex = true
+			break
+		}
+	}
+
 	var outputColumns []string
 	if isSkillIndex {
 		outputColumns = []string{
 			"skill_id", "space_id", "folder_id", "name", "tags", "description", "content",
 			"version", "status", "create_time", "update_time",
 		}
-		outputColumns = convertSelectFields(outputColumns, true)
+		outputColumns = convertSelectFields(outputColumns, true, false)
 	} else {
 		outputColumns = []string{
 			"id", "doc_id", "kb_id", "content_ltks", "content_with_weight",
@@ -888,12 +932,12 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			"create_timestamp_flt", "knowledge_graph_kwd", "question_kwd", "question_tks",
 			"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
 		}
-		outputColumns = convertSelectFields(outputColumns)
+		outputColumns = convertSelectFields(outputColumns, false, isMemoryIndex)
 	}
 
 	// Allow caller to override output columns (used by KG search, etc.)
 	if len(req.SelectFields) > 0 {
-		outputColumns = convertSelectFields(req.SelectFields)
+		outputColumns = convertSelectFields(req.SelectFields, false, isMemoryIndex)
 	}
 
 	hasTextMatch := false
@@ -946,8 +990,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		if hasVectorMatch && !hasTextMatch {
 			outputColumns = append(outputColumns, "similarity()")
 		}
-		// Skill index does not have pagerank_fea and tag_feas columns
-		if !isSkillIndex {
+		// Skill and memory indexes have no pagerank_fea / tag_feas columns
+		if !isSkillIndex && !isMemoryIndex {
 			if !slices.Contains(outputColumns, common.PAGERANK_FLD) {
 				outputColumns = append(outputColumns, common.PAGERANK_FLD)
 			}
@@ -961,7 +1005,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 		outputColumns = append(outputColumns, "row_id()")
 	}
 
-	outputColumns = convertSelectFields(outputColumns, isSkillIndex)
+	outputColumns = convertSelectFields(outputColumns, isSkillIndex, isMemoryIndex)
 	if hasVectorMatch && matchDense != nil && matchDense.VectorColumnName != "" {
 		outputColumns = append(outputColumns, matchDense.VectorColumnName)
 	}
@@ -969,16 +1013,20 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 	var filterParts []string
 
 	if hasTextMatch || hasVectorMatch {
-		if req.Filter != nil {
-			if availInt, ok := req.Filter["available_int"]; ok {
-				filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
-			} else if status, ok := req.Filter["status"]; ok {
-				filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
+		// Memory tables have no available_int/status; their conditions come in
+		// through the filter below.
+		if !isMemoryIndex {
+			if req.Filter != nil {
+				if availInt, ok := req.Filter["available_int"]; ok {
+					filterParts = append(filterParts, fmt.Sprintf("available_int=%v", availInt))
+				} else if status, ok := req.Filter["status"]; ok {
+					filterParts = append(filterParts, fmt.Sprintf("status='%s'", status))
+				} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
+					filterParts = append(filterParts, "available_int=1")
+				}
 			} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
 				filterParts = append(filterParts, "available_int=1")
 			}
-		} else if shouldDefaultAvailableFilter(req, isSkillIndex) {
-			filterParts = append(filterParts, "available_int=1")
 		}
 	}
 
@@ -1114,7 +1162,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			}
 			tableFilterParts := append([]string(nil), filterParts...)
 			if len(filterCopy) > 0 {
-				if condition := equivalentConditionToStr(filterCopy, tableColumns); condition != "" {
+				if condition := equivalentConditionToStr(filterCopy, tableColumns, isMemoryIndex); condition != "" {
 					tableFilterParts = append(tableFilterParts, condition)
 				}
 			}
@@ -1213,7 +1261,7 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 				}
 
 				denseFilterStr := filterStr
-				if denseFilterStr == "" && shouldDefaultAvailableFilter(req, isSkillIndex) {
+				if denseFilterStr == "" && !isMemoryIndex && shouldDefaultAvailableFilter(req, isSkillIndex) {
 					denseFilterStr = "available_int=1"
 				}
 
@@ -1362,7 +1410,12 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			// Apply field name mapping and row_id handling
 			// Skill index uses different schema
 			// so we skip the document-specific field mappings
-			if !isSkillIndex {
+			if isMemoryIndex {
+				// Memory rows come back under the message mapping's storage
+				// column names; rename them to the logical fields the memory
+				// service reads (mirrors the Elasticsearch engine).
+				normalizeMemoryMessageRows(searchChunks)
+			} else if !isSkillIndex {
 				applyFieldMappings(searchChunks)
 			} else {
 				// For skill index, only handle ROW_ID -> row_id() mapping
@@ -1416,8 +1469,8 @@ func (e *Engine) Search(ctx context.Context, req *types.SearchRequest) (*types.S
 			scoreColumn = "SIMILARITY"
 		}
 		pagerankField := common.PAGERANK_FLD
-		if isSkillIndex {
-			pagerankField = "" // Skill index has no pagerank field
+		if isSkillIndex || isMemoryIndex {
+			pagerankField = "" // Skill and memory indexes have no pagerank field
 		}
 
 		allResults = calculateScores(allResults, scoreColumn, pagerankField)
@@ -1531,6 +1584,13 @@ func (e *Engine) GetChunk(ctx context.Context, tableName, chunkID string, datase
 
 	common.Debug("infinity get chunk", zap.String("chunkID", chunkID), zap.Any("tables", tableNames))
 	decodeJSONFields(chunk)
+
+	// Memory rows come back under the message mapping's storage columns, which
+	// the chunk field mappings below would mangle.
+	if isMemoryIndexName(tableName) {
+		normalizeMemoryMessageRows([]map[string]interface{}{chunk})
+		return chunk, nil
+	}
 
 	// Apply field mappings (same as in GetFields)
 	// docnm -> docnm_kwd, title_tks, title_sm_tks
@@ -1713,9 +1773,30 @@ func memoryMessageStatusBool(value interface{}) bool {
 	switch v := value.(type) {
 	case bool:
 		return v
+	// int32 is what the thrift path returns for the mapping's integer columns;
+	// without it a stored status_int=1 fell through to the default and every
+	// message rendered as disabled.
 	case int:
 		return v != 0
+	case int8:
+		return v != 0
+	case int16:
+		return v != 0
+	case int32:
+		return v != 0
 	case int64:
+		return v != 0
+	case uint:
+		return v != 0
+	case uint8:
+		return v != 0
+	case uint16:
+		return v != 0
+	case uint32:
+		return v != 0
+	case uint64:
+		return v != 0
+	case float32:
 		return v != 0
 	case float64:
 		return v != 0
@@ -1727,6 +1808,62 @@ func memoryMessageStatusBool(value interface{}) bool {
 	default:
 		return false
 	}
+}
+
+// memoryMessageStatusInt renders a logical status as the mapping's status_int.
+func memoryMessageStatusInt(value interface{}) int {
+	if memoryMessageStatusBool(value) {
+		return 1
+	}
+	return 0
+}
+
+// mapMemoryMessageStorageFields renames the logical message fields onto the
+// message mapping's storage columns.
+func mapMemoryMessageStorageFields(row map[string]interface{}) {
+	if val, ok := row["message_type"]; ok {
+		row["message_type_kwd"] = val
+		delete(row, "message_type")
+	}
+	if val, ok := row["status"]; ok {
+		row["status_int"] = memoryMessageStatusInt(val)
+		delete(row, "status")
+	}
+}
+
+// normalizeMemoryMessageRows renames the message mapping's storage columns back
+// to the logical fields the memory service reads.
+func normalizeMemoryMessageRows(rows []map[string]interface{}) {
+	for _, row := range rows {
+		if val, ok := row["message_type_kwd"]; ok {
+			row["message_type"] = val
+			delete(row, "message_type_kwd")
+		}
+		if val, ok := row["status_int"]; ok {
+			row["status"] = memoryMessageStatusBool(val)
+			delete(row, "status_int")
+		}
+	}
+}
+
+// shapeMemoryMessageRow prepares one raw memory message for insert. The rename
+// onto the message mapping's storage columns (message_type -> message_type_kwd,
+// status -> status_int) is transformChunkFields'; this drops the chunk-only
+// doc_id/kb_id keys and the unset (nil) fields, so the column DEFAULT applies.
+// A NULL cell makes the comparison NULL, which drops the row from
+// `must_not exists forget_at` and reads back as a truthy "null" (showing the
+// message as disabled). Infinity 0.7.4 has no IS NULL / isnull() / coalesce()
+// to rescue it (3069/3030).
+func shapeMemoryMessageRow(chunk map[string]interface{}, embeddingCols [][2]interface{}) map[string]interface{} {
+	row := transformChunkFields(chunk, embeddingCols)
+	delete(row, "doc_id")
+	delete(row, "kb_id")
+	for key, value := range row {
+		if value == nil {
+			delete(row, key)
+		}
+	}
+	return row
 }
 
 // GetFields extracts the requested fields from Infinity search results
@@ -2267,12 +2404,13 @@ func (e *Engine) GetScores(knnResult map[string]interface{}) map[string]float64 
 
 // convertSelectFields converts field names to Infinity format
 // isSkillIndex indicates if this is a skill index (uses skill_id instead of id)
+// isMemoryIndex maps the logical "status" onto the message mapping's status_int.
 //
 // Does NOT mutate the input slice — callers (e.g. retrieval.go) reuse the same
 // SelectFields list both for Search() and GetFields(); mutating it would
 // replace logical names like "content_with_weight" with their Infinity column
 // names ("content"), breaking GetFields's field-presence checks.
-func convertSelectFields(output []string, isSkillIndex ...bool) []string {
+func convertSelectFields(output []string, isSkillIndex, isMemoryIndex bool) []string {
 	fieldMapping := map[string]string{
 		"docnm_kwd":           "docnm",
 		"title_tks":           "docnm",
@@ -2288,11 +2426,11 @@ func convertSelectFields(output []string, isSkillIndex ...bool) []string {
 		"authors_sm_tks":      "authors",
 		"message_type":        "message_type_kwd",
 	}
-
-	skillIndex := false
-	if len(isSkillIndex) > 0 {
-		skillIndex = isSkillIndex[0]
+	if isMemoryIndex {
+		fieldMapping["status"] = "status_int"
 	}
+
+	skillIndex := isSkillIndex
 
 	// Copy + map without mutating the caller's slice.
 	mapped := make([]string, len(output))
@@ -2609,20 +2747,27 @@ func buildGraphTypeFilterCondition(value interface{}) string {
 	return joinBalanced(conditions, " OR ")
 }
 
-// equivalentConditionToStr converts a condition map to an Infinity filter string
+// equivalentConditionToStr renders a condition map as an Infinity filter
+// string. memoryIndex marks a memory message index, whose source_id column is
+// an integer rather than a keyword.
 func equivalentConditionToStr(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
-}) string {
-	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns)
+}, memoryIndex ...bool) string {
+	return equivalentConditionToStrRaw(types.CompilationFilter(condition), tableColumns, memoryIndex...)
 }
 
 func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns map[string]struct {
 	Type    string
 	Default interface{}
-}) string {
+}, memoryIndex ...bool) string {
 	if len(condition) == 0 {
 		return ""
+	}
+
+	memIndex := false
+	if len(memoryIndex) > 0 {
+		memIndex = memoryIndex[0]
 	}
 
 	var cond []string
@@ -2631,7 +2776,7 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 		if k == "and" || k == "or" {
 			var children []string
 			for _, child := range types.FilterClauses(v) {
-				if expr := equivalentConditionToStrRaw(child, tableColumns); expr != "" {
+				if expr := equivalentConditionToStrRaw(child, tableColumns, memIndex); expr != "" {
 					children = append(children, "("+expr+")")
 				}
 			}
@@ -2651,14 +2796,16 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 		// Handle must_not specially
 		if k == "must_not" {
 			if m, ok := v.(map[string]interface{}); ok {
-				if expr := equivalentConditionToStrRaw(m, tableColumns); expr != "" {
+				if expr := equivalentConditionToStrRaw(m, tableColumns, memIndex); expr != "" {
 					cond = append(cond, "NOT ("+expr+")")
 				}
 			}
 			continue
 		}
 
-		// Handle exists specially (without table schema, use string comparison)
+		// Handle exists specially (without table schema, use string comparison).
+		// A NULL cell yields NULL here, so writers store the column default
+		// instead (see shapeMemoryMessageRow).
 		if k == "exists" {
 			cond = append(cond, fmt.Sprintf("%v!=''", v))
 			continue
@@ -2682,7 +2829,13 @@ func equivalentConditionToStrRaw(condition map[string]interface{}, tableColumns 
 
 		// Handle keyword fields (exact match, or full-text for the single-token
 		// values Infinity can tokenize — see keywordFilterCondition)
-		if fieldKeyword(k) {
+		keywordField := fieldKeyword(k)
+		if memIndex && k == "source_id" {
+			// The mapping's source_id is an integer, not a keyword column, so
+			// it cannot use the keyword branch's filter_fulltext().
+			keywordField = false
+		}
+		if keywordField {
 			// For keyword fields, values are always treated as strings. Blank
 			// entries are dropped: Infinity rejects a filter with an empty query
 			// ("Trying to match:  on fields: <column> failed", 3052) and fails

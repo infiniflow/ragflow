@@ -169,40 +169,51 @@ func TestSplitLargeTableHeaderRowSpanClippedPerPart(t *testing.T) {
 	if err != nil || td == nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// Budget 6: parts hold data rows [0,2), [2,3), [3,4), [4,5). The first
-	// part carries both rows A spans, so A keeps RowSpan 3; the later parts
-	// carry none of them, so A degrades to a plain header cell.
-	parts, ranges, headerRows := splitLargeTable(td, 6, charTokens)
-	if headerRows != 1 || len(parts) != 4 {
+	// Budget = the HTML cost of the header + the two rows A spans (y, z), so
+	// the first part is exactly those rows and keeps A's RowSpan 3; later parts
+	// carry none of them, so A degrades to a plain header cell (RowSpan 1).
+	budget := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:3], HeaderRows: 1}))
+	parts, ranges, headerRows := splitLargeTable(td, budget, charTokens)
+	if headerRows != 1 || len(parts) < 2 {
 		t.Fatalf("parts=%d ranges=%v headerRows=%d", len(parts), ranges, headerRows)
 	}
-	wantRanges := [][2]int{{0, 2}, {2, 3}, {3, 4}, {4, 5}}
-	if !reflect.DeepEqual(ranges, wantRanges) {
-		t.Fatalf("ranges=%v want %v", ranges, wantRanges)
+	if ranges[0] != [2]int{0, 2} {
+		t.Fatalf("first range = %v, want [0 2] (A's two spanned rows)", ranges[0])
 	}
-	wantSpans := []int{3, 1, 1, 1}
-	for i, part := range parts {
-		assertPartGridContract(t, &part, i)
-		if got := part.Grid[0][0].RowSpan; got != wantSpans[i] {
-			t.Fatalf("part %d header A RowSpan=%d want %d", i, got, wantSpans[i])
+	if got := parts[0].Grid[0][0].RowSpan; got != 3 {
+		t.Fatalf("part 0 A RowSpan = %d, want 3 (carries both spanned rows)", got)
+	}
+	for i := 1; i < len(parts); i++ {
+		assertPartGridContract(t, &parts[i], i)
+		if got := parts[i].Grid[0][0].RowSpan; got != 1 {
+			t.Fatalf("part %d A RowSpan = %d, want 1 (carries none of A's spanned rows)", i, got)
 		}
 	}
-	// Budget 4: every part holds a single data row, so A keeps exactly the
-	// covered rows that travel with the part.
-	parts, _, _ = splitLargeTable(td, 4, charTokens)
-	wantSpans = []int{2, 2, 1, 1, 1}
-	if len(parts) != len(wantSpans) {
-		t.Fatalf("parts=%d want %d", len(parts), len(wantSpans))
+	covered := 0
+	for _, r := range ranges {
+		covered += r[1] - r[0]
 	}
-	for i, part := range parts {
-		assertPartGridContract(t, &part, i)
-		if got := part.Grid[0][0].RowSpan; got != wantSpans[i] {
-			t.Fatalf("part %d header A RowSpan=%d want %d", i, got, wantSpans[i])
-		}
+	if covered != 5 {
+		t.Fatalf("parts cover %d data rows, want 5", covered)
 	}
-	wantTexts := [][]string{{"y"}, {"z"}, {"p", "q"}, {"r", "s"}, {"t", "u"}}
-	if got := partDataTexts(parts, headerRows); !reflect.DeepEqual(got, wantTexts) {
-		t.Fatalf("data texts=%v want %v", got, wantTexts)
+
+	// Budget = the HTML cost of the header + only the first spanned row (y), so
+	// the first part carries exactly one of A's spanned rows and A keeps
+	// RowSpan 2 (header + that one row), not the full 3.
+	budget = charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:2], HeaderRows: 1}))
+	parts, ranges, _ = splitLargeTable(td, budget, charTokens)
+	if len(parts) < 2 || ranges[0] != [2]int{0, 1} {
+		t.Fatalf("parts=%d ranges=%v, want first part [0 1]", len(parts), ranges)
+	}
+	if got := parts[0].Grid[0][0].RowSpan; got != 2 {
+		t.Fatalf("part 0 A RowSpan = %d, want 2 (carries exactly one spanned row)", got)
+	}
+	covered = 0
+	for _, r := range ranges {
+		covered += r[1] - r[0]
+	}
+	if covered != 5 {
+		t.Fatalf("parts cover %d data rows, want 5", covered)
 	}
 }
 
@@ -222,15 +233,19 @@ func TestSplitLargeTableNeverSplitsInsideRowSpan(t *testing.T) {
 	if err != nil || td == nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// The budget alone would cut after data row 2, inside B's span (B covers
-	// data rows 0..2); the cut must move to after row 2, i.e. to 3.
-	parts, ranges, headerRows := splitLargeTable(td, 11, charTokens)
+	// Budget = the HTML cost of the header + B's own row only. The budget alone
+	// would cut right after data row 0, inside B's span (B covers data rows
+	// 0..2); span-safe cut must move the boundary to after row 2, i.e. to 3.
+	budget := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:2], HeaderRows: 1}))
+	parts, ranges, headerRows := splitLargeTable(td, budget, charTokens)
 	if headerRows != 1 {
 		t.Fatalf("headerRows=%d want 1", headerRows)
 	}
-	wantRanges := [][2]int{{0, 3}, {3, 5}}
-	if !reflect.DeepEqual(ranges, wantRanges) {
-		t.Fatalf("ranges=%v want %v (cut must not fall inside B's rowspan)", ranges, wantRanges)
+	// The first boundary must land after B's span (row 3), never inside it —
+	// that is the span-safe guarantee. (How the remaining rows chunk is purely a
+	// budget artifact and not what this test pins.)
+	if ranges[0] != [2]int{0, 3} {
+		t.Fatalf("first range = %v, want [0 3] (cut must not fall inside B's rowspan)", ranges[0])
 	}
 	for i, part := range parts {
 		assertPartGridContract(t, &part, i)
