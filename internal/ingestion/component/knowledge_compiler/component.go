@@ -216,6 +216,10 @@ func (c *KnowledgeCompilerComponent) Invoke(ctx context.Context, db *gorm.DB, in
 				o.Products[i].Meta = map[string]any{}
 			}
 			o.Products[i].Meta["compilation_template_ids"] = []string{spec.ID}
+			// The effective model version: what a reader needs to tell a
+			// currently-valid assertion from one the published model no longer
+			// supports. 0 = never published (the working config was in force).
+			o.Products[i].Meta["compilation_template_version"] = spec.Version
 			o.Products[i].Kind = spec.Kind
 			o.Products[i].TemplateID = spec.ID
 			o.Products[i].Variant = variant
@@ -484,6 +488,14 @@ func productsToChunkDocs(products []common.Product) ([]schema.ChunkDoc, error) {
 		// document-structure endpoint groups rows by this column).
 		if ids := metaStringSlice(p.Meta, "compilation_template_ids"); len(ids) > 0 {
 			if err := doc.SetExtraValue("compilation_template_ids", ids); err != nil {
+				return nil, err
+			}
+		}
+		// compilation_template_version_int: the published model version that
+		// produced this row. Left unwritten for version 0 (never published), so
+		// "unversioned" is one state everywhere downstream rather than two.
+		if v, ok := metaInt(p.Meta, "compilation_template_version"); ok && v > 0 {
+			if err := doc.SetExtraValue("compilation_template_version_int", v); err != nil {
 				return nil, err
 			}
 		}

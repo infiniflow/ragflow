@@ -91,6 +91,34 @@ func TestMergeStructureDataset_GroupsByName(t *testing.T) {
 	}
 }
 
+// TestMergeStructureDataset_KeepsTheNewestModelVersion covers the version stamp
+// on a folded dataset bucket: a publish does not recompile the corpus, so one
+// bucket can fold rows extracted by different model versions. It reports the
+// newest, which is the version its latest rows come from.
+func TestMergeStructureDataset_KeepsTheNewestModelVersion(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, version int) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID, Content: "Engine desc",
+			Meta: map[string]any{
+				"name": "Engine", "entity_type": "component",
+				"compilation_template_version": version,
+			},
+		}
+	}
+	products := []kccommon.Product{entity("d1", 2), entity("d2", 5), entity("d3", 3)}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if fw.buckets[0].TemplateVersion != 5 {
+		t.Errorf("TemplateVersion = %d, want the newest 5", fw.buckets[0].TemplateVersion)
+	}
+}
+
 func TestMergeStructureDataset_IsolatesTemplates(t *testing.T) {
 	c := &Consumer{writer: &fakeWriter{}}
 	products := []kccommon.Product{
@@ -401,6 +429,37 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := tp.Meta["kind"].(string); kind != "root" {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
+	}
+}
+
+// TestProductFromChunkMap_RestoresModelVersion covers the doc→dataset
+// round-trip: without it the dataset row cannot say which published model
+// version extracted it, and a stale assertion looks exactly like a current one.
+func TestProductFromChunkMap_RestoresModelVersion(t *testing.T) {
+	row := map[string]interface{}{
+		"id": "entity-acme", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+		"content_with_weight":              `{"name":"Acme Corp","type":"organization"}`,
+		"type_kwd":                         "entity",
+		"name_kwd":                         "acme corp",
+		"compilation_template_version_int": int64(4),
+	}
+	p, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row should reconstruct")
+	}
+	if v, _ := metaInt(p.Meta, "compilation_template_version"); v != 4 {
+		t.Errorf("Meta.compilation_template_version = %v, want 4", p.Meta["compilation_template_version"])
+	}
+	// An unversioned row (never published, or written before the column existed)
+	// must not look like version 0 was published.
+	bare, _ := productFromChunkMap(map[string]interface{}{
+		"id": "entity-beta", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+		"content_with_weight": `{"name":"Beta Ltd","type":"organization"}`,
+		"type_kwd":            "entity",
+		"name_kwd":            "beta ltd",
+	}, "t1", kccommon.VariantStructure)
+	if _, present := bare.Meta["compilation_template_version"]; present {
+		t.Errorf("unversioned row carries a version: %v", bare.Meta)
 	}
 }
 

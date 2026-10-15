@@ -2443,6 +2443,120 @@ Example: Virtual Hosted Style`,
       modelMaxTokensMinMessage: 'Max tokens must be at least 0',
     },
     knowledgeCompilation: {
+      // What the model produced, read from the corpus. It sits next to the
+      // editor because "is this model any good" is answered by the compiled rows
+      // and their source text, not by the declaration alone.
+      ontologyInspect: {
+        open: 'Compiled output',
+        openHint: 'What this model extracted, with the source text behind it',
+        saveFirst:
+          'Save the model first: there is no output until a dataset has compiled with it',
+        title: 'Compiled output',
+        intro:
+          'What this model extracted from the datasets that compile with it. Every row comes with the dataset it came from and the source text behind it.',
+        scopeDataset: 'One dataset',
+        scopeCorpus: 'All datasets',
+        datasetsLoading: 'Loading datasets…',
+        noDatasets:
+          'No dataset compiles with this model yet, so there is nothing to inspect.',
+        instances: 'Instances',
+        assertions: 'Assertions',
+        summary:
+          '{{count}} in scope · {{datasets}} dataset(s) · model v{{version}}',
+        truncated:
+          'Showing a capped window, not everything in scope. Narrow the datasets or the class to see the rest.',
+        skipped: 'Not read: {{ids}}',
+        loading: 'Reading compiled rows…',
+        empty: 'Nothing in this scope.',
+        emptyHint:
+          'Either these datasets have not been compiled with this model yet, or the model does not extract this one.',
+        staleVersion:
+          'Extracted by v{{version}}; the model is now v{{current}}, so this row predates it',
+        evidence: 'Source text ({{count}})',
+        evidenceMissing: 'No source text recorded for this row',
+        evidenceTitle: 'Source text',
+        evidenceLoading: 'Loading…',
+        evidenceNone:
+          'No source text was recorded for this row. It was extracted before the row kept its chunks, or the text has since been deleted.',
+      },
+      ontologyModel: {
+        title: 'Models',
+        description:
+          'Each model shows the version in force, who published it, and how many datasets compile against it. The corpus is extracted with the published version, so an edit only takes effect once it is published.',
+        loading: 'Loading…',
+        empty: 'No models yet. Create one from the template editor first.',
+        status: {
+          draft: 'Draft',
+          review: 'In review',
+          published: 'Published',
+          retired: 'Retired',
+        },
+        unpublishedChanges: 'Unpublished changes',
+        history: 'Versions',
+        publishOrCheck: 'Publish',
+        submitForReview: 'Submit for review',
+        reject: 'Reject',
+        retire: 'Retire',
+        versionLine: 'v{{version}} · {{at}} by {{by}}',
+        notPublished: 'Never published — compilation reads the draft',
+        datasetCount: '{{count}} dataset(s) compiling against it',
+        impactTitle: 'Datasets compiling against {{name}}',
+        impactDescription:
+          'Publishing a new version does not recompile these datasets. They keep the knowledge extracted under the version they last ran on until someone recompiles them.',
+        impactEmpty: 'No dataset compiles against this model right now.',
+        impactDocs: '{{count}} document(s)',
+        openDataset: 'Open dataset',
+        trial: 'Rehearse',
+        trialTitle: 'Rehearse {{name}}',
+        trialDescription:
+          'The draft (v{{next}}) is compiled over real documents and compared with what the corpus holds under v{{current}}.',
+        trialWarning:
+          'A rehearsal compiles real documents with the model: it calls the chat model once per document and can take a while. It writes nothing — no dataset is recompiled and no version is published.',
+        trialRun: 'Run the rehearsal',
+        trialRerun: 'Run again',
+        trialRunning: 'Compiling…',
+        trialFailed: 'The rehearsal could not run',
+        trialSummary:
+          '{{added}} assertion(s) added · {{removed}} dropped, over {{runs}} compile(s)',
+        trialNoChange:
+          'The draft produces the same knowledge the corpus holds now, over {{runs}} compile(s).',
+        trialAdded: 'Added',
+        trialRemoved: 'Dropped',
+        trialUnchanged: '{{count}} unchanged',
+        trialChunks: '{{count}} chunk(s) of source text',
+        modelLibraryLink: 'Models & versions',
+        reviewNote: 'Review note',
+        editModel: 'Edit this model',
+        publishTitle: 'Publish {{name}}',
+        publishDescription:
+          'Publishing records v{{next}} and moves compilation onto it. The version in force now is v{{current}}.',
+        publishNote: 'What changed',
+        publishNotePlaceholder:
+          'Describe the change — it is what the version list shows later.',
+        cancel: 'Cancel',
+        publish: 'Publish',
+        publishAnyway: 'Publish anyway',
+        publishSucceeded: 'Published v{{version}}',
+        publishFailed: 'Publish failed',
+        reviewSubmitted: 'Submitted for review',
+        reviewSubmitFailed: 'Could not submit for review',
+        rejectPrompt: 'Why is this model being sent back?',
+        rejected: 'Sent back to draft',
+        rejectFailed: 'Could not reject the model',
+        retired: 'Model retired',
+        retireFailed: 'Could not retire the model',
+        checking: 'Checking the model…',
+        noFindings: 'No findings — nothing stands in the way of publishing.',
+        blockers: '{{count}} blocking finding(s) — publishing is refused',
+        warnings: '{{count}} warning(s) — publishing needs confirmation',
+        historyTitle: 'Versions of {{name}}',
+        historyDescription:
+          'Pick a version to see what it changed against the previous one.',
+        noVersions: 'This model has never been published.',
+        current: 'current',
+        noChanges: 'No differences between v{{from}} and v{{to}}.',
+        diffHeading: 'v{{from}} → v{{to}}',
+      },
       addTemplateGroup: 'Add template',
       editTemplateGroup: 'Edit template',
       deleteTemplateGroupTitle: 'Delete template group',
@@ -2495,16 +2609,19 @@ Example: Virtual Hosted Style`,
       ontologyGoToClass: 'Go to the other class',
       ontologyShowUndeclared: 'Show undeclared classes and properties',
       ontologyFocusedOnly: 'Only the focused class’s edges',
-      ontologyNoInstancesToShow: 'No instance of this class was compiled in this scope, so there is no list to open.',
+      ontologyNoInstancesToShow:
+        'No instance of this class was compiled in this scope, so there is no list to open.',
       ontologyDrilldownFailed: 'The request failed: {{message}}',
       ontologyDrilldownLoadMore: 'Load {{count}} more',
       ontologyDrilldownAllShown: 'All {{count}} row(s) shown',
-      ontologyDrilldownCapped: 'Showing the first {{shown}} of {{total}} — open the class in a narrower scope to see the rest',
+      ontologyDrilldownCapped:
+        'Showing the first {{shown}} of {{total}} — open the class in a narrower scope to see the rest',
       ontologyMoreAttributes: '+{{count}} more attribute(s)',
       ontologyResetLayout: 'Reset layout',
       ontologyAddClass: '+ Class',
       ontologyAutoArrange: 'Auto arrange',
-      ontologyDragHint: 'Drag a class to move it. Positions are not stored in the template.',
+      ontologyDragHint:
+        'Drag a class to move it. Positions are not stored in the template.',
       ontologyCanvas: 'Ontology canvas',
       ontologySelectHint: 'Select a class or a property on the canvas.',
       ontologyClass: 'Class',
@@ -2512,14 +2629,18 @@ Example: Virtual Hosted Style`,
       ontologyDeleteClass: 'Delete class',
       ontologyDeleteProperty: 'Delete property',
       ontologyPitfallCategory_logical: 'Logical issues',
-      ontologySaveBlocked: '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
-      ontologyLinkingHint: 'Click a class to connect it to {{from}}, or click empty canvas to add a new class joined to it (Esc cancels).',
+      ontologySaveBlocked:
+        '{{count}} ontology problem(s) must be fixed first — the canvas lists them.',
+      ontologyLinkingHint:
+        'Click a class to connect it to {{from}}, or click empty canvas to add a new class joined to it (Esc cancels).',
       ontologyMoreSettings: 'More settings',
-      ontologyLinkHandle: 'Link: click, then click a class — or click empty canvas to add a new class joined to this one.',
+      ontologyLinkHandle:
+        'Link: click, then click a class — or click empty canvas to add a new class joined to this one.',
       ontologyOwnProperties: 'Properties of this class',
       ontologyNoOwnProperties: 'None yet.',
       ontologyAddOwnAttribute: '+ Attribute',
-      ontologyRelationsViaHandle: 'Relations start at the + handle on the node.',
+      ontologyRelationsViaHandle:
+        'Relations start at the + handle on the node.',
       ontologyBelongsTo: 'Belongs to',
       ontologyBundleHeader: '{{count}} properties share this edge',
       ontologyBundleHint: 'Pick one to edit it.',
@@ -2530,21 +2651,36 @@ Example: Virtual Hosted Style`,
       ontologyPitfallCategory_structural: 'Structural issues',
       ontologyPitfallCategory_naming: 'Naming issues',
       ontologyPitfallCategory_semantic: 'Semantic issues',
-      ontologyPitfall_dangling_property: 'A property names an endpoint class the template does not declare',
-      ontologyPitfall_dangling_parent: 'A class declares a parent that is not a declared class',
-      ontologyPitfall_redundant_parent: 'A class declares a parent and that parent\'s ancestor, so one edge says nothing',
-      ontologyPitfall_class_without_property: 'No property touches this class, own or inherited',
-      ontologyPitfall_orphan_class: 'This class has no property and no compiled instance, so it only ever draws an isolated node',
-      ontologyPitfall_single_child_parent: 'A parent class has a single subclass',
-      ontologyPitfall_disconnected_hierarchy: 'The hierarchy has more than one root, so it is split into separate trees',
-      ontologyPitfall_endpoint_ancestor_expansion: 'A property names an endpoint and one of its ancestors, which the ancestor already covers',
-      ontologyPitfall_property_name_hierarchy: 'One property\'s name nests inside another\'s between the same classes, so it reads as a sub-property',
-      ontologyPitfall_standard_vocabulary_property: 'The name is already owned by RDF/OWL vocabulary',
-      ontologyPitfall_range_in_property_name: 'The property\'s name repeats the class it points at',
-      ontologyPitfall_domain_in_property_name: 'The property\'s name repeats the class it starts from',
-      ontologyPitfall_overly_generic_class: 'The name is so general that an extraction model can file anything under it',
-      ontologyPitfall_class_property_name_collision: 'A class and a property share this name',
-      ontologyPitfall_datatype_is_class: 'The declared datatype is a class of this ontology, so it was meant to be an object property',
+      ontologyPitfall_dangling_property:
+        'A property names an endpoint class the template does not declare',
+      ontologyPitfall_dangling_parent:
+        'A class declares a parent that is not a declared class',
+      ontologyPitfall_redundant_parent:
+        "A class declares a parent and that parent's ancestor, so one edge says nothing",
+      ontologyPitfall_class_without_property:
+        'No property touches this class, own or inherited',
+      ontologyPitfall_orphan_class:
+        'This class has no property and no compiled instance, so it only ever draws an isolated node',
+      ontologyPitfall_single_child_parent:
+        'A parent class has a single subclass',
+      ontologyPitfall_disconnected_hierarchy:
+        'The hierarchy has more than one root, so it is split into separate trees',
+      ontologyPitfall_endpoint_ancestor_expansion:
+        'A property names an endpoint and one of its ancestors, which the ancestor already covers',
+      ontologyPitfall_property_name_hierarchy:
+        "One property's name nests inside another's between the same classes, so it reads as a sub-property",
+      ontologyPitfall_standard_vocabulary_property:
+        'The name is already owned by RDF/OWL vocabulary',
+      ontologyPitfall_range_in_property_name:
+        "The property's name repeats the class it points at",
+      ontologyPitfall_domain_in_property_name:
+        "The property's name repeats the class it starts from",
+      ontologyPitfall_overly_generic_class:
+        'The name is so general that an extraction model can file anything under it',
+      ontologyPitfall_class_property_name_collision:
+        'A class and a property share this name',
+      ontologyPitfall_datatype_is_class:
+        'The declared datatype is a class of this ontology, so it was meant to be an object property',
       addField: 'Add field',
       editField: 'Edit field',
       selectFieldType: 'Select or enter a field type',

@@ -202,6 +202,25 @@ func (p Param) PlanEnabled() bool {
 	return p.Plan != nil && *p.Plan
 }
 
+// KindOntology is the compilation-template kind that declares a domain
+// ontology — the model layer the compiled assertions are held to.
+const KindOntology = "ontology"
+
+// IsOntologyKind reports whether a compilation-template kind names an ontology
+// template.
+//
+// The comparison is spelled once here because four layers ask the same question
+// of a raw kind string — template validation, the structure variant's prompt and
+// hypergraph selection, retrieval's structure filter, and the artifacts graph.
+// When any two of them disagree, an ontology template that passes validation
+// quietly stops narrowing retrieval or stops compiling as a hypergraph, and
+// nothing on screen says which layer disagreed. Kind is matched
+// case-insensitively after trimming, since it reaches these call sites both from
+// a stored config and from a request payload.
+func IsOntologyKind(kind string) bool {
+	return strings.EqualFold(strings.TrimSpace(kind), KindOntology)
+}
+
 // KindToVariant maps a compilation_template.kind to the Go compiler Variant.
 //
 // The Python model uses richer kind values (mind_map, page_index,

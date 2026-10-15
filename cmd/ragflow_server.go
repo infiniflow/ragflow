@@ -1240,6 +1240,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	pipelineHandler := handler.NewPipelineHandler()
 	compilationTemplateHandler := handler.NewCompilationTemplateHandler(service.NewCompilationTemplateService())
 	compilationTemplateGroupHandler := handler.NewCompilationTemplateGroupHandler(service.NewCompilationTemplateGroupService())
+	compilationModelHandler := handler.NewCompilationModelHandler(service.NewCompilationTemplateGovernanceService())
 	datasetArtifactHandler := handler.NewDatasetArtifactHandler(service.NewDatasetArtifactService(), datasetsService, file.NewFileCommitService())
 
 	// Install the production eino-based chat invoker as the shared chat default,
@@ -1297,6 +1298,7 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		pipelineHandler,
 		compilationTemplateHandler,
 		compilationTemplateGroupHandler,
+		compilationModelHandler,
 		datasetArtifactHandler,
 		ontologyABoxRetrievalHandler)
 

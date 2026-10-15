@@ -47,6 +47,24 @@ type OntologyABoxRetrievalRequest struct {
 	SimilarityThreshold float64
 }
 
+// OntologyABoxDegrade* are the machine-readable reasons the returned rows are
+// not narrowed by the declared structure.
+//
+// They exist because the two reasons call for different next actions and the UI
+// says different things about them: a model that could not be read is a model to
+// fix, and a model that matched nothing is a model whose coverage is incomplete.
+// A bare message would force the caller to match on prose.
+const (
+	// OntologyABoxDegradeNoModel means the declared structure could not be read
+	// at all: a missing template, a foreign tenant's template, or a kind that is
+	// not an ontology.
+	OntologyABoxDegradeNoModel = "no_model"
+	// OntologyABoxDegradeNoMatch means the structure was read and applied and
+	// matched no assertion, so the rows come from asking the same question
+	// without the narrowing.
+	OntologyABoxDegradeNoMatch = "no_match"
+)
+
 // OntologyABoxRetrievalResult carries the rows together with the filter that was
 // actually applied. The filter is echoed because the answer to "why did I get
 // these rows" is the expansion: a caller who asked for `agent` searched
@@ -54,7 +72,21 @@ type OntologyABoxRetrievalRequest struct {
 type OntologyABoxRetrievalResult struct {
 	Chunks []map[string]interface{}
 	Total  int64
+	// Filter is the narrowing the returned rows were searched with, and is nil
+	// when none was applied. It is never a filter that was merely attempted:
+	// echoing an unapplied filter would make the one field a caller reads to
+	// explain the result the one field that lies.
 	Filter map[string]interface{}
+	// StructureApplied reports whether the returned rows were narrowed by the
+	// declared structure. False means they are the unfiltered search: a model
+	// that cannot be read must not take retrieval down with it, so the rows still
+	// come back — but the caller has to be able to see which of the two it got.
+	StructureApplied bool
+	// DegradeCode is one of the OntologyABoxDegrade* values when StructureApplied
+	// is false, and empty when it is true.
+	DegradeCode string
+	// DegradeReason is the human-readable form of DegradeCode.
+	DegradeReason string
 }
 
 // ontologyABoxScope is what a request needs before it can search: the tenants
@@ -98,10 +130,11 @@ func NewOntologyABoxRetrievalService(docEngine engine.DocEngine, documentDAO *da
 
 // Retrieve answers with the compiled rows that fit the requested structure.
 //
-// Every refusal here is deliberate: a request without constraints would be the
-// main pipeline's job, a request without a readable template cannot honour its
-// narrowing, and a request for a dataset the caller does not own must not read
-// its rows.
+// The remaining refusals are deliberate: a request without constraints would be
+// the main pipeline's job, and a request for a dataset the caller does not own
+// must not read its rows. A structure that cannot be read is deliberately NOT a
+// refusal — the rows come back unnarrowed with the degrade code that says so,
+// because a model nobody has written yet must not make the corpus unsearchable.
 func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *OntologyABoxRetrievalRequest) (*OntologyABoxRetrievalResult, error) {
 	if s == nil || s.scopeResolver == nil || s.searcher == nil || s.structureFilter == nil {
 		return nil, fmt.Errorf("ontology ABox retrieval is not wired")
@@ -137,14 +170,6 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 	if len(scope.TenantIDs) == 0 {
 		return nil, fmt.Errorf("no tenant owns the given datasets")
 	}
-	filter, err := s.structureFilter(ctx, scope.TenantIDs[0], req.OntologyTemplateID, constraints)
-	if err != nil {
-		return nil, err
-	}
-	if filter == nil {
-		return nil, fmt.Errorf("the requested structure produced no filter")
-	}
-
 	topK := req.TopK
 	if topK <= 0 {
 		topK = 10
@@ -153,30 +178,73 @@ func (s *OntologyABoxRetrievalService) Retrieve(ctx context.Context, req *Ontolo
 	if similarity <= 0 {
 		similarity = 0.2
 	}
-	result, err := s.searcher.Retrieval(ctx, &nlp.RetrievalRequest{
-		TenantIDs:             scope.TenantIDs,
-		Question:              req.Question,
-		KbIDs:                 req.DatasetIDs,
-		DocIDs:                req.DocumentIDs,
-		Page:                  1,
-		PageSize:              topK,
-		RerankCandidatesCount: &topK,
-		SimilarityThreshold:   &similarity,
-		EmbeddingModel:        scope.EmbeddingModel,
-		Filter:                filter,
-	})
+	// search is the one place the request is built, so the retry below cannot
+	// drift from the first attempt in any field other than the filter.
+	search := func(filter map[string]interface{}) (*nlp.RetrievalResult, error) {
+		return s.searcher.Retrieval(ctx, &nlp.RetrievalRequest{
+			TenantIDs:             scope.TenantIDs,
+			Question:              req.Question,
+			KbIDs:                 req.DatasetIDs,
+			DocIDs:                req.DocumentIDs,
+			Page:                  1,
+			PageSize:              topK,
+			RerankCandidatesCount: &topK,
+			SimilarityThreshold:   &similarity,
+			EmbeddingModel:        scope.EmbeddingModel,
+			Filter:                filter,
+		})
+	}
+
+	out := &OntologyABoxRetrievalResult{}
+	filter, filterErr := s.structureFilter(ctx, scope.TenantIDs[0], req.OntologyTemplateID, constraints)
+	switch {
+	case filterErr != nil:
+		// Unavailable model, answerable question. Searching unfiltered keeps the
+		// corpus reachable and the degrade code says the rows are unnarrowed.
+		filter = nil
+		out.DegradeCode = OntologyABoxDegradeNoModel
+		out.DegradeReason = filterErr.Error()
+	case filter == nil:
+		out.DegradeCode = OntologyABoxDegradeNoModel
+		out.DegradeReason = "the requested structure produced no filter"
+	default:
+		out.StructureApplied = true
+	}
+	out.Filter = filter
+
+	result, err := search(filter)
 	if err != nil {
 		return nil, err
 	}
-	out := &OntologyABoxRetrievalResult{Filter: filter}
-	if result != nil {
-		out.Chunks = result.Chunks
-		out.Total = result.Total
+	applyOntologyABoxPage(out, result)
+	if out.StructureApplied && out.Total == 0 {
+		// The declared structure matched nothing. Re-asking without it keeps the
+		// question answerable, and the code is the signal that the model's
+		// coverage — not the corpus — is what came up short.
+		out.StructureApplied = false
+		out.Filter = nil
+		out.DegradeCode = OntologyABoxDegradeNoMatch
+		out.DegradeReason = "the declared structure matched no assertion; the rows are the unfiltered search"
+		retry, retryErr := search(nil)
+		if retryErr != nil {
+			return nil, retryErr
+		}
+		applyOntologyABoxPage(out, retry)
 	}
 	if out.Chunks == nil {
 		out.Chunks = []map[string]interface{}{}
 	}
 	return out, nil
+}
+
+// applyOntologyABoxPage copies an engine page onto the result, treating a nil
+// page as an empty one so the caller always reads a slice.
+func applyOntologyABoxPage(out *OntologyABoxRetrievalResult, page *nlp.RetrievalResult) {
+	if page == nil {
+		out.Chunks, out.Total = nil, 0
+		return
+	}
+	out.Chunks, out.Total = page.Chunks, page.Total
 }
 
 // kbScopeResolver reads the datasets: their owners name the indexes to search,

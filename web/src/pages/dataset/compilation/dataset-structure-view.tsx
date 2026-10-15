@@ -21,12 +21,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useCallback, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import {
-  StructureKind,
-  ViewMode,
-  ViewModeGenerateTypeMap,
-  ViewModeLabelKeyMap,
-} from './constants';
+import { StructureKind, ViewMode, ViewModeGenerateTypeMap } from './constants';
 import CompilationEmptyState from './empty-state';
 import {
   OntologyDetailPanel,
@@ -35,7 +30,6 @@ import {
 import { OntologyStats } from '@/components/structure-graph/ontology-model-graph/ontology-stats';
 import { OntologyQualityPanel } from '@/components/structure-graph/ontology-model-graph/quality-panel';
 import { useRunEndEffect } from './hooks/use-run-end-effect';
-import CompilationEmptyState from './empty-state';
 import { CompilationLoadingCard } from './loading-card';
 
 interface DatasetStructureViewProps {
@@ -177,14 +171,6 @@ export function DatasetStructureView({ kind }: DatasetStructureViewProps) {
           </aside>
         )}
       </div>
-      <UpdateLogSheet
-        open={updateSheetOpen}
-        onOpenChange={setUpdateSheetOpen}
-        data={structureRunData}
-        title={t('knowledgeCompilation.updateStructureSheetTitle', {
-          name: t(ViewModeLabelKeyMap[kind]),
-        })}
-      />
     </Card>
   );
 }

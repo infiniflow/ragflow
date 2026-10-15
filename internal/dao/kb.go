@@ -143,19 +143,54 @@ func (dao *KnowledgebaseDAO) EmbeddingBaseName(ctx context.Context, db *gorm.DB,
 	return base
 }
 
-// Create creates a new knowledge base record
+// Create creates a new knowledge base record.
+//
+// The dataset's compilation model references are derived from parser_config in
+// the same transaction. Every write of that column goes through this DAO, so
+// keeping the references here is what makes them impossible to forget: the
+// model library's "how many datasets does this affect" is either derived from
+// the config just written or the two disagree.
 func (dao *KnowledgebaseDAO) Create(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
-	return db.WithContext(ctx).Create(kb).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(kb).Error; err != nil {
+			return err
+		}
+		return ReplaceDatasetModelRefs(ctx, tx, kb.ID, kb.TenantID, kb.ParserConfig)
+	})
 }
 
-// Update updates a knowledge base record
+// Update updates a knowledge base record.
 func (dao *KnowledgebaseDAO) Update(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase) error {
-	return db.WithContext(ctx).Save(kb).Error
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Save(kb).Error; err != nil {
+			return err
+		}
+		return ReplaceDatasetModelRefs(ctx, tx, kb.ID, kb.TenantID, kb.ParserConfig)
+	})
 }
 
-// UpdateByID updates a knowledge base by ID with the given fields
+// UpdateByID updates a knowledge base by ID with the given fields.
+//
+// A write that carries parser_config also re-derives the dataset's model
+// references, because that is the only place the two are guaranteed to move
+// together.
 func (dao *KnowledgebaseDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
+	config, writesConfig := updates["parser_config"]
+	if !writesConfig {
+		return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
+	}
+	return db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+			return err
+		}
+		var row struct {
+			TenantID string `gorm:"column:tenant_id"`
+		}
+		if err := tx.Model(&entity.Knowledgebase{}).Select("tenant_id").Where("id = ?", id).Take(&row).Error; err != nil {
+			return err
+		}
+		return ReplaceDatasetModelRefs(ctx, tx, id, row.TenantID, config)
+	})
 }
 
 // Delete soft deletes a knowledge base by setting status to invalid

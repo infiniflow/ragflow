@@ -282,6 +282,12 @@ type TemplateInfo struct {
 	ID     string
 	Kind   string
 	Config map[string]any
+	// Version is the published version Config was resolved from; 0 means nothing
+	// has ever been published and the working config is in force. It is stamped
+	// on every compiled row because an edit takes effect on publish, not on
+	// save: rows outlive the version that wrote them, and without the stamp a
+	// reader cannot tell "this assertion is stale" from "the model says this".
+	Version int
 }
 
 var (

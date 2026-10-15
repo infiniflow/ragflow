@@ -30,6 +30,7 @@ func setupServiceTestDB(t *testing.T) *gorm.DB {
 	if err = db.AutoMigrate(
 		&entity.Document{},
 		&entity.Knowledgebase{},
+		&entity.DatasetModelRef{},
 		&entity.Task{},
 		&entity.IngestionTask{},
 		&entity.IngestionTaskLog{},

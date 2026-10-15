@@ -527,17 +527,34 @@ func newKnowledgeCompilerGroupResolver() kc.GroupResolver {
 // returns its id, kind (which selects the Go variant via common.KindToVariant),
 // and config (the template "content"). Without it, any config carrying
 // compilation_template_id would fail loudly at runtime.
+//
+// A published model compiles from its immutable snapshot rather than from the
+// working config. That is the whole point of the version table: an edit takes
+// effect when it is published, not when it is saved, so a draft in progress
+// cannot silently change what the corpus is extracted against. Version 0 means
+// nothing has ever been published (every template that predates the model
+// lifecycle), and those still compile from the config they carry.
 func newKnowledgeCompilerTemplateResolver() kc.TemplateResolver {
 	tmplDAO := dao.NewCompilationTemplateDAO()
+	versionDAO := dao.NewCompilationTemplateVersionDAO()
 	return func(ctx context.Context, db *gorm.DB, tenantID, templateID string) (kc.TemplateInfo, error) {
 		t, err := tmplDAO.GetTemplate(ctx, db, tenantID, templateID)
 		if err != nil {
 			return kc.TemplateInfo{}, err
 		}
+		config := map[string]any(t.Config)
+		if t.Version > 0 {
+			snapshot, err := versionDAO.GetByVersion(ctx, db, tenantID, templateID, t.Version)
+			if err != nil {
+				return kc.TemplateInfo{}, fmt.Errorf("knowledge_compiler: load published model %s@%d: %w", templateID, t.Version, err)
+			}
+			config = map[string]any(snapshot.Config)
+		}
 		return kc.TemplateInfo{
-			ID:     t.ID,
-			Kind:   t.Kind,
-			Config: map[string]any(t.Config),
+			ID:      t.ID,
+			Kind:    t.Kind,
+			Config:  config,
+			Version: t.Version,
 		}, nil
 	}
 }

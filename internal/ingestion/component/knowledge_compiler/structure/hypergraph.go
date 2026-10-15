@@ -111,7 +111,7 @@ func buildHypergraphIndex(prods []common.Product, parserConfig map[string]any) *
 	// ontology.md §10.7 ("only when the template declares config.ontology"), and
 	// it keeps a stray domain/range declaration in some other variant from
 	// quietly doubling that variant's row count.
-	if strings.TrimSpace(stringOf(parserConfig["kind"])) != "ontology" {
+	if !common.IsOntologyKind(stringOf(parserConfig["kind"])) {
 		return nil
 	}
 	classes, props := declaredOntology(parserConfig)

@@ -15,6 +15,7 @@
  */
 
 import BackButton from '@/components/back-button';
+import { CompilationModelsSheet } from '@/components/compilation-models-sheet';
 import { Button } from '@/components/ui/button';
 import { Form } from '@/components/ui/form';
 import { CompilationTemplateKind } from '@/constants/compilation';
@@ -33,6 +34,7 @@ import {
   validateDraft,
   type OntologySection,
 } from './ontology/model';
+import { OntologyInspectSheet } from './ontology/inspect-sheet';
 
 const SelectedTemplateIndex = 0;
 
@@ -58,6 +60,14 @@ export default function EditNextCompilationTemplate() {
   });
 
   const isArtifacts = selectedKind === CompilationTemplateKind.Artifacts;
+  const isOntology = selectedKind === CompilationTemplateKind.Ontology;
+
+  // A model that was never saved has produced nothing, so the compiled-output
+  // panel stays disabled until the form carries an id.
+  const templateId = useWatch({
+    control: form.control,
+    name: `templates.${SelectedTemplateIndex}.id`,
+  });
 
   // The service rejects an ontology template whose cross-references do not
   // resolve, and that rejection arrives with nothing on screen (see the schema
@@ -73,10 +83,27 @@ export default function EditNextCompilationTemplate() {
   }) as OntologySection | undefined;
   const ontologyIssues = useMemo(
     () =>
-      selectedKind === CompilationTemplateKind.Ontology
+      isOntology
         ? validateDraft(draftFromSections(entitySection, relationSection))
         : [],
-    [entitySection, relationSection, selectedKind],
+    [entitySection, relationSection, isOntology],
+  );
+
+  // What the model declares, which is what the compiled-output panel can be
+  // asked about: an instance list is per class, an assertion list per property.
+  const ontologyClasses = useMemo(
+    () =>
+      (entitySection?.fields ?? [])
+        .map((field) => String(field.type ?? ''))
+        .filter(Boolean),
+    [entitySection],
+  );
+  const ontologyProperties = useMemo(
+    () =>
+      (relationSection?.fields ?? [])
+        .map((field) => String(field.type ?? ''))
+        .filter(Boolean),
+    [relationSection],
   );
 
   const handleSave = useMemo(
@@ -93,6 +120,20 @@ export default function EditNextCompilationTemplate() {
             ? t('knowledgeCompilation.addTemplateGroup')
             : group?.name || t('knowledgeCompilation.editTemplateGroup')}
         </h2>
+        {/* Three questions about the same model, and they need three places:
+            here what it says, the panel below what it produced, and the two
+            sheets here what it produced and whether the version that says it
+            is the one datasets compile with. */}
+        <div className="ml-auto flex items-center gap-3">
+          {isOntology && (
+            <OntologyInspectSheet
+              templateId={templateId}
+              classes={ontologyClasses}
+              properties={ontologyProperties}
+            />
+          )}
+          <CompilationModelsSheet templateId={templateId} />
+        </div>
       </header>
 
       <Form {...form}>

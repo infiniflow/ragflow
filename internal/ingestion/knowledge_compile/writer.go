@@ -120,6 +120,10 @@ type StructureBucket struct {
 	TemplateID string
 	// TemplateKind identifies the producing template and determines CompileKwd.
 	TemplateKind string
+	// TemplateVersion is the published model version that extracted the folded
+	// rows (0 when the template was never published). It is what lets a reader
+	// see that a dataset row predates the model version now in force.
+	TemplateVersion int
 	// RelationType is the relation type (Python default "related"), persisted as
 	// relation_type_kwd and part of the relation bucket/ID identity.
 	RelationType string
@@ -561,6 +565,9 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		if b.TemplateID != "" {
 			row["compilation_template_ids"] = []string{b.TemplateID}
+		}
+		if b.TemplateVersion > 0 {
+			row["compilation_template_version_int"] = b.TemplateVersion
 		}
 		if b.FromEntity != "" || b.ToEntity != "" {
 			// relation row: carries from/to entities; kind=relation, no name_kwd.

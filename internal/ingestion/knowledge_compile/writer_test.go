@@ -237,6 +237,42 @@ func TestWriteMergedStructureMigratesTypeScopedEntityID(t *testing.T) {
 	}
 }
 
+// TestWriteMergedStructureStampsTheModelVersion covers the dataset row's model
+// version: a bucket extracted by a published version carries it, and a bucket
+// with no published version (0) writes no column at all, so "unversioned" stays
+// one state rather than "absent" plus "zero".
+func TestWriteMergedStructureStampsTheModelVersion(t *testing.T) {
+	eng := &fakeEngine{}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{
+		{Name: "Acme Corp", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph", TemplateID: "tpl1", TemplateVersion: 3},
+		{Name: "Beta Ltd", Type: "organization", Description: "company", CompileKwd: "knowledge_graph", TemplateKind: "knowledge_graph", TemplateID: "tpl1"},
+	}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] != "entity" {
+			continue
+		}
+		name, _ := row["name_kwd"].(string)
+		seen[name] = true
+		switch name {
+		case "acme corp":
+			if row["compilation_template_version_int"] != 3 {
+				t.Errorf("versioned row = %v, want 3", row["compilation_template_version_int"])
+			}
+		case "beta ltd":
+			if v, ok := row["compilation_template_version_int"]; ok {
+				t.Errorf("unversioned row = %v, want no column", v)
+			}
+		}
+	}
+	if !seen["acme corp"] || !seen["beta ltd"] {
+		t.Fatalf("inserted rows = %+v, want both entities", eng.insertedChunks)
+	}
+}
+
 func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
 	eng := &fakeEngine{}
 	w := engineWriter{eng: eng}

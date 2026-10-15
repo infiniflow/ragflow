@@ -712,6 +712,100 @@ func TestKnowledgeCompiler_TemplateIDsAndProvenance(t *testing.T) {
 
 }
 
+// TestKnowledgeCompiler_StampsModelVersion pins the compiled row's model
+// version: the published version the template was resolved from is stamped so a
+// reader can tell an assertion the current model supports from one it no longer
+// does. A template that was never published (version 0) writes no column at all
+// — "unversioned" must stay one state, not "absent" plus "zero".
+func TestKnowledgeCompiler_StampsModelVersion(t *testing.T) {
+	installMockDeps(t)
+	installVersionedTemplateResolvers(t, map[string]int{"tpl-structure": 7, "tpl-unpublished": 0})
+
+	run := func(templateID string) map[string]any {
+		t.Helper()
+		c, err := NewKnowledgeCompilerComponent("Compiler", map[string]any{
+			"compilation_template_id": templateID,
+			"llm_id":                  "llm1",
+			"embedding_model":         "emb1",
+		})
+		if err != nil {
+			t.Fatalf("NewKnowledgeCompilerComponent: %v", err)
+		}
+		out, err := c.Invoke(context.Background(), nil, map[string]any{
+			"chunks": []any{
+				map[string]any{"id": "c1", "text": "Alpha is a Beta"},
+			},
+			"doc_id":        "d1",
+			"tenant_id":     "t1",
+			"parser_config": graphParserConfig(),
+		})
+		if err != nil {
+			t.Fatalf("Invoke(%s): %v", templateID, err)
+		}
+		return out
+	}
+
+	checked := 0
+	for _, r := range run("tpl-structure")["chunks"].([]any) {
+		cm := r.(map[string]any)
+		if ck, _ := cm["compile_kwd"].(string); ck != "graph" {
+			continue
+		}
+		checked++
+		if v := numberValue(t, cm["compilation_template_version_int"]); v != 7 {
+			t.Fatalf("compiled chunk %v: compilation_template_version_int = %v, want 7", cm["id"], cm["compilation_template_version_int"])
+		}
+	}
+	if checked == 0 {
+		t.Fatal("no compiled chunks inspected; assertion was vacuous")
+	}
+
+	for _, r := range run("tpl-unpublished")["chunks"].([]any) {
+		cm := r.(map[string]any)
+		if ck, _ := cm["compile_kwd"].(string); ck != "graph" {
+			continue
+		}
+		if v, ok := cm["compilation_template_version_int"]; ok {
+			t.Fatalf("unpublished template chunk %v: version = %v, want no column", cm["id"], v)
+		}
+	}
+}
+
+// installVersionedTemplateResolvers registers synthetic template ids whose
+// resolver reports a published version, standing in for the DB-backed resolver
+// that resolves a published snapshot (knowledge_compiler_wiring.go). All ids go
+// in one call: the resolver is a single package-level slot, so a second
+// installation would drop the first one's ids back to the package stub.
+func installVersionedTemplateResolvers(t *testing.T, versions map[string]int) {
+	t.Helper()
+	prev := testTemplateResolver
+	common.SetTemplateResolver(func(ctx context.Context, db *gorm.DB, tenantID, id string) (common.TemplateInfo, error) {
+		if version, ok := versions[id]; ok {
+			return common.TemplateInfo{ID: id, Kind: "structure", Config: map[string]any{}, Version: version}, nil
+		}
+		return prev(ctx, db, tenantID, id)
+	})
+	t.Cleanup(func() { common.SetTemplateResolver(testTemplateResolver) })
+}
+
+// numberValue reads an integer column out of a chunk map. Extra values round
+// trip through JSON, so the same write comes back as float64 here.
+func numberValue(t *testing.T, v any) int64 {
+	t.Helper()
+	switch x := v.(type) {
+	case int:
+		return int64(x)
+	case int64:
+		return x
+	case float64:
+		return int64(x)
+	case nil:
+		t.Fatal("value is absent")
+	}
+	t.Fatalf("value %v (%T) is not a number", v, v)
+	return 0
+}
+
 // constEmbedder returns one fixed vector for every input text. It is used to
 // make historical-dedup deterministic: every compiled product shares the same
 // vector, so a historical candidate carrying that vector is a guaranteed

@@ -42,6 +42,12 @@ type ontologyABoxRetrievalBody struct {
 // applied filter travels back with them, expansion included: a caller who asked
 // for an abstract class needs to see the descendants it actually searched.
 //
+// The response also says whether the structure was applied at all. A model that
+// cannot be read, or one that matches no assertion, returns rows rather than an
+// error — with structure_applied=false and a degrade_code naming which of the
+// two happened. Callers render those differently: an unreadable model is a model
+// to fix, an unmatched one means the model's coverage is short.
+//
 //	@Summary Retrieve compiled ontology assertions matching a declared structure
 //	@Tags ontology
 //	@Security ApiKeyAuth
@@ -79,8 +85,11 @@ func (h *OntologyABoxRetrievalHandler) Retrieve(c *gin.Context) {
 		return
 	}
 	common.SuccessWithData(c, gin.H{
-		"chunks": result.Chunks,
-		"total":  result.Total,
-		"filter": result.Filter,
+		"chunks":            result.Chunks,
+		"total":             result.Total,
+		"filter":            result.Filter,
+		"structure_applied": result.StructureApplied,
+		"degrade_code":      result.DegradeCode,
+		"degrade_reason":    result.DegradeReason,
 	}, "success")
 }

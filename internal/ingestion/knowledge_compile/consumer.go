@@ -1777,6 +1777,13 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	}
 	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
+	// A bucket can fold rows compiled by different model versions (a publish
+	// does not recompile the corpus). The highest one is reported, because that
+	// is the version the bucket's latest rows come from — and the only honest
+	// answer when they disagree is the newest, not the first seen.
+	if v, ok := metaInt(p.Meta, "compilation_template_version"); ok && int(v) > b.TemplateVersion {
+		b.TemplateVersion = int(v)
+	}
 	// mention_count_int: sum the per-entity mention counts (Python
 	// _struct_merge_graph_entities sums mention_count across the merged entities).
 	// Each entity product carries mention_count ≥ 1 (structure compile.go L231);

@@ -4,12 +4,9 @@ import { SkeletonCard } from '@/components/skeleton-card';
 import { CompilationTemplateKind } from '@/constants/compilation';
 import {
   DocumentStructureKeys,
-  useDeleteDocumentStructureGraph,
   useFetchDocumentClaims,
 } from '@/hooks/use-document-request';
-import { useIsGoBackend } from '@/utils/backend-variant';
 import { useQueryClient } from '@tanstack/react-query';
-import { Trash2 } from 'lucide-react';
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
@@ -68,17 +65,13 @@ function Representation({
   onOntologyPanelChange,
   onOntologyViewChange,
 }: RepresentationProps) {
-
   const { t } = useTranslation();
-  const isGo = useIsGoBackend();
   // Both halves of the scope: the graph on this page is one DOCUMENT's, so the
   // ontology panel's drill-down has to be narrowed the same way. Without the
   // document id the panel's count and its list would be counting different
   // scopes — the panel would say "5 instances" and list rows from other
   // documents.
   const { knowledgeId: datasetId, documentId } = useGetKnowledgeSearchParams();
-  const { deleteDocumentStructureGraph, loading: deleting } =
-    useDeleteDocumentStructureGraph();
 
   const [claimsLeaf, setClaimsLeaf] = useState<ClickableNode | null>(null);
   const [evidenceDetail, setEvidenceDetail] = useState<ClickableNode | null>(
@@ -110,8 +103,9 @@ function Representation({
   const queryClient = useQueryClient();
   const handleApplyOntologyFixes = useCallback(
     async (fixes: OntologyFixAction[]) => {
-      const templateId = (selectedTemplate as { template_id?: string } | undefined)
-        ?.template_id;
+      const templateId = (
+        selectedTemplate as { template_id?: string } | undefined
+      )?.template_id;
       if (!templateId) {
         throw new Error('this template has no id to edit');
       }
@@ -138,7 +132,8 @@ function Representation({
       const documentIds = Array.from(
         new Set(fixes.flatMap((fix) => fix.docIds)),
       );
-      const target = documentIds.length > 0 ? documentIds : documentId ? [documentId] : [];
+      const target =
+        documentIds.length > 0 ? documentIds : documentId ? [documentId] : [];
       if (target.length > 0) {
         await runDocumentByIds({ documentIds: target, run: 1 });
       }

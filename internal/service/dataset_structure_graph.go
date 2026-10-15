@@ -14,12 +14,14 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // Structure-graph query constants.
@@ -34,12 +36,12 @@ const (
 // attribute names, and without the column the ontology's data itself would be
 // unreachable from the UI. Non-ontology rows have no such column, so the cost is
 // paid only where the value exists.
-var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr"}
-var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids"}
+var graphEntityFields = []string{"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids", "doc_id", "doc_ids_kwd", "source_doc_ids", "attr", "compilation_template_version_int"}
+var graphRelationFields = []string{"id", "content_with_weight", "from_entity_kwd", "to_entity_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids", "source_chunk_ids", "compilation_template_version_int"}
 var graphAllFields = []string{
 	"id", "content_with_weight", "name_kwd", "mention_count_int", "source_chunk_ids",
 	"from_entity_kwd", "to_entity_kwd", "type_kwd", "knowledge_graph_kwd", "doc_id", "doc_ids_kwd", "source_doc_ids",
-	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd",
+	"compile_kwd", "compilation_template_ids", "compilation_template_kind_kwd", "compilation_template_version_int",
 }
 
 // StructureGraphNode is a projected entity in the structure graph response.
@@ -188,8 +190,15 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 		"mention_count":    1,
 		"name":             name,
 		"source_chunk_ids": chunkIDs,
+		"document_ids":     graphSourceDocIDs(payload, row),
 		"type":             typ,
 		"description":      desc,
+	}
+	// The model version that extracted this instance, when the row knows it. It
+	// is what turns "this instance looks wrong" into "this instance predates the
+	// model version in force".
+	if version := graphTemplateVersion(row); version > 0 {
+		node["version"] = version
 	}
 	if mc, ok := graphMentionCount(row); ok {
 		node["mention_count"] = mc
@@ -267,6 +276,74 @@ func graphMentionCount(row map[string]interface{}) (int, bool) {
 	return 0, false
 }
 
+// graphSourceDocIDs reports the documents a row was compiled from, so a
+// drilldown can open the instance in its source document instead of ending at
+// the instance name.
+//
+// At document scope that is the row's own doc_id. At dataset scope doc_id is
+// the KB id — a dataset, not a document — so it is used only when the row
+// carries no source_doc_ids at all: the compiled documents of a dataset row are
+// its union, and naming the dataset as if it were a document would send the
+// reader to a document that does not exist.
+func graphSourceDocIDs(payload, row map[string]interface{}) []string {
+	var out []string
+	add := func(v interface{}) {
+		switch x := v.(type) {
+		case []string:
+			for _, s := range x {
+				if s != "" {
+					out = append(out, s)
+				}
+			}
+		case []interface{}:
+			for _, e := range x {
+				if s, ok := e.(string); ok && s != "" {
+					out = append(out, s)
+				}
+			}
+		case string:
+			if x != "" {
+				out = append(out, x)
+			}
+		}
+	}
+	if payload != nil {
+		add(payload["source_doc_ids"])
+	}
+	add(row["source_doc_ids"])
+	add(row["doc_ids_kwd"])
+	if len(out) == 0 && graphStr(row["scope_kwd"]) != "dataset" {
+		add(row["doc_id"])
+	}
+	seen := map[string]bool{}
+	dedup := out[:0]
+	for _, s := range out {
+		if !seen[s] {
+			seen[s] = true
+			dedup = append(dedup, s)
+		}
+	}
+	return dedup
+}
+
+// graphTemplateVersion reads the published model version that extracted a row.
+// 0 means the row does not say: it was compiled before the column existed, or
+// the template has never been published.
+func graphTemplateVersion(row map[string]interface{}) int64 {
+	switch v := row["compilation_template_version_int"].(type) {
+	case int:
+		return int64(v)
+	case int64:
+		return v
+	case float64:
+		return int64(v)
+	case string:
+		n, _ := strconv.ParseInt(v, 10, 64)
+		return n
+	}
+	return 0
+}
+
 // projectRelation mirrors _struct_graph_relation + project_relation.
 func projectRelation(row map[string]interface{}) StructureGraphRelation {
 	payload := graphLoadPayload(row)
@@ -300,11 +377,29 @@ func projectRelation(row map[string]interface{}) StructureGraphRelation {
 		fallbackSrc := strings.TrimSpace(firstStringValue(row["from_entity_kwd"]))
 		fallbackTgt := strings.TrimSpace(firstStringValue(row["to_entity_kwd"]))
 		if fallbackSrc != "" && fallbackTgt != "" {
-			return StructureGraphRelation{"from": fallbackSrc, "to": fallbackTgt, "type": typ}
+			return relationNode(fallbackSrc, fallbackTgt, typ, payload, row)
 		}
 		return nil
 	}
-	return StructureGraphRelation{"from": src, "to": tgt, "type": typ}
+	return relationNode(src, tgt, typ, payload, row)
+}
+
+// relationNode builds the projected assertion. The source chunk ids and their
+// documents ride along with it: an assertion a reader cannot open in the text it
+// was extracted from cannot be judged, and the ontology view is the one place
+// where "is this edge real?" is the whole question.
+func relationNode(src, tgt, typ string, payload, row map[string]interface{}) StructureGraphRelation {
+	node := StructureGraphRelation{
+		"from":             src,
+		"to":               tgt,
+		"type":             typ,
+		"source_chunk_ids": graphSourceChunkIDs(payload, row),
+		"document_ids":     graphSourceDocIDs(payload, row),
+	}
+	if version := graphTemplateVersion(row); version > 0 {
+		node["version"] = version
+	}
+	return node
 }
 
 // dedupEntities preserves the first entity for each lowercased name.
@@ -660,6 +755,13 @@ func compilationTemplateKind(kind string) string {
 	return k
 }
 
+// isOntologyTemplateKind reports whether a template kind names an ontology
+// template, routed through the canonical comparison so the artifacts graph
+// cannot drift from validation, extraction, and retrieval.
+func isOntologyTemplateKind(kind string) bool {
+	return kccommon.IsOntologyKind(compilationTemplateKind(kind))
+}
+
 // templateDisplayKind prefers the compilation template's own kind for the
 // response, falling back to the kind keywords stored on the entity rows. The
 // stored row keyword canonicalizes to "graph" (CanonicalCompilationKind)
@@ -865,7 +967,7 @@ func (s *DatasetArtifactService) GetDocumentGraph(ctx context.Context, in Docume
 		}
 		// An ontology bucket still has something to show when the document
 		// contributed no instances: the declared skeleton with zero counts.
-		isOntology := compilationTemplateKind(graphStr(meta["kind"])) == "ontology"
+		isOntology := isOntologyTemplateKind(graphStr(meta["kind"]))
 		if len(entities) == 0 && len(relations) == 0 && !isOntology {
 			continue
 		}
@@ -962,7 +1064,7 @@ func (s *DatasetArtifactService) attachDocumentOntology(
 	bucket *DocumentStructureGraphTemplate,
 	templateDAO *dao.CompilationTemplateDAO,
 ) error {
-	if compilationTemplateKind(bucket.Kind) != "ontology" {
+	if !isOntologyTemplateKind(bucket.Kind) {
 		return nil
 	}
 	graph, err := s.buildOntologyGraph(ctx, tenantID, datasetID,
@@ -1190,7 +1292,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 		}
 		// An ontology bucket still has something to show when nothing has been
 		// compiled yet: the declared skeleton with zero counts.
-		if len(entities) == 0 && len(relations) == 0 && resolved != "ontology" {
+		if len(entities) == 0 && len(relations) == 0 && !isOntologyTemplateKind(resolved) {
 			continue
 		}
 		bucket := DocumentStructureGraphTemplate{
@@ -1200,7 +1302,7 @@ func (s *DatasetArtifactService) GetDatasetStructure(ctx context.Context, in Dat
 			Entities:     entities,
 			Relations:    relations,
 		}
-		if resolved == "ontology" {
+		if isOntologyTemplateKind(resolved) {
 			graph, err := s.buildOntologyGraph(ctx, in.TenantID, in.DatasetID,
 				datasetBucketFilter(resolved, tid), loadTemplateConfig(ctx, templateDAO, in.TenantID, tid))
 			if err != nil {

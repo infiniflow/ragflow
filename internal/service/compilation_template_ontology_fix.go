@@ -7,6 +7,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // OntologyFixRequest is one edit a reader confirmed on the compile-quality
@@ -78,7 +79,7 @@ func (s *CompilationTemplateGroupService) ApplyOntologyFixes(
 	if tpl == nil || tpl.GroupID == nil || strings.TrimSpace(*tpl.GroupID) == "" {
 		return nil, fmt.Errorf("cannot find template %s.", templateID)
 	}
-	if kind := strings.TrimSpace(tpl.Kind); kind != "ontology" {
+	if kind := strings.TrimSpace(tpl.Kind); !kccommon.IsOntologyKind(kind) {
 		return nil, fmt.Errorf("template %s is a %s template; declarations are edited here only for ontology templates.", templateID, kind)
 	}
 

@@ -791,12 +791,37 @@ func buildOntologyPitfalls(d declaredOntology, classCounts map[string]int) []Ont
 	}
 	if len(orphans) > 0 {
 		out = append(out, OntologyPitfall{
-			Code:     "orphan_class",
+			Code:     pitfallOrphanClass,
 			Category: pitfallStructural,
 			Severity: "warning",
 			Message:  "declared class(es) with neither a property nor a single compiled instance: " + strings.Join(orphans, ", "),
 			Subjects: orphans,
 		})
+	}
+	return out
+}
+
+// pitfallOrphanClass is the one declaration check that is not a function of the
+// template alone: it compares the model against instance counts.
+const pitfallOrphanClass = "orphan_class"
+
+// declarationPitfalls runs the pitfall checks that read the template and nothing
+// else.
+//
+// The publish gate uses this because a model is published before the corpus has
+// been compiled against it, so no instance counts exist yet — and passing an
+// empty count map would report every class as an orphan, which is a statement
+// about the corpus that nobody can act on at that moment. orphan_class is
+// dropped here rather than answered with a guess; it stays part of the
+// compiled-artifacts view, where the counts are real.
+func declarationPitfalls(d declaredOntology) []OntologyPitfall {
+	all := buildOntologyPitfalls(d, nil)
+	out := make([]OntologyPitfall, 0, len(all))
+	for _, pitfall := range all {
+		if pitfall.Code == pitfallOrphanClass {
+			continue
+		}
+		out = append(out, pitfall)
 	}
 	return out
 }

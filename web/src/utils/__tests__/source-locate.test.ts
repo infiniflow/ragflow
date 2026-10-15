@@ -1,15 +1,19 @@
 import { supportsSourceLocate } from '../source-locate';
 
 describe('supportsSourceLocate', () => {
-  it('accepts pdf and excel extensions case-insensitively', () => {
+  it('accepts every previewable document extension, case-insensitively', () => {
     expect(supportsSourceLocate('pdf')).toBe(true);
     expect(supportsSourceLocate('XLSX')).toBe(true);
     expect(supportsSourceLocate('xls')).toBe(true);
+    // Support follows the previewable set rather than a hand-picked list: a
+    // document the preview can render is also one the citation can locate in.
+    expect(supportsSourceLocate('DOCX')).toBe(true);
+    expect(supportsSourceLocate('HTML')).toBe(true);
   });
 
-  it('rejects unsupported or missing extensions', () => {
-    expect(supportsSourceLocate('html')).toBe(false);
-    expect(supportsSourceLocate('docx')).toBe(false);
+  it('rejects extensions outside the previewable set and missing ones', () => {
+    expect(supportsSourceLocate('exe')).toBe(false);
+    expect(supportsSourceLocate('bin')).toBe(false);
     expect(supportsSourceLocate(undefined)).toBe(false);
   });
 });

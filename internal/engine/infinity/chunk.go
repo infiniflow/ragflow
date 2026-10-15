@@ -306,6 +306,18 @@ func (e *Engine) ensureChunkDataColumn(table *infinity.Table, exists bool) error
 	return nil
 }
 
+// ensureCompiledVersionColumn adds the compiled-row model version column to a
+// table created before the column existed (see ensureChunkDataColumn for why an
+// existing table needs this at all).
+func (e *Engine) ensureCompiledVersionColumn(table *infinity.Table) error {
+	if _, err := table.AddColumns(infinity.TableSchema{
+		&infinity.ColumnDefinition{Name: "compilation_template_version_int", DataType: "integer", Default: "0"},
+	}); err != nil {
+		return fmt.Errorf("failed to add compilation_template_version_int column: %w", err)
+	}
+	return nil
+}
+
 // InsertChunks inserts documents into a dataset table;
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
@@ -397,6 +409,14 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 	if parserIDFromChunks(chunks) == "table" {
 		if err := e.ensureChunkDataColumn(table, hasChunkData); err != nil {
 			common.Warn("Failed to add chunk_data column", zap.Error(err))
+		}
+	}
+
+	// Same reconciliation for the compiled-row model version column: a table
+	// created before it existed rejects every compiled-row insert naming it.
+	if !columns["compilation_template_version_int"] {
+		if err := e.ensureCompiledVersionColumn(table); err != nil {
+			common.Warn("Failed to add compilation_template_version_int column", zap.Error(err))
 		}
 	}
 

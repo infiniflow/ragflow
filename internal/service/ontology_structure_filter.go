@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"ragflow/internal/dao"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
 // StructureFilterForTemplate reads the named ontology template and returns the
@@ -74,7 +75,7 @@ func loadOntologyTemplateConfig(ctx context.Context, tenantID, templateID string
 	if err != nil || tpl == nil {
 		return nil
 	}
-	if kind := strings.TrimSpace(tpl.Kind); kind != "ontology" {
+	if !kccommon.IsOntologyKind(tpl.Kind) {
 		return nil
 	}
 	return map[string]interface{}(tpl.Config)

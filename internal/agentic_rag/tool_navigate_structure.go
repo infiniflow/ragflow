@@ -51,7 +51,7 @@ const navigateStructureToolName = "navigate_structure"
 
 const navigateStructureToolDescription = `Drill into ONE document's COMPILED STRUCTURE (the entity/relation outline built at compile time) and return a query-focused outline of where the answer sits, with chunk pointers you can pass to list_chunks to deep-read.
 CALL IT AFTER navigate_tree has routed you to a document: take a doc_id from the <tree_navigation> result and pass it as doc_id. It shows the document's internal structure (entities and how they relate) instead of scanning chunks blindly.
-Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of "name (type): description [chunks: c1,c2]" lines and optional <claims_sufficient/>. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
+Returns an XML <structure_navigation> document: one <doc> element per readable structure, each with a <structure> outline of "name (type): description [chunks: c1,c2]" lines and an evidence verdict: <claims_sufficient/> when every claim of that document carries at least one source chunk, or <claims_missing_evidence count="N"/> when N claims carry none. A claim without a source chunk cannot be traced back to the text it came from, so treat those as unverified and confirm them with a search (grep_chunks / search_*_chunks) instead of answering from them. Feed the chunk pointers to list_chunks (anchor_chunk_ids).
 An empty result (<structure_navigation count="0" error="...">) means this document has NO compiled structure of the requested kind - the error attribute says which: "no compiled navigation tree" (route first with navigate_tree), "no document located" (no doc_id), or "no structure" (structure absent for this kind in THAT document - fall back to grep_chunks / search_*_chunks; the verdict is per document, so the tool stays available for other documents).`
 
 // navigateStructureArgs is the JSON the model sends into InvokableRun.
@@ -792,8 +792,50 @@ func structureDocSegment(docID, query, kind string, rank int, nodes []structureN
 	if drill.outline != "" {
 		b.WriteString("\n    <structure>" + esc(drill.outline) + "</structure>")
 	}
+	b.WriteString(evidenceVerdict(nodes))
 	b.WriteString("\n  </doc>")
 	return b.String()
+}
+
+// evidenceVerdict reports whether a document's compiled claims are backed by
+// source chunks.
+//
+// It is the answerability half of the evidence layer: a claim carrying no
+// source chunk cannot be traced back to the text it came from, so the model has
+// nothing to check it against and must confirm it with a search instead of
+// answering from it. Without this the outline looks equally trustworthy whether
+// its claims were extracted from the document or projected from a model
+// declaration that no text reached.
+//
+// Nothing is emitted for a structure without claims: "no claims" is a fact
+// about the document, and dressing it up as "insufficient evidence" would send
+// the model searching for knowledge that was never there.
+func evidenceVerdict(nodes []structureNode) string {
+	claims := 0
+	withoutEvidence := 0
+	for _, node := range nodes {
+		if strings.TrimSpace(node.name) == "" {
+			continue
+		}
+		claims++
+		backed := false
+		for _, id := range node.sourceChunkIDs {
+			if strings.TrimSpace(id) != "" {
+				backed = true
+				break
+			}
+		}
+		if !backed {
+			withoutEvidence++
+		}
+	}
+	if claims == 0 {
+		return ""
+	}
+	if withoutEvidence == 0 {
+		return "\n    <claims_sufficient/>"
+	}
+	return fmt.Sprintf("\n    <claims_missing_evidence count=\"%d\"/>", withoutEvidence)
 }
 
 // emptyReasonLabel maps an empty-reason constant to the XML error label.

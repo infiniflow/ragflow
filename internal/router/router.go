@@ -57,6 +57,7 @@ type Router struct {
 
 	compilationTemplateHandler      *handler.CompilationTemplateHandler
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler
+	compilationModelHandler         *handler.CompilationModelHandler
 	datasetArtifactHandler          *handler.DatasetArtifactHandler
 	ontologyABoxRetrievalHandler    *handler.OntologyABoxRetrievalHandler
 }
@@ -95,6 +96,7 @@ func NewRouter(
 	pipelineHandler *handler.PipelineHandler,
 	compilationTemplateHandler *handler.CompilationTemplateHandler,
 	compilationTemplateGroupHandler *handler.CompilationTemplateGroupHandler,
+	compilationModelHandler *handler.CompilationModelHandler,
 	datasetArtifactHandler *handler.DatasetArtifactHandler,
 	ontologyABoxRetrievalHandler *handler.OntologyABoxRetrievalHandler,
 ) *Router {
@@ -132,6 +134,7 @@ func NewRouter(
 
 		compilationTemplateHandler:      compilationTemplateHandler,
 		compilationTemplateGroupHandler: compilationTemplateGroupHandler,
+		compilationModelHandler:         compilationModelHandler,
 		datasetArtifactHandler:          datasetArtifactHandler,
 		ontologyABoxRetrievalHandler:    ontologyABoxRetrievalHandler,
 	}
@@ -622,6 +625,22 @@ func (r *Router) Setup(engine *gin.Engine) {
 			v1.GET("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Get)
 			v1.PUT("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Update)
 			v1.DELETE("/compilation-template-groups/:group_id", r.compilationTemplateGroupHandler.Delete)
+
+			// Model lifecycle routes. These answer "which version of this model
+			// is in force and who put it there", which is a different question
+			// from the template palette above — and the one that has to survive
+			// an edit.
+			v1.GET("/compilation-models", r.compilationModelHandler.List)
+			v1.GET("/compilation-models/:template_id/check", r.compilationModelHandler.Check)
+			v1.POST("/compilation-models/:template_id/review", r.compilationModelHandler.SubmitForReview)
+			v1.POST("/compilation-models/:template_id/publish", r.compilationModelHandler.Publish)
+			v1.POST("/compilation-models/:template_id/reject", r.compilationModelHandler.Reject)
+			v1.POST("/compilation-models/:template_id/retire", r.compilationModelHandler.Retire)
+			v1.GET("/compilation-models/:template_id/versions", r.compilationModelHandler.ListVersions)
+			v1.GET("/compilation-models/:template_id/versions/diff", r.compilationModelHandler.VersionDiff)
+			v1.GET("/compilation-models/:template_id/datasets", r.compilationModelHandler.Impact)
+			v1.GET("/compilation-models/:template_id/instances", r.compilationModelHandler.Instances)
+			v1.POST("/compilation-models/:template_id/trial", r.compilationModelHandler.Trial)
 
 			connectors := v1.Group("/connectors")
 			{

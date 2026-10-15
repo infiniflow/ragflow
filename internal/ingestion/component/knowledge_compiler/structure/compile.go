@@ -617,13 +617,17 @@ type ontologyAttributeSpec struct {
 //
 // Inheritance matters: rdfs:subClassOf says a subclass has every attribute its
 // parent has, so an attribute declared on `agent` belongs to `person` and
-// `organization` too. Own attributes come first, then inherited ones, so a
-// subclass overrides its parent for the same name. Order follows declaration
-// order in the template, keeping the prompt text and stored keys deterministic.
+// `organization` too. A class may declare several parents (`|`-separated), so
+// the walk is breadth-first over the whole parent set, nearest first — the same
+// order ontologyClassAncestors returns. Own attributes come first, then
+// inherited ones, so a subclass overrides its parent for the same name, and a
+// class closer to the subclass overrides a farther ancestor. Order follows
+// declaration order in the template, keeping the prompt text and stored keys
+// deterministic.
 func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAttributeSpec {
 	_, props := declaredOntology(parserConfig)
 
-	parentOf := map[string]string{}
+	parentOf := map[string][]string{}
 	order := []string{}
 	for _, raw := range configFields(common.GetMap(parserConfig, "entity")) {
 		f, ok := raw.(map[string]any)
@@ -636,7 +640,7 @@ func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAt
 		}
 		order = append(order, name)
 		if parents := splitPipeList(stringOf(f["parent"])); len(parents) > 0 {
-			parentOf[name] = parents[0]
+			parentOf[name] = parents
 		}
 	}
 
@@ -661,14 +665,27 @@ func ontologyAttributeSpecs(parserConfig map[string]any) map[string][]ontologyAt
 
 	out := make(map[string][]ontologyAttributeSpec, len(order))
 	for _, class := range order {
-		seen := map[string]bool{}
+		seenName := map[string]bool{}
+		seenClass := map[string]bool{class: true}
 		attrs := []ontologyAttributeSpec{}
-		for cur := class; cur != ""; cur = parentOf[cur] {
+		queue := []string{class}
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
 			for _, a := range own[cur] {
-				if !seen[a.name] {
-					seen[a.name] = true
+				if !seenName[a.name] {
+					seenName[a.name] = true
 					attrs = append(attrs, a)
 				}
+			}
+			for _, parent := range parentOf[cur] {
+				if seenClass[parent] {
+					// A cycle cannot end the walk; the template validator
+					// rejects one, this only keeps the reader finite.
+					continue
+				}
+				seenClass[parent] = true
+				queue = append(queue, parent)
 			}
 		}
 		if len(attrs) > 0 {

@@ -73,6 +73,47 @@ func TestValidateTemplatePayload_AcceptsJSONMapConfig(t *testing.T) {
 	}
 }
 
+// A class `parent` may name several superclasses, `|`-separated. The
+// unknown-parent check and the cyclic-chain check both have to walk every one of
+// them: a cycle that closes through a NON-first parent must still be rejected,
+// and a diamond (one ancestor reached through two parents) must not be.
+func TestValidateOntologyTemplateMultiParent(t *testing.T) {
+	config := func(employeeParent, organizationParent string) map[string]interface{} {
+		fields := []interface{}{
+			map[string]interface{}{"type": "agent"},
+			map[string]interface{}{"type": "person", "parent": "agent"},
+		}
+		org := map[string]interface{}{"type": "organization"}
+		if organizationParent != "" {
+			org["parent"] = organizationParent
+		}
+		fields = append(fields, org, map[string]interface{}{"type": "employee", "parent": employeeParent})
+		return map[string]interface{}{
+			"kind":     "ontology",
+			"entity":   map[string]interface{}{"fields": fields},
+			"relation": map[string]interface{}{"fields": []interface{}{}},
+		}
+	}
+
+	// A diamond: both parents descend from `agent`, which is not a cycle.
+	if err := validateOntologyTemplate(config("person | organization", "agent")); err != nil {
+		t.Fatalf("multi-parent template rejected: %v", err)
+	}
+
+	// The unknown parent is the second one, so stopping at the first would pass.
+	err := validateOntologyTemplate(config("person | nope", "agent"))
+	if err == nil || !strings.Contains(err.Error(), `"nope"`) {
+		t.Fatalf("second parent unchecked: err = %v", err)
+	}
+
+	// organization -> employee closes the cycle through employee's second
+	// parent; the first parent (`person`) is acyclic.
+	err = validateOntologyTemplate(config("person | organization", "employee"))
+	if err == nil || !strings.Contains(err.Error(), "cyclic parent chain") {
+		t.Fatalf("cycle through a non-first parent not detected: err = %v", err)
+	}
+}
+
 func TestValidateTemplatePayloadCountsTextLimitsByRune(t *testing.T) {
 	valid := map[string]interface{}{
 		"name":        "模板",

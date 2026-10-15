@@ -282,3 +282,40 @@ func TestBuildTocTreeAndOutline(t *testing.T) {
 	}
 	_ = byName
 }
+
+// A claim with no source chunk cannot be traced back to the text it came from,
+// so the outline has to say so: otherwise a claim projected from a model
+// declaration reads exactly like one extracted from the document.
+func TestEvidenceVerdictSeparatesBackedClaimsFromProjectedOnes(t *testing.T) {
+	backed := []structureNode{{name: "Alpha", nodeType: "entity", sourceChunkIDs: []string{"c1"}}}
+	if verdict := evidenceVerdict(backed); verdict != "\n    <claims_sufficient/>" {
+		t.Fatalf("verdict = %q, want claims_sufficient", verdict)
+	}
+
+	projected := []structureNode{
+		{name: "Alpha", nodeType: "entity", sourceChunkIDs: []string{"c1"}},
+		{name: "Beta", nodeType: "entity"},
+		// A blank pointer is not evidence.
+		{name: "Gamma", nodeType: "entity", sourceChunkIDs: []string{"  "}},
+	}
+	if verdict := evidenceVerdict(projected); verdict != "\n    <claims_missing_evidence count=\"2\"/>" {
+		t.Fatalf("verdict = %q, want the two claims without evidence", verdict)
+	}
+
+	// A structure with no claims is not a structure with insufficient evidence:
+	// saying so would send the model searching for knowledge that was never
+	// extracted.
+	if verdict := evidenceVerdict(nil); verdict != "" {
+		t.Fatalf("verdict = %q, want nothing for a structure without claims", verdict)
+	}
+}
+
+func TestStructureDocSegmentCarriesTheEvidenceVerdict(t *testing.T) {
+	segment := structureDocSegment("doc-1", "q", "graph", 1,
+		[]structureNode{{name: "Alpha", nodeType: "entity"}},
+		nil,
+		structureDrillout{outline: "Alpha (entity): -"})
+	if !strings.Contains(segment, `<claims_missing_evidence count="1"/>`) {
+		t.Fatalf("segment = %q, want the missing-evidence verdict", segment)
+	}
+}

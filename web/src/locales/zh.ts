@@ -2028,6 +2028,115 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       modelMaxTokensMinMessage: '最大 Token 数不能小于 0',
     },
     knowledgeCompilation: {
+      // 模型产出的查看入口：紧挨编辑器，因为"这个模型好不好"要靠编译出的行和
+      // 它们的源文本回答，光看声明答不了。
+      ontologyInspect: {
+        open: '编译产物',
+        openHint: '该模型抽出了什么，以及背后的源文本',
+        saveFirst: '请先保存模型：没有数据集编译过它，就没有产物可看',
+        title: '编译产物',
+        intro:
+          '该模型在引用它的数据集上抽出的结果。每一行都带上来源数据集和背后的源文本。',
+        scopeDataset: '单个数据集',
+        scopeCorpus: '全部数据集',
+        datasetsLoading: '加载数据集…',
+        noDatasets: '还没有数据集使用该模型，暂无可查看的产物。',
+        instances: '实例',
+        assertions: '断言',
+        summary:
+          '范围内 {{count}} 条 · {{datasets}} 个数据集 · 模型 v{{version}}',
+        truncated:
+          '仅显示受限窗口，并非范围内全部。缩小数据集或类的范围可看到其余部分。',
+        skipped: '未读取：{{ids}}',
+        loading: '读取编译行…',
+        empty: '该范围内没有内容。',
+        emptyHint:
+          '可能是这些数据集还没有用该模型编译过，也可能该模型不产出这一项。',
+        staleVersion:
+          '由 v{{version}} 抽取；模型当前为 v{{current}}，此行早于当前版本',
+        evidence: '源文本（{{count}}）',
+        evidenceMissing: '该行没有记录源文本',
+        evidenceTitle: '源文本',
+        evidenceLoading: '加载中…',
+        evidenceNone:
+          '该行没有记录源文本：抽取时还没有保留 chunk，或者原文已被删除。',
+      },
+      ontologyModel: {
+        title: '模型库',
+        description:
+          '每个模型显示当前生效的版本、由谁发布、以及有多少数据集正在使用它。语料库按已发布版本抽取，因此修改只在发布后生效。',
+        loading: '加载中…',
+        empty: '还没有模型，请先在模板编辑器中创建。',
+        status: {
+          draft: '草稿',
+          review: '待评审',
+          published: '已发布',
+          retired: '已停用',
+        },
+        unpublishedChanges: '有未发布的修改',
+        history: '版本',
+        publishOrCheck: '发布',
+        submitForReview: '提交评审',
+        reject: '驳回',
+        retire: '停用',
+        versionLine: 'v{{version}} · {{at}} 由 {{by}} 发布',
+        notPublished: '从未发布——编译使用当前草稿',
+        datasetCount: '{{count}} 个数据集正在使用',
+        impactTitle: '正在使用 {{name}} 的数据集',
+        impactDescription:
+          '发布新版本不会重新编译这些数据集。在有人重新编译之前，它们仍保留上一次运行所用版本提取出的知识。',
+        impactEmpty: '当前没有数据集使用该模型。',
+        impactDocs: '{{count}} 个文档',
+        openDataset: '打开数据集',
+        trial: '试运行',
+        trialTitle: '试运行 {{name}}',
+        trialDescription:
+          '用真实文档运行草稿版本（v{{next}}），并与 v{{current}} 在当前语料中已提取的知识对比。',
+        trialWarning:
+          '试运行会用模型真实编译文档：每个文档都会调用一次对话模型，可能耗时较久。它不写入任何内容——不会重新编译数据集，也不会发布版本。',
+        trialRun: '开始试运行',
+        trialRerun: '再次运行',
+        trialRunning: '编译中…',
+        trialFailed: '试运行无法运行',
+        trialSummary:
+          '新增 {{added}} 条断言 · 丢失 {{removed}} 条，共 {{runs}} 次编译',
+        trialNoChange: '草稿版本产出的知识与当前语料一致，共 {{runs}} 次编译。',
+        trialAdded: '新增',
+        trialRemoved: '丢失',
+        trialUnchanged: '{{count}} 条未变',
+        trialChunks: '{{count}} 个源文本分块',
+        modelLibraryLink: '模型与版本',
+        reviewNote: '评审意见',
+        editModel: '编辑该模型',
+        publishTitle: '发布 {{name}}',
+        publishDescription:
+          '发布会把当前草稿记录为 v{{next}}，并让编译改用该版本。当前生效版本为 v{{current}}。',
+        publishNote: '本次改动',
+        publishNotePlaceholder:
+          '说明改了什么——版本列表之后显示的就是这段文字。',
+        cancel: '取消',
+        publish: '发布',
+        publishAnyway: '仍然发布',
+        publishSucceeded: '已发布 v{{version}}',
+        publishFailed: '发布失败',
+        reviewSubmitted: '已提交评审',
+        reviewSubmitFailed: '提交评审失败',
+        rejectPrompt: '请说明驳回原因',
+        rejected: '已退回草稿',
+        rejectFailed: '驳回失败',
+        retired: '模型已停用',
+        retireFailed: '停用失败',
+        checking: '正在检查模型…',
+        noFindings: '没有发现问题，可以发布。',
+        blockers: '{{count}} 项阻断问题——禁止发布',
+        warnings: '{{count}} 项警告——发布需确认',
+        historyTitle: '{{name}} 的版本',
+        historyDescription: '选择一个版本，查看它相对上一版改了什么。',
+        noVersions: '该模型从未发布过。',
+        current: '当前',
+        noChanges: 'v{{from}} 与 v{{to}} 之间没有差异。',
+        diffHeading: 'v{{from}} → v{{to}}',
+      },
       addTemplateGroup: '添加模板',
       editTemplateGroup: '编辑模板',
       deleteTemplateGroupTitle: '删除模板分组',
@@ -2078,11 +2187,13 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyGoToClass: '跳到另一端类',
       ontologyShowUndeclared: '显示未声明的类与属性',
       ontologyFocusedOnly: '只画选中类的边',
-      ontologyNoInstancesToShow: '本范围内这个类没有编译出实例，没有列表可打开。',
+      ontologyNoInstancesToShow:
+        '本范围内这个类没有编译出实例，没有列表可打开。',
       ontologyDrilldownFailed: '请求失败：{{message}}',
       ontologyDrilldownLoadMore: '再加载 {{count}} 条',
       ontologyDrilldownAllShown: '已显示全部 {{count}} 条',
-      ontologyDrilldownCapped: '已显示前 {{shown}} / {{total}} 条 —— 想看完请在更小的范围内打开这个类',
+      ontologyDrilldownCapped:
+        '已显示前 {{shown}} / {{total}} 条 —— 想看完请在更小的范围内打开这个类',
       ontologyMoreAttributes: '另有 {{count}} 个属性',
       ontologyResetLayout: '重新布局',
       ontologyAddClass: '+ 类',
@@ -2095,23 +2206,30 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyDeleteClass: '删除该类',
       ontologyDeleteProperty: '删除该属性',
       ontologyPitfallCategory_logical: '逻辑问题',
-      ontologySaveBlocked: '有 {{count}} 个本体问题需要先修正 —— 画布上已列出。',
+      ontologySaveBlocked:
+        '有 {{count}} 个本体问题需要先修正 —— 画布上已列出。',
       ontologyQualityTitle: '编译质量',
-      ontologyQualityLine: '编译质量：未声明 {{undeclared}} · 被拒 {{rejected}} · 无类 {{untyped}} · 缺陷 {{findings}} · 未被使用 {{uncovered}}',
-      ontologyQualityWhereToFix: '勾选你要接受的改动，然后点「应用并重编译」：这些行改的是**模板声明**，编译才会让数字变化。只重新编译文档不会改变这里。',
+      ontologyQualityLine:
+        '编译质量：未声明 {{undeclared}} · 被拒 {{rejected}} · 无类 {{untyped}} · 缺陷 {{findings}} · 未被使用 {{uncovered}}',
+      ontologyQualityWhereToFix:
+        '勾选你要接受的改动，然后点「应用并重编译」：这些行改的是**模板声明**，编译才会让数字变化。只重新编译文档不会改变这里。',
       ontologyQualityApply: '改模板',
       ontologyQualitySelect: '选中',
       ontologyQualityPending: '· 已选 {{count}} 项，尚未应用',
-      ontologyQualityNothingMeasured: '— 本范围没有编译出任何对象属性断言（实体 {{entities}} 个、断言 0 条）：上面的 0 是**空集**，不是合规。',
-      ontologyQualityApplyBatchHint: '— 先写回模板，再重编译；只重新编译文档不会生效。',
+      ontologyQualityNothingMeasured:
+        '— 本范围没有编译出任何对象属性断言（实体 {{entities}} 个、断言 0 条）：上面的 0 是**空集**，不是合规。',
+      ontologyQualityApplyBatchHint:
+        '— 先写回模板，再重编译；只重新编译文档不会生效。',
       ontologyQualitySelected: '已选 {{count}} 项',
       ontologyQualityApplyBatch: '应用并重编译',
       ontologyQualityClearSelection: '清除选择',
       ontologyQualityApplying: '正在写回模板…',
-      ontologyQualityApplied: '已应用 {{count}} 处修改；正在重跑受影响文档的编译，跑完后数字会更新。',
+      ontologyQualityApplied:
+        '已应用 {{count}} 处修改；正在重跑受影响文档的编译，跑完后数字会更新。',
       ontologyQualityApplyYes: '确认修改',
       ontologyQualityApplyFailed: '模板未修改：{{message}}',
-      ontologyQualityActionWiden: '把「{{class}}」加进 {{property}} 的 {{side}}（当前声明：{{declared}}）—— 一次覆盖 {{count}} 条断言',
+      ontologyQualityActionWiden:
+        '把「{{class}}」加进 {{property}} 的 {{side}}（当前声明：{{declared}}）—— 一次覆盖 {{count}} 条断言',
       ontologyQualityActionNothingDeclared: '未声明',
       ontologyQualityActionDeclare: '补一条声明：',
       ontologyQualityActionDeclareAs: '—— 观察为 {{domain}} → {{range}}',
@@ -2119,25 +2237,35 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyQualityShow: '查看要改什么',
       ontologyQualityHide: '收起要改什么',
       ontologyQualityPass: '—— 本范围没有需要修的地方。',
-      ontologyQualityScope: '按当前范围统计。下面每一项的修复动作都是改模板或重读文档，不是改某一行数据。',
+      ontologyQualityScope:
+        '按当前范围统计。下面每一项的修复动作都是改模板或重读文档，不是改某一行数据。',
       ontologyQualityUndeclared: '未声明的属性',
-      ontologyQualityUndeclaredHint: '—— 数据里出现、模板没声明；每一行就是该补的那条声明。',
+      ontologyQualityUndeclaredHint:
+        '—— 数据里出现、模板没声明；每一行就是该补的那条声明。',
       ontologyQualityEndpointGaps: '未声明的端点组合',
-      ontologyQualityEndpointGapsHint: '— 属性已声明，是这一对端点没声明；每行是把某一侧补上。',
-      ontologyQualityActionClassUndeclared: '{{class}} 本身也未声明，请先声明该类。',
+      ontologyQualityEndpointGapsHint:
+        '— 属性已声明，是这一对端点没声明；每行是把某一侧补上。',
+      ontologyQualityActionClassUndeclared:
+        '{{class}} 本身也未声明，请先声明该类。',
       ontologyQualityDropped: '被拒绝的断言',
-      ontologyQualityDroppedHint: '—— 声明写窄了；每一行就是把它放进来所需的那个改动。',
+      ontologyQualityDroppedHint:
+        '—— 声明写窄了；每一行就是把它放进来所需的那个改动。',
       ontologyQualityDroppedMore: '只列出第一页；上面的数字是完整的。',
       ontologyQualityUntyped: '没有类的实体',
-      ontologyQualityUntypedHint: '—— 抽取没给出类，这些行上不了图；把该类的 rule 写清后重跑。',
+      ontologyQualityUntypedHint:
+        '—— 抽取没给出类，这些行上不了图；把该类的 rule 写清后重跑。',
       ontologyQualityPitfalls: '声明缺陷',
-      ontologyQualityPitfallsHint: '—— 模板自身的问题；在编辑器里改即可，不需要重跑编译。',
+      ontologyQualityPitfallsHint:
+        '—— 模板自身的问题；在编辑器里改即可，不需要重跑编译。',
       ontologyQualityCoverage: '未被使用',
-      ontologyQualityCoverageHint: '— 本范围声明了 {{declared}} 个端点对，其中 {{exercised}} 个有线；下面列的是**一条断言都没有**的属性（单文档里大多正常，先看数据集范围再决定是否改）。',
+      ontologyQualityCoverageHint:
+        '— 本范围声明了 {{declared}} 个端点对，其中 {{exercised}} 个有线；下面列的是**一条断言都没有**的属性（单文档里大多正常，先看数据集范围再决定是否改）。',
       ontologyQualityNoSubjects: '无需列出',
-      ontologyLinkingHint: '点一个已有类连到 {{from}}，或点空白处新建一个相连的类（Esc 取消）。',
+      ontologyLinkingHint:
+        '点一个已有类连到 {{from}}，或点空白处新建一个相连的类（Esc 取消）。',
       ontologyMoreSettings: '更多设置',
-      ontologyLinkHandle: '连线：先点这里，再点一个已有类；或点空白处新建一个相连的类。',
+      ontologyLinkHandle:
+        '连线：先点这里，再点一个已有类；或点空白处新建一个相连的类。',
       ontologyOwnProperties: '这个类的属性',
       ontologyNoOwnProperties: '还没有。',
       ontologyAddOwnAttribute: '+ 属性',
@@ -2169,19 +2297,29 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       ontologyPitfallCategory_semantic: '语义问题',
       ontologyPitfall_dangling_property: '属性指向了模板未声明的端点类',
       ontologyPitfall_dangling_parent: '类声明的父类不是已声明的类',
-      ontologyPitfall_redundant_parent: '类同时声明了父类与其祖先类，其中一条边没有信息',
-      ontologyPitfall_class_without_property: '没有任何属性触达这个类（自身与继承都没有）',
-      ontologyPitfall_orphan_class: '这个类既没有属性、也没有编译出的实例，只能画成孤立节点',
+      ontologyPitfall_redundant_parent:
+        '类同时声明了父类与其祖先类，其中一条边没有信息',
+      ontologyPitfall_class_without_property:
+        '没有任何属性触达这个类（自身与继承都没有）',
+      ontologyPitfall_orphan_class:
+        '这个类既没有属性、也没有编译出的实例，只能画成孤立节点',
       ontologyPitfall_single_child_parent: '某个父类只有一个子类',
-      ontologyPitfall_disconnected_hierarchy: '继承层级有多个根，被切成互不相连的树',
-      ontologyPitfall_endpoint_ancestor_expansion: '属性同时声明了某个类和它的祖先类，祖先已经覆盖了它',
-      ontologyPitfall_property_name_hierarchy: '属性名嵌套在另一个属性名里、且类间关系相同或更窄，形似子属性',
-      ontologyPitfall_standard_vocabulary_property: '该名称已被 RDF/OWL 标准词汇占用',
+      ontologyPitfall_disconnected_hierarchy:
+        '继承层级有多个根，被切成互不相连的树',
+      ontologyPitfall_endpoint_ancestor_expansion:
+        '属性同时声明了某个类和它的祖先类，祖先已经覆盖了它',
+      ontologyPitfall_property_name_hierarchy:
+        '属性名嵌套在另一个属性名里、且类间关系相同或更窄，形似子属性',
+      ontologyPitfall_standard_vocabulary_property:
+        '该名称已被 RDF/OWL 标准词汇占用',
       ontologyPitfall_range_in_property_name: '属性名里重复了它指向的值域类',
       ontologyPitfall_domain_in_property_name: '属性名里重复了它的定义域类',
-      ontologyPitfall_overly_generic_class: '名称过于笼统，抽取模型会把什么都归到它下面',
-      ontologyPitfall_class_property_name_collision: '这个名字同时被一个类和一个属性使用',
-      ontologyPitfall_datatype_is_class: '声明的数据类型是本体的一个类，说明它本该是对象属性',
+      ontologyPitfall_overly_generic_class:
+        '名称过于笼统，抽取模型会把什么都归到它下面',
+      ontologyPitfall_class_property_name_collision:
+        '这个名字同时被一个类和一个属性使用',
+      ontologyPitfall_datatype_is_class:
+        '声明的数据类型是本体的一个类，说明它本该是对象属性',
       addField: '添加字段',
       editField: '编辑字段',
       selectFieldType: '选择或输入字段类型',

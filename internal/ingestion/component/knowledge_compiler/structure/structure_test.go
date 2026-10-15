@@ -1083,6 +1083,45 @@ func TestDatatypePropertiesByClassInherits(t *testing.T) {
 	}
 }
 
+// A class may name several superclasses (`|`-separated `parent`). Every one of
+// them contributes its attributes, nearest first — the same breadth-first order
+// ontologyClassAncestors uses — and an ancestor reached through two parents (the
+// diamond here: `agent` via both person and organization) is reported once.
+func TestDatatypePropertiesByClassInheritsFromEveryParent(t *testing.T) {
+	cfg := map[string]any{
+		"kind": "ontology",
+		"entity": map[string]any{"fields": []any{
+			map[string]any{"type": "agent", "description": "anything bearing a role"},
+			map[string]any{"type": "person", "parent": "agent", "description": "a person"},
+			map[string]any{"type": "organization", "parent": "agent", "description": "a company"},
+			map[string]any{"type": "employee", "parent": "person | organization", "description": "an employed person"},
+		}},
+		"relation": map[string]any{"fields": []any{
+			map[string]any{"type": "alias", "kind": "datatype", "domain": "agent", "datatype": "list"},
+			map[string]any{"type": "birth_date", "kind": "datatype", "domain": "person", "datatype": "date"},
+			map[string]any{"type": "founded_on", "kind": "datatype", "domain": "organization", "datatype": "date"},
+			map[string]any{"type": "employee_id", "kind": "datatype", "domain": "employee", "datatype": "string"},
+		}},
+	}
+	byClass := datatypePropertiesByClass(cfg)
+	want := map[string][]string{
+		"employee":     {"employee_id", "birth_date", "founded_on", "alias"},
+		"person":       {"birth_date", "alias"},
+		"organization": {"founded_on", "alias"},
+	}
+	for class, wantAttrs := range want {
+		got := byClass[class]
+		if len(got) != len(wantAttrs) {
+			t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+		}
+		for i := range wantAttrs {
+			if got[i] != wantAttrs[i] {
+				t.Fatalf("%s attributes = %v, want %v", class, got, wantAttrs)
+			}
+		}
+	}
+}
+
 func TestOntologyAttributes(t *testing.T) {
 	cfg := ontologyParserConfig()
 

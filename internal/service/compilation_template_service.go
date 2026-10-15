@@ -29,6 +29,7 @@ import (
 
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/utility"
 
 	"gopkg.in/yaml.v3"
@@ -194,23 +195,25 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 	}
 
 	classes := map[string]bool{}
-	parentOf := map[string]string{}
+	parentOf := map[string][]string{}
 	for _, f := range fieldsOf("entity") {
 		name := strings.TrimSpace(yamlStr(f["type"]))
 		if name == "" {
 			continue
 		}
 		classes[name] = true
-		if parent := strings.TrimSpace(yamlStr(f["parent"])); parent != "" {
-			parentOf[name] = parent
+		if parents := splitTypeList(yamlStr(f["parent"])); len(parents) > 0 {
+			parentOf[name] = parents
 		}
 	}
 	if len(classes) == 0 {
 		return errors.New("ontology template must declare at least one class")
 	}
 
-	for child, parent := range parentOf {
-		for _, p := range splitTypeList(parent) {
+	// A class may declare several superclasses (`|`-separated), so both checks
+	// below walk the whole parent set rather than one chain.
+	for child, parents := range parentOf {
+		for _, p := range parents {
 			if !classes[p] {
 				return fmt.Errorf("class %q declares unknown parent %q", child, p)
 			}
@@ -219,12 +222,19 @@ func validateOntologyTemplate(configMap map[string]interface{}) error {
 	// A cyclic parent chain would make the inherited-attribute walk used by the
 	// ontology queries (class -> all its attributes) never terminate.
 	for child := range parentOf {
-		seen := map[string]bool{child: true}
-		for cur := parentOf[child]; cur != ""; cur = parentOf[cur] {
-			if seen[cur] {
+		seen := map[string]bool{}
+		queue := append([]string{}, parentOf[child]...)
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			if cur == "" || seen[cur] {
+				continue
+			}
+			if cur == child {
 				return fmt.Errorf("class %q has a cyclic parent chain", child)
 			}
 			seen[cur] = true
+			queue = append(queue, parentOf[cur]...)
 		}
 	}
 
@@ -360,7 +370,7 @@ func ValidateTemplatePayload(req map[string]interface{}, requireAll bool) error 
 		// Ontology templates additionally carry cross-references between fields
 		// (class parent, property domain / range / datatype), which the per-field
 		// loop above cannot see.
-		if yamlStr(configMap["kind"]) == "ontology" || yamlStr(req["kind"]) == "ontology" {
+		if kccommon.IsOntologyKind(yamlStr(configMap["kind"])) || kccommon.IsOntologyKind(yamlStr(req["kind"])) {
 			if err := validateOntologyTemplate(configMap); err != nil {
 				return err
 			}

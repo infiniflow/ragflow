@@ -508,6 +508,14 @@ func (s *CompilationTemplateGroupService) reconcileChildren(ctx context.Context,
 			if desc != "" {
 				updates["description"] = desc
 			}
+			// A save on a published model is an unpublished change. The values are
+			// not compared first: a semantically identical save (reordered keys, a
+			// reformatted guideline) would then leave a modified model still
+			// labelled published, and the safe direction to be wrong in is showing
+			// "unpublished changes" on a model that happens to match.
+			if status := strings.TrimSpace(item.target.PublishStatus); status == entity.PublishStatusPublished || status == entity.PublishStatusReview {
+				updates["publish_status"] = entity.PublishStatusDraft
+			}
 			if err := s.templateDAO.UpdateFields(ctx, db, item.target.ID, updates); err != nil {
 				return err
 			}
