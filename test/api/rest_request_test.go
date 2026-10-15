@@ -140,7 +140,11 @@ func cleanupResource(t *testing.T, c *ServerTestConfig, family, id string) {
 		case "chats":
 			restCode(t, restCall(t, c, http.MethodGet, "/chats/"+id, nil, nil), 200, 404)
 		case "datasets":
-			remaining := restOK(t, restCall(t, c, http.MethodGet, "/datasets", nil, apiObject{"id": id}))
+			result := restCall(t, c, http.MethodGet, "/datasets", nil, apiObject{"id": id})
+			if result.Status == http.StatusOK && result.JSON["code"] == float64(404) {
+				return
+			}
+			remaining := restOK(t, result)
 			if len(array(t, remaining["data"])) != 0 {
 				t.Errorf("cleanup left dataset %s present", id)
 			}
@@ -177,5 +181,37 @@ func TestRESTHelperTransport(t *testing.T) {
 	}
 	if !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("cancellation error=%v", err)
+	}
+}
+
+func TestRESTHelperDatasetCleanup(t *testing.T) {
+	for _, tc := range []struct{ name, body string }{
+		{"empty_list", `{"code":0,"data":[]}`},
+		{"missing_id", `{"code":404,"message":"Resource not found"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var deleted, verified atomic.Bool
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.Method == http.MethodDelete && r.URL.Path == "/api/v1/datasets" {
+					deleted.Store(true)
+					_, _ = io.WriteString(w, `{"code":0,"data":{"success_count":1,"errors":[]}}`)
+					return
+				}
+				if !deleted.Load() || r.Method != http.MethodGet || r.URL.Query().Get("id") != "dataset-id" {
+					t.Error("cleanup did not delete then verify the selected dataset")
+				}
+				verified.Store(true)
+				_, _ = io.WriteString(w, tc.body)
+			}))
+			t.Cleanup(server.Close)
+			t.Cleanup(func() {
+				if !deleted.Load() || !verified.Load() {
+					t.Error("dataset cleanup did not execute both requests")
+				}
+			})
+			config := &ServerTestConfig{HostAddress: server.URL, APIVersion: "v1", APIKey: "test-secret"}
+			cleanupResource(t, config, "datasets", "dataset-id")
+		})
 	}
 }

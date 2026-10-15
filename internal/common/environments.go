@@ -240,6 +240,7 @@ const (
 	EnvChunkFeedbackWeighting            = "CHUNK_FEEDBACK_WEIGHTING"
 	EnvComposeProfiles                   = "COMPOSE_PROFILES"
 	EnvTEIModel                          = "TEI_MODEL"
+	EnvTEIHost                           = "TEI_HOST"
 	EnvTEIBaseURL                        = "TEI_BASE_URL"
 	EnvRAGFlowConfDir                    = "RAGFLOW_CONF_DIR"
 	EnvRAGProjectBase                    = "RAG_PROJECT_BASE"

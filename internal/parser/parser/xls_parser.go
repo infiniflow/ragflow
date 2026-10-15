@@ -176,7 +176,8 @@ func readBIFF8Records(ctx context.Context, reader excel.Reader) ([][]string, []i
 		records = append(records, row.cells)
 		dataRows = append(dataRows, row.number)
 	}
-	return cleanIllegalControlChars(records), dataRows, rows[0].number
+	records = trimTrailingEmptyColumns(cleanIllegalControlChars(records))
+	return records, dataRows, rows[0].number
 }
 
 func spreadsheetCellString(value any) string {

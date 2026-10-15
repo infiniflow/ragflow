@@ -109,14 +109,6 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 			wantText: "Title",
 		},
 		{
-			name: "html",
-			dispatched: parser.ParseResult{
-				OutputFormat: "html",
-				HTML:         "<h1>Title</h1><p>Body</p>",
-			},
-			wantText: "Title",
-		},
-		{
 			name: "text",
 			dispatched: parser.ParseResult{
 				OutputFormat: "text",
@@ -155,6 +147,22 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNormalizeParserJSON_EmptyPayloadYieldsEmpty pins that a result with no
+// populated payload family normalizes to an empty JSON slice rather than
+// injecting a bogus item. HTML is not a supported backend output format
+// (PR #19467 unified the component to JSON-only; no Go parser produces an
+// HTML payload), so there is no HTML normalization branch to fall through
+// to — this guards that regression.
+func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
+	r := parser.ParseResult{
+		OutputFormat: "json",
+	}
+	items := normalizeParserJSON(t.Context(), "doc.txt", r)
+	if len(items) != 0 {
+		t.Fatalf("normalizeParserJSON(empty) = %d items, want 0 (no payload → empty)", len(items))
 	}
 }
 

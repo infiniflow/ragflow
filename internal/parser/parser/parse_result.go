@@ -65,7 +65,7 @@ type ParseResult struct {
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
-	// Markdown / HTML / text emit normalized
+	// Markdown / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits an image payload and, after
 	// ingestion enhancement, its VLM description.
 	JSON []map[string]any
@@ -75,9 +75,6 @@ type ParseResult struct {
 
 	// Text is a backend response awaiting normalization.
 	Text string
-
-	// HTML is a backend response awaiting normalization.
-	HTML string
 
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
