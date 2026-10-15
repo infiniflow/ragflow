@@ -125,6 +125,76 @@ func tagFileIDFromTagsMap(raw any) string {
 	return ""
 }
 
+// DefaultTagTopN mirrors Python's parser_config.get("topn_tags", 3): the tag
+// count to return when the dataset declares no tags block.
+const DefaultTagTopN = 3
+
+// TagTopNFromParserConfig returns the tag count declared in a dataset's
+// parser_config, reading the same node-scoped tags block the migration writes
+// and the extractor reads:
+//
+//   - Go pipeline scoped form: parser_config["Extractor:<name>"]["tags"]
+//     ["top_n"] (several nodes: the lowest-sorting one wins, same rule as
+//     TagFileIDFromParserConfig).
+//   - Legacy / flat form: parser_config["tags"]["top_n"], kept as a fallback
+//     for rows the migration has not (or could not) rewrite.
+//
+// It reports false when no tags block declares top_n, so the caller falls
+// back to DefaultTagTopN.
+func TagTopNFromParserConfig(parserConfig map[string]any) (int, bool) {
+	if parserConfig == nil {
+		return 0, false
+	}
+	if topN, ok := tagTopNFromTagsMap(parserConfig["tags"]); ok {
+		return topN, true
+	}
+	keys := make([]string, 0, len(parserConfig))
+	for key := range parserConfig {
+		if key == "Extractor" || strings.HasPrefix(key, "Extractor:") {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		extractorMap, ok := asStringAnyMap(parserConfig[key])
+		if !ok {
+			continue
+		}
+		if topN, ok := tagTopNFromTagsMap(extractorMap["tags"]); ok {
+			return topN, true
+		}
+	}
+	return 0, false
+}
+
+// tagTopNFromTagsMap pulls top_n out of a raw "tags" config value, tolerating
+// every numeric shape JSON decoding produces.
+func tagTopNFromTagsMap(raw any) (int, bool) {
+	tags, ok := asStringAnyMap(raw)
+	if !ok {
+		return 0, false
+	}
+	switch v := tags["top_n"].(type) {
+	case float64:
+		if v <= 0 || v != float64(int(v)) {
+			return 0, false
+		}
+		return int(v), true
+	case int:
+		if v <= 0 {
+			return 0, false
+		}
+		return v, true
+	case int64:
+		if v <= 0 {
+			return 0, false
+		}
+		return int(v), true
+	default:
+		return 0, false
+	}
+}
+
 // asStringAnyMap accepts both plain and entity.JSONMap values, which is how
 // parser_config is persisted depending on the write path.
 func asStringAnyMap(raw any) (map[string]any, bool) {

@@ -18,7 +18,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 
 	"go.uber.org/zap"
 
@@ -36,7 +35,7 @@ type Knowledgebase = entity.Knowledgebase
 // Python points at tag datasets, Go points at a tag source file (parser_config
 // tags.tag_file_id) that is indexed in memory instead of a dataset.
 //
-// The last non-nil KB is returned so the caller can read topn_tags from it, as
+// The last non-nil KB is returned so the caller can read tags.top_n from it, as
 // Python does with the loop's final kb.
 func tagSourceRefs(kbs []*Knowledgebase) ([]component.TagSourceRef, *Knowledgebase) {
 	seen := make(map[string]struct{}, len(kbs))
@@ -61,26 +60,19 @@ func tagSourceRefs(kbs []*Knowledgebase) ([]component.TagSourceRef, *Knowledgeba
 	return refs, last
 }
 
-// topnTagsFromKB mirrors Python's parser_config.get("topn_tags", 3).
-// JSON-decoded numbers arrive as float64; also tolerate int/int64/json.Number.
+// topnTagsFromKB reads the tag count from the dataset's parser_config. The
+// migration folds Python's flat topn_tags into the Extractor node's tags.top_n
+// (and deletes the flat key), so the node-scoped block is authoritative; the
+// flat form survives only inside TagTopNFromParserConfig as a fallback for
+// rows the migration has not rewritten. Unset means Python's default of 3.
 func topnTagsFromKB(kb *Knowledgebase) int {
-	topnTags := 3
 	if kb == nil || kb.ParserConfig == nil {
-		return topnTags
+		return component.DefaultTagTopN
 	}
-	switch v := kb.ParserConfig["topn_tags"].(type) {
-	case float64:
-		topnTags = int(v)
-	case int:
-		topnTags = v
-	case int64:
-		topnTags = int(v)
-	case json.Number:
-		if n, err := v.Int64(); err == nil {
-			topnTags = int(n)
-		}
+	if topN, ok := component.TagTopNFromParserConfig(map[string]any(kb.ParserConfig)); ok {
+		return topN
 	}
-	return topnTags
+	return component.DefaultTagTopN
 }
 
 // LabelQuestion returns weighted tag rank features for a question, the Go

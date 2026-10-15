@@ -112,6 +112,99 @@ func TestTagFileIDFromParserConfigPicksStableExtractorNode(t *testing.T) {
 	}
 }
 
+func TestTagTopNFromParserConfig(t *testing.T) {
+	tests := []struct {
+		name         string
+		parserConfig map[string]any
+		want         int
+		wantOK       bool
+	}{
+		{
+			name:         "nil config",
+			parserConfig: nil,
+			want:         0,
+			wantOK:       false,
+		},
+		{
+			name: "extractor scoped form",
+			parserConfig: map[string]any{
+				"Extractor:AutoExtractDefault": map[string]any{
+					"tags": map[string]any{"top_n": float64(5)},
+				},
+			},
+			want:   5,
+			wantOK: true,
+		},
+		{
+			name: "flat tags map fallback",
+			parserConfig: map[string]any{
+				"tags": map[string]any{"top_n": float64(7)},
+			},
+			want:   7,
+			wantOK: true,
+		},
+		{
+			name: "flat tags map wins over node",
+			parserConfig: map[string]any{
+				"tags": map[string]any{"top_n": float64(7)},
+				"Extractor:AutoExtractDefault": map[string]any{
+					"tags": map[string]any{"top_n": float64(5)},
+				},
+			},
+			want:   7,
+			wantOK: true,
+		},
+		{
+			name: "int and int64 shapes",
+			parserConfig: map[string]any{
+				"Extractor:A": map[string]any{
+					"tags": map[string]any{"top_n": 4},
+				},
+			},
+			want:   4,
+			wantOK: true,
+		},
+		{
+			name: "zero and negative are absent",
+			parserConfig: map[string]any{
+				"Extractor:AutoExtractDefault": map[string]any{
+					"tags": map[string]any{"top_n": float64(0)},
+				},
+			},
+			want:   0,
+			wantOK: false,
+		},
+		{
+			name: "stable across nodes",
+			parserConfig: map[string]any{
+				"Extractor:B": map[string]any{
+					"tags": map[string]any{"top_n": float64(9)},
+				},
+				"Extractor:A": map[string]any{
+					"tags": map[string]any{"top_n": float64(3)},
+				},
+			},
+			want:   3,
+			wantOK: true,
+		},
+		{
+			name:         "no tags block",
+			parserConfig: map[string]any{"chunk_token_num": 128},
+			want:         0,
+			wantOK:       false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := TagTopNFromParserConfig(tt.parserConfig)
+			if got != tt.want || ok != tt.wantOK {
+				t.Fatalf("TagTopNFromParserConfig(%v) = (%d, %v), want (%d, %v)",
+					tt.parserConfig, got, ok, tt.want, tt.wantOK)
+			}
+		})
+	}
+}
+
 func newTagQueryTestIndex(t *testing.T) *MemoryTagIndex {
 	t.Helper()
 	// The infinity engine tokenizes by identity (whitespace split), so these
