@@ -159,7 +159,7 @@ If you cannot download the RAGFlow Docker image, try the following mirrors.
 
 [service_conf.yaml.template](https://github.com/infiniflow/ragflow/blob/main/docker/service_conf.yaml.template) specifies the system-level configuration used by the Go API, Admin, Ingestor, and Syncer services.
 
-### `ragflow`
+### `api`
 
 - `host`: The API server's IP address inside the Docker container. Defaults to `0.0.0.0`.
 - `http_port`: The API server's serving port inside the Docker container. Defaults to `9380`.

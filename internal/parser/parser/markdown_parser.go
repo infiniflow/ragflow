@@ -132,7 +132,7 @@ func (p *MarkdownParser) ParseWithResult(ctx context.Context, filename string, d
 		File: map[string]any{
 			"name": filename,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: warnings,
 	}
 }

@@ -231,21 +231,20 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		return res.Text, nil
 	case "markdown":
 		return res.Markdown, nil
-	case "html":
-		return res.HTML, nil
 	case "json":
 		if len(res.JSON) > 0 {
 			parts := make([]string, 0, len(res.JSON))
 			for _, item := range res.JSON {
-				if text, ok := item["text"].(string); ok {
+				m := item.ToMap()
+				if text, ok := m["text"].(string); ok {
 					parts = append(parts, text)
 					continue
 				}
-				if td, ok := item["table"].(*entity.TableData); ok && td != nil {
+				if td, ok := m["table"].(*entity.TableData); ok && td != nil {
 					parts = append(parts, tableutil.RenderTableHTML(td))
 					continue
 				}
-				raw, err := json.Marshal(item)
+				raw, err := json.Marshal(m)
 				if err != nil {
 					return "", err
 				}
@@ -256,7 +255,7 @@ func parseResultText(res parser.ParseResult) (string, error) {
 		// Some legacy parsers mark the result as JSON while only populating a
 		// rendered companion field. Preserve that content instead of returning
 		// an empty sys.files value.
-		for _, fallback := range []string{res.Markdown, res.HTML, res.Text} {
+		for _, fallback := range []string{res.Markdown, res.Text} {
 			if fallback != "" {
 				return fallback, nil
 			}

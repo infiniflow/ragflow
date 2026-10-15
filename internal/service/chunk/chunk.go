@@ -101,8 +101,8 @@ type ChunkService struct {
 	storeChunkImageFunc     func(string, string, []byte, string) error
 	removeChunkImageFunc    func(string, string) error
 	markWikiDirtyFunc       func(tenantID, datasetID, documentID string, chunkIDs []string)
-	tokenizeFunc            func(string) (string, error)
-	fineGrainedTokenizeFunc func(string) (string, error)
+	tokenizeFunc            func(text, language string) (string, error)
+	fineGrainedTokenizeFunc func(text, language string) (string, error)
 	numTokensFunc           func(string) int
 }
 
@@ -416,6 +416,7 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 
 	// Call RetrievalService to perform retrieval
@@ -851,7 +852,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 		if queryBuilder == nil {
 			queryBuilder = nlp.NewQueryBuilder()
 		}
-		if matchText, _ := queryBuilder.Question(keywords, "", 0.3); matchText != nil {
+		if matchText, _ := queryBuilder.Question(keywords, "", 0.3, datasetLanguageOf(kb)); matchText != nil {
 			matchExprs = append(matchExprs, matchText)
 		}
 	}
@@ -874,6 +875,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"content_with_weight",
 			"img_id",
 			"position_int",
+			// Read back only to emit the `available` boolean.
+			"available_int",
 			// Call for the ES field names: Elasticsearch does not translate
 			// SelectFields (see elasticsearch/chunk.go), while Infinity's
 			// convertSelectFields maps these names onto its own docnm /
@@ -919,6 +922,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	for _, chunk := range searchResp.Chunks {
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
+		// `available`: available_int=0 → false, missing → true; the frontend uses
+		// it to render disabled chunks, incl. parent rows.
+		availableInt := 1
+		if stored, ok := common.GetInt(chunk["available_int"]); ok {
+			availableInt = stored
+		}
+		result["available"] = availableInt != 0
 		skipFields := map[string]bool{
 			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
@@ -1094,6 +1104,7 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 		return err
 	}
 	targetTenantID := kb.TenantID
+	language := datasetLanguageOf(kb)
 
 	// Verify document belongs to dataset
 	docDAO := dao.NewDocumentDAO()
@@ -1139,8 +1150,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	// Tokenize content
 	contentStr := d["content_with_weight"].(string)
-	d["content_ltks"], _ = tokenizer.Tokenize(contentStr)
-	d["content_sm_ltks"], _ = tokenizer.FineGrainedTokenize(d["content_ltks"].(string))
+	d["content_ltks"], _ = s.tokenize(contentStr, language)
+	d["content_sm_ltks"], _ = s.fineGrainedTokenize(d["content_ltks"].(string), language)
 
 	// Important keywords - convert []string to []interface{} for transformChunkFields
 	if req.ImportantKwd != nil {
@@ -1260,15 +1271,18 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
 
-	if req.DocID == "" {
-		return 0, fmt.Errorf("doc_id is required")
+	if req.DatasetID == "" || req.DocID == "" {
+		return 0, fmt.Errorf("dataset_id and doc_id are required")
 	}
 
-	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
+	// Bind deletion to the dataset and document named in the route.
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return 0, permission.ErrResourceNotFound
 	}
 
 	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
@@ -1314,6 +1328,54 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	return deletedCount, nil
 }
 
+// nextSourceChunkOrder returns the chunk_order_int a newly added source chunk
+// should carry: one past the highest order already used by the document's source
+// chunks, so manual chunks append after the ingested ones. Parent rows live in
+// the reserved range starting at common.ParentChunkOrderBase, so the new chunk
+// still lists before every parent of the document — including when the document
+// has been parsed (and its parents materialized) long before the chunk was added.
+//
+// The lookup asks the engine for the document's highest-numbered source chunk.
+// doc_type_kwd separates the two ranges without a range condition: every chunker
+// output carries it (itemDocType defaults to "text"), it survives the tokenizer,
+// and this API writes it below, while parent rows never copy it — so descending
+// by chunk_order_int among those rows lands on the last source chunk rather than
+// on a parent. A pipeline that emits chunks without doc_type_kwd (custom
+// pipelines that never set it) makes the lookup come back empty, and the new
+// chunk falls back to order 0, still inside the source range.
+func (s *ChunkService) nextSourceChunkOrder(ctx context.Context, indexName, datasetID, documentID string) int {
+	// A small page rather than a single row: the lookup only needs the first row
+	// that actually carries a source order, so being tolerant of rows without one
+	// (products written after the tokenizer, e.g. RAPTOR summaries) keeps this
+	// independent of how an engine orders rows missing the sort key in DESC.
+	searchResp, err := s.docEngine.Search(ctx, &types.SearchRequest{
+		IndexNames:         []string{indexName},
+		KbIDs:              []string{datasetID},
+		Limit:              16,
+		IncludeUnavailable: true, // a disabled source chunk still holds its order
+		SelectFields:       []string{"id", "chunk_order_int"},
+		OrderBy:            (&types.OrderByExpr{}).Desc("chunk_order_int"),
+		Filter: map[string]interface{}{
+			"doc_id":   documentID,
+			"exists":   "doc_type_kwd",
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
+		},
+	})
+	if err != nil || searchResp == nil {
+		// The order only decides where the chunk lists: never fail a write over
+		// it. 0 keeps the chunk inside the source range, ahead of the parents.
+		return 0
+	}
+	for _, row := range searchResp.Chunks {
+		order, ok := common.GetInt(row["chunk_order_int"])
+		if !ok || order < 0 || order >= common.ParentChunkOrderBase {
+			continue
+		}
+		return order + 1
+	}
+	return 0
+}
+
 func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, addChunkError{code: common.CodeServerError, message: "doc engine not initialized"}
@@ -1351,20 +1413,21 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	chunkID := common.ChunkID(req.DocumentID, req.Content)
 	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
-	contentLtks, err := s.tokenize(req.Content)
+	language := datasetLanguageOf(kb)
+	contentLtks, err := s.tokenize(req.Content, language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content: %v", err)}
 	}
-	contentSmLtks, err := s.fineGrainedTokenize(contentLtks)
+	contentSmLtks, err := s.fineGrainedTokenize(contentLtks, language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize content fine-grained: %v", err)}
 	}
-	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "))
+	importantTks, err := s.tokenize(strings.Join(req.ImportantKeywords, " "), language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize important keywords: %v", err)}
 	}
 	questionKwd := filterTrimmedStrings(req.Questions)
-	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"))
+	questionTks, err := s.tokenize(strings.Join(req.Questions, "\n"), language)
 	if err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("tokenize questions: %v", err)}
 	}
@@ -1379,9 +1442,17 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		importantKeywords = []string{}
 	}
 
+	// Append the manual chunk after the document's existing source chunks. The
+	// value stays inside the source range [0, common.ParentChunkOrderBase) so the
+	// new chunk keeps listing before the parent rows MaterializeParentChunks
+	// created for this document.
+	chunkOrder := s.nextSourceChunkOrder(ctx, indexName, req.DatasetID, req.DocumentID)
+
 	chunkData := map[string]interface{}{
 		"id":                   chunkID,
 		"content_with_weight":  req.Content,
+		"doc_type_kwd":         "text", // Python chunk_api.py:1225; the image branch below overrides it
+		"chunk_order_int":      chunkOrder,
 		"content_ltks":         contentLtks,
 		"content_sm_ltks":      contentSmLtks,
 		"important_kwd":        importantKeywords,
@@ -1447,7 +1518,7 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 
 	ctx, cancel := context.WithTimeout(ctx, 600*time.Second)
 	defer cancel()
-	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID); err != nil {
+	if _, err = s.docEngine.InsertChunks(ctx, []map[string]interface{}{chunkData}, indexName, req.DatasetID, datasetLanguageOf(kb)); err != nil {
 		return nil, addChunkError{code: common.CodeServerError, message: fmt.Sprintf("insert chunk: %v", err)}
 	}
 
@@ -1632,18 +1703,20 @@ func filterTrimmedStrings(values []string) []string {
 	return filtered
 }
 
-func (s *ChunkService) tokenize(text string) (string, error) {
+// tokenize tokenizes a manually written chunk field with the dataset language,
+// so it is indexed the way the dataset's parsed chunks are and its queries fold.
+func (s *ChunkService) tokenize(text, language string) (string, error) {
 	if s.tokenizeFunc != nil {
-		return s.tokenizeFunc(text)
+		return s.tokenizeFunc(text, language)
 	}
-	return tokenizer.Tokenize(text)
+	return tokenizer.New(language).Tokenize(text)
 }
 
-func (s *ChunkService) fineGrainedTokenize(text string) (string, error) {
+func (s *ChunkService) fineGrainedTokenize(text, language string) (string, error) {
 	if s.fineGrainedTokenizeFunc != nil {
-		return s.fineGrainedTokenizeFunc(text)
+		return s.fineGrainedTokenizeFunc(text, language)
 	}
-	return tokenizer.FineGrainedTokenize(text)
+	return tokenizer.New(language).FineGrainedTokenize(text)
 }
 
 func (s *ChunkService) numTokens(text string) int {
@@ -1844,4 +1917,15 @@ func releaseChunkImageLock(key string) {
 	if lock.refs == 0 {
 		delete(chunkImageLocks.locks, key)
 	}
+}
+
+// datasetLanguageOf is the dataset's language, or "" when unset. A query is
+// folded the way its dataset was indexed, and on engines whose fulltext
+// analyzer is fixed when the chunk store is created a write that may create it
+// has to carry the language too.
+func datasetLanguageOf(kb *entity.Knowledgebase) string {
+	if kb == nil || kb.Language == nil {
+		return ""
+	}
+	return *kb.Language
 }

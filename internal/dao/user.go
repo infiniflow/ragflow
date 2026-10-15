@@ -148,11 +148,6 @@ func (dao *UserDAO) Delete(ctx context.Context, db *gorm.DB, id uint) error {
 	return db.WithContext(ctx).Delete(&entity.User{}, id).Error
 }
 
-// DeleteByID delete user by string ID (soft delete - set status to 0)
-func (dao *UserDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.User{}).Where("id = ?", id).Update("status", "0").Error
-}
-
 // HardDelete hard delete user by string ID
 func (dao *UserDAO) HardDelete(ctx context.Context, db *gorm.DB, id string) error {
 	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.User{}).Error

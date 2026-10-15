@@ -803,7 +803,7 @@ func TestAgent_ToolCallRound(t *testing.T) {
 
 func TestAgent_ExhaustRoundsError(t *testing.T) {
 	withAgentRunner(t, func(_ context.Context, _ AgentParam) (*schema.Message, error) {
-		return nil, errors.New("[GraphRunError] exceeds max steps")
+		return nil, fmt.Errorf("[GraphRunError] %w", compose.ErrExceedMaxSteps)
 	})
 
 	c := NewAgentComponent(AgentParam{ModelID: "stub", MaxRounds: 2})
@@ -814,7 +814,7 @@ func TestAgent_ExhaustRoundsError(t *testing.T) {
 		t.Fatalf("Invoke: %v", err)
 	}
 	if got := out["_ERROR"]; got != "**ERROR**: [GraphRunError] exceeds max steps" {
-		t.Fatalf("_ERROR = %v, want Python-compatible error envelope", got)
+		t.Fatalf("_ERROR = %v, want step-exhaustion error envelope", got)
 	}
 }
 

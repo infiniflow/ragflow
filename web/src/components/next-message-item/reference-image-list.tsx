@@ -182,22 +182,28 @@ export function ReferenceImageList({
   messageContent,
 }: IProps) {
   const images = useMemo(() => {
-    // Same positional mapping as the citation chips in next-markdown-content:
-    // each unique marker is a 0-based position by first occurrence and the
-    // chunk is read by insertion order. This works for both plain chat and
-    // agent references (whose markers are [ID:<chunkId>] and chunks are arrays).
-    const displayIndexes = [
-      ...buildCitationDisplayMap(messageContent).values(),
-    ];
-    const orderedChunks = Array.isArray(referenceChunks)
+    // In plain chat the body chips (markdown-content) treat a numeric marker
+    // [n] as the 0-based index into the full retrieved chunks array and render
+    // [n + 1], so the carousel must index chunks by that same key and label
+    // it n + 1 — indexing by first-occurrence position would show unrelated
+    // chunks whenever retrieval returns more chunks than the model cited.
+    // Agent markers are [ID:<chunkId>] strings; those keep the positional
+    // ordering (matched by chunk.id first, when possible).
+    const keyToPosition = buildCitationDisplayMap(messageContent);
+    const chunkList = Array.isArray(referenceChunks)
       ? referenceChunks
       : isPlainObject(referenceChunks)
         ? Object.values(referenceChunks ?? {})
         : [];
 
-    return displayIndexes
-      .map((position) => {
-        const chunk = orderedChunks[position];
+    return [...keyToPosition.entries()]
+      .map(([key, position]) => {
+        const chunk =
+          typeof key === 'number'
+            ? chunkList[key]
+            : ((Array.isArray(referenceChunks)
+                ? referenceChunks.find((item) => item.id === String(key))
+                : referenceChunks?.[String(key)]) ?? chunkList[position]);
         if (!chunk?.image_id || !chunk?.document_id) {
           return null;
         }
@@ -205,7 +211,7 @@ export function ReferenceImageList({
           id: chunk.image_id,
           documentId: chunk.document_id,
           documentName: chunk.document_name,
-          index: position,
+          index: typeof key === 'number' ? key : position,
         } as ImageItem;
       })
       .filter((item): item is ImageItem => item !== null);

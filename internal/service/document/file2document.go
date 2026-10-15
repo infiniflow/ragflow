@@ -241,12 +241,14 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 				continue
 			}
 
-			parserID, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			selection, parserConfig := resolveDocumentParser(ctx, kb, docName, utility.FileType(file.Type), cloneParserConfigForDocument(kb.ParserConfig))
+			parserID, pipelineID := parserSelectionColumns(selection)
 			suffix := strings.TrimPrefix(filepath.Ext(docName), ".")
 			doc := &entity.Document{
 				ID:           common.GenerateUUID(),
 				KbID:         kb.ID,
 				ParserID:     parserID,
+				PipelineID:   pipelineID,
 				ParserConfig: parserConfig,
 				CreatedBy:    userID,
 				Type:         file.Type,
@@ -256,10 +258,6 @@ func (s *File2DocumentService) convertFiles(ctx context.Context, fileIDs, kbIDs 
 			}
 			if file.Location != nil {
 				doc.Location = file.Location
-			}
-			if kb.PipelineID != nil {
-				doc.PipelineID = kb.PipelineID
-				doc.ParserID = "" // canvas pipeline mode — parser_id not applicable
 			}
 
 			// InsertDocument creates the row and increments KB doc_num in one

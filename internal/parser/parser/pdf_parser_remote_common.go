@@ -46,7 +46,7 @@ func pdfItemsToResult(filename string, items []map[string]any, outputFormat stri
 		return ParseResult{
 			OutputFormat: "json",
 			File:         pdfFileMeta(filename, pageCount),
-			JSON:         items,
+			JSON:         MapsToItems(items),
 		}
 	case "markdown":
 		var b strings.Builder
