@@ -79,6 +79,20 @@ function Harness({ name }: { name?: string }) {
 }
 
 describe('cross-language Portuguese support', () => {
+  it('preserves Slovak and Czech alongside Portuguese after merging upstream', async () => {
+    const wrapper = await createWrapper('en');
+    const { result } = renderHook(() => useCrossLanguageOptions(), { wrapper });
+    expect(result.current).toEqual(
+      expect.arrayContaining([
+        { label: 'Slovak', value: 'Slovak' },
+        { label: 'Czech', value: 'Czech' },
+        { label: 'Portuguese', value: 'Portuguese' },
+      ]),
+    );
+    const values = result.current.map(({ value }) => value);
+    expect(new Set(values).size).toBe(values.length);
+  });
+
   it.each([
     ['en', 'Portuguese'],
     ['pt-BR', 'Português'],

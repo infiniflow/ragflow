@@ -24,7 +24,7 @@ func TestProductsToChunkDocsCanonicalKinds(t *testing.T) {
 	} {
 		t.Run(test.kind, func(t *testing.T) {
 			docs, err := productsToChunkDocs([]common.Product{{ID: "row", Kind: test.kind, Variant: test.variant, Content: "summary",
-				Meta: map[string]any{"compile_kwd": "list", "kind": "entity", "page_type": "concept"}}})
+				Meta: map[string]any{"compile_kwd": "list", "kind": "entity", "page_type": "concept"}}}, "")
 			if err != nil {
 				t.Fatal(err)
 			}

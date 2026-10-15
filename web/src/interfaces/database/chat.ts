@@ -32,10 +32,6 @@ export interface PromptConfig {
   youcom_api_key?: string;
   web_search_provider?: WebSearchProvider;
   toc_enhance?: boolean;
-  reference_metadata?: {
-    include?: boolean;
-    fields?: string[];
-  };
 }
 
 export interface Parameter {
@@ -143,7 +139,6 @@ export interface IReferenceChunk {
   term_similarity: number;
   positions: number[][];
   doc_type?: string;
-  document_metadata?: Record<string, any>;
 }
 
 export interface IReference {

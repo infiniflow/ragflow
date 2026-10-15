@@ -131,17 +131,21 @@ func TestSplitLargeTableBudgetsOnHTML(t *testing.T) {
 	whole := tokenizeStr(tableutil.RenderTableHTML(td))
 	budget := whole / 2
 
-	parts, ranges, headerRows := splitLargeTable(td, budget, tokenizeStr)
+	parts, ranges, headerRows := splitLargeTable(td, budget, tokenizeStr, "")
 	if len(parts) < 2 {
 		t.Fatalf("table did not split under the HTML budget: whole=%d budget=%d parts=%d", whole, budget, len(parts))
 	}
 	if headerRows != 1 {
 		t.Fatalf("headerRows = %d, want 1", headerRows)
 	}
+	// The split budget covers data rows only: every part replicates the header,
+	// so a part may exceed the budget by up to the header's own HTML cost —
+	// but never beyond that (which is what clean-projection counting would do).
+	headerTokens := tokenizeStr(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:1], HeaderRows: 1}))
 	covered := 0
 	for i, p := range parts {
-		if n := tokenizeStr(tableutil.RenderTableHTML(&p)); n > budget {
-			t.Fatalf("part %d HTML tokens %d exceed budget %d (budget must cover the stored HTML)", i, n, budget)
+		if n := tokenizeStr(tableutil.RenderTableHTML(&p)); n > budget+headerTokens {
+			t.Fatalf("part %d HTML tokens %d exceed budget %d + header %d (budget must cover the stored HTML)", i, n, budget, headerTokens)
 		}
 		covered += ranges[i][1] - ranges[i][0]
 	}
@@ -168,7 +172,7 @@ func TestSplitLargeTableHTMLBudgetKeepsSingleOverBudgetRowWhole(t *testing.T) {
 		t.Fatalf("test setup: budget %d should be below the huge row HTML %d", budget, hugeRow)
 	}
 
-	parts, _, _ := splitLargeTable(td, budget, tokenizeStr)
+	parts, _, _ := splitLargeTable(td, budget, tokenizeStr, "")
 	if len(parts) < 2 {
 		t.Fatalf("expected the huge row to isolate into its own part, got %d parts", len(parts))
 	}
@@ -211,7 +215,7 @@ func TestSplitLargeTableHTMLBudgetKeepsRowspanGroup(t *testing.T) {
 		Grid:       [][]entity.TableCell{td.Grid[0], td.Grid[1]},
 		HeaderRows: 1,
 	}))
-	parts, _, _ := splitLargeTable(td, budget, tokenizeStr)
+	parts, _, _ := splitLargeTable(td, budget, tokenizeStr, "")
 	if len(parts) < 2 {
 		t.Fatalf("test setup: expected a split, got %d parts", len(parts))
 	}
