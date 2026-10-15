@@ -1108,39 +1108,6 @@ func extractLastUserContent(messages []map[string]interface{}) string {
 	return content
 }
 
-// extractUserInputFromFormInputs mirrors the front-end's wait-for-user submit
-// shape: `inputs` is an object keyed by form field name, and each entry carries
-// a nested `value`. The current chat-completion resume path consumes a single
-// string payload, so we lift the first field's value and stringify it.
-func extractUserInputFromFormInputs(inputs map[string]interface{}) interface{} {
-	if len(inputs) == 0 {
-		return nil
-	}
-
-	out := make(map[string]any, len(inputs))
-	for name, raw := range inputs {
-		out[name] = unwrapFormInput(raw)
-	}
-	return out
-}
-
-func unwrapFormInput(raw any) any {
-	field, ok := raw.(map[string]interface{})
-	if !ok {
-		return raw
-	}
-	if value, exists := field["value"]; exists {
-		return value
-	}
-	// Frontend form state can omit an untouched optional value. A field
-	// descriptor without a submitted value represents nil, not the
-	// descriptor itself (which would make Switch's `empty` fail).
-	if _, descriptor := field["type"]; descriptor {
-		return nil
-	}
-	return raw
-}
-
 func countInputValues(inputs map[string]interface{}) int {
 	count := 0
 	for _, raw := range inputs {
@@ -1254,15 +1221,9 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 	// Real canvas run. The editor sends the conversational query alongside
 	// named Begin inputs; preserve both so a custom Starter field cannot be
 	// replaced by sys.query before it reaches the runtime.
-	var userInput any
-	if req.Query != "" && len(req.Inputs) > 0 {
-		userInput = extractUserInputWithQuery(req.Inputs, req.Query)
-	} else if req.Query != "" {
-		userInput = req.Query
-	} else {
-		if extracted := extractUserInputFromFormInputs(req.Inputs); extracted != nil {
-			userInput = extracted
-		} else if extracted := extractLastUserContent(req.Messages); extracted != "" {
+	userInput := service.NormalizeAgentInput(req.Query, req.Inputs)
+	if userInput == nil {
+		if extracted := extractLastUserContent(req.Messages); extracted != "" {
 			userInput = extracted
 		}
 	}
@@ -1477,15 +1438,6 @@ func (h *AgentHandler) AgentChatCompletions(c *gin.Context) {
 		"session_id": finalAns.SessionID,
 	}
 	common.SuccessWithData(c, result, "success")
-}
-
-func extractUserInputWithQuery(inputs map[string]interface{}, query string) map[string]any {
-	values := make(map[string]any, len(inputs)+1)
-	for name, raw := range inputs {
-		values[name] = unwrapFormInput(raw)
-	}
-	values["query"] = query
-	return values
 }
 
 // TestDBConnection POST /api/v1/agents/test_db_connection
