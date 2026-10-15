@@ -735,12 +735,35 @@ func markdownImageUnitHasMediaContext(unit schema.ChunkDoc) bool {
 // than standalone media chunks, so image-bearing units participate in the
 // text merge and retain their image payload. Images with configured media
 // context are emitted as standalone chunks instead.
+//
+// The images merged into one chunk are collected in a markdownImageStack and
+// composed once, when the chunk closes.
 func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []schema.ChunkDoc {
 	overlapPct = max(0, min(100, overlapPct))
 	merged := make([]schema.ChunkDoc, 0, len(parts.chunks))
 	current := -1
 	currentTokens := 0
+	// stack holds the images of merged[stackIdx], the open chunk. Only the
+	// current chunk receives merges, so one stack is live at a time.
+	var stack *markdownImageStack
+	stackIdx := -1
+	closeStack := func() {
+		if stack != nil && stack.composite() {
+			merged[stackIdx].Image = stack.image()
+		}
+		stack, stackIdx = nil, -1
+	}
+	stackFor := func(idx int) *markdownImageStack {
+		if stackIdx != idx {
+			closeStack()
+			stack, stackIdx = newMarkdownImageStack(merged[idx].Image), idx
+		}
+		return stack
+	}
 	for index, unit := range parts.chunks {
+		if stack != nil && stackIdx != current {
+			closeStack()
+		}
 		startsBlock := parts.blockStarts[index]
 		previousShortHeading := index > 0 && parts.shortHeadings[index-1]
 		joinSep := ""
@@ -749,8 +772,8 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 		}
 		if itemDocType(unit) == "table" {
 			if current >= 0 && merged[current].CKType == "heading" && previousShortHeading {
-				mergedImage, imagesOK := mergeMarkdownImagesChecked(merged[current].Image, unit.Image)
-				if !imagesOK {
+				images := stackFor(current)
+				if !images.merge(unit.Image, true) {
 					merged = append(merged, cloneChunkDoc(unit))
 					current = -1
 					currentTokens = 0
@@ -767,11 +790,12 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 				table.PDFPositions = mergeGeneralPositions(heading.PDFPositions, table.PDFPositions)
 				table.Positions = mergeGeneralPositions(heading.Positions, table.Positions)
 				mergeGeneralMetadata(&table, heading)
-				table.Image = mergedImage
+				table.Image = images.image()
 				table.DocType = "table"
 				table.CKType = "table"
 				table.ContextAbove = stripTextLinesFromMediaContextAbove(table.ContextAbove, heading.Text)
 				merged[current] = table
+				stack, stackIdx = nil, -1
 				current = -1
 				currentTokens = 0
 				continue
@@ -819,8 +843,8 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			continue
 		}
 		forceMerge := previous.CKType == "heading" && previousShortHeading
-		mergedImage, imagesOK := mergeMarkdownImagesChecked(previous.Image, unit.Image)
-		if !imagesOK {
+		images := stackFor(current)
+		if !images.merge(unit.Image, false) {
 			merged = append(merged, unit)
 			current = len(merged) - 1
 			currentTokens = unitTokens
@@ -848,7 +872,10 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 			continue
 		}
 		mergeGeneralChunk(previous, unit, joinSep)
-		previous.Image = mergedImage
+		images.merge(unit.Image, true)
+		if !images.composite() {
+			previous.Image = images.image()
+		}
 		previous.DocType = "text"
 		if startsBlock || unit.CKType != "heading" {
 			previous.CKType = "text"
@@ -856,6 +883,7 @@ func mergeMarkdownUnits(parts markdownSplit, target int, overlapPct float64) []s
 		currentTokens = projected
 		previous.TKNums = intPtr(currentTokens)
 	}
+	closeStack()
 	return merged
 }
 
@@ -886,6 +914,11 @@ const (
 	maxMarkdownImagePixels    = 32 * 1024 * 1024
 )
 
+// mergeMarkdownImagesChecked stacks second under first and returns the PNG
+// composite, or first and false when the two cannot be composed. It is one
+// pairwise step; markdownImageStack reproduces its decisions and uses it only
+// to compose a stack whose intermediate composites hold semi-transparent
+// pixels.
 func mergeMarkdownImagesChecked(first, second string) (string, bool) {
 	if first == "" {
 		return second, true
@@ -909,11 +942,191 @@ func mergeMarkdownImagesChecked(first, second string) (string, bool) {
 	canvas := image.NewRGBA(image.Rect(0, 0, width, height))
 	draw.Draw(canvas, image.Rect(0, 0, firstImage.Bounds().Dx(), firstImage.Bounds().Dy()), firstImage, image.Point{}, draw.Src)
 	draw.Draw(canvas, image.Rect(0, firstImage.Bounds().Dy(), secondImage.Bounds().Dx(), canvas.Bounds().Dy()), secondImage, image.Point{}, draw.Src)
-	var encoded bytes.Buffer
-	if err := png.Encode(&encoded, canvas); err != nil {
+	composite, ok := encodeMarkdownComposite(canvas)
+	if !ok {
 		return first, false
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(encoded.Bytes()), true
+	return composite, true
+}
+
+const markdownCompositePrefix = "data:image/png;base64,"
+
+// encodeMarkdownComposite encodes a composed canvas as the PNG data URI a chunk
+// carries. png.Encode only fails on writer errors, which a bytes.Buffer never
+// reports.
+func encodeMarkdownComposite(canvas *image.RGBA) (string, bool) {
+	var encoded bytes.Buffer
+	if err := png.Encode(&encoded, canvas); err != nil {
+		return "", false
+	}
+	return markdownCompositePrefix + base64.StdEncoding.EncodeToString(encoded.Bytes()), true
+}
+
+// markdownImageStack collects the images merged into one markdown chunk and
+// composes them once, when the chunk closes: each source is decoded once and
+// the composite is encoded once.
+//
+// It keeps every decision of the pairwise merge: an empty payload is a no-op, a
+// payload equal to the chunk's current image is dropped as a duplicate, an
+// undecodable image or a composite beyond the size limits is refused, and a
+// refused merge leaves the stack untouched. The bytes match too: the sources
+// land on the canvas the pairwise merge ended with, encoded by the same encoder.
+// The one exception is an intermediate composite with semi-transparent pixels,
+// which the pairwise merge round-tripped through PNG, rounding their
+// premultiplied channels; such a stack is composed pairwise so its output stays
+// identical.
+type markdownImageStack struct {
+	payloads []string      // source images in reading order
+	decoded  []image.Image // decoded[i] is payloads[i]; the first is decoded on demand
+	width    int           // widest source
+	height   int           // sum of the source heights
+	rendered string        // composite cache, cleared by a merge
+
+	// lastPayload and lastImage memoize the last decode, so a merge checked
+	// before the token budget decision is not decoded again when committed.
+	lastPayload string
+	lastImage   image.Image
+}
+
+func newMarkdownImageStack(payload string) *markdownImageStack {
+	s := &markdownImageStack{}
+	if payload != "" {
+		s.payloads = []string{payload}
+		s.decoded = []image.Image{nil}
+	}
+	return s
+}
+
+// composite reports whether the chunk image is composed from several sources,
+// i.e. whether image renders.
+func (s *markdownImageStack) composite() bool { return len(s.payloads) > 1 }
+
+// image returns the chunk's image: nothing, the single source payload
+// untouched, or the composite of all sources.
+func (s *markdownImageStack) image() string {
+	switch len(s.payloads) {
+	case 0:
+		return ""
+	case 1:
+		return s.payloads[0]
+	}
+	if s.rendered == "" {
+		s.rendered = s.render()
+	}
+	return s.rendered
+}
+
+// merge reports whether payload may join the stack, exactly as
+// mergeMarkdownImagesChecked(s.image(), payload) would, and appends it when
+// commit is set. An empty or duplicate payload is a no-op that reports true.
+func (s *markdownImageStack) merge(payload string, commit bool) bool {
+	if payload == "" {
+		return true
+	}
+	if len(s.payloads) == 0 {
+		if commit {
+			s.payloads = append(s.payloads, payload)
+			s.decoded = append(s.decoded, nil)
+		}
+		return true
+	}
+	if s.isCurrent(payload) {
+		return true
+	}
+	if s.decoded[0] == nil {
+		first, ok := decodeMarkdownImage(s.payloads[0])
+		if !ok {
+			return false
+		}
+		s.decoded[0] = first
+		s.width, s.height = first.Bounds().Dx(), first.Bounds().Dy()
+	}
+	img, ok := s.decode(payload)
+	if !ok {
+		return false
+	}
+	width := max(s.width, img.Bounds().Dx())
+	height := s.height + img.Bounds().Dy()
+	if !markdownImageWithinLimits(width, height) {
+		return false
+	}
+	if commit {
+		s.payloads = append(s.payloads, payload)
+		s.decoded = append(s.decoded, img)
+		s.width, s.height = width, height
+		s.rendered = ""
+	}
+	return true
+}
+
+func (s *markdownImageStack) decode(payload string) (image.Image, bool) {
+	if payload == s.lastPayload && s.lastImage != nil {
+		return s.lastImage, true
+	}
+	img, ok := decodeMarkdownImage(payload)
+	if ok {
+		s.lastPayload, s.lastImage = payload, img
+	}
+	return img, ok
+}
+
+// isCurrent reports whether payload equals the chunk's current image, which the
+// pairwise merge dropped as a duplicate. A composite is a PNG data URI the stack
+// rendered itself, so a payload without that prefix cannot equal one, and the
+// composite is only rendered for the comparison when it might.
+func (s *markdownImageStack) isCurrent(payload string) bool {
+	if len(s.payloads) == 1 {
+		return s.payloads[0] == payload
+	}
+	return strings.HasPrefix(payload, markdownCompositePrefix) && s.image() == payload
+}
+
+// render draws every source onto one canvas, top to bottom and left-aligned:
+// the canvas the pairwise merge ends with. The PNG round trip the pairwise
+// merge applied to each intermediate composite changes nothing for pixels that
+// are fully opaque or fully transparent, but rounds semi-transparent ones, so a
+// stack with such a pixel in any source but the last is composed pairwise.
+func (s *markdownImageStack) render() string {
+	canvas := image.NewRGBA(image.Rect(0, 0, s.width, s.height))
+	y := 0
+	for i, img := range s.decoded {
+		r := image.Rect(0, y, img.Bounds().Dx(), y+img.Bounds().Dy())
+		draw.Draw(canvas, r, img, image.Point{}, draw.Src)
+		if i < len(s.decoded)-1 && hasPartialAlpha(canvas, r) {
+			return s.renderPairwise()
+		}
+		y += img.Bounds().Dy()
+	}
+	composite, ok := encodeMarkdownComposite(canvas)
+	if !ok {
+		return s.renderPairwise()
+	}
+	return composite
+}
+
+// renderPairwise composes one source at a time with a PNG round trip after each
+// step, exactly as mergeMarkdownImagesChecked did on every merge. Each step was
+// accepted when its source was merged, so every step succeeds here too.
+func (s *markdownImageStack) renderPairwise() string {
+	composite := s.payloads[0]
+	for _, payload := range s.payloads[1:] {
+		composite, _ = mergeMarkdownImagesChecked(composite, payload)
+	}
+	return composite
+}
+
+// hasPartialAlpha reports whether a pixel of canvas inside r has an alpha that
+// is neither 0 nor 0xff.
+func hasPartialAlpha(canvas *image.RGBA, r image.Rectangle) bool {
+	for y := r.Min.Y; y < r.Max.Y; y++ {
+		row := canvas.Pix[canvas.PixOffset(r.Min.X, y):canvas.PixOffset(r.Max.X, y)]
+		for i := 3; i < len(row); i += 4 {
+			if a := row[i]; a != 0 && a != 0xff {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func markdownImageWithinLimits(width, height int) bool {
