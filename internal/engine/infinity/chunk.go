@@ -55,14 +55,15 @@ var pagerankAdjustLocks [pagerankAdjustLockCount]sync.Mutex
 // The full table name is built as "{baseName}_{datasetID}"
 // For skill index (datasetID="skill"), tableName is just baseName and uses skill_infinity_mapping.json
 // For memory message indexes (baseName prefixed "memory_"), uses message_infinity_mapping.json
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+// language is the dataset language, which selects the fulltext analyzer; see analyzerForLanguage.
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	db, release, err := e.client.checkoutDatabase(ctx, "chunk.go")
 	if err != nil {
 		return fmt.Errorf("failed to get database: %w", err)
 	}
 	defer release()
 
-	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID)
+	return e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserID, language)
 }
 
 // memoryIndexPrefix marks per-memory message indexes (MemoryIndexName).
@@ -88,7 +89,7 @@ func chunkMappingFileName(baseName, datasetID, configured string) string {
 	}
 }
 
-func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	vecSize := vectorSize
 
 	// Determine table name and mapping file based on index type
@@ -227,7 +228,9 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 	}
 	common.Info("Created vector index", zap.String("indexName", vectorIndexName), zap.String("column", vectorColName))
 
-	// Create full-text indexes for varchar fields with analyzers
+	// Create full-text indexes for varchar fields with analyzers. CreateTable
+	// above is ConflictTypeIgnore, so this may be an existing table: its indexes
+	// are kept as they are, and with them the analyzer it was created with.
 	for _, fieldName := range schema.Keys {
 		fieldInfo := schema.Fields[fieldName]
 		if fieldInfo.Type != "varchar" || fieldInfo.Analyzer == nil {
@@ -247,13 +250,10 @@ func (e *Engine) createChunkStoreWithDB(db *infinity.Database, baseName, dataset
 		}
 
 		for _, analyzer := range analyzers {
-			indexNameFt := fmt.Sprintf("ft_%s_%s",
-				regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(fieldName, "_"),
-				regexp.MustCompile(`[^a-zA-Z0-9]`).ReplaceAllString(analyzer, "_"),
-			)
+			indexNameFt := fulltextIndexName(fieldName, analyzer)
 			_, err = table.CreateIndex(
 				indexNameFt,
-				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzer}),
+				infinity.NewIndexInfo(fieldName, infinity.IndexTypeFullText, map[string]string{"ANALYZER": analyzerForLanguage(analyzer, language)}),
 				infinity.ConflictTypeIgnore,
 				"",
 			)
@@ -332,7 +332,7 @@ func (e *Engine) ensureChunkDataColumn(table *infinity.Table, exists bool) error
 // Table name format: {baseName}_{datasetID}
 // Auto-create the table if it doesn't exist
 // Delete existing rows with matching IDs before insert
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
 	tableName := buildChunkTableName(baseName, datasetID)
 	common.Info("InfinityConnection.InsertChunks called", zap.String("tableName", tableName), zap.Int("chunkCount", len(chunks)))
 
@@ -369,8 +369,9 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 			return nil, fmt.Errorf("cannot infer vector size from chunks")
 		}
 
-		// Create table
-		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserIDFromChunks(chunks)); err != nil {
+		// Create table. This is the path the ingestion pipeline actually takes,
+		// so the dataset language has to reach it here.
+		if err := e.createChunkStoreWithDB(db, baseName, datasetID, vectorSize, parserIDFromChunks(chunks), language); err != nil {
 			return nil, fmt.Errorf("failed to create table: %w", err)
 		}
 
