@@ -994,7 +994,13 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	}
 	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr)
 	if ranges == nil {
-		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+		// The whole table fits one chunk: render it as HTML on Text so the
+		// persisted content and the id (hash of Text) stay byte-consistent and
+		// the UI can display a real table. TableData is dropped, never indexed.
+		out := cloneChunkDoc(unit)
+		out.Text = tableutil.RenderTableHTML(td)
+		out.TableData = nil
+		return []schema.ChunkDoc{out}
 	}
 	var matrix [][]float64
 	// Spreadsheet items only: PDF items write layout boxes into the same
@@ -1021,11 +1027,12 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
-		// Text carries a plain-text rendering (no markup) for the rare embed
-		// path without a downstream TableChunker; the structured TableData is
-		// the authoritative content for chunkers that read it.
-		piece.Text = tableutil.RenderTableText(&part)
-		piece.TableData = &part
+		// Text carries the sub-table rendered as HTML so the persisted content
+		// and the chunk id (hash of Text) stay byte-consistent and the UI can
+		// display a real table. The structured TableData is dropped here and is
+		// never serialized to the index.
+		piece.Text = tableutil.RenderTableHTML(&part)
+		piece.TableData = nil
 		piece.Positions = nil
 		lo := headerRows + ranges[i][0]
 		hi := headerRows + ranges[i][1]

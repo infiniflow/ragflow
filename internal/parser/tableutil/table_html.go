@@ -20,7 +20,6 @@
 package tableutil
 
 import (
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -329,12 +328,10 @@ func attrInt(n *html.Node, name string, max int) int {
 }
 
 // RenderTableHTML emits a deterministic <table> markup for a TableData. It is
-// used only as a test oracle / round-trip helper and is NOT part of the
-// persisted contract (producers emit TableData, not HTML). The emitted shape
-// matches the legacy spreadsheet producer's renderSpreadsheetTable exactly
-// (including the inter-row newlines) for 1x1 grids, so RenderTableText
-// reproduces the legacy htmlTableRE-stripped text byte for byte. For merged
-// tables it emits colspan/rowspan on the origin slot and skips Covered slots.
+// the persisted display form of a table chunk: the chunker renders each table
+// chunk's Text with it, and the chunk id is a hash of that rendered text. For
+// merged tables it emits colspan/rowspan on the origin slot and skips Covered
+// slots.
 func RenderTableHTML(td *entity.TableData) string {
 	if td == nil {
 		return ""
@@ -382,22 +379,6 @@ func RenderTableHTML(td *entity.TableData) string {
 	b.WriteString("</table>")
 	b.WriteString("\n")
 	return b.String()
-}
-
-// tableTagRE strips table markup tags (with any attributes) so the plaintext a
-// chunker writes for an embed-only path matches the legacy tag-stripped output.
-// The pattern tolerates arbitrary attribute lists (including colspan/rowspan)
-// so merged-table markup is stripped completely rather than left partly in the
-// text.
-var tableTagRE = regexp.MustCompile(`</?(?:table|td|caption|tr|th)(?:\s[^<>]*)?>`)
-
-// RenderTableText renders a TableData to plain text with no markup tags, for
-// the rare embed path that receives a table without a downstream TableChunker.
-// It reproduces the legacy htmlTableRE stripping of RenderTableHTML(td).
-func RenderTableText(td *entity.TableData) string {
-	h := RenderTableHTML(td)
-	h = tableTagRE.ReplaceAllString(h, " ")
-	return strings.TrimSpace(h)
 }
 
 // cellText returns the visible text of a table cell: text nodes contribute

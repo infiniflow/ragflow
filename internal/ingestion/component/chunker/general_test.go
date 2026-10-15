@@ -76,9 +76,9 @@ func spreadsheetSegmentItem(sheet string, header []string, rows [][]string, shee
 			"header_rows": 1,
 			"caption":     sheet,
 		},
-		// Mirror what the chunker derives from TableData so text-bound
-		// assertions (e.g. TokenChunker boundary tests) stay valid.
-		"text":         tableutil.RenderTableText(td),
+		// Mirror what the chunker derives from TableData (its HTML rendering)
+		// so text-bound assertions (e.g. TokenChunker boundary tests) stay valid.
+		"text":         tableutil.RenderTableHTML(td),
 		"doc_type_kwd": "table",
 		"ck_type":      "table",
 		"sheet_index":  sheetIndex,
@@ -1086,19 +1086,21 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 	}
 	covered := 0
 	for i, chunk := range chunks {
-		// New contract: Text is the plain rendering (no markup); the
-		// replicated header lives in the structured TableData, and positions
-		// are sliced to this sub-table when the matrix is row-aligned.
-		tbl, ok := chunk["table"].(map[string]any)
-		if !ok {
-			t.Fatalf("chunk %d missing structured TableData", i)
+		// New contract: Text is the sub-table rendered as HTML (replicated
+		// header + this part's data rows); the structured TableData is dropped
+		// and never indexed; positions are sliced to this sub-table when the
+		// matrix is row-aligned.
+		if _, ok := chunk["table"]; ok {
+			t.Fatalf("chunk %d still carries structured table", i)
 		}
-		tblGrid, _ := tbl["grid"].([]any)
-		if len(tblGrid) < 2 {
-			t.Fatalf("chunk %d has too few rows: %v", i, tblGrid)
+		text, _ := chunk["text"].(string)
+		if !strings.Contains(text, "<table>") || !strings.Contains(text, "<th>Name</th>") {
+			t.Fatalf("chunk %d text lost the header cell: %q", i, text)
 		}
-		if !strings.Contains(chunk["text"].(string), "Name") {
-			t.Errorf("chunk %d text lost the header cell: %q", i, chunk["text"])
+		// Single-column table: each data row is one <td>value-…</td> cell.
+		dataRows := strings.Count(text, "<td>value-")
+		if dataRows == 0 {
+			t.Fatalf("chunk %d has no data rows: %q", i, text)
 		}
 		var matrix [][]float64
 		raw, _ := json.Marshal(chunk["positions"])
@@ -1113,7 +1115,6 @@ func TestGeneralChunkerSpreadsheetSplitsLargeSegmentIntoBoundedChunks(t *testing
 		if matrix[0][1] != 1 {
 			t.Errorf("chunk %d header tuple = %v, want sheet 1 row 1", i, matrix[0])
 		}
-		dataRows := len(tblGrid) - 1
 		if dataRows != len(matrix)-1 {
 			t.Errorf("chunk %d data rows %d != position tuples %d", i, dataRows, len(matrix)-1)
 		}

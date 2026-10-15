@@ -5,8 +5,19 @@ import (
 	"testing"
 
 	"ragflow/internal/entity"
-	"ragflow/internal/parser/tableutil"
 )
+
+// cellTextsContain reports whether any cell of the structured table contains sub.
+func cellTextsContain(td *entity.TableData, sub string) bool {
+	for _, row := range td.CellTexts() {
+		for _, cell := range row {
+			if strings.Contains(cell, sub) {
+				return true
+			}
+		}
+	}
+	return false
+}
 
 // Consumers of doc_type_kwd "table" parse the item text as <table> markup
 // (the QA chunker reads its <tr> rows), so a table item that carries other
@@ -91,8 +102,8 @@ func TestPDFRemoteParsers_TableItemsCarryTableMarkup(t *testing.T) {
 				if len(td.CellTexts()) == 0 {
 					t.Fatalf("structured table has no rows: %#v", td)
 				}
-				if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") {
-					t.Fatalf("structured table missing cell text %q: %#v", got, td)
+				if !cellTextsContain(td, "What is RAGFlow?") {
+					t.Fatalf("structured table missing cell text %q: %#v", "What is RAGFlow?", td)
 				}
 			}
 		})

@@ -105,9 +105,9 @@ const ComponentNameTokenizer = "Tokenizer"
 // `re.sub(r"\.[a-zA-Z]+$", "", name)` in tokenizer.py:137.
 var titleExtRE = regexp.MustCompile(`\.[a-zA-Z]+$`)
 
-// Table content is no longer carried as HTML markup (the parser emits the
-// structured entity.TableData contract), so there is no table markup to strip
-// from the embedded text. The legacy htmlTableRE was removed.
+// Table chunks carry their row rendered as an HTML <table> on Text (produced
+// by the chunker), so the embedding input intentionally includes the table
+// markup — there is no markup to strip. The legacy htmlTableRE stays removed.
 
 // EmbeddingResult carries a vector plus the model-reported token usage
 // for that input batch entry.
