@@ -200,13 +200,13 @@ func TestMaybeDispatchImage_ParseMethodModelDoesNotOverrideGlobalEnhancement(t *
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text, _ := res.JSON[0].ToMap()["text"].(string)
 	if strings.TrimSpace(text) != "" {
 		t.Fatalf("image item text = %q, want empty: enhancement is off and OCR is off", text)
 	}
 	// The image itself is still carried; only the description is withheld, so
 	// turning the switch on later recovers the caption without a re-upload.
-	if res.JSON[0]["image"] == "" || res.JSON[0]["doc_type_kwd"] != "image" {
+	if res.JSON[0].ToMap()["image"] == "" || res.JSON[0].ToMap()["doc_type_kwd"] != "image" {
 		t.Fatalf("image attachment lost: %+v", res.JSON[0])
 	}
 	// #20668 reported this exact configuration producing zero chunks with no
@@ -241,7 +241,7 @@ func TestMaybeDispatchImage_OCRWithoutEnhancementSkipsVision(t *testing.T) {
 	if resolveModelConfigCalled {
 		t.Fatal("resolveModelConfig must not be called for parse_method=ocr without enhancement")
 	}
-	if len(res.JSON) != 1 || res.JSON[0]["text"] != "OCR text" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "OCR text" {
 		t.Fatalf("res = %+v, want OCR text", res.JSON)
 	}
 }
@@ -350,7 +350,7 @@ func TestMaybeDispatchImage_UsesSystemPrompt(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (image result must be a single JSON item)", len(res.JSON))
 	}
-	if txt, _ := res.JSON[0]["text"].(string); txt == "" {
+	if txt, _ := res.JSON[0].ToMap()["text"].(string); txt == "" {
 		t.Fatalf("expected non-empty combined text in JSON[0][\"text\"]")
 	}
 
@@ -505,7 +505,7 @@ func TestMaybeDispatchImage_ReturnsJSONWithImage(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	if got, _ := item["doc_type_kwd"].(string); got != "image" {
 		t.Errorf("doc_type_kwd = %q, want \"image\"", got)
 	}
@@ -608,10 +608,10 @@ func TestMaybeDispatchAudio_JSONCarriesTranscription(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1 (transcription must be carried as a JSON item)", len(res.JSON))
 	}
-	if got, _ := res.JSON[0]["text"].(string); got != want {
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != want {
 		t.Fatalf("JSON[0].text = %q, want %q", got, want)
 	}
-	if got, _ := res.JSON[0]["doc_type_kwd"].(string); got != "text" {
+	if got, _ := res.JSON[0].ToMap()["doc_type_kwd"].(string); got != "text" {
 		t.Fatalf("JSON[0].doc_type_kwd = %q, want text", got)
 	}
 }
@@ -651,7 +651,7 @@ func TestMaybeDispatchAudio_IgnoresLegacyOutputFormat(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if got, _ := res.JSON[0]["text"].(string); got != want {
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != want {
 		t.Fatalf("JSON[0].text = %q, want %q", got, want)
 	}
 }
@@ -804,7 +804,7 @@ func TestMaybeDispatchAudio_UsesConfiguredModel(t *testing.T) {
 	if tenantResolverCalled {
 		t.Error("tenant default resolver must not be called when audio setup vlm.llm_id is set")
 	}
-	if len(res.JSON) != 1 || res.JSON[0]["text"] != "transcribed" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "transcribed" {
 		t.Fatalf("unexpected audio result: %#v", res.JSON)
 	}
 }
@@ -866,7 +866,7 @@ func TestMaybeDispatchImageWithoutOCRTextKeepsImage(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" || len(result.Warnings) == 0 {
+			if !handled || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "" || result.JSON[0].ToMap()["image"] == "" || len(result.Warnings) == 0 {
 				t.Fatalf("method %q, available %v: result = %+v, handled = %v", method, available, result, handled)
 			}
 		}
@@ -890,7 +890,7 @@ func TestMaybeDispatchImageUnhealthyOCRKeepsImage(t *testing.T) {
 	if err != nil || result.Err != nil {
 		t.Fatalf("unhealthy OCR should degrade without an error: err = %v, result.Err = %v", err, result.Err)
 	}
-	if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" {
+	if !handled || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "" || result.JSON[0].ToMap()["image"] == "" {
 		t.Fatalf("unhealthy OCR should retain an image without text: result = %+v, handled = %v", result, handled)
 	}
 	if !strings.Contains(strings.Join(result.Warnings, "\n"), "image OCR unavailable: local OCR analyzer is unavailable") {
@@ -960,7 +960,7 @@ func TestMaybeDispatchImageDecodesRasterOnlyForOCR(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "captured" || result.JSON[0]["image"] == "" {
+			if !handled || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "captured" || result.JSON[0].ToMap()["image"] == "" {
 				t.Fatalf("VLM result = %+v, handled = %v", result, handled)
 			}
 		})
@@ -997,8 +997,8 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
 		}
-		if res.JSON[0]["text"] != "OCR text" {
-			t.Fatalf("text = %v, want OCR text", res.JSON[0]["text"])
+		if res.JSON[0].ToMap()["text"] != "OCR text" {
+			t.Fatalf("text = %v, want OCR text", res.JSON[0].ToMap()["text"])
 		}
 	})
 	t.Run("ocr-off-no-enhancement-keeps-empty", func(t *testing.T) {
@@ -1007,7 +1007,7 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
 		}
-		if res.JSON[0]["text"] != "" || res.JSON[0]["image"] == "" {
+		if res.JSON[0].ToMap()["text"] != "" || res.JSON[0].ToMap()["image"] == "" {
 			t.Fatalf("want empty text with image retained, got %#v", res.JSON[0])
 		}
 		if len(res.Warnings) == 0 {
@@ -1023,8 +1023,8 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		if err != nil || !handled {
 			t.Fatalf("err = %v, handled = %v", err, handled)
 		}
-		if res.JSON[0]["text"] != "captured" {
-			t.Fatalf("text = %v, want captured (VLM only)", res.JSON[0]["text"])
+		if res.JSON[0].ToMap()["text"] != "captured" {
+			t.Fatalf("text = %v, want captured (VLM only)", res.JSON[0].ToMap()["text"])
 		}
 	})
 	t.Run("switch-beats-stale-parse-method", func(t *testing.T) {
@@ -1035,8 +1035,8 @@ func TestMaybeDispatchImageOCRSwitch(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if res.JSON[0]["text"] != "" {
-			t.Fatalf("ocr_enabled:false must override stale parse_method, got text %v", res.JSON[0]["text"])
+		if res.JSON[0].ToMap()["text"] != "" {
+			t.Fatalf("ocr_enabled:false must override stale parse_method, got text %v", res.JSON[0].ToMap()["text"])
 		}
 	})
 }
@@ -1065,7 +1065,7 @@ func TestMaybeDispatchImageBlankVisionDescriptionWarns(t *testing.T) {
 	if err != nil || !handled {
 		t.Fatalf("err = %v, handled = %v", err, handled)
 	}
-	if text, _ := res.JSON[0]["text"].(string); strings.TrimSpace(text) != "" {
+	if text, _ := res.JSON[0].ToMap()["text"].(string); strings.TrimSpace(text) != "" {
 		t.Fatalf("text = %q, want empty", text)
 	}
 	if !strings.Contains(strings.Join(res.Warnings, "\n"), "the Tokenizer will discard this item") {

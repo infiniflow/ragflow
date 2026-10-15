@@ -334,7 +334,7 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	fallbackItems := make([]map[string]any, 0, len(rawPages))
 	for _, pageBytes := range rawPages {
 		txt := string(pageBytes)
-		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
+		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt).ToMap())
 	}
 	out["output_format"] = "json"
 	out["json"] = fallbackItems
@@ -343,13 +343,25 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 
 func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []map[string]any {
 	if len(dispatched.JSON) > 0 {
-		return dispatched.JSON
+		return parser.ItemsToMaps(dispatched.JSON)
 	}
 	if dispatched.Markdown != "" {
 		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
+	if dispatched.HTML != "" {
+		res := parser.NewHTMLParser().ParseWithResult(ctx, filename, []byte(dispatched.HTML))
+		if res.Err == nil && len(res.JSON) > 0 {
+			return parser.ItemsToMaps(res.JSON)
+		}
+		if res.Err != nil {
+			warnParserNormalizationFallback(filename, "html", res.Err)
+		} else {
+			warnParserNormalizationFallback(filename, "html", fmt.Errorf("parser returned no JSON items"))
+		}
+		return []map[string]any{parser.NewTextJSONItem(dispatched.HTML).ToMap()}
+	}
 	if dispatched.Text != "" {
-		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
+		return []map[string]any{parser.NewTextJSONItem(dispatched.Text).ToMap()}
 	}
 	return []map[string]any{}
 }

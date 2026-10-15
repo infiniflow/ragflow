@@ -125,7 +125,7 @@ func TestPDFParser_ParseWithResult_PaddleOCRJSONIntegration(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want markdown-normalized items")
 	}
-	if got := res.JSON[0]["text"]; got == nil {
+	if got := res.JSON[0].ToMap()["text"]; got == nil {
 		t.Fatal("JSON[0].text missing")
 	}
 }

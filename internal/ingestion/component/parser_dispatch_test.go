@@ -169,7 +169,7 @@ func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
 func TestBuildParserOutputsFallsBackWhenJSONIsEmpty(t *testing.T) {
 	out := buildParserOutputs(t.Context(), parser.ParseResult{
 		OutputFormat: "json",
-		JSON:         []map[string]any{},
+		JSON:         parser.MapsToItems([]map[string]any{}),
 		Markdown:     "# Recovered title",
 	}, "sample.md", nil, "")
 
@@ -184,7 +184,7 @@ func TestBuildParserOutputsPreservesPDFOutlineMetadata(t *testing.T) {
 			"name":    "report.pdf",
 			"outline": wantOutline,
 		},
-		JSON: []map[string]any{{"text": "body", "doc_type_kwd": "text"}},
+		JSON: parser.MapsToItems([]map[string]any{{"text": "body", "doc_type_kwd": "text"}}),
 	}, "report.pdf", nil, "")
 	file, ok := out["file"].(map[string]any)
 	if !ok {

@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/parser/parser"
 )
 
 // PayloadFormat is the discriminator shared by parser/chunker/tokenizer
@@ -227,6 +228,16 @@ func ChunkDocsFromAny(in any) ([]ChunkDoc, bool, error) {
 				continue
 			}
 			doc, err := ChunkDocFromMap(m)
+			if err != nil {
+				return nil, true, err
+			}
+			out = append(out, doc)
+		}
+		return out, true, nil
+	case []parser.DocItem:
+		out := make([]ChunkDoc, 0, len(t))
+		for _, item := range t {
+			doc, err := ChunkDocFromMap(item.ToMap())
 			if err != nil {
 				return nil, true, err
 			}
