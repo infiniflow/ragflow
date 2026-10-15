@@ -1,6 +1,7 @@
 package chunker
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -9,6 +10,54 @@ import (
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 )
+
+func TestPredictedJSONTableRowsThroughChunkers(t *testing.T) {
+	for _, markup := range []string{
+		`<table><caption>People</caption><tr><th>Alice</th><th>18</th></tr><tr><td>Bob</td><td>20</td></tr></table>`,
+		`<table><caption>People</caption><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>18</td></tr><tr><td>Bob</td><td>20</td></tr></table>`,
+	} {
+		items := []map[string]any{{"doc_type_kwd": "table", "text": markup, "page_number": 1, "_pdf_positions": [][]float64{{1, 10, 110, 20, 40}}}}
+		parser.ProjectPredictedTableItems(items)
+		wire, err := json.Marshal(map[string]any{"name": "data.pdf", "output_format": "json", "json": items})
+		if err != nil {
+			t.Fatal(err)
+		}
+		var payload map[string]any
+		if err = json.Unmarshal(wire, &payload); err != nil {
+			t.Fatal(err)
+		}
+		table, _ := NewTableChunker(nil)
+		qa, _ := NewQAChunker(nil)
+		for _, consumer := range []struct {
+			name string
+			run  func() (map[string]any, error)
+		}{
+			{"table", func() (map[string]any, error) { return table.Invoke(t.Context(), nil, payload) }},
+			{"qa", func() (map[string]any, error) { return qa.Invoke(t.Context(), nil, payload) }},
+		} {
+			out, err := consumer.run()
+			if err != nil {
+				t.Fatal(err)
+			}
+			chunks := outputChunks(t, out)
+			if len(chunks) != 2 {
+				t.Fatalf("%s got %d chunks, want 2 data rows", consumer.name, len(chunks))
+			}
+			for i, name := range []string{"Alice", "Bob"} {
+				text := chunks[i]["text"].(string)
+				if !strings.Contains(text, name) || strings.Contains(text, []string{"Bob", "Alice"}[i]) {
+					t.Errorf("%s row %d = %q", consumer.name, i, text)
+				}
+				if consumer.name == "table" && !strings.Contains(text, "<caption>People</caption>") {
+					t.Errorf("caption lost in row chunk: %s", text)
+				}
+				if _, ok := chunks[i]["_pdf_positions"]; !ok {
+					t.Errorf("%s PDF positions lost", consumer.name)
+				}
+			}
+		}
+	}
+}
 
 func TestCSVHeaderlessRowsThroughTableChunker(t *testing.T) {
 	parsed := parser.NewCSVParser().ParseWithResult(t.Context(), "data.csv", []byte("Alice,18\nBob,20\n"))

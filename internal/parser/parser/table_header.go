@@ -104,6 +104,15 @@ func NewOCRMarkdownResult(markdown string) ParseResult {
 	return ParseResult{OutputFormat: "markdown", Markdown: markdown, predictedTableHeaders: true}
 }
 
+// ProjectPredictedTableItems converts recognition table markup to structured
+// tables and classifies generated headings without granting native authority.
+// Non-table items and unstructured table text retain their original payload.
+func ProjectPredictedTableItems(items []map[string]any) {
+	for _, item := range items {
+		projectTableItem(item, true)
+	}
+}
+
 // projectTableItem replaces source table markup with structured TableData.
 // Callers declare whether heading markup is recognition output or native schema.
 // Other items keep their original text; tables render it from their grid.

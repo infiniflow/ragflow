@@ -871,6 +871,16 @@ func mineruContentItemToJSON(item map[string]any, images map[string]*zip.File) m
 			jsonItem["page_number"] = page
 		}
 	}
+	if typ == "table" {
+		parser.ProjectPredictedTableItems([]map[string]any{jsonItem})
+		if td, ok := jsonItem["table"].(*entity.TableData); ok {
+			// The raw text also carried captions and footnotes outside the
+			// HTML table. Keep them when projection removes the markup text.
+			caption := append([]string{td.Caption}, stringSlice(item["table_caption"])...)
+			caption = append(caption, stringSlice(item["table_footnote"])...)
+			td.Caption = strings.TrimSpace(strings.Join(caption, "\n"))
+		}
+	}
 	return jsonItem
 }
 
