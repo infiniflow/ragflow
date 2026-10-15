@@ -61,16 +61,16 @@ func DetectHeader(grid [][]entity.TableCell, evidence HeaderEvidence) Header {
 					continue
 				}
 				kind, matches, samples := "", 0, 0
+				kinds := make(map[string]int, 4)
 				for _, r := range bodyRows {
 					if col >= len(grid[r]) || grid[r][col].Covered || strings.TrimSpace(grid[r][col].Text) == "" {
 						continue
 					}
 					k := headerValueKind(grid[r][col].Text)
-					if kind == "" {
+					kinds[k]++
+					if kinds[k] > matches {
 						kind = k
-					}
-					if kind == k {
-						matches++
+						matches = kinds[k]
 					}
 					samples++
 				}

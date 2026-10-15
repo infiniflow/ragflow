@@ -62,3 +62,15 @@ func TestParseTableHTMLColumnScopeWithEmptyCorner(t *testing.T) {
 		t.Fatalf("HeaderRows = %d, want explicit column headers only", td.HeaderRows)
 	}
 }
+
+func TestDetectHeaderUsesDominantBodyType(t *testing.T) {
+	for _, body := range []string{
+		`<tr><td>A</td><td>N/A</td></tr><tr><td>B</td><td>20</td></tr><tr><td>C</td><td>30</td></tr><tr><td>D</td><td>40</td></tr><tr><td>E</td><td>50</td></tr>`,
+		`<tr><td>B</td><td>20</td></tr><tr><td>C</td><td>30</td></tr><tr><td>D</td><td>40</td></tr><tr><td>E</td><td>50</td></tr><tr><td>A</td><td>N/A</td></tr>`,
+	} {
+		td := mustParse(t, `<table><tr><td>商品</td><td>销售额</td></tr>`+body+`</table>`)
+		if got := DetectHeader(td.Grid, HeaderEvidence{}); got.Rows != 1 {
+			t.Fatalf("first record changed the header decision: %+v", got)
+		}
+	}
+}

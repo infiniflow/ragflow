@@ -4,6 +4,8 @@ import (
 	"archive/zip"
 	"bytes"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -288,5 +290,46 @@ func TestXLSXSparseMergeExpansionIsBounded(t *testing.T) {
 	}
 	if len(res.Warnings) == 0 {
 		t.Fatal("oversized merge geometry must be reported")
+	}
+}
+
+func TestTCADPSpreadsheetMarkdownPreservesPredictionSource(t *testing.T) {
+	withSSRFBypass(t)
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, err := zw.Create("result.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = io.WriteString(w, "| Alice | 18 |\n| --- | --- |\n| Bob | 20 |\n"); err != nil {
+		t.Fatal(err)
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/reconstruct_document" {
+			_, _ = io.WriteString(w, `{"DocumentRecognizeResultUrl":"`+server.URL+`/result.zip"}`)
+			return
+		}
+		_, _ = w.Write(buf.Bytes())
+	}))
+	defer server.Close()
+	for _, format := range []string{"CSV", "XLS", "XLSX"} {
+		res := parseWithTCADP(t.Context(), "source."+strings.ToLower(format), []byte("source"), format, server.URL, "", "1", "1", "markdown")
+		if res.Err != nil {
+			t.Fatal(res.Err)
+		}
+		md, _ := NewMarkdownParser(GoMarkdown)
+		converted := md.ParseWithResult(t.Context(), "converted.md", []byte(res.Markdown))
+		if converted.Err != nil {
+			t.Fatal(converted.Err)
+		}
+		items := res.NormalizeTableHeaders(converted.JSON)
+		td := items[0]["table"].(*entity.TableData)
+		if td.HeaderRows != 0 || len(td.Grid) != 2 {
+			t.Errorf("%s backend response treated as native markup: %+v", format, td)
+		}
 	}
 }
