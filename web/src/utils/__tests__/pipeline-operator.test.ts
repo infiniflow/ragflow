@@ -263,3 +263,59 @@ describe('buildOperatorNode dataset-level metadata precedence', () => {
     expect(form).not.toHaveProperty('metadata');
   });
 });
+
+describe('TitleChunker per-method config round trip', () => {
+  it('keeps hierarchy and group rules independent across load and save', () => {
+    const form = transformApiConfigToForm('TitleChunker', {
+      method: 'hierarchy',
+      hierarchy: 3,
+      levels: [['^#[^#]']],
+      hierarchyHierarchy: '3',
+      hierarchyGroup: '0',
+      hierarchyRules: [{ levels: [{ expression: '^#[^#]' }] }],
+      groupRules: [{ levels: [{ expression: '第[0-9]+章' }] }],
+    });
+    expect(form.hierarchyRules).toEqual([
+      { levels: [{ expression: '^#[^#]' }] },
+    ]);
+    expect(form.groupRules).toEqual([{ levels: [{ expression: '第[0-9]+章' }] }]);
+    expect(form.hierarchyHierarchy).toBe('3');
+    expect(form.hierarchyGroup).toBe('0');
+    expect(form).not.toHaveProperty('levels');
+    expect(form).not.toHaveProperty('hierarchy');
+
+    // Switch to group mode, edit only the group rules, and save: the shared
+    // levels/hierarchy keys carry the active method's values while the
+    // hierarchy rules survive untouched under their own key.
+    const api = transformFormConfigToApi('TitleChunker', {
+      ...form,
+      method: 'group',
+      hierarchyGroup: '2',
+      groupRules: [
+        { levels: [{ expression: '第[0-9]+章' }] },
+        { levels: [{ expression: '第[0-9]+节' }] },
+      ],
+    });
+    expect(api.method).toBe('group');
+    expect(api.levels).toEqual([['第[0-9]+章'], ['第[0-9]+节']]);
+    expect(api.hierarchy).toBe(2);
+    expect(api.hierarchyRules).toEqual([{ levels: [{ expression: '^#[^#]' }] }]);
+    expect(api.groupRules).toEqual([
+      { levels: [{ expression: '第[0-9]+章' }] },
+      { levels: [{ expression: '第[0-9]+节' }] },
+    ]);
+    expect(api.hierarchyHierarchy).toBe('3');
+    expect(api.hierarchyGroup).toBe('2');
+    expect(api).not.toHaveProperty('rules');
+  });
+
+  it('migrates a legacy levels-only config into both method rule sets', () => {
+    const form = transformApiConfigToForm('TitleChunker', {
+      method: 'hierarchy',
+      hierarchy: 2,
+      levels: [['^##']],
+    });
+    expect(form.hierarchyRules).toEqual([{ levels: [{ expression: '^##' }] }]);
+    expect(form.groupRules).toEqual([{ levels: [{ expression: '^##' }] }]);
+  });
+});

@@ -2,7 +2,11 @@
 // transforms. Focus: ManualChunker must serialize the form (rules /
 // hierarchyGroup) into the backend params shape (levels / numeric hierarchy)
 // — the same contract the Manual template's obj.params bakes in and
-// manual.go consumes.
+// manual.go consumes. Each method's rules/hierarchy value are additionally
+// kept under their own split keys (hierarchyRules/groupRules/
+// hierarchyHierarchy/hierarchyGroup) so the stored config stays independent
+// of the active method; the backend reads only levels/hierarchy and ignores
+// the rest.
 
 import { Operator } from '../../constant';
 import { buildDslComponentsByGraph } from '../../utils';
@@ -46,12 +50,19 @@ describe('buildDslComponentsByGraph ManualChunker params', () => {
 
     expect(params.hierarchy).toBe(3);
     expect(params.levels).toEqual([['第[0-9]+章'], ['第[0-9]+节']]);
-    // UI-only fields must not leak into the backend params.
-    expect(params.groupRules).toBeUndefined();
-    expect(params.hierarchyRules).toBeUndefined();
+    // The per-method split fields persist alongside the shared
+    // levels/hierarchy keys so Hierarchy and Group configs stay independent.
+    expect(params.hierarchyRules).toEqual([
+      { levels: [{ expression: '^#[^#]' }] },
+    ]);
+    expect(params.groupRules).toEqual([
+      { levels: [{ expression: '第[0-9]+章' }] },
+      { levels: [{ expression: '第[0-9]+节' }] },
+    ]);
+    expect(params.hierarchyHierarchy).toBe('0');
+    expect(params.hierarchyGroup).toBe('3');
+    // The legacy pre-split rules field must not leak (levels carries it).
     expect(params.rules).toBeUndefined();
-    expect(params.hierarchyHierarchy).toBeUndefined();
-    expect(params.hierarchyGroup).toBeUndefined();
     expect(params.chunk_token_cap).toBeUndefined();
     // include_heading_content is stripped before the transform but the
     // transform unconditionally re-adds it as false — the backend

@@ -439,15 +439,16 @@ export function transformTitleChunkerParams(
       ? params.hierarchyGroup
       : params.hierarchyHierarchy) ?? params.hierarchy;
 
+  // Persist each method's rules and hierarchy value under its own key so the
+  // stored config keeps them independent (the shared `levels`/`hierarchy` keys
+  // carry only the active method's values for the backend components). The
+  // load side (`transformTitleChunkerConfigToForm` and
+  // `transformApiResponseToForm`) reads these split keys first and only falls
+  // back to migrating the shared `levels`/`hierarchy` when they are absent.
   return {
     ...omit(params, [
-      'hierarchyRules',
-      'groupRules',
-      'hierarchyHierarchy',
-      'hierarchyGroup',
       // Legacy pre-split rules field. The active rules have already been
-      // resolved (with `rules` as fallback) into `levels` above; keep the
-      // serialized params identical to the template's obj.params shape.
+      // resolved (with `rules` as fallback) into `levels` above.
       'rules',
     ]),
     method: params.method,
