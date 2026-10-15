@@ -1319,6 +1319,54 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	return deletedCount, nil
 }
 
+// nextSourceChunkOrder returns the chunk_order_int a newly added source chunk
+// should carry: one past the highest order already used by the document's source
+// chunks, so manual chunks append after the ingested ones. Parent rows live in
+// the reserved range starting at common.ParentChunkOrderBase, so the new chunk
+// still lists before every parent of the document — including when the document
+// has been parsed (and its parents materialized) long before the chunk was added.
+//
+// The lookup asks the engine for the document's highest-numbered source chunk.
+// doc_type_kwd separates the two ranges without a range condition: every chunker
+// output carries it (itemDocType defaults to "text"), it survives the tokenizer,
+// and this API writes it below, while parent rows never copy it — so descending
+// by chunk_order_int among those rows lands on the last source chunk rather than
+// on a parent. A pipeline that emits chunks without doc_type_kwd (custom
+// pipelines that never set it) makes the lookup come back empty, and the new
+// chunk falls back to order 0, still inside the source range.
+func (s *ChunkService) nextSourceChunkOrder(ctx context.Context, indexName, datasetID, documentID string) int {
+	// A small page rather than a single row: the lookup only needs the first row
+	// that actually carries a source order, so being tolerant of rows without one
+	// (products written after the tokenizer, e.g. RAPTOR summaries) keeps this
+	// independent of how an engine orders rows missing the sort key in DESC.
+	searchResp, err := s.docEngine.Search(ctx, &types.SearchRequest{
+		IndexNames:         []string{indexName},
+		KbIDs:              []string{datasetID},
+		Limit:              16,
+		IncludeUnavailable: true, // a disabled source chunk still holds its order
+		SelectFields:       []string{"id", "chunk_order_int"},
+		OrderBy:            (&types.OrderByExpr{}).Desc("chunk_order_int"),
+		Filter: map[string]interface{}{
+			"doc_id":   documentID,
+			"exists":   "doc_type_kwd",
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
+		},
+	})
+	if err != nil || searchResp == nil {
+		// The order only decides where the chunk lists: never fail a write over
+		// it. 0 keeps the chunk inside the source range, ahead of the parents.
+		return 0
+	}
+	for _, row := range searchResp.Chunks {
+		order, ok := common.GetInt(row["chunk_order_int"])
+		if !ok || order < 0 || order >= common.ParentChunkOrderBase {
+			continue
+		}
+		return order + 1
+	}
+	return 0
+}
+
 func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
 	if s.docEngine == nil {
 		return nil, addChunkError{code: common.CodeServerError, message: "doc engine not initialized"}
@@ -1385,9 +1433,17 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		importantKeywords = []string{}
 	}
 
+	// Append the manual chunk after the document's existing source chunks. The
+	// value stays inside the source range [0, common.ParentChunkOrderBase) so the
+	// new chunk keeps listing before the parent rows MaterializeParentChunks
+	// created for this document.
+	chunkOrder := s.nextSourceChunkOrder(ctx, indexName, req.DatasetID, req.DocumentID)
+
 	chunkData := map[string]interface{}{
 		"id":                   chunkID,
 		"content_with_weight":  req.Content,
+		"doc_type_kwd":         "text", // Python chunk_api.py:1225; the image branch below overrides it
+		"chunk_order_int":      chunkOrder,
 		"content_ltks":         contentLtks,
 		"content_sm_ltks":      contentSmLtks,
 		"important_kwd":        importantKeywords,

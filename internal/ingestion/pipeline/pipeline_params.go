@@ -50,13 +50,46 @@ var extractorValidParamKeys = func() map[string]struct{} {
 // families) or whose param struct is not part of the schema package
 // (GeneralChunker, QAChunker) stay out of this table; Extractor and Compiler
 // keep their cpnID-prefixed dynamic whitelists.
+// titleChunkerPersistenceKeys are per-method config keys the frontend
+// persists alongside the runtime params (see transformTitleChunkerParams in
+// web/src/pages/agent/utils.ts). The runtime components only read
+// levels/hierarchy/chunk_token_cap for the active method and never touch
+// these; they are whitelisted so the stored config keeps the Hierarchy and
+// Group configurations independent of each other.
+var titleChunkerPersistenceKeys = map[string]struct{}{
+	"hierarchyRules":         {},
+	"groupRules":             {},
+	"hierarchyHierarchy":     {},
+	"hierarchyGroup":         {},
+	"hierarchyChunkTokenCap": {},
+	"groupChunkTokenCap":     {},
+}
+
+// unionParamKeys merges key sets into one for componentParamSchemaKeys entries.
+func unionParamKeys(sets ...map[string]struct{}) map[string]struct{} {
+	merged := make(map[string]struct{})
+	for _, set := range sets {
+		for k := range set {
+			merged[k] = struct{}{}
+		}
+	}
+	return merged
+}
+
+// titleFamilyParamKeys is the accepted-key set shared by TitleChunker and
+// ManualChunker: the component schema plus the per-method persistence keys.
+var titleFamilyParamKeys = unionParamKeys(
+	extractJSONTags(schema.TitleChunkerParam{}),
+	titleChunkerPersistenceKeys,
+)
+
 var componentParamSchemaKeys = map[string]map[string]struct{}{
-	"titlechunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"titlechunker": titleFamilyParamKeys,
 	// ManualChunker reuses TitleChunkerParam. It pins method=group and is exempt
 	// from the token cap, so method, chunk_token_cap and include_heading_content
 	// (hierarchy-only) are accepted here but ignored by the component — the
 	// operator form omits them for the same reason.
-	"manualchunker": extractJSONTags(schema.TitleChunkerParam{}),
+	"manualchunker": titleFamilyParamKeys,
 	"tokenchunker":  extractJSONTags(schema.TokenChunkerParam{}),
 	"tokenizer":     extractJSONTags(schema.TokenizerParam{}),
 }

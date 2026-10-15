@@ -398,8 +398,13 @@ func formatComponentFailure(componentName string, err error) string {
 	if err == nil {
 		return componentName + " Error"
 	}
-	if componentName == "Extractor" && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error())) {
-		return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
+	if errors.Is(err, context.DeadlineExceeded) || strings.Contains(strings.ToLower(err.Error()), context.DeadlineExceeded.Error()) {
+		switch componentName {
+		case "Extractor":
+			return "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."
+		case "Compiler":
+			return "Compiler: Document compilation timed out. Check that the configured model service is reachable and responsive, then retry."
+		}
 	}
 
 	message := err.Error()
