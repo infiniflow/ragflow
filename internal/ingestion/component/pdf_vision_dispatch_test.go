@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -119,8 +120,8 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	}
 }
 
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
+func TestOCRMarkdownResultDefersJSONNormalization(t *testing.T) {
+	result := parser.NewOCRMarkdownResult("# Heading")
 	if result.OutputFormat != "markdown" {
 		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
 	}
@@ -129,6 +130,16 @@ func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
 	}
 	if result.JSON != nil {
 		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
+	}
+}
+
+func TestOCRMarkdownDoesNotTrustGeneratedHeader(t *testing.T) {
+	result := parser.NewOCRMarkdownResult("| Alice | 18 |\n| --- | --- |\n| Bob | 20 |\n")
+	out := buildParserOutputs(t.Context(), result, "data.pdf", nil, "")
+	items := out["json"].([]map[string]any)
+	table := items[0]["table"].(*entity.TableData)
+	if table.HeaderRows != 0 || len(table.Grid) != 2 {
+		t.Fatalf("generated heading promoted a record: %+v", table)
 	}
 }
 

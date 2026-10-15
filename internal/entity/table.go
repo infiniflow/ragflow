@@ -34,10 +34,10 @@ import "encoding/json"
 // inert markup skipped, nested table text folded), so consumers can render
 // chunk text directly from Grid without re-parsing any markup.
 type TableData struct {
-	// Grid holds the cell text, row-major and dense (every row has the same
-	// width). Grid[0:HeaderRows] are header rows. A Covered slot contributes
-	// no text; its content lives at the origin slot named by OriginRow/
-	// OriginCol.
+	// Grid holds cell text row-major, including covered positions within each
+	// row. Rows may have different widths. Grid[0:HeaderRows] are header rows.
+	// A Covered slot contributes no text; its content lives at the origin slot
+	// named by OriginRow/OriginCol.
 	Grid [][]TableCell `json:"grid"`
 	// HeaderRows is the number of confirmed leading column-header rows.
 	// Zero keeps every row as data. Parsers decide this before segmentation;
@@ -45,7 +45,7 @@ type TableData struct {
 	HeaderRows int `json:"header_rows"`
 	// RowHeadersOnly records source markup that explicitly scopes the first
 	// row's headings to rows. It prevents source inference from promoting
-	// that row to column names and is discarded after parser normalization.
+	// that row to column names and is omitted from serialized parser output.
 	RowHeadersOnly bool `json:"-"`
 	// Caption is the table caption (pdf emits it; office uses the sheet name).
 	Caption string `json:"caption,omitempty"`

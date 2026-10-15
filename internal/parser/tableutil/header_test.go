@@ -74,3 +74,35 @@ func TestDetectHeaderUsesDominantBodyType(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectHeaderRejectsOverflowingExplicitRange(t *testing.T) {
+	grid := [][]entity.TableCell{{{Text: "a"}}, {{Text: "b"}}}
+	if got := DetectHeader(grid, HeaderEvidence{Explicit: &Header{Start: 1, Rows: int(^uint(0) >> 1)}}); got != (Header{}) {
+		t.Fatalf("accepted invalid range: %+v", got)
+	}
+}
+
+func TestDetectHeaderIgnoresMissingBodyValues(t *testing.T) {
+	td := mustParse(t, `<table><tr><td>型号</td><td>销量</td></tr><tr><td>A</td><td>N/A</td></tr><tr><td>B</td><td>-</td></tr><tr><td>C</td><td>unknown</td></tr><tr><td>D</td><td>10</td></tr><tr><td>E</td><td>20</td></tr></table>`)
+	if got := DetectHeader(td.Grid, HeaderEvidence{}); got.Rows != 1 {
+		t.Fatalf("missing values diluted typed body evidence: %+v", got)
+	}
+}
+
+func TestDetectHeaderUsesOnlySampledStyleColumns(t *testing.T) {
+	grid := make([][]entity.TableCell, 2)
+	for r := range grid {
+		grid[r] = make([]entity.TableCell, 130)
+		for c := range grid[r] {
+			grid[r][c].Text = "label"
+		}
+	}
+	grid[0][0].Text = "Product"
+	style := make([]bool, 64)
+	for c := range style {
+		style[c] = true
+	}
+	if got := DetectHeader(grid, HeaderEvidence{Styled: [][]bool{style, make([]bool, 64)}}); got.Rows != 1 {
+		t.Fatalf("unsampled columns diluted style evidence: %+v", got)
+	}
+}

@@ -23,9 +23,9 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 		name    string
 		produce func() []map[string]any
 	}{
-		{"projectPDFTable (DLA)", func() []map[string]any {
+		{"projectTableItem (DLA)", func() []map[string]any {
 			item := map[string]any{"doc_type_kwd": "table", "text": tableHTML, "page_number": 1}
-			projectPDFTable(item)
+			projectTableItem(item, true)
 			return []map[string]any{item}
 		}},
 		{"opendataloader html", func() []map[string]any {
@@ -118,7 +118,7 @@ func TestPDFItemsToMarkdownSkipsTableWithoutStructuredData(t *testing.T) {
 func TestProjectPDFTableKeepsTextWhenNotProjected(t *testing.T) {
 	t.Run("non-table doc_type", func(t *testing.T) {
 		item := map[string]any{"doc_type_kwd": "text", "text": "plain prose"}
-		projectPDFTable(item)
+		projectTableItem(item, true)
 		if item["text"] != "plain prose" {
 			t.Fatalf("text mutated for non-table item: %#v", item)
 		}
@@ -128,7 +128,7 @@ func TestProjectPDFTableKeepsTextWhenNotProjected(t *testing.T) {
 	})
 	t.Run("table doc_type but non-HTML text", func(t *testing.T) {
 		item := map[string]any{"doc_type_kwd": "table", "text": "not a table"}
-		projectPDFTable(item)
+		projectTableItem(item, true)
 		if item["text"] != "not a table" {
 			t.Fatalf("text mutated for non-HTML table item: %#v", item)
 		}
@@ -137,6 +137,6 @@ func TestProjectPDFTableKeepsTextWhenNotProjected(t *testing.T) {
 		}
 	})
 	t.Run("nil item", func(t *testing.T) {
-		projectPDFTable(nil) // must not panic
+		projectTableItem(nil, true) // must not panic
 	})
 }

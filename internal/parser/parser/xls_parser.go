@@ -20,11 +20,11 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"ragflow/internal/parser/tableutil"
 	"strings"
 	"time"
 
 	excel "github.com/jloor/go-excel-reader"
+	"ragflow/internal/parser/tableutil"
 )
 
 var compoundDocumentSignature = []byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1}

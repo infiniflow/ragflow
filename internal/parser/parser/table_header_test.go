@@ -27,6 +27,7 @@ func TestSpreadsheetAutomaticHeaders(t *testing.T) {
 		{"numbers", [][]string{{"1", "2"}, {"3", "4"}}, 0},
 		{"column labels", [][]string{{"Name", "Age"}, {"Alice", "18"}, {"Bob", "20"}}, 1},
 		{"single record", [][]string{{"Alice", "18"}}, 0},
+		{"missing first value", [][]string{{"Alice", "N/A"}, {"Bob", "20"}, {"Carol", "22"}}, 0},
 		{"summary", [][]string{{"Total", "Amount"}, {"10", "20"}, {"30", "40"}}, 0},
 	}
 	for _, tt := range tests {
@@ -72,6 +73,12 @@ func TestCSVAutomaticHeaders(t *testing.T) {
 		{"北京,上海\n广州,深圳\n", 0},
 		{"Name,Age\nAlice,18\nBob,20\n", 1},
 		{"Alice,18\n", 0},
+		{"Alice,N/A\nBob,20\nCarol,22\n", 0},
+		{"Widget,-\nGadget,12\nGizmo,30\n", 0},
+		{"Price,Unknown\nQuantity,10\nAmount,20\n", 0},
+		{"A,1e3\nB,20\nC,30\n", 0},
+		// Text-only labels without distinguishing evidence remain data.
+		{"Product,Region\nWidget,North\nGadget,South\n", 0},
 	} {
 		res := NewCSVParser().ParseWithResult(t.Context(), "rows.csv", []byte(tt.text))
 		if res.Err != nil {
@@ -81,6 +88,72 @@ func TestCSVAutomaticHeaders(t *testing.T) {
 		if td.HeaderRows != tt.want {
 			t.Errorf("%q: HeaderRows = %d, want %d", tt.text, td.HeaderRows, tt.want)
 		}
+	}
+}
+
+func TestSpreadsheetPreambleMergeDoesNotCreateOrphan(t *testing.T) {
+	grid := [][]entity.TableCell{
+		{{Text: "Report", RowSpan: 3}},
+		{{Covered: true, OriginRow: 0}, {Text: "Name"}, {Text: "Age"}},
+		{{Covered: true, OriginRow: 0}, {Text: "Alice"}, {Text: "18"}},
+	}
+	source := resolveSpreadsheetTable(grid, nil, tableutil.HeaderEvidence{Explicit: &tableutil.Header{Start: 1, Rows: 1}})
+	items := buildSheetItems(source, "Sheet1", 1, nil)
+	if len(items) != 2 || items[0]["text"] != "Report" {
+		t.Fatalf("preamble changed: %v", items)
+	}
+	td := items[1]["table"].(*entity.TableData)
+	for _, row := range td.Grid {
+		if row[0].Covered {
+			t.Fatalf("covered slot retained a removed preamble origin: %+v", row[0])
+		}
+	}
+	if grid[1][0].OriginRow != 0 || !grid[1][0].Covered {
+		t.Fatal("source grid mutated")
+	}
+}
+
+func TestXLSXLocalTableMetadataDoesNotOverrideSheet(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	for r, row := range [][]string{{"Name", "Age"}, {"Alice", "18"}, {"Bob", "20"}} {
+		for c, v := range row {
+			mustSetCell(t, f, "Sheet1", cellAxis(r+1, c+1), v)
+		}
+	}
+	for r, row := range [][]string{{"1", "2"}, {"3", "4"}} {
+		for c, v := range row {
+			mustSetCell(t, f, "Sheet1", cellAxis(r+5, c+4), v)
+		}
+	}
+	show := false
+	mustAddTable(t, f, "Sheet1", &excelize.Table{Range: "D5:E6", Name: "Local", ShowHeaderRow: &show})
+	source, warnings, err := readSpreadsheetTable(f, "Sheet1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if source.data.HeaderRows != 1 || len(warnings) == 0 {
+		t.Fatalf("local metadata affected unrelated columns or was silently ignored: header=%d warnings=%v", source.data.HeaderRows, warnings)
+	}
+}
+
+func TestXLSXWideStyledHeader(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		for col := 1; col <= 130; col++ {
+			mustSetCell(t, f, "Sheet1", cellAxis(1, col), "Custom field")
+			mustSetCell(t, f, "Sheet1", cellAxis(2, col), "record")
+		}
+		mustSetCell(t, f, "Sheet1", "A1", "Product")
+		style := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
+		mustSetCellStyle(t, f, "Sheet1", "A1", cellAxis(1, 130), style)
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "wide.xlsx", data)
+	if res.Err != nil {
+		t.Fatal(res.Err)
+	}
+	if td := res.JSON[0]["table"].(*entity.TableData); td.HeaderRows != 1 {
+		t.Fatalf("sampled styles diluted in a wide table: %+v", td.HeaderRows)
 	}
 }
 
@@ -94,14 +167,56 @@ func TestXLSXExplicitNoHeader(t *testing.T) {
 		show := false
 		mustAddTable(t, f, "Sheet1", &excelize.Table{Range: "A1:B3", Name: "NoHeader", ShowHeaderRow: &show})
 	})
-	p, _ := NewXLSXParser("")
-	res := p.ParseWithResult(t.Context(), "none.xlsx", data)
-	if res.Err != nil {
-		t.Fatal(res.Err)
+	// Excelize hides an existing header by advancing the range to A2:B3.
+	// Model a genuinely headerless source covering every record, A1:B3.
+	data = rewriteXLSXEntry(t, data, "xl/tables/table1.xml", func(content []byte) []byte {
+		return bytes.Replace(content, []byte(`ref="A2:B3"`), []byte(`ref="A1:B3"`), 1)
+	})
+	for _, tt := range []struct {
+		name, ref, count string
+		want             int
+		warn             bool
+	}{
+		{"whole sheet", "A1:B3", "0", 0, false},
+		{"trailing blank rows", "A1:B5", "0", 0, false},
+		{"overflowing count", "A1:B3", "9223372036854775807", 1, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			input := rewriteXLSXEntry(t, data, "xl/tables/table1.xml", func(content []byte) []byte {
+				content = bytes.Replace(content, []byte(`ref="A1:B3"`), []byte(`ref="`+tt.ref+`"`), 1)
+				return bytes.Replace(content, []byte(`headerRowCount="0"`), []byte(`headerRowCount="`+tt.count+`"`), 1)
+			})
+			p, _ := NewXLSXParser("")
+			res := p.ParseWithResult(t.Context(), "none.xlsx", input)
+			if res.Err != nil {
+				t.Fatal(res.Err)
+			}
+			td := res.JSON[0]["table"].(*entity.TableData)
+			if td.HeaderRows != tt.want || len(td.Grid) != 3 || (len(res.Warnings) > 0) != tt.warn {
+				t.Fatalf("header=%d rows=%d warnings=%v", td.HeaderRows, len(td.Grid), res.Warnings)
+			}
+		})
 	}
-	td := res.JSON[0]["table"].(*entity.TableData)
-	if td.HeaderRows != 0 || len(td.Grid) != 3 {
-		t.Fatalf("explicit no-header ignored: %+v", td)
+}
+
+func TestXLSXMultipleTableDeclarationsReportSheetInference(t *testing.T) {
+	f := excelize.NewFile()
+	defer f.Close()
+	for r, row := range [][]string{{"2024", "2025", "", "Category", "Metric"}, {"10", "20", "", "a", "b"}} {
+		for c, value := range row {
+			mustSetCell(t, f, "Sheet1", cellAxis(r+1, c+1), value)
+		}
+	}
+	mustAddTable(t, f, "Sheet1", &excelize.Table{Range: "A1:B2", Name: "Years"})
+	mustAddTable(t, f, "Sheet1", &excelize.Table{Range: "D1:E2", Name: "Other"})
+	source, warnings, err := readSpreadsheetTable(f, "Sheet1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Independent regions are not yet projected; neither declaration may
+	// silently grant a header to unrelated columns in the sheet table.
+	if source.data.HeaderRows != 0 || len(warnings) != 1 || len(source.data.Grid) != 2 {
+		t.Fatalf("header=%d warnings=%v grid=%v", source.data.HeaderRows, warnings, source.data.Grid)
 	}
 }
 
@@ -127,7 +242,7 @@ func TestXLSXMultiLevelHeader(t *testing.T) {
 
 func TestPDFHeaderPredictionDoesNotPromoteData(t *testing.T) {
 	item := map[string]any{"doc_type_kwd": "table", "text": `<table><tr><th>Alice</th><th>18</th></tr><tr><td>Bob</td><td>20</td></tr></table>`}
-	projectPDFTable(item)
+	projectTableItem(item, true)
 	td := item["table"].(*entity.TableData)
 	if td.HeaderRows != 0 || len(td.Grid) != 2 {
 		t.Fatalf("predicted data became header: %+v", td)

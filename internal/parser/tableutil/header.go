@@ -28,7 +28,7 @@ type HeaderEvidence struct {
 // a new header from content.
 func DetectHeader(grid [][]entity.TableCell, evidence HeaderEvidence) Header {
 	if h := evidence.Explicit; h != nil {
-		if h.Start >= 0 && h.Rows >= 0 && h.Start+h.Rows <= len(grid) {
+		if h.Start >= 0 && h.Start <= len(grid) && h.Rows >= 0 && h.Rows <= len(grid)-h.Start {
 			if h.Rows == 0 {
 				return Header{}
 			}
@@ -65,6 +65,9 @@ func DetectHeader(grid [][]entity.TableCell, evidence HeaderEvidence) Header {
 						continue
 					}
 					k := headerValueKind(grid[r][col].Text)
+					if k == "missing" {
+						continue
+					}
 					kinds[k]++
 					if kinds[k] > matches {
 						kind = k
@@ -118,10 +121,14 @@ func DetectHeader(grid [][]entity.TableCell, evidence HeaderEvidence) Header {
 	return Header{}
 }
 
-var headerNumber = regexp.MustCompile(`^[\p{Sc}+\-]?[0-9][0-9,]*(\.[0-9]+)?%?$`)
+var headerNumber = regexp.MustCompile(`^[\p{Sc}]?[+\-]?([0-9][0-9,]*(\.[0-9]*)?|\.[0-9]+)([eE][+\-]?[0-9]+)?%?$`)
 
 func headerValueKind(value string) string {
 	value = strings.TrimSpace(value)
+	switch strings.ToLower(value) {
+	case "", "-", "--", "?", "n/a", "na", "null", "none", "unknown", "无", "空":
+		return "missing"
+	}
 	if headerNumber.MatchString(value) {
 		return "number"
 	}
@@ -165,14 +172,15 @@ func hasStyleBoundary(styles [][]bool, grid [][]entity.TableCell, start, end int
 		}
 		styled, bodyStyled, values := 0, 0, 0
 		for c, cell := range grid[r] {
-			if cell.Covered || strings.TrimSpace(cell.Text) == "" {
+			// Unobserved columns are not evidence of an unstyled cell.
+			if c >= len(styles[r]) || c >= len(styles[end]) || cell.Covered || strings.TrimSpace(cell.Text) == "" {
 				continue
 			}
 			values++
-			if c < len(styles[r]) && styles[r][c] {
+			if styles[r][c] {
 				styled++
 			}
-			if c < len(styles[end]) && styles[end][c] {
+			if styles[end][c] {
 				bodyStyled++
 			}
 		}

@@ -243,7 +243,7 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 		return parser.ParseResult{}, err
 	}
 	md := strings.Join(sections, "\n\n")
-	return buildMarkdownOCRDispatchResult(md), nil
+	return parser.NewOCRMarkdownResult(md), nil
 }
 
 func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
@@ -266,15 +266,6 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 		return []map[string]any{parser.NewTextJSONItem(mdText)}
 	}
 	return res.JSON
-}
-
-func buildMarkdownOCRDispatchResult(md string) parser.ParseResult {
-	// Keep the backend's Markdown intact here. buildParserOutputs is the
-	// single normalization boundary for all non-JSON parser responses.
-	return parser.ParseResult{
-		OutputFormat: "markdown",
-		Markdown:     md,
-	}
 }
 
 var isMonkeyOCRv2LayoutModelID = defaultIsMonkeyOCRv2LayoutModelID
@@ -548,7 +539,7 @@ func dispatchMinerUPDF(
 			return mineruJSONParseResult(filename, items), nil
 		}
 		if v1Markdown != "" {
-			return buildMarkdownOCRDispatchResult(result.Markdown), nil
+			return parser.NewOCRMarkdownResult(result.Markdown), nil
 		}
 		if extractErr != nil {
 			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
@@ -655,7 +646,7 @@ func dispatchPaddleOCRPdf(
 		return parser.ParseResult{}, fmt.Errorf("parser: PaddleOCR returned empty text")
 	}
 
-	return buildMarkdownOCRDispatchResult(*resp.Text), nil
+	return parser.NewOCRMarkdownResult(*resp.Text), nil
 }
 
 // resolveMinerUBaseURL extracts the resolved base URL from a model driver.

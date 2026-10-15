@@ -3,6 +3,8 @@ package parser
 import (
 	"strings"
 
+	"go.uber.org/zap"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
@@ -53,20 +55,76 @@ func resolveSpreadsheetTable(grid [][]entity.TableCell, rowNumbers []int, eviden
 	}
 	dataGrid := grid[header.Start:]
 	if header.Start > 0 {
-		dataGrid = make([][]entity.TableCell, len(grid)-header.Start)
-		for r, row := range grid[header.Start:] {
-			dataGrid[r] = append([]entity.TableCell{}, row...)
-			for c := range dataGrid[r] {
-				if dataGrid[r][c].Covered {
-					dataGrid[r][c].OriginRow -= header.Start
-				}
-			}
+		rows := make([]int, len(grid)-header.Start)
+		for r := range rows {
+			rows[r] = r + header.Start
 		}
+		dataGrid = projectTableRows(grid, rows)
 	}
 	return spreadsheetTable{
 		data:       &entity.TableData{Grid: dataGrid, HeaderRows: header.Rows},
 		rowNumbers: rowNumbers[header.Start:], leading: leading,
 	}
+}
+
+// projectTableRows copies ascending source rows and rebuilds their merge origins.
+// A covered slot whose origin was removed becomes an empty ordinary cell; the
+// removed origin's text is owned by its original segment, never a fabricated one.
+func projectTableRows(grid [][]entity.TableCell, rows []int) [][]entity.TableCell {
+	rowIndex := make(map[int]int, len(rows))
+	for r, source := range rows {
+		rowIndex[source] = r
+	}
+	part := make([][]entity.TableCell, len(rows))
+	for r, source := range rows {
+		part[r] = append([]entity.TableCell{}, grid[source]...)
+		for c := range part[r] {
+			cell := &part[r][c]
+			if cell.Covered {
+				if origin, ok := rowIndex[cell.OriginRow]; ok {
+					cell.OriginRow = origin
+				} else {
+					*cell = entity.TableCell{}
+				}
+			} else if cell.RowSpan > 1 {
+				span := 1
+				for next := r + 1; next < len(rows) && rows[next]-source < cell.RowSpan; next++ {
+					span++
+				}
+				cell.RowSpan = span
+			}
+		}
+	}
+	return part
+}
+
+// NewOCRMarkdownResult retains recognition provenance until raw Markdown is
+// normalized. OCR backends must not grant native authority to generated headings.
+func NewOCRMarkdownResult(markdown string) ParseResult {
+	return ParseResult{OutputFormat: "markdown", Markdown: markdown, predictedTableHeaders: true}
+}
+
+// projectTableItem replaces source table markup with structured TableData.
+// Callers declare whether heading markup is recognition output or native schema.
+// Other items keep their original text; tables render it from their grid.
+func projectTableItem(item map[string]any, predicted bool) {
+	if item == nil || item["doc_type_kwd"] != "table" {
+		return
+	}
+	text, _ := item["text"].(string)
+	if !isTableHTML(text) {
+		return
+	}
+	td, err := tableutil.ParseTableHTML(text)
+	if err != nil || td == nil {
+		return
+	}
+	if page := numberValue(item["page_number"]); page > 0 {
+		td.Page = int(page)
+	}
+	resolveTableHeader(td, predicted)
+	item["table"] = td
+	delete(item, "text")
 }
 
 // resolveTableHeader classifies source tables before segmentation.
@@ -75,6 +133,11 @@ func resolveTableHeader(td *entity.TableData, predicted bool) {
 	if td == nil {
 		return
 	}
+	defer func() {
+		common.Debug("document table header decision", zap.String("caption", td.Caption),
+			zap.Int("page", td.Page), zap.Bool("predicted", predicted),
+			zap.Bool("row_headers_only", td.RowHeadersOnly), zap.Int("header_rows", td.HeaderRows))
+	}()
 	if td.RowHeadersOnly {
 		td.HeaderRows = 0
 		return
@@ -87,10 +150,9 @@ func resolveTableHeader(td *entity.TableData, predicted bool) {
 	td.HeaderRows = h.Rows
 }
 
-// NormalizeTableHeaders preserves the source's evidence level after a backend
-// response is converted from Markdown/HTML to structured JSON. Native document
-// declarations retain their semantics; recognition output is checked by the
-// shared detector. The source marker is never serialized to the pipeline.
+// NormalizeTableHeaders re-evaluates recognition-generated headings after raw
+// Markdown/HTML conversion. Native declarations retain their authority. The
+// source marker is never serialized to the pipeline.
 func (r ParseResult) NormalizeTableHeaders(items []map[string]any) []map[string]any {
 	if r.predictedTableHeaders {
 		for _, item := range items {

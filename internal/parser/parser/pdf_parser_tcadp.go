@@ -102,7 +102,7 @@ func tcadpAnyToItems(raw any) []map[string]any {
 			}
 			items := emit(text, pdfTableDocType(text), "table")
 			for _, it := range items {
-				projectPDFTable(it)
+				projectTableItem(it, true)
 			}
 			return items
 		case "image":

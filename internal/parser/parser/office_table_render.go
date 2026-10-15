@@ -41,7 +41,6 @@ var tableIllegalCharsRe = regexp.MustCompile(`[\x00-\x08]|\x0B|\x0C|[\x0E-\x1F]`
 // spreadsheetSegmentRow is one emitted data row: its cells for the markup
 // and its row-aligned position tuple.
 type spreadsheetSegmentRow struct {
-	grid      []entity.TableCell
 	sourceRow int
 	tuple     []float64
 	rowNum    int
@@ -66,8 +65,9 @@ func buildSheetItems(source spreadsheetTable, sheet string, sheetIndex int, imag
 		return images
 	}
 	headerRows := td.HeaderRows
+	common.Debug("spreadsheet table header decision", zap.String("sheet", sheet),
+		zap.Int("header_rows", headerRows), zap.Int("source_rows", len(td.Grid)))
 	rows := make([]spreadsheetSegmentRow, 0, len(td.Grid))
-	var headerGrid [][]entity.TableCell
 	var headerMatrix [][]float64
 	for r, row := range td.Grid {
 		cells := make([]string, len(row))
@@ -94,10 +94,9 @@ func buildSheetItems(source spreadsheetTable, sheet string, sheetIndex int, imag
 		rowNum := source.rowNumbers[r]
 		tuple := []float64{float64(sheetIndex), float64(rowNum), float64(rowNum), float64(colStart), float64(colEnd)}
 		if r < headerRows {
-			headerGrid = append(headerGrid, row)
 			headerMatrix = append(headerMatrix, tuple)
 		} else {
-			rows = append(rows, spreadsheetSegmentRow{sourceRow: r, grid: row, tuple: tuple, rowNum: rowNum, colStart: colStart})
+			rows = append(rows, spreadsheetSegmentRow{sourceRow: r, tuple: tuple, rowNum: rowNum, colStart: colStart})
 		}
 	}
 	spanThrough := make([]int, len(td.Grid))
@@ -165,37 +164,15 @@ func buildSheetItems(source spreadsheetTable, sheet string, sheetIndex int, imag
 	}
 	newSegment := func(body []spreadsheetSegmentRow) map[string]any {
 		matrix := append([][]float64{}, headerMatrix...)
-		grid := append([][]entity.TableCell{}, headerGrid...)
 		sourceRows := make([]int, headerRows, headerRows+len(body))
 		for r := range sourceRows {
 			sourceRows[r] = r
 		}
 		for _, r := range body {
-			grid = append(grid, r.grid)
 			matrix = append(matrix, r.tuple)
 			sourceRows = append(sourceRows, r.sourceRow)
 		}
-		// Rebase covered-slot pointers and constrain repeated header spans to
-		// rows actually present in this segment. Never mutate the source grid.
-		rowIndex := make(map[int]int, len(sourceRows))
-		for r, source := range sourceRows {
-			rowIndex[source] = r
-		}
-		for r, row := range grid {
-			grid[r] = append([]entity.TableCell{}, row...)
-			for c := range grid[r] {
-				cell := &grid[r][c]
-				if cell.Covered {
-					cell.OriginRow = rowIndex[cell.OriginRow]
-				} else if cell.RowSpan > 1 {
-					span := 1
-					for next := r + 1; next < len(grid) && sourceRows[next] < sourceRows[r]+cell.RowSpan; next++ {
-						span++
-					}
-					cell.RowSpan = span
-				}
-			}
-		}
+		grid := projectTableRows(td.Grid, sourceRows)
 		part := &entity.TableData{Grid: grid, HeaderRows: headerRows, Caption: sheet}
 		item := NewTableDataJSONItem(part, sheet, matrix)
 		item["sheet_index"] = sheetIndex
@@ -444,13 +421,6 @@ func axisToRC(axis string) (row, col int) {
 	return r, c
 }
 
-// rangeTopRow returns the top (first) row of an A1:B10-style range reference.
-func rangeTopRow(ref string) int {
-	ref = strings.SplitN(ref, ":", 2)[0]
-	r, _ := axisToRC(ref)
-	return r
-}
-
 // cellAxis builds an "A1"-style reference for 1-based (row, col).
 func cellAxis(row, col int) string {
 	// Build the column letters least-significant digit first, then reverse.
@@ -537,8 +507,13 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 	// Bound malformed far merges and preserve their geometry instead of copying
 	// a title's text into every covered column.
 	mergeCellBudget := 1 << 20
+	limitedMerges := 0
 	for _, m := range ranges {
-		if m.sr > len(grid) || m.sc > maxMergeExtentCols {
+		if m.sr > len(grid) {
+			continue
+		}
+		if m.sc > maxMergeExtentCols {
+			limitedMerges++
 			continue
 		}
 		endRow, endCol := m.er, m.ec
@@ -558,8 +533,11 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 			}
 		}
 		if added > mergeCellBudget {
-			warnings = append(warnings, fmt.Sprintf("XLSX sheet %q merge %s:%s exceeds the cell expansion budget; kept source values without merge geometry", sheet, cellAxis(m.sr, m.sc), cellAxis(m.er, m.ec)))
+			limitedMerges++
 			continue
+		}
+		if m.ec > maxMergeExtentCols {
+			limitedMerges++
 		}
 		mergeCellBudget -= added
 		for r := m.sr - 1; r < endRow; r++ {
@@ -576,11 +554,14 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 			}
 		}
 	}
+	if limitedMerges > 0 {
+		warnings = append(warnings, fmt.Sprintf("XLSX sheet %q limited merge geometry for %d ranges exceeding the supported width or cell expansion budget; kept source values", sheet, limitedMerges))
+	}
 	evidence := tableutil.HeaderEvidence{}
 	// Only the bounded detection window needs styles, not the entire worksheet.
 	for r := 0; r < len(grid) && r < 24; r++ {
-		style := make([]bool, len(grid[r]))
-		for col := 0; col < len(style) && col < 64; col++ {
+		style := make([]bool, min(len(grid[r]), 64))
+		for col := range style {
 			style[col] = cellIsStyled(f, sheet, r+1, col+1)
 		}
 		evidence.Styled = append(evidence.Styled, style)
@@ -613,13 +594,43 @@ func readSpreadsheetTable(f *excelize.File, sheet string) (spreadsheetTable, []s
 			if table.HeaderRows != nil {
 				count = *table.HeaderRows
 			}
-			start := rangeTopRow(table.Ref) - 1
+			// A ListObject declaration governs its rectangle, not unrelated
+			// worksheet cells. Apply it only to a whole-sheet table (optionally
+			// preceded by single-cell preamble rows).
+			bounds := strings.SplitN(table.Ref, ":", 2)
+			sr, sc := axisToRC(bounds[0])
+			er, ec := sr, sc
+			if len(bounds) == 2 {
+				er, ec = axisToRC(bounds[1])
+			}
+			covers := sr > 0 && sr <= len(grid) && sc == 1 && er >= len(grid)
+			for r, row := range grid {
+				if len(row) > ec {
+					covers = false
+				}
+				if r < sr-1 {
+					values := 0
+					for _, cell := range row {
+						if !cell.Covered && strings.TrimSpace(cell.Text) != "" {
+							values++
+						}
+					}
+					covers = covers && values <= 1
+				}
+			}
+			if !covers || count < 0 || count > 1 {
+				warnings = append(warnings, fmt.Sprintf("XLSX sheet %q table %q metadata does not describe the sheet table; inferred headers without applying region declarations", sheet, table.Name))
+				return false
+			}
+			start := sr - 1
 			if count == 0 {
 				start = 0
 			}
 			evidence.Explicit = &tableutil.Header{Start: start, Rows: count}
 			return false
 		})
+	} else if len(tables) > 1 {
+		warnings = append(warnings, fmt.Sprintf("XLSX sheet %q has multiple table regions; inferred sheet headers without applying region declarations", sheet))
 	}
 	return resolveSpreadsheetTable(grid, rowNumbers, evidence), warnings, nil
 }
