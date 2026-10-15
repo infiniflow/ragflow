@@ -1192,6 +1192,8 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 		agentOpts.stateSerializer,
 		agentOpts.runTracker,
 	)
+	// Chat channels bound to a flow Agent answer through the same runner.
+	service.SetChatChannelAgentService(agentService)
 	agentHandler := handler.NewAgentHandler(ctx, agentService, fileService)
 
 	// Public chatbot/agentbot endpoints (api/v1/chatbots/...,
