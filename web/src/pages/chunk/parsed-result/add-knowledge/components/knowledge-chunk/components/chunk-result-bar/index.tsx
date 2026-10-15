@@ -9,11 +9,11 @@ import { Radio } from '@/components/ui/radio';
 import { Segmented } from '@/components/ui/segmented';
 import { cn } from '@/lib/utils';
 import { LucideFilter, Plus } from 'lucide-react';
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChunkTextMode } from '../../constant';
 interface ChunkResultBarProps {
   className?: string;
+  textMode: ChunkTextMode;
   changeChunkTextMode: (mode: ChunkTextMode) => void;
   available: number | undefined;
   selectAllChunk: (value: boolean) => void;
@@ -24,6 +24,7 @@ interface ChunkResultBarProps {
 }
 export default function ChunkResultBar({
   className,
+  textMode,
   changeChunkTextMode,
   available,
   selectAllChunk,
@@ -33,9 +34,6 @@ export default function ChunkResultBar({
   searchString,
 }: ChunkResultBarProps) {
   const { t } = useTranslation('translation', { keyPrefix: 'chunk' });
-  const [textSelectValue, setTextSelectValue] = useState<string | number>(
-    ChunkTextMode.Full,
-  );
   const handleFilterChange = (e: string | number) => {
     const value = e === -1 ? undefined : (e as number);
     selectAllChunk(false);
@@ -58,7 +56,6 @@ export default function ChunkResultBar({
   ];
 
   const changeTextSelectValue = (value: string | number) => {
-    setTextSelectValue(value);
     changeChunkTextMode(value as ChunkTextMode);
   };
   return (
@@ -68,7 +65,7 @@ export default function ChunkResultBar({
         buttonSize="xs"
         itemClassName="px-2"
         options={textSelectOptions}
-        value={textSelectValue}
+        value={textMode}
         onChange={changeTextSelectValue}
       />
 

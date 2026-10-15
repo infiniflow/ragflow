@@ -22,7 +22,7 @@ import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useGetPaginationWithRouter,
@@ -55,6 +55,8 @@ export interface IChunkListResult {
   setPagination?: (pagination: { page: number; pageSize?: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
+  error: Error | null;
+  refetch: () => Promise<unknown>;
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
 }
 
@@ -177,11 +179,19 @@ export const useFetchNextChunkList = (
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
+  const lastDocumentInfo = useRef<{
+    knowledgeId: string;
+    documentId: string;
+    documentInfo: IKnowledgeFile;
+  }>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const {
     data,
     isFetching: loading,
+    isPlaceholderData,
+    error,
+    refetch,
     dataUpdatedAt,
   } = useQuery({
     queryKey: ChunkKeys.list(
@@ -233,6 +243,30 @@ export const useFetchNextChunkList = (
     },
   });
 
+  useEffect(() => {
+    if (!isPlaceholderData && data?.documentInfo?.id === documentId) {
+      lastDocumentInfo.current = {
+        knowledgeId,
+        documentId,
+        documentInfo: data.documentInfo,
+      };
+    }
+  }, [data, isPlaceholderData, documentId, knowledgeId]);
+
+  const safeData = useMemo(() => {
+    if (data) return data;
+    const previous = lastDocumentInfo.current;
+    return {
+      data: [],
+      total: 0,
+      documentInfo:
+        previous?.knowledgeId === knowledgeId &&
+        previous.documentId === documentId
+          ? previous.documentInfo
+          : {},
+    };
+  }, [data, knowledgeId, documentId]);
+
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       setPagination({ page: 1 });
@@ -250,7 +284,7 @@ export const useFetchNextChunkList = (
   );
 
   return {
-    data,
+    data: safeData,
     loading,
     pagination,
     setPagination,
@@ -258,6 +292,8 @@ export const useFetchNextChunkList = (
     handleInputChange: onInputChange,
     available,
     handleSetAvailable,
+    error,
+    refetch,
     dataUpdatedAt, // Timestamp when data was last updated - useful for cache busting
   };
 };
