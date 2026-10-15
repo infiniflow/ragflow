@@ -152,10 +152,8 @@ func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
 	}
 }
 
-// TestXLSXParserEmitsHeaderOnlySegment: a sheet with no data rows still
-// emits its header as the only searchable representation of the column
-// schema — one segment whose markup holds the single <tr> of <th> cells.
-func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
+// A lone record has no implicit header but remains searchable.
+func TestXLSXParserPreservesSingleRecord(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "Name")
 		mustSetCell(t, f, "Sheet1", "B1", "Amount")
@@ -170,7 +168,7 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 	}
 	item := res.JSON[0]
 	wantText := "<table><caption>Sheet1</caption>\n" +
-		"<tr><th>Name</th><th>Amount</th></tr>\n" +
+		"<tr><td>Name</td><td>Amount</td></tr>\n" +
 		"</table>\n"
 	if rendered := tableItemHTML(t, item); rendered != wantText {
 		t.Fatalf("table HTML = %q, want %q", rendered, wantText)
@@ -186,7 +184,7 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 // user content can never become markup.
 func TestBuildSheetItemsEscapesCellText(t *testing.T) {
 	const tricky = `<b>bold</b> & "quoted" > 1`
-	items := buildSheetItems([][]string{{"Name"}, {tricky}}, "Sheet1", 1, 1, nil, nil)
+	items := buildSheetItems(newSpreadsheetTable([][]string{{"Name"}, {tricky}}, nil, tableutil.HeaderEvidence{}), "Sheet1", 1, nil)
 	if len(items) != 1 {
 		t.Fatalf("items = %d, want one segment", len(items))
 	}
@@ -484,15 +482,13 @@ func TestXLSXParser_HeaderAndCaption(t *testing.T) {
 	}
 }
 
-// TestXLSXParser_MergedHeaderInheritance asserts a horizontally merged header
-// cell's slave columns inherit the master text, so a wide merged title does not
-// render as a row of blank header cells.
-func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
+// A merged title retains its geometry and is not repeated as column names.
+func TestXLSXParser_MergedTitleIsNotHeader(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
-		// Row 1 is the header; A1:C1 merged into one wide label "Sales Report".
+		// Row 1 is a title, not a column header.
 		mustSetCell(t, f, "Sheet1", "A1", "Sales Report")
 		mustMergeCell(t, f, "Sheet1", "A1", "C1")
-		// Make the header row bold so detection anchors row 1.
+		// Styling alone must not promote a title.
 		idx := mustNewStyle(t, f, &excelize.Style{Font: &excelize.Font{Bold: true}})
 		mustSetCellStyle(t, f, "Sheet1", "A1", "C1", idx)
 		mustSetCell(t, f, "Sheet1", "A2", "North")
@@ -508,8 +504,8 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	text := spreadsheetText(res)
-	if !strings.Contains(text, "<th>Sales Report</th><th>Sales Report</th><th>Sales Report</th>") {
-		t.Fatalf("merged master text not inherited into header cells, got:\n%s", text)
+	if !strings.Contains(text, `<td colspan="3">Sales Report</td>`) || strings.Contains(text, "<th>") {
+		t.Fatalf("merged title geometry lost or title classified as column header, got:\n%s", text)
 	}
 }
 
@@ -538,9 +534,8 @@ func TestDetectHeaderRow_ListObject(t *testing.T) {
 	}
 }
 
-// TestDetectHeaderRow_Lightweight asserts that when row 1 is numeric data and
-// row 2 is a styled text label row, the lightweight detector picks row 2.
-func TestDetectHeaderRow_Lightweight(t *testing.T) {
+// A styled candidate after data must not reorder the table.
+func TestXLSXParserDoesNotMoveHeaderPastData(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
 		mustSetCell(t, f, "Sheet1", "A1", "100")
 		mustSetCell(t, f, "Sheet1", "B1", "200")
@@ -557,8 +552,8 @@ func TestDetectHeaderRow_Lightweight(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "<th>Item</th><th>Count</th>") {
-		t.Fatalf("want row-2 header detected, got:\n%s", spreadsheetText(res))
+	if !strings.Contains(spreadsheetText(res), "<td>Item</td><td>Count</td>") || strings.Contains(spreadsheetText(res), "<th>") {
+		t.Fatalf("data preceding a candidate must remain in order, got:\n%s", spreadsheetText(res))
 	}
 	if strings.Contains(spreadsheetText(res), "<th>100</th><th>200</th>") {
 		t.Fatalf("numeric row 1 must not be the header:\n%s", spreadsheetText(res))
@@ -590,7 +585,7 @@ func TestXLSXParser_CommonCaseNoRegression(t *testing.T) {
 // stays the header.
 func TestDetectHeaderRow_BoldSubtotalNotHeader(t *testing.T) {
 	data := newTestXLSX(t, func(f *excelize.File) {
-		// Row 1: numeric year header (Python default header row).
+		// Row 1: ambiguous numeric values.
 		mustSetCell(t, f, "Sheet1", "A1", "2023")
 		mustSetCell(t, f, "Sheet1", "B1", "2024")
 		// Row 2: bold "Total/Summary" subtotal — must NOT become the header.
@@ -607,8 +602,8 @@ func TestDetectHeaderRow_BoldSubtotalNotHeader(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if !strings.Contains(spreadsheetText(res), "<th>2023</th><th>2024</th>") {
-		t.Fatalf("numeric row 1 must remain the header:\n%s", spreadsheetText(res))
+	if !strings.Contains(spreadsheetText(res), "<td>2023</td><td>2024</td>") || strings.Contains(spreadsheetText(res), "<th>") {
+		t.Fatalf("numeric rows and subtotals must not become headers:\n%s", spreadsheetText(res))
 	}
 	if strings.Contains(spreadsheetText(res), "<th>Total</th><th>Summary</th>") {
 		t.Fatalf("bold subtotal row must not be promoted to header:\n%s", spreadsheetText(res))
@@ -675,63 +670,6 @@ func TestDetectHeaderRow_StyledTextHeaderOverNumeric(t *testing.T) {
 	}
 	if got := spreadsheetHeaderText(res); got != "Product; Units" {
 		t.Fatalf("header text = %v, want Product; Units", got)
-	}
-}
-
-// TestInheritMergedHeader unit-tests the merge inheritance helper directly.
-func TestInheritMergedHeader(t *testing.T) {
-	records := [][]string{
-		{"MASTER", "", "Q2"}, // header row: B1 blank, merged from master A1
-		{"a", "b", "c"},
-	}
-	mm := map[[2]int][2]int{
-		{1, 1}: {1, 1},
-		{1, 2}: {1, 1}, // B1's master is A1
-		{1, 3}: {1, 3},
-	}
-	inheritMergedHeader(records, 1, mm)
-	if records[0][1] != "MASTER" {
-		t.Fatalf("expected B1 to inherit A1 master text, got %q", records[0][1])
-	}
-	if records[0][2] != "Q2" {
-		t.Fatalf("expected non-merged C1 to keep its value, got %q", records[0][2])
-	}
-}
-
-// TestPadRowToWidth asserts the single-row padder widens with empty strings,
-// preserves existing cells, and never shrinks an already-wide row.
-func TestPadRowToWidth(t *testing.T) {
-	row := []string{"a", "b"}
-	padRowToWidth(&row, 5)
-	if len(row) != 5 {
-		t.Fatalf("want len 5, got %d", len(row))
-	}
-	if row[0] != "a" || row[1] != "b" {
-		t.Fatalf("original cells lost: %v", row)
-	}
-	for i := 2; i < 5; i++ {
-		if row[i] != "" {
-			t.Fatalf("pad cell %d want empty, got %q", i, row[i])
-		}
-	}
-	// Never shrinks an already-wide row.
-	padRowToWidth(&row, 2)
-	if len(row) != 5 {
-		t.Fatalf("must not shrink: want 5, got %d", len(row))
-	}
-}
-
-// TestMergeExtentCol asserts the furthest merged column is reported as-is within
-// the cap and clamped to maxMergeExtentCols beyond it (the memory guard).
-func TestMergeExtentCol(t *testing.T) {
-	if got := mergeExtentCol(nil); got != 0 {
-		t.Fatalf("nil ranges: want 0, got %d", got)
-	}
-	if got := mergeExtentCol([]mergeRange{{1, 1, 3, 10}}); got != 10 {
-		t.Fatalf("within cap: want 10, got %d", got)
-	}
-	if got := mergeExtentCol([]mergeRange{{1, 1, 1, 5000}}); got != maxMergeExtentCols {
-		t.Fatalf("beyond cap: want %d, got %d", maxMergeExtentCols, got)
 	}
 }
 

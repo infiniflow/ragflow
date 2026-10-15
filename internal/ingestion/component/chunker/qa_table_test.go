@@ -19,7 +19,7 @@ func TestExtractQATableFollowsStructure(t *testing.T) {
 	}{
 		{
 			name: "newline inside a cell",
-			html: "<table><tr><th>问题\n跨行</th><th>答案</th></tr></table>",
+			html: "<table><tr><td>问题\n跨行</td><td>答案</td></tr></table>",
 			want: [][2]string{{"问题\n跨行", "答案"}},
 		},
 		{

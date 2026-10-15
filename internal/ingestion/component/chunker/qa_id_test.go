@@ -9,10 +9,9 @@ import (
 )
 
 // xlsxQATableHTML is the HTML the spreadsheet parser emits for a
-// headerless two-column Q&A workbook (the table renderer repeats the
-// first row as the <th> header; extractQATable still reads it as a pair).
+// headerless two-column Q&A workbook. Every row is data.
 const xlsxQATableHTML = `<table><caption>Sheet1</caption>
-<tr><th>门打不开怎么办</th><th>请家人回来开门</th></tr>
+<tr><td>门打不开怎么办</td><td>请家人回来开门</td></tr>
 <tr><td>门的材质是什么</td><td>蜂窝纸板</td></tr>
 <tr><td>怎么确定门的真伪</td><td>提供钢印号</td></tr>
 </table>`

@@ -1000,7 +1000,14 @@ func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
 
 		out := invoke(t, server.URL)
 		requireJSONText(t, out, "V1 body")
-		requireJSONText(t, out, "Table caption")
+		items := out["json"].([]map[string]any)
+		table, ok := items[1]["table"].(*entity.TableData)
+		if !ok || table.Caption != "Table caption" {
+			t.Fatalf("MinerU table caption lost during projection: %#v", items[1])
+		}
+		if _, exists := items[1]["text"]; exists {
+			t.Fatal("structured table retained redundant HTML text")
+		}
 	})
 
 	t.Run("markdown fallback when zip has no content_list", func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 
 	"github.com/xuri/excelize/v2"
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/entity"
 	"ragflow/internal/ingestion/task/indexdoc"
 	"ragflow/internal/parser/parser"
 )
@@ -79,6 +80,11 @@ func TestSpreadsheetChunkersPreserveSheetIdentityThroughIndexing(t *testing.T) {
 						var ranges [][]int
 						if err = json.Unmarshal(raw, &ranges); err != nil {
 							t.Fatal(err)
+						}
+						if tc.name == "QA" {
+							if td, ok := item["table"].(*entity.TableData); ok {
+								ranges = ranges[td.HeaderRows:]
+							}
 						}
 						want = append(want, ranges...)
 					}
@@ -157,10 +163,10 @@ func TestQAChunkerSheetNameOnlyPreservesSourceRows(t *testing.T) {
 		t.Fatal(err)
 	}
 	chunks := indexdoc.NormalizeChunks(out)
-	if len(chunks) != 2 {
-		t.Fatalf("chunks=%d, want 2", len(chunks))
+	if len(chunks) != 1 {
+		t.Fatalf("chunks=%d, want the data row only", len(chunks))
 	}
-	for i, row := range []int{1, 42} {
+	for i, row := range []int{42} {
 		chunk := chunks[i]
 		if chunk["sheet"] != "Sheet1" {
 			t.Fatalf("sheet=%v, want Sheet1", chunk["sheet"])

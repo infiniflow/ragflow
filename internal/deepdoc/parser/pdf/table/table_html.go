@@ -63,9 +63,9 @@ func RowsToHTML(rows [][]pdf.TSRCell, caption string, headerRows map[int]bool, s
 	return b.String()
 }
 
-// SimpleRowsToHTML converts plain string-based table data to an HTML table.
-// The first row is treated as a header (<th>).  Used by DOCX, XLSX, PPTX,
-// and HTML parsers that produce [][]string directly.
+// SimpleRowsToHTML converts extracted rows to markup, marking the first row
+// with <th>. This is a presentation hint; source parsers must classify the
+// resulting recognition markup before publishing a structured header decision.
 func SimpleRowsToHTML(rows [][]string) string {
 	if len(rows) == 0 {
 		return "<table></table>"

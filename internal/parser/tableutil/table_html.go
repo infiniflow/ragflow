@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package tableutil converts between table markup and the structured
-// entity.TableData contract. It intentionally mirrors the legacy chunker
-// extraction in internal/ingestion/component/chunker/html_rows.go so that the
-// cells it produces are byte-for-byte what consumers used to read out of the
-// HTML <table> text.
+// Package tableutil parses, classifies, and renders structured tables.
 package tableutil
 
 import (
@@ -27,19 +23,11 @@ import (
 	"ragflow/internal/entity"
 )
 
-// ParseTableHTML extracts a structured TableData from table markup. It mirrors
-// the legacy chunker behaviour (html_rows.go tableRowsWithHeader): each <tr>
-// becomes one row, each direct <td>/<th> one cell, a row carrying a <th> cell
-// is a header row, <br> becomes a newline, inert elements
-// (script/style/noscript/template) are skipped, and a nested table's text is
-// folded into the enclosing cell (the nested <tr> does NOT become a row).
-//
-// Unlike the legacy extractor, ParseTableHTML now honours colspan/rowspan:
-// a merged cell keeps its text on the origin slot (ColSpan/RowSpan > 1) and
-// the engulfed positions become Covered markers. This recovers merge geometry
-// that the legacy code discarded. For tables without merges the resulting grid
-// is identical to the legacy Rows, so CellTexts (the consumer view) is
-// unchanged.
+// ParseTableHTML extracts cells, merge geometry, caption, and explicit leading
+// column headers. Row headers do not make a row a column header. Unmarked rows
+// remain data; source parsers may call DetectHeader with additional evidence.
+// This function never infers headers from content, preserving zero-header
+// decisions when a structured table is rendered and read back.
 func ParseTableHTML(s string) (*entity.TableData, error) {
 	lower := strings.ToLower(s)
 	if strings.Contains(lower, "<tr") && !strings.Contains(lower, "<table") {
@@ -52,6 +40,7 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	var rows [][]cellInput
 	var headerFlags []bool
 	var caption string
+	firstRowHasRowScope := false
 	var walk func(*html.Node)
 	walk = func(n *html.Node) {
 		if n.Type == html.ElementNode && isInertElement(n.Data) {
@@ -63,11 +52,23 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 		}
 		if isHTMLElement(n, "tr") {
 			var cells []cellInput
-			anyTh := false
+			columnHeaders, columns := 0, 0
+			columnScope := false
 			for c := n.FirstChild; c != nil; c = c.NextSibling {
 				if isHTMLElement(c, "td") || isHTMLElement(c, "th") {
-					if isHTMLElement(c, "th") {
-						anyTh = true
+					columns++
+					scope := ""
+					for _, a := range c.Attr {
+						if a.Key == "scope" {
+							scope = strings.ToLower(a.Val)
+						}
+					}
+					if len(rows) == 0 && isHTMLElement(c, "th") && (scope == "row" || scope == "rowgroup") {
+						firstRowHasRowScope = true
+					}
+					if isHTMLElement(c, "th") && scope != "row" && scope != "rowgroup" {
+						columnHeaders++
+						columnScope = columnScope || scope == "col" || scope == "colgroup"
 					}
 					cells = append(cells, cellInput{
 						Text:    cellText(c),
@@ -77,7 +78,13 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 				}
 			}
 			rows = append(rows, cells)
-			headerFlags = append(headerFlags, anyTh)
+			inHead := false
+			for p := n.Parent; p != nil && !isHTMLElement(p, "table"); p = p.Parent {
+				if isHTMLElement(p, "thead") {
+					inHead = true
+				}
+			}
+			headerFlags = append(headerFlags, inHead || columnScope || columns > 0 && columnHeaders == columns)
 			// Do not recurse into the row's cells: a nested <table> inside a
 			// cell is folded into that cell's text by cellText, not parsed as
 			// a separate row.
@@ -92,13 +99,11 @@ func ParseTableHTML(s string) (*entity.TableData, error) {
 	for headerCount < len(headerFlags) && headerFlags[headerCount] {
 		headerCount++
 	}
-	if len(rows) > 0 && headerCount == 0 {
-		headerCount = 1
-	}
 	return &entity.TableData{
-		Grid:       buildGrid(rows),
-		HeaderRows: headerCount,
-		Caption:    caption,
+		Grid:           buildGrid(rows),
+		HeaderRows:     headerCount,
+		RowHeadersOnly: headerCount == 0 && firstRowHasRowScope,
+		Caption:        caption,
 	}, nil
 }
 

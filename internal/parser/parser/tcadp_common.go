@@ -118,7 +118,11 @@ func parseWithTCADP(
 	if err != nil {
 		return ParseResult{Err: err}
 	}
-	return pdfItemsToResult(filename, items, outputFormat, pageCount)
+	result := pdfItemsToResult(filename, items, outputFormat, pageCount)
+	if result.Err == nil {
+		result.predictedTableHeaders = true
+	}
+	return result
 }
 
 // authHeaderForDownload returns the bearer Authorization header value to

@@ -413,6 +413,7 @@ func emitHTMLTable(n *html.Node, out *[]map[string]any, state *htmlWalkState) {
 	// is infallible, so the parse always yields a non-nil TableData and no
 	// legacy HTML `text` is kept.
 	td, _ := tableutil.ParseTableHTML(markup)
+	resolveTableHeader(td, false)
 	table := map[string]any{
 		"doc_type_kwd": "table",
 		"ck_type":      "table",

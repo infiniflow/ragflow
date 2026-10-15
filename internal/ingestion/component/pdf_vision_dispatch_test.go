@@ -31,6 +31,7 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 
 	"gorm.io/gorm"
 )
@@ -119,8 +120,8 @@ func TestDispatchMonkeyOCRv2PDFPostsNativeParseRequest(t *testing.T) {
 	}
 }
 
-func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
-	result := buildMarkdownOCRDispatchResult("# Heading")
+func TestOCRMarkdownResultDefersJSONNormalization(t *testing.T) {
+	result := parser.NewOCRMarkdownResult("# Heading")
 	if result.OutputFormat != "markdown" {
 		t.Fatalf("OutputFormat = %q, want markdown", result.OutputFormat)
 	}
@@ -129,6 +130,66 @@ func TestBuildMarkdownOCRDispatchResultDefersJSONNormalization(t *testing.T) {
 	}
 	if result.JSON != nil {
 		t.Fatalf("JSON = %#v, want nil until buildParserOutputs normalization", result.JSON)
+	}
+}
+
+func TestOCRMarkdownDoesNotTrustGeneratedHeader(t *testing.T) {
+	result := parser.NewOCRMarkdownResult("| Alice | 18 |\n| --- | --- |\n| Bob | 20 |\n")
+	out := buildParserOutputs(t.Context(), result, "data.pdf", nil, "")
+	items := out["json"].([]map[string]any)
+	table := items[0]["table"].(*entity.TableData)
+	if table.HeaderRows != 0 || len(table.Grid) != 2 {
+		t.Fatalf("generated heading promoted a record: %+v", table)
+	}
+}
+
+func TestMinerUJSONTablesPreserveStructuredContract(t *testing.T) {
+	for _, tt := range []struct {
+		name, markup string
+		headers      int
+	}{
+		{"headerless", `<table><caption>Inline title</caption><tr><th>Alice</th><th>18</th></tr><tr><td>Bob</td><td>20</td></tr></table>`, 0},
+		{"confirmed header", `<table><tr><th>Name</th><th>Age</th></tr><tr><td>Alice</td><td>18</td></tr><tr><td>Bob</td><td>20</td></tr></table>`, 1},
+		{"missing first value", `<table><tr><th>Alice</th><th>N/A</th></tr><tr><td>Bob</td><td>20</td></tr></table>`, 0},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			item := mineruContentItemToJSON(map[string]any{
+				"type": "table", "table_body": tt.markup,
+				"table_caption": []any{"People & ages"}, "table_footnote": []any{"Source <raw>"},
+				"page_idx": float64(0), "bbox": []any{float64(10), float64(20), float64(110), float64(40)},
+			}, nil)
+			res := mineruJSONParseResult("data.pdf", []map[string]any{item})
+			out := buildParserOutputs(t.Context(), res, "data.pdf", nil, "")
+			wire, err := json.Marshal(out)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var structured struct {
+				Items []schema.ChunkDoc `json:"json"`
+			}
+			if err = json.Unmarshal(wire, &structured); err != nil {
+				t.Fatal(err)
+			}
+			doc := structured.Items[0]
+			if doc.TableData == nil {
+				t.Fatal("MinerU JSON table has no TableData after parser output and JSON transport")
+			}
+			if doc.Text != "" || doc.TableData.HeaderRows != tt.headers || doc.TableData.Page != 1 || len(doc.TableData.Grid) != 2+tt.headers {
+				t.Fatalf("unexpected structured table: %+v", doc)
+			}
+			for _, text := range []string{"People & ages", "Source <raw>"} {
+				if !strings.Contains(doc.TableData.Caption, text) {
+					t.Fatalf("lost caption or footnote %q: %q", text, doc.TableData.Caption)
+				}
+			}
+			if tt.name == "headerless" && !strings.Contains(doc.TableData.Caption, "Inline title") {
+				t.Fatal("inline table caption lost")
+			}
+			var positions [][]float64
+			if err = json.Unmarshal(doc.PDFPositions, &positions); err != nil || len(positions) != 1 || positions[0][0] != 1 || positions[0][1] != 10 || positions[0][2] != 110 {
+				t.Fatalf("PDF positions changed: %s (%v)", doc.PDFPositions, err)
+			}
+		})
 	}
 }
 

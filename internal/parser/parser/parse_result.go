@@ -42,6 +42,10 @@ import (
 // non-JSON backend responses to the Parser component's normalization boundary.
 // On failure, Err is non-nil and OutputFormat is empty.
 type ParseResult struct {
+	// Kept only until normalization, so model-generated markup is not
+	// mistaken for native HTML/Markdown column-header declarations.
+	predictedTableHeaders bool
+
 	// OutputFormat identifies the backend payload representation. The Parser
 	// component normalizes successful results to JSON. Empty when Err is non-nil.
 	OutputFormat string

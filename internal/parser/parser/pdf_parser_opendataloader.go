@@ -150,7 +150,7 @@ func openDataLoaderNodeToItem(el map[string]any) map[string]any {
 			return nil
 		}
 		item := map[string]any{"text": text, "doc_type_kwd": pdfTableDocType(text), "layout": "table"}
-		projectPDFTable(item)
+		projectTableItem(item, true)
 		return item
 	case "image", "picture", "figure":
 		if text == "" {

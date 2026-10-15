@@ -435,7 +435,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 			rows = td.CellTexts()
 		}
 		if len(rows) > 0 {
-			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
+			tmp = qaPairsFromRows(rows, td.HeaderRows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
 		} else {
 			tmp = extractQAText(txt)
 		}
@@ -468,11 +468,12 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if err != nil || td == nil {
 		return nil
 	}
-	return qaPairsFromRows(td.CellTexts(), strictPairs, nil, false)
+	return qaPairsFromRows(td.CellTexts(), td.HeaderRows, strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty
-// cells of a row become the question and the answer. strictPairs is the CSV
+// cells of a data row become the question and the answer. Confirmed header
+// rows are skipped without changing the source row alignment. strictPairs is the CSV
 // contract (Python qa.py:365) and requires a row to have exactly two cells
 // instead of taking the first two.
 //
@@ -485,7 +486,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 // mirroring Python qa.py's enumerate over the extracted pairs — PDF items
 // write layout boxes into the same field, so they must not be reinterpreted
 // as spreadsheet rows.
-func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
+func qaPairsFromRows(rows [][]string, headerRows int, strictPairs bool, positions json.RawMessage, spreadsheetPositions bool) []qaPair {
 	var matrix [][]float64
 	if len(positions) > 0 {
 		if err := json.Unmarshal(positions, &matrix); err != nil {
@@ -503,6 +504,9 @@ func qaPairsFromRows(rows [][]string, strictPairs bool, positions json.RawMessag
 	}
 	pairs := make([]qaPair, 0, len(rows))
 	for i, cells := range rows {
+		if i < headerRows {
+			continue
+		}
 		// Python qa.py:365 requires exactly two fields for CSV pairs.
 		if strictPairs && len(cells) != 2 {
 			if len(pairs) > 0 {
