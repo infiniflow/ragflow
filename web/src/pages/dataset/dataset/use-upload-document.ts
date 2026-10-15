@@ -89,7 +89,12 @@ export const useHandleUploadDocument = () => {
 
       return ret?.code;
     },
-    [uploadDocument, runDocumentByIds, findDocumentParseGaps, hideDocumentUploadModal],
+    [
+      uploadDocument,
+      runDocumentByIds,
+      findDocumentParseGaps,
+      hideDocumentUploadModal,
+    ],
   );
 
   const onDocumentUploadOk = useCallback(

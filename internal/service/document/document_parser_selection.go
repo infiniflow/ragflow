@@ -51,16 +51,6 @@ func dedicatedDocumentParserID(filetype utility.FileType, filename string) strin
 	return ""
 }
 
-// fallbackDocumentParserID returns the builtin pipeline that takes over a file
-// whose family the dataset's selection does not declare: the pipeline owning
-// the file type, else the catch-all general pipeline.
-func fallbackDocumentParserID(filetype utility.FileType, filename string) string {
-	if owner := dedicatedDocumentParserID(filetype, filename); owner != "" {
-		return owner
-	}
-	return generalParserID
-}
-
 // parserParamsDeclaresFamily reports whether a Parser component's params
 // declare the given file family ("pdf", "text&code", "slides", ...). The
 // declaration is the one the web parser-gap validation reads
@@ -111,19 +101,16 @@ func templateDeclaredFamily(ctx context.Context, parserID, family string) (decla
 	return false, false
 }
 
-// selectionGovernsFamily reports whether the dataset's selection should keep
-// governing a file of this family.
+// selectionGovernsFamily reports whether the dataset's selection declares a
+// file family.
 //
 // The saved config carries the declaration the web gap validation reads, so it
 // decides whenever it has a Parser entry. A legacy flat config has none, and a
 // builtin selection is then judged by the template its parser_id actually runs;
-// a canvas has no template to consult. An unmappable extension, and a
-// declaration that cannot be read, keep the selection too: a choice that cannot
-// be judged is honored rather than overridden.
+// a canvas has no template to consult. Callers only ask about a family the
+// pipeline vocabulary can name; an unreadable declaration answers true, keeping
+// the choice that cannot be judged.
 func selectionGovernsFamily(ctx context.Context, sel *service.ParserSelection, config entity.JSONMap, family string) bool {
-	if family == "" {
-		return true
-	}
 	if declared, found := configDeclaredFamily(config, family); found {
 		return declared
 	}
@@ -156,21 +143,33 @@ func parserSelectionColumns(sel *service.ParserSelection) (string, *string) {
 // The dataset's selection governs every file family its config declares; a file
 // the selection does not declare is handed to the pipeline that owns its family
 // (picture / audio / presentation / email), and failing that to the catch-all
-// general pipeline, with the config reseeded from that template. The row then
-// matches the pipeline that actually runs it: document parser_config drives
-// both the parser-gap validation and the runtime override params, and a row
-// left on a parser that cannot run its file is reported as unsupported by its
-// own type. On a DSL failure the selection and config are kept: a registry
+// general pipeline, with the config reseeded from that template. A family the
+// pipeline vocabulary cannot name cannot be judged against a declaration: the
+// owning pipeline still takes the file, and with no owner (rtf, wps, ...) the
+// dataset's choice is honored. The row then matches the pipeline that actually
+// runs it: document parser_config drives both the parser-gap validation and the
+// runtime override params, and a row left on a parser that cannot run its file
+// is reported as unsupported by its own type. An unchanged parser keeps its
+// config, and on a DSL failure the selection and config are kept: a registry
 // lookup must not fail an upload, and a half-switched row (new parser, old
 // config) is the inconsistent state this function exists to avoid.
 func resolveDocumentParser(ctx context.Context, kb *entity.Knowledgebase, filename string, filetype utility.FileType, base entity.JSONMap) (*service.ParserSelection, entity.JSONMap) {
 	selection := service.CurrentSelection(kb.ParserID, kb.PipelineID)
 	family := componentpkg.ParserFileFamily(utility.GetFileExtension(filename))
-	if selectionGovernsFamily(ctx, selection, kb.ParserConfig, family) {
+	if family != "" && selectionGovernsFamily(ctx, selection, kb.ParserConfig, family) {
 		return selection, base
 	}
 
-	target := fallbackDocumentParserID(filetype, filename)
+	target := dedicatedDocumentParserID(filetype, filename)
+	if target == "" {
+		if family == "" {
+			return selection, base
+		}
+		target = generalParserID
+	}
+	if selection.IsBuiltIn() && selection.ParserID == target {
+		return selection, base
+	}
 	if rebuilt, ok := rebuildParserConfig(ctx, kb, target, filename, base); ok {
 		return &service.ParserSelection{Mode: service.ParseModeBuiltIn, ParserID: target}, rebuilt
 	}

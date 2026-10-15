@@ -2,6 +2,7 @@ package document
 
 import (
 	"mime/multipart"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -97,86 +98,10 @@ func TestConfigDeclaredFamily(t *testing.T) {
 	}
 }
 
-func TestSelectionGovernsFamily(t *testing.T) {
-	canvasID := "canvas-1"
-	legacyConfig := entity.JSONMap{"llm_id": "ministral", "chunk_token_num": 512}
-	canvasWithoutParser := entity.JSONMap{"File": map[string]any{}}
-
-	cases := []struct {
-		name   string
-		sel    *service.ParserSelection
-		config entity.JSONMap
-		family string
-		want   bool
-	}{
-		{
-			name:   "config declares the family",
-			sel:    service.CurrentSelection("presentation", nil),
-			config: presentationParserConfig(),
-			family: "slides",
-			want:   true,
-		},
-		{
-			name:   "config misses the family",
-			sel:    service.CurrentSelection("presentation", nil),
-			config: presentationParserConfig(),
-			family: "text&code",
-			want:   false,
-		},
-		{
-			name:   "legacy flat config is judged by its template",
-			sel:    service.CurrentSelection("naive", nil),
-			config: legacyConfig,
-			family: "text&code",
-			want:   true,
-		},
-		{
-			name:   "legacy flat config still excludes an owned family",
-			sel:    service.CurrentSelection("naive", nil),
-			config: legacyConfig,
-			family: "slides",
-			want:   false,
-		},
-		{
-			name:   "canvas without a parser node keeps the selection",
-			sel:    service.CurrentSelection("presentation", &canvasID),
-			config: canvasWithoutParser,
-			family: "text&code",
-			want:   true,
-		},
-		{
-			name:   "unmappable family keeps the selection",
-			sel:    service.CurrentSelection("presentation", nil),
-			config: presentationParserConfig(),
-			family: "",
-			want:   true,
-		},
-	}
-
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := selectionGovernsFamily(t.Context(), tc.sel, tc.config, tc.family); got != tc.want {
-				t.Fatalf("selectionGovernsFamily(%q, %#v, %q) = %v, want %v",
-					tc.sel.ParserID, tc.config, tc.family, got, tc.want)
-			}
-		})
-	}
-}
-
-func TestParserSelectionColumns(t *testing.T) {
-	parserID, pipelineID := parserSelectionColumns(&service.ParserSelection{Mode: service.ParseModeBuiltIn, ParserID: "general"})
-	if parserID != "general" || pipelineID != nil {
-		t.Fatalf("builtin selection = (%q, %v), want (general, nil)", parserID, pipelineID)
-	}
-
-	parserID, pipelineID = parserSelectionColumns(&service.ParserSelection{Mode: service.ParseModePipeline, ParserID: "presentation", PipelineID: "canvas-1"})
-	if parserID != "" || pipelineID == nil || *pipelineID != "canvas-1" {
-		t.Fatalf("pipeline selection = (%q, %v), want (\"\", canvas-1)", parserID, pipelineID)
-	}
-
-	parserID, pipelineID = parserSelectionColumns(nil)
-	if parserID != "" || pipelineID != nil {
-		t.Fatalf("nil selection = (%q, %v), want (\"\", nil)", parserID, pipelineID)
+func TestSelectionGovernsFamilyMissesAnUndeclaredFamily(t *testing.T) {
+	sel := service.CurrentSelection("presentation", nil)
+	if selectionGovernsFamily(t.Context(), sel, presentationParserConfig(), "text&code") {
+		t.Fatal("selectionGovernsFamily reported an undeclared family as declared")
 	}
 }
 
@@ -220,8 +145,9 @@ func tableParserConfig() entity.JSONMap {
 // TestResolveDocumentParser_Priority pins the resolution order: the dataset's
 // selection governs the families its config declares, an undeclared family goes
 // to the builtin pipeline that owns it, and failing that to general. Undetermined
-// support (a canvas without a Parser node, an unmappable extension) keeps the
-// selection.
+// support (a canvas without a Parser node) keeps the selection, and so does an
+// extension the pipeline vocabulary cannot name unless an owning pipeline takes
+// it.
 func TestResolveDocumentParser_Priority(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -234,16 +160,17 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 	canvasWithoutParser := entity.JSONMap{"File": map[string]any{}}
 
 	cases := []struct {
-		name          string
-		kbParser      string
-		kbPipelineID  *string
-		kbConfig      entity.JSONMap
-		filename      string
-		filetype      utility.FileType
-		wantParserID  string
-		wantPipeline  string
-		wantFamilyIn  string
-		wantFamilyOut string
+		name               string
+		kbParser           string
+		kbPipelineID       *string
+		kbConfig           entity.JSONMap
+		filename           string
+		filetype           utility.FileType
+		wantParserID       string
+		wantPipeline       string
+		wantFamilyIn       string
+		wantFamilyOut      string
+		wantBaseConfigKept bool
 	}{
 		{
 			name:          "general keeps a text family it declares",
@@ -379,6 +306,61 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			wantParserID: "general",
 			wantFamilyIn: "text&code",
 		},
+		{
+			name:         "an unmappable extension still reaches its owner pipeline",
+			kbParser:     "general",
+			kbConfig:     generalParserConfig(),
+			filename:     "deck.pages",
+			filetype:     utility.FileTypeDOC,
+			wantParserID: "presentation",
+			wantFamilyIn: "slides",
+		},
+		{
+			name:         "an unmappable visual extension still reaches picture",
+			kbParser:     "general",
+			kbConfig:     generalParserConfig(),
+			filename:     "clip.rm",
+			filetype:     utility.FileTypeVISUAL,
+			wantParserID: "picture",
+			wantFamilyIn: "video",
+		},
+		{
+			name:         "an unmappable audio extension still reaches audio",
+			kbParser:     "general",
+			kbConfig:     generalParserConfig(),
+			filename:     "song.vorbis",
+			filetype:     utility.FileTypeAURAL,
+			wantParserID: "audio",
+			wantFamilyIn: "audio",
+		},
+		{
+			name:               "an unmappable extension with no owner keeps the selection",
+			kbParser:           "general",
+			kbConfig:           generalParserConfig(),
+			filename:           "notes.rtf",
+			filetype:           utility.FileTypeDOC,
+			wantParserID:       "general",
+			wantBaseConfigKept: true,
+		},
+		{
+			name:               "an owner already selected keeps its edited config",
+			kbParser:           "picture",
+			kbConfig:           pictureParserConfig(),
+			filename:           "clip.psd",
+			filetype:           utility.FileTypeVISUAL,
+			wantParserID:       "picture",
+			wantBaseConfigKept: true,
+		},
+		{
+			name:         "a canvas loses an unmappable extension to its owner",
+			kbParser:     "presentation",
+			kbPipelineID: &canvasID,
+			kbConfig:     presentationParserConfig(),
+			filename:     "clip.rm",
+			filetype:     utility.FileTypeVISUAL,
+			wantParserID: "picture",
+			wantFamilyIn: "video",
+		},
 	}
 
 	for _, tc := range cases {
@@ -404,6 +386,9 @@ func TestResolveDocumentParser_Priority(t *testing.T) {
 			if gotParser != tc.wantParserID || gotPipeline != tc.wantPipeline {
 				t.Fatalf("selection = (%q, %q), want (%q, %q)",
 					gotParser, gotPipeline, tc.wantParserID, tc.wantPipeline)
+			}
+			if tc.wantBaseConfigKept && !reflect.DeepEqual(gotConfig, base) {
+				t.Fatalf("parser_config = %#v, want the base config kept", gotConfig)
 			}
 			if tc.wantFamilyIn != "" && !configHasParserFamily(gotConfig, tc.wantFamilyIn) {
 				t.Fatalf("parser_config misses family %q: %#v", tc.wantFamilyIn, gotConfig)

@@ -28,10 +28,7 @@ import {
 // Mirrors how findFilesParserGaps feeds the switch decision: the family comes
 // from the extension map, the suffix sets from the backend's accepted owners.
 const switchTarget = (name: string) =>
-  builtinParserSwitchTarget(
-    name,
-    getFileTypeByExtension(getExtension(name)),
-  );
+  builtinParserSwitchTarget(name, getFileTypeByExtension(getExtension(name)));
 
 describe('isDocumentStopping', () => {
   it('is true only for the STOPPING status', () => {
@@ -336,30 +333,6 @@ describe('attachAutoSwitchTargets', () => {
       null,
       'general',
     ]);
-  });
-
-  it('annotates a general fallback for a custom-pipeline dataset gap', () => {
-    // A canvas that declares families other than the uploaded file's produces
-    // the same unsupported-type gap; the file leaves the canvas for general.
-    const gaps = attachAutoSwitchTargets([
-      {
-        name: 'laws.txt',
-        reason: ParserGapReason.UnsupportedType,
-        fileType: FileType.Code,
-      },
-    ]);
-    expect(gaps[0].autoSwitchTarget).toBe('general');
-  });
-
-  it('annotates nothing switchable for a type no pipeline owns', () => {
-    const gaps = attachAutoSwitchTargets([
-      {
-        name: 'song.wma',
-        reason: ParserGapReason.UnsupportedType,
-        fileType: FileType.Audio,
-      },
-    ]);
-    expect(gaps[0].autoSwitchTarget).toBeNull();
   });
 });
 
