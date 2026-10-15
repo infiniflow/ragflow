@@ -16,8 +16,13 @@ package chunker
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
 	"ragflow/internal/parser/tableutil"
 )
@@ -35,7 +40,7 @@ func makeTable(dataRows int) *entity.TableData {
 
 func TestSplitLargeTableFitsWhole(t *testing.T) {
 	td := makeTable(3)
-	parts, ranges, headerRows := splitLargeTable(td, 1_000_000, charTokens)
+	parts, ranges, headerRows := splitLargeTable(td, 1_000_000, charTokens, "")
 	if ranges != nil || len(parts) != 0 {
 		t.Fatalf("small table should not split: parts=%v ranges=%v", parts, ranges)
 	}
@@ -46,8 +51,9 @@ func TestSplitLargeTableFitsWhole(t *testing.T) {
 
 func TestSplitLargeTableRowGranular(t *testing.T) {
 	td := makeTable(20)
-	// Budget bounded so a part holds ~3 data rows.
-	parts, ranges, headerRows := splitLargeTable(td, 22, charTokens)
+	// Budget bounded so a part holds a couple of data rows (the replicated
+	// header is not charged against it; rows cost ~36 tokens as HTML here).
+	parts, ranges, headerRows := splitLargeTable(td, 80, charTokens, "")
 	if headerRows != 1 {
 		t.Fatalf("headerRows = %d, want 1", headerRows)
 	}
@@ -99,7 +105,7 @@ func TestSplitLargeTableSingleRowOverBudgetKeepsRow(t *testing.T) {
 		Grid:       [][]entity.TableCell{{{Text: "H"}}, {{Text: "x" + string(make([]byte, 200))}}},
 		HeaderRows: 1,
 	}
-	parts, ranges, _ := splitLargeTable(td, 5, charTokens)
+	parts, ranges, _ := splitLargeTable(td, 5, charTokens, "")
 	if ranges != nil || len(parts) != 0 {
 		t.Fatalf("over-budget single row must emit whole (ranges nil): parts=%v ranges=%v", parts, ranges)
 	}
@@ -107,7 +113,7 @@ func TestSplitLargeTableSingleRowOverBudgetKeepsRow(t *testing.T) {
 
 func TestSplitLargeTableHeaderOnly(t *testing.T) {
 	td := &entity.TableData{Grid: [][]entity.TableCell{{{Text: "Name"}, {Text: "Age"}}}, HeaderRows: 1}
-	parts, ranges, _ := splitLargeTable(td, 10, charTokens)
+	parts, ranges, _ := splitLargeTable(td, 10, charTokens, "")
 	if ranges != nil || len(parts) != 0 {
 		t.Fatalf("header-only table should not split")
 	}
@@ -169,40 +175,54 @@ func TestSplitLargeTableHeaderRowSpanClippedPerPart(t *testing.T) {
 	if err != nil || td == nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// Budget 6: parts hold data rows [0,2), [2,3), [3,4), [4,5). The first
-	// part carries both rows A spans, so A keeps RowSpan 3; the later parts
-	// carry none of them, so A degrades to a plain header cell.
-	parts, ranges, headerRows := splitLargeTable(td, 6, charTokens)
-	if headerRows != 1 || len(parts) != 4 {
+	// Budget = the HTML cost of the two rows A spans (y, z), so
+	// the first part is exactly those rows and keeps A's RowSpan 3; later parts
+	// carry none of them, so A degrades to a plain header cell (RowSpan 1).
+	// The header cost is subtracted: the split budget covers data rows only.
+	headerCost := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:1], HeaderRows: 1}))
+	budget := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:3], HeaderRows: 1})) - headerCost
+	parts, ranges, headerRows := splitLargeTable(td, budget, charTokens, "")
+	if headerRows != 1 || len(parts) < 2 {
 		t.Fatalf("parts=%d ranges=%v headerRows=%d", len(parts), ranges, headerRows)
 	}
-	wantRanges := [][2]int{{0, 2}, {2, 3}, {3, 4}, {4, 5}}
-	if !reflect.DeepEqual(ranges, wantRanges) {
-		t.Fatalf("ranges=%v want %v", ranges, wantRanges)
+	if ranges[0] != [2]int{0, 2} {
+		t.Fatalf("first range = %v, want [0 2] (A's two spanned rows)", ranges[0])
 	}
-	wantSpans := []int{3, 1, 1, 1}
-	for i, part := range parts {
-		assertPartGridContract(t, &part, i)
-		if got := part.Grid[0][0].RowSpan; got != wantSpans[i] {
-			t.Fatalf("part %d header A RowSpan=%d want %d", i, got, wantSpans[i])
+	if got := parts[0].Grid[0][0].RowSpan; got != 3 {
+		t.Fatalf("part 0 A RowSpan = %d, want 3 (carries both spanned rows)", got)
+	}
+	for i := 1; i < len(parts); i++ {
+		assertPartGridContract(t, &parts[i], i)
+		if got := parts[i].Grid[0][0].RowSpan; got != 1 {
+			t.Fatalf("part %d A RowSpan = %d, want 1 (carries none of A's spanned rows)", i, got)
 		}
 	}
-	// Budget 4: every part holds a single data row, so A keeps exactly the
-	// covered rows that travel with the part.
-	parts, _, _ = splitLargeTable(td, 4, charTokens)
-	wantSpans = []int{2, 2, 1, 1, 1}
-	if len(parts) != len(wantSpans) {
-		t.Fatalf("parts=%d want %d", len(parts), len(wantSpans))
+	covered := 0
+	for _, r := range ranges {
+		covered += r[1] - r[0]
 	}
-	for i, part := range parts {
-		assertPartGridContract(t, &part, i)
-		if got := part.Grid[0][0].RowSpan; got != wantSpans[i] {
-			t.Fatalf("part %d header A RowSpan=%d want %d", i, got, wantSpans[i])
-		}
+	if covered != 5 {
+		t.Fatalf("parts cover %d data rows, want 5", covered)
 	}
-	wantTexts := [][]string{{"y"}, {"z"}, {"p", "q"}, {"r", "s"}, {"t", "u"}}
-	if got := partDataTexts(parts, headerRows); !reflect.DeepEqual(got, wantTexts) {
-		t.Fatalf("data texts=%v want %v", got, wantTexts)
+
+	// Budget = the HTML cost of only the first spanned row (y), so
+	// the first part carries exactly one of A's spanned rows and A keeps
+	// RowSpan 2 (header + that one row), not the full 3.
+	// The header cost is subtracted: the split budget covers data rows only.
+	budget = charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:2], HeaderRows: 1})) - headerCost
+	parts, ranges, _ = splitLargeTable(td, budget, charTokens, "")
+	if len(parts) < 2 || ranges[0] != [2]int{0, 1} {
+		t.Fatalf("parts=%d ranges=%v, want first part [0 1]", len(parts), ranges)
+	}
+	if got := parts[0].Grid[0][0].RowSpan; got != 2 {
+		t.Fatalf("part 0 A RowSpan = %d, want 2 (carries exactly one spanned row)", got)
+	}
+	covered = 0
+	for _, r := range ranges {
+		covered += r[1] - r[0]
+	}
+	if covered != 5 {
+		t.Fatalf("parts cover %d data rows, want 5", covered)
 	}
 }
 
@@ -222,15 +242,21 @@ func TestSplitLargeTableNeverSplitsInsideRowSpan(t *testing.T) {
 	if err != nil || td == nil {
 		t.Fatalf("parse: %v", err)
 	}
-	// The budget alone would cut after data row 2, inside B's span (B covers
-	// data rows 0..2); the cut must move to after row 2, i.e. to 3.
-	parts, ranges, headerRows := splitLargeTable(td, 11, charTokens)
+	// Budget = the HTML cost of B's own row only. The budget alone
+	// would cut right after data row 0, inside B's span (B covers data rows
+	// 0..2); span-safe cut must move the boundary to after row 2, i.e. to 3.
+	// The header cost is subtracted: the split budget covers data rows only.
+	headerCost := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:1], HeaderRows: 1}))
+	budget := charTokens(tableutil.RenderTableHTML(&entity.TableData{Grid: td.Grid[:2], HeaderRows: 1})) - headerCost
+	parts, ranges, headerRows := splitLargeTable(td, budget, charTokens, "")
 	if headerRows != 1 {
 		t.Fatalf("headerRows=%d want 1", headerRows)
 	}
-	wantRanges := [][2]int{{0, 3}, {3, 5}}
-	if !reflect.DeepEqual(ranges, wantRanges) {
-		t.Fatalf("ranges=%v want %v (cut must not fall inside B's rowspan)", ranges, wantRanges)
+	// The first boundary must land after B's span (row 3), never inside it —
+	// that is the span-safe guarantee. (How the remaining rows chunk is purely a
+	// budget artifact and not what this test pins.)
+	if ranges[0] != [2]int{0, 3} {
+		t.Fatalf("first range = %v, want [0 3] (cut must not fall inside B's rowspan)", ranges[0])
 	}
 	for i, part := range parts {
 		assertPartGridContract(t, &part, i)
@@ -253,4 +279,102 @@ func TestSplitLargeTableNeverSplitsInsideRowSpan(t *testing.T) {
 	if seen != 1 {
 		t.Fatalf("merged value B appears %d times across parts, want 1", seen)
 	}
+}
+
+// A header wider than the whole budget must not eat the data allowance. While
+// the header was charged per part, every data row alone blew the budget and the
+// table collapsed to one row per part (20 parts here); the budget is now spent
+// on data rows alone, so a part packs as many rows as fit.
+func TestSplitLargeTableHeaderDoesNotConsumeDataBudget(t *testing.T) {
+	header := strings.Repeat("x", 100) // wide header: 136 tokens as HTML
+	grid := [][]entity.TableCell{{{Text: header}}}
+	for i := 0; i < 20; i++ {
+		grid = append(grid, []entity.TableCell{{Text: strings.Repeat("y", 10)}}) // 29 tokens each as HTML
+	}
+	td := &entity.TableData{Grid: grid, HeaderRows: 1}
+
+	// 150-token budget: data alone packs 5 rows per part -> 4 parts.
+	// While the 136-token header was charged per part, every data row alone
+	// blew the budget and the table collapsed to 20 one-row parts.
+	parts, ranges, headerRows := splitLargeTable(td, 150, charTokens, "")
+	if headerRows != 1 {
+		t.Fatalf("headerRows = %d, want 1", headerRows)
+	}
+	if len(parts) <= 1 {
+		t.Fatalf("expected the table to split, got %d parts", len(parts))
+	}
+	if len(parts) > 5 {
+		t.Fatalf("header consumed the data budget: got %d parts, want <= 5", len(parts))
+	}
+	if len(parts) != len(ranges) {
+		t.Fatalf("parts(%d) != ranges(%d)", len(parts), len(ranges))
+	}
+	seen := 0
+	for i := range parts {
+		part := &parts[i]
+		assertPartGridContract(t, part, i)
+		if part.Grid[0][0].Text != header {
+			t.Fatalf("part %d missing the replicated header: %v", i, part.Grid[0])
+		}
+		if len(part.Grid) < 2 {
+			t.Fatalf("part %d holds no data rows: %v", i, part.CellTexts())
+		}
+		r := ranges[i]
+		if r[0] != seen {
+			t.Fatalf("part %d range start %d != running %d", i, r[0], seen)
+		}
+		seen = r[1]
+	}
+	if seen != 20 {
+		t.Fatalf("data rows covered = %d, want 20", seen)
+	}
+}
+
+// A header that alone meets or exceeds the budget means the table width and
+// ChunkTokenSize disagree; that must be surfaced as a warning, not absorbed.
+func TestSplitLargeTableWarnsWhenHeaderExceedsBudget(t *testing.T) {
+	const msg = "chunker: table header alone exceeds chunk budget"
+
+	newObservedLogs := func(t *testing.T) *observer.ObservedLogs {
+		t.Helper()
+		core, logs := observer.New(zap.WarnLevel)
+		originalLogger := common.Logger
+		common.Logger = zap.New(core)
+		t.Cleanup(func() { common.Logger = originalLogger })
+		return logs
+	}
+
+	t.Run("header at or over budget warns", func(t *testing.T) {
+		logs := newObservedLogs(t)
+		td := &entity.TableData{
+			Grid:       [][]entity.TableCell{{{Text: strings.Repeat("x", 100)}}, {{Text: "cell"}}},
+			HeaderRows: 1,
+		}
+		splitLargeTable(td, 50, charTokens, "doc-123")
+
+		entries := logs.FilterMessage(msg).All()
+		if len(entries) != 1 {
+			t.Fatalf("want exactly 1 warning, got %d (logs=%v)", len(entries), logs.All())
+		}
+		fields := entries[0].ContextMap()
+		if fields["doc_id"] != "doc-123" {
+			t.Fatalf("doc_id = %v, want doc-123", fields["doc_id"])
+		}
+		if fields["chunk_token_size"] != int64(50) {
+			t.Fatalf("chunk_token_size = %v, want 50", fields["chunk_token_size"])
+		}
+		if got, ok := fields["header_tokens"].(int64); !ok || got < 50 {
+			t.Fatalf("header_tokens = %v, want >= 50", fields["header_tokens"])
+		}
+	})
+
+	t.Run("header under budget stays quiet", func(t *testing.T) {
+		logs := newObservedLogs(t)
+		// makeTable's header costs 52 tokens as HTML; budget 100 stays above it.
+		splitLargeTable(makeTable(3), 100, charTokens, "doc-123")
+
+		if n := logs.FilterMessage(msg).Len(); n != 0 {
+			t.Fatalf("want no warning, got %d (logs=%v)", n, logs.All())
+		}
+	})
 }

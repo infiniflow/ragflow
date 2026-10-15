@@ -85,7 +85,7 @@ func (n *NvidiaModel) resolveEndpoint(modelName string, apiConfig *APIConfig, su
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s/%s", strings.TrimRight(resolvedBaseURL, "/"), strings.TrimLeft(suffix, "/")), nil
+	return joinURL(resolvedBaseURL, suffix), nil
 }
 
 func (n *NvidiaModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {

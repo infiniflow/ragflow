@@ -964,7 +964,7 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 	chunks := make([]schema.ChunkDoc, 0, len(units))
 	for _, unit := range units {
 		if itemDocType(unit) == "table" && tableDataOf(unit) != nil {
-			chunks = append(chunks, c.splitSpreadsheetTable(unit)...)
+			chunks = append(chunks, c.splitSpreadsheetTable(unit, upstream.DocID)...)
 			continue
 		}
 		chunks = append(chunks, cloneChunkDoc(unit))
@@ -984,17 +984,27 @@ func (c *GeneralChunkerComponent) chunkSpreadsheet(ctx context.Context, upstream
 // whole; a split whose matrix cannot be aligned to the markup rows drops
 // positions rather than pointing every sub-table row at the full matrix (R1).
 //
+// The budget covers data rows only — the replicated header is fixed
+// boilerplate and does not consume the per-part allowance (see
+// splitLargeTable). docID attributes the oversized-header warning.
+//
 // The legacy path merged adjacent rows by token budget into multi-row chunks
 // and deferred the header; a segment now passes through whole unless the
 // budget forces a cut, and the header repeats in every part.
-func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []schema.ChunkDoc {
+func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc, docID string) []schema.ChunkDoc {
 	td := tableDataOf(unit)
 	if td == nil {
 		return []schema.ChunkDoc{cloneChunkDoc(unit)}
 	}
-	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr)
+	parts, ranges, headerRows := splitLargeTable(td, c.param.ChunkTokenSize, tokenizeStr, docID)
 	if ranges == nil {
-		return []schema.ChunkDoc{cloneChunkDoc(unit)}
+		// The whole table fits one chunk: render it as HTML on Text so the
+		// persisted content and the id (hash of Text) stay byte-consistent and
+		// the UI can display a real table. TableData is dropped, never indexed.
+		out := cloneChunkDoc(unit)
+		out.Text = tableutil.RenderTableHTML(td)
+		out.TableData = nil
+		return []schema.ChunkDoc{out}
 	}
 	var matrix [][]float64
 	// Spreadsheet items only: PDF items write layout boxes into the same
@@ -1021,11 +1031,12 @@ func (c *GeneralChunkerComponent) splitSpreadsheetTable(unit schema.ChunkDoc) []
 	out := make([]schema.ChunkDoc, 0, len(parts))
 	for i, part := range parts {
 		piece := cloneChunkDoc(unit)
-		// Text carries a plain-text rendering (no markup) for the rare embed
-		// path without a downstream TableChunker; the structured TableData is
-		// the authoritative content for chunkers that read it.
-		piece.Text = tableutil.RenderTableText(&part)
-		piece.TableData = &part
+		// Text carries the sub-table rendered as HTML so the persisted content
+		// and the chunk id (hash of Text) stay byte-consistent and the UI can
+		// display a real table. The structured TableData is dropped here and is
+		// never serialized to the index.
+		piece.Text = tableutil.RenderTableHTML(&part)
+		piece.TableData = nil
 		piece.Positions = nil
 		lo := headerRows + ranges[i][0]
 		hi := headerRows + ranges[i][1]

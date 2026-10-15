@@ -61,8 +61,8 @@ func TestPDFTableItemsOmitHTMLText(t *testing.T) {
 			if !ok || td == nil || len(td.CellTexts()) == 0 {
 				t.Fatalf("table item missing structured TableData: %#v", tableItem)
 			}
-			if got := tableutil.RenderTableText(td); !strings.Contains(got, "What is RAGFlow?") && !strings.Contains(got, "cell") {
-				t.Fatalf("structured table missing cell text %q: %#v", got, td)
+			if !cellTextsContain(td, "What is RAGFlow?") && !cellTextsContain(td, "cell") {
+				t.Fatalf("structured table missing cell text %q: %#v", "What is RAGFlow?", td)
 			}
 		})
 	}
