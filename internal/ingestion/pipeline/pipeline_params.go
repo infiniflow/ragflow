@@ -53,14 +53,16 @@ var extractorValidParamKeys = func() map[string]struct{} {
 // titleChunkerPersistenceKeys are per-method config keys the frontend
 // persists alongside the runtime params (see transformTitleChunkerParams in
 // web/src/pages/agent/utils.ts). The runtime components only read
-// levels/hierarchy for the active method and never touch these; they are
-// whitelisted so the stored config keeps the Hierarchy and Group rule sets
-// independent of each other.
+// levels/hierarchy/chunk_token_cap for the active method and never touch
+// these; they are whitelisted so the stored config keeps the Hierarchy and
+// Group configurations independent of each other.
 var titleChunkerPersistenceKeys = map[string]struct{}{
-	"hierarchyRules":     {},
-	"groupRules":         {},
-	"hierarchyHierarchy": {},
-	"hierarchyGroup":     {},
+	"hierarchyRules":         {},
+	"groupRules":             {},
+	"hierarchyHierarchy":     {},
+	"hierarchyGroup":         {},
+	"hierarchyChunkTokenCap": {},
+	"groupChunkTokenCap":     {},
 }
 
 // unionParamKeys merges key sets into one for componentParamSchemaKeys entries.

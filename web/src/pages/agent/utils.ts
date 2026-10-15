@@ -439,12 +439,23 @@ export function transformTitleChunkerParams(
       ? params.hierarchyGroup
       : params.hierarchyHierarchy) ?? params.hierarchy;
 
-  // Persist each method's rules and hierarchy value under its own key so the
-  // stored config keeps them independent (the shared `levels`/`hierarchy` keys
-  // carry only the active method's values for the backend components). The
-  // load side (`transformTitleChunkerConfigToForm` and
-  // `transformApiResponseToForm`) reads these split keys first and only falls
-  // back to migrating the shared `levels`/`hierarchy` when they are absent.
+  // The token cap is split per method like rules/hierarchy above; the runtime
+  // components read the shared chunk_token_cap, so resolve the active
+  // method's value into it. Snapshots stored before the split carry only the
+  // shared key — fall back to it. When no cap key exists at all (the manual
+  // chunker strips them), write none.
+  const chunkTokenCap =
+    (params.method === TitleChunkerMethod.Group
+      ? params.groupChunkTokenCap
+      : params.hierarchyChunkTokenCap) ?? params.chunk_token_cap;
+
+  // Persist each method's rules, hierarchy value and token cap under its own
+  // key so the stored config keeps them independent (the shared
+  // `levels`/`hierarchy`/`chunk_token_cap` keys carry only the active
+  // method's values for the backend components). The load side
+  // (`transformTitleChunkerConfigToForm` and `transformApiResponseToForm`)
+  // reads these split keys first and only falls back to migrating the shared
+  // keys when they are absent.
   return {
     ...omit(params, [
       // Legacy pre-split rules field. The active rules have already been
@@ -455,6 +466,9 @@ export function transformTitleChunkerParams(
     hierarchy: Number(hierarchyValue || 0),
     include_heading_content: Boolean(params.include_heading_content),
     root_chunk_as_heading: Boolean(params.root_chunk_as_heading),
+    ...(chunkTokenCap === undefined || chunkTokenCap === null
+      ? {}
+      : { chunk_token_cap: Number(chunkTokenCap) }),
     levels,
   };
 }
@@ -726,7 +740,12 @@ export const buildDslComponentsByGraph = (
           // by the backend ManualChunker component (manual.go pins method=group,
           // ignores the token cap).
           params = transformTitleChunkerParams(
-            omit(params, ['include_heading_content', 'chunk_token_cap']) as any,
+            omit(params, [
+              'include_heading_content',
+              'chunk_token_cap',
+              'hierarchyChunkTokenCap',
+              'groupChunkTokenCap',
+            ]) as any,
           );
           break;
         case Operator.Extractor:
