@@ -16,6 +16,7 @@ package handler
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -26,7 +27,7 @@ import (
 )
 
 type ChatChannelService interface {
-	CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID *string) (*entity.ChatChannel, error)
+	CreateChatChannel(ctx context.Context, userID, name, channelType string, config entity.JSONMap, chatID, agentID *string) (*entity.ChatChannel, error)
 	List(ctx context.Context, userID string) ([]*entity.ChatChannelListResponse, error)
 	GetChatChannel(ctx context.Context, userID, channelID string) (*entity.ChatChannel, common.ErrorCode, error)
 	UpdateChatChannel(ctx context.Context, userID, channelID string, req map[string]interface{}) (*entity.ChatChannel, common.ErrorCode, error)
@@ -52,6 +53,7 @@ type CreateChatChannelRequest struct {
 	Channel string         `json:"channel" binding:"required"`
 	Config  entity.JSONMap `json:"config"`
 	ChatID  *string        `json:"chat_id"`
+	AgentID *string        `json:"agent_id"`
 }
 
 // CreateChatChannel handles POST /chat-channels.
@@ -80,9 +82,14 @@ func (h *ChatChannelHandler) CreateChatChannel(c *gin.Context) {
 		req.Channel,
 		req.Config,
 		req.ChatID,
+		req.AgentID,
 	)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, true) {
+			return
+		}
+		if errors.Is(err, service.ErrChatChannelTargetConflict) {
+			common.ResponseWithCodeData(c, common.CodeDataError, nil, err.Error())
 			return
 		}
 		common.ResponseWithCodeData(c, common.CodeServerError, nil, err.Error())

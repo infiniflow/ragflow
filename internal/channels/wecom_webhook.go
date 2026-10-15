@@ -295,17 +295,84 @@ func (s *wecomWebhookServer) handleRequest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if message.MsgType == "text" && message.FromUserName != "" {
-		channel.handleTextMessage(r.Context(), message.FromUserName, message.FromUserName, message.MsgID, message.Content, "p2p", map[string]any{
-			"to_user_name":   message.ToUserName,
-			"from_user_name": message.FromUserName,
-			"create_time":    message.CreateTime,
-			"msg_type":       message.MsgType,
-			"content":        message.Content,
-			"msg_id":         message.MsgID,
-			"xml":            string(plaintext),
-		})
+		if weComMessageSeen(accountID, message.MsgID) {
+			common.Info("wecom: skipping duplicate callback", zap.String("account_id", accountID), zap.String("message_id", message.MsgID))
+		} else {
+			// WeCom retries callbacks that are not acknowledged within a few
+			// seconds, while answering runs an LLM completion that takes far
+			// longer. Acknowledge immediately and answer in the background; the
+			// message id guard above keeps a retry from answering twice.
+			chatID := message.FromUserName
+			senderID := message.FromUserName
+			messageID := message.MsgID
+			content := message.Content
+			raw := map[string]any{
+				"to_user_name":   message.ToUserName,
+				"from_user_name": message.FromUserName,
+				"create_time":    message.CreateTime,
+				"msg_type":       message.MsgType,
+				"content":        message.Content,
+				"msg_id":         message.MsgID,
+				"xml":            string(plaintext),
+			}
+			go func() {
+				// The request context is cancelled as soon as this handler
+				// returns, so the background reply must not inherit it.
+				runCtx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), weComHandlerTimeout)
+				defer cancel()
+				channel.handleTextMessage(runCtx, chatID, senderID, messageID, content, "p2p", raw)
+			}()
+		}
 	}
 	w.WriteHeader(http.StatusOK)
+}
+
+// WeCom retries unacknowledged callbacks, so recently handled message ids are
+// remembered and the retries dropped instead of answered twice.
+const (
+	weComDedupeWindow   = 30 * time.Second
+	weComDedupeMax      = 2000
+	weComHandlerTimeout = 10 * time.Minute
+)
+
+var (
+	weComSeenMessagesMu sync.Mutex
+	weComSeenMessages   = map[string]time.Time{}
+)
+
+// weComMessageSeen records an inbound message id and reports whether it was
+// already handled inside the dedupe window.
+func weComMessageSeen(accountID, messageID string) bool {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return false
+	}
+	key := accountID + ":" + messageID
+	now := time.Now()
+
+	weComSeenMessagesMu.Lock()
+	defer weComSeenMessagesMu.Unlock()
+
+	if seenAt, ok := weComSeenMessages[key]; ok && now.Sub(seenAt) < weComDedupeWindow {
+		return true
+	}
+	for existing, seenAt := range weComSeenMessages {
+		if now.Sub(seenAt) >= weComDedupeWindow {
+			delete(weComSeenMessages, existing)
+		}
+	}
+	for len(weComSeenMessages) >= weComDedupeMax {
+		oldestKey := ""
+		oldestAt := now
+		for existing, seenAt := range weComSeenMessages {
+			if oldestKey == "" || seenAt.Before(oldestAt) {
+				oldestKey, oldestAt = existing, seenAt
+			}
+		}
+		delete(weComSeenMessages, oldestKey)
+	}
+	weComSeenMessages[key] = now
+	return false
 }
 
 func weComAccountIDFromPath(path string) (string, bool) {

@@ -260,15 +260,19 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 
 	channelService := service.NewChatChannelService()
 	ch.SetMessageHandler(func(ctx context.Context, msg core.IncomingMessage) error {
-		answer, err := channelService.HandleIncomingMessage(ctx, service.ChatChannelIncomingMessage{
-			Channel:   msg.Channel,
-			AccountID: msg.AccountID,
-			ChatID:    msg.ChatID,
-			ChatType:  msg.ChatType,
-			MessageID: msg.MessageID,
-			SenderID:  msg.SenderID,
-			Text:      msg.Text,
-		})
+		answer, err := channelService.HandleIncomingMessage(
+			ctx,
+			service.ChatChannelIncomingMessage{
+				Channel:   msg.Channel,
+				AccountID: msg.AccountID,
+				ChatID:    msg.ChatID,
+				ChatType:  msg.ChatType,
+				MessageID: msg.MessageID,
+				SenderID:  msg.SenderID,
+				Text:      msg.Text,
+			},
+			thinkingNotifier(ctx, ch, msg),
+		)
 		if err != nil || answer == "" {
 			return err
 		}
@@ -286,6 +290,25 @@ func (r *Runtime) startChannel(ctx context.Context, accountID string, wanted des
 	r.mu.Unlock()
 	common.Info("started chat channel", zap.String("channel", ch.ChannelID()), zap.String("account_id", accountID))
 	return nil
+}
+
+// thinkingPlaceholder is the interim WeCom reply posted while a completion runs.
+const thinkingPlaceholder = "🤔 开始思考..."
+
+// thinkingNotifier posts the interim "thinking" reply while the bound Chat or
+// Agent is still working. Only WeCom sends it; other channels return nil so the
+// bridge keeps a single code path.
+func thinkingNotifier(ctx context.Context, ch core.Channel, msg core.IncomingMessage) func() error {
+	if ch.ChannelID() != "wecom" {
+		return nil
+	}
+	return func() error {
+		return ch.Send(ctx, core.OutgoingMessage{
+			ChatID:           msg.ChatID,
+			Text:             thinkingPlaceholder,
+			ReplyToMessageID: msg.MessageID,
+		})
+	}
 }
 
 // buildChannel constructs the platform-specific channel implementation for one chat_channel row.
