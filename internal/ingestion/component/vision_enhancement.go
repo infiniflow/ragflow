@@ -383,7 +383,7 @@ func maybeDispatchVisionEnhancement(
 		}
 		m := dispatched.JSON[itemIdx].ToMap()
 		appendItemText(m, desc)
-		dispatched.JSON[itemIdx] = parser.RawItem{M: m}
+		dispatched.JSON[itemIdx] = parser.DocItemFromMap(m)
 		modified = true
 	}
 

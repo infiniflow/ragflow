@@ -39,7 +39,7 @@ func NormalizeChunks(output map[string]any) []map[string]any {
 	if json, ok := output["json"].([]map[string]any); ok {
 		return DeepCopyChunks(json)
 	}
-	if docs, ok := output["json"].([]parser.DocItem); ok && len(docs) > 0 {
+	if docs, ok := output["json"].([]parser.DocItem); ok {
 		return DeepCopyChunks(parser.ItemsToMaps(docs))
 	}
 	if json, ok := toChunkMaps(output["json"]); ok {

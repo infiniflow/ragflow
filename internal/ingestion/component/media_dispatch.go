@@ -128,7 +128,7 @@ func maybeDispatchImage(
 	imageData, _ := parsed.JSON[0].ToMap()["image"].(string)
 	m := parsed.JSON[0].ToMap()
 	m["text"] = text
-	parsed.JSON[0] = parser.RawItem{M: m}
+	parsed.JSON[0] = parser.DocItemFromMap(m)
 	if err != nil {
 		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", err))
 	} else if useOCR && strings.TrimSpace(text) == "" {
@@ -159,7 +159,7 @@ func maybeDispatchImage(
 		if description != "" {
 			m := parsed.JSON[0].ToMap()
 			appendItemText(m, description)
-			parsed.JSON[0] = parser.RawItem{M: m}
+			parsed.JSON[0] = parser.DocItemFromMap(m)
 		} else if strings.TrimSpace(text) == "" {
 			// Enhancement was permitted and the model produced nothing usable,
 			// so the item still has no text at all. Without this the chunk is
@@ -365,10 +365,7 @@ func maybeDispatchAudio(
 
 	return parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []parser.DocItem{parser.RawItem{M: map[string]any{
-			"text":         transcription,
-			"doc_type_kwd": "text",
-		}}},
+		JSON:         []parser.DocItem{parser.NewTextJSONItem(transcription)},
 	}, true, nil
 }
 

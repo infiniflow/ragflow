@@ -411,7 +411,7 @@ func emptyPDFResult(filename string) ParseResult {
 			"page_count": 0,
 			"outline":    []map[string]any{},
 		},
-		JSON: []DocItem{RawItem{M: map[string]any{"text": "", "doc_type_kwd": "text"}}},
+		JSON: []DocItem{NewTextJSONItem("")},
 	}
 }
 
@@ -1037,7 +1037,7 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 		m := res.JSON[i].ToMap()
 		if img, _ := m["image"].(string); img != "" {
 			m["image"] = pdflayout.InlinePNGDataURL(img)
-			res.JSON[i] = RawItem{M: m}
+			res.JSON[i] = DocItemFromMap(m)
 		}
 	}
 	return res

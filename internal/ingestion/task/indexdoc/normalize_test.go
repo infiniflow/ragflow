@@ -2,6 +2,8 @@ package indexdoc
 
 import (
 	"testing"
+
+	"ragflow/internal/parser/parser"
 )
 
 // =============================================================================
@@ -36,6 +38,25 @@ func TestNormalizeChunks_JSONFormat(t *testing.T) {
 	}
 	if result[0]["text"] != "section 1" {
 		t.Errorf("result[0][\"text\"] = %q, want \"section 1\"", result[0]["text"])
+	}
+}
+
+// An empty (non-nil) []parser.DocItem under "json" is a present result and
+// must take precedence over markdown, matching the historical
+// []map[string]any empty-slice behavior (which returned no chunks, not the
+// markdown text). Regression guard for the len(docs) > 0 guard that skipped
+// the typed json branch for an empty slice.
+func TestNormalizeChunks_EmptyDocItemSlicePrecedence(t *testing.T) {
+	input := map[string]any{
+		"json":     []parser.DocItem{},
+		"markdown": "# heading",
+	}
+	result := NormalizeChunks(input)
+	if result == nil {
+		t.Fatalf("expected empty (non-nil) slice, got nil")
+	}
+	if len(result) != 0 {
+		t.Fatalf("len = %d, want 0 (json present, takes precedence over markdown)", len(result))
 	}
 }
 

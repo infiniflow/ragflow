@@ -267,56 +267,15 @@ func ChunkDocsFromDocItem(items []parser.DocItem) ([]ChunkDoc, bool, error) {
 	return out, true, nil
 }
 
+// chunkDocFromDocItem converts a parser DocItem directly into a typed chunk by
+// projecting it through its canonical ToMap wire shape and decoding that via
+// ChunkDocFromMap. Using ToMap — the parser package's single canonical
+// projection, with mergeExtra semantics — instead of a second, divergent wire
+// map builder keeps the conversion identical to the historical []map path and
+// prevents an Extra key from shadowing an empty canonical field (e.g. a stray
+// Extra["text"] must never override TextItem.Text == "").
 func chunkDocFromDocItem(it parser.DocItem) (ChunkDoc, error) {
-	return ChunkDocFromMap(docItemWireMap(it))
-}
-
-// docItemWireMap reconstructs the historical wire shape of an item from its
-// typed fields (not via DocItem.ToMap), so the conversion is driven by the
-// item's semantic API. For RawItem the map is passed through unchanged.
-func docItemWireMap(it parser.DocItem) map[string]any {
-	switch t := it.(type) {
-	case parser.RawItem:
-		return t.M
-	case parser.TextItem:
-		return docItemWireMapFromFields(t.Text, parser.DocTypeText, t.CKType, "", nil, "", nil, t.Extra)
-	case parser.TableItem:
-		return docItemWireMapFromFields("", parser.DocTypeTable, t.CKType, "", t.Table, t.Sheet, t.Positions, t.Extra)
-	case parser.ImageItem:
-		return docItemWireMapFromFields(t.Text, parser.DocTypeImage, t.CKType, t.Image, nil, t.Sheet, t.Positions, t.Extra)
-	default:
-		return it.ToMap()
-	}
-}
-
-func docItemWireMapFromFields(text, docType, ckType, image string, table *entity.TableData, sheet string, positions [][]float64, extra map[string]any) map[string]any {
-	m := map[string]any{parser.DocTypeKey: docType}
-	if text != "" {
-		m["text"] = text
-	}
-	if image != "" {
-		m["image"] = image
-	}
-	if ckType != "" {
-		m["ck_type"] = ckType
-	} else if docType == parser.DocTypeTable {
-		m["ck_type"] = parser.DocTypeTable
-	}
-	if table != nil {
-		m["table"] = table
-	}
-	if sheet != "" {
-		m["sheet"] = sheet
-	}
-	if len(positions) > 0 {
-		m["positions"] = positions
-	}
-	for k, v := range extra {
-		if _, ok := m[k]; !ok {
-			m[k] = v
-		}
-	}
-	return m
+	return ChunkDocFromMap(it.ToMap())
 }
 
 // ToMap converts a typed chunk back to the generic map form used by

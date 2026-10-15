@@ -245,3 +245,78 @@ func TestToMapIndependentPerCall(t *testing.T) {
 		t.Errorf("Extra passthrough broke: %#v %#v", first, second)
 	}
 }
+
+// DocItemFromMap detects doc_type_kwd and builds the matching typed item,
+// extracting canonical fields into the struct and leaving the rest in Extra.
+// For an opaque map without a known discriminator it falls back to RawItem,
+// preserving the map exactly. The produced item's ToMap must equal the input
+// map (the wire shape is unchanged), so producers can emit typed items
+// without altering downstream chunking.
+func TestDocItemFromMap_WireShapePreserved(t *testing.T) {
+	textMap := map[string]any{
+		"text":        "hello",
+		DocTypeKey:    DocTypeText,
+		"ck_type":     "heading",
+		"layout":      "1",
+		"page_number": 3,
+	}
+	imageMap := map[string]any{
+		"text":        "alt",
+		"image":       "data:image/png;base64,xxx",
+		DocTypeKey:    DocTypeImage,
+		"ck_type":     "image",
+		"page_number": 2,
+	}
+	tableMap := map[string]any{
+		"table":       &entity.TableData{},
+		DocTypeKey:    DocTypeTable,
+		"ck_type":     DocTypeTable,
+		"sheet":       "s",
+		"positions":   [][]float64{{1, 2}},
+		"sheet_index": 0,
+	}
+	opaqueMap := map[string]any{"foo": "bar", "nested": map[string]any{"a": 1}}
+
+	for _, m := range []map[string]any{textMap, imageMap, tableMap, opaqueMap} {
+		got := DocItemFromMap(m).ToMap()
+		if !reflect.DeepEqual(got, m) {
+			t.Fatalf("DocItemFromMap round-trip mismatch for %q\n got=%#v\nwant=%#v", m[DocTypeKey], got, m)
+		}
+	}
+
+	// The typed detection must actually yield the concrete type, not RawItem.
+	if _, ok := DocItemFromMap(textMap).(TextItem); !ok {
+		t.Error("text map should produce a TextItem")
+	}
+	if _, ok := DocItemFromMap(imageMap).(ImageItem); !ok {
+		t.Error("image map should produce an ImageItem")
+	}
+	if _, ok := DocItemFromMap(tableMap).(TableItem); !ok {
+		t.Error("table map should produce a TableItem")
+	}
+	if _, ok := DocItemFromMap(opaqueMap).(RawItem); !ok {
+		t.Error("opaque map should fall back to RawItem")
+	}
+}
+
+// DocItemsFromMaps maps a []map[string]any to typed DocItems the same way
+// DocItemFromMap does, preserving order and skipping nothing.
+func TestDocItemsFromMaps_OrderAndType(t *testing.T) {
+	maps := []map[string]any{
+		{"text": "a", DocTypeKey: DocTypeText, "ck_type": "text"},
+		{"foo": "bar"},
+	}
+	items := DocItemsFromMaps(maps)
+	if len(items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(items))
+	}
+	if _, ok := items[0].(TextItem); !ok {
+		t.Errorf("first should be TextItem: %#v", items[0])
+	}
+	if _, ok := items[1].(RawItem); !ok {
+		t.Errorf("second (opaque) should be RawItem: %#v", items[1])
+	}
+	if items[0].ToMap()["text"] != "a" {
+		t.Errorf("first item text lost: %#v", items[0].ToMap())
+	}
+}

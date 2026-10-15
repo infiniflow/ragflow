@@ -156,14 +156,126 @@ func FromMap(m map[string]any) DocItem { return RawItem{M: m} }
 // unchanged while the field gains the DocItem type.
 func Raw(m map[string]any) DocItem { return RawItem{M: m} }
 
-// MapsToItems wraps a slice of opaque payload maps as DocItems (one RawItem
-// each). Parsers that accumulate items as []map[string]any use it at the
-// assignment site (`JSON: MapsToItems(items)`) so their internal logic is
-// unchanged while the field gains the DocItem type.
+// MapsToItems wraps a slice of payload maps as typed DocItems (one
+// TextItem / TableItem / ImageItem / RawItem each, detected via doc_type_kwd).
+// Parsers that accumulate results as []map[string]any use it at the assignment
+// site (`JSON: MapsToItems(items)`) so their internal logic is unchanged while
+// the field gains the DocItem type and the concrete TextItem/TableItem/
+// ImageItem constructors become the emission path. Opaque maps without a known
+// discriminator stay RawItem, preserving the wire shape exactly.
 func MapsToItems(maps []map[string]any) []DocItem {
+	return DocItemsFromMaps(maps)
+}
+
+// DocItemFromMap detects the item's doc_type_kwd and builds the matching typed
+// DocItem, extracting the canonical wire fields into the struct and leaving
+// every other key in Extra. For an opaque map without a known discriminator it
+// falls back to RawItem, preserving the map exactly. This is the producer-side
+// counterpart to ItemsToMaps: parsers can emit typed DocItems without altering
+// the wire shape downstream consumers (ToMap) rely on.
+func DocItemFromMap(m map[string]any) DocItem {
+	if m == nil {
+		return RawItem{}
+	}
+	switch docType, _ := m[DocTypeKey].(string); docType {
+	case DocTypeText:
+		// Only build a TextItem when the map actually carries a text field.
+		// A text-typed map without a text key (e.g. an email metadata item
+		// whose body is gated by fields) must round-trip through ToMap
+		// unchanged; TextItem.ToMap always writes "text", so forcing it here
+		// would invent a text key the original map lacked.
+		if _, ok := m["text"]; ok {
+			return textItemFromMap(m)
+		}
+		return RawItem{M: m}
+	case DocTypeImage:
+		if _, ok := m["image"]; ok {
+			return imageItemFromMap(m)
+		}
+		return RawItem{M: m}
+	case DocTypeTable:
+		if _, ok := m["table"]; ok {
+			return tableItemFromMap(m)
+		}
+		return RawItem{M: m}
+	default:
+		return RawItem{M: m}
+	}
+}
+
+func textItemFromMap(m map[string]any) DocItem {
+	return TextItem{
+		Text:   stringField(m, "text"),
+		CKType: stringField(m, "ck_type"),
+		Extra:  extraFromMap(m, "text", DocTypeKey, "ck_type"),
+	}
+}
+
+func imageItemFromMap(m map[string]any) DocItem {
+	return ImageItem{
+		Text:      stringField(m, "text"),
+		Image:     stringField(m, "image"),
+		CKType:    stringField(m, "ck_type"),
+		Sheet:     stringField(m, "sheet"),
+		Positions: positionsField(m),
+		Extra:     extraFromMap(m, "text", "image", DocTypeKey, "ck_type", "sheet", "positions"),
+	}
+}
+
+func tableItemFromMap(m map[string]any) DocItem {
+	td, _ := m["table"].(*entity.TableData)
+	return TableItem{
+		Table:     td,
+		Sheet:     stringField(m, "sheet"),
+		Positions: positionsField(m),
+		CKType:    stringField(m, "ck_type"),
+		Extra:     extraFromMap(m, "table", DocTypeKey, "ck_type", "sheet", "positions"),
+	}
+}
+
+func stringField(m map[string]any, key string) string {
+	s, _ := m[key].(string)
+	return s
+}
+
+func positionsField(m map[string]any) [][]float64 {
+	p, _ := m["positions"].([][]float64)
+	return p
+}
+
+// extraFromMap returns every key of m that is not a canonical field for the
+// item type, so it lands in the item's Extra passthrough (matching mergeExtra
+// semantics downstream). A nil result means "no extra keys".
+func extraFromMap(m map[string]any, canonical ...string) map[string]any {
+	skip := make(map[string]struct{}, len(canonical))
+	for _, c := range canonical {
+		skip[c] = struct{}{}
+	}
+	extra := make(map[string]any)
+	for k, v := range m {
+		if _, ok := skip[k]; ok {
+			continue
+		}
+		extra[k] = v
+	}
+	if len(extra) == 0 {
+		return nil
+	}
+	return extra
+}
+
+// DocItemsFromMaps maps a []map[string]any to typed DocItems, preserving order,
+// via DocItemFromMap. Parsers that accumulate results as []map[string]any use
+// it at the assignment site (`JSON: DocItemsFromMaps(items)`) so their internal
+// logic is unchanged while the field gains the DocItem type and the concrete
+// constructors become the emission path.
+func DocItemsFromMaps(maps []map[string]any) []DocItem {
+	if maps == nil {
+		return nil
+	}
 	out := make([]DocItem, 0, len(maps))
 	for _, m := range maps {
-		out = append(out, RawItem{M: m})
+		out = append(out, DocItemFromMap(m))
 	}
 	return out
 }

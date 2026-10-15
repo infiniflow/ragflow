@@ -64,7 +64,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 				"size":     0,
 				"encoding": "utf-8",
 			},
-			JSON: []DocItem{RawItem{M: map[string]any{"text": "", "doc_type_kwd": "text"}}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 

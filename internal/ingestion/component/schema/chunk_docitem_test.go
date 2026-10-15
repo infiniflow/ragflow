@@ -23,9 +23,15 @@ import (
 )
 
 // ChunkDocsFromDocItem must produce the same []ChunkDoc as the historical
-// map path (ChunkDocsFromAny over []DocItem, which round-trips via ToMap).
-// This pins the typed conversion to the exact wire shape the chunker relied
-// on, so consuming DocItem directly cannot change chunking behavior.
+// map path. The historical contract is ChunkDocsFromAny over the []map form
+// the parser produced before emitting DocItems directly: ItemsToMaps
+// projects each DocItem via its canonical ToMap, then ChunkDocFromMap decodes
+// it. ChunkDocsFromDocItem must converge to that exact result, otherwise
+// consuming DocItem directly would silently change chunking behavior.
+//
+// The baseline is deliberately the map path (NOT ChunkDocsFromAny(items),
+// which dispatches []DocItem straight back to ChunkDocsFromDocItem and would
+// make the comparison tautological — the bug this test guards against).
 func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -63,6 +69,23 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 				parser.ImageItem{Image: "i", CKType: "image"},
 			},
 		},
+		// A canonical key present in Extra must NOT shadow the typed field when
+		// the typed field is empty. ToMap keeps the empty canonical field and
+		// blocks Extra via mergeExtra; the typed conversion must match exactly.
+		// Regression guard for the divergent docItemWireMapFromFields builder,
+		// which omitted empty canonical keys and let Extra override them.
+		{
+			name: "empty text must not be shadowed by extra text",
+			items: []parser.DocItem{
+				parser.TextItem{Text: "", Extra: map[string]any{"text": "stale"}},
+			},
+		},
+		{
+			name: "empty image text must not be shadowed by extra text",
+			items: []parser.DocItem{
+				parser.ImageItem{Text: "", Image: "i", CKType: "image", Extra: map[string]any{"text": "stale"}},
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -73,7 +96,9 @@ func TestChunkDocsFromDocItem_ParallelsMapPath(t *testing.T) {
 			if !found {
 				t.Fatalf("expected found=true")
 			}
-			want, wfound, werr := ChunkDocsFromAny(tc.items)
+			// Historical map-path baseline: ItemsToMaps -> ChunkDocsFromAny.
+			maps := parser.ItemsToMaps(tc.items)
+			want, wfound, werr := ChunkDocsFromAny(maps)
 			if werr != nil || !wfound {
 				t.Fatalf("map-path baseline unexpected: err=%v found=%v", werr, wfound)
 			}
@@ -138,5 +163,67 @@ func TestChunkDocsFromDocItem_SkipsNilElement(t *testing.T) {
 	}
 	if got[0].Text != "a" || got[1].Image != "i" {
 		t.Fatalf("unexpected docs after nil skip: %#v", got)
+	}
+}
+
+// Producers emit []map[string]any and wrap with parser.MapsToItems, which now
+// detects doc_type_kwd and builds typed DocItems. The resulting []ChunkDoc the
+// chunker sees must be identical to the historical path that decoded the raw
+// []map directly. This pins the producer-side typed emission to the exact
+// wire contract, so the migration cannot change chunking behavior.
+func TestDocItemsFromMaps_ParallelsMapPath(t *testing.T) {
+	cases := []struct {
+		name string
+		maps []map[string]any
+	}{
+		{
+			name: "text with extra passthrough",
+			maps: []map[string]any{
+				{"text": "hello", parser.DocTypeKey: parser.DocTypeText, "ck_type": "heading", "layout": "1", "page_number": 3},
+			},
+		},
+		{
+			name: "image with extra passthrough",
+			maps: []map[string]any{
+				{"text": "alt", "image": "data:image/png;base64,xxx", parser.DocTypeKey: parser.DocTypeImage, "ck_type": "image", "page_number": 2},
+			},
+		},
+		{
+			name: "table with sheet and positions",
+			maps: []map[string]any{
+				{"table": &entity.TableData{}, parser.DocTypeKey: parser.DocTypeTable, "ck_type": parser.DocTypeTable, "sheet": "s", "positions": [][]float64{{1, 2}}, "sheet_index": 0},
+			},
+		},
+		{
+			name: "opaque map without doc_type_kwd stays raw",
+			maps: []map[string]any{
+				{"foo": "bar", "nested": map[string]any{"a": 1}},
+			},
+		},
+		{
+			name: "mixed typed and opaque",
+			maps: []map[string]any{
+				{"text": "a", parser.DocTypeKey: parser.DocTypeText, "ck_type": "text"},
+				{"foo": "bar"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, found, err := ChunkDocsFromDocItem(parser.DocItemsFromMaps(tc.maps))
+			if err != nil {
+				t.Fatalf("ChunkDocsFromDocItem err: %v", err)
+			}
+			if !found {
+				t.Fatalf("expected found=true")
+			}
+			want, wfound, werr := ChunkDocsFromAny(tc.maps)
+			if werr != nil || !wfound {
+				t.Fatalf("map-path baseline unexpected: err=%v found=%v", werr, wfound)
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("DocItemsFromMaps path diverges from map path\n got=%#v\nwant=%#v", got, want)
+			}
+		})
 	}
 }

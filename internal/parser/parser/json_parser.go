@@ -63,7 +63,7 @@ func (p *JSONParser) ParseWithResult(ctx context.Context, filename string, data 
 				"size":     len(data),
 				"encoding": encName,
 			},
-			JSON: []DocItem{RawItem{M: map[string]any{"text": "", "doc_type_kwd": "text"}}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
