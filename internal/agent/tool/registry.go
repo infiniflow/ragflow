@@ -131,7 +131,9 @@ func BuildByName(name string, params map[string]any) (einotool.BaseTool, error) 
 	if cleanParams != nil {
 		cleanParams = cloneToolParams(cleanParams)
 		delete(cleanParams, "component_name")
-		if key != "retrieval" {
+		// function_name and description are DSL metadata used only by
+		// retrieval tools to advertise instance-specific names.
+		if key != "retrieval" && key != "search_my_dataset" && key != "search_my_dateset" {
 			delete(cleanParams, "function_name")
 			delete(cleanParams, "description")
 		}

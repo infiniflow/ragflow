@@ -130,9 +130,14 @@ func NewRetrievalToolWithDefaults(defaults retrievalArgs) *RetrievalTool {
 // Info returns the tool's metadata for the chat model. The schema mirrors
 // the Python RetrievalParam ToolMeta (plan, field alignment).
 func (r *RetrievalTool) Info(_ context.Context) (*schema.ToolInfo, error) {
+	extra := map[string]any{}
+	if len(r.defaults.DatasetIDs) > 0 {
+		extra["dataset_ids"] = r.defaults.DatasetIDs
+	}
 	return &schema.ToolInfo{
-		Name: r.name,
-		Desc: r.desc,
+		Name:  r.name,
+		Desc:  r.desc,
+		Extra: extra,
 		ParamsOneOf: schema.NewParamsOneOfByParams(map[string]*schema.ParameterInfo{
 			"query": {
 				Type:     schema.String,
