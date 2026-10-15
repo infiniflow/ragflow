@@ -53,7 +53,7 @@ func TestGeneralHeaderlessSubtablesKeepEveryRow(t *testing.T) {
 		{{Text: "Alice"}, {Text: "18"}}, {{Text: "Bob"}, {Text: "20"}}, {{Text: "Carol"}, {Text: "22"}},
 	}}
 	count := func(s string) int { return len(s) }
-	parts, _, _ := splitLargeTable(td, 70, count)
+	parts, _, _ := splitLargeTable(td, 70, count, "")
 	if len(parts) < 2 {
 		t.Fatalf("expected split: %v", parts)
 	}
