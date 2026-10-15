@@ -88,12 +88,28 @@ def test_chat_crud_cycle(rest_client, clear_chats):
     assert create_payload["code"] == 0, create_payload
     chat_id = create_payload["data"]["id"]
 
+    # A second chat in the same tenant, so the exact id lookup below only
+    # passes when the filter is applied.
+    other_res = rest_client.post("/chats", json={"name": "restful_chat_crud_other", "dataset_ids": []})
+    assert other_res.status_code == 200
+    other_payload = other_res.json()
+    assert other_payload["code"] == 0, other_payload
+    assert other_payload["data"]["id"] != chat_id, other_payload
+
     list_res = rest_client.get("/chats", params={"id": chat_id})
     assert list_res.status_code == 200
     list_payload = list_res.json()
     assert list_payload["code"] == 0, list_payload
     assert len(list_payload["data"]["chats"]) == 1, list_payload
     assert list_payload["data"]["chats"][0]["id"] == chat_id, list_payload
+
+    # Exact filters take precedence over keywords, so the id wins even when the keyword names the other chat.
+    precedence_res = rest_client.get("/chats", params={"id": chat_id, "keywords": "restful_chat_crud_other"})
+    assert precedence_res.status_code == 200
+    precedence_payload = precedence_res.json()
+    assert precedence_payload["code"] == 0, precedence_payload
+    assert len(precedence_payload["data"]["chats"]) == 1, precedence_payload
+    assert precedence_payload["data"]["chats"][0]["id"] == chat_id, precedence_payload
 
     get_res = rest_client.get(f"/chats/{chat_id}")
     assert get_res.status_code == 200
@@ -152,8 +168,8 @@ def test_chat_duplicate_name_validation(rest_client, clear_chats):
     second = rest_client.post("/chats", json={"name": "duplicate_chat_name", "dataset_ids": []})
     assert second.status_code == 200
     second_payload = second.json()
-    assert second_payload["code"] == 102, second_payload
-    assert "duplicated chat name" in second_payload["message"], second_payload
+    assert second_payload["code"] == 0, second_payload
+    assert second_payload["data"]["name"] == "duplicate_chat_name(1)", second_payload
 
 
 @pytest.mark.p2
@@ -320,8 +336,8 @@ def test_chat_list_default_get_and_separate_lookup_contract(rest_client, clear_c
     invalid_get_res = rest_client.get("/chats/unknown")
     assert invalid_get_res.status_code == 200
     invalid_get_payload = invalid_get_res.json()
-    assert invalid_get_payload["code"] == 109, invalid_get_payload
-    assert invalid_get_payload["message"] == "no authorization", invalid_get_payload
+    assert invalid_get_payload["code"] == 404, invalid_get_payload
+    assert invalid_get_payload["message"] == "Resource not found", invalid_get_payload
 
     for chat_id, keywords, expected_count in ((ids[0], "list_default_0", 1), (ids[0], "list_default_1", 1), (ids[0], "unknown", 0)):
         get_res = rest_client.get(f"/chats/{chat_id}")
@@ -1387,8 +1403,8 @@ def test_chat_update_mapping_and_validation_branches_p2(rest_client, clear_chats
     unauthorized = rest_client.patch("/chats/invalid-chat-id", json={"name": "anything"})
     assert unauthorized.status_code == 200
     unauthorized_payload = unauthorized.json()
-    assert unauthorized_payload["code"] == 109, unauthorized_payload
-    assert unauthorized_payload["message"] == "no authorization", unauthorized_payload
+    assert unauthorized_payload["code"] == 404, unauthorized_payload
+    assert unauthorized_payload["message"] == "Resource not found", unauthorized_payload
 
     quote_res = rest_client.patch(f"/chats/{chat_id}", json={"prompt_config": {"quote": False}})
     assert quote_res.status_code == 200

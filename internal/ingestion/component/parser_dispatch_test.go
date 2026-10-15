@@ -109,14 +109,6 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 			wantText: "Title",
 		},
 		{
-			name: "html",
-			dispatched: parser.ParseResult{
-				OutputFormat: "html",
-				HTML:         "<h1>Title</h1><p>Body</p>",
-			},
-			wantText: "Title",
-		},
-		{
 			name: "text",
 			dispatched: parser.ParseResult{
 				OutputFormat: "text",
@@ -155,6 +147,22 @@ func TestBuildParserOutputsNormalizesTextFormatsToJSON(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestNormalizeParserJSON_EmptyPayloadYieldsEmpty pins that a result with no
+// populated payload family normalizes to an empty JSON slice rather than
+// injecting a bogus item. HTML is not a supported backend output format
+// (PR #19467 unified the component to JSON-only; no Go parser produces an
+// HTML payload), so there is no HTML normalization branch to fall through
+// to — this guards that regression.
+func TestNormalizeParserJSON_EmptyPayloadYieldsEmpty(t *testing.T) {
+	r := parser.ParseResult{
+		OutputFormat: "json",
+	}
+	items := normalizeParserJSON(t.Context(), "doc.txt", r)
+	if len(items) != 0 {
+		t.Fatalf("normalizeParserJSON(empty) = %d items, want 0 (no payload → empty)", len(items))
 	}
 }
 
@@ -550,7 +558,7 @@ func TestDispatch_PDFVisionJSON_UsesTenantAwareModel(t *testing.T) {
 		}
 		return "Describe page {{ page }}.", nil
 	}
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -629,7 +637,7 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	})
 
 	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
-	pdfVisionPageRenderer = func(_ []byte) ([]pdfVisionPage, error) {
+	pdfVisionPageRenderer = func(_ []byte, _ [][]int) ([]pdfVisionPage, error) {
 		return []pdfVisionPage{
 			{PageNumber: 1, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,aaa"},
 			{PageNumber: 2, WidthPts: 120, HeightPts: 240, ImageURL: "data:image/png;base64,bbb"},
@@ -668,6 +676,95 @@ func TestDispatch_PDFVisionJSON_PreservesEmptyPages(t *testing.T) {
 	}
 	if got := jsonItems[1]["text"]; got != "" {
 		t.Fatalf("json[1].text = %#v, want empty string placeholder", got)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_HonorsPageRanges pins that the VLM path renders
+// and transcribes only the configured page ranges. The same setup key carries
+// the canvas-debug page cap.
+func TestDispatch_PDFVisionJSON_HonorsPageRanges(t *testing.T) {
+	origPromptLoader := pdfVisionPromptLoader
+	origRenderer := pdfVisionPageRenderer
+	origResolver := pdfVisionModelResolver
+	origInvoker := pdfVisionChatInvoker
+	t.Cleanup(func() {
+		pdfVisionPromptLoader = origPromptLoader
+		pdfVisionPageRenderer = origRenderer
+		pdfVisionModelResolver = origResolver
+		pdfVisionChatInvoker = origInvoker
+	})
+
+	pdfVisionPromptLoader = func(string) (string, error) { return "Describe page {{ page }}.", nil }
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		if want := [][]int{{2, 3}}; !reflect.DeepEqual(ranges, want) {
+			return nil, fmt.Errorf("renderer ranges = %v, want %v", ranges, want)
+		}
+		return []pdfVisionPage{
+			{PageNumber: 2, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,bbb"},
+			{PageNumber: 3, WidthPts: 100, HeightPts: 200, ImageURL: "data:image/png;base64,ccc"},
+		}, nil
+	}
+	pdfVisionModelResolver = func(ctx context.Context, db *gorm.DB, tenantID string, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+		return nil, "resolved-vlm", nil, nil
+	}
+	pdfVisionChatInvoker = func(ctx context.Context, _ models.ModelDriver, _ string, _ []models.Message, _ *models.APIConfig) (*models.ChatResponse, error) {
+		answer := "page text"
+		return &models.ChatResponse{Answer: &answer}, nil
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	setups["pdf"]["pages"] = []any{[]any{float64(2), float64(3)}}
+	c := &ParserComponent{setups: setups}
+
+	out, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	jsonItems, ok := out["json"].([]map[string]any)
+	if !ok {
+		t.Fatalf("json payload = %T, want []map[string]any", out["json"])
+	}
+	var pageNumbers []any
+	for _, item := range jsonItems {
+		pageNumbers = append(pageNumbers, item["page_number"])
+	}
+	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {
+		t.Fatalf("page numbers = %v, want %v", pageNumbers, want)
+	}
+}
+
+// TestDispatch_PDFVisionJSON_RejectsInvalidPages pins that an invalid pages
+// value fails the VLM parse before any page is rendered. A fallback to every
+// page would send the whole PDF to the vision model.
+func TestDispatch_PDFVisionJSON_RejectsInvalidPages(t *testing.T) {
+	origRenderer := pdfVisionPageRenderer
+	t.Cleanup(func() { pdfVisionPageRenderer = origRenderer })
+	pdfVisionPageRenderer = func(_ []byte, ranges [][]int) ([]pdfVisionPage, error) {
+		t.Errorf("renderer called with ranges %v, want no render for invalid pages", ranges)
+		return nil, fmt.Errorf("renderer must not run")
+	}
+
+	setups := defaultSetups()
+	setups["pdf"]["parse_method"] = "CustomVLM"
+	setups["pdf"]["output_format"] = "json"
+	setups["pdf"]["pages"] = "abc"
+	c := &ParserComponent{setups: setups}
+
+	_, err := c.Invoke(t.Context(), nil, map[string]any{
+		"binary":    []byte("%PDF-1.4"),
+		"file_type": "pdf",
+		"name":      "vision.pdf",
+		"tenant_id": "tenant-1",
+	})
+	if err == nil || !strings.Contains(err.Error(), "pdf vision pages") {
+		t.Fatalf("Invoke error = %v, want pdf vision pages error", err)
 	}
 }
 
@@ -835,9 +932,13 @@ func TestDispatch_PDFMinerUMarkdown_SendsServerURLFromProviderConfig(t *testing.
 }
 
 func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
 	origResolver := resolveMinerUModelForDispatch
 	defer func() { resolveMinerUModelForDispatch = origResolver }()
-	baseURL := "http://mineru-api:8888"
+	baseURL := server.URL
 	apiKey := `{"mineru_backend":"hybrid-http-client"}`
 	resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
 		return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
@@ -859,6 +960,192 @@ func TestDispatch_PDFMinerUMarkdown_RequiresServerURLForHTTPClientBackend(t *tes
 	if !strings.Contains(err.Error(), "mineru_server_url") {
 		t.Fatalf("error = %q, want mineru_server_url context", err.Error())
 	}
+}
+
+func TestDispatch_PDFMinerUV1_WiresParseAndExtract(t *testing.T) {
+	withSSRFBypass(t)
+
+	invoke := func(t *testing.T, serverURL string) map[string]any {
+		t.Helper()
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := serverURL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["output_format"] = "markdown"
+		setups["pdf"]["mineru_backend"] = "standard"
+		return invokeMinerUDispatch(t, nil, setups)
+	}
+
+	t.Run("zip content_list uses mineruExtractJSONItems", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":"V1 body"},{"type":"table","table_body":"<table></table>","table_caption":["Table caption"]}]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "V1 body")
+		requireJSONText(t, out, "Table caption")
+	})
+
+	t.Run("markdown fallback when zip has no content_list", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("middle.json")
+		_, _ = f.Write([]byte(`{}`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Zip had no content_list\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Zip had no content_list")
+	})
+
+	t.Run("markdown fallback when zip sections are blank", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[{"type":"text","text":""}]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Blank zip sections\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Blank zip sections")
+	})
+
+	t.Run("markdown fallback when zip download fails", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"},"markdown":{"file_id":"out-md"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				http.Error(w, "zip gone", http.StatusInternalServerError)
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-md/content":
+				_, _ = w.Write([]byte("# Markdown fallback\n"))
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		out := invoke(t, server.URL)
+		requireJSONText(t, out, "Markdown fallback")
+	})
+
+	t.Run("empty content_list without markdown is an error", func(t *testing.T) {
+		var zipBuf bytes.Buffer
+		zw := zip.NewWriter(&zipBuf)
+		f, _ := zw.Create("content_list.json")
+		_, _ = f.Write([]byte(`[]`))
+		_ = zw.Close()
+		zipBytes := zipBuf.Bytes()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch {
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/health":
+				w.WriteHeader(http.StatusOK)
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/uploads":
+				_, _ = w.Write([]byte(`{"id":"up-1","status":"completed","file":{"id":"file-1"}}`))
+			case r.Method == http.MethodPost && r.URL.Path == "/v1/parse/jobs":
+				_, _ = w.Write([]byte(`{"job_id":"job-1","status":"completed","files":[{"name":"sample.pdf","status":"completed","output_files":{"zip":{"file_id":"out-zip"}}}]}`))
+			case r.Method == http.MethodGet && r.URL.Path == "/v1/files/out-zip/content":
+				w.Header().Set("Content-Type", "application/zip")
+				_, _ = w.Write(zipBytes)
+			default:
+				http.NotFound(w, r)
+			}
+		}))
+		defer server.Close()
+
+		origResolver := resolveMinerUModelForDispatch
+		t.Cleanup(func() { resolveMinerUModelForDispatch = origResolver })
+		baseURL := server.URL
+		apiKey := ""
+		resolveMinerUModelForDispatch = func(ctx context.Context, db *gorm.DB, tenantID, modelID string) (models.ModelDriver, string, *models.APIConfig, error) {
+			return &mineruTestDriver{}, "mineru-model", &models.APIConfig{ApiKey: &apiKey, BaseURL: &baseURL}, nil
+		}
+		setups := defaultSetups()
+		setups["pdf"]["parse_method"] = "mineru"
+		setups["pdf"]["output_format"] = "markdown"
+		setups["pdf"]["mineru_backend"] = "standard"
+		c := &ParserComponent{setups: setups}
+		_, err := c.Invoke(t.Context(), nil, map[string]any{
+			"binary":    []byte("%PDF-1.4"),
+			"file_type": "pdf",
+			"name":      "sample.pdf",
+			"tenant_id": "test-tenant",
+		})
+		if err == nil {
+			t.Fatal("Invoke: want error when V1 zip yields no sections")
+		}
+		if !strings.Contains(err.Error(), "no usable content_list") && !strings.Contains(err.Error(), "no sections") {
+			t.Fatalf("error = %q, want empty content_list extract error", err.Error())
+		}
+	})
 }
 
 func TestDispatch_PDFMonkeyOCRv2Markdown_UsesNativeParseEndpoint(t *testing.T) {

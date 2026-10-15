@@ -19,16 +19,33 @@ package parser
 import (
 	"strings"
 	"testing"
+
+	"ragflow/internal/entity"
 )
 
-func TestNewTableJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
-	item := NewTableJSONItem("<table><tr><td>value</td></tr></table>", "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
+func TestNewTableDataJSONItem_IncludesDocTypeAndChunkType(t *testing.T) {
+	td := &entity.TableData{
+		Grid:       [][]entity.TableCell{{{Text: "col"}}, {{Text: "value"}}},
+		HeaderRows: 1,
+		Caption:    "Sheet1",
+	}
+	item := NewTableDataJSONItem(td, "Sheet1", [][]float64{{1, 2, 2, 1, 1}})
 
 	if got, want := item[DocTypeKey], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", DocTypeKey, got, want)
 	}
 	if got, want := item["ck_type"], DocTypeTable; got != want {
 		t.Fatalf("item[%q] = %v, want %v", "ck_type", got, want)
+	}
+	got, ok := item["table"].(*entity.TableData)
+	if !ok {
+		t.Fatalf("item[%q] = %T, want *entity.TableData", "table", item["table"])
+	}
+	if got.Caption != "Sheet1" || len(got.Grid) != 2 {
+		t.Fatalf("item table = %+v, want caption Sheet1 and 2 rows", got)
+	}
+	if _, ok := item["positions"].([][]float64); !ok {
+		t.Fatalf("item[%q] missing positions matrix", "positions")
 	}
 }
 
@@ -78,14 +95,6 @@ func TestParseResult_Contract(t *testing.T) {
 			wantFmt: "text",
 		},
 		{
-			name: "html family only",
-			in: ParseResult{
-				OutputFormat: "html",
-				HTML:         "<p>x</p>",
-			},
-			wantFmt: "html",
-		},
-		{
 			name:    "failure clears payload",
 			in:      ParseResult{Err: errSentinel},
 			wantErr: true,
@@ -100,7 +109,7 @@ func TestParseResult_Contract(t *testing.T) {
 				if tc.in.OutputFormat != "" {
 					t.Errorf("OutputFormat on failure = %q, want empty", tc.in.OutputFormat)
 				}
-				if tc.in.JSON != nil || tc.in.Markdown != "" || tc.in.Text != "" || tc.in.HTML != "" {
+				if tc.in.JSON != nil || tc.in.Markdown != "" || tc.in.Text != "" {
 					t.Errorf("payload fields must be zero on failure; got %+v", tc.in)
 				}
 				return
@@ -198,13 +207,11 @@ func payloadFamily(r ParseResult) string {
 		return "markdown"
 	case "text":
 		return "text"
-	case "html":
-		return "html"
 	}
 	return ""
 }
 
-var allPayloadFamilies = []string{"json", "markdown", "text", "html"}
+var allPayloadFamilies = []string{"json", "markdown", "text"}
 
 func isPayloadZero(r ParseResult, family string) bool {
 	switch family {
@@ -214,8 +221,6 @@ func isPayloadZero(r ParseResult, family string) bool {
 		return r.Markdown == ""
 	case "text":
 		return r.Text == ""
-	case "html":
-		return r.HTML == ""
 	}
 	return false
 }

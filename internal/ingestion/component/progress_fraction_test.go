@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/utility"
 )
@@ -43,27 +44,27 @@ func (r *fractionRecorder) fractions() []float64 {
 }
 
 func TestFractionSplit_HandsOutMonotonicWindows(t *testing.T) {
-	split := newFractionSplit(true, false, true)
+	split := progress.NewSplit(true, false, true)
 
-	first := split.take(true)
-	skipped := split.take(false)
-	second := split.take(true)
+	first := split.Take(true)
+	skipped := split.Take(false)
+	second := split.Take(true)
 
-	if first.base != 0 || first.span != 0.5 {
+	if first.Base != 0 || first.Span != 0.5 {
 		t.Errorf("first window = %+v, want base 0 span 0.5", first)
 	}
-	if skipped.base != 0 || skipped.span != 0 {
+	if skipped.Base != 0 || skipped.Span != 0 {
 		t.Errorf("disabled window = %+v, want the zero window", skipped)
 	}
-	if second.base != 0.5 || second.span != 0.5 {
+	if second.Base != 0.5 || second.Span != 0.5 {
 		t.Errorf("second window = %+v, want base 0.5 span 0.5", second)
 	}
 
 	rec := &fractionRecorder{}
 	ctx := rec.context(t, "Extractor:abc")
-	first.report(ctx, 0.5)
-	skipped.report(ctx, 1)
-	second.report(ctx, 1)
+	first.Report(ctx, 0.5)
+	skipped.Report(ctx, 1)
+	second.Report(ctx, 1)
 
 	got := rec.fractions()
 	want := []float64{0.25, 1}
@@ -80,10 +81,10 @@ func TestFractionSplit_HandsOutMonotonicWindows(t *testing.T) {
 func TestFractionWindow_ClampsRatio(t *testing.T) {
 	rec := &fractionRecorder{}
 	ctx := rec.context(t, "Extractor:abc")
-	w := fractionWindow{base: 0.5, span: 0.5}
+	w := progress.Window{Base: 0.5, Span: 0.5}
 
-	w.report(ctx, -1)
-	w.report(ctx, 2)
+	w.Report(ctx, -1)
+	w.Report(ctx, 2)
 
 	got := rec.fractions()
 	if len(got) != 2 || got[0] != 0.5 || got[1] != 1 {
@@ -104,7 +105,7 @@ func TestAwaitFutures_ReportsEverySettledJob(t *testing.T) {
 		futs = append(futs, f)
 	}
 
-	w := fractionWindow{base: 0.5, span: 0.5}
+	w := progress.Window{Base: 0.5, Span: 0.5}
 	if err := awaitFutures(ctx, futs, w); err != nil {
 		t.Fatalf("awaitFutures: %v", err)
 	}
@@ -115,15 +116,15 @@ func TestAwaitFutures_ReportsEverySettledJob(t *testing.T) {
 	}
 	highest := got[0]
 	for i, f := range got {
-		if f < w.base || f > w.base+w.span {
-			t.Errorf("report %d = %v, outside window [%v %v]", i, f, w.base, w.base+w.span)
+		if f < w.Base || f > w.Base+w.Span {
+			t.Errorf("report %d = %v, outside window [%v %v]", i, f, w.Base, w.Base+w.Span)
 		}
 		highest = max(highest, f)
 	}
 	// Goroutines report concurrently, so only the highest value proves the
 	// phase reached the end of its window.
-	if highest != w.base+w.span {
-		t.Errorf("highest report = %v, want %v", highest, w.base+w.span)
+	if highest != w.Base+w.Span {
+		t.Errorf("highest report = %v, want %v", highest, w.Base+w.Span)
 	}
 }
 
@@ -131,7 +132,7 @@ func TestAwaitFutures_NoJobsNoReports(t *testing.T) {
 	rec := &fractionRecorder{}
 	ctx := rec.context(t, "Extractor:abc")
 
-	if err := awaitFutures(ctx, nil, fractionWindow{span: 1}); err != nil {
+	if err := awaitFutures(ctx, nil, progress.Window{Span: 1}); err != nil {
 		t.Fatalf("awaitFutures: %v", err)
 	}
 	if got := rec.fractions(); len(got) != 0 {

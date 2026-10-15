@@ -22,7 +22,7 @@
 //	api/db/joint_services/memory_message_service.py:
 //	    handle_save_to_memory_task / save_extracted_to_memory_only / extract_by_llm
 //
-// QueueSaveToMemoryTask persists the raw message and publishes a
+// queueSaveToMemoryTask persists the raw message and publishes a
 // task_type="memory" TaskMessage on the NATS tasks.RAGFLOW subject. The
 // Ingestor's shared consumer + worker pool dispatches it by TaskType to
 // HandleSaveToMemoryTask (see internal/ingestion/service/handleAndExecute and
@@ -490,17 +490,15 @@ func (s *MemoryMessageService) extractByLLM(ctx context.Context, mem *CreateMemo
 		messages = append(messages, models.Message{Role: "user", Content: PromptAssembler{}.AssembleUserPrompt(conversation, now, now)})
 	}
 
-	// Python prefers tenant_llm_id and falls back to llm_id;
-	// ResolveModelConfig accepts both tenant-model ids and model names.
+	// Python prefers tenant_llm_id and falls back to llm_id.
 	llmRef := mem.LLMID
 	if mem.TenantLLMID != nil && *mem.TenantLLMID != "" {
 		llmRef = *mem.TenantLLMID
 	}
-	target, err := NewModelSolver().ResolveModelConfig(ctx, mem.TenantID, entity.ModelTypeChat, llmRef)
+	chatModel, err := NewModelFactory().NewChatModel(ctx, ModelAccess{TenantID: mem.TenantID}, llmRef)
 	if err != nil {
 		return nil, fmt.Errorf("resolve chat model: %w", classifyMemoryTaskDependencyError(err))
 	}
-	chatModel := models.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 
 	_ = s.updateTaskProgress(ctx, taskID, 0.15, "Prepared prompts and LLM.")
 	temperature := mem.Temperature
@@ -547,10 +545,11 @@ func materializeMemoryExtraction(ctx context.Context, extracted []extractedMemor
 	for i, item := range extracted {
 		item.MessageID = generateRawMessageID(ctx)
 		item.ValidAt = formatMemoryTime(item.ValidAt, now)
-		item.InvalidAt = strings.TrimSpace(item.InvalidAt)
-		if item.InvalidAt != "" {
-			item.InvalidAt = formatMemoryTime(item.InvalidAt, now)
-		}
+		// An invalid_at the model made up normalizes to "", which persists as
+		// nil and leaves the memory valid (Python stores nothing via
+		// fallback=""). Falling back to now here would instead expire the
+		// memory at extraction time. valid_at keeps its now fallback above.
+		item.InvalidAt, _ = normalizeMemoryTime(item.InvalidAt)
 		materialized[i] = item
 	}
 	return materialized

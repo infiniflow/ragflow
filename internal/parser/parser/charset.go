@@ -231,8 +231,13 @@ func extractCharsetHint(hint string) string {
 	return ""
 }
 
+// utf8BOM is the byte-order mark as it appears once the payload is UTF-8.
+var utf8BOM = []byte("\ufeff")
+
 // DecodeToUTF8 converts arbitrary data bytes into UTF-8.
 // If data is already valid UTF-8, it returns data untouched with encoding "utf-8".
+// A leading byte-order mark is dropped on every path, as Python's decode_text
+// does, so it never leaks into the first heading, CSV header, or JSON token.
 // hint can be:
 //   - An explicit charset label (e.g. "gbk", "gb2312", "big5", from MIME headers)
 //   - A MIME Content-Type (e.g. "text/html", "application/xhtml+xml", "text/csv", "text/plain")
@@ -240,6 +245,11 @@ func extractCharsetHint(hint string) string {
 //
 // It returns the decoded UTF-8 bytes and the canonical encoding label used.
 func DecodeToUTF8(data []byte, hint string) ([]byte, string) {
+	decoded, label := decodeToUTF8(data, hint)
+	return bytes.TrimPrefix(decoded, utf8BOM), label
+}
+
+func decodeToUTF8(data []byte, hint string) ([]byte, string) {
 	if len(data) == 0 {
 		return data, "utf-8"
 	}

@@ -85,6 +85,12 @@ int parse_entry(const char *buff, entry *entry_i) {
         free(ucs4_buff);
     }
 
+    /* value_i may equal value_count here (e.g. exactly a power-of-two
+     * multiple of INITIAL_DICTIONARY_SIZE values on one line), which would
+     * write the NUL terminator one slot past the end of the buffer below.
+     * Grow the allocation to guarantee room for it. */
+    if (value_i >= value_count)
+        value_count = value_i + 1;
     entry_i->value = (ucs4_t **)realloc(entry_i->value, value_count * sizeof(ucs4_t *));
     entry_i->value[value_i] = NULL;
 

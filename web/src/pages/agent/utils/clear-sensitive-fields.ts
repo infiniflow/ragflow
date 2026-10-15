@@ -31,12 +31,26 @@ function isQueritOperator(value: unknown) {
   );
 }
 
+function isSearch1APIOperator(value: unknown) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return ['search1api', 'search1apisearch', 'search1apicrawl'].includes(
+    value.replace(/_/g, '').toLowerCase(),
+  );
+}
+
 function isNodeLabelApiKeyOperator(value: unknown) {
   if (typeof value !== 'string') {
     return false;
   }
 
-  return isQueritOperator(value) || nodeLabelApiKeyOperators.includes(value);
+  return (
+    isQueritOperator(value) ||
+    isSearch1APIOperator(value) ||
+    nodeLabelApiKeyOperators.includes(value)
+  );
 }
 
 export function clearSensitiveFields<T>(obj: T): T {
@@ -47,7 +61,8 @@ export function clearSensitiveFields<T>(obj: T): T {
 
     if (
       (apiKeyOperators.includes(value.component_name) ||
-        isQueritOperator(value.component_name)) &&
+        isQueritOperator(value.component_name) ||
+        isSearch1APIOperator(value.component_name)) &&
       get(value, 'params.api_key')
     ) {
       return { ...value, params: { ...value.params, api_key: '' } };

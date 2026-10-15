@@ -57,6 +57,8 @@ func (t *ScheduledTask) Start() {
 	t.running = true
 	t.mu.Unlock()
 
+	t.runSafely()
+
 	go func(stop <-chan struct{}) {
 		ticker := time.NewTicker(t.Interval)
 		defer ticker.Stop()

@@ -41,6 +41,7 @@ export function useChatSettingSchema() {
     linkup_api_key: z.string().optional(),
     parallel_api_key: z.string().optional(),
     querit_api_key: z.string().optional(),
+    search1api_api_key: z.string().optional(),
     serply_api_key: z.string().optional(),
     tavily_api_key: z.string().optional(),
     youcom_api_key: z.string().optional(),
@@ -52,6 +53,7 @@ export function useChatSettingSchema() {
         WebSearchProvider.Linkup,
         WebSearchProvider.Parallel,
         WebSearchProvider.Querit,
+        WebSearchProvider.Search1API,
         WebSearchProvider.Serply,
         WebSearchProvider.Tavily,
         WebSearchProvider.YouCom,
@@ -60,12 +62,6 @@ export function useChatSettingSchema() {
       .or(z.literal('')),
     reasoning: z.boolean().optional(),
     cross_languages: z.array(z.string()).optional(),
-    reference_metadata: z
-      .object({
-        include: z.boolean().optional(),
-        fields: z.array(z.string()).optional(),
-      })
-      .optional(),
   });
 
   const formSchema = z

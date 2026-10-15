@@ -399,15 +399,27 @@ func TestEmailParser_MsgTextOutputExcludesMetadata(t *testing.T) {
 		t.Fatalf("expected non-empty JSON items")
 	}
 
-	if !strings.Contains(result.Text, "subject:asdf") {
-		t.Errorf("text output missing subject, got %q", result.Text)
+	// The json path no longer duplicates the flattened body into
+	// result.Text; the searchable text lives in the JSON items instead
+	// (the header text item from searchableEmailHeaders). Assert on the
+	// concatenated item text so the test survives the json-path Text removal.
+	var sb strings.Builder
+	for _, it := range result.JSON {
+		if txt, _ := it["text"].(string); txt != "" {
+			sb.WriteString(txt)
+			sb.WriteString("\n")
+		}
 	}
-	if !strings.Contains(result.Text, "from:<christoph@freiraum.xyz>") {
-		t.Errorf("text output missing from, got %q", result.Text)
+	joined := sb.String()
+	if !strings.Contains(joined, "subject:asdf") {
+		t.Errorf("json output missing subject in item text, got %q", joined)
+	}
+	if !strings.Contains(joined, "from:<christoph@freiraum.xyz>") {
+		t.Errorf("json output missing from in item text, got %q", joined)
 	}
 	for _, leaked := range []string{"metadata", "message_id", "in_reply_to"} {
-		if strings.Contains(result.Text, leaked) {
-			t.Errorf("text output must not contain %q, got %q", leaked, result.Text)
+		if strings.Contains(joined, leaked) {
+			t.Errorf("json item text must not contain %q, got %q", leaked, joined)
 		}
 	}
 }
@@ -1462,5 +1474,61 @@ func TestHTMLBodyToText(t *testing.T) {
 				t.Errorf("htmlBodyToText(%q) = %q, want %q", tt.body, got, tt.want)
 			}
 		})
+	}
+}
+
+// TestEmailParserJSONPathOmitsDuplicateText verifies that the JSON output
+// path no longer duplicates the flattened email body into result.Text.
+// result.Text is only populated on the "text" output_format branch; on the
+// JSON branch the searchable text lives in the JSON items (body + the
+// header text item from searchableEmailHeaders), so the redundant json-path
+// Text is intentionally empty. This guards the removal of the json-path
+// Text assignment in parseEmail.
+func TestEmailParserJSONPathOmitsDuplicateText(t *testing.T) {
+	p := NewEmailParser() // default output_format -> "json"
+	p.ConfigureFromSetup(map[string]any{
+		"fields": []string{"from", "to", "cc", "bcc", "date", "subject", "body", "attachments", "metadata"},
+	})
+	data, err := os.ReadFile("testdata/sample.msg")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	res := p.ParseWithResult(t.Context(), "sample.msg", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if res.OutputFormat != "json" {
+		t.Fatalf("OutputFormat = %q, want json", res.OutputFormat)
+	}
+	if len(res.JSON) == 0 {
+		t.Fatal("JSON: want non-empty items")
+	}
+	if res.Text != "" {
+		t.Errorf("JSON-path Email result.Text = %q, want empty (text lives in JSON items)", res.Text)
+	}
+}
+
+// TestEmailParserTextPathKeepsText guards that the explicit "text"
+// output_format branch still populates result.Text — the only place the
+// field is read downstream (sys.files parseResultText, document preview,
+// and nested attachment re-parse).
+func TestEmailParserTextPathKeepsText(t *testing.T) {
+	p := NewEmailParser()
+	p.ConfigureFromSetup(map[string]any{"output_format": "text"})
+	const eml = "From: a@example.com\r\n" +
+		"To: b@example.com\r\n" +
+		"Subject: Hi\r\n" +
+		"Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n" +
+		"\r\n" +
+		"Hello body.\r\n"
+	res := p.ParseWithResult(t.Context(), "msg.eml", []byte(eml))
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if res.OutputFormat != "text" {
+		t.Fatalf("OutputFormat = %q, want text", res.OutputFormat)
+	}
+	if res.Text == "" {
+		t.Error("text-path Email result.Text empty, want body text")
 	}
 }

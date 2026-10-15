@@ -89,8 +89,7 @@ func (r *ReplicateModel) endpoint(apiConfig *APIConfig, suffix string) (string, 
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, suffix), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func replicateUsesVersionEndpoint(modelName string) bool {

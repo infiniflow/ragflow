@@ -56,7 +56,7 @@ type MergeGroup struct {
 
 // DeduperFactory builds a per-tenant Deduper. It is invoked once per batch so
 // the LLM deps can be resolved for the owning tenant.
-type DeduperFactory func(tenant string) (Deduper, error)
+type DeduperFactory func(ctx context.Context, tenant string) (Deduper, error)
 
 // llmDeduper wraps the component's GroupedDeduper (which internally uses
 // LLMMergeDecider for duplicate-judging), scoped to the whole KB batch.

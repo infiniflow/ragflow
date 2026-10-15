@@ -422,11 +422,18 @@ export const useFetchPureFileList = () => {
     mutationKey: [FileApiAction.FetchPureFileList],
     gcTime: 0,
 
-    mutationFn: async (parentId: string) => {
+    mutationFn: async ({
+      parentId,
+      tenantId,
+    }: {
+      parentId: string;
+      tenantId?: string;
+    }) => {
       const { data } = await fileManagerService.listFile({
         parent_id: parentId,
         page_size: 100,
         page: 1,
+        ...(tenantId ? { tenant_id: tenantId } : {}),
       });
 
       return data;

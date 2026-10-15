@@ -81,7 +81,10 @@ const DebugContent = ({
         }
 
         if (cur.optional) {
-          fieldSchema = fieldSchema.optional();
+          fieldSchema = z.preprocess(
+            (val) => (val === '' ? undefined : val),
+            fieldSchema.optional(),
+          );
         }
 
         const index = idx.toString();

@@ -31,7 +31,11 @@
 
 package parser
 
-import "context"
+import (
+	"context"
+
+	"ragflow/internal/entity"
+)
 
 // ParseResult is the structured return value of a parse operation. JSON holds
 // structured backend output when available; the rendered fields carry
@@ -61,7 +65,7 @@ type ParseResult struct {
 	// Shape depends on the parser family: PDF emits
 	// `[]map[string]any` with `text` + `doc_type_kwd` keys (and
 	// optional `image` / `layout` / `positions` fields);
-	// Markdown / HTML / text emit normalized
+	// Markdown / text emit normalized
 	// `{text, doc_type_kwd}` items; image emits an image payload and, after
 	// ingestion enhancement, its VLM description.
 	JSON []map[string]any
@@ -71,9 +75,6 @@ type ParseResult struct {
 
 	// Text is a backend response awaiting normalization.
 	Text string
-
-	// HTML is a backend response awaiting normalization.
-	HTML string
 
 	// Err is the failure reason. On non-nil Err, all payload
 	// fields are zero values.
@@ -108,10 +109,14 @@ func NewTextJSONItem(text string) map[string]any {
 	}
 }
 
-// NewTableJSONItem constructs a canonical table JSON item for parser output.
-func NewTableJSONItem(html string, sheet string, positions [][]float64) map[string]any {
+// NewTableDataJSONItem constructs a canonical structured table JSON item for
+// parser output. It carries the parsed TableData contract (caption, header
+// rows, cell text already normalized the same way the legacy chunker
+// normalized HTML <td>/<th> text) instead of the legacy HTML markup string,
+// so the chunker reads rows directly without re-parsing any markup.
+func NewTableDataJSONItem(td *entity.TableData, sheet string, positions [][]float64) map[string]any {
 	item := map[string]any{
-		"text":     html,
+		"table":    td,
 		DocTypeKey: DocTypeTable,
 		"ck_type":  DocTypeTable,
 	}

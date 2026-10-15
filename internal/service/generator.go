@@ -26,8 +26,8 @@ import (
 	"time"
 
 	"ragflow/internal/common"
-	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/rag/prompts"
 
 	"go.uber.org/zap"
 )
@@ -66,7 +66,7 @@ func KeywordExtraction(ctx context.Context, chatModel *modelModule.ChatModel, co
 	}
 
 	// Load keyword prompt template from file
-	keywordPromptTemplate, err := LoadPrompt("keyword_prompt")
+	keywordPromptTemplate, err := (prompts.EmbeddedPromptLoader{}).Load("keyword_prompt")
 	if err != nil {
 		return "", fmt.Errorf("failed to load keyword prompt: %w", err)
 	}
@@ -122,33 +122,21 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 		zap.String("llmID", llmID),
 		zap.Strings("languages", languages))
 
-	modelSolver := NewModelSolver()
+	modelFactory := NewModelFactory()
 	var chatModel *modelModule.ChatModel
 	var err error
 
+	access := ModelAccess{TenantID: tenantID}
 	if llmID != "" {
-		modelTypes, err := modelSolver.ResolveModelType(ctx, tenantID, llmID)
-		if err != nil {
-			return query, fmt.Errorf("failed to get model type: %w", err)
-		}
-		resolvedType := entity.ModelTypeChat
-		for _, mt := range modelTypes {
-			if mt == entity.ModelTypeImage2Text {
-				resolvedType = entity.ModelTypeImage2Text
-				break
-			}
-		}
-		target, err := modelSolver.ResolveModelConfig(ctx, tenantID, resolvedType, llmID)
+		chatModel, err = modelFactory.NewChatModel(ctx, access, llmID)
 		if err != nil {
 			return query, fmt.Errorf("failed to get chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	} else {
-		target, err := modelSolver.ResolveDefaultModelConfig(ctx, tenantID, entity.ModelTypeChat)
+		chatModel, err = modelFactory.NewDefaultChatModel(ctx, access)
 		if err != nil {
 			return query, fmt.Errorf("failed to get default chat model: %w", err)
 		}
-		chatModel = modelModule.NewChatModel(target.Driver, &target.ModelName, target.APIConfig)
 	}
 	if chatModel == nil {
 		return query, fmt.Errorf("failed to get chat model: nil chat model")
@@ -163,13 +151,13 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	}
 
 	// Load system prompt from embedded file
-	systemPrompt, err := LoadPrompt("cross_languages_sys_prompt")
+	systemPrompt, err := (prompts.EmbeddedPromptLoader{}).Load("cross_languages_sys_prompt")
 	if err != nil {
 		return query, fmt.Errorf("failed to load system prompt: %w", err)
 	}
 
-	// Load user prompt template from file
-	userPromptTemplate, err := LoadPrompt("cross_languages_user_prompt")
+	// Load user prompt template
+	userPromptTemplate, err := (prompts.EmbeddedPromptLoader{}).Load("cross_languages_user_prompt")
 	if err != nil {
 		return query, fmt.Errorf("failed to load user prompt: %w", err)
 	}
@@ -230,9 +218,8 @@ func CrossLanguages(ctx context.Context, tenantID string, llmID string, query st
 	return query, nil
 }
 
-// fullQuestionTmpl mirrors the Python Jinja2 template
-// rag/prompts/full_question_prompt.md. The rendered output is used as the
-// system message; the user message is just "Output: ".
+// fullQuestionTmpl is rendered as the system message; the user message is
+// just "Output: ".
 var fullQuestionTmpl = template.Must(template.New("full_question").Parse(`## Role
 A helpful assistant.
 
@@ -306,8 +293,6 @@ var errorMarkerRE = regexp.MustCompile(`\*\*ERROR\*\*`)
 // The prompt structure mirrors Python's full_question():
 //   - System: fullQuestionTmpl (instructions, examples, conversation)
 //   - User: "Output: "
-//
-// This matches rag/prompts/full_question_prompt.md rendered via Jinja2.
 func FullQuestion(
 	ctx context.Context,
 	chatModel *modelModule.ChatModel,

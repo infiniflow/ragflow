@@ -22,6 +22,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 	"strconv"
 	"strings"
@@ -95,10 +96,16 @@ func CommitFolderResolver(h *FileCommitHandler, entityType, urlParam string) gin
 		// Authorize, not just existence: the commit surface exposes artifact
 		// contents and history, so it needs the same access check the dataset
 		// routes apply.
-		if entityType == "datasets" && !h.kbDAO.Accessible(ctx, dao.DB, id, user.ID) {
-			common.ResponseWithCodeData(c, common.CodeNotFound, nil, fmt.Sprintf("%s not found", entityType))
-			c.Abort()
-			return
+		if entityType == "datasets" {
+			operation := permission.OperationUpdate
+			if c.Request.Method == "GET" || c.Request.Method == "HEAD" {
+				operation = permission.OperationRead
+			}
+			if err := service.CheckDatasetAccess(ctx, permission.Subject{UserID: user.ID}, id, operation); err != nil {
+				respondHTTPPermissionError(c, err, true)
+				c.Abort()
+				return
+			}
 		}
 		folderID, err := h.ResolveFolderID(ctx, entityType, id)
 		if err != nil {
@@ -136,10 +143,13 @@ func (h *FileCommitHandler) resolveDatasetFolderID(ctx context.Context, datasetI
 func (h *FileCommitHandler) folderAccessible(c *gin.Context, userID, folderID string) bool {
 	ctx := c.Request.Context()
 	folder, err := h.fileDAO.GetByID(ctx, dao.DB, folderID)
-	if err != nil || folder == nil {
+	if err != nil || folder == nil || folder.Type != "folder" {
 		return false
 	}
-	return service.CheckFileTeamPermission(ctx, h.fileDAO, folder, userID)
+	return permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: userID}, permission.ResourceRef{
+		Kind: permission.ResourceKindFolder,
+		ID:   folder.ID,
+	}, permission.OperationRead) == nil
 }
 
 func commitFolderID(c *gin.Context) string {
@@ -669,7 +679,10 @@ func (h *FileCommitHandler) GetFileVersionHistory(c *gin.Context) {
 
 	ctx := c.Request.Context()
 	file, err := h.fileDAO.GetByID(ctx, dao.DB, fileID)
-	if err != nil || file == nil || !service.CheckFileTeamPermission(ctx, h.fileDAO, file, user.ID) {
+	if err != nil || file == nil || permission.NewDatabaseChecker(dao.DB).CheckResource(ctx, permission.Subject{UserID: user.ID}, permission.ResourceRef{
+		Kind: permission.ResourceKindFile,
+		ID:   fileID,
+	}, permission.OperationRead) != nil {
 		common.ResponseWithCodeData(c, common.CodeNotFound, nil, "File not found")
 		return
 	}
