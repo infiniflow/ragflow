@@ -159,7 +159,7 @@ var tokenizedFullTextFields = []string{"title_tks", "title_sm_tks", "important_t
 
 // CreateChunkStore creates or upgrades the legacy shared tenant table. The
 // dataset ID is a row-level discriminator for chunk and memory tables.
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if err := validateIdentifier(baseName); err != nil {
 		return err
 	}
@@ -326,28 +326,38 @@ func (e *Engine) withDDLLock(ctx context.Context, lockName string, check func() 
 	}
 	timeout := time.Duration(timeoutSeconds) * time.Second
 	distributed := kvrocks.NewDistributedLock(lockName, "", timeout, timeout)
-	if distributed != nil && !distributed.Acquire(ctx) {
-		deadline := time.NewTimer(timeout)
-		defer deadline.Stop()
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-	waitForLock:
-		for {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-deadline.C:
-				return fmt.Errorf("timeout waiting for DDL %s", lockName)
-			case <-ticker.C:
-				exists, err = check()
-				if err != nil {
-					return err
-				}
-				if exists {
-					return nil
-				}
-				if distributed.Acquire(ctx) {
-					break waitForLock
+	if distributed != nil {
+		acquired, err := distributed.Acquire(ctx)
+		if err != nil {
+			return err
+		}
+		if !acquired {
+			deadline := time.NewTimer(timeout)
+			defer deadline.Stop()
+			ticker := time.NewTicker(time.Second)
+			defer ticker.Stop()
+		waitForLock:
+			for {
+				select {
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-deadline.C:
+					return fmt.Errorf("timeout waiting for DDL %s", lockName)
+				case <-ticker.C:
+					exists, err = check()
+					if err != nil {
+						return err
+					}
+					if exists {
+						return nil
+					}
+					got, err := distributed.Acquire(ctx)
+					if err != nil {
+						return err
+					}
+					if got {
+						break waitForLock
+					}
 				}
 			}
 		}

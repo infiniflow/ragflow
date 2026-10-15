@@ -61,12 +61,10 @@ func (n *NovitaModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	if chatModelConfig != nil {
@@ -104,12 +102,10 @@ func (n *NovitaModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 
 	if chatModelConfig != nil {
@@ -306,12 +302,10 @@ func (n *NovitaModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -388,12 +382,10 @@ func (n *NovitaModel) Embed(ctx context.Context, modelName *string, request Embe
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -510,7 +502,7 @@ func (n *NovitaModel) Rerank(ctx context.Context, modelName *string, request Rer
 	if n.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("novita: no rerank URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Rerank)
+	url := joinURL(baseURL, n.baseModel.URLSuffix.Rerank)
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -590,11 +582,10 @@ func (n *NovitaModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[st
 		return nil, err
 	}
 
-	baseURL, err := n.baseModel.GetBaseURL(apiConfig)
+	url, err := n.baseModel.EndpointURL(apiConfig, n.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, n.baseModel.URLSuffix.Balance)
 
 	// Build request body
 	reqBody := map[string]interface{}{}

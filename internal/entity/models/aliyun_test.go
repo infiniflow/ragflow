@@ -17,11 +17,14 @@
 package models
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -933,5 +936,276 @@ func TestAliyunEmbedNativeRejectsTooNegativeIndex(t *testing.T) {
 		EmbedRequest{Texts: []string{"a", "b"}}, &APIConfig{ApiKey: &apiKey}, nil)
 	if err == nil || !strings.Contains(err.Error(), "out of range") {
 		t.Fatalf("err = %v, want out-of-range error", err)
+	}
+}
+
+const aliyunASRTestSuffix = "api/v1/services/aigc/multimodal-generation/generation"
+
+// newAliyunASRTestServer stubs the DashScope multimodal-generation endpoint for
+// ASR: POST returns one message choice whose content carries the transcription.
+func newAliyunASRTestServer(t *testing.T, transcription string, requestBody chan<- map[string]interface{}, requestPath chan<- string) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		var body map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if requestPath != nil {
+			requestPath <- r.URL.Path
+		}
+		if requestBody != nil {
+			requestBody <- body
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := fmt.Fprintf(w, `{"output":{"choices":[{"finish_reason":"stop","message":{"role":"assistant","content":[{"text":%q}]}}]},"request_id":"req-1"}`, transcription); err != nil {
+			t.Errorf("failed to write ASR response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func writeAliyunASRTestFile(t *testing.T, name string, content []byte) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(path, content, 0o600); err != nil {
+		t.Fatalf("write audio file: %v", err)
+	}
+	return path
+}
+
+func aliyunASRMessages(t *testing.T, body map[string]interface{}) []map[string]interface{} {
+	t.Helper()
+	input, ok := body["input"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("input = %T, want JSON object", body["input"])
+	}
+	raw, ok := input["messages"].([]interface{})
+	if !ok {
+		t.Fatalf("input.messages = %T, want JSON array", input["messages"])
+	}
+	messages := make([]map[string]interface{}, 0, len(raw))
+	for _, item := range raw {
+		message, ok := item.(map[string]interface{})
+		if !ok {
+			t.Fatalf("message = %T, want JSON object", item)
+		}
+		messages = append(messages, message)
+	}
+	return messages
+}
+
+func aliyunASRContentString(t *testing.T, message map[string]interface{}, key string) string {
+	t.Helper()
+	content, ok := message["content"].([]interface{})
+	if !ok || len(content) == 0 {
+		t.Fatalf("content = %v, want non-empty JSON array", message["content"])
+	}
+	part, ok := content[0].(map[string]interface{})
+	if !ok {
+		t.Fatalf("content[0] = %T, want JSON object", content[0])
+	}
+	value, _ := part[key].(string)
+	return value
+}
+
+func TestAliyunTranscribeAudioSendsDataURLAndParsesText(t *testing.T) {
+	withSSRFBypass(t)
+	requestBody := make(chan map[string]interface{}, 1)
+	requestPath := make(chan string, 1)
+	server := newAliyunASRTestServer(t, "hello world", requestBody, requestPath)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	audio := []byte("RIFF....WAVE")
+	file := writeAliyunASRTestFile(t, "clip.wav", audio)
+
+	response, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err != nil {
+		t.Fatalf("TranscribeAudio: %v", err)
+	}
+	if response.Text != "hello world" {
+		t.Errorf("text = %q, want %q", response.Text, "hello world")
+	}
+
+	if got := <-requestPath; got != "/"+aliyunASRTestSuffix {
+		t.Errorf("request path = %q, want /%s", got, aliyunASRTestSuffix)
+	}
+	body := <-requestBody
+	if body["model"] != "qwen-asr-flash" {
+		t.Errorf("model = %v, want qwen-asr-flash", body["model"])
+	}
+	messages := aliyunASRMessages(t, body)
+	if len(messages) != 2 {
+		t.Fatalf("messages = %d, want 2 (system + user)", len(messages))
+	}
+	if messages[0]["role"] != "system" {
+		t.Errorf("messages[0].role = %v, want system", messages[0]["role"])
+	}
+	if messages[1]["role"] != "user" {
+		t.Errorf("messages[1].role = %v, want user", messages[1]["role"])
+	}
+	wantURL := "data:audio/wav;base64," + base64.StdEncoding.EncodeToString(audio)
+	if got := aliyunASRContentString(t, messages[1], "audio"); got != wantURL {
+		t.Errorf("audio = %q, want %q", got, wantURL)
+	}
+
+	params, ok := body["parameters"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parameters = %T, want JSON object", body["parameters"])
+	}
+	if params["result_format"] != "message" {
+		t.Errorf("result_format = %v, want message", params["result_format"])
+	}
+	options, ok := params["asr_options"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("asr_options = %T, want JSON object", params["asr_options"])
+	}
+	if options["enable_lid"] != true || options["enable_itn"] != false {
+		t.Errorf("asr_options = %v, want defaults enable_lid=true enable_itn=false", options)
+	}
+}
+
+func TestAliyunTranscribeAudioHonorsContextAndASROptions(t *testing.T) {
+	withSSRFBypass(t)
+	requestBody := make(chan map[string]interface{}, 1)
+	server := newAliyunASRTestServer(t, "ok", requestBody, nil)
+	ctx := t.Context()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.mp3", []byte("ID3...."))
+
+	_, err := model.TranscribeAudio(ctx, &modelName, &file, &APIConfig{ApiKey: &apiKey}, &ASRConfig{Params: map[string]interface{}{
+		"context":    "NAVI vs Faze",
+		"language":   "en",
+		"enable_itn": true,
+	}}, nil)
+	if err != nil {
+		t.Fatalf("TranscribeAudio: %v", err)
+	}
+	body := <-requestBody
+	messages := aliyunASRMessages(t, body)
+	if got := aliyunASRContentString(t, messages[0], "text"); got != "NAVI vs Faze" {
+		t.Errorf("system text = %q, want NAVI vs Faze", got)
+	}
+	if got := aliyunASRContentString(t, messages[1], "audio"); !strings.HasPrefix(got, "data:audio/mpeg;base64,") {
+		t.Errorf("audio data URL = %q, want mp3 MIME prefix", got)
+	}
+	params, ok := body["parameters"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("parameters = %T, want JSON object", body["parameters"])
+	}
+	options, ok := params["asr_options"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("asr_options = %T, want JSON object", params["asr_options"])
+	}
+	if options["language"] != "en" {
+		t.Errorf("language = %v, want en", options["language"])
+	}
+	if options["enable_itn"] != true {
+		t.Errorf("enable_itn = %v, want true (explicit override)", options["enable_itn"])
+	}
+	if options["enable_lid"] != true {
+		t.Errorf("enable_lid = %v, want default true", options["enable_lid"])
+	}
+}
+
+func TestAliyunTranscribeAudioSurfacesAPIError(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(`{"code":"InvalidApiKey","message":"Invalid API-key provided."}`))
+	}))
+	defer server.Close()
+
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "bad-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	var statusErr *APIStatusError
+	if !errors.As(err, &statusErr) || statusErr.Status != http.StatusUnauthorized {
+		t.Fatalf("error = %v, want APIStatusError with status 401", err)
+	}
+	if !strings.Contains(statusErr.Body, "InvalidApiKey") {
+		t.Fatalf("error body = %q, want to include InvalidApiKey", statusErr.Body)
+	}
+}
+
+func TestAliyunTranscribeAudioRejectsEmptyFile(t *testing.T) {
+	withSSRFBypass(t)
+	model := NewAliyunModel(
+		map[string]string{"default": "https://dashscope.example"},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "empty.wav", nil)
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || err.Error() != "audio file is empty" {
+		t.Fatalf("error = %v, want empty audio error", err)
+	}
+}
+
+func TestAliyunTranscribeAudioRequiresASRSuffix(t *testing.T) {
+	withSSRFBypass(t)
+	model := NewAliyunModel(
+		map[string]string{"default": "https://dashscope.example"},
+		URLSuffix{Chat: "compatible-mode/v1/chat/completions"},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	_, err := model.TranscribeAudio(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil)
+	if err == nil || err.Error() != "aliyun ASR URL suffix is required" {
+		t.Fatalf("error = %v, want missing ASR suffix error", err)
+	}
+}
+
+func TestAliyunTranscribeAudioWithSenderSendsSingleChunk(t *testing.T) {
+	withSSRFBypass(t)
+	server := newAliyunASRTestServer(t, "transcribed", nil, nil)
+	model := NewAliyunModel(
+		map[string]string{"default": server.URL},
+		URLSuffix{ASR: aliyunASRTestSuffix},
+	)
+	apiKey := "test-key"
+	modelName := "qwen-asr-flash"
+	file := writeAliyunASRTestFile(t, "clip.wav", []byte("data"))
+
+	var chunks []string
+	err := model.TranscribeAudioWithSender(t.Context(), &modelName, &file, &APIConfig{ApiKey: &apiKey}, nil, nil, func(content, _ *string) error {
+		if content != nil {
+			chunks = append(chunks, *content)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("TranscribeAudioWithSender: %v", err)
+	}
+	if len(chunks) != 1 || chunks[0] != "transcribed" {
+		t.Fatalf("chunks = %v, want [transcribed]", chunks)
 	}
 }

@@ -32,7 +32,7 @@ func TestBuildDOCXJSONSections_FromJSON(t *testing.T) {
 		{"text": "Title", "image": nil, "doc_type_kwd": "text", "ck_type": "heading"},
 		{"text": "Hello", "image": nil, "doc_type_kwd": "text"},
 		{"text": "", "image": "aGVsbG8=", "doc_type_kwd": "image"},
-		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Rows: [][]string{{"cell"}}, HeaderRows: 1}},
+		{"image": nil, "doc_type_kwd": "table", "table": &entity.TableData{Grid: [][]entity.TableCell{{{Text: "cell", ColSpan: 1, RowSpan: 1}}}, HeaderRows: 1}},
 		{"text": "item1", "image": nil, "doc_type_kwd": "text"},
 	}
 	if !reflect.DeepEqual(got, want) {

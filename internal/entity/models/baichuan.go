@@ -57,11 +57,10 @@ func (b *BaichuanModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := b.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -81,11 +80,10 @@ func (b *BaichuanModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
@@ -104,11 +102,10 @@ func (b *BaichuanModel) Embed(ctx context.Context, modelName *string, request Em
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,

@@ -140,7 +140,7 @@ func TestXLSParser_PreservesFormulaErrors(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("res.JSON len = %d, want 1", len(res.JSON))
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<tr><td>#DIV/0!</td></tr>") {
 		t.Fatalf("table markup = %q, want formula error row", text)
 	}
@@ -173,7 +173,7 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 		t.Fatalf("res.JSON len = %d, want one table for each sheet", len(res.JSON))
 	}
 
-	first := res.JSON[0]
+	first := res.JSON[0].ToMap()
 	text := tableItemHTML(t, first)
 	if !strings.Contains(text, "<caption>Inventory</caption>") ||
 		!strings.Contains(text, "<tr><th>Name</th><th>Count</th></tr>") ||
@@ -194,7 +194,7 @@ func TestXLSParser_GenuineBIFF8SpreadsheetJSONOutput(t *testing.T) {
 		t.Fatalf("last row position = %v, want %v", got, want)
 	}
 
-	second := res.JSON[1]
+	second := res.JSON[1].ToMap()
 	secondText := tableItemHTML(t, second)
 	if !strings.Contains(secondText, "<caption>Notes</caption>") ||
 		!strings.Contains(secondText, "<tr><td>Legacy</td><td>BIFF8</td></tr>") {
@@ -224,7 +224,7 @@ func TestXLSParser_SpreadsheetJSONOutput(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatalf("res.JSON should have structured table items")
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	if item["ck_type"] != "table" {
 		t.Errorf("table item ck_type = %v, want table", item["ck_type"])
 	}
@@ -271,8 +271,8 @@ func TestXLSXParser_JSONOutput(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("res.JSON = %#v, want one segmented HTML table item", res.JSON)
 	}
-	if res.JSON[0]["ck_type"] != "table" {
-		t.Errorf("item ck_type = %v, want table", res.JSON[0]["ck_type"])
+	if res.JSON[0].ToMap()["ck_type"] != "table" {
+		t.Errorf("item ck_type = %v, want table", res.JSON[0].ToMap()["ck_type"])
 	}
 
 	// Even if configured to legacy "html", format is unified to "json"
@@ -326,7 +326,7 @@ func TestXLSParser_ImagesDoNotRunOCR(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
 	var imageItem map[string]any
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "image" {
 			imageItem = item
 			break
@@ -375,7 +375,7 @@ func TestXLSParser_CapsEmbeddedImageCount(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
 	imageCount := 0
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "image" {
 			imageCount++
 		}

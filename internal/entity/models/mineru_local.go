@@ -119,38 +119,47 @@ func (m *MinerULocalModel) CheckConnection(ctx context.Context, apiConfig *APICo
 	if err != nil {
 		return err
 	}
+	if !strings.HasPrefix(resolvedBaseURL, "http://") && !strings.HasPrefix(resolvedBaseURL, "https://") {
+		resolvedBaseURL = "http://" + resolvedBaseURL
+	}
+
 	u, err := url.Parse(resolvedBaseURL)
 	if err != nil {
 		return fmt.Errorf("invalid base URL: %w", err)
 	}
-	// MinerU's API service exposes GET /health; keep scheme/host and replace
-	// only the path so a base URL with extra path segments or query stays sane.
-	u.Path = "/health"
+	token := ""
+	if apiConfig != nil && apiConfig.ApiKey != nil {
+		token = MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey)
+	}
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
-	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
-	}
-	// Same token extraction as ParseFile/ShowTask: a plain api_key is a bearer
-	// token, while MinerU provider JSON config carries no bearer unless it
-	// embeds mineru_api_key/access_token — sending the raw payload would be an
-	// invalid header.
-	if apiConfig != nil && apiConfig.ApiKey != nil {
-		if token := MinerUBearerTokenFromAPIKey(*apiConfig.ApiKey); token != "" {
-			req.Header.Set("Authorization", "Bearer "+token)
+
+	// MinerU 4.0 serves GET /v1/health; 3.x serves GET /health. Probe V1
+	// first so a 4.0-only service (no /health) still verifies, then fall
+	// back. 401/403 mean the credentials are wrong; any other HTTP answer
+	// (including 404 on a server without that path) still proves reachability
+	// once at least one probe got a response.
+	v1URL := *u
+	v1URL.Path = "/v1/health"
+	v1Code, v1Err := minerUProbeGET(ctx, m.baseModel.httpClient, v1URL.String(), token)
+	if v1Err == nil && v1Code != http.StatusNotFound && v1Code != http.StatusMethodNotAllowed {
+		if v1Code == http.StatusUnauthorized || v1Code == http.StatusForbidden {
+			return fmt.Errorf("authentication failed (HTTP %d)", v1Code)
 		}
+		return nil
 	}
-	resp, err := m.baseModel.httpClient.Do(req)
+
+	legacy := *u
+	legacy.Path = "/health"
+	code, err := minerUProbeGET(ctx, m.baseModel.httpClient, legacy.String(), token)
 	if err != nil {
+		if v1Err != nil {
+			return fmt.Errorf("connection failed: %w", v1Err)
+		}
 		return fmt.Errorf("connection failed: %w", err)
 	}
-	defer resp.Body.Close()
-	// Match the hosted mineru.net driver's semantics (mineru.go): 401/403 mean
-	// the credentials are wrong, while any other HTTP answer (e.g. 404 on a
-	// service without /health) still proves the endpoint is reachable.
-	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return fmt.Errorf("authentication failed (HTTP %d)", resp.StatusCode)
+	if code == http.StatusUnauthorized || code == http.StatusForbidden {
+		return fmt.Errorf("authentication failed (HTTP %d)", code)
 	}
 	return nil
 }
@@ -168,7 +177,7 @@ func (m *MinerULocalModel) ParseFile(ctx context.Context, modelName *string, con
 	if err != nil {
 		return nil, err
 	}
-	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
+	apiURL := joinURL(resolvedBaseURL, m.baseModel.URLSuffix.DocumentParse)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -277,11 +286,11 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		return nil, fmt.Errorf("taskID is empty")
 	}
 
-	resolvedBaseURL, err := m.GetBaseURL(apiConfig)
+	taskURL, err := m.baseModel.EndpointURL(apiConfig, m.baseModel.URLSuffix.Task)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s/%s/result", resolvedBaseURL, m.baseModel.URLSuffix.Task, taskID)
+	url := taskURL + "/" + taskID + "/result"
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
 

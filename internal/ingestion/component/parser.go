@@ -88,6 +88,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -274,8 +275,27 @@ func (c *ParserComponent) Check() error {
 				return errors.New("parser: image ocr_enabled must be a boolean")
 			}
 		}
+		// An image needs at least one text source: local OCR or the global
+		// vision enhancement. With neither, the item carries no text and the
+		// Tokenizer drops it, so reject the configuration at build time
+		// instead of indexing nothing silently.
+		if !c.enableVisionEnhancement && !imageSetupRunsOCR(img) {
+			return errors.New("parser: image has no text source: OCR is off and vision enhancement is disabled")
+		}
 	}
 	return nil
+}
+
+// imageSetupRunsOCR mirrors the OCR selection in maybeDispatchImage
+// (media_dispatch.go): the ocr_enabled switch wins when present, otherwise
+// the legacy parse_method reading applies ("ocr"/empty runs local OCR).
+
+func imageSetupRunsOCR(setup schema.ParserSetup) bool {
+	if ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool); hasOCRFlag {
+		return ocrEnabled
+	}
+	method := getStringOr(setup, "parse_method", "")
+	return method == "" || strings.EqualFold(method, "ocr")
 }
 
 func defaultSetups() map[string]schema.ParserSetup {
@@ -525,13 +545,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
 		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
 		enhanceOn := c.enableVisionEnhancement
-		split := newFractionSplit(parsePagesOn, enhanceOn)
-		pageWin := split.take(parsePagesOn)
-		visionWin := split.take(enhanceOn)
+		split := progress.NewSplit(parsePagesOn, enhanceOn)
+		pageWin := split.Take(parsePagesOn)
+		visionWin := split.Take(enhanceOn)
 
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
-			pageWin.report(ctx, 1.0)
+			pageWin.Report(ctx, 1.0)
 		}
 
 		if c.enableVisionEnhancement {
@@ -571,7 +591,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	items, _ := out["json"].([]map[string]any)
+	items, _ := out["json"].([]parser.DocItem)
 	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
@@ -579,7 +599,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
@@ -593,9 +613,6 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	}
 	if dispatched.Markdown != "" {
 		return "markdown"
-	}
-	if dispatched.HTML != "" {
-		return "html"
 	}
 	if dispatched.Text != "" {
 		return "text"

@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -25,6 +24,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -54,16 +54,10 @@ const (
 var monkeyOCRv2ImagePattern = regexp.MustCompile(`!\[([^]]*)\]\(([^)]+)\)`)
 
 var (
-	pdfVisionPromptLoader  = loadPDFVisionPrompt
+	pdfVisionPromptLoader  = (prompts.EmbeddedPromptLoader{}).Load
 	pdfVisionPageRenderer  = defaultRenderPDFVisionPages
 	pdfVisionModelResolver = defaultPDFVisionModelResolver
 	pdfVisionChatInvoker   = defaultPDFVisionChatInvoker
-)
-
-var (
-	pdfVisionPromptCache   = make(map[string]string)
-	pdfVisionPromptCacheMu sync.RWMutex
-	pdfVisionPrompts       promptDirState
 )
 
 func maybeDispatchPDFVision(
@@ -252,11 +246,11 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	return buildMarkdownOCRDispatchResult(md), nil
 }
 
-func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
+func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
 	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
 	if err != nil {
 		warnParserNormalizationFallback(filename, "markdown", err)
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	// OCR Markdown is an untrusted backend response. Keep normalization
 	// deterministic and local: embedded data URIs remain available, while
@@ -265,11 +259,11 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
 	if res.Err != nil {
 		warnParserNormalizationFallback(filename, "markdown", res.Err)
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	if len(res.JSON) == 0 {
 		warnParserNormalizationFallback(filename, "markdown", fmt.Errorf("parser returned no JSON items"))
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	return res.JSON
 }
@@ -482,10 +476,9 @@ func getAnyString(object map[string]any, keys ...string) string {
 	return ""
 }
 
-// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model
-// via the streaming /file_parse endpoint and returns parsed sections.
-// Mirrors Python's mineru_parser.py:parse_PDF which POSTs with
-// stream=True and reads the zip response body directly (no polling).
+// dispatchMinerUPDF submits a PDF to the selected MinerU OCR model.
+// MinerU 4.0 uses the V1 upload/job API; 3.x still POSTs /file_parse with
+// stream=True and returns a zip body (Python mineru_parser.py:parse_PDF).
 func dispatchMinerUPDF(
 	ctx context.Context,
 	db *gorm.DB,
@@ -516,7 +509,6 @@ func dispatchMinerUPDF(
 	if strings.TrimSpace(baseURL) == "" {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU requires a base URL (instance base_url, mineru_apiserver, or MINERU_APISERVER)")
 	}
-	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 
 	parseMethod := mineruAPIParseMethod(getStringOr(setup, "mineru_parse_method", ""))
 	// MinerU's language is an OCR engine parameter, not the caption language:
@@ -531,10 +523,40 @@ func dispatchMinerUPDF(
 	mineruLang := mineruLangCode(lang)
 	backend := modelModule.ResolveMinerUBackend(getStringOr(setup, "mineru_backend", ""), apiKeyRaw)
 	serverURL := modelModule.ResolveMinerUServerURL(getStringOr(setup, "mineru_server_url", ""), apiKeyRaw)
-	if err := modelModule.ValidateMinerUConfig(backend, serverURL); err != nil {
+
+	v1, err := modelModule.MinerUSupportsV1(ctx, baseURL, apiKeyRaw)
+	if err != nil {
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU probe: %w", err)
+	}
+	if err := modelModule.ValidateMinerUConfigForAPI(backend, serverURL, v1); err != nil {
 		return parser.ParseResult{}, err
 	}
 
+	if v1 {
+		result, err := modelModule.ParseMinerUV1(ctx, baseURL, apiKeyRaw, filename, binary, backend, parseMethod, 0)
+		if err != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU V1: %w", err)
+		}
+		v1Markdown := ""
+		var zipBytes []byte
+		if result != nil {
+			v1Markdown = strings.TrimSpace(result.Markdown)
+			zipBytes = result.Zip
+		}
+		items, extractErr := mineruExtractJSONItems(zipBytes)
+		if extractErr == nil && len(items) > 0 {
+			return mineruJSONParseResult(filename, items), nil
+		}
+		if v1Markdown != "" {
+			return buildMarkdownOCRDispatchResult(result.Markdown), nil
+		}
+		if extractErr != nil {
+			return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", extractErr)
+		}
+		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: no sections")
+	}
+
+	apiURL := strings.TrimRight(baseURL, "/") + "/file_parse"
 	zipBytes, err := mineruStreamParse(apiURL, apiKeyRaw, binary, parseMethod, mineruLang, backend, serverURL)
 	if err != nil {
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU stream: %w", err)
@@ -545,16 +567,7 @@ func dispatchMinerUPDF(
 		return parser.ParseResult{}, fmt.Errorf("parser: MinerU extract: %w", err)
 	}
 
-	return parser.ParseResult{
-		OutputFormat: "json",
-		File: map[string]any{
-			"name":         filename,
-			"page_count":   mineruItemPageCount(items),
-			"outline":      []map[string]any{},
-			"parse_method": "mineru",
-		},
-		JSON: items,
-	}, nil
+	return mineruJSONParseResult(filename, items), nil
 }
 
 // resolveMinerUModelForDispatch resolves the OCR model used by the MinerU PDF
@@ -1028,6 +1041,19 @@ func mineruZipImageDataURI(images map[string]*zip.File, imgPath string) string {
 	return fmt.Sprintf("data:%s;base64,%s", mediaType, base64.StdEncoding.EncodeToString(data))
 }
 
+func mineruJSONParseResult(filename string, items []map[string]any) parser.ParseResult {
+	return parser.ParseResult{
+		OutputFormat: "json",
+		File: map[string]any{
+			"name":         filename,
+			"page_count":   mineruItemPageCount(items),
+			"outline":      []map[string]any{},
+			"parse_method": "mineru",
+		},
+		JSON: parser.MapsToItems(items),
+	}
+}
+
 func mineruItemPageCount(items []map[string]any) int {
 	maxPage := 0
 	for _, item := range items {
@@ -1122,7 +1148,7 @@ func dispatchPDFVision(
 	return parser.ParseResult{
 		OutputFormat: "json",
 		File:         fileMeta,
-		JSON:         items,
+		JSON:         parser.MapsToItems(items),
 	}, nil
 }
 
@@ -1160,34 +1186,6 @@ func defaultPDFVisionChatInvoker(
 	vision := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	return chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
-}
-
-func loadPDFVisionPrompt(name string) (string, error) {
-	pdfVisionPromptCacheMu.RLock()
-	if cached, ok := pdfVisionPromptCache[name]; ok {
-		pdfVisionPromptCacheMu.RUnlock()
-		return cached, nil
-	}
-	pdfVisionPromptCacheMu.RUnlock()
-
-	baseDir, err := pdfVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", fmt.Sprintf("%s.md", name))
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("prompt file %q not found: %w", name, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	pdfVisionPromptCacheMu.Lock()
-	pdfVisionPromptCache[name] = cached
-	pdfVisionPromptCacheMu.Unlock()
-	return cached, nil
-}
-
-func pdfVisionPromptsBaseDir() (string, error) {
-	return pdfVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision

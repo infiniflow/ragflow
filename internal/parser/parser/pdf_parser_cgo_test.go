@@ -43,7 +43,7 @@ func TestPDFParser_ParseWithResult_CGOEmpty(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("JSON len = %d, want 1", len(res.JSON))
 	}
-	if text, _ := res.JSON[0]["text"].(string); strings.TrimSpace(text) != "" {
+	if text, _ := res.JSON[0].ToMap()["text"].(string); strings.TrimSpace(text) != "" {
 		t.Fatalf("JSON[0].text = %q, want empty", text)
 	}
 }

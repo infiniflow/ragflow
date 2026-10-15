@@ -79,3 +79,23 @@ const StatusDialogValid = "1"
 // DialogStatus is a typed alias for dialog.status to avoid raw string
 // comparisons in call sites.
 type DialogStatus string
+
+// ParentChunkOrderBase is the first chunk_order_int of the range reserved for
+// parent rows — the hidden rows MaterializeParentChunks creates for retrieval
+// promotion. Source chunks live in [0, ParentChunkOrderBase): the tokenizer
+// numbers ingested chunks, and AddChunk appends whatever the user adds after the
+// highest order already present. Keeping the two ranges apart is what makes a
+// parent sort after every source chunk on every engine, including source chunks
+// added after the document was parsed:
+//
+//   - Elasticsearch already sorted parents last because the field was simply
+//     absent on the parent row (a missing sort key counts as greatest);
+//   - Infinity cannot express "absent": an unwritten integer column falls back to
+//     its mapping default 0, which tied every parent with the first source chunk,
+//     so the management chunk list listed parents first and sliced that tie group
+//     differently on every page (LIMIT/OFFSET).
+//
+// The value fits a signed 32-bit integer, the narrowest type the column has
+// across engines (Infinity integer, OceanBase INTEGER, Elasticsearch long), and
+// leaves room for a billion parent rows per document.
+const ParentChunkOrderBase = 1 << 30

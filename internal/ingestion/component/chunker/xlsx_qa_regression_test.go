@@ -49,8 +49,6 @@ func qaChunksFromXLSX(t *testing.T, data []byte) []map[string]any {
 	switch res.OutputFormat {
 	case "json":
 		inputs["json"] = res.JSON
-	case "html":
-		inputs["html"] = res.HTML
 	}
 
 	comp, err := NewQAChunker(nil)

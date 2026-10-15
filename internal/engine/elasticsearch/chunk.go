@@ -51,7 +51,7 @@ var jsonIterator = sonic.Config{
 var memoryMessageVectorFieldRE = regexp.MustCompile(`^q_\d+_vec$`)
 
 // CreateChunkStore creates an index
-func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID string) error {
+func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID string, vectorSize int, parserID, language string) error {
 	if baseName == "" {
 		return fmt.Errorf("index name cannot be empty")
 	}
@@ -158,8 +158,8 @@ func (e *Engine) CreateChunkStore(ctx context.Context, baseName, datasetID strin
 // chunks straight back (the chunk APIs, the debug endpoints) sees them right
 // away. Ingestion must use InsertChunksNoRefresh instead - see that method for
 // why the wait is the wrong trade there.
-func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
-	return e.insertChunks(ctx, chunks, baseName, datasetID, "wait_for")
+func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
+	return e.insertChunks(ctx, chunks, baseName, datasetID, language, "wait_for")
 }
 
 // InsertChunksNoRefresh inserts chunks without waiting for an index refresh:
@@ -171,13 +171,16 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 // This is the ingestion path's contract, and it matches Python's: the Python
 // ingestion inserts chunks with refresh=False (rag/svr/task_executor_refactor/
 // chunk_service.py:386 and :423), while its API default stays "wait_for".
-func (e *Engine) InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string) ([]string, error) {
-	return e.insertChunks(ctx, chunks, baseName, datasetID, "")
+func (e *Engine) InsertChunksNoRefresh(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
+	return e.insertChunks(ctx, chunks, baseName, datasetID, language, "")
 }
 
 // insertChunks is the shared bulk-insert body. An empty refresh omits the
 // parameter, which leaves the decision to the index (no forced refresh).
-func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, refresh string) ([]string, error) {
+// language is the dataset language, which only engines whose fulltext analyzer
+// is fixed at index creation need; Elasticsearch analyses client-side and
+// ignores it.
+func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string, refresh string) ([]string, error) {
 	common.Info("ElasticsearchConnection.InsertChunks called", zap.String("index_name", baseName), zap.Int("chunkCount", len(chunks)))
 
 	if len(chunks) == 0 {
@@ -302,6 +305,9 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 		// Document line: work with a copy to avoid mutating the original
 		docCopy := copyFields(doc)
 		docCopy["kb_id"] = datasetID
+		if !isMemoryIndex && docCopy["available_int"] == nil {
+			docCopy["available_int"] = 1
+		}
 		if raw, ok := formatOrderedTagFeas(docCopy["tag_feas"]); ok {
 			docCopy["tag_feas"] = raw
 		}
@@ -2846,14 +2852,22 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 
 	// Extract chunk IDs from first search results
 	chunkIDs := make([]string, 0, len(chunks))
+	indexNames := make([]string, 0, len(chunks))
 	for _, chunk := range chunks {
-		if id, ok := chunk["_id"].(string); ok {
+		if id, ok := chunk["_id"].(string); ok && id != "" {
+			indexName, ok := chunk["_index"].(string)
+			if !ok || indexName == "" {
+				return nil, fmt.Errorf("KNN candidate %s has no index", id)
+			}
 			chunkIDs = append(chunkIDs, id)
+			indexNames = append(indexNames, indexName)
 		}
 	}
 	if len(chunkIDs) == 0 {
 		return nil, nil
 	}
+	chunkIDs = common.Deduplicate(chunkIDs)
+	indexNames = common.Deduplicate(indexNames)
 
 	common.Info("KNNScores starting", zap.Int("chunkCount", len(chunkIDs)), zap.Strings("chunkIDs", chunkIDs), zap.Int("vectorSize", len(queryVector)))
 
@@ -2882,19 +2896,10 @@ func (e *Engine) KNNScores(ctx context.Context, chunks []map[string]interface{},
 		return nil, fmt.Errorf("failed to marshal KNN query: %w", err)
 	}
 
-	//common.Info("KNNScores query body", zap.String("body", string(body)))
-
-	// Execute search - use first index name from chunks if available
-	indexName := ""
-	if len(chunks) > 0 {
-		if idx, ok := chunks[0]["_index"].(string); ok {
-			indexName = idx
-		}
-	}
-
 	res, err := e.client.Search(
 		e.client.Search.WithContext(ctx),
-		e.client.Search.WithIndex(indexName),
+		e.client.Search.WithIndex(indexNames...),
+		e.client.Search.WithAllowPartialSearchResults(false),
 		e.client.Search.WithBody(bytes.NewReader(body)),
 	)
 	if err != nil {

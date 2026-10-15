@@ -148,8 +148,10 @@ func TestTableChunkerPreservesHeaderOnlySheetAlongsideDataSheet(t *testing.T) {
 		t.Fatalf("got %d chunks, want data row plus header-only segment", len(chunks))
 	}
 	// The header row of the data segment never becomes a chunk of its own;
-	// its column names live in the row record text instead.
-	if chunks[0]["text"] != "- ID: A-1\n- Name: paid" {
+	// its column names ride along as the HTML header of the row chunk.
+	row0, _ := chunks[0]["text"].(string)
+	if !strings.Contains(row0, "<table>") || !strings.Contains(row0, "<td>A-1</td>") ||
+		!strings.Contains(row0, "<td>paid</td>") || !strings.Contains(row0, "<th>ID</th>") {
 		t.Fatalf("chunk0 = %#v", chunks[0])
 	}
 	if chunks[1]["ck_type"] != "table" || chunks[1]["table"] != nil {
@@ -181,11 +183,14 @@ func TestTableChunker_ExpandsHTMLRowsWithAlignedPositions(t *testing.T) {
 	if len(chunks) != 2 {
 		t.Fatalf("got %d chunks, want one per data row", len(chunks))
 	}
-	if chunks[0]["text"] != "- ID: A-1\n- Status: paid" {
+	c0, _ := chunks[0]["text"].(string)
+	if !strings.Contains(c0, "<td>A-1</td>") || !strings.Contains(c0, "<td>paid</td>") || !strings.Contains(c0, "<th>ID</th>") {
 		t.Errorf("chunk0 text = %v", chunks[0]["text"])
 	}
-	// The empty cell is skipped, matching the Python table chunker's per-cell skip.
-	if chunks[1]["text"] != "- ID: A-2" {
+	// The empty cell is skipped in the row record; the HTML row keeps the row's
+	// own id and renders the empty cell plainly.
+	c1, _ := chunks[1]["text"].(string)
+	if !strings.Contains(c1, "<td>A-2</td>") {
 		t.Errorf("chunk1 text = %v", chunks[1]["text"])
 	}
 	if got := fmt.Sprintf("%v", chunks[0]["positions"]); !strings.Contains(got, "2") || strings.Contains(got, "3") {
@@ -249,15 +254,15 @@ func TestTableChunker_NonSpreadsheetPositionsNotAttached(t *testing.T) {
 }
 
 // TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload: a table whose only
-// row is the header has nothing to expand; the whole markup stays one chunk
-// carrying the plain-text rendering of the header.
+// row is the header has nothing to expand; the whole table stays one chunk
+// carrying its HTML rendering.
 func TestTableChunker_HeaderOnlyHTMLTableKeepsWholePayload(t *testing.T) {
 	table := "<table><caption>t</caption>\n<tr><th>A</th><th>B</th></tr>\n</table>\n"
 	td, err := tableutil.ParseTableHTML(table)
 	if err != nil {
 		t.Fatalf("ParseTableHTML: %v", err)
 	}
-	want := tableutil.RenderTableText(td)
+	want := tableutil.RenderTableHTML(td)
 	chunks := tableChunksOf(t, map[string]any{
 		"name":          "template.xlsx",
 		"output_format": "json",
@@ -287,7 +292,9 @@ func TestTableChunker_HeaderlessHTMLFirstRowIsHeader(t *testing.T) {
 	if len(chunks) != 1 {
 		t.Fatalf("got %d chunks, want the single data row", len(chunks))
 	}
-	if chunks[0]["text"] != "- k: a\n- v: b" {
+	txt, _ := chunks[0]["text"].(string)
+	if !strings.Contains(txt, "<th>k</th>") || !strings.Contains(txt, "<th>v</th>") ||
+		!strings.Contains(txt, "<td>a</td>") || !strings.Contains(txt, "<td>b</td>") {
 		t.Errorf("text = %v", chunks[0]["text"])
 	}
 }

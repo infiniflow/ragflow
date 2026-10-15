@@ -113,11 +113,6 @@ func (dao *TenantDAO) GetAllIDs(ctx context.Context, db *gorm.DB) ([]string, err
 	return ids, err
 }
 
-// Delete deletes a tenant by ID (soft delete)
-func (dao *TenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Tenant{}).Where("id = ?", id).Update("status", "0").Error
-}
-
 // Update updates a tenant by ID
 func (dao *TenantDAO) Update(ctx context.Context, db *gorm.DB, id string, updates map[string]interface{}) error {
 	return db.WithContext(ctx).Model(&entity.Tenant{}).Where("id = ?", id).Updates(updates).Error

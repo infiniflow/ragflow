@@ -2,10 +2,12 @@ import type { IDocumentInfo } from '@/interfaces/database/document';
 import { useCallback } from 'react';
 import { useKnowledgeBaseContext } from '../contexts/knowledge-base-context';
 import {
+  attachAutoSwitchTargets,
   FileParserGap,
   findDocumentsParserGaps,
   findFilesParserGaps,
   getSavedParserConfig,
+  type UploadFileParserGap,
 } from './utils';
 
 /**
@@ -20,8 +22,12 @@ export function useParserGapValidation() {
   // yet and every file would look unsupported. A missing Parser entry means
   // the config predates operator-scoped settings, so type support cannot be
   // determined either.
+  //
+  // Upload runs before the backend parser switch, so each gap is annotated
+  // with the fate the backend will give the file (see
+  // attachAutoSwitchTargets).
   const findParseGaps = useCallback(
-    (names: string[]): FileParserGap[] => {
+    (names: string[]): UploadFileParserGap[] => {
       if (loading) {
         return [];
       }
@@ -29,7 +35,10 @@ export function useParserGapValidation() {
       if (!config) {
         return [];
       }
-      return findFilesParserGaps(names, config);
+      return attachAutoSwitchTargets(
+        findFilesParserGaps(names, config),
+        knowledgeBase?.pipeline_id,
+      );
     },
     [loading, knowledgeBase],
   );

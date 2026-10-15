@@ -1163,14 +1163,6 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       thinkingEnabled: 'Etkin',
       thinkingDisabled: 'Devre dışı',
       thinkingLevelNone: 'Yalın',
-      thinkingLevelLow: 'Düşük',
-      thinkingLevelLowDescription: 'Hızlı yanıtlar',
-      thinkingLevelMedium: 'Orta',
-      thinkingLevelMediumDescription: 'Dengeli hız ve derinlik',
-      thinkingLevelHigh: 'Yüksek',
-      thinkingLevelHighDescription: 'Derin akıl yürütme',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maksimum bilişsel çaba',
       thinkingTip:
         'Yalnızca resmi Qwen, Kimi ve GLM model sağlayıcıları için düşünme modunu denetler. Sistem varsayılanı, uzun süren görevlerden kaçınmak için Qwen düşünmesini devre dışı bırakır.',
       quote: 'Alıntı göster',
@@ -2149,18 +2141,18 @@ Bu otomatik etiketleme özelliği, mevcut datasete alanına özgü bilgi katman�
       chatModelTip: 'Her yeni oluşturulan dataset için varsayılan LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, RAGFlow slim sürümünü (embedding modeller içermez) kullanıp kullanmadığınızı kontrol edin veya model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
+        'Her yeni oluşturulan dataset için varsayılan embedding model. Açılır listede bir embedding model bulamıyorsanız, RAGFlow slim sürümünü (embedding modeller içermez) kullanıp kullanmadığınızı kontrol edin veya model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
+        'Her yeni oluşturulan dataset için varsayılan VLM. Bir resmi veya videoyu tanımlar. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Her yeni oluşturulan dataset için varsayılan ASR modeli. Bu modeli sesleri ilgili metne dönüştürmek için kullanın.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Parçaları yeniden sıralamak için varsayılan yeniden sıralama modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.`,
+      rerankModelTip: `Parçaları yeniden sıralamak için varsayılan yeniden sıralama modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'Varsayılan metin-konuşma dönüştürme modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için https://ragflow.io/docs/dev/supported_models adresine bakın.',
+        'Varsayılan metin-konuşma dönüştürme modeli. Açılır listede bir model bulamıyorsanız, model sağlayıcınızın bu modeli destekleyip desteklemediğini görmek için “Model sağlayıcıları” sayfasına bakın.',
       workspace: 'çalışma alanı',
       upgrade: 'Yükselt',
       addLlmTitle: 'LLM Ekle',
