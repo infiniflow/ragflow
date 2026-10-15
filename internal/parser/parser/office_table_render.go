@@ -622,17 +622,16 @@ func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange)
 		if strings.TrimSpace(master) == "" {
 			continue
 		}
-		for row := r.sr; row <= r.er && row <= len(rows); row++ {
+		// Start past the master row: its own cell already holds the value.
+		for row := r.sr + 1; row <= r.er && row <= len(rows); row++ {
 			if row == headerRow {
 				continue
 			}
-			for col := r.sc; col <= r.ec && col <= len(rows[row-1]); col++ {
-				if row == r.sr && col == r.sc {
-					continue
-				}
-				if strings.TrimSpace(rows[row-1][col-1]) == "" {
-					rows[row-1][col-1] = master
-				}
+			if r.sc > len(rows[row-1]) {
+				continue
+			}
+			if strings.TrimSpace(rows[row-1][r.sc-1]) == "" {
+				rows[row-1][r.sc-1] = master
 			}
 		}
 	}
