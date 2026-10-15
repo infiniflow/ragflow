@@ -347,6 +347,16 @@ check_ort_version_consistency() {
 # use). Devs who ran a download script have the zip under ragflow_deps/; CI
 # seeds from /opt and has no zip, where the bake is authoritative.
 check_onnxruntime_deps() {
+    # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
+    # depends on them; without this guard an early call (before any other path
+    # triggers detect_target_platform) would resolve the archive glob against an
+    # empty prefix and could pick up an ORT built for the wrong platform from a
+    # shared cache. Idempotent: derive once, then reuse the result.
+    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
+        detect_target_platform
+        _TARGET_PLATFORM_DETECTED=1
+    fi
+
     local ort_version
     ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
         "${PROJECT_ROOT}/internal/common/environments.go" \

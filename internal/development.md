@@ -104,7 +104,14 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 > # assignment: the shell does not expand `*` inside the double-quoted
 > # CGO_LDFLAGS below. If this lists more than one match, delete the stale
 > # version dir — build.sh refuses to link two ORT versions.
-> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/*/lib/libonnxruntime.a)"
+> # The glob must pin the target platform: the extracted dir is
+> # onnxruntime-<os>-<arch>-static_lib-<version> (see ort_static_lib_prefix in
+> # build.sh). A bare */ would also match ORT built for another OS/arch in a
+> # shared cache. For linux_amd64 the prefix is onnxruntime-linux-x64-static_lib-;
+> # for linux_arm64 use onnxruntime-linux-aarch64-static_lib-; for macOS use
+> # onnxruntime-osx-arm64-static_lib- (darwin_arm64) or
+> # onnxruntime-osx-universal-static_lib- (darwin_amd64, Intel Macs).
+> ORT_A="$(ls ${RAGFLOW_DEPS}/onnxruntime/static_lib/onnxruntime-linux-x64-static_lib-*/lib/libonnxruntime.a)"
 >
 > # Link flags differ between Linux (GNU ld) and macOS (ld64). On macOS the
 > # path below is written but NOT yet verified on real Apple-Silicon hardware
@@ -113,7 +120,12 @@ The image contains Go DeepDoc weights, tokenizer assets, the BPE table, and stag
 >   ORT_LINK="-Wl,-export_dynamic"
 >   for a in ${ORT_A}; do ORT_LINK="${ORT_LINK} -Wl,-force_load,${a}"; done
 >   ORT_LINK="${ORT_LINK} -lc++"
->   SYS_LIBS="-lm -lpthread -ldl -lutil -lc"
+>   # System libs mirror setup_cgo_env in build.sh for darwin: the frameworks are
+>   # required by ONNX Runtime's Core ML / system integrations, and -liconv /
+>   # -lresolv back the string/network code paths the static archive references.
+>   SYS_LIBS="-framework CoreGraphics -framework CoreFoundation \
+>     -framework Security -framework SystemConfiguration \
+>     -liconv -lresolv -lm -lpthread -ldl -lutil -lc -lc++"
 > else
 >   # The binding reaches ORT with dlopen(NULL)+dlsym("OrtGetApiBase"), so
 >   # OrtGetApiBase is the only symbol that must be visible process-wide. Export
