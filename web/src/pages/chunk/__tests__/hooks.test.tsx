@@ -21,7 +21,9 @@ jest.mock('@/hooks/route-hook', () => ({
 
 function wrapperFor(initialEntry: string) {
   return function Wrapper({ children }: { children?: React.ReactNode }) {
-    return <MemoryRouter initialEntries={[initialEntry]}>{children}</MemoryRouter>;
+    return (
+      <MemoryRouter initialEntries={[initialEntry]}>{children}</MemoryRouter>
+    );
   };
 }
 
@@ -34,7 +36,9 @@ function useTargetChunkHarness() {
 describe('useTargetChunkFromQuery', () => {
   it('reads the chunk id handed over by the retrieval testing page', () => {
     const { result } = renderHook(useTargetChunkHarness, {
-      wrapper: wrapperFor('/chunk/parsed/chunks?id=kb-1&doc_id=doc-1&chunk_id=c-9'),
+      wrapper: wrapperFor(
+        '/chunk/parsed/chunks?id=kb-1&doc_id=doc-1&chunk_id=c-9',
+      ),
     });
 
     expect(result.current.targetChunkId).toBe('c-9');
