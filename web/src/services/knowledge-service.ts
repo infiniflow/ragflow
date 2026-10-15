@@ -16,6 +16,7 @@
 
 import { ProcessingType } from '@/constants/knowledge';
 import { IRenameTag } from '@/interfaces/database/dataset';
+import { IListEntityChunksRequestParams } from '@/interfaces/request/chunk';
 import {
   IFetchArtifactGraphRequestParams,
   IFetchArtifactListRequestParams,
@@ -149,6 +150,17 @@ const mapDocumentToLegacy = (doc: Record<string, any>) => ({
   parser_id: doc.parser_id || doc.chunk_method,
 });
 
+const mapChunkListResponse = (response: any) => {
+  if (response.data?.code === 0) {
+    response.data.data = {
+      ...response.data.data,
+      chunks: (response.data.data?.chunks || []).map(mapChunkToLegacy),
+      doc: mapDocumentToLegacy(response.data.data?.doc || {}),
+    };
+  }
+  return response;
+};
+
 const mapChunkPayloadToRest = (payload: Record<string, any>) => ({
   content: payload.content ?? payload.content_with_weight,
   important_keywords: payload.important_keywords ?? payload.important_kwd,
@@ -170,6 +182,21 @@ const getAvailableParam = (available?: number) => {
   }
   return available === 1 ? 'true' : 'false';
 };
+
+const EntityChunkService = registerNextServer({
+  entityChunkList: {
+    url: ({
+      datasetId,
+      documentId,
+      entityId,
+    }: {
+      datasetId: string;
+      documentId: string;
+      entityId: string;
+    }) => api.documentEntityChunks(datasetId, documentId, entityId),
+    method: 'get',
+  },
+});
 
 const chunkService = {
   retrievalTest: async (params: Record<string, any>) => {
@@ -236,15 +263,19 @@ const chunkService = {
       },
     });
 
-    if (response.data?.code === 0) {
-      response.data.data = {
-        ...response.data.data,
-        chunks: (response.data.data?.chunks || []).map(mapChunkToLegacy),
-        doc: mapDocumentToLegacy(response.data.data?.doc || {}),
-      };
-    }
-
-    return response;
+    return mapChunkListResponse(response);
+  },
+  entityChunkList: async (
+    datasetId: string,
+    documentId: string,
+    entityId: string,
+    params: IListEntityChunksRequestParams,
+  ) => {
+    const response = await EntityChunkService.entityChunkList(
+      { datasetId, documentId, entityId, params },
+      true,
+    );
+    return mapChunkListResponse(response);
   },
   createChunk: async (payload: Record<string, any>) => {
     const datasetId = getDatasetId(payload);

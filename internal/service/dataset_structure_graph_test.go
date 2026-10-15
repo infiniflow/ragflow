@@ -9,6 +9,7 @@ import (
 // payload shape to the graph-node shape (mirroring _struct_graph_entity).
 func TestProjectEntity_FromPayload(t *testing.T) {
 	row := map[string]interface{}{
+		"id":                  "entity-1",
 		"content_with_weight": `{"name":"NVIDIA","type":"tree_node","description":"chip maker","source_chunk_ids":["c1","c2"]}`,
 		"source_chunk_ids":    []string{"c1"},
 		"mention_count_int":   3,
@@ -19,6 +20,9 @@ func TestProjectEntity_FromPayload(t *testing.T) {
 	}
 	if n["name"] != "NVIDIA" || n["type"] != "tree_node" {
 		t.Errorf("name/type = %v/%v, want NVIDIA/tree_node", n["name"], n["type"])
+	}
+	if n["entity_id"] != "entity-1" || entityResponseID(n) != "NVIDIA" {
+		t.Errorf("entity identity = %v/%v, want entity-1/NVIDIA", n["entity_id"], entityResponseID(n))
 	}
 	if n["mention_count"] != 3 {
 		t.Errorf("mention_count = %v, want 3", n["mention_count"])

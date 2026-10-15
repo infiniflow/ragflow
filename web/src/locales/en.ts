@@ -1046,6 +1046,10 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       questionTip: `If there are given questions, the embedding of the chunk will be based on them.`,
       chunkResult: 'Chunk result',
       chunkResultTip: `View the chunked segments used for embedding and retrieval.`,
+      entityUnavailable:
+        'The selected entity is no longer available. Select another entity or switch to Preview to clear the selection.',
+      loadFailed: 'Failed to load chunks. Please try again.',
+      retry: 'Retry',
       representation: 'Representation',
       representationKinds: {
         knowledge_graph: 'Knowledge graph',

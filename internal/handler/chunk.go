@@ -136,7 +136,7 @@ func (h *ChunkHandler) Parse(c *gin.Context) {
 	common.ResponseWithCodeData(c, code, data, "success")
 }
 
-// ListChunks retrieves chunks for a document from path/query parameters.
+// ListChunks retrieves chunks for a document or one of its structure entities.
 func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	user, errorCode, errorMessage := GetUser(c)
 	if errorCode != common.CodeSuccess {
@@ -165,10 +165,15 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	req := service.ListChunksRequest{
 		DatasetID: datasetID,
 		DocID:     documentID,
+		EntityID:  strings.TrimSpace(c.Param("entity_id")),
 		ChunkIDs:  queryStringList(c, "chunk_ids"),
 		Page:      &page,
 		Size:      &size,
 		Keywords:  c.Query("keywords"),
+	}
+	if c.Param("entity_id") != "" && req.EntityID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, common.CodeArgumentError, nil, "entity_id is required")
+		return
 	}
 	available, ok, err := parseAvailableQuery(c.Query("available"))
 	if err != nil {
@@ -183,6 +188,15 @@ func (h *ChunkHandler) ListChunks(c *gin.Context) {
 	resp, err := h.chunkService.List(ctx, &req, user.ID)
 	if err != nil {
 		if respondPermissionErrorIf(c, err, false) {
+			return
+		}
+		if errors.Is(err, common.ErrNotFound) {
+			common.ResponseWithHttpCodeData(c, http.StatusNotFound, common.CodeNotFound, nil, err.Error())
+			return
+		}
+		var codedErr *common.CodedError
+		if errors.As(err, &codedErr) && codedErr.Code == common.CodeArgumentError {
+			common.ResponseWithHttpCodeData(c, http.StatusBadRequest, codedErr.Code, nil, err.Error())
 			return
 		}
 		common.ResponseWithHttpCodeData(c, http.StatusInternalServerError, common.CodeServerError, nil, err.Error())

@@ -4,6 +4,8 @@ import {
 } from '@/hooks/use-chunk-request';
 import type { IChunk } from '@/interfaces/database/dataset';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import { useMemoizedFn } from 'ahooks';
+import { isAxiosError } from 'axios';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ChunkCard from './components/chunk-card';
@@ -50,7 +52,7 @@ import { getExtension } from '@/utils/document-util';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
-  const [filterChunkIds, setFilterChunkIds] = useState<string[]>([]);
+  const [filterEntityId, setFilterEntityId] = useState<string>();
   const [selectedChunkIds, setSelectedChunkIds] = useState<string[]>([]);
   // The artifact tree publishes its claims / evidence content upward; the page
   // renders it as a resizable column between the tree and the chunk list, and
@@ -69,7 +71,9 @@ function Chunk() {
     available,
     handleSetAvailable,
     dataUpdatedAt,
-  } = useFetchNextChunkList(true, { chunkIds: filterChunkIds });
+    error,
+    refetch,
+  } = useFetchNextChunkList(true, { entityId: filterEntityId });
   const { handleChunkCardClick, selectedChunkId } = useHandleChunkCardClick();
 
   const { t } = useTranslation();
@@ -131,15 +135,17 @@ function Chunk() {
     [],
   );
 
-  const handleChunkIdsChange = useCallback(
-    (chunkIds: string[]) => {
-      setFilterChunkIds(chunkIds);
-      if (chunkIds.length === 0) {
-        pagination.onChange?.(1, pagination.pageSize);
-      }
-    },
-    [pagination],
-  );
+  const handleSelectedEntityChange = useMemoizedFn((entityId?: string) => {
+    setFilterEntityId(entityId);
+    clearSelectedChunkIds();
+    pagination.onChange?.(1, pagination.pageSize);
+  });
+
+  const handleRetryChunks = useCallback(() => {
+    void refetch();
+  }, [refetch]);
+  const entityUnavailable =
+    !!filterEntityId && isAxiosError(error) && error.response?.status === 404;
 
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));
@@ -270,7 +276,7 @@ function Chunk() {
                   setWidthAndHeight={setWidthAndHeight}
                   url={fileUrl}
                   positions={positions}
-                  onChunkIdsChange={handleChunkIdsChange}
+                  onEntityChange={handleSelectedEntityChange}
                   onClaimsPanelChange={handleClaimsPanelChange}
                   onEvidencePanelChange={handleEvidencePanelChange}
                 />
@@ -329,61 +335,80 @@ function Chunk() {
                 </header>
 
                 <Spin spinning={loading} className="flex-1 h-0" size="large">
-                  <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
+                  {error ? (
                     <div
-                      className="
+                      role="alert"
+                      className="h-full p-5 flex flex-col items-center justify-center gap-4 text-text-secondary"
+                    >
+                      <p>
+                        {t(
+                          entityUnavailable
+                            ? 'chunk.entityUnavailable'
+                            : 'chunk.loadFailed',
+                        )}
+                      </p>
+                      <Button variant="outline" onClick={handleRetryChunks}>
+                        {t('chunk.retry')}
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="relative @container h-full px-5 pb-5 overflow-hidden flex flex-col">
+                      <div
+                        className="
                         sticky top-0 z-[1] bg-bg-base space-y-4 py-5
                         @4xl:flex @4xl:justify-between @4xl:items-center
                         @4xl:space-y-0 @4xl:gap-4
                       "
-                      role="toolbar"
-                    >
-                      <ChunkResultBar
-                        className="@4xl:order-2"
-                        handleInputChange={handleInputChange}
-                        searchString={searchString}
-                        changeChunkTextMode={changeChunkTextMode}
-                        createChunk={showChunkUpdatingModal}
-                        available={available}
-                        selectAllChunk={selectAllChunk}
-                        handleSetAvailable={handleSetAvailable}
-                      />
+                        role="toolbar"
+                      >
+                        <ChunkResultBar
+                          className="@4xl:order-2"
+                          handleInputChange={handleInputChange}
+                          searchString={searchString}
+                          textMode={textMode}
+                          changeChunkTextMode={changeChunkTextMode}
+                          createChunk={showChunkUpdatingModal}
+                          available={available}
+                          selectAllChunk={selectAllChunk}
+                          handleSetAvailable={handleSetAvailable}
+                        />
 
-                      <CheckboxSets
-                        className="h-8"
-                        selectAllChunk={selectAllChunk}
-                        switchChunk={handleSwitchChunk}
-                        removeChunk={handleRemoveChunk}
-                        checked={selectedChunkIds.length === data.length}
+                        <CheckboxSets
+                          className="h-8"
+                          selectAllChunk={selectAllChunk}
+                          switchChunk={handleSwitchChunk}
+                          removeChunk={handleRemoveChunk}
+                          checked={selectedChunkIds.length === data.length}
+                          selectedChunkIds={selectedChunkIds}
+                        />
+                      </div>
+
+                      <ChunkVirtualList
+                        key={listKey}
+                        items={chunkList}
+                        selectedChunkId={selectedChunkId}
                         selectedChunkIds={selectedChunkIds}
+                        textMode={textMode}
+                        editChunk={showChunkUpdatingModal}
+                        handleCheckboxClick={handleSingleCheckboxClick}
+                        switchChunk={handleSwitchChunk}
+                        clickChunkCard={handleChunkCardClick}
+                        // Changes on every refetch, so a chunk whose image was
+                        // replaced in place re-fetches it instead of reusing the
+                        // cached bytes.
+                        imageCacheKey={dataUpdatedAt}
                       />
+
+                      <footer className="mt-5">
+                        <RAGFlowPagination
+                          pageSize={pagination.pageSize}
+                          current={pagination.current}
+                          total={total}
+                          onChange={pagination.onChange}
+                        />
+                      </footer>
                     </div>
-
-                    <ChunkVirtualList
-                      key={listKey}
-                      items={chunkList}
-                      selectedChunkId={selectedChunkId}
-                      selectedChunkIds={selectedChunkIds}
-                      textMode={textMode}
-                      editChunk={showChunkUpdatingModal}
-                      handleCheckboxClick={handleSingleCheckboxClick}
-                      switchChunk={handleSwitchChunk}
-                      clickChunkCard={handleChunkCardClick}
-                      // Changes on every refetch, so a chunk whose image was
-                      // replaced in place re-fetches it instead of reusing the
-                      // cached bytes.
-                      imageCacheKey={dataUpdatedAt}
-                    />
-
-                    <footer className="mt-5">
-                      <RAGFlowPagination
-                        pageSize={pagination.pageSize}
-                        current={pagination.current}
-                        total={total}
-                        onChange={pagination.onChange}
-                      />
-                    </footer>
-                  </div>
+                  )}
                 </Spin>
               </article>
             </ResizablePanel>

@@ -22,7 +22,7 @@ import { IChunk, IKnowledgeFile } from '@/interfaces/database/dataset';
 import kbService from '@/services/knowledge-service';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useDebounce } from 'ahooks';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   useGetPaginationWithRouter,
@@ -33,6 +33,21 @@ import {
   useSetPaginationParams,
 } from './route-hook';
 
+const ChunkKeys = {
+  lists: () => ['fetchChunkList'] as const,
+  list: (
+    ...params: [
+      knowledgeId: string,
+      documentId: string,
+      page: number,
+      pageSize: number,
+      keywords: string,
+      available: number | undefined,
+      entityId?: string,
+    ]
+  ) => [...ChunkKeys.lists(), ...params] as const,
+};
+
 export interface IChunkListResult {
   searchString?: string;
   handleInputChange?: React.ChangeEventHandler<HTMLInputElement>;
@@ -40,6 +55,8 @@ export interface IChunkListResult {
   setPagination?: (pagination: { page: number; pageSize?: number }) => void;
   available: number | undefined;
   handleSetAvailable: (available: number | undefined) => void;
+  error: Error | null;
+  refetch: () => Promise<unknown>;
   dataUpdatedAt?: number; // Timestamp when data was last updated - useful for cache busting
 }
 
@@ -49,7 +66,7 @@ export const useSelectChunkList = () => {
     data: IChunk[];
     total: number;
     documentInfo: IKnowledgeFile;
-  }>({ queryKey: ['fetchChunkList'] });
+  }>({ queryKey: ChunkKeys.lists() });
 
   return data?.at(-1)?.[1];
 };
@@ -71,7 +88,7 @@ export const useDeleteChunk = () => {
       });
       if (data.code === 0) {
         setPaginationParams(1);
-        queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+        queryClient.invalidateQueries({ queryKey: ChunkKeys.lists() });
       }
       return data?.code;
     },
@@ -114,7 +131,7 @@ export const useCreateChunk = () => {
           );
         }
         setTimeout(() => {
-          queryClient.invalidateQueries({ queryKey: ['fetchChunkList'] });
+          queryClient.invalidateQueries({ queryKey: ChunkKeys.lists() });
         }, 1000); // Delay to ensure the list is updated
       }
       return data?.code;
@@ -150,53 +167,63 @@ export const useFetchChunk = (
 
 export const useFetchNextChunkList = (
   enabled = true,
-  options?: { chunkIds?: string[] },
+  options?: { entityId?: string },
 ): ResponseGetType<{
   data: IChunk[];
   total: number;
   documentInfo: IKnowledgeFile;
 }> &
   IChunkListResult => {
-  const chunkIds = options?.chunkIds?.slice(0, 100);
+  const entityId = options?.entityId;
   const { pagination, setPagination } = useGetPaginationWithRouter();
   const { documentId, knowledgeId } = useGetKnowledgeSearchParams();
   const { searchString, handleInputChange } = useHandleSearchChange();
   const [available, setAvailable] = useState<number | undefined>();
+  const lastDocumentInfo = useRef<{
+    knowledgeId: string;
+    documentId: string;
+    documentInfo: IKnowledgeFile;
+  }>();
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
 
   const {
     data,
     isFetching: loading,
+    isPlaceholderData,
+    error,
+    refetch,
     dataUpdatedAt,
   } = useQuery({
-    queryKey: [
-      'fetchChunkList',
+    queryKey: ChunkKeys.list(
       knowledgeId,
       documentId,
       pagination.current,
       pagination.pageSize,
       debouncedSearchString,
       available,
-      chunkIds,
-    ],
+      entityId,
+    ),
     placeholderData: (previousData: any) =>
       previousData ?? { data: [], total: 0, documentInfo: {} }, // https://github.com/TanStack/query/issues/8183
     gcTime: 0,
     enabled: enabled && !!knowledgeId && !!documentId,
     queryFn: async () => {
-      const { data } = await kbService.chunkList({
-        kb_id: knowledgeId,
-        doc_id: documentId,
-        // page: pagination.current,
-        size: Math.min(pagination.pageSize, 100),
-        page: chunkIds?.length ? 1 : pagination.current,
-        // size: chunkIds?.length
-        //   ? chunkIds.length
-        //   : Math.min(pagination.pageSize, 100),
-        available_int: available,
-        keywords: searchString,
-        chunk_ids: chunkIds,
-      });
+      const pageSize = Math.min(pagination.pageSize, 100);
+      const { data } = await (entityId
+        ? kbService.entityChunkList(knowledgeId, documentId, entityId, {
+            page: pagination.current,
+            page_size: pageSize,
+            keywords: searchString,
+            available: available === undefined ? undefined : available === 1,
+          })
+        : kbService.chunkList({
+            kb_id: knowledgeId,
+            doc_id: documentId,
+            page: pagination.current,
+            size: pageSize,
+            available_int: available,
+            keywords: searchString,
+          }));
       if (data.code === 0) {
         const res = data.data;
         return {
@@ -216,6 +243,30 @@ export const useFetchNextChunkList = (
     },
   });
 
+  useEffect(() => {
+    if (!isPlaceholderData && data?.documentInfo?.id === documentId) {
+      lastDocumentInfo.current = {
+        knowledgeId,
+        documentId,
+        documentInfo: data.documentInfo,
+      };
+    }
+  }, [data, isPlaceholderData, documentId, knowledgeId]);
+
+  const safeData = useMemo(() => {
+    if (data) return data;
+    const previous = lastDocumentInfo.current;
+    return {
+      data: [],
+      total: 0,
+      documentInfo:
+        previous?.knowledgeId === knowledgeId &&
+        previous.documentId === documentId
+          ? previous.documentInfo
+          : {},
+    };
+  }, [data, knowledgeId, documentId]);
+
   const onInputChange: React.ChangeEventHandler<HTMLInputElement> = useCallback(
     (e) => {
       setPagination({ page: 1 });
@@ -233,7 +284,7 @@ export const useFetchNextChunkList = (
   );
 
   return {
-    data,
+    data: safeData,
     loading,
     pagination,
     setPagination,
@@ -241,6 +292,8 @@ export const useFetchNextChunkList = (
     handleInputChange: onInputChange,
     available,
     handleSetAvailable,
+    error,
+    refetch,
     dataUpdatedAt, // Timestamp when data was last updated - useful for cache busting
   };
 };

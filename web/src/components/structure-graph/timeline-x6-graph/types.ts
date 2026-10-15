@@ -18,6 +18,7 @@ import { type TimelineX6EdgeData, type TimelineX6NodeData } from '../adapters';
 
 export interface TimelineNodeValue {
   id: string;
+  entity_id?: string;
   name: string;
   source_chunk_ids?: string[];
 }

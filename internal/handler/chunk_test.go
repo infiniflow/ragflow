@@ -232,6 +232,25 @@ func TestChunkHandlerListChunksMapsAvailableFalse(t *testing.T) {
 	}
 }
 
+func TestChunkHandlerListEntityChunks(t *testing.T) {
+	mock := &mockChunkSvc{listFn: func(_ context.Context, req *service.ListChunksRequest, userID string) (*service.ListChunksResponse, error) {
+		if req.DatasetID != "kb-1" || req.DocID != "doc-1" || req.EntityID != "entity-1" || userID != "user-1" {
+			t.Fatalf("unexpected entity request: %+v, user=%s", req, userID)
+		}
+		if *req.Page != 2 || *req.Size != 5 || req.Keywords != "AI" || req.AvailableInt == nil || *req.AvailableInt != 0 {
+			t.Fatalf("unexpected page/filter: %+v", req)
+		}
+		return &service.ListChunksResponse{Total: 120, Chunks: []map[string]interface{}{{"id": "chunk-6"}}}, nil
+	}}
+	r, h := setupChunkHandlerWithUser("user-1", mock)
+	r.GET("/api/v1/datasets/:dataset_id/documents/:document_id/structure/entities/:entity_id/chunks", h.ListChunks)
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, httptest.NewRequest(http.MethodGet, "/api/v1/datasets/kb-1/documents/doc-1/structure/entities/entity-1/chunks?page=2&page_size=5&keywords=AI&available=false", nil))
+	if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), `"total":120`) {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+}
+
 func TestChunkHandlerSwitchChunksCallsService(t *testing.T) {
 	mock := &mockChunkSvc{}
 	r, h := setupChunkHandlerWithUser("user-1", mock)

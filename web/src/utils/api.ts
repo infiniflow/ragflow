@@ -262,6 +262,12 @@ export default {
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/chunks/${chunkId}`,
   documentStructureGraph: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/graph`,
+  documentEntityChunks: (
+    datasetId: string,
+    documentId: string,
+    entityId: string,
+  ) =>
+    `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/entities/${encodeURIComponent(entityId)}/chunks`,
   documentStructureClaims: (datasetId: string, documentId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents/${documentId}/structure/claims`,
   retrievalTest: `${restAPIv1}/datasets/search`,

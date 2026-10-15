@@ -943,6 +943,10 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       questionTip: `如果有给定的问题，则块的 Embedding 将基于它们。`,
       chunkResult: '切片结果',
       chunkResultTip: `查看用于 Embedding 和召回的切片段落。`,
+      entityUnavailable:
+        '所选实体已失效。请选择其他实体，或切换到预览以清除筛选。',
+      loadFailed: '切片加载失败，请重试。',
+      retry: '重试',
       representation: '表征',
       representationKinds: {
         knowledge_graph: 'Graph',

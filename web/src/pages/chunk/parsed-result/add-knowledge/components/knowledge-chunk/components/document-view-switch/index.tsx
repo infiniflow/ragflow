@@ -27,7 +27,7 @@ interface DocumentViewSwitchProps {
   setWidthAndHeight: (width: number, height: number) => void;
   url: string;
   positions?: number[][];
-  onChunkIdsChange?: (chunkIds: string[]) => void;
+  onEntityChange?: (entityId?: string) => void;
   // The artifact tree publishes its claims / evidence panels upward so the page
   // can render them as a resizable middle column instead of inside the tree.
   onClaimsPanelChange?: (panel: ClaimsPanelState | null) => void;
@@ -41,7 +41,7 @@ export default function DocumentViewSwitch({
   setWidthAndHeight,
   url,
   positions,
-  onChunkIdsChange,
+  onEntityChange,
   onClaimsPanelChange,
   onEvidencePanelChange,
 }: DocumentViewSwitchProps) {
@@ -49,20 +49,20 @@ export default function DocumentViewSwitch({
   const [viewMode, setViewMode] = useState<ViewMode>(ViewMode.Preview);
 
   const handleNodeClick = useCallback(
-    (node: ClickableNode) => {
-      onChunkIdsChange?.(node.source_chunk_ids ?? []);
+    (node: ClickableNode | null) => {
+      onEntityChange?.(node?.entity_id);
     },
-    [onChunkIdsChange],
+    [onEntityChange],
   );
 
   const handleViewModeChange = useCallback(
     (value: SegmentedValue) => {
       setViewMode(value as ViewMode);
       if (value === ViewMode.Preview && viewMode !== ViewMode.Preview) {
-        onChunkIdsChange?.([]);
+        onEntityChange?.();
       }
     },
-    [onChunkIdsChange, viewMode],
+    [onEntityChange, viewMode],
   );
 
   const options = [

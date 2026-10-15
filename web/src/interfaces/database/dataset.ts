@@ -270,6 +270,7 @@ export interface IWikiCommitListResponse {
 
 export interface IArtifactGraphEntity {
   slug: string;
+  entity_id?: string;
   name: string;
   aliases: string[];
   description: string;

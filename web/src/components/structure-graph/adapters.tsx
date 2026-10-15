@@ -31,6 +31,7 @@ import { type TreeData } from '@antv/g6/lib/types';
 
 declare module '@/components/ui/tree-view' {
   interface TreeDataItem {
+    entity_id?: string;
     source_chunk_ids?: string[];
     /** page_index fact/conclusion: gate-verified quotes for the detail panel. */
     description?: string;
@@ -89,6 +90,7 @@ function buildTreeDataItems(
       entity.id,
       {
         id: entity.id,
+        entity_id: entity.entity_id,
         name: entity.name,
         entityType: showEntityType ? entity.type : undefined,
         source_chunk_ids: entity.source_chunk_ids,
@@ -148,6 +150,7 @@ function buildUniqueTreeDataItems(
       entity.id,
       {
         id: entity.id,
+        entity_id: entity.entity_id,
         name: entity.name,
         entityType: entity.type,
         source_chunk_ids: entity.source_chunk_ids,
@@ -240,6 +243,7 @@ export function adaptKnowledgeGraphToForceGraph(
       const normalized = normalizeEntity(entity);
       return {
         slug: normalized.id,
+        entity_id: normalized.entity_id,
         name: normalized.name,
         aliases: normalized.aliases ?? [],
         description: getEntityDescription(normalized),
@@ -272,6 +276,7 @@ function treeDataItemToG6TreeData(item: TreeDataItem): TreeData {
   const node: TreeData = {
     id: item.id,
     data: {
+      entity_id: item.entity_id,
       name: item.name,
       source_chunk_ids: item.source_chunk_ids,
     },

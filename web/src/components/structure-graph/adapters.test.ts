@@ -42,7 +42,11 @@ describe('adaptMindMapToIndentedTree', () => {
       kind: CompilationTemplateKind.MindMap,
       template_id: 't1',
       template_name: 'mindmap',
-      entities: [{ name: 'root' }, { name: 'child a' }, { name: 'child b' }],
+      entities: [
+        { name: 'root', entity_id: 'row-root' },
+        { name: 'child a' },
+        { name: 'child b' },
+      ],
       relations: [
         { from: 'root', to: 'root', type: 'related' },
         { from: 'root', to: 'child a', type: 'related' },
@@ -51,6 +55,7 @@ describe('adaptMindMapToIndentedTree', () => {
     });
 
     expect(tree.id).toBe('root');
+    expect(tree.data?.entity_id).toBe('row-root');
     expect(tree.children?.map((child) => child.id)).toEqual([
       'child a',
       'child b',

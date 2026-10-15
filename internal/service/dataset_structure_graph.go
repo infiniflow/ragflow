@@ -172,8 +172,9 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 			}
 		}
 	}
-	chunkIDs := graphSourceChunkIDs(payload, row)
+	chunkIDs := StructureSourceChunkIDs(payload, row)
 	node := StructureGraphNode{
+		"entity_id":        firstStringValue(row["id"]),
 		"aliases":          aliases,
 		"mention_count":    1,
 		"name":             name,
@@ -187,7 +188,9 @@ func projectEntity(row map[string]interface{}) StructureGraphNode {
 	return node
 }
 
-func graphSourceChunkIDs(payload, row map[string]interface{}) []string {
+// StructureSourceChunkIDs extracts distinct sources, preferring an explicit
+// payload field (including an empty value) over the row's indexed field.
+func StructureSourceChunkIDs(payload, row map[string]interface{}) []string {
 	var out []string
 	add := func(v interface{}) {
 		switch x := v.(type) {
@@ -560,7 +563,7 @@ func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenan
 	ids := make([]string, 0)
 	seen := map[string]bool{}
 	for _, row := range rows {
-		for _, id := range graphSourceChunkIDs(nil, row) {
+		for _, id := range StructureSourceChunkIDs(nil, row) {
 			if id != "" && !seen[id] {
 				seen[id] = true
 				ids = append(ids, id)
@@ -592,7 +595,7 @@ func (s *DatasetArtifactService) structureSourceOrder(ctx context.Context, tenan
 // chunk_order_int among its source_chunk_ids (false when none resolve).
 func structureRowSourceOrder(row map[string]interface{}, order map[string]int) (int, bool) {
 	best, found := 0, false
-	for _, id := range graphSourceChunkIDs(nil, row) {
+	for _, id := range StructureSourceChunkIDs(nil, row) {
 		v, ok := order[id]
 		if !ok {
 			continue
