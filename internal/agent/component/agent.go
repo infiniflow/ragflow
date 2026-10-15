@@ -12,6 +12,7 @@
 package component
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -818,6 +819,7 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 	}
 	tools = append(tools, mcpTools...)
 	toolNames := make(map[string]struct{}, len(tools)+len(p.SubAgents))
+	toolInfoByName := make(map[string][]byte, len(tools))
 	var deduped []einotool.BaseTool
 	for _, tool := range tools {
 		info, err := tool.Info(ctx)
@@ -827,16 +829,32 @@ func buildAgentTools(ctx context.Context, p AgentParam) ([]einotool.BaseTool, er
 		if info == nil || strings.TrimSpace(info.Name) == "" {
 			return nil, fmt.Errorf("agent tool info: missing name")
 		}
-		if _, exists := toolNames[info.Name]; exists {
-			// DSLs can list the same Retrieval tool twice (agent tools and
-			// canvas nodes both produce entries); identical names are
-			// indistinguishable to the model, so keep the first instead of
-			// failing the whole run.
-			common.Warn("agent: dropping duplicate tool name", zap.String("name", info.Name))
-			continue
+		infoJSON, err := json.Marshal(info)
+		if err != nil {
+			return nil, fmt.Errorf("agent tool info: marshal: %w", err)
 		}
-		toolNames[info.Name] = struct{}{}
-		deduped = append(deduped, tool)
+		name := info.Name
+		if _, exists := toolNames[name]; exists {
+			if bytes.Equal(toolInfoByName[name], infoJSON) {
+				// Identical tool definition registered more than once (e.g.
+				// agent-level tools and canvas nodes). The model cannot
+				// distinguish them, so keep the first occurrence.
+				common.Warn("agent: dropping identical duplicate tool", zap.String("name", name))
+				continue
+			}
+			// Same name but different configuration: assign a unique name
+			// rather than silently dropping the second definition.
+			name = uniqueAgentToolName(name, toolNames)
+			common.Warn("agent: renamed tool with duplicate name to keep distinct configuration",
+				zap.String("original", info.Name), zap.String("assigned", name))
+		}
+		toolNames[name] = struct{}{}
+		toolInfoByName[name] = infoJSON
+		if name != info.Name {
+			deduped = append(deduped, &renamedTool{BaseTool: tool, name: name})
+		} else {
+			deduped = append(deduped, tool)
+		}
 	}
 	for _, subAgent := range p.SubAgents {
 		name := uniqueAgentToolName(subAgent.Name, toolNames)
@@ -891,6 +909,26 @@ func indexedToolBaseName(name string) (string, bool) {
 		}
 	}
 	return name[:i], true
+}
+
+// renamedTool wraps a BaseTool so a duplicate-name instance can be exposed
+// to the model under a unique name while reusing the same invocation logic.
+type renamedTool struct {
+	einotool.BaseTool
+	name string
+}
+
+func (t *renamedTool) Info(ctx context.Context) (*schema.ToolInfo, error) {
+	info, err := t.BaseTool.Info(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if info == nil {
+		return nil, nil
+	}
+	renamed := *info
+	renamed.Name = t.name
+	return &renamed, nil
 }
 
 type subAgentTool struct {
