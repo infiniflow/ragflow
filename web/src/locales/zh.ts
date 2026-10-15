@@ -1799,18 +1799,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
       ttsModel: 'TTS',
       ttsModelTip:
-        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       rerankModel: 'Rerank',
-      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
+      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',

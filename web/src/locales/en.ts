@@ -2178,18 +2178,18 @@ Example: Virtual Hosted Style`,
       chatModelTip: 'The default LLM for each newly created dataset.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank',
-      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       workspace: 'workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
