@@ -310,6 +310,7 @@ var pdfParseMethodSpellings = map[string]string{
 	"docling":        "docling",
 	"opendataloader": "opendataloader",
 	"tcadp parser":   "tcadp",
+	"tcadp":          "tcadp",
 	"paddleocr":      "paddleocr",
 	"somark":         "somark",
 }
@@ -318,32 +319,15 @@ var pdfParseMethodSpellings = map[string]string{
 // a VLM model selector. "@"-suffixed spellings such as "foo@mineru" are
 // layout_recognizer selectors resolved separately, so they report false.
 func IsPDFParseMethod(raw string) bool {
-	_, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
+	_, ok := CanonicalPDFParseMethod(raw)
 	return ok
 }
 
-// IsSupportedPDFParseMethod reports whether raw is a canonical parse_method the
-// Go PDF path can actually run: a token supportedPDFParseMethods accepts, or
-// "monkeyocrv2", which the ingestion vision dispatcher handles before PDFParser
-// is reached. raw is expected to be a canonical token (the output of
-// pdfParseMethodSpellings); map a user-facing spelling through that table first.
-//
-// Writers that must store a parse_method — the Python-era parser_config
-// migration, for instance — use this rather than keeping their own copy of the
-// vocabulary, so a token this build cannot execute is never persisted.
-func IsSupportedPDFParseMethod(raw string) bool {
-	method := strings.ToLower(strings.TrimSpace(raw))
-	if method == "" {
-		// "" is supportedPDFParseMethods' unset sentinel: the parser reads it as
-		// "no method chosen" and falls back to its DeepDOC default. It is not a
-		// method a caller can store, so it reports false here.
-		return false
-	}
-	if method == "monkeyocrv2" {
-		return true
-	}
-	_, ok := supportedPDFParseMethods[method]
-	return ok
+// CanonicalPDFParseMethod resolves a recognized engine spelling to its stored
+// token. Model references are resolved by the ingestion dispatcher separately.
+func CanonicalPDFParseMethod(raw string) (string, bool) {
+	method, ok := pdfParseMethodSpellings[strings.ToLower(strings.TrimSpace(raw))]
+	return method, ok
 }
 
 func normalizePDFParseMethod(raw string) string {
@@ -358,7 +342,7 @@ func normalizePDFParseMethod(raw string) string {
 	case strings.HasSuffix(method, "@opendataloader"):
 		return "opendataloader"
 	}
-	if canonical, ok := pdfParseMethodSpellings[method]; ok {
+	if canonical, ok := CanonicalPDFParseMethod(method); ok {
 		return canonical
 	}
 	return method

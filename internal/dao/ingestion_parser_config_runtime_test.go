@@ -573,7 +573,7 @@ func effectiveComponentParams(t *testing.T, parserID string, config map[string]a
 		if !ok {
 			t.Fatalf("stored cpnID %q is not an object", cpnID)
 		}
-		out[cpnID] = params
+		out[cpnID] = mergeComponentParams(out[cpnID], params)
 	}
 	return out
 }

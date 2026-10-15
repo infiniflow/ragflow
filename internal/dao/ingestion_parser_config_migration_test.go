@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/glebarez/sqlite"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
 	"gorm.io/gorm"
+	"ragflow/internal/common"
 	"ragflow/internal/entity"
-	parserpkg "ragflow/internal/parser/parser"
 )
 
 // Test bridges keep migration internals out of the production API.
@@ -34,8 +35,12 @@ func TestMigrateIngestionConfig(t *testing.T) {
 		{name: "tcadp result options follow the engine", parser: "table", input: `{"layout_recognize":"TCADP Parser","table_result_type":"2","markdown_image_response_type":"2"}`, want: `{"Parser:HipSignsRhyme":{"spreadsheet":{"markdown_image_response_type":"2","parse_method":"tcadp","table_result_type":"2"}}}`},
 		{name: "tcadp result options without the engine", parser: "table", input: `{"layout_recognize":"DeepDOC","table_result_type":"2"}`, want: `{}`},
 		{name: "model reference stays a layout recognizer", input: `{"layout_recognize":"bge-m3@mineru"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":"bge-m3@mineru"}}}`},
-		{name: "mistral ocr is dropped", input: `{"layout_recognize":"foo@mistral ocr"}`, want: `{}`},
-		{name: "unknown engine is dropped", input: `{"layout_recognize":"MagicOCR"}`, want: `{}`},
+		{name: "existing engine wins over old model reference", input: `{"layout_recognize":"foo@MinerU","Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`},
+		{name: "existing model reference wins over old engine", input: `{"layout_recognize":"DeepDOC","Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":"foo@MinerU"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"layout_recognizer":"foo@MinerU"}}}`},
+		{name: "existing engine supersedes unsupported old engine", input: `{"layout_recognize":"MagicOCR","Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`},
+		{name: "PDF selector does not mask spreadsheet engine", input: `{"layout_recognize":"TCADP Parser","Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"plain_text"},"spreadsheet":{"parse_method":"tcadp"}}}`},
+		{name: "MinerU options reach the PDF setup", input: `{"layout_recognize":"MinerU","mineru_parse_method":"ocr","mineru_lang":"English"}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_parse_method":"ocr","mineru_lang":"English"}}}`},
+		{name: "existing MinerU options win", input: `{"mineru_lang":"English","Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_lang":"Chinese"}}}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"parse_method":"mineru","mineru_lang":"Chinese"}}}`},
 		{name: "picture has no engine path", parser: "picture", input: `{"layout_recognize":"PaddleOCR"}`, want: `{}`},
 		{name: "audio has no engine path", parser: "audio", input: `{"layout_recognize":true}`, want: `{}`},
 		{name: "pages are normalized", input: `{"pages":[[3,5],[1,2],[6,7]]}`, want: `{"Parser:HipSignsRhyme":{"pdf":{"pages":[[1,7]]}}}`},
@@ -65,6 +70,12 @@ func TestMigrateIngestionConfig(t *testing.T) {
 		{name: "group shape wins over the legacy flag", input: `{"parent_child":{"use_parent_child":false,"children_delimiter":"|"},"enable_children":true,"children_delimiter":"。"}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":false,"children_delimiter":"|"},"children_delimiters":[]}}`},
 		{name: "parent child delimiters default to a newline", input: `{"parent_child":{"use_parent_child":true}}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"\n"},"children_delimiters":["\n"]}}`},
 		{name: "parent child on a QA chunker", parser: "qa", input: `{"enable_children":true}`, want: `{}`},
+		{name: "effective Python child delimiter", input: `{"children_delimiter":"。"}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"。"},"children_delimiters":["。"]}}`},
+		{name: "escaped Python child delimiter", input: `{"enable_children":true,"children_delimiter":"\\n"}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"\n"},"children_delimiters":["\n"]}}`},
+		{name: "explicit empty child delimiter stays disabled", input: `{"parent_child":{"use_parent_child":true,"children_delimiter":""}}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":""},"children_delimiters":[]}}`},
+		{name: "existing disabled child group wins", input: `{"enable_children":true,"children_delimiter":"。","GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":false,"children_delimiter":"|"}}}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":false,"children_delimiter":"|"},"children_delimiters":[]}}`},
+		{name: "existing enabled child group wins", input: `{"enable_children":false,"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"|"}}}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"|"},"children_delimiters":["|"]}}`},
+		{name: "explicit runtime child delimiters win", input: `{"enable_children":true,"children_delimiter":"。","GeneralChunker:SixApplesFall":{"children_delimiters":["|"]}}`, want: `{"GeneralChunker:SixApplesFall":{"parent_child":{"use_parent_child":true,"children_delimiter":"。"},"children_delimiters":["|"]}}`},
 		{name: "filename weight", parser: "picture", input: `{"filename_embd_weight":0}`, want: `{"Tokenizer:SharpLensFocus":{"filename_embd_weight":0}}`},
 		{name: "null filename weight", parser: "picture", input: `{"filename_embd_weight":null}`, want: `{}`},
 		{name: "null engine", input: `{"layout_recognize":null}`, want: `{}`},
@@ -85,7 +96,7 @@ func TestMigrateIngestionConfig(t *testing.T) {
 			input:  `{"layout_recognize":true,"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false}}}`,
 			want:   `{"Parser:HipSignsRhyme":{"pdf":{"preprocess":["main_content"],"remove_toc":false,"parse_method":"deepdoc"}}}`,
 		},
-		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x","mineru_lang":"en","mineru_formula_enable":true}`, want: `{}`},
+		{name: "retired settings are deleted", input: `{"html4excel":true,"task_page_size":256,"analyze_hyperlink":true,"hyperlink_urls":true,"video_prompt":"x","mineru_formula_enable":true}`, want: `{}`},
 		{name: "no owned keys", input: `{"chunk_method":"naive","topn_tags":5}`, want: `{"chunk_method":"naive","topn_tags":5}`},
 		{name: "empty config", input: `{}`, want: `{}`},
 		{name: "canvas rows are skipped", pipeline: ptrString("canvas-1"), input: `{"layout_recognize":true,"chunk_token_num":128}`, want: `{"layout_recognize":true,"chunk_token_num":128}`},
@@ -117,6 +128,11 @@ func TestMigrateIngestionConfig(t *testing.T) {
 
 func TestMigrateIngestionConfigRejectsMalformedValues(t *testing.T) {
 	for _, raw := range []string{
+		`{"layout_recognize":"MagicOCR"}`,
+		`{"layout_recognize":"foo@mistral ocr"}`,
+		`{"layout_recognize":"model@instance@somark"}`,
+		`{"layout_recognize":"model@instance@opendataloader"}`,
+		`{"layout_recognize":"model@instance@paddleocr"}`,
 		`{"pages":"1-5"}`,
 		`{"pages":[[0,5]]}`,
 		`{"pages":[[5,1]]}`,
@@ -146,30 +162,20 @@ func TestMigrateIngestionConfigRejectsMalformedValues(t *testing.T) {
 	}
 }
 
-// TestIngestionPDFEngineVocabulary keeps the migration's engine table aligned
-// with the parser package, which owns the executable vocabulary.
-func TestIngestionPDFEngineVocabulary(t *testing.T) {
-	for spelling, canonical := range ingestionPDFEngines {
-		// "tcadp" is both a fired spelling and the canonical token: the parser's
-		// spelling table knows only "tcadp parser", but a stored config may
-		// already carry the canonical form.
-		if !parserpkg.IsPDFParseMethod(spelling) && spelling != canonical {
-			t.Errorf("IsPDFParseMethod(%q) = false; the parser does not recognize this spelling", spelling)
-		}
-		if !parserpkg.IsSupportedPDFParseMethod(canonical) {
-			t.Errorf("IsSupportedPDFParseMethod(%q) = false (from spelling %q)", canonical, spelling)
-		}
-		if canonical != strings.ToLower(strings.TrimSpace(canonical)) {
-			t.Errorf("canonical token %q is not normalized (from spelling %q)", canonical, spelling)
-		}
+func TestMigrateIngestionConfigLogsRetiredFields(t *testing.T) {
+	core, logs := observer.New(zap.WarnLevel)
+	previous := common.Logger
+	common.Logger = zap.New(core)
+	t.Cleanup(func() { common.Logger = previous })
+	config := decodeIngestionConfig(t, `{"html4excel":true,"task_page_size":12,"mineru_formula_enable":false}`)
+	if _, err := migrateIngestionConfig(config, "general", nil, "document", "doc-1"); err != nil {
+		t.Fatal(err)
 	}
-	// Python's PARSERS lists "mistral ocr"; Go has no backend for it, so the
-	// migration must not claim it maps anywhere.
-	if _, ok := ingestionPDFEngines[ingestionMistralOCR]; ok {
-		t.Errorf("%q must not have a canonical token", ingestionMistralOCR)
-	}
-	if parserpkg.IsSupportedPDFParseMethod(ingestionMistralOCR) {
-		t.Errorf("IsSupportedPDFParseMethod(%q) = true; Go gained a Mistral OCR backend, so the migration may map it now", ingestionMistralOCR)
+	for _, field := range []string{"html4excel", "task_page_size", "mineru_formula_enable"} {
+		entries := logs.FilterField(zap.String("field", field)).All()
+		if len(entries) != 1 || entries[0].ContextMap()["table"] != "document" || entries[0].ContextMap()["row_id"] != "doc-1" {
+			t.Errorf("missing row-specific warning for %s: %v", field, entries)
+		}
 	}
 }
 

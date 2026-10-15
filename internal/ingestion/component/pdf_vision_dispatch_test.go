@@ -31,9 +31,18 @@ import (
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/utility"
 
 	"gorm.io/gorm"
 )
+
+func TestTCADPUsesPDFParserInsteadOfVisionModel(t *testing.T) {
+	_, handled, err := maybeDispatchPDFVision(t.Context(), nil, utility.FileTypePDF,
+		"sample.pdf", nil, nil, map[string]schema.ParserSetup{"pdf": {"parse_method": "tcadp"}})
+	if handled || err != nil {
+		t.Fatalf("TCADP was dispatched as a vision model: handled=%v err=%v", handled, err)
+	}
+}
 
 func TestMonkeyOCRv2ExtractSectionsUsesNativeJSON(t *testing.T) {
 	var buffer bytes.Buffer

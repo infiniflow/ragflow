@@ -88,29 +88,9 @@ func (t builtinIngestionTarget) hasFamily(family string) bool {
 	return ok
 }
 
-// chunkerAcceptsContextSize reports whether the target chunker exposes the
-// table_context_size / image_context_size params. Only GeneralChunker and
-// TokenChunker have a param struct carrying them
-// (internal/ingestion/component/schema/chunker.go); the title, manual, page,
-// one, QA and table chunkers have no such field.
-func (t builtinIngestionTarget) chunkerAcceptsContextSize() bool {
-	return t.chunker == "GeneralChunker" || t.chunker == "TokenChunker"
-}
-
-// chunkerAcceptsChunkSettings reports whether the target chunker reads
-// chunk_token_size / delimiters / overlapped_percent. Same two components:
-// TitleChunker reuses its own param struct (no delimiters, no overlap),
-// ManualChunker pins method=group and ignores the token cap, and the remaining
-// chunkers take no params at all.
-func (t builtinIngestionTarget) chunkerAcceptsChunkSettings() bool {
-	return t.chunker == "GeneralChunker" || t.chunker == "TokenChunker"
-}
-
-// chunkerAcceptsParentChild reports whether parent/child settings have a home on
-// the target chunker. pipeline.IsChunkerComponent accepts only GeneralChunker and
-// TokenChunker ids, so CleanComponentParams would drop the group on any other
-// node even if it were written.
-func (t builtinIngestionTarget) chunkerAcceptsParentChild() bool {
+// acceptsChunkParams reports whether the chunker accepts delimiter, overlap,
+// context and parent/child parameters.
+func (t builtinIngestionTarget) acceptsChunkParams() bool {
 	return t.chunker == "GeneralChunker" || t.chunker == "TokenChunker"
 }
 
@@ -136,7 +116,7 @@ func multiColumnDefault() map[string]any { return map[string]any{"enable_multi_c
 // list mirrors the Parser node's params in each embedded template: writing into
 // a family the template does not carry would be dropped by CleanComponentParams
 // and never reach the parser.
-func ingestionTargets() map[string]builtinIngestionTarget {
+var ingestionTargets = func() map[string]builtinIngestionTarget {
 	// "naive" is the historical name of the general pipeline: the embedded
 	// general template declares parser_ids ["naive"] and the registry aliases
 	// "general" onto it.
@@ -231,12 +211,14 @@ func ingestionTargets() map[string]builtinIngestionTarget {
 			tokenizerNode:  "Tokenizer:NiceWordsSpoken",
 		},
 	}
-}
+}()
 
-// IngestionParserFlatKeys are the Python-era top level keys this step converts.
+// ingestionParserFlatKeys are the Python-era top level keys this step converts.
 var (
 	ingestionParserFlatKeys = []string{
 		"layout_recognize",
+		"mineru_parse_method",
+		"mineru_lang",
 		"pages",
 		"table_result_type",
 		"markdown_image_response_type",
@@ -273,12 +255,9 @@ var ingestionRetiredFlatKeys = []string{
 	// Video parsing is rejected at dispatch
 	// (internal/ingestion/component/media_dispatch.go:maybeDispatchVideo).
 	"video_prompt",
-	// MinerU option keys: Go selects MinerU from the layout recognizer itself
-	// and has no per-option wiring.
-	"mineru_parse_method",
+	// These MinerU toggles have no Go reader; method and language are migrated.
 	"mineru_formula_enable",
 	"mineru_table_enable",
-	"mineru_lang",
 }
 
 // ingestionOwnedFlatKeys is every flat key this step consumes or retires. A row
@@ -381,7 +360,7 @@ func migrateIngestionConfig(config map[string]any, parserID string, pipelineID *
 	if pipelineID != nil && strings.TrimSpace(*pipelineID) != "" {
 		return false, nil
 	}
-	target, ok := ingestionTargets()[strings.ToLower(strings.TrimSpace(parserID))]
+	target, ok := ingestionTargets[strings.ToLower(strings.TrimSpace(parserID))]
 	if !ok {
 		// resume / tag / knowledge_graph and unknown parser ids have no Go
 		// template, so their settings are preserved instead of being dropped.
@@ -412,6 +391,11 @@ func migrateIngestionConfig(config map[string]any, parserID string, pipelineID *
 	changed, err := applyNodeWrites(config, writes)
 	if err != nil {
 		return false, err
+	}
+	for _, key := range ingestionRetiredFlatKeys {
+		if _, exists := config[key]; exists {
+			row.retire(key, "this Python setting has no Go consumer")
+		}
 	}
 	for _, key := range ingestionOwnedFlatKeys() {
 		if _, exists := config[key]; exists {
@@ -523,48 +507,29 @@ func applyNodeWrites(config map[string]any, writes nodeWrites) (bool, error) {
 	return changed, nil
 }
 
-// ingestionPDFEngines maps a Python-era layout_recognize engine name (lowered
-// and trimmed) to the canonical Go parse_method token. The vocabulary is
-// Python's rag/app/naive.py PARSERS map (deepdoc, mineru, monkeyocrv2, docling,
-// opendataloader, "tcadp parser", paddleocr, somark, "mistral ocr", plaintext)
-// restricted to the engines Go implements: "mistral ocr" has no Go backend, so
-// it is absent and falls through to the retire path rather than being rewritten
-// to DeepDOC behind the operator's back.
-//
-// TestIngestionParserEngineVocabulary checks every value against
-// parser.IsPDFParseMethod, so this table cannot drift from the parser's own
-// accepted spellings.
-var ingestionPDFEngines = map[string]string{
-	"deepdoc":        "deepdoc",
-	"plaintext":      "plain_text",
-	"plain text":     "plain_text",
-	"plain_text":     "plain_text",
-	"mineru":         "mineru",
-	"monkeyocrv2":    "monkeyocrv2",
-	"docling":        "docling",
-	"opendataloader": "opendataloader",
-	"tcadp":          "tcadp",
-	"tcadp parser":   "tcadp",
-	"paddleocr":      "paddleocr",
-	"somark":         "somark",
-}
-
-// ingestionMistralOCR is the Python engine Go has no backend for. Python maps a
-// layout_recognizer ending in "@mistral ocr" to its Mistral OCR factory
-// (common/parser_config_utils.py:normalize_layout_recognizer).
-const ingestionMistralOCR = "mistral ocr"
-
 // convertIngestionParser moves the flat PDF-parser settings onto the row's
-// Parser node. It never invents an engine: a name Go cannot run is dropped with
-// a warning, leaving the template's own parse_method in place.
+// Parser node. An unsupported engine stops migration before the source is lost.
 func convertIngestionParser(config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) error {
 	engine := ""
 	if raw, ok := config["layout_recognize"]; ok {
-		derived, err := convertIngestionLayoutRecognize(raw, target, writes, row)
+		derived, err := convertIngestionLayoutRecognize(raw, config, target, writes, row)
 		if err != nil {
 			return err
 		}
 		engine = derived
+	}
+	for _, key := range []string{"mineru_parse_method", "mineru_lang"} {
+		if raw, exists := config[key]; exists && raw != nil {
+			value, ok := raw.(string)
+			if !ok {
+				return fmt.Errorf("%s must be a string, got %T", key, raw)
+			}
+			if target.hasFamily("pdf") {
+				writes.setSetup(target.parserNode, "pdf", key, value)
+			} else {
+				row.retire(key, "the targeted pipeline has no PDF file family")
+			}
+		}
 	}
 	if err := convertIngestionParserPages(config, target, writes, row); err != nil {
 		return err
@@ -604,7 +569,25 @@ func seedCarriedParserFamilyDefaults(target builtinIngestionTarget, writes nodeW
 // convertIngestionLayoutRecognize resolves the flat engine setting. It returns
 // the canonical token it selected for the PDF family ("" when none), which the
 // TCADP option keys key off.
-func convertIngestionLayoutRecognize(raw any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) (string, error) {
+func convertIngestionLayoutRecognize(raw any, config map[string]any, target builtinIngestionTarget, writes nodeWrites, row ingestionConfigRow) (string, error) {
+	// An existing selector owns the engine choice as a whole: filling its
+	// sibling could change which dispatcher wins, even if the old value stays.
+	if node, ok := config[target.parserNode].(map[string]any); ok {
+		if setup, ok := node["pdf"].(map[string]any); ok {
+			_, hasMethod := setup["parse_method"]
+			_, hasModel := setup["layout_recognizer"]
+			if hasMethod || hasModel {
+				// A PDF selector does not own the spreadsheet family's engine.
+				if value, ok := raw.(string); ok && target.hasFamily("spreadsheet") {
+					if method, known := parserpkg.CanonicalPDFParseMethod(value); known && method == "tcadp" {
+						writes.setSetup(target.parserNode, "spreadsheet", "parse_method", method)
+						return method, nil
+					}
+				}
+				return "", nil
+			}
+		}
+	}
 	switch value := raw.(type) {
 	case nil:
 		// A null engine means "unset": nothing to derive, nothing lost.
@@ -629,30 +612,23 @@ func convertIngestionLayoutRecognize(raw any, target builtinIngestionTarget, wri
 			return "", fmt.Errorf("layout_recognize must not be empty")
 		}
 		if ingestionLayoutModelReference(trimmed) {
-			if ingestionModelReferenceEngine(trimmed) == ingestionMistralOCR {
-				row.retire("layout_recognize", "Go has no Mistral OCR engine")
-				return "", nil
-			}
 			if !target.hasFamily("pdf") {
 				row.retire("layout_recognize", "the targeted pipeline has no PDF file family")
 				return "", nil
 			}
-			// A VLM model reference is not a parse method: keep the full
-			// reference so the PDF vision dispatcher can resolve it.
+			// These OCR selectors cannot be resolved by the Go ingestion dispatcher.
+			// Preserve them by stopping rather than sending them to generic VLM chat.
+			switch ingestionModelReferenceEngine(trimmed) {
+			case "mistral ocr", "somark", "opendataloader", "paddleocr":
+				return "", fmt.Errorf("layout_recognize %q has no supported Go model-reference dispatch", trimmed)
+			}
+			// Keep supported OCR and VLM model references whole.
 			writes.setSetup(target.parserNode, "pdf", "layout_recognizer", trimmed)
 			return "", nil
 		}
-		method, known := ingestionPDFEngines[strings.ToLower(trimmed)]
+		method, known := parserpkg.CanonicalPDFParseMethod(trimmed)
 		if !known {
-			row.retire("layout_recognize", fmt.Sprintf("%q is not a parse method this build implements", trimmed))
-			return "", nil
-		}
-		if !parserpkg.IsSupportedPDFParseMethod(method) {
-			// The parser package owns the executable vocabulary; a token it
-			// cannot run must not be persisted, or the pipeline would fail at
-			// parse time instead of keeping the template's engine.
-			row.retire("layout_recognize", fmt.Sprintf("%q maps to %q, which this build cannot parse", trimmed, method))
-			return "", nil
+			return "", fmt.Errorf("layout_recognize %q is not a supported Go parse method", trimmed)
 		}
 		if target.hasFamily("pdf") {
 			writes.setSetup(target.parserNode, "pdf", "parse_method", method)
@@ -754,7 +730,13 @@ func ingestionEffectiveFamilyEngine(config map[string]any, writes nodeWrites, pa
 	if node, ok := config[parserNode].(map[string]any); ok {
 		if setup, ok := node[family].(map[string]any); ok {
 			if existing, ok := setup["parse_method"].(string); ok && existing != "" {
+				if canonical, known := parserpkg.CanonicalPDFParseMethod(existing); known {
+					return canonical
+				}
 				return strings.ToLower(existing)
+			}
+			if model, ok := setup["layout_recognizer"].(string); ok && model != "" {
+				return strings.ToLower(model)
 			}
 		}
 	}
@@ -942,7 +924,7 @@ func convertIngestionDelimiter(config map[string]any, target builtinIngestionTar
 	if !ok || raw == nil {
 		return nil
 	}
-	if !target.chunkerAcceptsChunkSettings() {
+	if !target.acceptsChunkParams() {
 		row.retire("delimiter", fmt.Sprintf("%s splits on its own structure", target.chunker))
 		return nil
 	}
@@ -975,7 +957,7 @@ func convertIngestionOverlappedPercent(config map[string]any, target builtinInge
 	if !ok || raw == nil {
 		return
 	}
-	if !target.chunkerAcceptsChunkSettings() {
+	if !target.acceptsChunkParams() {
 		row.retire("overlapped_percent", fmt.Sprintf("%s has no overlap parameter", target.chunker))
 		return
 	}
@@ -1000,7 +982,7 @@ func convertIngestionContextSizes(config map[string]any, target builtinIngestion
 		if !ok || raw == nil {
 			continue
 		}
-		if !target.chunkerAcceptsContextSize() {
+		if !target.acceptsChunkParams() {
 			row.retire(key, fmt.Sprintf("%s has no context size parameter", target.chunker))
 			continue
 		}
@@ -1026,7 +1008,7 @@ func convertIngestionParentChild(config map[string]any, target builtinIngestionT
 	if !hasGroup && !hasEnabled && !hasDelimiter {
 		return nil
 	}
-	if !target.chunkerAcceptsParentChild() {
+	if !target.acceptsChunkParams() {
 		row.retire("parent_child", fmt.Sprintf("%s cannot split parent chunks into children", target.chunker))
 		return nil
 	}
@@ -1068,15 +1050,28 @@ func convertIngestionParentChild(config map[string]any, target builtinIngestionT
 		}
 		childrenDelimiter = text
 	}
-	if childrenDelimiter == "" {
-		// Python's ParentChildConfig defaults children_delimiter to a newline.
+	if !delimiterFromGroup && (!hasDelimiter || delimiterRaw == nil) {
 		childrenDelimiter = "\n"
 	}
-
-	writes.set(target.chunkerNode, "parent_child", map[string]any{
-		"use_parent_child":   useParentChild,
-		"children_delimiter": childrenDelimiter,
-	})
+	if !useFromGroup && (!hasEnabled || enabledRaw == nil) && hasDelimiter {
+		useParentChild = childrenDelimiter != ""
+	}
+	childrenDelimiter = decodePythonChildDelimiter(childrenDelimiter)
+	group := map[string]any{"use_parent_child": useParentChild, "children_delimiter": childrenDelimiter}
+	if node, ok := config[target.chunkerNode].(map[string]any); ok {
+		if raw, present := node["parent_child"]; present {
+			existing, ok := raw.(map[string]any)
+			if !ok {
+				return fmt.Errorf("%s.parent_child is not an object", target.chunkerNode)
+			}
+			for key, value := range existing {
+				group[key] = value
+			}
+		}
+	}
+	useParentChild, _ = group["use_parent_child"].(bool)
+	childrenDelimiter, _ = group["children_delimiter"].(string)
+	writes.set(target.chunkerNode, "parent_child", group)
 	children := []any{}
 	if useParentChild {
 		for _, delimiter := range parserchunk.ParseDelimiterField(childrenDelimiter) {
@@ -1085,6 +1080,25 @@ func convertIngestionParentChild(config map[string]any, target builtinIngestionT
 	}
 	writes.set(target.chunkerNode, "children_delimiters", children)
 	return nil
+}
+
+// Python decodes escaped control characters before splitting child chunks.
+// Unknown escapes retain their backslash, as unicode_escape does.
+func decodePythonChildDelimiter(text string) string {
+	var out strings.Builder
+	for len(text) > 0 {
+		if text[0] == '\\' {
+			char, _, tail, err := strconv.UnquoteChar(text, '"')
+			if err == nil {
+				out.WriteRune(char)
+				text = tail
+				continue
+			}
+		}
+		out.WriteByte(text[0])
+		text = text[1:]
+	}
+	return out.String()
 }
 
 // convertIngestionTokenizer moves the filename weight onto the row's tokenizer.

@@ -505,7 +505,7 @@ func TestNormalizePDFParseMethod_PlainTextSpellings(t *testing.T) {
 func TestIsPDFParseMethod(t *testing.T) {
 	named := []string{
 		"deepdoc", "plain_text", "plaintext", "plain text", "mineru",
-		"monkeyocrv2", "docling", "opendataloader", "tcadp parser",
+		"monkeyocrv2", "docling", "opendataloader", "tcadp parser", "tcadp",
 		"paddleocr", "somark",
 		"DeepDoc", "PLAIN_TEXT", "MinerU", "DocLing",
 		"OpenDataLoader", "TCADP Parser", "PaddleOCR", "SoMark",
@@ -517,10 +517,8 @@ func TestIsPDFParseMethod(t *testing.T) {
 		}
 	}
 
-	// Anything else is a VLM model name: the UI never writes the bare
-	// "tcadp" abbreviation, and empty values are rejected separately.
+	// Empty values are rejected separately; other names are model selectors.
 	notNamed := []string{
-		"tcadp",
 		"CustomVLM", "some_vlm", "gpt-4o",
 		"", "  ",
 	}
@@ -598,27 +596,20 @@ func TestPDFParseMethodTablesAgree(t *testing.T) {
 	}
 }
 
-// TestIsSupportedPDFParseMethod pins the writer-facing validity check against
-// the two vocabulary tables it is derived from.
-func TestIsSupportedPDFParseMethod(t *testing.T) {
-	for spelling, canonical := range pdfParseMethodSpellings {
-		if !IsSupportedPDFParseMethod(canonical) {
-			t.Errorf("IsSupportedPDFParseMethod(%q) = false for spelling %q", canonical, spelling)
+func TestCanonicalPDFParseMethod(t *testing.T) {
+	for _, tc := range []struct{ input, want string }{
+		{"TCADP Parser", "tcadp"}, {"tcadp", "tcadp"},
+		{" Plain Text ", "plain_text"}, {"PLAIN_TEXT", "plain_text"},
+		{"monkeyocrv2", "monkeyocrv2"},
+	} {
+		got, ok := CanonicalPDFParseMethod(tc.input)
+		if !ok || got != tc.want || !IsPDFParseMethod(got) {
+			t.Errorf("%q: canonical=%q recognized=%v", tc.input, got, ok)
 		}
 	}
-	// "tcadp" has no spelling of its own (it is reachable through "tcadp
-	// parser"), and "monkeyocrv2" is dispatcher-handled rather than executable
-	// by the parser switch; both must still be accepted.
-	for _, token := range []string{"tcadp", "monkeyocrv2", " deepdoc ", "PLAIN_TEXT"} {
-		if !IsSupportedPDFParseMethod(token) {
-			t.Errorf("IsSupportedPDFParseMethod(%q) = false", token)
-		}
-	}
-	// The unset sentinel means "no method chosen", and a VLM model selector or
-	// an engine this build does not implement are not storeable methods.
-	for _, token := range []string{"", "mistral ocr", "foo@mineru", "MagicOCR", "not a method"} {
-		if IsSupportedPDFParseMethod(token) {
-			t.Errorf("IsSupportedPDFParseMethod(%q) = true, want false", token)
+	for _, input := range []string{"", "mistral ocr", "foo@mineru", "MagicOCR"} {
+		if _, ok := CanonicalPDFParseMethod(input); ok {
+			t.Errorf("model or unsupported engine accepted: %q", input)
 		}
 	}
 }
