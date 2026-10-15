@@ -1180,7 +1180,7 @@ The above is the content you need to summarize.`,
         'LLM по подразбиране за всяка новосъздадена база от знания.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Embedding модел по подразбиране за всяка новосъздадена база от знания. Ако не можете да намерите embedding модел от падащия списък, проверете дали използвате RAGFlow slim edition (която не включва embedding модели) или проверете https://ragflow.io/docs/dev/supported_models.',
+        'Embedding модел по подразбиране за всяка новосъздадена база от знания. Ако не можете да намерите embedding модел от падащия списък, проверете дали използвате RAGFlow slim edition (която не включва embedding модели) или проверете страницата „Доставчици на модели“.',
       img2txtModel: 'VLM',
       img2txtModelTip:
         'VLM по подразбиране за всяка новосъздадена база от знания. Описва изображение или видео.',

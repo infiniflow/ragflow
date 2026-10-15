@@ -1061,12 +1061,9 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		}
 	}
 	if err != nil {
-		// Python's LLM layer turns model/tool execution failures into an
-		// ``**ERROR**`` response, which Agent exposes as the `_ERROR`
-		// component output.  Preserve cancellation as a real graph error,
-		// but keep ordinary ReAct failures in the component data flow so
-		// Canvas exception branches can handle them.
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !isAgentGraphRunError(err) {
+		// Only step exhaustion is an _ERROR output. Model/tool failures must
+		// stop execution before downstream nodes read an absent content output.
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) || !errors.Is(err, compose.ErrExceedMaxSteps) {
 			return nil, fmt.Errorf("component: Agent.Invoke: %w", err)
 		}
 		return map[string]any{"_ERROR": "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}, nil
@@ -1138,18 +1135,6 @@ func (c *AgentComponent) invokeNow(ctx context.Context, db *gorm.DB, inputs map[
 		runtime.EmitAgentMessage(ctx, artifactMD, "")
 	}
 	return out, nil
-}
-
-// isAgentGraphRunError identifies ReAct graph failures that Python exposes
-// through the Agent component's _ERROR output. Construction/configuration
-// errors must remain real component errors so invalid canvases still fail
-// fast; only the graph execution limit/error is routed to exception branches.
-func isAgentGraphRunError(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "[graphrunerror]") || strings.Contains(msg, "exceeds max steps")
 }
 
 // Stream implements Component.Stream. Mirrors Invoke then pushes the

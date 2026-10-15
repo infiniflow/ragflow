@@ -1270,19 +1270,19 @@ Applicable lorsque vous avez besoin que le LLM résume le document entier.
         'Le modèle de chat par défaut pour chaque base de connaissances nouvellement créée.',
       embeddingModel: "Modèle d'embedding",
       embeddingModelTip:
-        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur de modèle supporte ce modèle.",
+        "Le modèle d'embedding par défaut pour chaque base de connaissances nouvellement créée. Si vous ne trouvez pas de modèle d'embedding dans la liste déroulante, vérifiez si vous utilisez l'édition RAGFlow slim (qui n'inclut pas les modèles d'embedding) ou consultez la page Fournisseurs de modèles pour voir si votre fournisseur de modèle supporte ce modèle.",
       img2txtModel: 'Modèle Img2txt',
       img2txtModelTip:
-        'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle img2txt par défaut pour chaque base de connaissances nouvellement créée. Il décrit une image ou une vidéo. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       sequence2txtModel: 'Modèle Speech2txt',
       sequence2txtModelTip:
         'Le modèle ASR par défaut pour chaque base de connaissances nouvellement créée. Utilisez ce modèle pour traduire les voix en texte correspondant.',
       rerankModel: 'Modèle de rerank',
       rerankModelTip:
-        'Le modèle de rerank par défaut pour le rerank des segments. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle de rerank par défaut pour le rerank des segments. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       ttsModel: 'Modèle TTS',
       ttsModelTip:
-        'Le modèle de synthèse vocale par défaut. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez https://ragflow.io/docs/dev/supported_models pour voir si votre fournisseur le supporte.',
+        'Le modèle de synthèse vocale par défaut. Si vous ne trouvez pas de modèle dans la liste déroulante, consultez la page Fournisseurs de modèles pour voir si votre fournisseur le supporte.',
       workspace: 'Espace de travail',
       upgrade: 'Mettre à jour',
       addLlmTitle: 'Ajouter LLM',

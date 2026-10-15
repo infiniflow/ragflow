@@ -1581,18 +1581,18 @@ export default {
       chatModelTip: '새로 생성된 각 데이터셋의 기본 LLM입니다.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 임베딩 모델입니다. 드롭다운에서 임베딩 모델을 찾을 수 없으면 RAGFlow 슬림 에디션(임베딩 모델 미포함)을 사용 중인지 확인하거나 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '새로 생성된 각 데이터셋의 기본 VLM입니다. 이미지나 동영상을 설명합니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         '새로 생성된 각 데이터셋의 기본 ASR 모델입니다. 이 모델을 사용하여 음성을 텍스트로 변환하세요.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
+      rerankModelTip: `Chunk rerank를 위한 기본 rerank 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 https://ragflow.io/docs/dev/supported_models 에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
+        '기본 텍스트 음성 변환 모델입니다. 드롭다운에서 모델을 찾을 수 없으면 모델 공급자 페이지에서 모델 제공업체가 이 모델을 지원하는지 확인하세요.',
       workspace: '워크스페이스',
       upgrade: '업그레이드',
       addLlmTitle: 'LLM 추가',

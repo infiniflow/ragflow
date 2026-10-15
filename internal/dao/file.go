@@ -275,12 +275,6 @@ func (dao *FileDAO) UpdateByID(ctx context.Context, db *gorm.DB, id string, upda
 	return db.WithContext(ctx).Model(&entity.File{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// DeleteByTenantID deletes all files by tenant ID (hard delete)
-func (dao *FileDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.File{})
-	return result.RowsAffected, result.Error
-}
-
 // DeleteByIDs deletes files by IDs (hard delete)
 func (dao *FileDAO) DeleteByIDs(ctx context.Context, db *gorm.DB, ids []string) (int64, error) {
 	if len(ids) == 0 {

@@ -1595,18 +1595,18 @@ Esempio: Virtual Hosted Style`,
       chatModelTip: 'Il LLM predefinito per ogni nuovo dataset creato.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello di embedding predefinito per ogni nuovo dataset creato. Se non riesci a trovare un modello di embedding dal menu a discesa, controlla se stai usando la versione slim di RAGFlow (che non include modelli di embedding) o controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.",
+        "Il VLM predefinito per ogni nuovo dataset creato. Descrive un'immagine o un video. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.",
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Il modello ASR predefinito per ogni nuovo dataset creato. Usa questo modello per tradurre le voci in testo corrispondente.',
       rerankModel: 'Rerank',
-      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.`,
+      rerankModelTip: `Il modello rerank predefinito per il reranking dei chunk. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla https://ragflow.io/docs/dev/supported_models per vedere se il tuo fornitore di modelli supporta questo modello.',
+        'Il modello text-to-speech predefinito. Se non riesci a trovare un modello dal menu a discesa, controlla la pagina Provider di modelli per vedere se il tuo fornitore di modelli supporta questo modello.',
       workspace: 'workspace',
       upgrade: 'Aggiorna',
       addLlmTitle: 'Aggiungi LLM',

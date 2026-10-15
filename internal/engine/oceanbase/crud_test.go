@@ -66,7 +66,7 @@ func TestInsertChunksFindsLaterVectorAndWaitsForSeekDBIndexRefresh(t *testing.T)
 			"id": "memory-1_2", "message_id": "2", "memory_id": "memory-1",
 			"content": "hello", "content_embed": []float64{0.1, 0.2},
 		},
-	}, tableName, "memory-1")
+	}, tableName, "memory-1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestInsertChunksReturnsNormalizationErrorWithoutPanic(t *testing.T) {
 
 	_, err = engine.InsertChunks(t.Context(), []map[string]interface{}{{
 		"id": "memory-1_1", "message_id": "1", "q_2_vec": "invalid",
-	}}, tableName, "memory-1")
+	}}, tableName, "memory-1", "")
 	if err == nil {
 		t.Fatal("InsertChunks() error = nil, want vector normalization error")
 	}

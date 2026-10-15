@@ -380,7 +380,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	case "somark":
 		return parsePDFWithSoMark(filename, data, p)
 	case "tcadp":
-		return parsePDFWithTCADP(filename, data, p)
+		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
 	cfg := deepdoctype.DefaultParserConfig()
 	cfg.Pages = p.Pages
@@ -411,7 +411,7 @@ func emptyPDFResult(filename string) ParseResult {
 			"page_count": 0,
 			"outline":    []map[string]any{},
 		},
-		JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+		JSON: []DocItem{NewTextJSONItem("")},
 	}
 }
 
@@ -507,7 +507,7 @@ func pdfParseResultToJSONWithOptions(filename string, parsed *deepdoctype.ParseR
 			"page_count": len(processed.PageHeight),
 			"outline":    outlinesToFileMeta(processed.Outlines),
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 
@@ -1034,8 +1034,10 @@ func parsePDFWithDeepDocOptions(ctx context.Context, filename string, data []byt
 		return ParseResult{Err: fmt.Errorf("parser: unsupported PDF output_format %q", opts.outputFormat)}
 	}
 	for i := range res.JSON {
-		if img, _ := res.JSON[i]["image"].(string); img != "" {
-			res.JSON[i]["image"] = pdflayout.InlinePNGDataURL(img)
+		m := res.JSON[i].ToMap()
+		if img, _ := m["image"].(string); img != "" {
+			m["image"] = pdflayout.InlinePNGDataURL(img)
+			res.JSON[i] = DocItemFromMap(m)
 		}
 	}
 	return res

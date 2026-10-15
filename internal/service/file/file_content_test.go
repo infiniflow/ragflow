@@ -60,11 +60,11 @@ func TestParseFileContent_JSONItems(t *testing.T) {
 func TestParseResultText_JSONItemsPreservesOrderAndFallsBackToJSON(t *testing.T) {
 	result, err := parseResultText(parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "first"},
 			{"text": "second"},
 			{"value": 3},
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)
@@ -82,9 +82,9 @@ func TestParseResultText_SpreadsheetSegmentsAreTheirOwnMarkup(t *testing.T) {
 	segment := "<table><caption>Data</caption>\n<tr><th>a</th><th>b</th></tr>\n<tr><td>1</td><td>2</td></tr>\n</table>\n"
 	result, err := parseResultText(parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": segment, "doc_type_kwd": "table", "ck_type": "table", "sheet": "Data", "sheet_index": 1},
-		},
+		}),
 	})
 	if err != nil {
 		t.Fatalf("parseResultText: %v", err)

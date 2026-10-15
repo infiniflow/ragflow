@@ -32,6 +32,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -455,7 +456,12 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
 		if err != nil {
-			return "", true, &runtime.DeferredStreamError{Err: err}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return "", true, &runtime.DeferredStreamError{Err: err}
+			}
+			// Eino reuses nested graph errors, discarding outer wrappers; keep
+			// ordinary stream failures as text so the deferred marker survives.
+			return "", true, &runtime.DeferredStreamError{Text: "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}

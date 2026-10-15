@@ -41,6 +41,7 @@ package chunker
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -180,7 +181,13 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 	// resolve_target_level(text_levels, hierarchy) — the exact call
 	// python makes inside flush_text_records (Gap H: the hierarchy
 	// pointer is dereferenced defensively so a nil never panics).
+	// recordGroups and groupPrefixes stay aligned: groupPrefixes[i] is the
+	// leading segment (up to and including the last title, each line + "\n")
+	// that chunk i starts with, empty for groups without headings.
+	// enforceTitleTokenCap re-prepends it to every cap-split piece, so a
+	// split does not strip the parent headings from the continuation pieces.
 	var recordGroups [][]lineRecord
+	var groupPrefixes []string
 	var textRun []lineRecord
 	var textLevels []int
 
@@ -200,6 +207,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 			runCopy := make([]lineRecord, len(textRun))
 			copy(runCopy, textRun)
 			recordGroups = append(recordGroups, runCopy)
+			groupPrefixes = append(groupPrefixes, "")
 		} else {
 			indexed := make([]indexedLine, len(textRun))
 			for j := range textRun {
@@ -216,7 +224,25 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 				for k, idx := range path {
 					grp[k] = textRun[idx]
 				}
+				// The re-attached chain is the chunk text's leading segment:
+				// every path record up to and including the last title
+				// (level <= targetLevel). Ancestor body text folded in by
+				// getPaths sits between the titles, so a titles-only chain
+				// would not be a text prefix. Position tags are stripped to
+				// match the built chunk text.
+				lastTitle := -1
+				for k, idx := range path {
+					if textLevels[idx] <= targetLevel {
+						lastTitle = k
+					}
+				}
+				var chain strings.Builder
+				for k := 0; k <= lastTitle; k++ {
+					chain.WriteString(removeTag(textRun[path[k]].text))
+					chain.WriteByte('\n')
+				}
 				recordGroups = append(recordGroups, grp)
+				groupPrefixes = append(groupPrefixes, chain.String())
 			}
 		}
 		textRun = textRun[:0]
@@ -231,6 +257,7 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		}
 		flush()
 		recordGroups = append(recordGroups, []lineRecord{rec})
+		groupPrefixes = append(groupPrefixes, "")
 	}
 	flush()
 	common.Debug("chunker stage",
@@ -239,12 +266,13 @@ func invokeHierarchy(parentCtx context.Context, db *gorm.DB, inputs map[string]a
 		zap.Int("record_groups", len(recordGroups)),
 	)
 
-	chunks := buildChunksFromRecordGroups(recordGroups, p, isPlainTextFormat(inputs))
+	chunks, prefixes := buildChunksFromRecordGroups(recordGroups, groupPrefixes, p, isPlainTextFormat(inputs))
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
-	// invoke() order (build -> cap -> set_chunks).
+	// invoke() order (build -> cap -> set_chunks). prefixes re-attaches each
+	// chunk's ancestor heading chain to every piece the cap splits off.
 	if p.ChunkTokenCap > 0 {
-		chunks = enforceTitleTokenCap(chunks, p.ChunkTokenCap)
+		chunks = enforceTitleTokenCap(chunks, prefixes, p.ChunkTokenCap)
 	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),

@@ -153,16 +153,7 @@ func (s *BotService) AgentbotCompletion(
 	if _, err := s.loadCanvas(ctx, userID, agentID, permission.OperationRun); err != nil {
 		return nil, common.CodeDataError, err
 	}
-	// Compose the canvas user input the same way Python's
-	// canvas_service.completion does: `query` first (falling back to
-	// `question`), with the begin-form `inputs` dict only as a
-	// last resort when no free-text question is present. Passing the
-	// `inputs` map itself as the user input breaks the run — the
-	// canvas seeds sys.query / Begin's `query` output with it, and
-	// downstream Retrieval nodes then fail to unmarshal an object
-	// into a string field. Files remain a separate RunAgent argument
-	// so they can populate sys.files.
-	userInput := agentbotUserInput(req)
+	userInput := NormalizeAgentInput(question, req.UserInput)
 	var ch <-chan canvas.RunEvent
 	if req.Release != nil && *req.Release {
 		ch, err = s.agentService.runReleasedAgent(ctx, userID, agentID,
@@ -218,43 +209,6 @@ type AgentbotCompletionRequest struct {
 	Question  string                   `json:"question"`
 	Files     []map[string]interface{} `json:"files"`
 	Release   *bool                    `json:"release,omitempty"`
-}
-
-// agentbotUserInput uses the resolved question, falling back to Begin form inputs.
-// A single form field lifts its value; multiple fields collapse to a name/value map.
-func agentbotUserInput(req AgentbotCompletionRequest) any {
-	query := req.Question
-	if query == "" {
-		query = req.Query
-	}
-	if query != "" {
-		return query
-	}
-	inputs := req.UserInput
-	if len(inputs) == 0 {
-		return nil
-	}
-	if len(inputs) == 1 {
-		for _, raw := range inputs {
-			if field, ok := raw.(map[string]any); ok {
-				if v, ok := field["value"]; ok {
-					return v
-				}
-			}
-			return raw
-		}
-	}
-	out := make(map[string]any, len(inputs))
-	for name, raw := range inputs {
-		if field, ok := raw.(map[string]any); ok {
-			if v, ok := field["value"]; ok {
-				out[name] = v
-				continue
-			}
-		}
-		out[name] = raw
-	}
-	return out
 }
 
 // ChatbotCompletionRequest is the request body for
