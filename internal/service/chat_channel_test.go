@@ -23,7 +23,7 @@ func setupChatChannelServiceTestDB(t *testing.T) *gorm.DB {
 		t.Fatalf("failed to open sqlite: %v", err)
 	}
 
-	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}); err != nil {
+	if err = db.AutoMigrate(&entity.ChatChannel{}, &entity.Chat{}, &entity.UserTenant{}, &entity.UserCanvas{}); err != nil {
 		t.Fatalf("failed to migrate test schema: %v", err)
 	}
 
@@ -98,6 +98,7 @@ func TestChatChannelServiceCreateAndList(t *testing.T) {
 		"dingtalk",
 		entity.JSONMap{"token": "abc"},
 		&chatID,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("CreateChatChannel failed: %v", err)
@@ -284,5 +285,43 @@ func TestChatChannelServiceDeleteChatChannel(t *testing.T) {
 
 	if _, err = dao.NewChatChannel().GetByID(ctx, dao.DB, "cc-1"); err == nil {
 		t.Fatal("expected deleted record to be gone")
+	}
+}
+
+func TestResolveChannelTargetRejectsChatAndAgentTogether(t *testing.T) {
+	chatID := "dialog-1"
+	agentID := "agent-1"
+
+	_, _, err := resolveChannelTarget(t.Context(), "tenant-1", &chatID, &agentID)
+	if !errors.Is(err, ErrChatChannelTargetConflict) {
+		t.Fatalf("resolveChannelTarget() error = %v, want ErrChatChannelTargetConflict", err)
+	}
+}
+
+func TestStripReasoningContentKeepsOnlyTheAnswer(t *testing.T) {
+	if got := stripReasoningContent("<think>weighing options</think>final answer"); got != "final answer" {
+		t.Fatalf("stripReasoningContent() = %q, want %q", got, "final answer")
+	}
+	if got := stripReasoningContent("plain answer"); got != "plain answer" {
+		t.Fatalf("stripReasoningContent() = %q, want the input unchanged", got)
+	}
+	if got := stripReasoningContent("<think>unterminated reasoning"); got != "<think>unterminated reasoning" {
+		t.Fatalf("stripReasoningContent() = %q, want the input unchanged without a closing tag", got)
+	}
+}
+
+func TestChannelAgentSessionIDIsStablePerChat(t *testing.T) {
+	sessionID := channelAgentSessionID("agent-1", "channel-1", "chat-1")
+	if len(sessionID) != 32 {
+		t.Fatalf("session id length = %d, want 32", len(sessionID))
+	}
+	if sessionID != channelAgentSessionID("agent-1", "channel-1", "chat-1") {
+		t.Fatal("session id must be stable for the same agent, channel and chat")
+	}
+	if sessionID == channelAgentSessionID("agent-1", "channel-1", "chat-2") {
+		t.Fatal("each end-user chat must get its own agent session")
+	}
+	if sessionID == channelAgentSessionID("agent-2", "channel-1", "chat-1") {
+		t.Fatal("rebinding another agent must not reuse the previous session")
 	}
 }
