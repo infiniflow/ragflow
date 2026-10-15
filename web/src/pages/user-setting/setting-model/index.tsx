@@ -175,8 +175,8 @@ const SettingModelV2: FC = () => {
     // key is the draft id, so a successfully-saved draft can be removed
     // from `draftIds` individually even when a later card in the batch
     // fails (the early return must not strand already-persisted drafts).
-    const refs = Array.from(cardRefs.current.entries()).flatMap(
-      ([key, ref]) => (ref ? [{ key, ref }] : []),
+    const refs = Array.from(cardRefs.current.entries()).flatMap(([key, ref]) =>
+      ref ? [{ key, ref }] : [],
     );
     if (refs.length === 0) return;
 
