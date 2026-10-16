@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/engine"
 	"ragflow/internal/entity"
 	"ragflow/internal/rag/prompts"
+	"ragflow/internal/tokenizer"
 	"regexp"
 
 	"strconv"
@@ -163,6 +164,38 @@ func GenMetaFilter(ctx context.Context, chatModel *modelModule.ChatModel, metaDa
 
 	// Build user message
 	userMessage := "Generate filters:"
+
+	// The metadata block is the whole value space of the dataset, so its size is
+	// set by the data rather than by anything here: one high-cardinality key can
+	// push the system prompt past the model's context on its own. Left unchecked
+	// the result is a failed model request rather than a degraded filter.
+	//
+	// Trimming to fit would be worse than refusing. The conditions returned here
+	// are applied as a hard document scope, so a filter chosen from a value list
+	// that lost entries excludes matching documents, and the model cannot report
+	// that it only saw part of the metadata -- the answer looks exactly as
+	// confident either way. So when the prompt does not fit, return no conditions
+	// and skip the model call that could only produce an answer we must not use.
+	// Empty conditions leave the search unscoped, which ApplyMetaDataFilter reads
+	// as "no scope": a filter that fails to narrow is recoverable, one that
+	// narrows to the wrong documents is not.
+	//
+	// A context length of 0 means it could not be resolved; tokenizer.Fit reads
+	// that as its 8192 default, never as "no budget".
+	contextLength := 0
+	if info := chatModel.Info(); info != nil {
+		contextLength = info.ContextLength
+	}
+	fitted, _, _ := tokenizer.Fit([]tokenizer.Message{
+		{Role: "system", Content: systemPrompt},
+		{Role: "user", Content: userMessage},
+	}, contextLength)
+	if len(fitted) != 2 || fitted[0].Content != systemPrompt {
+		common.Warn("GenMetaFilter: the metadata value space does not fit the model context; returning no conditions so the search stays unscoped rather than filtered on a partial value list",
+			zap.Int("context_length", contextLength),
+			zap.Int("keys", len(metaData)))
+		return &MetaFilterResult{Conditions: []MetaFilterCondition{}, Logic: "and"}, nil
+	}
 
 	// Build messages: system prompt + user message
 	messages := []modelModule.Message{
@@ -580,7 +613,8 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 	return strings.Join(filtered, ",")
 }
 
-// ApplyMetaDataFilter applies metadata filtering rules and returns filtered doc_ids
+// ApplyMetaDataFilter applies metadata filtering rules and returns the document
+// scope retrieval must be constrained to.
 // Supports three modes:
 // - auto: generate filter conditions via LLM
 // - semi_auto: generate conditions using selected metadata keys only via LLM
@@ -589,6 +623,21 @@ func MetadataConditionToDocIDs(metaData common.MetaData, metadataCondition map[s
 // When kbIDs is supplied, metadata filters are pushed down to the doc metadata
 // index (ES/Infinity) via FilterDocIdsByMetaPushdown instead of being evaluated
 // in-memory. The in-memory meta_filter path remains the fallback.
+//
+// The return value carries three distinct outcomes:
+//
+//   - nil -- no metadata narrowing: the generated filter produced no
+//     conditions, or conditions that selected nothing. Callers keep their own
+//     document scope and search it unfiltered; a filter that fails to narrow is
+//     recoverable, one that narrows to the wrong documents is not.
+//   - []string{NoMatchDocIDSentinel} -- manual conditions that match no document.
+//     Only manual mode produces the sentinel, and it means zero results on
+//     purpose: the user asked for those exact conditions.
+//   - any other slice -- the documents the filter selected.
+//
+// nil must never be turned into the sentinel: that would answer "the metadata
+// was unusable" with "no documents exist", which is the one outcome the user
+// did not ask for.
 func ApplyMetaDataFilter(
 	ctx context.Context,
 	metaDataFilter map[string]interface{},
@@ -598,9 +647,9 @@ func ApplyMetaDataFilter(
 	baseDocIDs []string,
 	kbIDs []string,
 	manualValueResolver ...ManualValueResolver,
-) ([]string, bool) {
+) []string {
 	if metaDataFilter == nil {
-		return baseDocIDs, false
+		return baseDocIDs
 	}
 
 	method, _ := metaDataFilter["method"].(string)
@@ -645,14 +694,16 @@ func ApplyMetaDataFilter(
 		filters, err := GenMetaFilter(ctx, chatModel, metaData, question, nil)
 		if err != nil {
 			common.Warn("Failed to generate meta filter", zap.Error(err))
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 		filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(docIDs) == 0 {
-			return nil, true // Return nil to indicate auto filter returned empty
+			// No conditions, or conditions that selected nothing: the model was
+			// not able to narrow the search, so it stays unnarrowed.
+			return nil
 		}
-		return docIDs, false
+		return docIDs
 
 	case "semi_auto":
 		selectedKeys := []string{}
@@ -687,14 +738,14 @@ func ApplyMetaDataFilter(
 				filters, err := GenMetaFilter(ctx, chatModel, filteredMeta, question, constraints)
 				if err != nil {
 					common.Warn("Failed to generate meta filter", zap.Error(err))
-					return baseDocIDs, false
+					return baseDocIDs
 				}
 				filteredIDs := runMetadataFilter(filters.Conditions, filters.Logic)
 				docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 				if len(docIDs) == 0 {
-					return nil, true
+					return nil
 				}
-				return docIDs, false
+				return docIDs
 			}
 		}
 
@@ -705,7 +756,7 @@ func ApplyMetaDataFilter(
 			logic = logicVal
 		}
 		if len(manualFilters) == 0 {
-			return baseDocIDs, false
+			return baseDocIDs
 		}
 
 		// Apply manual_value_resolver callback if provided
@@ -740,12 +791,13 @@ func ApplyMetaDataFilter(
 		filteredIDs := runMetadataFilter(conditions, logic)
 		docIDs := constrainDocIDs(baseDocIDs, filteredIDs)
 		if len(manualFilters) > 0 && len(docIDs) == 0 {
-			return []string{NoMatchDocIDSentinel}, false
+			// The user named these conditions, so no match is the answer.
+			return []string{NoMatchDocIDSentinel}
 		}
-		return docIDs, false
+		return docIDs
 	}
 
-	return baseDocIDs, false
+	return baseDocIDs
 }
 
 // chatMetadataDocIDs is shared by standard retrieval and the agent's corpus tools.
@@ -762,11 +814,7 @@ func (s *ChatPipelineService) chatMetadataDocIDs(ctx context.Context, chat *enti
 		common.Warn("loadMetaData failed; skipping meta_data_filter", zap.Error(err))
 		return docIDs
 	}
-	filtered, empty := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs)
-	if empty {
-		return []string{NoMatchDocIDSentinel}
-	}
-	if filtered != nil {
+	if filtered := ApplyMetaDataFilter(ctx, *chat.MetaDataFilter, meta, question, model, docIDs, kbIDs); filtered != nil {
 		common.Debug("meta_data_filter applied", zap.Int("filtered_count", len(filtered)), zap.Int("pre_filter_count", len(docIDs)))
 		return filtered
 	}
