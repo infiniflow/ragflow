@@ -1,3 +1,4 @@
+import CopyToClipboard from '@/components/copy-to-clipboard';
 import Image from '@/components/image';
 import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -77,15 +78,33 @@ const ChunkCard = ({
         selected && 'bg-text-primary/15',
       )}
     >
-      <span
-        className="
-        absolute top-0 right-0 px-4 py-1
-        leading-none text-xs text-text-disabled
-        bg-bg-card rounded-bl-2xl rounded-tr-lg
-        border-l-0.5 border-b-0.5 border-border-button"
-      >
-        {t(`chunk.docType.${chunkType}`)}
-      </span>
+      <div className="absolute top-0 inset-x-0 flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1 pl-3">
+          <span
+            title={item.chunk_id}
+            className="truncate font-mono text-xs leading-none text-text-disabled"
+          >
+            {item.chunk_id}
+          </span>
+          <CopyToClipboard
+            text={item.chunk_id}
+            size="icon-xs"
+            variant="ghost"
+            className="size-5 text-text-disabled [&_svg]:size-3"
+            aria-label={t('chunk.copyChunkId')}
+          />
+        </div>
+
+        <span
+          className="
+          shrink-0 px-4 py-1
+          leading-none text-xs text-text-disabled
+          bg-bg-card rounded-bl-2xl rounded-tr-lg
+          border-l-0.5 border-b-0.5 border-border-button"
+        >
+          {t(`chunk.docType.${chunkType}`)}
+        </span>
+      </div>
 
       <div className="flex items-start justify-between gap-2.5">
         <Checkbox

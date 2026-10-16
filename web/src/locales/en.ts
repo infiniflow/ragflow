@@ -1015,6 +1015,7 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
     },
     chunk: {
       type: 'Type',
+      copyChunkId: 'Copy chunk ID',
       docType: {
         image: 'Image',
         table: 'Table',
