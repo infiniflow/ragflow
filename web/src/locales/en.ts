@@ -2964,6 +2964,23 @@ Best for: Documents with flowing, contextually connected content — such as boo
       search1APICrawlUrl: 'URL',
       search1APICrawlUrlTip:
         'The absolute HTTP or HTTPS URL of the page to read. As an agent tool, the agent supplies the URL.',
+      anySearchSearch: 'AnySearch',
+      anySearchSearchDescription:
+        'Web and vertical search through AnySearch: general web results, or finance, academic, code, legal and other verticals. Works without an API key.',
+      anySearchDiscover: 'AnySearch Discover',
+      anySearchDiscoverDescription:
+        "Lists AnySearch's current domains and the vertical tags and params each one takes, so the Agent can choose a valid tag.",
+      anySearchApiKeyTip:
+        "Optional. AnySearch works without a key. Add one to use your account's quota; service limits apply.",
+      anySearchZone: 'Zone',
+      anySearchZoneTip:
+        "The region to search. Leave it unset to use AnySearch's default. As an agent tool, the agent can pick a zone for each call.",
+      anySearchZoneUnset: 'Not set',
+      anySearchZoneIntl: 'International',
+      anySearchZoneCn: 'China',
+      anySearchLanguage: 'Language',
+      anySearchLanguageTip:
+        "The preferred result language, such as en or zh-CN. Leave it blank to use AnySearch's default. As an agent tool, the agent can pick a language for each call.",
       docGenerator: 'Doc Generator',
       docGeneratorDescription: `Generate a file from Markdown content.`,
       browser: 'Browser',
@@ -3516,6 +3533,8 @@ This process aggregates variables from multiple branches into a single variable 
         tavilySearch: 'Searching the web',
         queritSearch: 'Searching the web with Querit',
         queritContents: 'Reading web pages with Querit',
+        anySearchSearch: 'Searching with AnySearch',
+        anySearchDiscover: 'Looking up AnySearch verticals',
         tavilyExtract: 'Reading the page',
         exeSQL: 'Querying database',
         google: 'Searching the web',
