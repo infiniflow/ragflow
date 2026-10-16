@@ -37,6 +37,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"ragflow/internal/common"
 	"sort"
 	"strings"
@@ -620,11 +621,22 @@ func lessKey(a, b any) bool {
 }
 
 // lessScalar compares two scalar (or non-tuple) values. Numbers are
-// compared numerically; everything else via fmt.Sprintf.
+// sorted before non-numbers and compared numerically, with NaN after all
+// other numbers. Non-numbers compare via fmt.Sprintf. A type rank avoids
+// cycles when numeric comparison and formatted string comparison differ.
 func lessScalar(a, b any) bool {
 	af, aok := toFloat64OK(a)
 	bf, bok := toFloat64OK(b)
-	if aok && bok {
+	if aok != bok {
+		return aok
+	}
+	if aok {
+		// NaN compares false in both directions with every number. Give it
+		// an explicit position so stable sort has a strict weak ordering.
+		aNaN, bNaN := math.IsNaN(af), math.IsNaN(bf)
+		if aNaN || bNaN {
+			return !aNaN && bNaN
+		}
 		return af < bf
 	}
 	return fmt.Sprintf("%v", a) < fmt.Sprintf("%v", b)
