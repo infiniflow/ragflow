@@ -60,6 +60,16 @@ from rag.svr.task_executor_refactor.chunk_post_processor import (
 )
 
 
+def make_mother_chunk_id(dataset_id: str, doc_id: str, content: str) -> str:
+    """Build a parent chunk ID scoped to its dataset and document.
+
+    All datasets of a tenant share one index, so identical parent text from
+    another document must not map to the same row. NUL separators keep the
+    boundaries unambiguous and match Go's parentChunkID.
+    """
+    return xxhash.xxh64(f"{dataset_id}\0{doc_id}\0{content}".encode("utf-8")).hexdigest()
+
+
 def apply_document_availability(chunks: List[Dict[str, Any]], status) -> int:
     """Stamp ordinary source chunks available_int=0 when document status is disabled.
 
@@ -308,7 +318,7 @@ class ChunkService:
         self._apply_document_availability(chunks)
 
         # Create mother chunks (summary chunks)
-        mothers = self._create_mother_chunks(chunks)
+        mothers = self._create_mother_chunks(chunks, task_dataset_id)
 
         # Insert mother chunks
         if not await self._insert_mother_chunks(task_id, task_tenant_id, task_dataset_id, mothers, doc_bulk_size):
@@ -338,7 +348,7 @@ class ChunkService:
             )
 
     @classmethod
-    def _create_mother_chunks(cls, chunks: List[Dict]) -> List[Dict]:
+    def _create_mother_chunks(cls, chunks: List[Dict], dataset_id: str) -> List[Dict]:
         """Create mother chunks from summary fields.
 
         Mother chunks are summary/abstract chunks that are stored separately.
@@ -351,7 +361,7 @@ class ChunkService:
             if not mom:
                 continue
 
-            mom_id = xxhash.xxh64(mom.encode("utf-8")).hexdigest()
+            mom_id = make_mother_chunk_id(dataset_id, ck["doc_id"], mom)
             ck["mom_id"] = mom_id
 
             if mom_id in mother_ids:
