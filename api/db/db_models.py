@@ -21,19 +21,12 @@ import operator
 import os
 import sys
 import time
-import typing
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from functools import wraps
 
-from quart_auth import AuthUser
 from itsdangerous.url_safe import URLSafeTimedSerializer as Serializer
-from psycopg2 import sql as psycopg2_sql
 from peewee import (
-    fn,
-    InterfaceError,
-    OperationalError,
-    ProgrammingError,
     BigIntegerField,
     BooleanField,
     CharField,
@@ -42,13 +35,19 @@ from peewee import (
     Field,
     FloatField,
     IntegerField,
+    InterfaceError,
     Metadata,
     Model,
     ModelInsert,
+    OperationalError,
+    ProgrammingError,
     TextField,
+    fn,
 )
 from playhouse.migrate import MySQLMigrator, PostgresqlMigrator, migrate
 from playhouse.pool import PooledMySQLDatabase, PooledPostgresqlDatabase
+from psycopg2 import sql as psycopg2_sql
+from quart_auth import AuthUser
 
 from api import utils
 from api.db import SerializedType
@@ -59,14 +58,12 @@ from api.db.gaussdb_error_utils import (
     is_undefined_object_error,
     sqlstate_from_exception,
 )
-from api.utils.json_encode import json_dumps, json_loads
 from api.utils.configs import deserialize_b64, serialize_b64
-
-from common.time_utils import current_timestamp, timestamp_to_date, date_string_to_timestamp
-from common.decorator import singleton
-from common.constants import ParserType, MAXIMUM_TASK_PAGE_NUMBER
+from api.utils.json_encode import json_dumps, json_loads
 from common import settings
-
+from common.constants import MAXIMUM_TASK_PAGE_NUMBER, ParserType
+from common.decorator import singleton
+from common.time_utils import current_timestamp, date_string_to_timestamp, timestamp_to_date
 
 CONTINUOUS_FIELD_TYPE = {IntegerField, FloatField, DateTimeField}
 AUTO_DATE_TIMESTAMP_FIELD_PREFIX = {"create", "start", "end", "update", "read_access", "write_access"}
@@ -211,7 +208,7 @@ class SerializedField(LongTextField):
             raise ValueError(f"the serialized type {self._serialized_type} is not supported")
 
 
-def is_continuous_field(cls: typing.Type) -> bool:
+def is_continuous_field(cls: type) -> bool:
     if cls in CONTINUOUS_FIELD_TYPE:
         return True
     for p in cls.__bases__:
@@ -220,8 +217,7 @@ def is_continuous_field(cls: typing.Type) -> bool:
         elif p is not Field and p is not object:
             if is_continuous_field(p):
                 return True
-    else:
-        return False
+    return False
 
 
 def auto_date_timestamp_field():
@@ -233,7 +229,7 @@ def auto_date_timestamp_db_field():
 
 
 def remove_field_name_prefix(field_name):
-    return field_name[2:] if field_name.startswith("f_") else field_name
+    return field_name.removeprefix("f_")
 
 
 class BaseModel(Model):
@@ -341,7 +337,7 @@ class BaseModel(Model):
 
 class JsonSerializedField(SerializedField):
     def __init__(self, object_hook=utils.from_dict_hook, object_pairs_hook=None, **kwargs):
-        super(JsonSerializedField, self).__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
+        super().__init__(serialized_type=SerializedType.JSON, object_hook=object_hook, object_pairs_hook=object_pairs_hook, **kwargs)
 
 
 class PooledConnectionRetryMixin:
@@ -872,10 +868,10 @@ def with_retry(max_retries=3, retry_delay=1.0):
 
                     if retry < max_retries - 1:
                         current_delay = retry_delay * (2**retry)
-                        logging.warning(f"{func_name} {lock_name} failed: {str(e)}, retrying ({retry + 1}/{max_retries})")
+                        logging.warning(f"{func_name} {lock_name} failed: {e!s}, retrying ({retry + 1}/{max_retries})")
                         time.sleep(current_delay)
                     else:
-                        logging.error(f"{func_name} {lock_name} failed after all attempts: {str(e)}")
+                        logging.error(f"{func_name} {lock_name} failed after all attempts: {e!s}")
 
             if last_exception:
                 raise last_exception
@@ -1763,7 +1759,7 @@ class DateTimeTzField(CharField):
             if value.tzinfo is not None:
                 return value.isoformat()
             else:
-                return value.replace(tzinfo=timezone.utc).isoformat()
+                return value.replace(tzinfo=UTC).isoformat()
         return value
 
     def python_value(self, value: str | datetime | None) -> datetime | None:
@@ -1773,7 +1769,7 @@ class DateTimeTzField(CharField):
             # The column is declared VARCHAR, but deployments upgraded from
             # older schemas may hold it as native DATETIME, in which case the
             # driver returns datetime objects instead of ISO strings.
-            return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
+            return value if value.tzinfo is not None else value.replace(tzinfo=UTC)
         try:
             dt = datetime.fromisoformat(value)
         except ValueError:
@@ -1783,7 +1779,7 @@ class DateTimeTzField(CharField):
             # IndexError: list index out of range.
             logging.warning("DateTimeTzField: unparseable value %r, falling back to None", value)
             return None
-        return dt if dt.tzinfo is not None else dt.replace(tzinfo=timezone.utc)
+        return dt if dt.tzinfo is not None else dt.replace(tzinfo=UTC)
 
 
 class SyncLogs(DataBaseModel):
@@ -1980,7 +1976,6 @@ def alter_db_add_column(migrator, table_name, column_name, column_type):
 
     except Exception as ex:
         logging.critical(f"Failed to add {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name}, error: {ex}")
-        pass
 
 
 def alter_db_column_type(migrator, table_name, column_name, new_column_type):
@@ -1988,7 +1983,255 @@ def alter_db_column_type(migrator, table_name, column_name, new_column_type):
         migrate(migrator.alter_column_type(table_name, column_name, new_column_type))
     except Exception as ex:
         logging.critical(f"Failed to alter {settings.DATABASE_TYPE.upper()}.{table_name} column {column_name} type, error: {ex}")
-        pass
+
+
+TENANT_MODEL_ID_COLUMNS = (
+    ("tenant", "tenant_llm_id"),
+    ("tenant", "tenant_embd_id"),
+    ("tenant", "tenant_asr_id"),
+    ("tenant", "tenant_img2txt_id"),
+    ("tenant", "tenant_rerank_id"),
+    ("tenant", "tenant_tts_id"),
+    ("tenant", "tenant_ocr_id"),
+    ("knowledgebase", "tenant_embd_id"),
+    ("dialog", "tenant_llm_id"),
+    ("dialog", "tenant_rerank_id"),
+    ("memory", "tenant_llm_id"),
+    ("memory", "tenant_embd_id"),
+)
+
+_INTEGER_COLUMN_TYPES = frozenset({"int", "integer", "bigint", "smallint", "mediumint", "tinyint"})
+
+
+def _get_column_data_type(table_name: str, column_name: str) -> str | None:
+    if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+        cursor = DB.execute_sql(
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = current_schema()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    else:
+        cursor = DB.execute_sql(
+            """
+            SELECT DATA_TYPE
+            FROM information_schema.columns
+            WHERE table_schema = DATABASE()
+              AND table_name = %s
+              AND column_name = %s
+            """,
+            (table_name, column_name),
+        )
+    row = cursor.fetchone()
+    return row[0].lower() if row else None
+
+
+def migrate_tenant_model_id_column_types(migrator):
+    """Fallback: convert leftover IntegerField tenant_*_id columns to VARCHAR(32).
+
+    Primary conversion and backfill belong in the pre-startup script
+    (``mysql_migration.py`` / ``postgres_migration.py`` stage
+    ``tenant_model_id_migration``). ``migrate_db()`` runs after that script, so
+    this helper is a no-op when columns are already ``varchar`` — it only
+    converts if the script did not run or did not finish.
+
+    It does not backfill ``tenant_model.id`` values. Postgres/GaussDB still run
+    ``migrate_postgres_family_model_provider_tables()`` later for seeding,
+    ``model_type`` merge, and id backfill.
+
+    There is no matching in-place ALTER for ``tenant_model.model_type`` on any
+    dialect: converting that column before ``tenant_model_seeding`` /
+    ``model_type_merge`` would skip those stages. Postgres/GaussDB also run
+    ``migrate_postgres_family_model_provider_tables()`` for seeding, merge, and
+    backfill. MySQL/OceanBase non-Docker deployments that skip
+    ``run_migrations.sh`` get only this ``tenant_*_id`` fallback — they must run
+    ``mysql_migration.py`` manually or #18755 (``model_type`` bitmask merge) can
+    persist.
+    """
+    target_field = CharField(max_length=32, null=True, help_text="id in tenant_model", index=True)
+
+    for table_name, column_name in TENANT_MODEL_ID_COLUMNS:
+        try:
+            table_present = DB.table_exists(table_name)
+        except Exception as ex:
+            logging.warning("Failed to inspect table %s while migrating tenant_*_id types: %s", table_name, ex)
+            continue
+        if not table_present:
+            continue
+
+        try:
+            col_type = _get_column_data_type(table_name, column_name)
+        except Exception:
+            logging.critical(
+                "Skipping %s.%s tenant_*_id migration; column inspection failed",
+                table_name,
+                column_name,
+                exc_info=True,
+            )
+            continue
+
+        if col_type is None:
+            logging.info("Adding missing %s.%s tenant_model.id reference column", table_name, column_name)
+            alter_db_add_column(migrator, table_name, column_name, target_field)
+            continue
+
+        mysql_family = settings.DATABASE_TYPE.upper() not in {"POSTGRES"} and not is_gaussdb_compatible_database()
+        leftover_sql = f"UPDATE `{table_name}` SET `{column_name}` = NULL WHERE `{column_name}` IS NOT NULL AND CHAR_LENGTH(`{column_name}`) <> 32"
+
+        if col_type not in _INTEGER_COLUMN_TYPES:
+            # MySQL commits ALTER TABLE independently of the leftover UPDATE.
+            # A retry after a failed cleanup must still NULL non-32-char values.
+            if mysql_family:
+                try:
+                    DB.execute_sql(leftover_sql)
+                except Exception as ex:
+                    logging.critical(
+                        "Failed to clear leftover integer ids in converted %s.%s: %s",
+                        table_name,
+                        column_name,
+                        ex,
+                    )
+            continue
+
+        try:
+            if settings.DATABASE_TYPE.upper() == "POSTGRES" or is_gaussdb_compatible_database():
+                # Legacy integers were tenant_llm row ids, never 32-char tenant_model.id
+                # values. Cast them away rather than leaving strings such as "42".
+                DB.execute_sql(f'ALTER TABLE "{table_name}" ALTER COLUMN "{column_name}" TYPE varchar(32) USING CAST(NULL AS varchar(32))')
+            else:
+                migrate(migrator.alter_column_type(table_name, column_name, target_field))
+                DB.execute_sql(leftover_sql)
+            logging.info(
+                "Converted %s.%s from %s to varchar(32) for tenant_model.id references",
+                table_name,
+                column_name,
+                col_type,
+            )
+        except Exception as ex:
+            logging.critical(
+                "Failed to convert %s.%s from %s to varchar(32): %s",
+                table_name,
+                column_name,
+                col_type,
+                ex,
+            )
+
+
+MODEL_PROVIDER_MIGRATION_VERSION_MARKER = "mysql_migration.database.version"
+MODEL_PROVIDER_MIGRATION_FINAL_VERSION = "v0.27.0"
+
+
+def _parse_model_provider_migration_version(version: str | None) -> tuple[int, ...] | None:
+    if not version:
+        return None
+    normalized = version.strip()
+    if normalized.startswith(("v", "V")):
+        normalized = normalized[1:]
+    parts = []
+    for token in normalized.split("."):
+        if not token.isdigit():
+            return None
+        parts.append(int(token))
+    return tuple(parts) or None
+
+
+def _model_provider_migration_complete(
+    current_version: str | None,
+    target_version: str = MODEL_PROVIDER_MIGRATION_FINAL_VERSION,
+) -> bool:
+    current = _parse_model_provider_migration_version(current_version)
+    target = _parse_model_provider_migration_version(target_version)
+    if current is None or target is None:
+        return False
+    max_len = max(len(current), len(target))
+    current_padded = current + (0,) * (max_len - len(current))
+    target_padded = target + (0,) * (max_len - len(target))
+    return current_padded >= target_padded
+
+
+def _get_model_provider_migration_version() -> str | None:
+    try:
+        if not DB.table_exists("system_settings"):
+            return None
+        cursor = DB.execute_sql(
+            "SELECT value FROM system_settings WHERE name = %s",
+            (MODEL_PROVIDER_MIGRATION_VERSION_MARKER,),
+        )
+        row = cursor.fetchone()
+        return row[0] if row else None
+    except Exception:
+        return None
+
+
+def _load_model_provider_migration_module():
+    import importlib.util
+
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "tools", "scripts", "mysql_migration.py")
+    if not os.path.isfile(script_path):
+        raise FileNotFoundError(f"Model provider migration script not found: {script_path}")
+    spec = importlib.util.spec_from_file_location("ragflow_mysql_migration", script_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not load model provider migration module from {script_path}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def migrate_postgres_family_model_provider_tables():
+    """Run model-provider data stages on PostgreSQL when the marker is behind v0.27.0.
+
+    Mirrors ``tools/scripts/postgres_migration.py`` / ``mysql_migration.py``
+    (``tenant_model_seeding`` → ``model_type_merge`` → ``tenant_model_id_migration``).
+    Docker ``run_migrations.sh`` is the primary path. This startup fallback runs
+    only when ``system_settings`` records a migration version below v0.27.0 so
+    steady-state boots avoid loading the migration script. Import or execution
+    failures are logged and do not abort service startup.
+
+    GaussDB is intentionally excluded: the postgres-shaped migration SQL is not
+    safe on distributed GaussDB (ORA mode). Use a dedicated upgrade path.
+
+    MySQL/OceanBase have no matching ``model_type`` fallback in ``migrate_db()``;
+    non-Docker deployments must run ``mysql_migration.py`` / ``run_migrations.sh``.
+
+    Do not ALTER ``tenant_model.model_type`` to integer before these stages.
+    """
+    if settings.DATABASE_TYPE.upper() != "POSTGRES":
+        return
+
+    try:
+        current_version = _get_model_provider_migration_version()
+        if _model_provider_migration_complete(current_version):
+            logging.info(
+                "Skipping postgres-family model-provider migration; version marker is %s",
+                current_version,
+            )
+            return
+    except Exception as ex:
+        logging.warning(
+            "Failed to read model-provider migration version marker; will attempt fallback: %s",
+            ex,
+        )
+
+    database_cfg = settings.DATABASE or {}
+    database_name = database_cfg.get("name") or database_cfg.get("database") or "rag_flow"
+    try:
+        module = _load_model_provider_migration_module()
+        module.run_using_existing_connection(
+            peewee_db=DB,
+            dialect="postgres",
+            database_name=database_name,
+            options=database_cfg.get("options"),
+        )
+    except Exception as ex:
+        logging.critical(
+            "Failed postgres-family model-provider migration fallback; service will continue: %s",
+            ex,
+            exc_info=True,
+        )
 
 
 def alter_db_rename_column(migrator, table_name, old_column_name, new_column_name):
@@ -2474,6 +2717,10 @@ def migrate_db():
     alter_db_column_type(migrator, "file", "size", BigIntegerField(default=0, index=True))
     alter_db_add_column(migrator, "tenant", "ocr_id", CharField(max_length=128, null=True, help_text="default ocr model ID", index=True))
     alter_db_add_column(migrator, "tenant", "tenant_ocr_id", CharField(max_length=32, null=True, help_text="id in tenant_model", index=True))
+    # Fallback only: pre-startup mysql_migration.py / postgres_migration.py already
+    # convert tenant_*_id. This no-ops when columns are varchar. model_type is
+    # intentionally not converted here — merge stages must see varchar first.
+    migrate_tenant_model_id_column_types(migrator)
     alter_db_column_type(migrator, "chat_channel", "status", IntegerField(default=1, index=True))
     alter_db_rename_column(migrator, "chat_channel", "dialog_id", "chat_id")
     alter_db_add_column(migrator, "chat_channel", "agent_id", CharField(max_length=32, null=True, help_text="connected agent id", index=True))
@@ -2530,6 +2777,9 @@ def migrate_db():
     # this is after re-enabling logging to allow logging changed user emails
     migrate_add_unique_email(migrator)
     migrate_model_type_names()
+    # Run data stages before ensure_model_indexes: ModelTypeMergeStage swaps
+    # tenant_model and would discard indexes created on the pre-merge table.
+    migrate_postgres_family_model_provider_tables()
     ensure_model_indexes(migrator)
 
 
@@ -2552,7 +2802,7 @@ def migrate_model_type_names():
         for old_name, new_name in RENAME_MAP.items():
             try:
                 cursor = DB.execute_sql(
-                    "UPDATE {} SET model_type = %s WHERE model_type = %s".format(table),
+                    f"UPDATE {table} SET model_type = %s WHERE model_type = %s",
                     (new_name, old_name),
                 )
                 if cursor.rowcount:
