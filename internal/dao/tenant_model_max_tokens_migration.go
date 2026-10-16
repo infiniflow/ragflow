@@ -31,7 +31,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2"
+const tenantModelMaxTokensTargetVersion = "v1.0.0-rc2.dev1"
 
 type tenantModelMaxTokensTarget struct {
 	ID         string `gorm:"column:id"`
