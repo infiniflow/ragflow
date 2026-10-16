@@ -2971,6 +2971,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       systemPrompt: '系统提示词',
       userPrompt: '用户提示词',
       tagFile: '标签文件',
+      tagFileTip:
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:

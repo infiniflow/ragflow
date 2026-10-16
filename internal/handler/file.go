@@ -46,6 +46,11 @@ func respondFileServiceError(c *gin.Context, err error) {
 	if respondPermissionErrorIf(c, err, true) {
 		return
 	}
+	var codedErr *common.CodedError
+	if errors.As(err, &codedErr) {
+		common.ErrorWithCode(c, codedErr.Code, codedErr.Message)
+		return
+	}
 	jsonInternalError(c, err)
 }
 
