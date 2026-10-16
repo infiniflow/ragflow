@@ -53,3 +53,27 @@ def _snippet(s: str, n: int) -> str:
     if len(s) <= n:
         return s
     return s[:n].rstrip() + "..."
+
+
+def strip_chunk_vectors(chunks: list | None) -> None:
+    """Drop dense embedding arrays from retrieved chunks.
+
+    ``Dealer.retrieval`` still attaches a ``vector`` field for reranking and
+    legacy backends. After scores are computed the vectors are not needed for
+    evidence, search caches, or retrieval memory — but they are large (often
+    hundreds of floats per chunk) and agentic chat can retain many copies per
+    turn (memory store + per-query search_cache). Citation code re-fetches
+    vectors on demand via ``fetch_chunk_vectors`` when required.
+    """
+    if not chunks:
+        return
+    for chunk in chunks:
+        if isinstance(chunk, dict):
+            chunk.pop("vector", None)
+
+
+def strip_kbinfos_vectors(kbinfos: dict | None) -> None:
+    """Remove ``vector`` from every chunk in a kbinfos dict."""
+    if not isinstance(kbinfos, dict):
+        return
+    strip_chunk_vectors(kbinfos.get("chunks"))
