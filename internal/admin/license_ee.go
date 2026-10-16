@@ -16,6 +16,8 @@
 
 package admin
 
-func InitLicense() error {
+import "context"
+
+func InitLicense(ctx context.Context) error {
 	return nil
 }

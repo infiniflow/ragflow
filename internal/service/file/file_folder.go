@@ -11,6 +11,8 @@ import (
 	"ragflow/internal/storage"
 	"ragflow/internal/utility"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // GetRootFolder gets or creates root folder for tenant
@@ -23,6 +25,16 @@ func (s *FileService) GetRootFolder(ctx context.Context, tenantID string) (map[s
 		return nil, err
 	}
 	return s.toFileResponse(file), nil
+}
+
+// lookupError classifies a file lookup failure: a missing row is a client-facing
+// not-found (CodeNotFound), while any other error (connection loss, timeout,
+// etc.) is returned unchanged so handlers keep reporting it as a server error.
+func lookupError(err error, message string) error {
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return common.NewCodedError(common.CodeNotFound, message)
+	}
+	return err
 }
 
 // ListFiles lists files by parent folder ID (matching Python /files endpoint)
@@ -77,7 +89,7 @@ func (s *FileService) listFiles(ctx context.Context, userID, tenantID, pfID stri
 	// Check if parent folder exists
 	folder, err := s.fileDAO.GetByID(ctx, dao.DB, pfID)
 	if err != nil {
-		return nil, fmt.Errorf("folder not found")
+		return nil, lookupError(err, "folder not found")
 	}
 	if folder.Type != FileTypeFolder {
 		return nil, permission.ErrResourceNotFound
@@ -261,7 +273,7 @@ func (s *FileService) GetParentFolder(ctx context.Context, userID, fileID string
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, lookupError(err, "file or folder not found")
 	}
 
 	// Permission check
@@ -305,7 +317,7 @@ func (s *FileService) getAllParentFolders(ctx context.Context, userID, tenantID,
 	// Get file
 	file, err := s.fileDAO.GetByID(ctx, dao.DB, fileID)
 	if err != nil {
-		return nil, err
+		return nil, lookupError(err, "file or folder not found")
 	}
 	if tenantID != "" && file.TenantID != tenantID {
 		return nil, permission.ErrResourceNotFound

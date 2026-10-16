@@ -187,7 +187,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
    ```
 

@@ -1320,6 +1320,26 @@ func (c *CLI) AdminCheckLicenseCommand(commandCount int, cmd *Command) (Response
 	return HandleCommonDataResponse(resp, "check license")
 }
 
+func (c *CLI) AdminVerifyLicenseCommand(commandCount int, cmd *Command) (ResponseIf, error) {
+	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {
+		return nil, fmt.Errorf("this command is only allowed in ADMIN mode or already login")
+	}
+
+	licenseStr, ok := cmd.Params["license"].(string)
+	if !ok {
+		return nil, fmt.Errorf("license not provided")
+	}
+
+	apiURL := fmt.Sprintf("/admin/system/license?license=%s", licenseStr)
+
+	resp, err := c.AdminServerClient.Request(commandCount, "GET", apiURL, "admin", nil, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to verify license: %w", err)
+	}
+
+	return HandleCommonDataResponse(resp, "verify license")
+}
+
 // AdminShowFingerprintCommand show fingerprint command (admin mode only)
 func (c *CLI) AdminShowFingerprintCommand(commandCount int, cmd *Command) (ResponseIf, error) {
 	if c.Config.CLIMode != AdminMode || c.AdminServerClient.LoginToken == nil {

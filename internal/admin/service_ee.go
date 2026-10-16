@@ -378,23 +378,35 @@ func (s *Service) GetSystemFingerprint(ctx context.Context) (map[string]interfac
 	return result, nil
 }
 
-func (s *Service) SetSystemLicense(ctx context.Context, license string) error {
-	return errors.New("'set system license' is not supported")
+func (s *Service) SetSystemLicense(ctx context.Context, licenseStr string) (map[string]interface{}, error) {
+	return nil, errors.New("'set system license' is not supported")
 }
 
-func (s *Service) ShowSystemLicense(ctx context.Context, check bool) (map[string]interface{}, error) {
+func (s *Service) ShowSystemLicense(ctx context.Context) (map[string]interface{}, error) {
 	var result map[string]interface{}
-	if check {
-		result = map[string]interface{}{
-			"command": "check_system_license",
-			"error":   "'check system license' is not supported",
-		}
+	result = map[string]interface{}{
+		"command": "show_system_license",
+		"error":   "'show system license' is not supported",
+	}
 
-	} else {
-		result = map[string]interface{}{
-			"command": "show_system_license",
-			"error":   "'show system license' is not supported",
-		}
+	return result, nil
+}
+
+func (s *Service) VerifyLicense(ctx context.Context, licenseStr string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	result = map[string]interface{}{
+		"command": "verify_license",
+		"error":   "'verify license' is not supported",
+	}
+
+	return result, nil
+}
+
+func (s *Service) CheckSystemLicense(ctx context.Context) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	result = map[string]interface{}{
+		"command": "check_system_license",
+		"error":   "'check system license' is not supported",
 	}
 
 	return result, nil

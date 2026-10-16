@@ -50,7 +50,7 @@ func Run(ctx context.Context, serverName string, args *bootstrap.ServerArgs) err
 	adminService := adminapi.NewService()
 	adminHandler := adminapi.NewHandler(adminService)
 
-	if err := adminapi.InitLicense(); err != nil {
+	if err := adminapi.InitLicense(ctx); err != nil {
 		common.Warn("Failed to initialize license", zap.Error(err))
 	}
 

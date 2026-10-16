@@ -187,7 +187,7 @@ Docker は迅速な評価、統合テスト、本番環境に、ソース起動�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
    ```
 

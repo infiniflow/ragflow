@@ -1091,6 +1091,11 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	if query == "" {
 		return "", fmt.Errorf("navigate_structure: query is required and must be a non-empty string")
 	}
+	// Entry trace: logged BEFORE the enablement check and the backend call, so
+	// the tool-usage gate can tell "never called" from "called and bailed out".
+	common.InfoCtx(ctx, "agentic_rag: navigate_structure called",
+		zap.String("query", query), zap.String("kind", args.Kind),
+		zap.Int("docs", len(args.DocIDs)))
 	if !navToolEnabled(ctx, navigateStructureToolName) {
 		// Marked unavailable for this conversation (bound datasets have no
 		// compiled structure): skip the backend and return the same verdict the
@@ -1125,5 +1130,14 @@ func (g *NavigateStructureTool) invokableRun(ctx context.Context, argumentsInJSO
 	text := strings.TrimSpace(query + " " + strings.TrimSpace(args.Keywords))
 	out, reason := navigateStructures(ctx, g.tenantID, text, docIDs, datasetIDs, args.Kind, reader)
 	_ = reason
+	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
+	// log, so a graph tool that rendered a structure without leaving a line here
+	// cannot be told from one that was never called.
+	common.InfoCtx(ctx, "agentic_rag: navigate_structure",
+		zap.String("query", query),
+		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("docs", len(docIDs)),
+		zap.Strings("names", docIDs),
+		zap.Int("out_bytes", len(out)))
 	return out, nil
 }
