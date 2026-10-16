@@ -273,16 +273,24 @@ jobs:
           fetch-tags: true
 
 
+      # Hybrid publishing strategy:
+      #  - Push the version-specific tag :${RELEASE_TAG} (amd64-only) here, so the
+      #    new release is always pullable on amd64 even if the ARM64 job fails.
+      #    Each release uses a unique version tag, so this never clobbers a
+      #    different version's image.
+      #  - Do NOT push :latest here; the existing (possibly multi-arch) :latest
+      #    must not be overwritten with an amd64-only image before ARM64 is ready.
+      #    :latest is created as a multi-arch tag by the `build-arm64` job's
+      #    manifest step once both arches are pushed.
+      #  - Arch-specific tags (-amd64/:amd64) are also pushed for direct pulls.
       - name: Build and push image
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:${RELEASE_TAG}-amd64
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:amd64
-          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:latest
+          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG}-amd64 -f Dockerfile .
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:${RELEASE_TAG}
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:amd64
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}-amd64
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}
           sudo docker push infiniflow/ragflow:amd64
 
       - name: Build and push ragflow-sdk
@@ -333,10 +341,13 @@ jobs:
             infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-arm64
             infiniflow/ragflow:arm64
 
-      # Merge the freshly pushed arm64 image with the amd64 image the `release`
-      # job already pushed into a single multi-arch manifest list. The amd64 bare
-      # tags stay intact (just wrapped into the index), so a failure here degrades
-      # to amd64-only rather than breaking the existing image.
+      # Create/upgrade the public multi-arch tags now that both arch-specific
+      # images (-amd64/:amd64 from the `release` job, -arm64/:arm64 from this
+      # job) are pushed. :${RELEASE_TAG} was already pushed amd64-only by the
+      # release job (so amd64 pulls always work); this upgrades it to multi-arch.
+      # :latest is created here for the first time this release (it is NOT pushed
+      # by the release job), so the previous, possibly multi-arch, :latest is
+      # never overwritten with an amd64-only image before ARM64 is ready.
       - name: Create multi-arch manifest
         run: |
           docker buildx imagetools create --tag infiniflow/ragflow:${RELEASE_TAG} \

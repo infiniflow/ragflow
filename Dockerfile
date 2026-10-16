@@ -207,11 +207,18 @@ ENV GOPROXY="${GOPROXY:-https://goproxy.cn,https://proxy.golang.org,direct}"
 COPY go.mod go.sum ./
 # Retry the module download: Go module proxies occasionally drop the HTTP/2
 # connection (GOAWAY) mid-transfer, which is transient and recovers on retry.
+# Exit nonzero if all attempts fail, so the build fails fast instead of
+# continuing with an incomplete module cache (which would surface later in
+# build.sh as a confusing missing-dependency error).
 RUN --mount=type=cache,id=ragflow_gomod,target=/root/.cache/gomod,sharing=locked \
     --mount=type=cache,id=ragflow_gobuild,target=/root/.cache/gobuild \
+    ok=0; \
     for i in 1 2 3 4 5; do \
-      go mod download && break || sleep 5; \
-    done
+      if go mod download; then ok=1; break; fi; \
+      echo "go mod download attempt $i failed, retrying in 5s" >&2; \
+      [ "$i" -lt 5 ] && sleep 5; \
+    done; \
+    if [ "$ok" -ne 1 ]; then echo "go mod download failed after 5 attempts" >&2; exit 1; fi
 
 COPY internal internal
 COPY cmd cmd
