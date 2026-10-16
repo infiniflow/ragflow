@@ -31,123 +31,76 @@ func IsASCIIPrintable(r rune) bool {
 	return false
 }
 
-// DefaultSampleChars returns up to n character texts, concatenated.
-// The page is split into that many equal spans, in page order, and one
-// character is taken from each span. The offset inside a span cycles so a
-// periodic mix is not stuck on one phase. Punctuation that lands on a
-// sample point is moved to an ASCII character in that span when the covered
-// stretch has a real run of 30 ASCII characters and the span itself is
-// already mostly ASCII, so a quote that shares the sampling phase does not
-// hide an English page. A span that is still mostly CJK keeps its sample, so
-// a short English block does not reclassify the page. When the points are
-// still ASCII across a stretch that is not mostly ASCII, and that stretch
-// has no such run, non-ASCII characters from it are kept so a skipped mix
-// is not read as an English run. The same page always yields the same sample.
+// DefaultSampleChars returns up to n character texts, concatenated. The page
+// is split into that many equal spans in page order, and each span gives one
+// character. A span is English when the page has a run of 30 consecutive
+// ASCII characters and more than half of the span is English text: ASCII
+// characters, or a gap shorter than one span between two such runs. An
+// English span gives its first ASCII character; any other span gives its
+// first non-ASCII character when it has one.
+//
+// A page with no real 30-character run therefore never samples one, and a
+// short English block cannot make a mostly CJK page English. Punctuation
+// shorter than a span inside English text never breaks the sample, wherever
+// it falls against the spans. The same page always yields the same sample.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
 	}
 	m := min(n, len(chars))
-	idx := make([]int, m)
-	for i := range m {
-		start := i * len(chars) / m
-		width := (i+1)*len(chars)/m - start
-		idx[i] = start + i%width
-	}
-	// A quote on the sampling phase breaks every sample run before a 30-long
-	// ASCII run can form. When the stretch really contains 30 printable
-	// characters, take a letter from the same span, but only if that span is
-	// already mostly ASCII. A mostly CJK span keeps its sample: one letter
-	// beside a short English block must not turn the page English. A page
-	// with no 30-character run keeps the later repair.
-	if asciiRunAtLeast(chars, idx[0], idx[m-1], 30) {
-		for i := range m {
-			if !breaksASCIIRun(chars[idx[i]].Text) {
-				continue
-			}
-			start := i * len(chars) / m
-			end := (i + 1) * len(chars) / m
-			ascii := 0
-			firstASCII := -1
-			for j := start; j < end; j++ {
-				if breaksASCIIRun(chars[j].Text) {
-					continue
-				}
-				if firstASCII < 0 {
-					firstASCII = j
-				}
-				ascii++
-			}
-			if ascii*2 <= end-start {
-				continue
-			}
-			idx[i] = firstASCII
-		}
-	}
-	// A run of ASCII sample points is trusted when the page stretch it covers
-	// has at most one non-ASCII character per 20 (an English page with
-	// typographic marks stays under that). A denser mix was skipped by the
-	// stride; keep characters from it so the run stays under 30. Skip that
-	// repair when the stretch already contains a real run of 30 ASCII
-	// characters, so typographic punctuation at 6-10% does not hide it.
-	for a := 0; a < m; {
-		if breaksASCIIRun(chars[idx[a]].Text) {
-			a++
-			continue
-		}
-		b := a
-		for b+1 < m && !breaksASCIIRun(chars[idx[b+1]].Text) {
-			b++
-		}
-		if b-a+1 >= 30 {
-			lo, hi := idx[a], idx[b]
-			span := hi - lo + 1
-			non := 0
-			for j := lo; j <= hi; j++ {
-				if breaksASCIIRun(chars[j].Text) {
-					non++
-				}
-			}
-			if non*20 > span && !asciiRunAtLeast(chars, lo, hi, 30) {
-				next := lo
-				for off := 29; off < b-a+1; off += 29 {
-					for next <= hi && !breaksASCIIRun(chars[next].Text) {
-						next++
-					}
-					if next > hi {
-						break
-					}
-					idx[a+off] = next
-					next++
-				}
-			}
-		}
-		a = b + 1
-	}
-	var buf strings.Builder
-	for _, i := range idx {
-		buf.WriteString(chars[i].Text)
-	}
-	return buf.String()
-}
-
-// asciiRunAtLeast reports whether chars[lo] through chars[hi] contain n
-// consecutive ASCII-printable runes.
-func asciiRunAtLeast(chars []pdf.TextChar, lo, hi, n int) bool {
-	run := 0
-	for j := lo; j <= hi; j++ {
-		for _, r := range chars[j].Text {
+	text := make([]bool, len(chars))
+	pageHasRun := false
+	run, runStart, lastRunEnd := 0, 0, -1
+	for i, c := range chars {
+		text[i] = !breaksASCIIRun(c.Text)
+		for _, r := range c.Text {
 			if !IsASCIIPrintable(r) {
 				run = 0
 				continue
 			}
-			run++
-			if run >= n {
-				return true
+			if run == 0 {
+				runStart = i
 			}
+			run++
+			if run < 30 {
+				continue
+			}
+			// The bound rounds down so a bridged gap never covers a whole
+			// span, and every English span still has an ASCII character.
+			if run == 30 && lastRunEnd >= 0 && runStart-lastRunEnd-1 < len(chars)/m {
+				for j := lastRunEnd + 1; j < runStart; j++ {
+					text[j] = true
+				}
+			}
+			pageHasRun = true
+			lastRunEnd = i
 		}
 	}
-	return false
+
+	var buf strings.Builder
+	for i := range m {
+		start := i * len(chars) / m
+		end := (i + 1) * len(chars) / m
+		english := false
+		if pageHasRun {
+			k := 0
+			for j := start; j < end; j++ {
+				if text[j] {
+					k++
+				}
+			}
+			english = k*2 > end-start
+		}
+		pick := start
+		for j := start; j < end; j++ {
+			if breaksASCIIRun(chars[j].Text) != english {
+				pick = j
+				break
+			}
+		}
+		buf.WriteString(chars[pick].Text)
+	}
+	return buf.String()
 }
 
 // breaksASCIIRun reports whether s contains a rune outside an English run.

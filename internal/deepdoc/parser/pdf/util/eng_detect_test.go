@@ -57,8 +57,8 @@ func TestDefaultSampleCharsStable(t *testing.T) {
 	for i := range chars {
 		chars[i] = pdf.TextChar{Text: string(rune('a' + i%26))}
 	}
-	// Span offsets cycle: indexes 0,5,10,15,16,21,26,31,32,37.
-	const want = "afkpqvafgl"
+	// All ASCII, so each span of four gives its first character.
+	const want = "aeimquycgk"
 	var first string
 	for range 30 {
 		got := DefaultSampleChars(chars, 10)
@@ -100,9 +100,8 @@ func TestDetectEnglishPageStable(t *testing.T) {
 
 func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
 	// 200 glyphs repeating a short mix. A fixed stride of len/n == 2 samples
-	// only A from A/你. The cycling span offset samples only A from A你你A
-	// (indexes 0, 3, 4, 7, ...). Neither page has a 30-character ASCII run,
-	// so the vote must stay false.
+	// only A from A/你, and a cycling span offset samples only A from A你你A.
+	// Neither page has a 30-character ASCII run, so the vote must stay false.
 	cycles := []struct {
 		name  string
 		cycle []string
@@ -127,13 +126,32 @@ func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
 			if allA {
 				t.Fatalf("DefaultSampleChars = %q, want a sample that is not all A", sample)
 			}
-			if !strings.Contains(sample, "A") || !strings.Contains(sample, "你") {
-				t.Fatalf("DefaultSampleChars = %q, want both A and 你", sample)
-			}
 			if DetectEnglishPage(chars, nil) {
 				t.Fatal("DetectEnglishPage = true, want false")
 			}
 		})
+	}
+}
+
+func TestDetectEnglishPageNeedsRealRun(t *testing.T) {
+	// One CJK glyph per period of 2-12 at every phase, across page lengths
+	// that give span widths of one to five. No page has a 30-character ASCII
+	// run, so no alignment of glyphs and spans may vote English.
+	for period := 2; period <= 12; period++ {
+		for phase := range period {
+			for pageLen := 101; pageLen <= 513; pageLen++ {
+				chars := make([]pdf.TextChar, pageLen)
+				for i := range chars {
+					chars[i].Text = "A"
+					if i%period == phase {
+						chars[i].Text = "你"
+					}
+				}
+				if DetectEnglishPage(chars, nil) {
+					t.Fatalf("period %d, phase %d, length %d: DetectEnglishPage = true, want false", period, phase, pageLen)
+				}
+			}
+		}
 	}
 }
 
@@ -198,31 +216,19 @@ func TestReviewLongEnglishOnePercentQuotes(t *testing.T) {
 }
 
 func TestDetectEnglishPageSixToTenPercentPunctuation(t *testing.T) {
-	// Punctuation is 8% of the page and sits off the sampled indexes, with a
-	// real 40-character ASCII run left intact. The sample already contains
-	// 30 letters; the dense-stretch repair must not punch that run out.
+	// A curly quote every 12 characters, about 8% of the page, so letters
+	// between quotes run only 11 long. One clean 40-character stretch is the
+	// page's only real 30-character run. Every span is still mostly ASCII,
+	// and the page has to stay English.
 	const pageLen = 1000
-	const samples = 100
 	chars := make([]pdf.TextChar, pageLen)
-	for i := range chars {
-		chars[i].Text = "e"
-	}
-	sampled := make([]bool, pageLen)
-	for i := range samples {
-		start := i * pageLen / samples
-		width := (i+1)*pageLen/samples - start
-		sampled[start+i%width] = true
-	}
 	placed := 0
 	for i := range chars {
-		if sampled[i] || (i >= 400 && i < 440) {
-			continue
+		chars[i].Text = "e"
+		if i%12 == 0 && (i < 400 || i >= 440) {
+			chars[i].Text = "“"
+			placed++
 		}
-		if placed == 80 {
-			break
-		}
-		chars[i].Text = "“"
-		placed++
 	}
 	if placed*100 < 6*pageLen || placed*100 > 10*pageLen {
 		t.Fatalf("non-ASCII punctuation = %d/%d, want 6-10%%", placed, pageLen)
@@ -239,22 +245,35 @@ func TestDetectEnglishPageSixToTenPercentPunctuation(t *testing.T) {
 }
 
 func TestDetectEnglishPagePhaseAlignedPunctuation(t *testing.T) {
-	// Quotes share the sampling phase and are denser than one in twenty, so
-	// a density gate leaves them in the sample and the longest sampled ASCII
-	// run stays under 30. Each page still has a real run of 30 ASCII
-	// characters, and the vote has to stay English.
+	// Quotes share the first character of a span and are denser than one in
+	// twenty. A raw page-order sample is ten copies of a quote and nine
+	// letters, so its longest ASCII run stays under 30. Each page still has
+	// real runs of 30 ASCII characters, and the vote has to stay English.
 	cases := []struct {
 		name string
 		fill func([]pdf.TextChar)
 	}{
 		{
 			name: "quote clusters",
-			// 92% ASCII: four curly quotes, then 46 letters. The raw sample
-			// is ten copies of a quote and nine letters.
+			// 92% ASCII: four curly quotes, then 46 letters.
 			fill: func(chars []pdf.TextChar) {
 				for i := range chars {
 					chars[i].Text = "e"
 					if i%50 < 4 {
+						chars[i].Text = "“"
+					}
+				}
+			},
+		},
+		{
+			name: "quote clusters fill half a span",
+			// 90% ASCII: five curly quotes, then 45 letters. Each affected
+			// span of ten is exactly half quotes. The quotes sit between two
+			// real runs and are shorter than a span, so they read as text.
+			fill: func(chars []pdf.TextChar) {
+				for i := range chars {
+					chars[i].Text = "e"
+					if i%50 < 5 {
 						chars[i].Text = "“"
 					}
 				}
@@ -315,51 +334,102 @@ func TestDetectEnglishPagePhaseAlignedPunctuation(t *testing.T) {
 	}
 }
 
-func TestDetectEnglishPageShortEnglishBlockOnCJK(t *testing.T) {
-	// A 30-letter heading, then one letter every 10 characters and CJK
-	// everywhere else: 127 ASCII out of 1000, about 87% CJK. The heading is
-	// a real 30-character run. Moving each later CJK sample to that span's
-	// lone letter would make the sample all ASCII and vote English.
-	chars := make([]pdf.TextChar, 1000)
-	for i := range chars {
-		chars[i].Text = "你"
-		if i < 30 || i%10 == 5 {
-			chars[i].Text = "e"
-		}
-	}
-	ascii := 0
-	for i := range chars {
-		if !breaksASCIIRun(chars[i].Text) {
-			ascii++
-		}
-	}
-	if ascii != 127 {
-		t.Fatalf("ASCII characters = %d, want 127", ascii)
-	}
-	if !asciiRunAtLeast(chars, 0, len(chars)-1, 30) {
-		t.Fatal("fixture has no 30-character ASCII run")
-	}
-	sample := DefaultSampleChars(chars, 100)
-	run := 0
-	for _, r := range sample {
-		if IsASCIIPrintable(r) {
-			run++
-			if run >= 30 {
-				break
+func TestDetectEnglishPageQuoteClustersIgnorePhase(t *testing.T) {
+	// k curly quotes every 50 characters, shifted through every phase
+	// against the spans of ten. Where the clusters fall must not change
+	// the vote, and clusters of up to five keep the page English.
+	for k := 1; k <= 12; k++ {
+		var first bool
+		for phase := range 50 {
+			chars := make([]pdf.TextChar, 1000)
+			for i := range chars {
+				chars[i].Text = "e"
+				if (i+phase)%50 < k {
+					chars[i].Text = "“"
+				}
 			}
-			continue
+			got := DetectEnglishPage(chars, nil)
+			if phase == 0 {
+				first = got
+			}
+			if got != first {
+				t.Fatalf("%d quotes: phase %d votes %v, phase 0 votes %v", k, phase, got, first)
+			}
 		}
-		run = 0
+		if k <= 5 && !first {
+			t.Fatalf("%d quotes per 50: DetectEnglishPage = false, want true", k)
+		}
 	}
-	if run >= 30 {
-		t.Fatalf("DefaultSampleChars = %q, want no 30-character ASCII run", sample)
+}
+
+func TestDetectEnglishPageShortEnglishBlockOnCJK(t *testing.T) {
+	// A 30-letter heading is the page's only real 30-character run. Letters
+	// after it are isolated, so those spans are not English text and the
+	// heading alone must not outvote the rest of the page.
+	cases := []struct {
+		name      string
+		wantASCII int
+		letter    func(i int) bool
+	}{
+		{
+			// One letter every 10 characters, CJK elsewhere: 127 ASCII out
+			// of 1000, about 87% CJK.
+			name:      "periodic letters",
+			wantASCII: 127,
+			letter:    func(i int) bool { return i < 30 || i%10 == 5 },
+		},
+		{
+			// Alternating letter and CJK: each later span is exactly half
+			// ASCII.
+			name:      "alternating",
+			wantASCII: 515,
+			letter:    func(i int) bool { return i < 30 || i%2 == 0 },
+		},
 	}
-	if DetectEnglishPage(chars, nil) {
-		t.Fatal("DetectEnglishPage = true, want false")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			chars := make([]pdf.TextChar, 1000)
+			ascii := 0
+			for i := range chars {
+				chars[i].Text = "你"
+				if tc.letter(i) {
+					chars[i].Text = "e"
+					ascii++
+				}
+			}
+			if ascii != tc.wantASCII {
+				t.Fatalf("ASCII characters = %d, want %d", ascii, tc.wantASCII)
+			}
+			if !asciiRunAtLeast(chars, 0, len(chars)-1, 30) {
+				t.Fatal("fixture has no 30-character ASCII run")
+			}
+			if DetectEnglishPage(chars, nil) {
+				t.Fatalf("DetectEnglishPage = true, want false; sample %q", DefaultSampleChars(chars, 100))
+			}
+			if DetectEnglishPage(chars, nil) {
+				t.Fatal("DetectEnglishPage flipped to true")
+			}
+		})
 	}
-	if DetectEnglishPage(chars, nil) {
-		t.Fatal("DetectEnglishPage flipped to true")
+}
+
+// asciiRunAtLeast reports whether chars[lo] through chars[hi] contain n
+// consecutive ASCII-printable runes.
+func asciiRunAtLeast(chars []pdf.TextChar, lo, hi, n int) bool {
+	run := 0
+	for j := lo; j <= hi; j++ {
+		for _, r := range chars[j].Text {
+			if !IsASCIIPrintable(r) {
+				run = 0
+				continue
+			}
+			run++
+			if run >= n {
+				return true
+			}
+		}
 	}
+	return false
 }
 
 func TestFullTextFromChars(t *testing.T) {
