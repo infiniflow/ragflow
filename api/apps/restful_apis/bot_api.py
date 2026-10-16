@@ -220,10 +220,12 @@ async def agent_bot_completions(agent_id, tenant_id=None):
             # agent_completion yields SSE-formatted strings. A single yielded
             # chunk can contain multiple "data:..." frames separated by "\n\n"
             # plus blank or comment lines, so parse line-by-line rather than
-            # assuming one frame per chunk.
+            # assuming one frame per chunk. Split on "\n" only: frames are
+            # serialized with ensure_ascii=False, so a U+2028/U+2029/U+0085 in
+            # the content stays raw and str.splitlines() would cut the JSON.
             if not isinstance(answer, str):
                 continue
-            for line in answer.splitlines():
+            for line in answer.split("\n"):
                 line = line.strip()
                 if not line.startswith("data:"):
                     continue
