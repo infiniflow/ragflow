@@ -13,8 +13,10 @@ import (
 // top level and on nodes. Legacy flat metadata forms are intentionally not
 // supported. When a dataset-level modular metadata config is present it is
 // authoritative and replaces each Extractor node's metadata; when absent, the
-// node's own modular metadata is preserved. It mutates the provided map in
-// place and returns it for convenience.
+// node's own modular metadata is preserved. Flat delimiter transport keys are
+// bridged onto GeneralChunker:SixApplesFall so parser-config delimiters
+// persist for the built-in general chunker (#20496 / #20497). It mutates the
+// provided map in place and returns it for convenience.
 func ApplyComponentScopedParserConfig(
 	parserConfig entity.JSONMap,
 	llmID string,
@@ -61,6 +63,12 @@ func ApplyComponentScopedParserConfig(
 		}
 	}
 
+	if flatDelim, ok := parserConfig["delimiters"]; ok {
+		bridgeFlatDelimiter(parserConfig, "delimiters", flatDelim)
+	} else if flatDelim, ok := parserConfig["delimiter"]; ok {
+		bridgeFlatDelimiter(parserConfig, "delimiter", flatDelim)
+	}
+
 	// Documents and datasets are uniformly component-scoped (every dataset and
 	// document DSL defines an Extractor node), so the flat "metadata" transport
 	// key is never a first-class config: it is scoped onto an Extractor node
@@ -74,6 +82,18 @@ func ApplyComponentScopedParserConfig(
 	delete(parserConfig, "metadata")
 
 	return parserConfig
+}
+
+const generalChunkerNodeID = "GeneralChunker:SixApplesFall"
+
+func bridgeFlatDelimiter(parserConfig entity.JSONMap, key string, value any) {
+	node, ok := parserConfig[generalChunkerNodeID].(map[string]any)
+	if !ok {
+		node = map[string]any{}
+		parserConfig[generalChunkerNodeID] = node
+	}
+	node[key] = value
+	delete(parserConfig, key)
 }
 
 func cloneJSONMap(in map[string]any) map[string]any {

@@ -43,6 +43,7 @@ describe('normalizeParserConfig backend awareness', () => {
     });
     expect(out['GeneralChunker:SixApplesFall']).toEqual({
       chunk_token_size: 128,
+      delimiters: ['\n'],
       parent_child: { children_delimiter: '!?;', use_parent_child: true },
     });
     // No flat transport keys survive for the Go backend.
@@ -52,6 +53,10 @@ describe('normalizeParserConfig backend awareness', () => {
     // chunk_token_num, so the flat key must be gone and the value re-homed.
     expect(out).not.toHaveProperty('chunk_token_num');
     expect(out).not.toHaveProperty('delimiter');
+    expect(
+      (out['GeneralChunker:SixApplesFall'] as Record<string, unknown>)
+        .delimiters,
+    ).toEqual(['\n']);
     expect(out).not.toHaveProperty('layout_recognize');
     expect(out).not.toHaveProperty('auto_keywords');
     // graphrag/raptor are always stripped.
@@ -75,6 +80,7 @@ describe('normalizeParserConfig backend awareness', () => {
     // The chunk size is still re-homed onto the chunker node.
     expect(out['GeneralChunker:SixApplesFall']).toEqual({
       chunk_token_size: 128,
+      delimiters: ['\n'],
     });
   });
 });
