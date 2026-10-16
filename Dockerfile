@@ -9,7 +9,7 @@ ARG TARGETARCH
 # that matches the target platform, so a single-arch build never requires both
 # runner images to be present.
 FROM infiniflow/github_action_runner:latest      AS runner-amd64
-FROM infiniflow/github_action_runner:arm64-latest AS runner-arm64
+FROM infiniflow/github_action_runner:latest-arm64 AS runner-arm64
 
 # base stage
 FROM ubuntu:24.04 AS base
