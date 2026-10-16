@@ -288,6 +288,104 @@ func TestStringTransform_SplitFeedsVariableAssignerAppend(t *testing.T) {
 	}
 }
 
+// runMerge runs a merge StringTransform against state and returns its result.
+func runMerge(t *testing.T, state *canvas.CanvasState, delimiter, script string, inputs map[string]any) any {
+	t.Helper()
+	c, err := NewStringTransformComponent(map[string]any{
+		"method":     "merge",
+		"delimiters": delimiter,
+		"script":     script,
+	})
+	if err != nil {
+		t.Fatalf("NewStringTransformComponent: %v", err)
+	}
+	out, err := c.Invoke(canvas.WithState(t.Context(), state), nil, inputs)
+	if err != nil {
+		t.Fatalf("merge Invoke: %v", err)
+	}
+	return out["result"]
+}
+
+// TestStringTransform_MergeJoinsListRef: a list reference is joined with the
+// first delimiter, as Python's get_kwargs did.
+func TestStringTransform_MergeJoinsListRef(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		list      any
+		delimiter string
+		want      string
+	}{
+		{"comma", []any{"a", "b", "c"}, ",", "a,b,c"},
+		{"line break", []any{"a", "b", "c"}, "\n", "a\nb\nc"},
+		{"typed slice", []string{"a", "b"}, ",", "a,b"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			state := canvas.NewCanvasState("run-10", "task-10")
+			state.Outputs["st_0"] = map[string]any{"result": tc.list}
+			if got := runMerge(t, state, tc.delimiter, "{st_0@result}", nil); got != tc.want {
+				t.Errorf("merge: got %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestStringTransform_MergeJoinsListPlaceholder: a {{name}} placeholder
+// whose input is a list is joined the same way.
+func TestStringTransform_MergeJoinsListPlaceholder(t *testing.T) {
+	state := canvas.NewCanvasState("run-11", "task-11")
+	got := runMerge(t, state, ",", "{{xs}}", map[string]any{"xs": []any{"a", "b"}})
+	if got != "a,b" {
+		t.Errorf("merge: got %q, want %q", got, "a,b")
+	}
+}
+
+// TestStringTransform_MergeKeepsNonListRefs: references that are not lists
+// resolve as before next to a joined list.
+func TestStringTransform_MergeKeepsNonListRefs(t *testing.T) {
+	state := canvas.NewCanvasState("run-12", "task-12")
+	state.Sys["query"] = "q"
+	state.Outputs["st_0"] = map[string]any{"result": []any{"a", "b", "c"}}
+	got := runMerge(t, state, ",", "{sys.query}: {st_0@result}", nil)
+	if got != "q: a,b,c" {
+		t.Errorf("merge: got %q, want %q", got, "q: a,b,c")
+	}
+}
+
+// TestStringTransform_MergeListItemsAreNotResolved: list items are inserted
+// as text; ref-like text inside an item is neither resolved nor allowed to
+// break the other refs.
+func TestStringTransform_MergeListItemsAreNotResolved(t *testing.T) {
+	state := canvas.NewCanvasState("run-14", "task-14")
+	state.Sys["query"] = "q"
+	state.Outputs["st_0"] = map[string]any{"result": []any{"a", "{foo@bar}"}}
+	got := runMerge(t, state, ",", "{sys.query}: {st_0@result}", nil)
+	if got != "q: a,{foo@bar}" {
+		t.Errorf("merge: got %q, want %q", got, "q: a,{foo@bar}")
+	}
+}
+
+// TestStringTransform_MergeListPlaceholderItemsAreNotResolved: a joined
+// {{name}} list is inserted after the placeholder pass, so its items are not
+// replaced by later placeholders.
+func TestStringTransform_MergeListPlaceholderItemsAreNotResolved(t *testing.T) {
+	state := canvas.NewCanvasState("run-15", "task-15")
+	got := runMerge(t, state, ",", "{{a}}/{{b}}", map[string]any{"a": []any{"{{b}}"}, "b": "X"})
+	if got != "{{b}}/X" {
+		t.Errorf("merge: got %q, want %q", got, "{{b}}/X")
+	}
+}
+
+// TestStringTransform_SplitThenMerge: a split result merged with another
+// delimiter.
+func TestStringTransform_SplitThenMerge(t *testing.T) {
+	state := canvas.NewCanvasState("run-13", "task-13")
+	splitIntoState(t, state, "st_0", "a,b,c")
+	got := runMerge(t, state, ";", "{st_0@result}", nil)
+	if got != "a;b;c" {
+		t.Errorf("merge: got %q, want %q", got, "a;b;c")
+	}
+}
+
 // TestStringTransform_EmptyStringDelimiter: delimiters="" is rejected.
 func TestStringTransform_EmptyStringDelimiter(t *testing.T) {
 	_, err := NewStringTransformComponent(map[string]any{
