@@ -55,6 +55,84 @@ PDF_OXIDE_VERSION="0.3.73"
 # Downloaded by tools/scripts/download_dev_deps.py into onnxruntime/static_lib.
 ONNXRUNTIME_STATIC_PREFIX="${HOME}/ragflow-native-libs/onnxruntime/static_lib"
 
+# ── target platform detection ──────────────────────────────────────────
+# Defaults to the build host (uname), overridable with RAGFLOW_TARGET_OS /
+# RAGFLOW_TARGET_ARCH for cross-baked dependency downloads. goos ∈ {linux,
+# darwin}; goarch ∈ {amd64, arm64}.
+TARGET_OS=""
+TARGET_ARCH=""
+detect_target_platform() {
+    TARGET_OS="${RAGFLOW_TARGET_OS:-$(uname -s)}"
+    TARGET_ARCH="${RAGFLOW_TARGET_ARCH:-$(uname -m)}"
+    case "$TARGET_OS" in
+        Linux)  TARGET_OS="linux" ;;
+        Darwin) TARGET_OS="darwin" ;;
+    esac
+    case "$TARGET_ARCH" in
+        x86_64|amd64) TARGET_ARCH="amd64" ;;
+        arm64|aarch64) TARGET_ARCH="arm64" ;;
+    esac
+    export TARGET_OS TARGET_ARCH
+}
+
+# Map the target platform to the release asset filename for each native lib.
+# These mirror tools/scripts/download_dev_deps.py's *_ASSETS maps and the
+# verified upstream release assets.
+office_oxide_asset() {
+    case "${TARGET_OS}_${TARGET_ARCH}" in
+        linux_amd64)  echo "native-linux-x86_64.tar.gz" ;;
+        linux_arm64)  echo "native-linux-aarch64.tar.gz" ;;
+        darwin_amd64) echo "native-macos-x86_64.tar.gz" ;;
+        darwin_arm64) echo "native-macos-aarch64.tar.gz" ;;
+    esac
+}
+pdfium_asset() {
+    case "${TARGET_OS}_${TARGET_ARCH}" in
+        linux_amd64)  echo "pdfium-linux-x64-static.tgz" ;;
+        linux_arm64)  echo "pdfium-linux-arm64-static.tgz" ;;
+        darwin_amd64) echo "pdfium-mac-x64-static.tgz" ;;
+        darwin_arm64) echo "pdfium-mac-arm64-static.tgz" ;;
+    esac
+}
+pdf_oxide_asset() {
+    case "${TARGET_OS}_${TARGET_ARCH}" in
+        linux_amd64)  echo "pdf_oxide-go-ffi-linux-amd64.tar.gz" ;;
+        linux_arm64)  echo "pdf_oxide-go-ffi-linux-arm64.tar.gz" ;;
+        darwin_amd64) echo "pdf_oxide-go-ffi-darwin-amd64.tar.gz" ;;
+        darwin_arm64) echo "pdf_oxide-go-ffi-darwin-arm64.tar.gz" ;;
+    esac
+}
+# Release target token of the ONNX Runtime zip published under
+# infiniflow/ragflow-build tag onnxruntime-v{version}: linux-x86_64,
+# linux-aarch64, osx-arm64, osx-universal (no osx-x86_64 is published —
+# Intel Macs use the universal archive). Mirrors download_dev_deps.py's
+# ort_target().
+ort_release_target() {
+    case "${TARGET_OS}_${TARGET_ARCH}" in
+        linux_amd64)  echo "linux-x86_64" ;;
+        linux_arm64)  echo "linux-aarch64" ;;
+        darwin_amd64) echo "osx-universal" ;;
+        darwin_arm64) echo "osx-arm64" ;;
+    esac
+}
+# Top-level dir prefix of the extracted ONNX Runtime static lib under
+# $ONNXRUNTIME_STATIC_PREFIX, e.g. onnxruntime-linux-x64-static_lib-.
+# download_dev_deps.py renames each release zip's top-level dir to
+# onnxruntime-<os>-<arch>-static_lib-<version>[-glibc2_28] (see its
+# ort_normalized_dir), so this prefix — plus the DeepDocORTVersion parsed
+# below — pins the dir we link. Keeping it platform-specific stops a shared
+# cache from linking an ORT built for another OS/arch. The arch token is not
+# GOARCH: Linux uses x64/aarch64, and macOS uses arm64 or universal (Intel Macs
+# share the universal archive — ragflow-build publishes no osx-x86_64).
+ort_static_lib_prefix() {
+    case "${TARGET_OS}_${TARGET_ARCH}" in
+        linux_amd64)  echo "onnxruntime-linux-x64-static_lib-" ;;
+        linux_arm64)  echo "onnxruntime-linux-aarch64-static_lib-" ;;
+        darwin_amd64) echo "onnxruntime-osx-universal-static_lib-" ;;
+        darwin_arm64) echo "onnxruntime-osx-arm64-static_lib-" ;;
+    esac
+}
+
 # Copy a dependency from the system pre-seed directory to the user cache.
 # Returns 0 if the dep was copied or already exists in cache, 1 otherwise.
 _seed_from_system() {
@@ -269,6 +347,16 @@ check_ort_version_consistency() {
 # use). Devs who ran a download script have the zip under ragflow_deps/; CI
 # seeds from /opt and has no zip, where the bake is authoritative.
 check_onnxruntime_deps() {
+    # Ensure TARGET_OS/TARGET_ARCH are resolved. ort_static_lib_prefix below
+    # depends on them; without this guard an early call (before any other path
+    # triggers detect_target_platform) would resolve the archive glob against an
+    # empty prefix and could pick up an ORT built for the wrong platform from a
+    # shared cache. Idempotent: derive once, then reuse the result.
+    if [ -z "$_TARGET_PLATFORM_DETECTED" ]; then
+        detect_target_platform
+        _TARGET_PLATFORM_DETECTED=1
+    fi
+
     local ort_version
     ort_version="$(grep -m1 -E 'DeepDocORTVersion[[:space:]]*=[[:space:]]*"' \
         "${PROJECT_ROOT}/internal/common/environments.go" \
@@ -285,12 +373,26 @@ check_onnxruntime_deps() {
     ORT_A_FILES=""
     local primary=""
     local f
+    # Platform-specific top-level dir prefix (see ort_static_lib_prefix)
+    # plus the required version — a shared cache can hold ORT built for
+    # another OS/arch, and the Python side legitimately keeps another ORT
+    # version in the same prefix. Matching both is why coexisting version
+    # dirs need no separate fail-fast guard here.
+    local ort_dir_prefix
+    ort_dir_prefix="$(ort_static_lib_prefix)"
     while IFS= read -r f; do
         case "$(basename "$f")" in
             *cuda*|*tensorrt*|*coreml*|*dml*|*migraphx*) continue ;;
         esac
         case "$f" in
-            */onnxruntime-linux-x64-static_lib-"${ort_version}"*/lib/*.a)
+            # Only collect .a from the dir matching both the target
+            # platform and the required version: ${ort_dir_prefix} pins
+            # OS/arch (a shared cache can also hold ORT built for another
+            # platform), ${ort_version} pins DeepDocORTVersion (the Python
+            # side legitimately keeps another ORT version in the same
+            # prefix). Matching both is why coexisting version dirs no
+            # longer need a fail-fast guard here.
+            */${ort_dir_prefix}${ort_version}*/lib/*.a)
                 ORT_A_FILES="$ORT_A_FILES $f"
                 [ -z "$primary" ] && primary="$f"
                 case "$(basename "$f")" in
@@ -303,7 +405,7 @@ check_onnxruntime_deps() {
     if [ -z "$ORT_A_FILES" ]; then
         local avail
         avail="$(find "$ONNXRUNTIME_STATIC_PREFIX" -maxdepth 1 -type d \
-            -name 'onnxruntime-linux-x64-static_lib-*' -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
+            -name "${ort_dir_prefix}*" -exec basename {} \; 2>/dev/null | tr '\n' ' ')"
         echo -e "${RED}Error: no ONNX Runtime ${ort_version} static lib under $ONNXRUNTIME_STATIC_PREFIX${NC}" >&2
         echo "  available: ${avail:-<none>}" >&2
         echo "  DeepDocORTVersion=${ort_version}; fetch it with:" >&2
@@ -325,10 +427,26 @@ check_onnxruntime_deps() {
     # tools/scripts/download_dev_deps.py still verifies against
     # the published sidecar at download time, so a re-issued archive is picked
     # up on the next download.
-    local asset="onnxruntime-v${ort_version}-linux-x86_64.zip"
+    #
+    # The digest is per release target (see ort_release_target): comparing a
+    # macOS zip against the Linux digest would warn on every build, so an
+    # unknown target verifies nothing instead.
+    local asset="onnxruntime-v${ort_version}-$(ort_release_target).zip"
     local zip_path="${PROJECT_ROOT}/ragflow_deps/${asset}"
-    local expected="439308c93822d26cf04341cab3e77c595bbe88a12b54043210d14a0ca5574bd1"
-    if [ -f "$zip_path" ]; then
+    local expected=""
+    case "$asset" in
+        onnxruntime-v*-linux-x86_64.zip)
+            expected="439308c93822d26cf04341cab3e77c595bbe88a12b54043210d14a0ca5574bd1" ;;
+        onnxruntime-v*-linux-aarch64.zip)
+            expected="59a30fc0754d2b3dafb2761f208610e9be962f6370a0e1223fbca39440fa02a0" ;;
+        onnxruntime-v*-osx-arm64.zip)
+            expected="e80f81e61750f7cfde8bada1f2175c5218d9d910a5ec61bc70dba4a1f7c950eb" ;;
+        onnxruntime-v*-osx-universal.zip)
+            expected="29e9ceeaa84eba4734bbc8b7a8473487e1deb8010a2b6bc1b1cd695a4d87e7f3" ;;
+    esac
+    if [ -z "$expected" ]; then
+        echo "  (no pinned digest for ${asset}; skipping sha256 check)"
+    elif [ -f "$zip_path" ]; then
         local actual
         actual="$(sha256sum "$zip_path" | awk '{print $1}')"
         if [ "$actual" != "$expected" ]; then
@@ -363,7 +481,7 @@ check_office_oxide_deps() {
         echo -e "${RED}Error: office_oxide native library not found${NC}"
         echo "  Expected: ${lib_path}"
         echo "  Run: uv run tools/scripts/download_dev_deps.py"
-        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/native-linux-x86_64.tar.gz"
+        echo "  Or manually download: https://github.com/yfedoseev/office_oxide/releases/download/v${OFFICE_OXIDE_VERSION}/$(office_oxide_asset)"
         exit 1
     fi
 
@@ -375,12 +493,12 @@ check_office_oxide_deps() {
         local found_version
         found_version=$(strings "$lib_path" 2>/dev/null | grep -E "^0\.[0-9]+\.[0-9]+$" | head -1)
         echo -e "${YELLOW}office_oxide native lib version mismatch (required v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}); refreshing from download${NC}"
-        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/office_oxide-linux-x86_64.tar.gz"
+        rm -rf "${OFFICE_OXIDE_PREFIX}" "${PROJECT_ROOT}/ragflow_deps/$(office_oxide_asset)"
         if ! (cd "${PROJECT_ROOT}" && uv run tools/scripts/download_dev_deps.py); then
             echo -e "${RED}Error: office_oxide native lib version mismatch${NC}"
             echo "  Required: v${OFFICE_OXIDE_VERSION}; found: ${found_version:-unknown}"
             echo "  A stale lib silently loses PPT97 (.ppt) slide content. Refresh:"
-            echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/office_oxide-linux-x86_64.tar.gz"
+            echo "    rm -rf ~/ragflow-native-libs/office_oxide ragflow_deps/$(office_oxide_asset)"
             echo "    uv run tools/scripts/download_dev_deps.py"
             exit 1
         fi
@@ -415,7 +533,7 @@ check_pdfium_deps() {
     echo "  pdfium (static) not found"
     echo "  Expected: ${lib_path}"
     echo "  Run: uv run tools/scripts/download_dev_deps.py"
-    echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/pdfium-linux-x64-static.tgz | tar xz -C ${PDFIUM_STATIC_PREFIX}"
+    echo "  Or: curl -fsSL https://github.com/kognitos/pdfium-static/releases/download/chromium%2F${PDFIUM_STATIC_VERSION}/$(pdfium_asset) | tar xz -C ${PDFIUM_STATIC_PREFIX}"
     return 1
 }
 
@@ -463,24 +581,13 @@ pdf_oxide_validate_version() {
 
 check_pdf_oxide_deps() {
     _seed_from_system "pdf_oxide" || true
-    # Map platform to tarball-internal subdirectory.
-    local platform_subdir
-    case "$(uname -s)" in
-        Linux)
-            case "$(uname -m)" in
-                x86_64)  platform_subdir="linux_amd64" ;;
-                aarch64|arm64) platform_subdir="linux_arm64" ;;
-                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
-            esac
-            ;;
-        Darwin)
-            case "$(uname -m)" in
-                x86_64)  platform_subdir="darwin_amd64" ;;
-                arm64)   platform_subdir="darwin_arm64" ;;
-                *) echo "  pdf_oxide (static) → unsupported arch"; return 1 ;;
-            esac
-            ;;
-        *) echo "  pdf_oxide (static) → unsupported OS"; return 1 ;;
+    # Map platform to tarball-internal subdirectory (lib/<os>_<arch>/). Reuses
+    # TARGET_OS/TARGET_ARCH set by detect_target_platform instead of re-deriving
+    # from uname, so it stays consistent with the other check_*_deps helpers.
+    local platform_subdir="${TARGET_OS}_${TARGET_ARCH}"
+    case "$platform_subdir" in
+        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
+        *) echo "  pdf_oxide (static) → unsupported platform: $platform_subdir"; return 1 ;;
     esac
 
     local lib_path="${PDF_OXIDE_PREFIX}/lib/${platform_subdir}/libpdf_oxide.a"
@@ -519,7 +626,7 @@ check_pdf_oxide_deps() {
                 echo -e "${RED}Error: pdf_oxide native lib version mismatch${NC}"
                 echo "  Required: v${PDF_OXIDE_VERSION}; found: ${found_version:-unknown}"
                 echo "  A stale lib silently reverts PDF parsing fixes. Refresh:"
-                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+                echo "    rm -rf ${PDF_OXIDE_PREFIX} ragflow_deps/$(pdf_oxide_asset)"
                 echo "    uv run tools/scripts/download_dev_deps.py"
                 return 1
                 ;;
@@ -529,7 +636,7 @@ check_pdf_oxide_deps() {
     echo "  pdf_oxide (static) not found"
     echo "  Expected: ${lib_path}"
     echo "  Run: uv run tools/scripts/download_dev_deps.py"
-    echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz | tar xz -C ${PDF_OXIDE_PREFIX}"
+    echo "  Or: curl -fsSL https://github.com/yfedoseev/pdf_oxide/releases/download/v${PDF_OXIDE_VERSION}/$(pdf_oxide_asset) | tar xz -C ${PDF_OXIDE_PREFIX}"
     return 1
 }
 
@@ -569,16 +676,24 @@ build_cpp() {
     # onnxruntime keeps calling its own. Verified to eliminate the crash.
     local tok_a="$BUILD_DIR/librag_tokenizer_c_api.a"
     local rename_map="$BUILD_DIR/re2_rename.map"
+    # GNU objcopy is standard on Linux; on macOS it is provided by LLVM as
+    # llvm-objcopy (brew install llvm). Prefer whichever is available.
+    local objcopy_bin=""
     if command -v objcopy >/dev/null 2>&1; then
+        objcopy_bin=objcopy
+    elif command -v llvm-objcopy >/dev/null 2>&1; then
+        objcopy_bin=llvm-objcopy
+    fi
+    if [ -n "$objcopy_bin" ]; then
         nm "$tok_a" \
             | awk '$2 ~ /^[TDBRWtdbrwiIVv]$/ && $3 ~ /^_ZN3re2|_ZNK3re2|_ZTVN3re2|_ZTIN3re2|_ZTSN3re2/ { print $3" ragtokre2_"$3 }' \
             | sort -u > "$rename_map"
         if [ -s "$rename_map" ]; then
-            objcopy --redefine-syms="$rename_map" "$tok_a"
+            "$objcopy_bin" --redefine-syms="$rename_map" "$tok_a"
             echo -e "${GREEN}✓ Renamed $(wc -l < "$rename_map") tokenizer re2 symbols into private namespace (ragtokre2_)${NC}"
         fi
     else
-        echo -e "${YELLOW}Warning: objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
+        echo -e "${YELLOW}Warning: objcopy/llvm-objcopy not found, skipping re2 symbol rename (re2 collision with onnxruntime may cause SIGSEGV)${NC}"
     fi
 
     echo -e "${GREEN}✓ C++ static library built successfully${NC}"
@@ -696,6 +811,8 @@ build_go() {
 # Configure CGO flags for native libraries (office_oxide, pdfium, pdf_oxide).
 # All three are statically linked — no LD_LIBRARY_PATH or -Wl,-rpath needed.
 setup_cgo_env() {
+    detect_target_platform
+
     # ── office_oxide ──────────────────────────────────────────────────
     check_office_oxide_deps
 
@@ -744,23 +861,14 @@ setup_cgo_env() {
 
     # ── pdf_oxide ─────────────────────────────────────────────────────
     check_pdf_oxide_deps || return 1
-    # The go-ffi tarball places the .a under lib/<platform_subdir>/.
-    local pdf_oxide_subdir
-    case "$(uname -s)" in
-        Linux)
-            case "$(uname -m)" in
-                x86_64)  pdf_oxide_subdir="linux_amd64" ;;
-                aarch64|arm64) pdf_oxide_subdir="linux_arm64" ;;
-                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
-            esac
-            ;;
-        Darwin)
-            case "$(uname -m)" in
-                x86_64)  pdf_oxide_subdir="darwin_amd64" ;;
-                arm64)   pdf_oxide_subdir="darwin_arm64" ;;
-                *) echo "pdf_oxide: unsupported arch"; return 1 ;;
-            esac
-            ;;
+    # The go-ffi tarball places the .a under lib/<platform_subdir>/. Reuses
+    # TARGET_OS/TARGET_ARCH set by detect_target_platform (instead of
+    # re-deriving from uname) so RAGFLOW_TARGET_OS/ARCH overrides apply here
+    # exactly as they do in check_pdf_oxide_deps.
+    local pdf_oxide_subdir="${TARGET_OS}_${TARGET_ARCH}"
+    case "$pdf_oxide_subdir" in
+        linux_amd64|linux_arm64|darwin_amd64|darwin_arm64) ;;
+        *) echo "pdf_oxide: unsupported platform: $pdf_oxide_subdir"; return 1 ;;
     esac
     # Version-stamp the archive path so an in-place .a upgrade invalidates
     # Go's build cache. See the office_oxide block above for why the raw path
@@ -774,36 +882,30 @@ setup_cgo_env() {
     export CGO_LDFLAGS="$CGO_LDFLAGS ${pdf_oxide_versioned_dir}/libpdf_oxide.a"
 
     # ── onnxruntime (static, resolved via dlopen(NULL)) ────────────────
-    # macOS native builds of the in-process DeepDoc backend are not supported:
-    # ONNX Runtime is statically linked with GNU ld flags
-    # (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list) and resolved at
-    # runtime via dlopen(NULL); Apple's ld64 does not understand these flags.
-    # Build on Linux or cross-compile there.
-    case "$(uname -s)" in
-        Darwin)
-            echo "Error: macOS native build of the in-process DeepDoc backend is not supported." >&2
-            echo "  ONNX Runtime is linked with GNU ld flags (-Wl,--undefined=OrtGetApiBase + -Wl,--dynamic-list)" >&2
-            echo "  and resolved via dlopen(NULL); Apple's ld64 does not support them. Build on Linux." >&2
-            return 1
-            ;;
-    esac
     # Statically link libonnxruntime*.a into the binary. The org Go binding
     # (onnxruntime_go, github.com/infiniflow/onnxruntime_go) resolves OrtGetApiBase
     # with dlopen(NULL) + dlsym(handle, "OrtGetApiBase"), so the ONLY symbol that
-    # must be visible in the process-global table is OrtGetApiBase.
+    # must be visible in the process-global table is OrtGetApiBase. No
+    # libonnxruntime.so/.dylib is required or supported at runtime; there is no
+    # dynamic fallback.
     #
-    # We therefore do NOT use --whole-archive: that flag force-pulls every .o in
-    # the archive (including unregistered "dead" kernels we never call), which
-    # is why every ORT size-trimming build flag had near-zero effect before.
-    # Instead we link the archives normally and let GNU ld's archive-level GC
-    # drop any kernel/EP object that nothing references. The onnxruntime_go
-    # binding reaches ORT purely through the OrtApi function-pointer table
-    # returned by OrtGetApiBase, and a minimal/reduced-ops build registers only
-    # the operators the deepdoc models actually use, so the reachable closure is
-    # small. --dynamic-list exports just OrtGetApiBase (the only symbol dlopen
-    # needs) and leaves Go's runtime symbols untouched, unlike a "local: *"
-    # version script which breaks PIE absolute relocations. No libonnxruntime.so
-    # is required or supported at runtime; there is no dynamic .so fallback.
+    # The two linkers need different flags to get there (see the platform
+    # branch further down where CGO_LDFLAGS is assembled):
+    #   Linux (GNU ld): force-pull just the archive member defining OrtGetApiBase
+    #     and export exactly that symbol — no --whole-archive, so archive-level GC
+    #     drops every ORT kernel/EP object nothing references (that flag is why
+    #     every ORT size-trimming build flag had near-zero effect before). The
+    #     binding reaches ORT purely through the OrtApi function-pointer table
+    #     returned by OrtGetApiBase, and a minimal/reduced-ops build registers
+    #     only the operators the deepdoc models actually use, so the reachable
+    #     closure is small. --dynamic-list exports just OrtGetApiBase (the only
+    #     symbol dlopen needs) and leaves Go's runtime symbols untouched, unlike
+    #     a "local: *" version script which breaks PIE absolute relocations.
+    #   macOS (ld64): no GNU ld flags exist, so pull the archives in with
+    #     -force_load and export them with -export_dynamic. This path is written
+    #     but NOT yet verified on real Apple-Silicon hardware — the dlopen(NULL)
+    #     resolution of OrtGetApiBase under -export_dynamic must be confirmed
+    #     there. (待 Mac 验证)
     #
     # Seed the static ORT archives from the system pre-bake (/opt, laid down
     # by the CI runner image) into the user cache before the link check
@@ -831,36 +933,54 @@ setup_cgo_env() {
         ort_a_versioned="$ort_a_versioned $ort_versioned_dir/$(basename "$f")"
     done
 
-    # Export exactly one symbol (OrtGetApiBase) for the binding's
-    # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
-    # with "local: *", which hides Go's runtime type symbols and breaks
-    # the PIE absolute relocations). No --whole-archive, so GNU ld's
-    # archive-level GC drops any ORT kernel/EP object nothing references.
-    #
-    # The dynamic list is written to a STABLE, project-scoped path (not
-    # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
-    # across invocations; its content never changes, so overwriting is
-    # safe and nothing leaks in /tmp. .cache/ is gitignored.
-    local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
-    mkdir -p "$(dirname "$ort_dynamic_list")"
-    printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
-    # --undefined=OrtGetApiBase force-pulls the archive member that
-    # defines OrtGetApiBase (the Go binding reaches ORT only via
-    # dlsym("OrtGetApiBase"), so nothing references it at link time and
-    # it would otherwise be GC'd). From there the minimal build's CPU-EP
-    # registration call chain pulls in the operators the models use.
-    # The explicit space between $ort_dynamic_list and the versioned .a
-    # list keeps the two as separate linker arguments regardless of the
-    # list's leading space.
-    export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a_versioned -lstdc++"
+    if [ "$TARGET_OS" = "darwin" ]; then
+        # ld64 has no --undefined / --dynamic-list spelled the GNU way.
+        # Force-load each archive so ORT's lazily-registered execution
+        # providers are pulled in, and export the symbols so the runtime
+        # dlopen(NULL) can resolve OrtGetApiBase.
+        #
+        # NOTE: the macOS link path is NOT yet verified on a real Apple
+        # Silicon machine — the dlopen(NULL) symbol resolution of
+        # OrtGetApiBase under -export_dynamic must be confirmed there.
+        # (待 Mac 验证)
+        local ort_force=""
+        for f in $ort_a_versioned; do
+            ort_force="$ort_force -Wl,-force_load,$f"
+        done
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,-export_dynamic${ort_force} -lc++"
+    else
+        # Export exactly one symbol (OrtGetApiBase) for the binding's
+        # dlopen(NULL)+dlsym lookup via --dynamic-list (NOT --version-script
+        # with "local: *", which hides Go's runtime type symbols and breaks
+        # the PIE absolute relocations). No --whole-archive, so GNU ld's
+        # archive-level GC drops any ORT kernel/EP object nothing references.
+        #
+        # The dynamic list is written to a STABLE, project-scoped path (not
+        # mktemp) so CGO_LDFLAGS is reproducible across builds and survives
+        # across invocations; its content never changes, so overwriting is
+        # safe and nothing leaks in /tmp. .cache/ is gitignored.
+        local ort_dynamic_list="${PROJECT_ROOT}/.cache/ort_dynamic_list.txt"
+        mkdir -p "$(dirname "$ort_dynamic_list")"
+        printf '{\n  OrtGetApiBase;\n};\n' > "$ort_dynamic_list"
+        # --undefined=OrtGetApiBase force-pulls the archive member that
+        # defines OrtGetApiBase (the Go binding reaches ORT only via
+        # dlsym("OrtGetApiBase"), so nothing references it at link time and
+        # it would otherwise be GC'd). From there the minimal build's CPU-EP
+        # registration call chain pulls in the operators the models use.
+        # The explicit space between $ort_dynamic_list and the versioned .a
+        # list keeps the two as separate linker arguments regardless of the
+        # list's leading space.
+        export CGO_LDFLAGS="$CGO_LDFLAGS -Wl,--undefined=OrtGetApiBase -Wl,--dynamic-list=$ort_dynamic_list $ort_a_versioned -lstdc++"
+    fi
     echo "  onnxruntime (static) → $ONNXRUNTIME_STATIC_PREFIX"
     # The re2 regex-library collision between onnxruntime.a and
     # librag_tokenizer_c_api.a is fixed at the .a level in build_cpp():
     # the tokenizer's bundled re2 symbols are renamed into a private
     # namespace (ragtokre2_) so the two re2 copies never share a symbol
-    # name. --dynamic-list (above) exports OrtGetApiBase into the process
-    # dynamic symbol table, which is what the binding's dlopen(NULL)+dlsym
-    # lookup needs at runtime (no --export-dynamic required).
+    # name. OrtGetApiBase is exported into the process dynamic symbol
+    # table on Linux via --dynamic-list (above) — or, on macOS, via
+    # -export_dynamic — which is what the binding's dlopen(NULL)+dlsym
+    # lookup needs at runtime.
 
     # ── platform-specific system libraries ────────────────────────────
     case "$(uname -s)" in
