@@ -163,6 +163,81 @@ func TestDetectEnglishPageLongEnglish(t *testing.T) {
 	}
 }
 
+func TestReviewLongEnglishOnePercentQuotes(t *testing.T) {
+	// 99% ASCII, one curly quote every 100 characters, including index 0.
+	// With 100 samples the span offset is i%10, so those quotes land on
+	// every tenth sample and used to break the run before it reached 30.
+	chars := make([]pdf.TextChar, 1000)
+	for i := range chars {
+		chars[i].Text = "e"
+		if i%100 == 0 {
+			chars[i].Text = "“"
+		}
+	}
+	sample := DefaultSampleChars(chars, 100)
+	run := 0
+	for _, r := range sample {
+		if IsASCIIPrintable(r) {
+			run++
+			if run >= 30 {
+				break
+			}
+			continue
+		}
+		run = 0
+	}
+	if run < 30 {
+		t.Fatalf("DefaultSampleChars = %q, want a 30-character ASCII run", sample)
+	}
+	if !DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage = false, want true")
+	}
+	if !DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage flipped to false")
+	}
+}
+
+func TestDetectEnglishPageSixToTenPercentPunctuation(t *testing.T) {
+	// Punctuation is 8% of the page and sits off the sampled indexes, with a
+	// real 40-character ASCII run left intact. The sample already contains
+	// 30 letters; the dense-stretch repair must not punch that run out.
+	const pageLen = 1000
+	const samples = 100
+	chars := make([]pdf.TextChar, pageLen)
+	for i := range chars {
+		chars[i].Text = "e"
+	}
+	sampled := make([]bool, pageLen)
+	for i := range samples {
+		start := i * pageLen / samples
+		width := (i+1)*pageLen/samples - start
+		sampled[start+i%width] = true
+	}
+	placed := 0
+	for i := range chars {
+		if sampled[i] || (i >= 400 && i < 440) {
+			continue
+		}
+		if placed == 80 {
+			break
+		}
+		chars[i].Text = "“"
+		placed++
+	}
+	if placed*100 < 6*pageLen || placed*100 > 10*pageLen {
+		t.Fatalf("non-ASCII punctuation = %d/%d, want 6-10%%", placed, pageLen)
+	}
+	if !asciiRunAtLeast(chars, 0, pageLen-1, 30) {
+		t.Fatal("fixture has no 30-character ASCII run")
+	}
+	if !DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage = false, want true")
+	}
+	if !DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage flipped to false")
+	}
+}
+
 func TestFullTextFromChars(t *testing.T) {
 	chars := map[int][]pdf.TextChar{
 		0: {{Text: "Hello"}, {Text: " "}, {Text: "World"}},
