@@ -25,6 +25,7 @@ import (
 	einotool "github.com/cloudwego/eino/components/tool"
 	"github.com/cloudwego/eino/schema"
 	"github.com/eino-contrib/jsonschema"
+	"go.uber.org/zap"
 
 	"ragflow/internal/common"
 )
@@ -116,6 +117,10 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 	if query == "" {
 		return "", fmt.Errorf("graph_explore: query is required and must be a non-empty string")
 	}
+	// Entry trace: logged BEFORE the enablement check and the backend call, so
+	// the tool-usage gate can tell "never called" from "called and bailed out".
+	common.InfoCtx(ctx, "agentic_rag: graph_explore called",
+		zap.String("query", query), zap.Int("doc_scope", len(args.DocScope)))
 	if !navToolEnabled(ctx, graphExploreToolName) {
 		// Marked unavailable for this conversation (bound datasets have no
 		// compiled knowledge graph): skip the backend and return the same
@@ -151,6 +156,15 @@ func (g *GraphExploreTool) invokableRun(ctx context.Context, argumentsInJSON str
 		markNavToolUnavailable(ctx, graphExploreToolName)
 		common.DebugCtx(ctx, "graph_explore: marking unavailable for conversation (no compiled knowledge graph)")
 	}
+	// Per-call INFO: the tool-usage gate (kg_tool_calls) is read off the server
+	// log, so a graph tool that calls the backend without leaving a line here
+	// cannot be told from one that was never called.
+	common.InfoCtx(ctx, "agentic_rag: graph_explore",
+		zap.String("query", query),
+		zap.Int("datasets", len(datasetIDs)),
+		zap.Int("entities", len(result.Entities)),
+		zap.Int("relations", len(result.Relations)),
+		zap.Int("passages", len(result.Passages)))
 	return renderKgExplore(ctx, query, result), nil
 }
 
