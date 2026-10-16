@@ -893,3 +893,54 @@ func TestRetrievalPageBeyondCandidatePoolRejected(t *testing.T) {
 		t.Fatal("Retrieval page 8 (offset 70 >= 64 candidates) must be rejected, got nil error")
 	}
 }
+
+// TestRetrievalHugePageRejectedNoPanic guards against the overflow path an
+// earlier multiplication-based bounds check had: a page so large that
+// (page-1)*pageSize overflows. The division-based check must reject it cleanly
+// instead of letting a negative offset reach the validIdx slice (which would
+// panic).
+func TestRetrievalHugePageRejectedNoPanic(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	rows := make([]map[string]interface{}, 70)
+	for i := range rows {
+		rows[i] = map[string]interface{}{
+			"id":                  fmt.Sprintf("chunk-%02d", i),
+			"content_ltks":        "alpha",
+			"content_with_weight": "alpha",
+			"_score":              0.9,
+		}
+	}
+	engine := &retrievalCountEngine{rows: rows}
+	service := NewRetrievalService(engine, &dao.DocumentDAO{})
+	top := 100
+	threshold := 0.5
+	vectorWeight := 1.0
+	aggs := false
+	rerankCandidatesCount := 64
+
+	// (1<<62 - 1) * 10 would overflow a 64-bit int; the division-based check
+	// must reject this before any slicing happens.
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("Retrieval panicked on a huge page: %v", r)
+		}
+	}()
+	_, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1<<62 + 1,
+		PageSize:               10,
+		KNNTopK:                &top,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+		Filter:                 map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}},
+		RerankCandidatesCount:  &rerankCandidatesCount,
+	})
+	if err == nil {
+		t.Fatal("Retrieval with a huge page must be rejected, got nil error")
+	}
+}

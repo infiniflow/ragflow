@@ -141,12 +141,14 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 	pageSize := req.PageSize
 	rerankCandidatesCount := *req.RerankCandidatesCount
 	// The page is valid while its start offset still falls inside the candidate
-	// pool, i.e. (page-1)*pageSize < rerankCandidatesCount. The previous form
-	// `page > rerankCandidatesCount/pageSize` used Go floor division, which
-	// rejected the last partial page whenever rerankCandidatesCount was not a
-	// multiple of pageSize (e.g. 64 candidates, pageSize 10: page 7 starts at
-	// offset 60 and holds 4 results, but 64/10 floored to 6 rejected it).
-	if rerankCandidatesCount <= 0 || (req.Page-1)*pageSize >= rerankCandidatesCount {
+	// pool, i.e. (page-1)*pageSize < rerankCandidatesCount. Express that as a
+	// division rather than a multiplication: req.Page-1 <= (rerankCandidatesCount-
+	// 1)/pageSize. The previous form `page > rerankCandidatesCount/pageSize`
+	// floored and rejected the last partial page; a multiplication form
+	// `(page-1)*pageSize >= rerankCandidatesCount` would admit the partial page
+	// but could overflow on an absurdly large page and then slice validIdx with
+	// a negative offset (panic). The division form has neither problem.
+	if rerankCandidatesCount <= 0 || req.Page-1 > (rerankCandidatesCount-1)/pageSize {
 		return nil, fmt.Errorf("page(%d) * page_size(%d) exceeds rerank_candidates_count(%d); the requested page starts at or beyond the candidate pool", req.Page, pageSize, rerankCandidatesCount)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
