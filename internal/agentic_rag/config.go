@@ -86,6 +86,11 @@ func toolRegistry() map[string]toolFactory {
 		// The compiled-knowledge-graph walk. Registered always; a template that
 		// omits it simply never offers it to the model.
 		"graph_explore": func(t string, d []string) tool.BaseTool { return NewGraphExploreTool(t, d) },
+		// The compiled-graph panorama read: one call returns a whole document's
+		// entities and relations instead of scanning it chunk by chunk.
+		// Registered always; a template that omits it never offers it to the
+		// model (same pattern as graph_explore).
+		"graph_doc_outline": func(t string, d []string) tool.BaseTool { return NewGraphDocOutlineTool(t, d) },
 		// The compiled-navigation-tree router. Registered always; a template that
 		// omits it simply never offers it to the model (same pattern as
 		// graph_explore).

@@ -25,6 +25,7 @@ import (
 	"github.com/cloudwego/eino/schema"
 	"go.uber.org/zap"
 
+	"ragflow/internal/agent/runtime"
 	"ragflow/internal/agentic_rag"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
@@ -95,6 +96,18 @@ func (s *ChatPipelineService) agenticRag(
 		// those handles against the same numbering.
 		registry := agentic_rag.NewEvidenceRegistry()
 		runCtx = agentic_rag.WithEvidenceRegistry(runCtx, registry)
+		// The retrieval tools authorize their datasets as the CALLER of the run,
+		// not as the chat's tenant: NLPRetrievalAdapter.Search reads that identity
+		// from the run's runtime state (state.Sys["user_id"]) and treats a missing
+		// state as an empty subject, which fails every dataset permission check and
+		// kills the vector-only locate tool. The canvas path gets this state from
+		// its compile step; the agentic path has no canvas, so attach it here.
+		runState := runtime.NewCanvasState("", chat.ID)
+		if userID != "" {
+			runState.Sys["user_id"] = userID
+			runState.Sys["tenant_id"] = chat.TenantID
+		}
+		runCtx = runtime.WithState(runCtx, runState)
 		emitResult := func(result AsyncChatResult) bool {
 			select {
 			case out <- result:

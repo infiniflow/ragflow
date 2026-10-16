@@ -20,20 +20,29 @@ import (
 	"context"
 
 	"github.com/cloudwego/eino/components/tool"
+	"go.uber.org/zap"
 
+	"ragflow/internal/common"
 	"ragflow/internal/engine"
 	enginetypes "ragflow/internal/engine/types"
 )
 
 // compiledKnowledgeToolNames are the tools that only make sense on a corpus that
 // has produced knowledge-compilation products (a navigation tree, a compiled
-// structure, a knowledge graph). They are INJECTED, never declared in a
-// template's tool list: Run adds them only when the bound datasets actually hold
-// compiled products, so an uncompiled corpus never offers - or pays for - them.
+// structure, a knowledge graph, a per-document panorama). They are INJECTED,
+// never declared in a template's tool list: Run adds them only when the bound
+// datasets actually hold compiled products, so an uncompiled corpus never
+// offers - or pays for - them.
+//
+// The injected set is the whole compiled-knowledge surface on purpose: a tool
+// that is registered but neither declared by a template nor injected here is
+// unreachable at runtime, which is indistinguishable from "the model chose not
+// to use it" unless someone reads the tool list.
 var compiledKnowledgeToolNames = []string{
 	navigateTreeToolName,
 	navigateStructureToolName,
 	graphExploreToolName,
+	graphDocOutlineToolName,
 }
 
 // compiledKnowledgeTools builds the injected compiled-knowledge tool set scoped
@@ -71,6 +80,13 @@ func datasetsHaveCompiledKnowledge(ctx context.Context, tenantID string, dataset
 		IncludeUnavailable: true,
 	})
 	if err != nil || res == nil {
+		// A probe that fails for an infrastructure reason (engine down, index
+		// missing) must not read as "this corpus was never compiled": say so,
+		// and let the caller's own INFO line carry the decision.
+		common.DebugCtx(ctx, "agentic_rag: compiled-knowledge probe failed",
+			zap.String("tenant_id", tenantID),
+			zap.Strings("datasets", datasetIDs),
+			zap.Error(err))
 		return false
 	}
 	return len(res.Chunks) > 0

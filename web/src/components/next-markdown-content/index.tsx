@@ -42,6 +42,7 @@ import 'katex/dist/katex.min.css'; // `rehype-katex` does not import the CSS for
 import {
   buildCitationDisplayMap,
   currentReg,
+  decodeAngleBracketEntities,
   escapeUnmatchedAngleBrackets,
   parseCitationIndex,
   preprocessLaTeX,
@@ -475,6 +476,10 @@ function MarkdownContent({
               const { children, className, ...rest } = props;
               const restProps = omit(rest, 'node');
               const match = /language-(\w+)/.exec(className || '');
+              // Code content is literal for react-markdown, so the &lt;/&gt;
+              // entities restored by unescapeAngleBrackets survive parsing;
+              // decode them back.
+              const codeText = decodeAngleBracketEntities(String(children));
               return match ? (
                 <SyntaxHighlighter
                   {...restProps}
@@ -482,14 +487,14 @@ function MarkdownContent({
                   language={match[1]}
                   wrapLongLines
                 >
-                  {String(children).replace(/\n$/, '')}
+                  {codeText.replace(/\n$/, '')}
                 </SyntaxHighlighter>
               ) : (
                 <code
                   {...restProps}
                   className={classNames(className, 'text-wrap')}
                 >
-                  {children}
+                  {codeText}
                 </code>
               );
             },

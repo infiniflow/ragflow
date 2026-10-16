@@ -48,13 +48,24 @@ const (
 	kgScopeDataset = "dataset"
 	kgScopeDoc     = "doc"
 
-	kgSeeds        = 2   // top-N entities matched directly to the question
-	kgSeedPool     = 64  // KNN candidate pool before the mention_count re-sort
-	kgSeedSim      = 0.8 // dense seed similarity floor
-	kgHops         = 2   // relation hops out from the seeds
-	kgNeighbors    = 128 // cap on neighbour entity rows resolved per hop
-	kgRelLimit     = 32  // relations fetched per endpoint filter
-	kgMaxPassages  = 6   // source passages returned per walk
+	kgSeeds       = 2   // top-N entities matched directly to the question
+	kgSeedPool    = 64  // KNN candidate pool before the mention_count re-sort
+	kgSeedSim     = 0.8 // dense seed similarity floor
+	kgHops        = 2   // relation hops out from the seeds
+	kgNeighbors   = 128 // cap on neighbour entity rows resolved per hop
+	kgRelLimit    = 32  // relations fetched per endpoint filter
+	kgMaxPassages = 6   // source passages returned per walk
+
+	kgOutlineMaxDocs  = 3 // documents per outline call
+	kgOutlineRowsEach = 1 // a document has exactly one `graph` row
+	// kgOutlineMaxEntities / kgOutlineMaxRelations bound the skeleton to what
+	// the model can actually use: the hubs. An outline enters the ReAct
+	// transcript and is re-sent on EVERY later turn, so a 60-entity dump costs
+	// more than the deep read it was meant to replace. The mention-count sort
+	// already puts the useful entities first, so cutting the tail is free.
+	kgOutlineMaxEntities  = 15
+	kgOutlineMaxRelations = 20
+
 	kgPassageRunes = 1500
 )
 
@@ -66,6 +77,9 @@ type KgEntity struct {
 	Aliases        []string
 	SourceChunkIDs []string
 	DocID          string
+	// MentionCount is how often the corpus mentions the entity: a centrality
+	// proxy that lets the caller tell a hub from a leaf.
+	MentionCount int
 }
 
 // KgRelation is one relation (edge) row of the compiled graph.
@@ -115,6 +129,7 @@ type KgExploreResult struct {
 // so the server can install the engine-backed adapter at boot.
 type KgService interface {
 	Explore(ctx context.Context, req KgExploreRequest) (KgExploreResult, error)
+	DocOutline(ctx context.Context, req KgDocOutlineRequest) (KgExploreResult, error)
 }
 
 var (
@@ -144,6 +159,10 @@ func GetKgService() KgService {
 type stubKgService struct{}
 
 func (stubKgService) Explore(context.Context, KgExploreRequest) (KgExploreResult, error) {
+	return KgExploreResult{}, ErrKgServiceMissing
+}
+
+func (stubKgService) DocOutline(context.Context, KgDocOutlineRequest) (KgExploreResult, error) {
 	return KgExploreResult{}, ErrKgServiceMissing
 }
 
@@ -586,6 +605,7 @@ func kgParseEntity(row map[string]interface{}) (KgEntity, bool) {
 		Description:    kgStrOr(payload["description"], ""),
 		SourceChunkIDs: kgStrSlice(row["source_chunk_ids"]),
 		DocID:          kgStr(row["doc_id"]),
+		MentionCount:   kgMentionCount(row),
 	}
 	if aliases, ok := payload["aliases"].([]interface{}); ok {
 		for _, alias := range aliases {
@@ -675,4 +695,230 @@ func kgStrSlice(v interface{}) []string {
 		return out
 	}
 	return nil
+}
+
+// KgDocOutlineRequest asks for the per-document graph panorama. DocIDs are the
+// documents whose outline the caller wants.
+type KgDocOutlineRequest struct {
+	TenantID   string
+	DatasetIDs []string
+	DocIDs     []string
+}
+
+// DocOutline returns each document's compiled graph in one shot. Every document
+// the compiler processed carries a single `graph` row holding all of its
+// entities and relations together, so the caller gets the whole skeleton of a
+// long document for the price of one fetch instead of scanning it chunk by
+// chunk. Entities are returned in descending mention order - the hubs first.
+func (a *KgAdapter) DocOutline(ctx context.Context, req KgDocOutlineRequest) (KgExploreResult, error) {
+	empty := KgExploreResult{}
+	if a == nil || a.docEngine == nil {
+		return empty, ErrKgServiceMissing
+	}
+	docIDs := nonEmptyStrings(req.DocIDs)
+	datasetIDs := nonEmptyStrings(req.DatasetIDs)
+	if len(docIDs) == 0 || len(datasetIDs) == 0 {
+		return empty, nil
+	}
+	if len(docIDs) > kgOutlineMaxDocs {
+		docIDs = docIDs[:kgOutlineMaxDocs]
+	}
+
+	var entities []KgEntity
+	var relations []KgRelation
+	seenNames := map[string]bool{}
+	seenRel := map[string]bool{}
+	collectEntities := func(list []KgEntity) {
+		for _, e := range list {
+			key := strings.ToLower(e.Name)
+			if key == "" || seenNames[key] {
+				continue
+			}
+			seenNames[key] = true
+			entities = append(entities, e)
+		}
+	}
+	collectRelations := func(list []KgRelation) {
+		for _, r := range list {
+			key := r.From + "|" + r.To + "|" + r.Type
+			if seenRel[key] {
+				continue
+			}
+			seenRel[key] = true
+			relations = append(relations, r)
+		}
+	}
+	// outlined tracks which of the requested documents actually carry a `graph`
+	// panorama row: the compiler writes exactly one per processed document, but
+	// a document it never processed has none at all.
+	outlined := map[string]bool{}
+	absent := true
+	for _, kbID := range datasetIDs {
+		rows := a.kgSearchRaw(ctx, req.TenantID, kbID, docIDs, "graph", "",
+			nil, nil, "", kgOutlineMaxDocs*kgOutlineRowsEach)
+		if len(rows) > 0 {
+			absent = false
+		}
+		for _, row := range rows {
+			if id := kgStr(row["doc_id"]); id != "" {
+				outlined[id] = true
+			}
+			ents, rels := kgParseGraphRow(row)
+			collectEntities(ents)
+			collectRelations(rels)
+		}
+	}
+
+	// Fallback for documents with no `graph` row. Such a document still carries
+	// its own entity and relation rows, and returning the caller an empty
+	// outline reads to the agent as "this document has no compiled knowledge" -
+	// which is wrong and sends it to the text tools for a skeleton that exists.
+	var fallbackDocs []string
+	for _, id := range docIDs {
+		if id != "" && !outlined[id] {
+			fallbackDocs = append(fallbackDocs, id)
+		}
+	}
+	for _, kbID := range datasetIDs {
+		if len(fallbackDocs) == 0 {
+			break
+		}
+		for _, kind := range []string{"entity", "relation"} {
+			limit := kgOutlineMaxEntities
+			if kind == "relation" {
+				limit = kgOutlineMaxRelations
+			}
+			rows := a.kgSearchRaw(ctx, req.TenantID, kbID, fallbackDocs, kind, "",
+				nil, nil, "mention_count_int", limit)
+			if len(rows) == 0 {
+				continue
+			}
+			absent = false
+			for _, row := range rows {
+				if kind == "entity" {
+					if e, ok := kgParseEntity(row); ok {
+						collectEntities([]KgEntity{e})
+					}
+					continue
+				}
+				if r, ok := kgParseRelation(row); ok {
+					collectRelations([]KgRelation{r})
+				}
+			}
+		}
+	}
+
+	// `absent` so far only says that THESE documents yielded nothing, which is a
+	// document-scoped miss - not the dataset-level fact GraphAbsent carries (see
+	// the KgExploreResult contract). The distinction decides whether the tool
+	// disables itself for the conversation, so a scoped miss must not claim it:
+	// one unprocessed document, or a transient engine failure (kgSearchRaw
+	// reports a failed read as no rows), would otherwise turn graph_doc_outline
+	// off until the TTL expires - and the renderKgDocOutline branch that
+	// explains "these documents carry no compiled graph row" could never be
+	// reached. Probe the datasets exactly as Explore does: propagate a probe
+	// failure instead of reading an infrastructure error as "no graph", let any
+	// dataset that does carry compiled rows turn this into a scoped miss, and
+	// report the absence only when every probe succeeded and found nothing.
+	if absent {
+		for _, kbID := range datasetIDs {
+			has, probeErr := a.graphRowsExist(ctx, req.TenantID, kbID, nil, "")
+			if probeErr != nil {
+				return empty, probeErr
+			}
+			if has {
+				absent = false
+				break
+			}
+		}
+	}
+
+	// Mention count is the only centrality signal the panorama carries, and the
+	// caller reads a bounded payload: sort so the hubs survive the cap.
+	sort.SliceStable(entities, func(i, j int) bool {
+		return entities[i].MentionCount > entities[j].MentionCount
+	})
+	if len(entities) > kgOutlineMaxEntities {
+		entities = entities[:kgOutlineMaxEntities]
+	}
+	if len(relations) > kgOutlineMaxRelations {
+		relations = relations[:kgOutlineMaxRelations]
+	}
+
+	passages := a.evidencePassages(ctx, req.TenantID, datasetIDs, entities, relations)
+	return KgExploreResult{
+		Entities:    entities,
+		Relations:   relations,
+		Passages:    passages,
+		GraphAbsent: absent,
+	}, nil
+}
+
+// kgParseGraphRow projects a document's `graph` panorama row - every entity
+// and relation the compiler extracted from that document, serialised as
+// entities and relations in a single JSON payload - into the shared types.
+func kgParseGraphRow(row map[string]interface{}) ([]KgEntity, []KgRelation) {
+	raw := kgStr(row["content_with_weight"])
+	if raw == "" {
+		return nil, nil
+	}
+	var payload struct {
+		Entities []struct {
+			Name           string      `json:"name"`
+			Type           string      `json:"type"`
+			Description    string      `json:"description"`
+			MentionCount   interface{} `json:"mention_count"`
+			SourceChunkIDs interface{} `json:"source_chunk_ids"`
+		} `json:"entities"`
+		Relations []struct {
+			From string `json:"from"`
+			To   string `json:"to"`
+			Type string `json:"type"`
+		} `json:"relations"`
+	}
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		return nil, nil
+	}
+	docID := kgStr(row["doc_id"])
+	entities := make([]KgEntity, 0, len(payload.Entities))
+	for _, e := range payload.Entities {
+		name := strings.TrimSpace(e.Name)
+		if name == "" {
+			continue
+		}
+		entities = append(entities, KgEntity{
+			Name:           name,
+			Type:           kgStrOr(e.Type, "other"),
+			Description:    e.Description,
+			SourceChunkIDs: kgStrSlice(e.SourceChunkIDs),
+			DocID:          docID,
+			MentionCount:   int(kgFloat(e.MentionCount)),
+		})
+	}
+	relations := make([]KgRelation, 0, len(payload.Relations))
+	for _, r := range payload.Relations {
+		from, to := strings.TrimSpace(r.From), strings.TrimSpace(r.To)
+		if from == "" || to == "" {
+			continue
+		}
+		relations = append(relations, KgRelation{
+			From: from, To: to, Type: kgStrOr(r.Type, "other"), DocID: docID,
+		})
+	}
+	return entities, relations
+}
+
+// kgFloat reads a JSON number that may decode as any numeric type.
+func kgFloat(v interface{}) float64 {
+	switch x := v.(type) {
+	case float64:
+		return x
+	case float32:
+		return float64(x)
+	case int:
+		return float64(x)
+	case int64:
+		return float64(x)
+	}
+	return 0
 }
