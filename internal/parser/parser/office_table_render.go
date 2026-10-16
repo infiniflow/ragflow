@@ -594,11 +594,14 @@ func inheritMergedHeader(records [][]string, headerRowIdx int, mm map[[2]int][2]
 
 // inheritMergedDataCells fills empty cells of non-header rows with the value
 // of their merge master, so a vertically merged group label (e.g. A2:A4) is
-// visible on every data row instead of only the first. Unlike the header-row
-// path above, data rows are never widened: only cells already present in the
-// row slice are filled, so a far merge cannot allocate a sea of empty <td>
-// cells (see padRowToWidth for the blow-up this avoids). Call with absolute
-// sheet row numbers, before records are reordered around the header row.
+// visible on every data row instead of only the first. excelize truncates
+// each row at its last valued cell, so a slave cell past that point is absent
+// from the slice: the row is then extended exactly up to the slave column to
+// host the real inherited value. The extension is bounded by the master row's
+// own width (the master cell must exist and be non-empty), so unlike header
+// padding it cannot chase a far merge across the sheet (see padRowToWidth).
+// Call with absolute sheet row numbers, before records are reordered around
+// the header row.
 func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange) {
 	for _, r := range ranges {
 		// Vertical merges only: a horizontally merged data cell is already
@@ -629,8 +632,10 @@ func inheritMergedDataCells(rows [][]string, headerRow int, ranges []mergeRange)
 			if row == headerRow {
 				continue
 			}
-			if r.sc > len(rows[row-1]) {
-				continue
+			// Grow a truncated row exactly up to the slave column; the
+			// appended cells stay empty except the inherited value below.
+			for len(rows[row-1]) < r.sc {
+				rows[row-1] = append(rows[row-1], "")
 			}
 			if strings.TrimSpace(rows[row-1][r.sc-1]) == "" {
 				rows[row-1][r.sc-1] = master

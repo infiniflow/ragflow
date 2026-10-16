@@ -38,6 +38,13 @@ func (f *fakeKgService) Explore(_ context.Context, req KgExploreRequest) (KgExpl
 	return f.result, f.err
 }
 
+// DocOutline completes KgService. This fake only ever backs the explore tool's
+// tests, so it carries the fake's canned error (nil by default) and returns no
+// skeleton.
+func (f *fakeKgService) DocOutline(context.Context, KgDocOutlineRequest) (KgExploreResult, error) {
+	return KgExploreResult{}, f.err
+}
+
 func installFakeKgService(t *testing.T, svc KgService) {
 	t.Helper()
 	previous := GetKgService()
@@ -371,5 +378,177 @@ func TestKgAdapterExploreProbeFailureIsAnError(t *testing.T) {
 	})
 	if err == nil || !strings.Contains(err.Error(), "engine down") {
 		t.Fatalf("probe failure must surface as an error, got %v", err)
+	}
+}
+
+// kgOutlineFakeEngine serves the per-document panorama read and the
+// entity/relation fallback from separate row sets, so a test can hand a
+// document only one of them.
+type kgOutlineFakeEngine struct {
+	engine.DocEngine
+	graphRows    []map[string]interface{}
+	entityRows   []map[string]interface{}
+	relationRows []map[string]interface{}
+	searchErr    error
+	reads        []string
+}
+
+func (e *kgOutlineFakeEngine) Search(_ context.Context, req *enginetypes.SearchRequest) (*enginetypes.SearchResult, error) {
+	kind, _ := req.Filter["knowledge_graph_kwd"].(string)
+	e.reads = append(e.reads, kind)
+	if e.searchErr != nil {
+		return nil, e.searchErr
+	}
+	var rows []map[string]interface{}
+	switch kind {
+	case "graph":
+		rows = e.graphRows
+	case "entity":
+		rows = e.entityRows
+	case "relation":
+		rows = e.relationRows
+	}
+	// A real engine applies the doc_id term filter, and the outline relies on it:
+	// the fallback read is scoped to the requested documents, while the dataset
+	// probe is unscoped. Without this, a fixture row for another document would
+	// answer a document-scoped read.
+	if docs, ok := req.Filter["doc_id"].([]string); ok && len(docs) > 0 {
+		keep := make(map[string]bool, len(docs))
+		for _, d := range docs {
+			keep[d] = true
+		}
+		scoped := make([]map[string]interface{}, 0, len(rows))
+		for _, row := range rows {
+			if id, _ := row["doc_id"].(string); keep[id] {
+				scoped = append(scoped, row)
+			}
+		}
+		rows = scoped
+	}
+	return &enginetypes.SearchResult{Chunks: rows}, nil
+}
+
+// TestKgAdapterDocOutlineFallsBackToPerDocumentRows pins the gap fix: a document
+// the compiler wrote no `graph` panorama for still carries its own entity and
+// relation rows, so the outline is built from those instead of coming back
+// empty - which the agent reads as "this document has no compiled knowledge".
+func TestKgAdapterDocOutlineFallsBackToPerDocumentRows(t *testing.T) {
+	eng := &kgOutlineFakeEngine{
+		entityRows: []map[string]interface{}{{
+			"doc_id": "d1", "mention_count_int": 7,
+			"content_with_weight": `{"name":"Marie Curie","type":"person"}`,
+		}},
+		relationRows: []map[string]interface{}{{
+			"doc_id": "d1", "from_entity_kwd": "marie curie", "to_entity_kwd": "radium",
+			"content_with_weight": `{"type":"discovered"}`,
+		}},
+	}
+	got, err := NewKgAdapter(eng).DocOutline(context.Background(), KgDocOutlineRequest{
+		TenantID: "t1", DatasetIDs: []string{"kb1"}, DocIDs: []string{"d1"},
+	})
+	if err != nil {
+		t.Fatalf("DocOutline: %v", err)
+	}
+	if got.GraphAbsent {
+		t.Error("entity rows exist for the document: a dataset-level absence must not be reported")
+	}
+	if len(got.Entities) != 1 || got.Entities[0].Name != "Marie Curie" || got.Entities[0].MentionCount != 7 {
+		t.Errorf("entities = %+v, want the fallback entity row", got.Entities)
+	}
+	if len(got.Relations) != 1 || got.Relations[0].Type != "discovered" {
+		t.Errorf("relations = %+v, want the fallback relation row", got.Relations)
+	}
+	if len(eng.reads) == 0 || eng.reads[0] != "graph" {
+		t.Errorf("reads = %v, want the panorama read first", eng.reads)
+	}
+}
+
+// TestKgAdapterDocOutlinePrefersThePanoramaRows: when the document HAS a
+// panorama row the fallback must not run, so a document is never read twice.
+func TestKgAdapterDocOutlinePrefersThePanoramaRows(t *testing.T) {
+	eng := &kgOutlineFakeEngine{
+		graphRows: []map[string]interface{}{{
+			"doc_id": "d1",
+			"content_with_weight": `{"entities":[{"name":"Hub","type":"org"}],` +
+				`"relations":[{"from":"Hub","to":"Leaf","type":"owns"}]}`,
+		}},
+		entityRows: []map[string]interface{}{{
+			"doc_id": "d1", "content_with_weight": `{"name":"Fallback","type":"other"}`,
+		}},
+	}
+	got, err := NewKgAdapter(eng).DocOutline(context.Background(), KgDocOutlineRequest{
+		TenantID: "t1", DatasetIDs: []string{"kb1"}, DocIDs: []string{"d1"},
+	})
+	if err != nil {
+		t.Fatalf("DocOutline: %v", err)
+	}
+	if len(got.Entities) != 1 || got.Entities[0].Name != "Hub" {
+		t.Errorf("entities = %+v, want only the panorama entity", got.Entities)
+	}
+	for _, kind := range eng.reads {
+		if kind == "entity" || kind == "relation" {
+			t.Errorf("reads = %v: the fallback ran for a document that has a panorama", eng.reads)
+			break
+		}
+	}
+}
+
+// TestKgAdapterDocOutlineScopedMissIsNotDatasetAbsence pins the contract the
+// tool's self-disable rides on: GraphAbsent is a dataset-level fact, so a
+// document that yielded no row - an unprocessed document, or a BM25 hit whose
+// document was never compiled - must come back as a plain empty result. Were it
+// reported as an absence, one such document would turn graph_doc_outline off for
+// the rest of the conversation (markNavToolUnavailable), and the renderer's
+// "these documents carry no compiled graph row" note could never be reached.
+func TestKgAdapterDocOutlineScopedMissIsNotDatasetAbsence(t *testing.T) {
+	eng := &kgOutlineFakeEngine{
+		entityRows: []map[string]interface{}{{
+			"doc_id": "other-doc", "content_with_weight": `{"name":"Someone else","type":"person"}`,
+		}},
+	}
+	got, err := NewKgAdapter(eng).DocOutline(context.Background(), KgDocOutlineRequest{
+		TenantID: "t1", DatasetIDs: []string{"kb1"}, DocIDs: []string{"d-never-compiled"},
+	})
+	if err != nil {
+		t.Fatalf("DocOutline: %v", err)
+	}
+	if got.GraphAbsent {
+		t.Error("a document-scoped miss must not report a dataset-level absence: the tool would disable itself")
+	}
+	if len(got.Entities) != 0 || len(got.Relations) != 0 {
+		t.Errorf("entities/relations = %d/%d, want the requested document's empty payload", len(got.Entities), len(got.Relations))
+	}
+}
+
+// TestKgAdapterDocOutlineAbsentOnlyWhenNothingIsCompiled is the other half: the
+// absence IS reported when every scoped read came back empty AND the dataset
+// holds no compiled row at all, which is the only case that may disable the tool.
+func TestKgAdapterDocOutlineAbsentOnlyWhenNothingIsCompiled(t *testing.T) {
+	got, err := NewKgAdapter(&kgOutlineFakeEngine{}).DocOutline(context.Background(), KgDocOutlineRequest{
+		TenantID: "t1", DatasetIDs: []string{"kb1"}, DocIDs: []string{"d1"},
+	})
+	if err != nil {
+		t.Fatalf("DocOutline: %v", err)
+	}
+	if !got.GraphAbsent {
+		t.Error("an uncompiled dataset must report the dataset-level absence")
+	}
+}
+
+// TestKgAdapterDocOutlineProbeFailureIsNotAbsence: a read failure looks like "no
+// rows" to this code path, so it must be settled by the probe, not assumed. A
+// failing probe has to surface as an error - a transient engine failure may
+// never masquerade as "this dataset has no compiled knowledge", because that
+// answer disables the tool for the conversation.
+func TestKgAdapterDocOutlineProbeFailureIsNotAbsence(t *testing.T) {
+	eng := &kgOutlineFakeEngine{searchErr: errors.New("engine down")}
+	got, err := NewKgAdapter(eng).DocOutline(context.Background(), KgDocOutlineRequest{
+		TenantID: "t1", DatasetIDs: []string{"kb1"}, DocIDs: []string{"d1"},
+	})
+	if err == nil {
+		t.Fatalf("probe failure must surface as an error, got GraphAbsent=%v", got.GraphAbsent)
+	}
+	if !strings.Contains(err.Error(), "engine down") {
+		t.Errorf("error = %v, want the probe failure", err)
 	}
 }

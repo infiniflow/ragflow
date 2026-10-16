@@ -919,3 +919,37 @@ func TestDropUndeclaredFieldsFailsWhenMappingIsMissing(t *testing.T) {
 		t.Fatal("a failed mapping read must leave the row unchanged")
 	}
 }
+
+// TestDedupeByChunkIDKeepsLast pins that a repeated id keeps its last row.
+func TestDedupeByChunkIDKeepsLast(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "a", "chunk_order_int": int(0)},
+		{"id": "b", "chunk_order_int": int(1)},
+		{"id": "a", "chunk_order_int": int(9)},
+		{"id": "c", "chunk_order_int": int(2)},
+	}
+
+	got := dedupeByChunkID(rows)
+	if len(got) != 3 {
+		t.Fatalf("rows = %d, want 3: %#v", len(got), got)
+	}
+	if got[0]["id"] != "b" || got[1]["id"] != "a" || got[2]["id"] != "c" {
+		t.Fatalf("order = %#v, want b, a(last), c", got)
+	}
+	if got[1]["chunk_order_int"] != int(9) {
+		t.Fatalf("kept row = %#v, want the last occurrence of a", got[1])
+	}
+}
+
+// TestDedupeByChunkIDKeepsRowsWithoutID pins that rows the engine cannot key stay.
+func TestDedupeByChunkIDKeepsRowsWithoutID(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"chunk_data": "x"},
+		{"id": ""},
+		{"id": "a"},
+		{"id": "a"},
+	}
+	if got := dedupeByChunkID(rows); len(got) != 3 {
+		t.Fatalf("rows = %d, want 3 (only the duplicate id collapses): %#v", len(got), got)
+	}
+}

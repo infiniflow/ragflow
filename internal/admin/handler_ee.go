@@ -791,12 +791,12 @@ func (h *Handler) SetSystemLicense(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	err := h.service.SetSystemLicense(ctx, req.License)
+	result, err := h.service.SetSystemLicense(ctx, req.License)
 	if err != nil {
 		common.ErrorWithCode(c, common.CodeServerError, err.Error())
 		return
 	}
-	common.SuccessWithData(c, nil, "System license set successfully")
+	common.SuccessWithData(c, result, "System license set successfully")
 }
 
 // ShowSystemLicense to get system license
@@ -812,13 +812,32 @@ func (h *Handler) ShowSystemLicense(c *gin.Context) {
 	}
 	ctx := c.Request.Context()
 
-	systemLicense, err := h.service.ShowSystemLicense(ctx, checkFlag)
-	if err != nil {
-		common.ErrorWithCode(c, common.CodeServerError, err.Error())
-		return
+	var result map[string]interface{}
+	if checkFlag {
+		result, err = h.service.CheckSystemLicense(ctx)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			return
+		}
+	} else {
+		var license string
+		license, ok = c.GetQuery("license")
+		if !ok {
+			// Show license
+			result, err = h.service.ShowSystemLicense(ctx)
+			if err != nil {
+				common.ErrorWithCode(c, common.CodeServerError, err.Error())
+				return
+			}
+		}
+		// Verify license
+		result, err = h.service.VerifyLicense(ctx, license)
+		if err != nil {
+			common.ErrorWithCode(c, common.CodeServerError, err.Error())
+			return
+		}
 	}
-
-	common.SuccessWithData(c, systemLicense, "")
+	common.SuccessNoMessage(c, result)
 }
 
 type SetSystemLicenseConfigRequest struct {
