@@ -231,7 +231,8 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 	region := extra["region"]
 	baseURL := extra["base_url"]
 
-	providerInfo := dao.GetModelProviderManager().FindProvider(provider.ProviderName)
+	catalogName := modelModule.CatalogProviderName(provider.ProviderName)
+	providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 	if providerInfo == nil {
 		return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", provider.ProviderName)
 	}
@@ -240,7 +241,7 @@ func resolveModelConfigByID(ctx context.Context, db *gorm.DB, tenantID string, m
 		return nil, "", nil, 0, err
 	}
 	contextLength := 0
-	if mi, _ := dao.GetModelProviderManager().GetModelByName(provider.ProviderName, modelObj.ModelName); mi != nil {
+	if mi, _ := dao.GetModelProviderManager().GetModelByName(catalogName, modelObj.ModelName); mi != nil {
 		if mi.ContextLength != nil {
 			contextLength = *mi.ContextLength
 		} else if mi.MaxTokens != nil {
@@ -265,6 +266,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 	if err != nil {
 		return nil, "", nil, 0, err
 	}
+	catalogName := modelModule.CatalogProviderName(providerName)
 
 	providerDAO := dao.NewTenantModelProviderDAO()
 	instanceDAO := dao.NewTenantModelInstanceDAO()
@@ -293,7 +295,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		if modelObj.Status == "inactive" {
 			return nil, "", nil, 0, fmt.Errorf("model %q is disabled", modelName)
 		}
-		providerInfo := dao.GetModelProviderManager().FindProvider(providerName)
+		providerInfo := dao.GetModelProviderManager().FindProvider(catalogName)
 		if providerInfo == nil {
 			return nil, "", nil, 0, fmt.Errorf("provider %q driver not found", providerName)
 		}
@@ -302,7 +304,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 			return nil, "", nil, 0, err
 		}
 		contextLength := 0
-		if mi, _ := dao.GetModelProviderManager().GetModelByName(providerName, pureModelName); mi != nil {
+		if mi, _ := dao.GetModelProviderManager().GetModelByName(catalogName, pureModelName); mi != nil {
 			if mi.ContextLength != nil {
 				contextLength = *mi.ContextLength
 			} else if mi.MaxTokens != nil {
@@ -324,7 +326,7 @@ func resolveModelConfigFromProviderInstance(ctx context.Context, db *gorm.DB, te
 		return nil, "", nil, 0, fmt.Errorf("model %q lookup failed: %w", modelName, modelErr)
 	}
 
-	targetProvider := dao.GetModelProviderManager().FindProvider(providerName)
+	targetProvider := dao.GetModelProviderManager().FindProvider(catalogName)
 	if targetProvider == nil {
 		return nil, "", nil, 0, fmt.Errorf("model provider config not found: %s", providerName)
 	}

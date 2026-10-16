@@ -88,17 +88,14 @@ func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	return c.invoke(ctx, inputs)
 }
 
+// invoke extracts question-answer pairs from the decoded upstream payload.
 func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："

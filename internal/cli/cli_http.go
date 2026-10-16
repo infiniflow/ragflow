@@ -173,6 +173,8 @@ func (c *CLI) ExecuteAdminCommand(commandCount int, cmd *Command) (ResponseIf, e
 		return c.UserShowMessageQueueCommand(commandCount, cmd)
 	case "admin_check_license":
 		return c.AdminCheckLicenseCommand(commandCount, cmd)
+	case "admin_verify_license":
+		return c.AdminVerifyLicenseCommand(commandCount, cmd)
 	case "admin_check_provider_with_key":
 		return c.CommonCheckProviderWithKeyCommand(commandCount, cmd)
 	case "admin_check_provider_instance":

@@ -439,18 +439,23 @@ func TestNewLevelContext_OutlineBranch(t *testing.T) {
 	}
 }
 
-// TestOutlineFromInputs verifies the parser-supplied file.outline is parsed
-// into outlineEntry, tolerating float64-encoded levels (runtime JSON path).
-func TestOutlineFromInputs(t *testing.T) {
-	inputs := map[string]any{
+// TestOutlineFromUpstream verifies the parser-supplied file.outline survives
+// the decode path and is parsed into outlineEntry, tolerating float64-encoded
+// levels (runtime JSON path).
+func TestOutlineFromUpstream(t *testing.T) {
+	up, err := decodeChunkerFromUpstream(map[string]any{
+		"name": "t.pdf",
 		"file": map[string]any{
 			"outline": []any{
 				map[string]any{"title": "第一章", "level": float64(0), "page_number": float64(1)},
 				map[string]any{"title": "第二章", "level": float64(1), "page_number": float64(3)},
 			},
 		},
+	})
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
 	}
-	out := outlineFromInputs(inputs)
+	out := outlineFromUpstream(up)
 	if len(out) != 2 {
 		t.Fatalf("outline len = %d, want 2", len(out))
 	}
@@ -462,8 +467,12 @@ func TestOutlineFromInputs(t *testing.T) {
 	}
 
 	// No file / no outline -> nil (frequency fallback).
-	if got := outlineFromInputs(map[string]any{}); got != nil {
-		t.Errorf("empty inputs outline = %v, want nil", got)
+	empty, err := decodeChunkerFromUpstream(map[string]any{"name": "t.pdf"})
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
+	}
+	if got := outlineFromUpstream(empty); got != nil {
+		t.Errorf("empty upstream outline = %v, want nil", got)
 	}
 }
 

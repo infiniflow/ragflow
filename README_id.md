@@ -173,7 +173,7 @@ Deployment lokal mendukung Docker dan menjalankan dari sumber. Docker cocok untu
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
    ```
 
