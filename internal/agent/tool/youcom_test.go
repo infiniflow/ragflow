@@ -147,6 +147,29 @@ func TestYouComToolCapsUpstreamCountButKeepsRequestedMergedLimit(t *testing.T) {
 	}
 }
 
+func TestYouComToolPreservesRawLargeNumbers(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"results":{"web":[{"title":"large","url":"https://example.com","id":9007199254740993,"score":0.125}],"news":[]}}`))
+	}))
+	defer server.Close()
+	tool := newYouComTool(NewHTTPHelper().WithClient(server.Client()), "", youComParams{})
+	tool.keylessEndpoint = server.URL
+	raw, err := tool.InvokableRun(t.Context(), `{"query":"precision"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoder := json.NewDecoder(strings.NewReader(raw))
+	decoder.UseNumber()
+	var envelope map[string]any
+	if err := decoder.Decode(&envelope); err != nil {
+		t.Fatal(err)
+	}
+	result := envelopeSlice(envelope, "results")[0].(map[string]any)
+	if result["id"] != json.Number("9007199254740993") || result["score"] != json.Number("0.125") {
+		t.Errorf("raw numeric values changed: %#v", result)
+	}
+}
+
 func TestYouComCanvasRegistration(t *testing.T) {
 	for _, name := range []string{"YouComSearch", "youcom", "youcom_search"} {
 		built, err := BuildByName(name, map[string]any{"api_key": "test-key", "freshness": "day", "top_n": float64(3)})

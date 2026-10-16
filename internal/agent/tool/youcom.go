@@ -145,7 +145,9 @@ func (y *YouComTool) InvokableRun(ctx context.Context, argsJSON string, _ ...ein
 		return "", fmt.Errorf("youcom: upstream returned HTTP %d", response.StatusCode)
 	}
 	var payload youComResponse
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+	decoder := json.NewDecoder(response.Body)
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
 		return "", fmt.Errorf("youcom: invalid response (%T)", err)
 	}
 	merged := append(payload.Results.Web, payload.Results.News...)
