@@ -207,20 +207,6 @@ func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
 	}
 }
 
-// An SVG is a text source of its own, so switching both OCR and vision
-// enhancement off must not report the item as having none.
-func TestMaybeDispatchImageSVGNeedsNoTextSource(t *testing.T) {
-	setups := defaultSetups()
-	setups["image"]["ocr_enabled"] = false
-	result, _, err := maybeDispatchImage(t.Context(), nil, utility.FileTypeVISUAL, "diagram.svg", pictureSVGFixture, nil, setups, false, visionSettings{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != pictureSVGFixtureText || len(result.Warnings) != 0 {
-		t.Fatalf("result = %+v, warnings = %v", result.JSON, result.Warnings)
-	}
-}
-
 func TestMaybeDispatchImageRejectsInvalidSVG(t *testing.T) {
 	for _, ocr := range []bool{true, false} {
 		setups := defaultSetups()

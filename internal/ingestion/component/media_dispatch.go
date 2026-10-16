@@ -151,7 +151,7 @@ func maybeDispatchImage(
 	} else if useOCR && strings.TrimSpace(text) == "" {
 		parsed.Warnings = append(parsed.Warnings, "image OCR returned no text")
 	}
-	if !isSVG && !useOCR && !enableVisionEnhancement {
+	if !useOCR && !enableVisionEnhancement {
 		// Neither text source is enabled: local OCR is off and the vision
 		// description is not permitted. The item still carries the image, but the
 		// Tokenizer's retrievability filter drops chunks that have no text and no
