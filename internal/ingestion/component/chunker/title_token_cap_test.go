@@ -440,7 +440,7 @@ func TestTitleCap_GroupPipeline_RespectsCap(t *testing.T) {
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
 	p := newTitleParam(t, "group", 20, [][]string{{`^# `}})
-	inputs := map[string]any{"output_format": "text", "text": body}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": body}
 	got, err := invokeGroup(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
@@ -464,7 +464,7 @@ func TestTitleCap_GroupPipeline_ValidatedInRangeCap(t *testing.T) {
 	if err := p.TitleChunkerParam.Validate(); err != nil {
 		t.Fatalf("cap=128 must pass production Validate: %v", err)
 	}
-	inputs := map[string]any{"output_format": "text", "text": body}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": body}
 	got, err := invokeGroup(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
@@ -481,7 +481,7 @@ func TestTitleCap_HierarchyPipeline_RespectsCap(t *testing.T) {
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
 	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `}})
-	inputs := map[string]any{"output_format": "text", "text": body}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": body}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
@@ -498,7 +498,7 @@ func TestTitleCap_GroupPipeline_CapZeroNoop(t *testing.T) {
 	defer restoreTokenizer()
 	body := strings.Join(joinSentences(12), "")
 	p := newTitleParam(t, "group", 0, [][]string{{`^# `}})
-	inputs := map[string]any{"output_format": "text", "text": body}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": body}
 	got, err := invokeGroup(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
@@ -519,7 +519,7 @@ func TestTitleCap_GroupPipeline_MultiRecordMerged(t *testing.T) {
 	}
 	body := strings.Join(records, "\n")
 	p := newTitleParam(t, "group", 10, [][]string{{`^# `}})
-	inputs := map[string]any{"output_format": "text", "text": body}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": body}
 	got, err := invokeGroup(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeGroup: %v", err)
@@ -543,6 +543,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepPositions(t *testing.T) {
 	body := strings.Join(joinSentences(12), "")
 	p := newTitleParam(t, "hierarchy", 20, [][]string{{`^# `}})
 	inputs := map[string]any{
+		"name":          "t.txt",
 		"output_format": "chunks",
 		"chunks": []schema.ChunkDoc{
 			{Text: body, DocType: "text", Positions: json.RawMessage(`[[1,10,200,50,80]]`)},
@@ -587,7 +588,7 @@ func TestTitleCap_HierarchyPipeline_SubChunksKeepHeadingChain(t *testing.T) {
 	two := 2
 	p.Hierarchy = &two
 	inputText := "# H1\n## H2a\n" + body
-	inputs := map[string]any{"output_format": "text", "text": inputText}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": inputText}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
@@ -633,7 +634,7 @@ func TestTitleCap_HierarchyPipeline_RootAsHeadingKeepsChain(t *testing.T) {
 	p.Hierarchy = &two
 	p.RootChunkAsHeading = true
 	inputText := "前言。\n# H1\n## H2a\n" + body
-	inputs := map[string]any{"output_format": "text", "text": inputText}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": inputText}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
@@ -671,7 +672,7 @@ func TestTitleCap_HierarchyPipeline_AncestorBodyKeepsLeadingChain(t *testing.T) 
 	three := 3
 	p.Hierarchy = &three
 	inputText := "# A\n前言A。\n## B\n前言B。\n### C\n" + body
-	inputs := map[string]any{"output_format": "text", "text": inputText}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": inputText}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
@@ -712,7 +713,7 @@ func TestTitleCap_HierarchyPipeline_IncludeHeadingContentKeepsTitles(t *testing.
 	p.Hierarchy = &two
 	p.IncludeHeadingContent = true
 	inputText := "# H1\n短。\n## H2a\n" + body
-	inputs := map[string]any{"output_format": "text", "text": inputText}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": inputText}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
@@ -755,7 +756,7 @@ func TestTitleCap_HierarchyPipeline_NearCapPrefixFallsBack(t *testing.T) {
 	two := 2
 	p.Hierarchy = &two
 	inputText := "# H1\n## H2a\n" + body
-	inputs := map[string]any{"output_format": "text", "text": inputText}
+	inputs := map[string]any{"name": "t.txt", "output_format": "text", "text": inputText}
 	got, err := invokeHierarchy(testCtx(), nil, inputs, &p)
 	if err != nil {
 		t.Fatalf("invokeHierarchy: %v", err)
