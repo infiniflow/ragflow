@@ -179,11 +179,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
-		// Normalize "pages" ranges before persistence. Invalid ranges are
-		// rejected (fail-fast) — the request is aborted with a clear error.
-		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
-		}
 		var dslJSON []byte
 		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
@@ -376,6 +371,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 
 	if present["meta_fields"] {
 		if err := validateMetaFields(req.MetaFields); err != nil {
+			return common.CodeDataError, err
+		}
+	}
+	if present["parser_config"] && req.ParserConfig != nil {
+		// Reject invalid page ranges before any names or metadata are persisted.
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
 			return common.CodeDataError, err
 		}
 	}

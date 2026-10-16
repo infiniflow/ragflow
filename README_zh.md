@@ -198,10 +198,10 @@
    cd ragflow/docker
    ```
 
-   切换到 `v1.0.0-rc1` 发布标签。
+   切换到 `v1.0.0-rc2` 发布标签。
 
    ```bash
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    ```
 
    在启动 RAGFlow 服务及其依赖服务。
@@ -210,10 +210,10 @@
    docker compose -f docker-compose.yml up -d
    ```
 
-   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc1` 标签：
+   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc2` 标签：
    >
-   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc1`
-   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc1`
+   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc2`
+   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc2`
 
    默认 MySQL 配置下，镜像入口会先执行数据库迁移，再启动 Admin、Syncer、Ingestor 和 API 等服务。
 

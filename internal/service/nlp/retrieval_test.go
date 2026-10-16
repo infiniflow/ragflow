@@ -76,6 +76,47 @@ func TestRetrievalUsesRerankCandidatesCountAsCandidateSet(t *testing.T) {
 	}
 }
 
+func TestRetrievalPreservesCompilationKindWhenPresent(t *testing.T) {
+	oldQueryBuilder := globalQueryBuilder
+	globalQueryBuilder = NewQueryBuilder()
+	defer func() { globalQueryBuilder = oldQueryBuilder }()
+
+	docEngine := &retrievalCountEngine{rows: []map[string]interface{}{
+		{"id": "compiled", "content_ltks": "alpha", "content_with_weight": "alpha", "compile_kwd": "page_index", "_score": 0.9},
+		{"id": "ordinary", "content_ltks": "alpha", "content_with_weight": "alpha", "_score": 0.8},
+	}}
+	service := NewRetrievalService(docEngine, &dao.DocumentDAO{})
+	threshold := 0.0
+	vectorWeight := 1.0
+	aggs := false
+	result, err := service.Retrieval(t.Context(), &RetrievalRequest{
+		Question:               "alpha",
+		TenantIDs:              []string{"tenant-1"},
+		Page:                   1,
+		PageSize:               2,
+		SimilarityThreshold:    &threshold,
+		VectorSimilarityWeight: &vectorWeight,
+		Aggs:                   &aggs,
+	})
+	if err != nil {
+		t.Fatalf("Retrieval failed: %v", err)
+	}
+	for _, fields := range docEngine.selectedFields {
+		if !slices.Contains(fields, "compile_kwd") {
+			t.Fatalf("search fields = %v, want compile_kwd", fields)
+		}
+	}
+	if len(result.Chunks) != 2 {
+		t.Fatalf("chunks = %#v, want compiled and ordinary chunks", result.Chunks)
+	}
+	if got := result.Chunks[0]["compile_kwd"]; got != "page_index" {
+		t.Fatalf("compiled chunk compile_kwd = %v, want page_index", got)
+	}
+	if _, ok := result.Chunks[1]["compile_kwd"]; ok {
+		t.Fatalf("ordinary chunk unexpectedly has compile_kwd: %#v", result.Chunks[1])
+	}
+}
+
 func TestRetrievalReturnsRegexHighlightWithoutFallbackOrCleanup(t *testing.T) {
 	oldQueryBuilder := globalQueryBuilder
 	globalQueryBuilder = NewQueryBuilder()
@@ -202,6 +243,7 @@ type retrievalCountEngine struct {
 	rows           []map[string]interface{}
 	searchLimits   []int
 	searchFilters  []map[string]interface{}
+	selectedFields [][]string
 	highlights     map[string]string
 	highlightCalls int
 }
@@ -209,6 +251,7 @@ type retrievalCountEngine struct {
 func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchLimits = append(e.searchLimits, req.Limit)
 	e.searchFilters = append(e.searchFilters, req.Filter)
+	e.selectedFields = append(e.selectedFields, slices.Clone(req.SelectFields))
 	offset := req.Offset
 	if offset > len(e.rows) {
 		offset = len(e.rows)
@@ -217,7 +260,21 @@ func (e *retrievalCountEngine) Search(_ context.Context, req *types.SearchReques
 	if req.Limit <= 0 || end > len(e.rows) {
 		end = len(e.rows)
 	}
-	return &types.SearchResult{Chunks: e.rows[offset:end], Total: int64(len(e.rows))}, nil
+	chunks := make([]map[string]interface{}, 0, end-offset)
+	for _, row := range e.rows[offset:end] {
+		if len(req.SelectFields) == 0 {
+			chunks = append(chunks, maps.Clone(row))
+			continue
+		}
+		projected := map[string]interface{}{"id": row["id"]}
+		for _, field := range req.SelectFields {
+			if value, ok := row[field]; ok {
+				projected[field] = value
+			}
+		}
+		chunks = append(chunks, projected)
+	}
+	return &types.SearchResult{Chunks: chunks, Total: int64(len(e.rows))}, nil
 }
 
 func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []string {
@@ -230,11 +287,17 @@ func (e *retrievalCountEngine) GetChunkIDs(chunks []map[string]interface{}) []st
 	return ids
 }
 
-func (e *retrievalCountEngine) GetFields(chunks []map[string]interface{}, _ []string) map[string]map[string]interface{} {
+func (e *retrievalCountEngine) GetFields(chunks []map[string]interface{}, selected []string) map[string]map[string]interface{} {
 	fields := make(map[string]map[string]interface{}, len(chunks))
 	for _, chunk := range chunks {
 		if id, ok := chunk["id"].(string); ok {
-			fields[id] = chunk
+			projected := make(map[string]interface{}, len(selected))
+			for _, field := range selected {
+				if value, ok := chunk[field]; ok {
+					projected[field] = value
+				}
+			}
+			fields[id] = projected
 		}
 	}
 	return fields

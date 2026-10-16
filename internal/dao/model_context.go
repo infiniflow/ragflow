@@ -25,6 +25,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/entity"
+	"ragflow/internal/entity/models"
 )
 
 // ResolveModelContentLength returns the chat model's effective context window
@@ -66,21 +67,21 @@ func ResolveModelContentLength(ctx context.Context, db *gorm.DB, tenantID, model
 	// 2a. Active tenant row → its provider row → catalog context_length.
 	if obj != nil && obj.Status == "active" {
 		if provider, err := NewTenantModelProviderDAO().GetByID(ctx, db, obj.ProviderID); err == nil && provider != nil {
-			if mdl, err := GetModelProviderManager().GetModelByName(provider.ProviderName, obj.ModelName); err == nil && mdl.ContextLength != nil {
+			if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(provider.ProviderName), obj.ModelName); err == nil && mdl.ContextLength != nil {
 				return *mdl.ContextLength
 			}
 		}
 	}
 	// 2b. Composite reference with no tenant row → catalog by reference parts.
 	if composite {
-		if mdl, err := GetModelProviderManager().GetModelByName(providerName, pureName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(providerName), pureName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}
 	// 2c. Resolved driver + bare model name: fallback when modelRef is a
 	//     tenant id that could not be resolved without a database.
 	if driver != "" && modelName != "" {
-		if mdl, err := GetModelProviderManager().GetModelByName(driver, modelName); err == nil && mdl.ContextLength != nil {
+		if mdl, err := GetModelProviderManager().GetModelByName(models.CatalogProviderName(driver), modelName); err == nil && mdl.ContextLength != nil {
 			return *mdl.ContextLength
 		}
 	}

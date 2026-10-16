@@ -337,15 +337,20 @@ function useAddChildEdge() {
 }
 
 function useAddToolNode() {
-  const { nodes, edges, addEdge, getNode, addNode } = useGraphStore(
-    (state) => state,
-  );
+  const { addEdge, getNode, addNode } = useGraphStore((state) => state);
 
   const addToolNode = useCallback(
     (newNode: Node<any>, nodeId?: string): boolean => {
       const agentNode = getNode(nodeId);
 
       if (agentNode) {
+        // Read edges/nodes from the store at call time, not from the
+        // render-time snapshot: React StrictMode double-invokes the mount
+        // effect that auto-adds this node (ToolPopover), and the second
+        // invocation must see the edge the first one just committed —
+        // otherwise both pass the guard and stack a duplicate tool node at
+        // the same position.
+        const { nodes, edges } = useGraphStore.getState();
         const childToolNodeIds = edges
           .filter(
             (x) => x.source === nodeId && x.sourceHandle === NodeHandleId.Tool,
@@ -377,7 +382,7 @@ function useAddToolNode() {
       }
       return false;
     },
-    [addEdge, addNode, edges, getNode, nodes],
+    [addEdge, addNode, getNode],
   );
 
   return { addToolNode };

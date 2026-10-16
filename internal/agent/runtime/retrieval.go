@@ -201,7 +201,7 @@ var ErrBm25ServiceMissing = errors.New(
 )
 
 // ErrRegexpNotSupported is returned when the underlying doc engine does not
-// implement regex matching on chunk content (e.g. Infinity).
+// implement regex matching on chunk content (no SearchByRegexp method).
 var ErrRegexpNotSupported = errors.New(
 	"grep_chunks: regex matching is not supported by this document engine",
 )
