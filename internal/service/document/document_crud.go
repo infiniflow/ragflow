@@ -304,13 +304,16 @@ func (s *DocumentService) deleteDocumentFull(ctx context.Context, docID string) 
 // deleting the underlying file record, its storage blob, or its file2document
 // mappings. Mirrors Python DocumentService.remove_document — the caller is
 // responsible for cleaning up the file2document mappings separately.
+//
+// Chunk + metadata cleanup is delegated to deleteDocEngineData so the keep-
+// file path matches deleteDocumentFull. The doc_deleted event is published
+// from inside deleteDocEngineData; no separate PublishDeleted is needed here.
 func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID string) error {
 	doc, kb, err := s.resolveDocAndKB(ctx, docID)
 	if err != nil {
 		return err
 	}
-	variants, taskTypes, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID)
-	if typeErr != nil {
+	if _, _, typeErr := s.documentKnowledgeCompileTypes(ctx, kb.TenantID, kb.ID, docID); typeErr != nil {
 		return fmt.Errorf("resolve knowledge compile types for document %s: %w", docID, typeErr)
 	}
 	ingestionTask, err := s.ingestionTaskDAO.GetByDocumentID(ctx, dao.DB, docID)
@@ -331,19 +334,11 @@ func (s *DocumentService) RemoveDocumentKeepFile(ctx context.Context, docID stri
 		}
 		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: failed to delete tasks for %s: %v", docID, delErr))
 	}
-	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+	if err := s.deleteDocEngineData(ctx, docID, kb.TenantID, doc.KbID); err != nil {
 		return err
 	}
-	if len(variants) == 0 {
-		return nil
-	}
-	// File replacement/deletion uses this path instead of deleteDocumentFull.
-	// Publish the same deletion event so the dataset-level consumer removes the
-	// deleted document's contribution in both paths.
-	pubCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-	defer cancel()
-	if err := knowledge_compile.PublishDeleted(pubCtx, kb.TenantID, kb.ID, docID, variants, taskTypes); err != nil {
-		common.Warn(fmt.Sprintf("RemoveDocumentKeepFile: publish doc_deleted for %s failed: %v", docID, err))
+	if err := s.deleteDocRecordWithCounters(ctx, doc, kb.ID); err != nil {
+		return err
 	}
 	return nil
 }
@@ -412,6 +407,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	deleteCtx, cancel := context.WithTimeout(ctx, cleanupBatchTimeout)
 	_, delErr := s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	if delErr != nil && deleteCtx.Err() == nil {
+		_, delErr = s.docEngine.DeleteChunks(deleteCtx, map[string]interface{}{"doc_id": docID}, indexName, kbID)
+	}
 	cancel()
 	if delErr != nil {
 		common.Warn(fmt.Sprintf("deleteDocEngineData: failed to delete chunks for %s: %v", docID, delErr))
@@ -419,7 +417,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 	}
 	if len(variants) == 0 {
 		if s.metadataSvc != nil {
-			_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+			if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -436,7 +436,9 @@ func (s *DocumentService) deleteDocEngineData(ctx context.Context, docID, tenant
 		common.Warn(fmt.Sprintf("deleteDocEngineData: publish doc_deleted for %s failed: %v", docID, err))
 	}
 	if s.metadataSvc != nil {
-		_ = s.DeleteDocumentAllMetadata(ctx, docID) // logs internally
+		if err := s.DeleteDocumentAllMetadata(ctx, docID); err != nil {
+			return err
+		}
 	}
 	return nil
 }
