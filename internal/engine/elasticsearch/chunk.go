@@ -334,7 +334,10 @@ func (e *Engine) insertChunks(ctx context.Context, chunks []map[string]interface
 	return []string{}, nil
 }
 
-// UpdateChunks updates chunks by condition
+// UpdateChunks updates chunks by condition. For non-memory indices, a string id
+// selects a single-chunk update constrained only by id, datasetID (as kb_id), and
+// optional doc_id. Other condition keys are ignored on that path; compound
+// filters require the update-by-query path.
 func (e *Engine) UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error {
 	fullIndexName := baseName
 	common.Info("ElasticsearchConnection.UpdateChunks called", zap.String("index_name", fullIndexName), zap.Any("condition", condition), zap.Any("new_value", newValue))
@@ -520,6 +523,8 @@ func mapMemoryMessageESConditionFields(condition map[string]interface{}) map[str
 }
 
 // updateSingleChunk preserves dataset/document scope during lookup and mutation.
+// Supported condition fields are id, kb_id, and optional doc_id, all non-empty
+// strings. Other keys are not evaluated by this path.
 // The update script rechecks the scope atomically before changing any field:
 // https://www.elastic.co/docs/reference/elasticsearch/rest-apis/update-document
 func (e *Engine) updateSingleChunk(ctx context.Context, indexName string, condition, newValue map[string]interface{}) error {
@@ -585,6 +590,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName string, condit
 	if field, ok := removeValue.(string); ok && field != "" {
 		removeFields = append(removeFields, field)
 	}
+	sort.Strings(removeFields)
 	removeValues, _ := removeValue.(map[string]interface{})
 	if removeValues == nil {
 		removeValues = make(map[string]interface{})
@@ -605,7 +611,7 @@ func (e *Engine) updateSingleChunk(ctx context.Context, indexName string, condit
         for (def field : params.remove_fields) { ctx._source.remove(field); }
         for (def entry : params.remove_values.entrySet()) {
             def values = ctx._source[entry.getKey()];
-            if (values != null) {
+            if (values instanceof List) {
                 int i = values.indexOf(entry.getValue());
                 if (i >= 0) { values.remove(i); }
             }

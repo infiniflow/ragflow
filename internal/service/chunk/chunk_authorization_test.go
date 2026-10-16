@@ -2,9 +2,11 @@ package chunk
 
 import (
 	"context"
+	"reflect"
 	"testing"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	permissionresponse "ragflow/internal/permission/response"
@@ -15,29 +17,30 @@ import (
 // before any search-engine read or write, using real DAOs and an in-memory DB.
 func TestChunkManagementAuthorization(t *testing.T) {
 	operations := []struct {
-		name string
-		call func(*ChunkService, string) error
+		name      string
+		wantCalls []string
+		call      func(*ChunkService, string) error
 	}{
-		{"get", func(s *ChunkService, userID string) error {
+		{"get", []string{"GetChunk"}, func(s *ChunkService, userID string) error {
 			_, err := s.Get(t.Context(), &service.GetChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1"}, userID)
 			return err
 		}},
-		{"list", func(s *ChunkService, userID string) error {
+		{"list", []string{"Search"}, func(s *ChunkService, userID string) error {
 			_, err := s.List(t.Context(), &service.ListChunksRequest{DatasetID: "kb-1", DocID: "doc-1"}, userID)
 			return err
 		}},
-		{"list by document", func(s *ChunkService, userID string) error {
+		{"list by document", []string{"Search"}, func(s *ChunkService, userID string) error {
 			_, err := s.List(t.Context(), &service.ListChunksRequest{DocID: "doc-1"}, userID)
 			return err
 		}},
-		{"switch", func(s *ChunkService, userID string) error {
+		{"switch", []string{"UpdateChunks"}, func(s *ChunkService, userID string) error {
 			return s.SwitchChunks(t.Context(), userID, "kb-1", "doc-1", 1, []string{"chunk-1"})
 		}},
-		{"update", func(s *ChunkService, userID string) error {
+		{"update", []string{"GetChunk", "UpdateChunks"}, func(s *ChunkService, userID string) error {
 			available := true
 			return s.UpdateChunk(t.Context(), &service.UpdateChunkRequest{DatasetID: "kb-1", DocumentID: "doc-1", ChunkID: "chunk-1", Available: &available}, userID)
 		}},
-		{"remove", func(s *ChunkService, userID string) error {
+		{"remove", []string{"DeleteChunks"}, func(s *ChunkService, userID string) error {
 			_, err := s.RemoveChunks(t.Context(), &service.RemoveChunksRequest{DatasetID: "kb-1", DocID: "doc-1", ChunkIDs: []string{"chunk-1"}}, userID)
 			return err
 		}},
@@ -93,8 +96,8 @@ func TestChunkManagementAuthorization(t *testing.T) {
 						if err != nil {
 							t.Fatalf("authorized operation failed: %v", err)
 						}
-						if docEngine.calls == 0 {
-							t.Fatal("authorized operation did not reach the doc engine")
+						if !reflect.DeepEqual(docEngine.calls, operation.wantCalls) {
+							t.Fatalf("engine calls = %v, want %v", docEngine.calls, operation.wantCalls)
 						}
 						return
 					}
@@ -104,8 +107,8 @@ func TestChunkManagementAuthorization(t *testing.T) {
 					if !permissionresponse.IsPermissionError(err) {
 						t.Fatalf("expected an authorization error, got %v", err)
 					}
-					if docEngine.calls != 0 || downstreamCalls != 0 {
-						t.Fatalf("unauthorized downstream calls: engine=%d side effects=%d", docEngine.calls, downstreamCalls)
+					if len(docEngine.calls) != 0 || downstreamCalls != 0 {
+						t.Fatalf("unauthorized downstream calls: engine=%v side effects=%d", docEngine.calls, downstreamCalls)
 					}
 				})
 			}
@@ -113,32 +116,33 @@ func TestChunkManagementAuthorization(t *testing.T) {
 	}
 }
 
-// chunkAuthorizationTestEngine records calls beyond the authorization boundary.
+// chunkAuthorizationTestEngine records allowed calls beyond the authorization boundary.
+// Its unconfigured embedded interface makes every unexpected method fail the test.
 type chunkAuthorizationTestEngine struct {
-	parseTestDocEngine
-	calls int
+	engine.DocEngine
+	calls []string
 }
 
 // Search records reads beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) Search(context.Context, *types.SearchRequest) (*types.SearchResult, error) {
-	e.calls++
+	e.calls = append(e.calls, "Search")
 	return &types.SearchResult{}, nil
 }
 
 // GetChunk records detail reads and returns the authorized fixture.
 func (e *chunkAuthorizationTestEngine) GetChunk(context.Context, string, string, []string) (interface{}, error) {
-	e.calls++
+	e.calls = append(e.calls, "GetChunk")
 	return map[string]interface{}{"id": "chunk-1", "doc_id": "doc-1", "kb_id": "kb-1", "content_with_weight": "sample"}, nil
 }
 
 // UpdateChunks records mutation calls beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
-	e.calls++
+	e.calls = append(e.calls, "UpdateChunks")
 	return nil
 }
 
 // DeleteChunks records deletions beyond the authorization boundary.
 func (e *chunkAuthorizationTestEngine) DeleteChunks(context.Context, map[string]interface{}, string, string) (int64, error) {
-	e.calls++
+	e.calls = append(e.calls, "DeleteChunks")
 	return 1, nil
 }

@@ -36,11 +36,13 @@ func TestSingleChunkUpdatePreservesScopeAndFieldValues(t *testing.T) {
 		name                       string
 		withDocument, updateFields bool
 		remove                     interface{}
+		extraFeatures              bool
 	}{
-		{"dataset", false, true, map[string]interface{}{"labels": "old"}},
-		{"dataset and document", true, true, map[string]interface{}{"labels": "old"}},
-		{"remove field only", false, false, "obsolete"},
-		{"remove array value only", true, false, map[string]interface{}{"labels": "old"}},
+		{"dataset", false, true, map[string]interface{}{"labels": "old"}, false},
+		{"dataset and document", true, true, map[string]interface{}{"labels": "old"}, false},
+		{"remove field only", false, false, "obsolete", false},
+		{"remove array value only", true, false, map[string]interface{}{"labels": "old"}, false},
+		{"multiple feature fields", true, true, "obsolete", true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,6 +99,9 @@ func TestSingleChunkUpdatePreservesScopeAndFieldValues(t *testing.T) {
 			}
 			if !tc.updateFields {
 				values = map[string]interface{}{"remove": tc.remove}
+			}
+			if tc.extraFeatures {
+				values["other_feas"] = map[string]int{"feature": 1}
 			}
 			if err := engine.UpdateChunks(t.Context(), condition, values, "ragflow_tenant", "kb-1"); err != nil {
 				t.Fatal(err)
@@ -171,6 +176,9 @@ func TestSingleChunkUpdatePreservesScopeAndFieldValues(t *testing.T) {
 				wantRemovedFields = append(wantRemovedFields, removal)
 			case map[string]interface{}:
 				wantRemovedValues = removal
+			}
+			if tc.extraFeatures {
+				wantRemovedFields = []interface{}{"obsolete", "other_feas", "tag_feas"}
 			}
 			if !reflect.DeepEqual(params["remove_fields"], wantRemovedFields) {
 				t.Fatalf("field-removal parameters changed: %v", params)
