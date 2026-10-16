@@ -24,8 +24,10 @@ type SelectKeysProps = {
   nodeId?: string;
   isObject?: boolean;
   operatorList: WebhookRequestParameters[];
+  keyInputPattern?: RegExp;
 };
 
+/** Edits request fields, applying the supplied key pattern when filtering names. */
 export function DynamicRequest({
   name,
   label,
@@ -34,6 +36,7 @@ export function DynamicRequest({
   operatorField = 'type',
   requiredField = 'required',
   operatorList,
+  keyInputPattern,
 }: SelectKeysProps) {
   const form = useFormContext();
 
@@ -71,7 +74,7 @@ export function DynamicRequest({
               <div className="flex-1 space-y-3 min-w-0">
                 <div className="flex items-start gap-2">
                   <RAGFlowFormItem name={keyFieldAlias} className="flex-1 ">
-                    <KeyInput></KeyInput>
+                    <KeyInput searchValue={keyInputPattern}></KeyInput>
                   </RAGFlowFormItem>
                   <div className="flex h-8 items-center">
                     <Separator className="w-2" />
