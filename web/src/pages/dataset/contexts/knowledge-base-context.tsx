@@ -1,3 +1,4 @@
+import { useFetchUserInfo } from '@/hooks/use-user-setting-request';
 import { IDataset } from '@/interfaces/database/dataset';
 import React, { createContext, ReactNode, useContext } from 'react';
 
@@ -37,3 +38,16 @@ export const useKnowledgeBaseContext = (): KnowledgeBaseContextType => {
 export const useOwnerTenantId = (): string | undefined => {
   return useKnowledgeBaseContext().knowledgeBase?.tenant_id;
 };
+
+// Undefined while the dataset or the signed-in user is still loading.
+// False when the signed-in user is a member of someone else's dataset.
+export function useIsDatasetOwner(): boolean | undefined {
+  const knowledgeBase = useContext(KnowledgeBaseContext)?.knowledgeBase;
+  const { data: userInfo } = useFetchUserInfo();
+  const ownerId = knowledgeBase?.tenant_id;
+  const userId = userInfo?.id;
+  if (!ownerId || !userId) {
+    return undefined;
+  }
+  return ownerId === userId;
+}

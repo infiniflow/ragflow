@@ -24,6 +24,8 @@ import {
   usePipelineOperatorNodes,
   useResetParserConfigOnPipelineChange,
 } from '@/hooks/use-pipeline-operator';
+import { useFetchDefaultModelDictionary } from '@/hooks/use-llm-request';
+import { useIsDatasetOwner } from '@/pages/dataset/contexts/knowledge-base-context';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { isEqual } from 'lodash';
 import { useCallback, useEffect, useState } from 'react';
@@ -46,6 +48,10 @@ import { useRevealSubmitErrors } from './use-reveal-submit-errors';
 
 export default function DatasetSetting() {
   const { t } = useTranslation();
+  const isOwner = useIsDatasetOwner();
+  // Invited members keep editing this page. Only the dataset owner is asked
+  // to configure default models, and model fields are disabled for members.
+  useFetchDefaultModelDictionary(isOwner === true);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
