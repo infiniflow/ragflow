@@ -833,8 +833,11 @@ var (
 // attachCodeExecArtifacts uploads the `_ARTIFACTS` produced by the
 // CodeExec tool to object storage and populates the message-facing
 // `attachments` / `_ATTACHMENT_CONTENT` outputs plus a content
-// appendix. It is a no-op when the tool returned no artifacts.
+// appendix. The attachments output remains an empty list when no files exist.
 func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
+	if _, ok := decoded["attachments"]; !ok {
+		decoded["attachments"] = []string{}
+	}
 	raw, ok := decoded["_ARTIFACTS"].([]any)
 	if !ok || len(raw) == 0 {
 		return

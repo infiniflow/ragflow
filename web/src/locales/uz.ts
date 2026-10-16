@@ -2096,19 +2096,19 @@ export default {
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart LLM.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini https://ragflow.io/docs/dev/supported_models’dan tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart embedding modeli. Ochiladigan ro‘yxatdan embedding modelini topa olmasangiz, RAGFlow slim nashrini ishlatayotganingizni (u embedding modellarini o‘z ichiga olmaydi) yoki model provayderingiz bu modelni qo‘llab-quvvatlashini “Model provayderlari” sahifasidan tekshiring.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart VLM. Rasm yoki videoni tasvirlaydi. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Har bir yangi yaratilgan ma’lumotlar to‘plami uchun standart ASR modeli. Ovozni mos matnga ko‘chirish uchun shu modeldan foydalaning.',
       rerankModel: 'Rerank',
       rerankModelTip:
-        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Bo‘laklarni rerank qilish uchun standart rerank modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       ttsModel: 'TTS',
       ttsModelTip:
-        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, https://ragflow.io/docs/dev/supported_models’dan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
+        'Standart matndan-nutqqa modeli. Ochiladigan ro‘yxatdan modelni topa olmasangiz, “Model provayderlari” sahifasidan model provayderingiz bu modelni qo‘llab-quvvatlashini tekshiring.',
       workspace: 'ish maydoni',
       upgrade: 'Yangilash',
       addLlmTitle: 'LLM qo‘shish',

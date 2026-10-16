@@ -166,7 +166,7 @@ func TestCSVParser_GBK(t *testing.T) {
 		t.Fatalf("CSVParser returned no JSON items")
 	}
 	var rowText strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text := tableItemHTML(t, item)
 		rowText.WriteString(text)
 	}
@@ -217,7 +217,7 @@ func TestEPUBParser_GB2312(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("want non-empty JSON items from EPUB")
 	}
-	text, _ := res.JSON[0]["text"].(string)
+	text, _ := res.JSON[0].ToMap()["text"].(string)
 	if strings.ContainsRune(text, '\ufffd') {
 		t.Errorf("EPUB text contains replacement runes: %s", text)
 	}

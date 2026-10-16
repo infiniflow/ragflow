@@ -168,20 +168,23 @@ export function pickByGapKind<T>(
 }
 
 // --- Upload-time built-in parser switch ------------------------------------
-// Mirrors the backend's document parser selection
-// (internal/service/document/document_parser_selection.go): for a dataset
-// without a custom pipeline, upload reseeds a document with the built-in
-// pipeline owning its file type — visual (images and video) -> picture,
-// aural -> audio, .ppt/.pptx/.pages -> presentation, .msg/.eml -> email —
-// and keeps the dataset parser for everything else. A dataset on a custom
-// pipeline never switches. The upload modal annotates each unsupported file
-// with this fate so it never promises a switch that will not happen.
+// Mirrors the backend's document parser resolution
+// (internal/service/document/document_parser_selection.go): a file whose
+// family the dataset's selection declares runs on that selection; an undeclared
+// family is reseeded with the built-in pipeline owning it — visual (images and
+// video) -> picture, aural -> audio, .ppt/.pptx/.pages -> presentation,
+// .msg/.eml -> email — and failing that with the catch-all general pipeline.
+// A dataset selection whose support cannot be determined (a canvas without a
+// Parser node) produces no gap and never switches. The upload modal annotates
+// each unsupported file with this fate so it never promises a switch that will
+// not happen.
 
 export type BuiltinSwitchTarget =
   | 'picture'
   | 'audio'
   | 'presentation'
-  | 'email';
+  | 'email'
+  | 'general';
 
 // Display labels match the dataset table's parse column, which renders the
 // parser id capitalized.
@@ -190,7 +193,21 @@ export const BuiltinSwitchTargetLabels: Record<BuiltinSwitchTarget, string> = {
   audio: 'Audio',
   presentation: 'Presentation',
   email: 'Email',
+  general: 'General',
 };
+
+// FileType members the catch-all general pipeline declares. A file no dedicated
+// pipeline owns and whose family the dataset selection does not declare runs
+// under general after upload.
+const GeneralFamilyFileTypes = new Set<FileType>([
+  FileType.PDF,
+  FileType.Spreadsheet,
+  FileType.TextMarkdown,
+  FileType.Code,
+  FileType.Html,
+  FileType.Doc,
+  FileType.Docx,
+]);
 
 // Extension sets mirror utility.FilenameType (internal/utility/file.go); the
 // visual bucket intentionally includes the video extensions.
@@ -251,17 +268,17 @@ const AuralSwitchSuffixes = new Set([
 ]);
 
 /**
- * The built-in pipeline the backend switches an uploaded file to, or null
- * when the file keeps the dataset parser. `pipelineId` is the dataset's
- * custom pipeline id: once set, the backend never switches.
+ * The built-in pipeline the backend switches an uploaded file to, or null when
+ * the file keeps the dataset selection. Callers only consult this for files the
+ * selection does not declare (an unsupported-type gap), so the remaining
+ * general-family types resolve to the catch-all general pipeline. `fileType` is
+ * the uploaded file's family; a type the backend rejects at upload (or an
+ * unmapped one) keeps the dataset selection.
  */
 export function builtinParserSwitchTarget(
   name: string,
-  pipelineId?: string | null,
+  fileType: FileType | undefined,
 ): BuiltinSwitchTarget | null {
-  if (pipelineId) {
-    return null;
-  }
   const suffix = getExtension(name);
   if (VisualSwitchSuffixes.has(suffix)) {
     return 'picture';
@@ -275,7 +292,7 @@ export function builtinParserSwitchTarget(
   if (suffix === 'msg' || suffix === 'eml') {
     return 'email';
   }
-  return null;
+  return fileType && GeneralFamilyFileTypes.has(fileType) ? 'general' : null;
 }
 
 /** An upload-time gap annotated with the file's parser-switch fate. */
@@ -286,13 +303,12 @@ export type UploadFileParserGap = FileParserGap & {
 
 export function attachAutoSwitchTargets(
   gaps: FileParserGap[],
-  pipelineId?: string | null,
 ): UploadFileParserGap[] {
   return gaps.map((gap) => ({
     ...gap,
     autoSwitchTarget:
       gap.reason === ParserGapReason.UnsupportedType
-        ? builtinParserSwitchTarget(gap.name, pipelineId)
+        ? builtinParserSwitchTarget(gap.name, gap.fileType)
         : null,
   }));
 }

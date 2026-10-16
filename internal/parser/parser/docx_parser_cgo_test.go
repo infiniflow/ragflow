@@ -24,7 +24,7 @@ func TestDOCXParser_ParseWithResult_JSON(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON items is empty; expected parsed content")
 	}
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		if _, ok := item["text"]; !ok {
 			t.Errorf("item[%d] missing 'text' field", i)
 		}
@@ -161,7 +161,7 @@ func TestDOCXParser_PreservesXMLCharacterReferences(t *testing.T) {
 			if jsonRes.Err != nil {
 				t.Fatalf("ParseWithResult(json): %v", jsonRes.Err)
 			}
-			if got := joinItemTexts(jsonRes.JSON); !strings.Contains(got, tc.want) {
+			if got := joinItemTexts(ItemsToMaps(jsonRes.JSON)); !strings.Contains(got, tc.want) {
 				t.Errorf("json text = %q, want it to contain %q", got, tc.want)
 			}
 

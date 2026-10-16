@@ -261,7 +261,7 @@ func doclingTextsToResult(filename string, texts []string, outputFormat string, 
 		return ParseResult{
 			OutputFormat: "json",
 			File:         fileMeta,
-			JSON:         items,
+			JSON:         MapsToItems(items),
 		}
 	case "markdown":
 		return ParseResult{

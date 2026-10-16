@@ -64,7 +64,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 				"size":     0,
 				"encoding": "utf-8",
 			},
-			JSON: []map[string]any{{"text": "", "doc_type_kwd": "text"}},
+			JSON: []DocItem{NewTextJSONItem("")},
 		}
 	}
 
@@ -97,7 +97,7 @@ func (p *EPUBParser) ParseWithResult(ctx context.Context, filename string, data 
 			"size":     len(data),
 			"encoding": detectedEnc,
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 
