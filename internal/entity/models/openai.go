@@ -749,3 +749,7 @@ func (o *OpenAIModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 func (o *OpenAIModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", o.Name())
 }
+
+func (o *OpenAIModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", o.Name())
+}

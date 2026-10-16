@@ -344,3 +344,7 @@ func (s *StepFunModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]L
 func (s *StepFunModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", s.Name())
 }
+
+func (s *StepFunModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", s.Name())
+}
