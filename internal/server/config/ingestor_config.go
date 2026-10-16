@@ -29,6 +29,9 @@ import (
 )
 
 type IngestorConfig struct {
+	deepDocModelDir  string  `mapstructure:"deep_doc_model_dir"`
+	deepDocDropScore float64 `mapstructure:"deep_doc_drop_score"`
+
 	// MaxConcurrentWorkers bounds how many ingestion tasks the ingestor runs in
 	// parallel — it is the NATS consumer worker count. Valid range [1, 256],
 	// enforced at startup by the CLI/env/config resolver (GetIngestor*); a
@@ -103,9 +106,15 @@ func (c *Config) ParseIngestorConfig(v *viper.Viper) error {
 
 	if sub.IsSet("max_concurrent_workers") {
 		c.ingestor.MaxConcurrentWorkers = sub.GetInt("max_concurrent_workers")
+		if c.ingestor.MaxConcurrentWorkers < MinIngestorWorkers || c.ingestor.MaxConcurrentWorkers > MaxIngestorWorkers {
+			return fmt.Errorf("ingestor max_concurrent_workers %d out of range [%d, %d]", c.ingestor.MaxConcurrentWorkers, MinIngestorWorkers, MaxIngestorWorkers)
+		}
 	}
 	if sub.IsSet("page_concurrency") {
 		c.ingestor.PageConcurrency = sub.GetInt("page_concurrency")
+		if c.ingestor.PageConcurrency < MinPageConcurrency || c.ingestor.PageConcurrency > MaxPageConcurrency {
+			return fmt.Errorf("ingestor page_concurrency %d out of range [%d, %d]", c.ingestor.PageConcurrency, MinPageConcurrency, MaxPageConcurrency)
+		}
 	}
 	if sub.IsSet("compiler_pool_size") {
 		c.ingestor.CompilerPoolSize = sub.GetInt("compiler_pool_size")
@@ -268,4 +277,39 @@ func (c *Config) GetIngestorPageConcurrency(argValue *int) (int, error) {
 
 func (c *Config) GetIngestorConfig() *IngestorConfig {
 	return &c.ingestor
+}
+
+func (c *Config) GetDeepDocModelDir() string {
+	if c.environments.DeepDocModelDir != "" {
+		return c.environments.DeepDocModelDir
+	}
+	return c.ingestor.deepDocModelDir
+}
+
+func (c *Config) GetDeepDocInferenceConcurrency() int {
+	if c.environments.DeepDocInferenceConcurrency != 0 {
+		return c.environments.DeepDocInferenceConcurrency
+	}
+	return c.ingestor.deepDocInferenceConcurrency
+}
+
+func (c *Config) GetIngestorMaxConcurrentWorkers() int {
+	if c.environments.IngestorMaxConcurrentWorkers != 0 {
+		return c.environments.IngestorMaxConcurrentWorkers
+	}
+	return c.ingestor.MaxConcurrentWorkers
+}
+
+func (c *Config) GetIngestorPageConcurrency() int {
+	if c.environments.IngestorPageConcurrency != 0 {
+		return c.environments.IngestorPageConcurrency
+	}
+	return c.ingestor.PageConcurrency
+}
+
+func (c *Config) GetDeepDocInferenceCPUCores() int {
+	if c.environments.DeepDocInferenceCPUCores != 0 {
+		return c.environments.DeepDocInferenceCPUCores
+	}
+	return c.ingestor.deepDocInferenceCPUCores
 }
