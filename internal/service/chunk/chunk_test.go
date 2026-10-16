@@ -5,12 +5,14 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	_ "image/jpeg"
 	"image/png"
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
@@ -151,7 +153,8 @@ func TestKnowledgebaseEmbeddingKey(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, map[string]string{}); got != tt.want {
+			names := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+			if got := knowledgebaseEmbeddingKey(t.Context(), db, tt.kb, tt.tenantID, names); got != tt.want {
 				t.Fatalf("knowledgebaseEmbeddingKey() = %q, want %q", got, tt.want)
 			}
 		})
@@ -339,12 +342,23 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	if _, ok := resp.Chunks[0]["available_int"]; ok {
 		t.Fatal("available_int should not be returned in chunk lists")
 	}
+	// Stored available_int (0 here) is surfaced as the `available` boolean.
+	if got := resp.Chunks[0]["available"]; got != false {
+		t.Fatalf("available = %#v, want false for a chunk stored with available_int=0", got)
+	}
 
 	if engine.searchReq == nil {
 		t.Fatal("expected Search to be called")
 	}
 	if !engine.searchReq.IncludeUnavailable {
 		t.Fatal("management chunk list must include disabled parent chunks")
+	}
+	// Parent rows must not be filtered out: they are listed after their children
+	// on every engine (MaterializeParentChunks numbers them past the source
+	// chunks), and excluding them by doc_type_kwd made the list engine-agnostic
+	// but no longer showed the parent-child structure users see on ES.
+	if _, exists := engine.searchReq.Filter["exists"]; exists {
+		t.Fatalf("unexpected existence filter on the chunk list: %#v", engine.searchReq.Filter)
 	}
 	if engine.searchReq.OrderBy == nil {
 		t.Fatal("expected OrderBy to be set")
@@ -357,6 +371,59 @@ func TestListSortsChunksByDocumentPosition(t *testing.T) {
 	}
 	if !reflect.DeepEqual(engine.searchReq.OrderBy.Fields, want) {
 		t.Fatalf("OrderBy fields = %#v, want %#v", engine.searchReq.OrderBy.Fields, want)
+	}
+}
+
+// TestListReportsChunkAvailability pins that stored available_int is surfaced as
+// the `available` boolean (0 → false, missing → true).
+func TestListReportsChunkAvailability(t *testing.T) {
+	db := setupChunkTestDB(t)
+	pushChunkTestDB(t, db)
+
+	userID := "user-1"
+	tenantID := "tenant-1"
+	datasetID := "kb-1"
+	documentID := "doc-1"
+	insertChunkTestUserTenant(t, userID, tenantID)
+	insertChunkTestKB(t, datasetID, tenantID)
+	insertChunkTestDoc(t, documentID, datasetID)
+
+	engine := &listChunksSearchEngine{
+		chunks: []map[string]interface{}{
+			{"id": "parent-1", "content_with_weight": "parent", "available_int": 0, "doc_id": documentID},
+			{"id": "child-1", "content_with_weight": "child", "doc_id": documentID},
+		},
+	}
+	svc := &ChunkService{
+		docEngine:   engine,
+		kbDAO:       dao.NewKnowledgebaseDAO(),
+		documentDAO: dao.NewDocumentDAO(),
+	}
+
+	page := 1
+	size := 30
+	resp, err := svc.List(t.Context(), &service.ListChunksRequest{
+		DatasetID: datasetID,
+		DocID:     documentID,
+		Page:      &page,
+		Size:      &size,
+	}, userID)
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(resp.Chunks) != 2 {
+		t.Fatalf("chunks = %v, want two chunks", resp.Chunks)
+	}
+	if got := resp.Chunks[0]["available"]; got != false {
+		t.Fatalf("parent available = %#v, want false (stored available_int=0)", got)
+	}
+	if got := resp.Chunks[1]["available"]; got != true {
+		t.Fatalf("child available = %#v, want true (column absent)", got)
+	}
+	for i, chunk := range resp.Chunks {
+		if _, ok := chunk["available_int"]; ok {
+			t.Fatalf("chunk %d leaks the raw available_int column: %#v", i, chunk)
+		}
 	}
 }
 
@@ -1065,7 +1132,18 @@ func TestAddChunkSuccess(t *testing.T) {
 	insertChunkTestKB(t, datasetID, userID)
 	insertChunkTestDoc(t, documentID, datasetID)
 
-	engine := &addChunkTestEngine{}
+	// The document already holds source chunks whose highest order is 9; the
+	// lookup page also carries rows the lookup must ignore (a parent-range value
+	// and a row without any order), so the added chunk still continues from 9.
+	engine := &addChunkTestEngine{
+		searchResp: &types.SearchResult{
+			Chunks: []map[string]interface{}{
+				{"id": "parent-1", "chunk_order_int": float64(common.ParentChunkOrderBase + 3)},
+				{"id": "raptor-1"},
+				{"id": "chunk-9", "chunk_order_int": float64(9)},
+			},
+		},
+	}
 	var incrementTokenNum, incrementChunkNum int64
 	language := "Slovak"
 	var tokenizeLanguages []string
@@ -1162,6 +1240,36 @@ func TestAddChunkSuccess(t *testing.T) {
 	}
 	if engine.insertLanguage != language {
 		t.Fatalf("InsertChunks language = %q, want %q", engine.insertLanguage, language)
+	}
+
+	// A manually added text chunk must carry doc_type_kwd (Python chunk_api.py:1225):
+	// the management chunk list selects source chunks by that field, so a missing
+	// value would hide the chunk from the list.
+	if inserted["doc_type_kwd"] != "text" {
+		t.Fatalf("doc_type_kwd = %#v, want text", inserted["doc_type_kwd"])
+	}
+	// The added chunk continues the document's source ordering (highest source
+	// order + 1) and stays inside [0, common.ParentChunkOrderBase), so it lists
+	// after the ingested chunks and still before the document's parent rows.
+	if got := inserted["chunk_order_int"]; got != 10 {
+		t.Fatalf("chunk_order_int = %#v, want 10 (highest source order + 1)", got)
+	}
+	if engine.searchReq == nil {
+		t.Fatal("expected the document's highest source order to be looked up")
+	}
+	if got := engine.searchReq.Filter["exists"]; got != "doc_type_kwd" {
+		t.Fatalf("order lookup exists filter = %#v, want doc_type_kwd", got)
+	}
+	if got := engine.searchReq.Filter["doc_id"]; got != documentID {
+		t.Fatalf("order lookup doc_id = %#v, want %q", got, documentID)
+	}
+	if !engine.searchReq.IncludeUnavailable {
+		t.Fatal("order lookup must count disabled source chunks")
+	}
+	if engine.searchReq.OrderBy == nil || len(engine.searchReq.OrderBy.Fields) != 1 ||
+		engine.searchReq.OrderBy.Fields[0].Field != "chunk_order_int" ||
+		engine.searchReq.OrderBy.Fields[0].Type != types.SortDesc {
+		t.Fatalf("order lookup OrderBy = %#v, want descending chunk_order_int", engine.searchReq.OrderBy)
 	}
 	vec, ok := inserted["q_2_vec"].([]float64)
 	if !ok {
@@ -1635,6 +1743,44 @@ func TestChunkImageOperationsShareThePerChunkLock(t *testing.T) {
 	}
 }
 
+func TestRemoveChunksRejectsInvalidDatasetBeforeMutation(t *testing.T) {
+	for _, datasetID := range []string{"", "kb-2"} {
+		for _, deleteAll := range []bool{false, true} {
+			t.Run(fmt.Sprintf("dataset=%s/delete_all=%t", datasetID, deleteAll), func(t *testing.T) {
+				db := setupChunkTestDB(t)
+				pushChunkTestDB(t, db)
+				insertChunkTestKB(t, "kb-1", "owner")
+				insertChunkTestDoc(t, "doc-1", "kb-1")
+				engine := &parseTestDocEngine{deleteChunksCount: 1}
+				svc := &ChunkService{
+					docEngine: engine,
+					decrementChunkStatsFunc: func(string, string, int64, int64, float64) error {
+						t.Fatal("rejected deletion must not change statistics")
+						return nil
+					},
+					markWikiDirtyFunc: func(string, string, string, []string) {
+						t.Fatal("rejected deletion must not schedule wiki updates")
+					},
+				}
+				req := &service.RemoveChunksRequest{DatasetID: datasetID, DocID: "doc-1", DeleteAll: deleteAll}
+				if !deleteAll {
+					req.ChunkIDs = []string{"chunk-1"}
+				}
+				count, err := svc.RemoveChunks(t.Context(), req, "owner")
+				if err == nil || count != 0 {
+					t.Fatalf("invalid dataset deletion = (%d, %v), want error and zero count", count, err)
+				}
+				if datasetID != "" && !errors.Is(err, permission.ErrResourceNotFound) {
+					t.Fatalf("error = %v, want resource not found", err)
+				}
+				if engine.deleteChunksCalls != 0 {
+					t.Fatalf("rejected deletion reached the engine %d times", engine.deleteChunksCalls)
+				}
+			})
+		}
+	}
+}
+
 func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	db := setupChunkTestDB(t)
 	pushChunkTestDB(t, db)
@@ -1650,8 +1796,9 @@ func TestRemoveChunksDecrementsStatsAfterDelete(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
-		DocID:    "doc-1",
-		ChunkIDs: []string{"chunk-1", "chunk-2", "chunk-3"},
+		DatasetID: "kb-1",
+		DocID:     "doc-1",
+		ChunkIDs:  []string{"chunk-1", "chunk-2", "chunk-3"},
 	}, "user-1")
 	if err != nil {
 		t.Fatalf("RemoveChunks() error = %v", err)
@@ -1714,6 +1861,7 @@ func TestRemoveChunksSkipsStatsWhenNothingDeleted(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
+		DatasetID: "kb-1",
 		DocID:     "doc-1",
 		DeleteAll: true,
 	}, "user-1")
@@ -1747,8 +1895,9 @@ func TestRemoveChunksReturnsStatsError(t *testing.T) {
 	}
 	ctx := t.Context()
 	deletedCount, err := svc.RemoveChunks(ctx, &service.RemoveChunksRequest{
-		DocID:    "doc-1",
-		ChunkIDs: []string{"chunk-1", "chunk-2"},
+		DatasetID: "kb-1",
+		DocID:     "doc-1",
+		ChunkIDs:  []string{"chunk-1", "chunk-2"},
 	}, "user-1")
 	if err == nil || !strings.Contains(err.Error(), "failed to update chunk stats") {
 		t.Fatalf("expected stats update error, got count=%d err=%v", deletedCount, err)
@@ -2087,6 +2236,8 @@ type addChunkTestEngine struct {
 	insertDataset  string
 	insertLanguage string
 	insertErr      error
+	searchReq      *types.SearchRequest
+	searchResp     *types.SearchResult
 }
 
 func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error) {
@@ -2097,9 +2248,16 @@ func (e *addChunkTestEngine) InsertChunks(_ context.Context, chunks []map[string
 	return nil, e.insertErr
 }
 
+func (e *addChunkTestEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	e.searchReq = req
+	return e.searchResp, nil
+}
+
 type listChunksSearchEngine struct {
 	parseTestDocEngine
 	searchReq *types.SearchRequest
+	// chunks optionally overrides the canned list rows.
+	chunks []map[string]interface{}
 }
 
 type getChunkTestEngine struct {
@@ -2126,8 +2284,9 @@ func (e *getChunkTestEngine) GetChunk(_ context.Context, baseName, chunkID strin
 
 func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
 	e.searchReq = req
-	return &types.SearchResult{
-		Chunks: []map[string]interface{}{
+	chunks := e.chunks
+	if chunks == nil {
+		chunks = []map[string]interface{}{
 			{
 				"id":                  "chunk-1",
 				"content":             "plain invoice terms body",
@@ -2135,8 +2294,11 @@ func (e *listChunksSearchEngine) Search(_ context.Context, req *types.SearchRequ
 				"available_int":       0,
 				"doc_id":              "doc-1",
 			},
-		},
-		Total: 1,
+		}
+	}
+	return &types.SearchResult{
+		Chunks: chunks,
+		Total:  int64(len(chunks)),
 	}, nil
 }
 

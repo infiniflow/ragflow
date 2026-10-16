@@ -154,9 +154,11 @@ func (dao *SearchDAO) Create(ctx context.Context, db *gorm.DB, search *entity.Se
 	return db.WithContext(ctx).Create(search).Error
 }
 
-// DeleteByID deletes a search by ID (soft delete by setting status to "0")
+// DeleteByID deletes a search by ID (hard delete), matching Python
+// SearchService.delete_by_id. A soft delete only hid the row from the permission
+// layer and left it in MySQL.
 func (dao *SearchDAO) DeleteByID(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Search{}).Where("id = ? AND status = ?", id, "1").Update("status", "0").Error
+	return db.WithContext(ctx).Unscoped().Where("id = ?", id).Delete(&entity.Search{}).Error
 }
 
 // UpdateByID updates search by ID

@@ -136,7 +136,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
-	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+	driver := clickhouse.GetDriver()
+	if driver == nil {
+		return nil
+	}
+	return driver.CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it

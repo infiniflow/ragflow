@@ -48,6 +48,12 @@ export function CommonHandle({
   return (
     <HandleContext.Provider value={value}>
       <Handle
+        // With ConnectionMode.Loose a drag may start from any handle and land
+        // on any handle, so pin the direction here: a target handle never
+        // starts a drag and a source handle never accepts one. Callers can
+        // still override through props.
+        isConnectableStart={props.type === 'target' ? false : undefined}
+        isConnectableEnd={props.type === 'source' ? false : undefined}
         {...props}
         isConnectable={isConnectable && !readOnly}
         className={cn(
@@ -96,6 +102,10 @@ export function LeftEndHandle({
 }: Omit<HandleProps, 'type' | 'position'>) {
   return (
     <Handle
+      // A target handle must never start a drag: with ConnectionMode.Loose a
+      // drag started here can land on another target handle, and xyflow then
+      // records a flipped edge (drop node as source) that cannot render.
+      isConnectableStart={false}
       isConnectable={isConnectable}
       className={cn('!bg-accent-primary !size-2', className)}
       id={NodeHandleId.End}

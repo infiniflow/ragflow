@@ -43,6 +43,7 @@ import (
 	"gorm.io/gorm"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/engine"
 	"ragflow/internal/engine/types"
 	"ragflow/internal/ingestion/knowledge_compile"
@@ -191,10 +192,10 @@ func (s *ChunkService) RetrievalTest(ctx context.Context, req *service.Retrieval
 
 	// Check if all kbs resolve to the same base embedding model
 	if len(kbRecords) > 1 {
-		embdNameCache := make(map[string]string)
-		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNameCache)
+		embdNames := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
+		firstEmbeddingKey := knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[0], tenantIDs[0], embdNames)
 		for i := 1; i < len(kbRecords); i++ {
-			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNameCache) != firstEmbeddingKey {
+			if knowledgebaseEmbeddingKey(ctx, dao.DB, kbRecords[i], tenantIDs[i], embdNames) != firstEmbeddingKey {
 				return nil, fmt.Errorf("cannot retrieve across datasets with different embedding models")
 			}
 		}
@@ -497,11 +498,11 @@ func resolveSearchbotRetrievalParams(req *service.RetrievalTestRequest, searchCo
 // model name (e.g. "BAAI/bge-m3") so datasets pointing at the same model
 // through different provider instances or storage forms (tenant_model id vs
 // legacy composite name) retrieve together.
-func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, cache map[string]string) string {
+func knowledgebaseEmbeddingKey(ctx context.Context, db *gorm.DB, kb *entity.Knowledgebase, tenantID string, names *transaction.EmbeddingBaseNameResolver) string {
 	if strings.TrimSpace(kb.EmbdID) == "" && (kb.TenantEmbdID == nil || strings.TrimSpace(*kb.TenantEmbdID) == "") {
 		return fmt.Sprintf("default:%s", tenantID)
 	}
-	return "embd:" + dao.NewKnowledgebaseDAO().EmbeddingBaseName(ctx, db, kb, cache)
+	return "embd:" + names.Resolve(ctx, db, kb)
 }
 
 // hydrateChunkVectors replaces zero (placeholder) vectors in chunks with real
@@ -875,6 +876,8 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 			"content_with_weight",
 			"img_id",
 			"position_int",
+			// Read back only to emit the `available` boolean.
+			"available_int",
 			// Call for the ES field names: Elasticsearch does not translate
 			// SelectFields (see elasticsearch/chunk.go), while Infinity's
 			// convertSelectFields maps these names onto its own docnm /
@@ -920,6 +923,13 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	for _, chunk := range searchResp.Chunks {
 		// Inline formatChunkForList
 		result := make(map[string]interface{})
+		// `available`: available_int=0 → false, missing → true; the frontend uses
+		// it to render disabled chunks, incl. parent rows.
+		availableInt := 1
+		if stored, ok := common.GetInt(chunk["available_int"]); ok {
+			availableInt = stored
+		}
+		result["available"] = availableInt != 0
 		skipFields := map[string]bool{
 			"_id": true, "authors": true, "_score": true, "SCORE": true, "available_int": true,
 			"important_kwd_empty_count": true, "kb_id": true, "mom_id": true, "page_num_int": true,
@@ -1262,15 +1272,18 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 		return 0, fmt.Errorf("doc engine not initialized")
 	}
 
-	if req.DocID == "" {
-		return 0, fmt.Errorf("doc_id is required")
+	if req.DatasetID == "" || req.DocID == "" {
+		return 0, fmt.Errorf("dataset_id and doc_id are required")
 	}
 
-	// Verify document exists and belongs to a dataset (do this first to get doc.KbID)
+	// Bind deletion to the dataset and document named in the route.
 	docDAO := dao.NewDocumentDAO()
 	doc, err := docDAO.GetByID(ctx, dao.DB, req.DocID)
 	if err != nil || doc == nil {
 		return 0, fmt.Errorf("document not found")
+	}
+	if doc.KbID != req.DatasetID {
+		return 0, permission.ErrResourceNotFound
 	}
 
 	kb, err := s.getAccessibleKnowledgebase(ctx, doc.KbID, userID, permission.OperationUpdate)
@@ -1314,6 +1327,54 @@ func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChun
 	}
 
 	return deletedCount, nil
+}
+
+// nextSourceChunkOrder returns the chunk_order_int a newly added source chunk
+// should carry: one past the highest order already used by the document's source
+// chunks, so manual chunks append after the ingested ones. Parent rows live in
+// the reserved range starting at common.ParentChunkOrderBase, so the new chunk
+// still lists before every parent of the document — including when the document
+// has been parsed (and its parents materialized) long before the chunk was added.
+//
+// The lookup asks the engine for the document's highest-numbered source chunk.
+// doc_type_kwd separates the two ranges without a range condition: every chunker
+// output carries it (itemDocType defaults to "text"), it survives the tokenizer,
+// and this API writes it below, while parent rows never copy it — so descending
+// by chunk_order_int among those rows lands on the last source chunk rather than
+// on a parent. A pipeline that emits chunks without doc_type_kwd (custom
+// pipelines that never set it) makes the lookup come back empty, and the new
+// chunk falls back to order 0, still inside the source range.
+func (s *ChunkService) nextSourceChunkOrder(ctx context.Context, indexName, datasetID, documentID string) int {
+	// A small page rather than a single row: the lookup only needs the first row
+	// that actually carries a source order, so being tolerant of rows without one
+	// (products written after the tokenizer, e.g. RAPTOR summaries) keeps this
+	// independent of how an engine orders rows missing the sort key in DESC.
+	searchResp, err := s.docEngine.Search(ctx, &types.SearchRequest{
+		IndexNames:         []string{indexName},
+		KbIDs:              []string{datasetID},
+		Limit:              16,
+		IncludeUnavailable: true, // a disabled source chunk still holds its order
+		SelectFields:       []string{"id", "chunk_order_int"},
+		OrderBy:            (&types.OrderByExpr{}).Desc("chunk_order_int"),
+		Filter: map[string]interface{}{
+			"doc_id":   documentID,
+			"exists":   "doc_type_kwd",
+			"must_not": map[string]interface{}{"exists": "compile_kwd"},
+		},
+	})
+	if err != nil || searchResp == nil {
+		// The order only decides where the chunk lists: never fail a write over
+		// it. 0 keeps the chunk inside the source range, ahead of the parents.
+		return 0
+	}
+	for _, row := range searchResp.Chunks {
+		order, ok := common.GetInt(row["chunk_order_int"])
+		if !ok || order < 0 || order >= common.ParentChunkOrderBase {
+			continue
+		}
+		return order + 1
+	}
+	return 0
 }
 
 func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkRequest, userID string) (*service.AddChunkResponse, error) {
@@ -1382,9 +1443,17 @@ func (s *ChunkService) AddChunk(ctx context.Context, req *service.AddChunkReques
 		importantKeywords = []string{}
 	}
 
+	// Append the manual chunk after the document's existing source chunks. The
+	// value stays inside the source range [0, common.ParentChunkOrderBase) so the
+	// new chunk keeps listing before the parent rows MaterializeParentChunks
+	// created for this document.
+	chunkOrder := s.nextSourceChunkOrder(ctx, indexName, req.DatasetID, req.DocumentID)
+
 	chunkData := map[string]interface{}{
 		"id":                   chunkID,
 		"content_with_weight":  req.Content,
+		"doc_type_kwd":         "text", // Python chunk_api.py:1225; the image branch below overrides it
+		"chunk_order_int":      chunkOrder,
 		"content_ltks":         contentLtks,
 		"content_sm_ltks":      contentSmLtks,
 		"important_kwd":        importantKeywords,

@@ -114,7 +114,7 @@ func (p *PictureParser) ParseWithResult(ctx context.Context, filename string, da
 			"size":         len(data),
 			"doc_type_kwd": DocTypeImage,
 		},
-		JSON: []map[string]any{item},
+		JSON: []DocItem{DocItemFromMap(item)},
 	}
 }
 

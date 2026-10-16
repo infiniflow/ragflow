@@ -569,10 +569,10 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
-	// Get document_id from URL path
+	datasetID := c.Param("dataset_id")
 	docID := c.Param("document_id")
-	if docID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "document_id is required")
+	if datasetID == "" || docID == "" {
+		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "dataset_id and document_id are required")
 		return
 	}
 
@@ -582,12 +582,8 @@ func (h *ChunkHandler) RemoveChunks(c *gin.Context) {
 		return
 	}
 
+	req.DatasetID = datasetID
 	req.DocID = docID
-
-	if req.DocID == "" {
-		common.ResponseWithHttpCodeData(c, http.StatusBadRequest, 400, nil, "doc_id is required")
-		return
-	}
 
 	ctx := c.Request.Context()
 	deletedCount, err := h.chunkService.RemoveChunks(ctx, &req, user.ID)
