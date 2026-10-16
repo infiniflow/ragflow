@@ -108,6 +108,27 @@ func TestBuildAll_CanvasComponentNameUsesCanonicalParams(t *testing.T) {
 	}
 }
 
+// TestBuildByName_FunctionNameCollisionPrefersComponentName asserts that a
+// Retrieval node whose DSL function_name happens to match a registered tool
+// (e.g., "wikipedia") still builds the retrieval tool, not the registered one.
+// The retrieval tool advertises the DSL function_name as its agent-visible name.
+func TestBuildByName_FunctionNameCollisionPrefersComponentName(t *testing.T) {
+	built, err := BuildByName("wikipedia", map[string]any{
+		"component_name": "Retrieval",
+		"function_name":  "wikipedia",
+	})
+	if err != nil {
+		t.Fatalf("BuildByName: %v", err)
+	}
+	info, err := built.Info(t.Context())
+	if err != nil {
+		t.Fatalf("Info: %v", err)
+	}
+	if info.Name == "wikipedia_search" {
+		t.Errorf("tool name = %q, want retrieval (function_name collision must not build Wikipedia)", info.Name)
+	}
+}
+
 func TestBuildByName_QueritAliases(t *testing.T) {
 	for _, name := range []string{"querit", "querit_search", "queritsearch", "QueritSearch"} {
 		built, err := BuildByName(name, map[string]any{
