@@ -189,6 +189,10 @@ const SettingModelV2: FC = () => {
     for (const { payload } of dirty) {
       if (!payload) continue;
       const name = payload.instanceName.trim();
+      if (payload.isDraft && !/^[0-9A-Za-z_-]+$/.test(name)) {
+        message.error(tSetting('instanceNameInvalidCharacters'));
+        return;
+      }
       if (payload.isDraft && takenNames.has(name)) {
         message.error(tSetting('instanceNameExists'));
         return;
