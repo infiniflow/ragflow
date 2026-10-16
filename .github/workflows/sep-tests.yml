@@ -718,7 +718,7 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          ./build.sh --test-integration-go -v -timeout 60m ./test/api 2>&1 | tee infinity_go_api_test.log
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee infinity_go_api_test.log
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -1296,7 +1296,7 @@ jobs:
             export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
             export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
-          ./build.sh --test-integration-go -v -timeout 60m ./test/api 2>&1 | tee es_go_api_test.log
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee es_go_api_test.log
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
