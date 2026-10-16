@@ -44,6 +44,10 @@ export const Languages = [
   'Portuguese',
 ];
 
+/**
+ * Builds localized language labels while preserving the English language names
+ * as option values sent to the retrieval API.
+ */
 export function useCrossLanguageOptions() {
   const { t } = useTranslation();
 
