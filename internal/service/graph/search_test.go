@@ -445,3 +445,72 @@ func TestSearchTypeSamples_WithMock(t *testing.T) {
 		t.Errorf("expected empty, got %d", len(samples))
 	}
 }
+
+// searcherOnlyMock implements ONLY engine.Searcher — it does not embed
+// engine.DocEngine. It proves the graph search functions need nothing beyond
+// the narrow Searcher role, so a consumer can be tested with a 7-method mock
+// instead of the 31-method DocEngine. Unused methods panic so a widening
+// dependency fails loudly.
+type searcherOnlyMock struct {
+	result *types.SearchResult
+	err    error
+	gotReq *types.SearchRequest
+}
+
+func (m *searcherOnlyMock) Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error) {
+	m.gotReq = req
+	if m.err != nil {
+		return nil, m.err
+	}
+	if m.result == nil {
+		return &types.SearchResult{}, nil
+	}
+	return m.result, nil
+}
+
+func (m *searcherOnlyMock) GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{} {
+	panic("searcherOnlyMock.GetFields: not used by graph search")
+}
+
+func (m *searcherOnlyMock) GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{} {
+	panic("searcherOnlyMock.GetAggregation: not used by graph search")
+}
+
+func (m *searcherOnlyMock) GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string {
+	panic("searcherOnlyMock.GetHighlight: not used by graph search")
+}
+
+func (m *searcherOnlyMock) GetChunkIDs(chunks []map[string]interface{}) []string {
+	panic("searcherOnlyMock.GetChunkIDs: not used by graph search")
+}
+
+func (m *searcherOnlyMock) KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error) {
+	panic("searcherOnlyMock.KNNScores: not used by graph search")
+}
+
+func (m *searcherOnlyMock) GetScores(searchResult map[string]interface{}) map[string]float64 {
+	panic("searcherOnlyMock.GetScores: not used by graph search")
+}
+
+// TestSearchEntitiesByTypes_NeedsOnlySearcher drives SearchEntitiesByTypes with
+// a Searcher-only mock (no DocEngine), proving the function's real dependency is
+// the narrow Searcher role. It fails to compile until the signature is narrowed.
+func TestSearchEntitiesByTypes_NeedsOnlySearcher(t *testing.T) {
+	mock := &searcherOnlyMock{
+		result: &types.SearchResult{
+			Chunks: []map[string]interface{}{
+				{"entity_kwd": "SpaceX", "entity_type_kwd": "ORGANIZATION"},
+			},
+		},
+	}
+	entities, err := SearchEntitiesByTypes(t.Context(), mock, []string{"kb1"}, []string{"ORGANIZATION"}, 10)
+	if err != nil {
+		t.Fatalf("SearchEntitiesByTypes failed: %v", err)
+	}
+	if len(entities) != 1 || entities[0].Name != "SpaceX" || entities[0].Type != "ORGANIZATION" {
+		t.Errorf("expected [SpaceX/ORGANIZATION], got %+v", entities)
+	}
+	if mock.gotReq == nil || mock.gotReq.Filter["knowledge_graph_kwd"] != "entity" {
+		t.Errorf("expected entity filter in search request, got %+v", mock.gotReq)
+	}
+}

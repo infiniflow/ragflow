@@ -34,7 +34,7 @@ import (
 // Pipeline encapsulates the knowledge graph retrieval pipeline.
 // Matches Python: rag/graphrag/search.py::KGSearch
 type Pipeline struct {
-	docEngine engine.DocEngine
+	docEngine engine.Searcher
 	chatModel *modelModule.ChatModel
 	embModel  *modelModule.EmbeddingModel
 	kbIDs     []string
@@ -77,7 +77,7 @@ func WithDenseTopK(v int) Option {
 // chatModel and embModel should be set via WithChatModel/WithEmbModel setters
 // or passed directly after construction.
 func NewPipeline(
-	docEngine engine.DocEngine,
+	docEngine engine.Searcher,
 	kbIDs []string,
 	tenantIDs []string,
 	question string,

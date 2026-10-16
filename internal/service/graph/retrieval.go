@@ -15,7 +15,7 @@ import (
 // a synthetic chunk. Convenience wrapper around Pipeline.
 func Retrieval(
 	ctx context.Context,
-	docEngine engine.DocEngine,
+	docEngine engine.Searcher,
 	chatModel *modelModule.ChatModel,
 	embModel *modelModule.EmbeddingModel,
 	kbIDs []string,
@@ -55,7 +55,7 @@ func indexName(tenantID string) string {
 }
 
 // searchTypeSamples searches for ty2ents data.
-func searchTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string) (map[string][]string, error) {
+func searchTypeSamples(ctx context.Context, docEngine engine.Searcher, idxnms []string, kbIDs []string) (map[string][]string, error) {
 	req := &types.SearchRequest{
 		IndexNames:   idxnms,
 		KbIDs:        kbIDs,
@@ -85,7 +85,7 @@ func searchTypeSamples(ctx context.Context, docEngine engine.DocEngine, idxnms [
 }
 
 // searchCommunityContent searches for community reports and formats them.
-func searchCommunityContent(ctx context.Context, docEngine engine.DocEngine, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
+func searchCommunityContent(ctx context.Context, docEngine engine.Searcher, idxnms []string, kbIDs []string, scoredEnts []ScoredEntity, topN int, maxToken *int) string {
 	if maxToken == nil || len(scoredEnts) == 0 || *maxToken <= 0 {
 		return ""
 	}

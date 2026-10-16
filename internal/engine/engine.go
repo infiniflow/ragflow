@@ -38,9 +38,8 @@ const (
 	EngineVastbase      EngineType = "vastbase"
 )
 
-// DocEngine document storage engine interface
-type DocEngine interface {
-	// Chunk operations
+// ChunkStore is the chunk-index lifecycle and CRUD surface of a DocEngine.
+type ChunkStore interface {
 	// CreateChunkStore creates the chunk store for a dataset. language is the
 	// dataset language, needed by engines whose fulltext analyzer is fixed when
 	// the index is created; the others ignore it.
@@ -51,12 +50,25 @@ type DocEngine interface {
 	InsertChunks(ctx context.Context, chunks []map[string]interface{}, baseName string, datasetID string, language string) ([]string, error)
 	UpdateChunks(ctx context.Context, condition map[string]interface{}, newValue map[string]interface{}, baseName string, datasetID string) error
 	DeleteChunks(ctx context.Context, condition map[string]interface{}, baseName string, datasetID string) (int64, error)
-	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
 	GetChunk(ctx context.Context, baseName, chunkID string, datasetIDs []string) (interface{}, error)
 	DropChunkStore(ctx context.Context, baseName, datasetID string) error
 	ChunkStoreExists(ctx context.Context, baseName, datasetID string) (bool, error)
+}
 
-	// Document metadata operations
+// Searcher is the retrieval surface plus the search-result post-processing
+// helpers (scoring, field projection, highlighting, aggregation).
+type Searcher interface {
+	Search(ctx context.Context, req *types.SearchRequest) (*types.SearchResult, error)
+	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
+	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
+	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
+	GetChunkIDs(chunks []map[string]interface{}) []string
+	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
+	GetScores(searchResult map[string]interface{}) map[string]float64
+}
+
+// MetadataStore is the document-metadata CRUD and search surface.
+type MetadataStore interface {
 	CreateMetadataStore(ctx context.Context, tenantID string) error
 	InsertMetadata(ctx context.Context, metadata []map[string]interface{}, tenantID string) ([]string, error)
 	UpdateMetadata(ctx context.Context, docID string, datasetID string, metaFields map[string]interface{}, tenantID string) error
@@ -65,24 +77,29 @@ type DocEngine interface {
 	DropMetadataStore(ctx context.Context, tenantID string) error
 	MetadataStoreExists(ctx context.Context, tenantID string) (bool, error)
 	SearchMetadata(ctx context.Context, req *types.SearchMetadataRequest) (*types.SearchMetadataResult, error)
+}
 
-	// Document operations (used by skill indexing)
+// DocIndexer is the document-indexing surface used by skill/graph indexing.
+type DocIndexer interface {
 	IndexDocument(ctx context.Context, indexName, docID string, doc interface{}) error
 	DeleteDocument(ctx context.Context, indexName, docID string) error
 	BulkIndex(ctx context.Context, indexName string, docs []interface{}) (interface{}, error)
+}
 
-	// Utility functions for search result processing
-	GetFields(chunks []map[string]interface{}, fields []string) map[string]map[string]interface{}
-	GetAggregation(chunks []map[string]interface{}, fieldName string) []map[string]interface{}
-	GetHighlight(chunks []map[string]interface{}, keywords []string, fieldName string) map[string]string
-
+// SQLRunner is the raw-SQL and metadata-pushdown surface.
+type SQLRunner interface {
 	// RunSQL runs a SQL query
 	RunSQL(ctx context.Context, tableName string, sqlText string, kbIDs []string, format string) ([]map[string]interface{}, error)
 
-	GetChunkIDs(chunks []map[string]interface{}) []string
-	KNNScores(ctx context.Context, chunks []map[string]interface{}, queryVector []float64, topK int) (map[string]interface{}, error)
-	GetScores(searchResult map[string]interface{}) map[string]float64
+	// FilterDocIdsByMetaPushdown runs a metadata filter directly against
+	// the doc metadata index, returning matching doc IDs or nil if push-down
+	// is not supported (caller should fall back to in-memory filtering).
+	// conditions is a list of filter objects with keys: key, op, value
+	FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string
+}
 
+// EngineLifecycle is the liveness and capability surface.
+type EngineLifecycle interface {
 	// Ping check the engine is alive
 	Ping(ctx context.Context) error
 	Close() error
@@ -92,12 +109,19 @@ type DocEngine interface {
 
 	// SupportsPageRank reports whether the engine supports dataset-level pagerank.
 	SupportsPageRank() bool
+}
 
-	// FilterDocIdsByMetaPushdown runs a metadata filter directly against
-	// the doc metadata index, returning matching doc IDs or nil if push-down
-	// is not supported (caller should fall back to in-memory filtering).
-	// conditions is a list of filter objects with keys: key, op, value
-	FilterDocIdsByMetaPushdown(ctx context.Context, sqlDB *gorm.DB, kbIDs []string, conditions []map[string]interface{}, logic string) []string
+// DocEngine is the full document-storage-engine surface: the composition of its
+// six role interfaces. Consumers should depend on the narrowest role(s) they
+// actually use rather than the whole engine; engine_roles_test.go pins
+// DocEngine == union(roles) so a role can never silently drop a method.
+type DocEngine interface {
+	ChunkStore
+	Searcher
+	MetadataStore
+	DocIndexer
+	SQLRunner
+	EngineLifecycle
 }
 
 // Type returns the engine type (helper method for runtime type checking)
