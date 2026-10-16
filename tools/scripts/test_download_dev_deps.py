@@ -8,11 +8,16 @@
 # an ORT version bump, where the zip's version-stamped top-level dir changes but
 # static_lib/ still exists from the previous run.
 #
-# The release zip from infiniflow/ragflow-build carries a top-level dir named
-# onnxruntime-v{version}-linux-x86_64; extract_onnxruntime() must rename it to the
-# build.sh-expected onnxruntime-linux-x64-static_lib-{version}-glibc2_28 so every
-# consumer shares one name convention. These tests pin that rename, the stale-dir
-# pruning, the archive member sanitization, and the atomic download behaviour.
+# The release zip from infiniflow/ragflow-build wraps everything in a top-level
+# dir named onnxruntime-v{version}-{target}; extract_onnxruntime() must rename
+# it to the build.sh-expected onnxruntime-<os>-<arch>-static_lib-{version}... so
+# every consumer shares one name convention. These tests pin that rename, the
+# stale-dir pruning, the archive member sanitization, and the atomic download
+# behaviour.
+#
+# extract_onnxruntime() takes the *expected dir name* rather than just the
+# version string, because that name is platform-dependent (linux vs osx, amd64
+# vs arm64) and build.sh's stale-version guard keys on it.
 
 import importlib.util
 import io
@@ -28,28 +33,32 @@ import pytest
 import requests
 
 
-def make_ort_zip(path, version):
+def make_ort_zip(path, dir_name):
     """Build a zip shaped like the infiniflow/ragflow-build ORT release: a
-    top-level dir named onnxruntime-v{version}-linux-x86_64 holding
-    lib/libonnxruntime.a. extract_onnxruntime() must rename it to the
-    build.sh-expected onnxruntime-linux-x64-static_lib-{version}-glibc2_28."""
-    member = f"{native.ort_extracted_dir(version)}/lib/libonnxruntime.a"
+    top-level dir holding lib/libonnxruntime.a. extract_onnxruntime() must
+    rename it to the build.sh-expected dir (see ort_normalized_dir)."""
     with zipfile.ZipFile(path, "w") as zf:
-        zf.writestr(member, b"!<arch>\nort-payload")
+        zf.writestr(f"{dir_name}/lib/libonnxruntime.a", b"!<arch>\nort-payload")
     return path
+
+
+def ort_archive(tmp_path, goos="linux", goarch="amd64", version="1.29.0"):
+    """Return (zip_path, normalized_dir) for `goos/goarch` at `version`."""
+    target = native.ort_target(goos, goarch)
+    zip_path = tmp_path / native.ort_asset_name(version, target)
+    return make_ort_zip(zip_path, native.ort_extracted_dir(version, target)), native.ort_normalized_dir(version, goos, goarch)
 
 
 def test_extracts_on_first_run(tmp_path):
     # static_lib/ does not exist yet: the plain first-run path.
     static_lib = tmp_path / "onnxruntime" / "static_lib"
-    version = "1.29.0"
-    archive = make_ort_zip(tmp_path / native.ort_asset_name(version), version)
+    archive, dir_name = ort_archive(tmp_path)
 
-    assert native.extract_onnxruntime(str(static_lib), str(archive), version) is True
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
 
-    extracted = static_lib / native.ort_extracted_dir(version)
+    extracted = static_lib / native.ort_extracted_dir("1.29.0", native.ort_target("linux", "amd64"))
     assert not extracted.exists(), "release zip top-level dir must be renamed away"
-    version_dir = static_lib / native.ort_normalized_dir(version)
+    version_dir = static_lib / dir_name
     assert version_dir.is_dir()
     assert native.has_static_archives(str(version_dir))
 
@@ -61,37 +70,152 @@ def test_extracts_after_version_bump_when_static_lib_exists(tmp_path):
     build.sh's ORT guard rejects the build."""
     static_lib = tmp_path / "onnxruntime" / "static_lib"
     static_lib.mkdir(parents=True)
-    stale = static_lib / native.ort_normalized_dir("1.28.0")
+    stale = static_lib / native.ort_normalized_dir("1.28.0", "linux", "amd64")
     (stale / "lib").mkdir(parents=True)
     (stale / "lib" / "libonnxruntime.a").write_bytes(b"old-ort")
 
-    version = "1.29.0"
-    archive = make_ort_zip(tmp_path / native.ort_asset_name(version), version)
+    archive, dir_name = ort_archive(tmp_path)
 
-    assert native.extract_onnxruntime(str(static_lib), str(archive), version) is True
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
 
     assert not stale.exists(), "stale ORT version should be pruned"
-    extracted = static_lib / native.ort_extracted_dir(version)
+    extracted = static_lib / native.ort_extracted_dir("1.29.0", native.ort_target("linux", "amd64"))
     assert not extracted.exists(), "release zip top-level dir must be renamed away"
-    version_dir = static_lib / native.ort_normalized_dir(version)
+    version_dir = static_lib / dir_name
     assert version_dir.is_dir(), "bumped ORT version was silently not extracted"
     assert native.has_static_archives(str(version_dir)), "bumped ORT version landed no .a"
 
 
 def test_skips_when_archive_missing(tmp_path):
     static_lib = tmp_path / "onnxruntime" / "static_lib"
-    assert native.extract_onnxruntime(str(static_lib), str(tmp_path / "missing.zip"), "1.29.0") is False
+    _, dir_name = ort_archive(tmp_path)
+    assert native.extract_onnxruntime(str(static_lib), str(tmp_path / "missing.zip"), dir_name) is False
 
 
 def test_idempotent_when_matching_version_already_present(tmp_path):
     static_lib = tmp_path / "onnxruntime" / "static_lib"
-    version = "1.29.0"
-    archive = make_ort_zip(tmp_path / native.ort_asset_name(version), version)
+    archive, dir_name = ort_archive(tmp_path)
 
-    assert native.extract_onnxruntime(str(static_lib), str(archive), version) is True
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
     before = sorted(os.listdir(static_lib))
-    assert native.extract_onnxruntime(str(static_lib), str(archive), version) is True
+    # Same dir already present: should short-circuit, not re-extract.
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
     assert sorted(os.listdir(static_lib)) == before
+
+
+def test_prunes_foreign_platform_dir(tmp_path):
+    """A dir from a different platform/version must be pruned so build.sh's
+    `find ... -name '*.a'` does not link two ORT builds."""
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    static_lib.mkdir(parents=True)
+    foreign = static_lib / native.ort_normalized_dir("1.29.0", "darwin", "arm64")
+    (foreign / "lib").mkdir(parents=True)
+    (foreign / "lib" / "libonnxruntime.a").write_bytes(b"mac-ort")
+
+    archive, dir_name = ort_archive(tmp_path)
+
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
+    assert not foreign.exists(), "foreign-platform ORT dir should be pruned"
+    assert (static_lib / dir_name).is_dir()
+
+
+def test_ort_asset_names_match_upstream_layout():
+    # Spot-check the platform-specific asset/dir names so the download script and
+    # build.sh's stale-version guard stay aligned with the upstream release.
+    assert native.ort_asset_name("1.29.0", "linux-x86_64") == "onnxruntime-v1.29.0-linux-x86_64.zip"
+    assert native.ort_asset_name("1.29.0", "linux-aarch64") == "onnxruntime-v1.29.0-linux-aarch64.zip"
+    assert native.ort_asset_name("1.29.0", "osx-arm64") == "onnxruntime-v1.29.0-osx-arm64.zip"
+    # No osx-x86_64 asset is published; Intel Macs use the universal archive.
+    assert native.ort_asset_name("1.29.0", "osx-universal") == "onnxruntime-v1.29.0-osx-universal.zip"
+    assert native.ort_normalized_dir("1.29.0", "linux", "amd64") == "onnxruntime-linux-x64-static_lib-1.29.0-glibc2_28"
+    assert native.ort_normalized_dir("1.29.0", "linux", "arm64") == "onnxruntime-linux-aarch64-static_lib-1.29.0-glibc2_28"
+    assert native.ort_normalized_dir("1.29.0", "darwin", "arm64") == "onnxruntime-osx-arm64-static_lib-1.29.0"
+    assert native.ort_normalized_dir("1.29.0", "darwin", "amd64") == "onnxruntime-osx-universal-static_lib-1.29.0"
+    assert native.ort_target("linux", "amd64") == "linux-x86_64"
+    assert native.ort_target("linux", "arm64") == "linux-aarch64"
+    assert native.ort_target("darwin", "arm64") == "osx-arm64"
+    assert native.ort_target("darwin", "amd64") == "osx-universal"
+
+
+def test_extracts_darwin_archive(tmp_path):
+    # The macOS zip carries no glibc suffix in its normalized dir name; the
+    # rename step must still land it where build.sh expects.
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    archive, dir_name = ort_archive(tmp_path, goos="darwin", goarch="arm64")
+
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
+    assert (static_lib / dir_name / "lib" / "libonnxruntime.a").is_file()
+
+
+def test_prunes_foreign_platform_dir_on_short_circuit(tmp_path):
+    """When the expected ORT dir is already extracted, the short-circuit return
+    must still prune a co-resident foreign-platform dir (defense-in-depth;
+    build.sh's ort_dir_prefix guard also filters by platform at link time)."""
+    static_lib = tmp_path / "onnxruntime" / "static_lib"
+    dir_name = native.ort_normalized_dir("1.29.0", "linux", "amd64")
+    expected = static_lib / dir_name
+    (expected / "lib").mkdir(parents=True)
+    (expected / "lib" / "libonnxruntime.a").write_bytes(b"linux-ort")
+    foreign = static_lib / native.ort_normalized_dir("1.29.0", "darwin", "arm64")
+    (foreign / "lib").mkdir(parents=True)
+    (foreign / "lib" / "libonnxruntime.a").write_bytes(b"mac-ort")
+
+    archive, _ = ort_archive(tmp_path)
+    assert native.extract_onnxruntime(str(static_lib), str(archive), dir_name) is True
+    assert not foreign.exists(), "foreign dir must be pruned even on short-circuit"
+    assert expected.is_dir()
+
+
+def test_host_platform_normalizes_aliases(monkeypatch):
+    # build.sh's detect_target_platform accepts Linux/Darwin + x86_64/amd64
+    # aliases; host_platform must normalize the same way or it KeyErrors when
+    # indexing the per-platform asset maps.
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "Linux")
+    monkeypatch.setenv("RAGFLOW_TARGET_ARCH", "x86_64")
+    assert native.host_platform() == ("linux", "amd64")
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "Darwin")
+    monkeypatch.setenv("RAGFLOW_TARGET_ARCH", "aarch64")
+    assert native.host_platform() == ("darwin", "arm64")
+
+
+def test_host_platform_normalizes_explicit_arguments():
+    # The --target-os / --target-arch flags must go through the same
+    # normalization as the environment variables, or an alias (e.g.
+    # --target-os Linux) KeyErrors on the per-platform asset maps.
+    assert native.host_platform("Linux", "x86_64") == ("linux", "amd64")
+    assert native.host_platform("Darwin", "aarch64") == ("darwin", "arm64")
+
+
+def test_host_platform_rejects_unsupported(monkeypatch):
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "windows")
+    with pytest.raises(SystemExit):
+        native.host_platform()
+    monkeypatch.setenv("RAGFLOW_TARGET_OS", "linux")
+    monkeypatch.setenv("RAGFLOW_TARGET_ARCH", "riscv64")
+    with pytest.raises(SystemExit):
+        native.host_platform()
+
+
+def test_url_builders_select_platform_assets(monkeypatch):
+    monkeypatch.delenv("GH_PROXY", raising=False)
+    assert native.pdfium_url("linux", "amd64").endswith("/pdfium-linux-x64-static.tgz")
+    assert native.pdfium_url("linux", "arm64").endswith("/pdfium-linux-arm64-static.tgz")
+    assert native.pdfium_url("darwin", "arm64").endswith("/pdfium-mac-arm64-static.tgz")
+    assert native.pdf_oxide_url("linux", "amd64").endswith("/pdf_oxide-go-ffi-linux-amd64.tar.gz")
+    assert native.pdf_oxide_url("darwin", "amd64").endswith("/pdf_oxide-go-ffi-darwin-amd64.tar.gz")
+    assert native.ort_url("1.29.0", native.ort_target("darwin", "amd64")).endswith("/onnxruntime-v1.29.0-osx-universal.zip")
+
+
+def test_office_oxide_url_selects_platform_asset(tmp_path):
+    (tmp_path / "go.mod").write_text("module fixture\n\nrequire github.com/yfedoseev/office_oxide/go v0.1.12\n")
+    assert native.office_oxide_url(str(tmp_path), "linux", "amd64").endswith("/v0.1.12/native-linux-x86_64.tar.gz")
+    assert native.office_oxide_url(str(tmp_path), "darwin", "arm64").endswith("/v0.1.12/native-macos-aarch64.tar.gz")
+
+
+def test_url_builders_honor_gh_proxy(monkeypatch):
+    monkeypatch.setenv("GH_PROXY", "https://gh-proxy.com/")
+    assert native.pdfium_url("linux", "amd64").startswith("https://gh-proxy.com/https://github.com/")
+    assert native.pdf_oxide_url("linux", "arm64").startswith("https://gh-proxy.com/https://github.com/")
 
 
 @pytest.fixture
@@ -367,3 +491,57 @@ def test_image_script_does_not_handle_native_archives():
     assert not hasattr(img, "extract_onnxruntime")
     assert not hasattr(img, "_extract_native_archive")
     assert "onnxruntime" not in (img.__doc__ or "").lower()
+
+
+# ── Documentation contract: ARM64 build-host minimums ─────────────────────
+# The ARM64 host requirements are empirical findings from real hardware
+# (glibc 2.38 __isoc23_* symbols, GCC 13 libstdc++, SIMDe headers, cmake 4.x,
+# lld 20 — where lld-18 LINKS but hangs at startup). They cost half a day to
+# diagnose, so a doc refactor must not silently drop them: these tests pin the
+# section and its failure signatures.
+
+
+def _arm64_docs_section():
+    """Return the ARM64 host-requirements block of internal/development.md.
+
+    Scoped to the section (anchor → next "###" heading) so the assertions
+    below check the requirements block itself, not unrelated version numbers
+    elsewhere in an 800-line document.
+    """
+    doc = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "internal", "development.md")
+    assert os.path.isfile(doc), f"development.md not found at {doc}"
+    with open(doc, encoding="utf-8") as file:
+        text = file.read()
+    start = text.find("ARM64 (aarch64) build hosts")
+    assert start != -1, "development.md no longer has an ARM64 build-hosts section"
+    end = text.find("\n### ", start)
+    return text[start:] if end == -1 else text[start:end]
+
+
+def test_development_docs_document_arm64_host_requirements():
+    section = _arm64_docs_section()
+    # Each minimum, with its concrete failure signature, must stay documented.
+    for token in (
+        "glibc",
+        "2.38",
+        "__isoc23_strtoll",
+        "GCC",
+        "13",
+        "libsimde-dev",
+        "simde/x86/sse4.1.h",
+        "cmake",
+        "4.0",
+        "lld",
+        "20",
+        "inittrace",
+    ):
+        assert token in section, f"development.md ARM64 section lost requirement token {token!r}"
+
+
+def test_arm64_docs_section_warns_that_lld18_links_but_hangs():
+    # The subtle failure mode: lld-18 produces a binary that links fine and
+    # then spins at startup. Drop this warning and an ARM64 host silently
+    # keeping the distro-default lld hits an undebuggable hang.
+    section = _arm64_docs_section()
+    assert "lld-18" in section, "lld-18 is no longer called out as insufficient"
+    assert "hang" in section.lower() or "spin" in section.lower(), "lld-18 startup-hang failure mode missing"

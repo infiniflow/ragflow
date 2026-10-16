@@ -16,7 +16,7 @@ A version-by-version record of the schema and data changes the Go backend applie
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
 - The marker prevents a migration step from running again after that step has completed successfully.
-- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2.dev1`.
+- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2`.
 - A step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
 - `checkDatabaseVersion` in [cmd/ragflow_server.go](https://github.com/infiniflow/ragflow/blob/main/cmd/ragflow_server.go) refuses to start when the code version is older than the stored database version, so a database migrated by a newer release cannot be opened by an older one.
 
@@ -34,8 +34,8 @@ Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/b
 |-------------------|--------------------------------------------------------------------------------------------------------------|------------------------------------|
 | `v0.26.0`         | Rebuild the tenant model tables from `tenant_llm` and normalize stored model ids                             | `modelMigrationBaseVersion`        |
 | `v1.0.0-rc1`      | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion`      |
-| `v1.0.0-rc1.dev1` | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
-| `v1.0.0-rc2.dev1` | Convert Python ingestion settings in dataset/document `parser_config` onto pipeline components, then remove retired dataset `raptor` / `graphrag` sections | `ingestionParserConfigTargetVersion` / `knowledgebaseParserConfigTargetVersion` |
+| `v1.0.0-rc1`      | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
+| `v1.0.0-rc2`      | Convert Python ingestion settings in dataset/document `parser_config` onto pipeline components, then remove retired dataset `raptor` / `graphrag` sections | `ingestionParserConfigTargetVersion` / `knowledgebaseParserConfigTargetVersion` |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -93,7 +93,7 @@ On success the step writes `v0.27.2` into the version marker.
 
 ---
 
-## v1.0.0-rc1.dev1
+## v1.0.0-rc1
 
 This step only prepares the schema owned by `v1.0.0-rc1`; dropping the legacy payload columns is out of its scope.
 
@@ -120,11 +120,11 @@ Execution details:
 - A conversation that already has rows in either child table is left untouched: rows written after the split took effect win over the payload, so a rerun neither duplicates nor clobbers them.
 - Parent tables without `message` and `reference` columns are skipped.
 
-On success the step writes `v1.0.0-rc1.dev1` into the version marker.
+On success the step writes `v1.0.0-rc1` into the version marker.
 
 ---
 
-## v1.0.0-rc2.dev1
+## v1.0.0-rc2
 
 Converts saved Python v0.27.2 ingestion settings into the component-scoped configuration consumed by Go. After conversion, the existing dataset cleanup removes the retired `raptor` and `graphrag` sections.
 
@@ -145,7 +145,7 @@ Execution details:
 - SQL `NULL`, empty strings and JSON `null` are left untouched. Invalid JSON, unsupported metadata schemas and unsupported engine selections stop migration with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely. See [Parser-config conversion failures](./upgrade_from_v1_to_later_releases.md#parser-config-conversion-failures) for recovery instructions.
 - The marker advances only after both table conversions and the existing dataset cleanup succeed. If neither table exists, the marker is left unchanged.
 
-On success the migration records `v1.0.0-rc2.dev1`. Databases already marked `v1.0.0-rc2.dev1` or later skip conversion. This includes databases marked by the earlier cleanup-only implementation: that marker does not prove their ingestion settings were converted.
+On success the migration records `v1.0.0-rc2`. Databases already marked `v1.0.0-rc2` or later skip conversion. This includes databases marked by the earlier cleanup-only implementation: that marker does not prove their ingestion settings were converted.
 
 ---
 

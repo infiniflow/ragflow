@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"ragflow/internal/dao"
+	"ragflow/internal/dao/transaction"
 	"ragflow/internal/entity"
 	pipelinepkg "ragflow/internal/ingestion/pipeline"
 
@@ -108,12 +109,11 @@ func ValidateDatasetEmbeddingModels(ctx context.Context, db *gorm.DB, kbs []*ent
 	embdNames := make(map[string]struct{})
 	hasEmbd := false
 	noEmbd := false
-	cache := make(map[string]string)
-	kbDAO := dao.NewKnowledgebaseDAO()
+	names := transaction.NewEmbeddingBaseNameResolver(dao.NewKnowledgebaseDAO().EmbeddingBaseName)
 	for _, kb := range kbs {
 		if kb.EmbdID != "" {
 			hasEmbd = true
-			embdNames[kbDAO.EmbeddingBaseName(ctx, db, kb, cache)] = struct{}{}
+			embdNames[names.Resolve(ctx, db, kb)] = struct{}{}
 		} else {
 			noEmbd = true
 		}

@@ -302,6 +302,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		if v, ok := chunk["kb_id"]; ok {
 			resultChunk["kb_id"] = v
 		}
+		if kind := firstStringValue(chunk["compile_kwd"]); kind != "" {
+			resultChunk["compile_kwd"] = kind
+		}
 		if v, ok := chunk["important_kwd"]; ok {
 			resultChunk["important_kwd"] = v
 		}

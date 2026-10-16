@@ -566,6 +566,38 @@ func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
 	}
 }
 
+// TestXLSXParser_MergedDataCellBeyondTruncation asserts a merged slave cell
+// past its row's truncation point (excelize drops trailing empties) is still
+// filled: the row grows exactly up to the slave column to host the value.
+func TestXLSXParser_MergedDataCellBeyondTruncation(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "name")
+		mustSetCell(t, f, "Sheet1", "B1", "age")
+		mustSetCell(t, f, "Sheet1", "C1", "department")
+		mustSetCell(t, f, "Sheet1", "D1", "notes")
+		mustSetCell(t, f, "Sheet1", "A2", "Mike")
+		mustSetCell(t, f, "Sheet1", "B2", 28)
+		mustSetCell(t, f, "Sheet1", "C2", "Sales")
+		mustSetCell(t, f, "Sheet1", "D2", "Important customer")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustMergeCell(t, f, "Sheet1", "B2", "B3")
+		mustMergeCell(t, f, "Sheet1", "D2", "D3")
+		// Row 3's own value sits before the merged columns, so GetRows
+		// truncates the row short of the D3 slave.
+		mustSetCell(t, f, "Sheet1", "C3", "IT")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	want := "<tr><td>Mike</td><td>28</td><td>IT</td><td>Important customer</td></tr>"
+	if !strings.Contains(text, want) {
+		t.Fatalf("truncated slave cells not filled, got:\n%s", text)
+	}
+}
+
 // TestXLSXParser_MergedHeaderDownIntoDataUntouched asserts a vertical merge
 // mastered on the header row does not leak the header label into data rows.
 func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {

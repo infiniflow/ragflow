@@ -11,6 +11,10 @@ import { useFormContext, useWatch } from 'react-hook-form';
 import { useTranslation } from 'react-i18next';
 import { DynamicRequest } from './dynamic-request';
 
+// Dots are path separators; other HTTP token punctuation is not supported by variable references.
+const HeaderNameInvalidCharacters = /[^0-9a-zA-Z_-]/g;
+
+/** Configures request fields with header names supported by downstream variable references. */
 export function WebhookRequestSchema() {
   const { t } = useTranslation();
   const form = useFormContext();
@@ -59,6 +63,7 @@ export function WebhookRequestSchema() {
         ></DynamicRequest>
         <DynamicRequest
           name="schema.headers"
+          keyInputPattern={HeaderNameInvalidCharacters}
           label={t('flow.webhook.headerParameters')}
           operatorList={[WebhookRequestParameters.String]}
         ></DynamicRequest>

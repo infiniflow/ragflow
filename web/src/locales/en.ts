@@ -3376,6 +3376,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       tagFile: 'Tag file',
+      tagFileTip:
+        'Automatically extracts up to N relevant tags for each chunk based on the selected tag file to improve retrieval accuracy. Tag extraction may invoke a model and consume additional tokens. If extraction fails, the original chunk will be preserved. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',

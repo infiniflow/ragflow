@@ -348,7 +348,8 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 // normalizeParserJSON returns the parser output as the typed []DocItem. It no
 // longer round-trips through map[string]any (the historical ItemsToMaps call),
 // so the downstream chunker receives structured items and converts them via
-// schema.ChunkDocsFromDocItem without ever calling DocItem.ToMap.
+// schema.ChunkDocsFromDocItem, which projects each item through its canonical
+// DocItem.ToMap wire shape before decoding it into a ChunkDoc.
 func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []parser.DocItem {
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON

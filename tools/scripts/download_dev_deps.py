@@ -35,10 +35,28 @@
 #
 # Behind the GFW, route GitHub release downloads through a mirror with
 # --china-mirrors (or export GH_PROXY=https://gh-proxy.com/).
+#
+# Platform support
+# ----------------
+# The native static libraries are downloaded for the *target* platform by
+# default. The target GOOS/GOARCH is detected from the host `uname`; override it
+# with RAGFLOW_TARGET_OS / RAGFLOW_TARGET_ARCH (or --target-os / --target-arch)
+# when baking a cross-platform environment or when the host's reported arch is
+# wrong.
+#
+#   linux/amd64   -> native-linux-x86_64 / pdfium-linux-x64 / ... / onnxruntime-v{VER}-linux-x86_64
+#   linux/arm64   -> native-linux-aarch64 / pdfium-linux-arm64 / ... / onnxruntime-v{VER}-linux-aarch64
+#   darwin/amd64  -> native-macos-x86_64 / pdfium-mac-x64 / ... / onnxruntime-v{VER}-osx-universal
+#   darwin/arm64  -> native-macos-aarch64 / pdfium-mac-arm64 / ... / onnxruntime-v{VER}-osx-arm64
+#
+# The in-process (Go) DeepDoc backend statically links ONNX Runtime; the
+# symlink-free `dlopen(NULL)` resolution means no `.so`/`.dylib` ships at
+# runtime.
 
 import argparse
 import hashlib
 import os
+import platform
 import re
 import shutil
 import sys
@@ -59,12 +77,12 @@ import requests
 #
 # Source of the native static archives: infiniflow/ragflow-build (our own
 # ORT-only minimal build), NOT the third-party csukuangfj/onnxruntime-libs
-# account. The release tag is `onnxruntime-v{ORT_VERSION}` and the asset is
-# `onnxruntime-v{ORT_VERSION}-linux-x86_64.zip`. The archive is occasionally
-# re-issued under this SAME tag/asset name with patched content (e.g. the
-# build that exports SessionGetInitializer*); the downloader detects that via
-# a `{asset}.sha256` sidecar and re-downloads/re-extracts, so a stale local
-# copy never silently lingers.
+# account. The release tag is `onnxruntime-v{ORT_VERSION}` and it publishes one
+# asset per target: `onnxruntime-v{ORT_VERSION}-<target>.zip` (see ort_target).
+# The archive is occasionally re-issued under this SAME tag/asset name with
+# patched content (e.g. the build that exports SessionGetInitializer*); the
+# downloader detects that via a `{asset}.sha256` sidecar and
+# re-downloads/re-extracts, so a stale local copy never silently lingers.
 ORT_VERSION = "1.29.0"
 
 # pdf_oxide go-ffi release. Bare module version (the "v" is added by
@@ -76,6 +94,58 @@ PDF_OXIDE_VERSION = "0.3.73"
 # the URL-encoded slash are added by pdfium_url). Matches build.sh's
 # PDFIUM_STATIC_VERSION.
 PDFIUM_VERSION = "7809"
+
+
+def host_platform(target_os=None, target_arch=None):
+    """Return (goos, goarch) for the build target.
+
+    Defaults to the host machine, overridable via the RAGFLOW_TARGET_OS /
+    RAGFLOW_TARGET_ARCH environment variables or the explicit arguments (the
+    --target-os / --target-arch CLI flags) so a cross-platform environment can
+    be baked for a foreign arch.
+    """
+    raw_os = target_os or os.environ.get("RAGFLOW_TARGET_OS")
+    raw_arch = target_arch or os.environ.get("RAGFLOW_TARGET_ARCH")
+    if not raw_os:
+        raw_os = platform.system()  # "Linux" / "Darwin" / ...
+    if not raw_arch:
+        raw_arch = platform.machine().lower()  # x86_64 / arm64 / aarch64 / ...
+
+    # Normalize the same aliases build.sh's detect_target_platform accepts, so
+    # `RAGFLOW_TARGET_OS=Linux RAGFLOW_TARGET_ARCH=x86_64` (valid for build.sh)
+    # does not raise KeyError when indexing the per-platform asset maps below.
+    goos = {"linux": "linux", "darwin": "darwin"}.get(raw_os.lower())
+    if goos is None:
+        raise SystemExit(f"Unsupported target OS={raw_os!r}; expected linux or darwin (aliases Linux/Darwin also accepted).")
+    goarch = {"amd64": "amd64", "x86_64": "amd64", "arm64": "arm64", "aarch64": "arm64"}.get(raw_arch.lower())
+    if goarch is None:
+        raise SystemExit(f"Unsupported target arch={raw_arch!r}; expected amd64 or arm64 (aliases x86_64/aarch64 also accepted).")
+    return goos, goarch
+
+
+# Per-(goos, goarch) release asset filenames. The tarballs extract flat into
+# `~/ragflow-native-libs/<lib>/` with a platform-independent internal layout
+# (office_oxide: lib/liboffice_oxide.a + include/office_oxide_c/; pdfium:
+# lib/libpdfium.a; pdf_oxide: lib/<platform_subdir>/libpdf_oxide.a +
+# include/), so build.sh resolves the same paths on every platform.
+OFFICE_OXIDE_ASSETS = {
+    ("linux", "amd64"): "native-linux-x86_64.tar.gz",
+    ("linux", "arm64"): "native-linux-aarch64.tar.gz",
+    ("darwin", "amd64"): "native-macos-x86_64.tar.gz",
+    ("darwin", "arm64"): "native-macos-aarch64.tar.gz",
+}
+PDFIUM_STATIC_ASSETS = {
+    ("linux", "amd64"): "pdfium-linux-x64-static.tgz",
+    ("linux", "arm64"): "pdfium-linux-arm64-static.tgz",
+    ("darwin", "amd64"): "pdfium-mac-x64-static.tgz",
+    ("darwin", "arm64"): "pdfium-mac-arm64-static.tgz",
+}
+PDF_OXIDE_ASSETS = {
+    ("linux", "amd64"): "pdf_oxide-go-ffi-linux-amd64.tar.gz",
+    ("linux", "arm64"): "pdf_oxide-go-ffi-linux-arm64.tar.gz",
+    ("darwin", "amd64"): "pdf_oxide-go-ffi-darwin-amd64.tar.gz",
+    ("darwin", "arm64"): "pdf_oxide-go-ffi-darwin-arm64.tar.gz",
+}
 
 
 def gh_proxy() -> str:
@@ -99,47 +169,71 @@ def go_module_version(module: str, repo_root: str) -> str:
 
 # ── URL builders ──────────────────────────────────────────────────────────
 # Every download URL is assembled from the constants above via one of these
-# helpers, so a version bump touches exactly one constant.
+# helpers, so a version bump touches exactly one constant. Each takes the target
+# (goos, goarch) and resolves the release asset filename from the per-platform
+# maps above.
 
 
-def pdf_oxide_url() -> str:
-    """pdf_oxide go-ffi tarball."""
-    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/pdf_oxide-go-ffi-linux-amd64.tar.gz"
+def pdf_oxide_url(goos: str, goarch: str) -> str:
+    """pdf_oxide go-ffi tarball for the target platform."""
+    return f"{gh_proxy()}https://github.com/yfedoseev/pdf_oxide/releases/download/v{PDF_OXIDE_VERSION}/{PDF_OXIDE_ASSETS[(goos, goarch)]}"
 
 
-def pdfium_url() -> str:
-    """pdfium static library tarball."""
-    return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/pdfium-linux-x64-static.tgz"
+def pdfium_url(goos: str, goarch: str) -> str:
+    """pdfium static library tarball for the target platform."""
+    return f"{gh_proxy()}https://github.com/kognitos/pdfium-static/releases/download/chromium%2F{PDFIUM_VERSION}/{PDFIUM_STATIC_ASSETS[(goos, goarch)]}"
 
 
-def office_oxide_url(repo_root: str) -> str:
-    """office_oxide native tarball. The version is derived from go.mod so it
-    always matches what the Go build actually links (no second hardcoded copy
-    to drift)."""
+def office_oxide_url(repo_root: str, goos: str, goarch: str) -> str:
+    """office_oxide native tarball for the target platform. The version is
+    derived from go.mod so it always matches what the Go build actually links
+    (no second hardcoded copy to drift)."""
     version = go_module_version("github.com/yfedoseev/office_oxide/go", repo_root)
-    return f"{gh_proxy()}https://github.com/yfedoseev/office_oxide/releases/download/v{version}/native-linux-x86_64.tar.gz"
+    return f"{gh_proxy()}https://github.com/yfedoseev/office_oxide/releases/download/v{version}/{OFFICE_OXIDE_ASSETS[(goos, goarch)]}"
 
 
 # ── ONNX Runtime release asset helpers ─────────────────────────────────────
 
 
-def ort_asset_name(version: str = ORT_VERSION) -> str:
+def ort_target(goos: str, goarch: str) -> str:
+    """infiniflow/ragflow-build release target for (goos, goarch).
+
+    The release publishes one zip per target: linux-x86_64, linux-aarch64,
+    osx-arm64 and osx-universal. There is no osx-x86_64 — Intel Macs use the
+    universal archive (x86_64 + arm64 in one .a).
+    """
+    if goos == "linux":
+        return "linux-x86_64" if goarch == "amd64" else "linux-aarch64"
+    return "osx-universal" if goarch == "amd64" else "osx-arm64"
+
+
+def ort_asset_name(version: str, target: str) -> str:
     """Release asset filename under infiniflow/ragflow-build tag onnxruntime-v{version}."""
-    return f"onnxruntime-v{version}-linux-x86_64.zip"
+    return f"onnxruntime-v{version}-{target}.zip"
 
 
-def ort_url(version: str = ORT_VERSION) -> str:
-    return f"{gh_proxy()}https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{version}/{ort_asset_name(version)}"
+def ort_url(version: str, target: str) -> str:
+    return f"{gh_proxy()}https://github.com/infiniflow/ragflow-build/releases/download/onnxruntime-v{version}/{ort_asset_name(version, target)}"
 
 
-def ort_extracted_dir(version: str = ORT_VERSION) -> str:
+def ort_extracted_dir(version: str, target: str) -> str:
     """Top-level directory name INSIDE the release zip (what extractall creates)."""
-    return f"onnxruntime-v{version}-linux-x86_64"
+    return f"onnxruntime-v{version}-{target}"
 
 
-def ort_normalized_dir(version: str = ORT_VERSION) -> str:
-    """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib."""
-    return f"onnxruntime-linux-x64-static_lib-{version}-glibc2_28"
+def ort_normalized_dir(version: str, goos: str, goarch: str) -> str:
+    """Directory name build.sh's `find ... -name '*.a'` glob expects under static_lib.
+
+    Not the zip's own top-level dir: build.sh matches the onnxruntime release
+    layout (onnxruntime-<os>-<arch>-static_lib-<version>[-glibc2_28]), so
+    extract_onnxruntime() renames the extracted dir to this. The glibc suffix
+    exists on Linux only.
+    """
+    if goos == "linux":
+        arch_token = "x64" if goarch == "amd64" else "aarch64"
+        return f"onnxruntime-linux-{arch_token}-static_lib-{version}-glibc2_28"
+    arch_token = "universal" if goarch == "amd64" else "arm64"
+    return f"onnxruntime-osx-{arch_token}-static_lib-{version}"
 
 
 def _repo_root() -> str:
@@ -210,7 +304,7 @@ def _valid_download(filename):
     if filename.endswith((".tar.gz", ".tgz")):
         if not tarfile.is_tarfile(filename):
             return False
-        if os.path.basename(filename) == "office_oxide-linux-x86_64.tar.gz":
+        if os.path.basename(filename) in OFFICE_OXIDE_ASSETS.values():
             version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
             with tarfile.open(filename) as archive:
                 try:
@@ -276,18 +370,18 @@ def _extract_native_archive(archive_path, target, required_files, version=None):
     print(f"  ✓ extracted {os.path.basename(archive_path)} to {target}")
 
 
-def prune_stale_onnxruntime(static_lib_dir, version):
+def prune_stale_onnxruntime(static_lib_dir, expected_dir):
     """Remove ONNX Runtime version dirs under static_lib that do NOT match
-    `version`. Without this, a version bump leaves the stale dir next to
-    the new one and build.sh's `find ... -name '*.a'` links BOTH (duplicate
-    symbols / wrong version, silently)."""
+    `expected_dir`. Without this, a version bump (or a foreign-arch run on a
+    shared cache) leaves a stale dir next to the new one and build.sh's
+    `find ... -name '*.a'` links BOTH (duplicate symbols / wrong version,
+    silently)."""
     if not os.path.isdir(static_lib_dir):
         return
-    expected = ort_normalized_dir(version)
     for name in os.listdir(static_lib_dir):
-        if not name.startswith("onnxruntime-linux-x64-static_lib-"):
+        if not name.startswith("onnxruntime-"):
             continue
-        if name == expected:
+        if name == expected_dir:
             continue
         stale = os.path.join(static_lib_dir, name)
         print(f"  Removing stale ONNX Runtime dir: {stale}")
@@ -299,39 +393,40 @@ def has_static_archives(directory):
     return any(f.endswith(".a") for _, _, files in os.walk(directory) for f in files)
 
 
-def extract_onnxruntime(static_lib_dir, archive_path, version):
-    """Ensure the ONNX Runtime static archives for `version` sit under
-    `static_lib_dir`. Returns True when that version is available afterwards
+def extract_onnxruntime(static_lib_dir, archive_path, expected_dir):
+    """Ensure the ONNX Runtime static archives for `expected_dir` sit under
+    `static_lib_dir`. Returns True when that dir is available afterwards
     (extracted now or already present), False when the archive is missing.
 
-    The infiniflow/ragflow-build release zip carries a top-level dir named
-    onnxruntime-v{version}-linux-x86_64, so a present
+    The zip wraps everything in a version-stamped top-level dir
+    (onnxruntime-v{version}-<target>/, see ort_extracted_dir), so a present
     `static_lib_dir` is NOT evidence that THIS version is extracted: after a
     version bump the stale dir is pruned and the new one must be extracted.
     """
     if not os.path.isfile(archive_path):
         print(f"  Skipping extraction: {os.path.basename(archive_path)} not found")
         return False
-    prune_stale_onnxruntime(static_lib_dir, version)
-    version_dir = os.path.join(static_lib_dir, ort_normalized_dir(version))
-    if os.path.isdir(version_dir) and has_static_archives(version_dir):
-        print(f"  ✓ onnxruntime/static_lib ({version}) already extracted to {version_dir}")
+    prune_stale_onnxruntime(static_lib_dir, expected_dir)
+    expected_path = os.path.join(static_lib_dir, expected_dir)
+    if os.path.isdir(expected_path) and has_static_archives(expected_path):
+        print(f"  ✓ onnxruntime/static_lib ({expected_dir}) already extracted to {expected_path}")
         return True
     os.makedirs(static_lib_dir, exist_ok=True)
     print(f"  Extracting {os.path.basename(archive_path)} → {static_lib_dir}")
     with zipfile.ZipFile(archive_path) as zf:
         zf.extractall(static_lib_dir)
-    # The release zip's top-level dir is onnxruntime-v{version}-linux-x86_64, but
-    # build.sh's glob and the stale checks above all expect
-    # onnxruntime-linux-x64-static_lib-{version}-glibc2_28. Rename it so every
-    # consumer shares one name convention (driven by ORT_VERSION).
-    extracted = os.path.join(static_lib_dir, ort_extracted_dir(version))
-    normalized = os.path.join(static_lib_dir, ort_normalized_dir(version))
-    if os.path.isdir(extracted) and extracted != normalized:
-        if os.path.exists(normalized):
-            shutil.rmtree(normalized)
-        print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
-        os.rename(extracted, normalized)
+        top_level = {name.split("/", 1)[0] for name in zf.namelist() if name.strip("/")}
+    # The zip's top-level dir (onnxruntime-v{version}-<target>) is not the name
+    # build.sh's glob and the stale-dir check above expect, so rename it to
+    # `expected_dir` — every consumer then shares one name convention.
+    normalized = os.path.join(static_lib_dir, expected_dir)
+    if len(top_level) == 1:
+        extracted = os.path.join(static_lib_dir, top_level.pop())
+        if os.path.isdir(extracted) and extracted != normalized:
+            if os.path.exists(normalized):
+                shutil.rmtree(normalized)
+            print(f"  Renaming {os.path.basename(extracted)} → {os.path.basename(normalized)}")
+            os.rename(extracted, normalized)
     return True
 
 
@@ -352,14 +447,15 @@ def _fetch_ort_sidecar_sha(url):
         return None
 
 
-def _download_ort_archive(archive_path):
+def _download_ort_archive(archive_path, goos, goarch):
     """Download the ORT release zip, verifying it against the published
     .sha256 sidecar so a re-issued archive is always refreshed.
 
     A (re-)download drops any previously extracted version dir, so the
     same-named re-issued archive actually refreshes the .a files instead of
     being masked by the extraction-time idempotence check."""
-    url = ort_url()
+    target = ort_target(goos, goarch)
+    url = ort_url(ORT_VERSION, target)
     expected_sha = _fetch_ort_sidecar_sha(url + ".sha256")
     if os.path.isfile(archive_path) and os.path.getsize(archive_path) > 0:
         if expected_sha is not None:
@@ -381,7 +477,7 @@ def _download_ort_archive(archive_path):
     if not _valid_download(archive_path):
         os.unlink(archive_path)
         raise RuntimeError(f"Invalid downloaded dependency: {os.path.basename(archive_path)}")
-    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", ort_normalized_dir())
+    version_dir = os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib", ort_normalized_dir(ORT_VERSION, goos, goarch))
     if os.path.isdir(version_dir):
         print(f"  Removing stale extracted ONNX Runtime dir: {version_dir}")
         shutil.rmtree(version_dir)
@@ -571,20 +667,35 @@ def main():
     build stage bakes into the binary)."""
     parser = argparse.ArgumentParser(description="Download the native static libraries and runtime resources the local Go dev server needs")
     parser.add_argument("--china-mirrors", action="store_true", help="Use China-accessible mirrors for downloads")
+    parser.add_argument(
+        "--target-os",
+        default=os.environ.get("RAGFLOW_TARGET_OS"),
+        help="Override the target GOOS (linux/darwin). Defaults to host.",
+    )
+    parser.add_argument(
+        "--target-arch",
+        default=os.environ.get("RAGFLOW_TARGET_ARCH"),
+        help="Override the target GOARCH (amd64/arm64). Defaults to host.",
+    )
     args = parser.parse_args()
     if args.china_mirrors:
         os.environ["GH_PROXY"] = "https://gh-proxy.com/"
+
+    goos, goarch = host_platform(args.target_os, args.target_arch)
+    print(f"Target platform: {goos}/{goarch}")
+    ort_zip = ort_asset_name(ORT_VERSION, ort_target(goos, goarch))
+    ort_dir = ort_normalized_dir(ORT_VERSION, goos, goarch)
 
     # Anchor the downloaded archives to ragflow_deps/ regardless of the
     # caller's working directory (build.sh invokes this from the repo root).
     os.chdir(RAGFLOW_DEPS_DIR)
 
     # ONNX Runtime archive (+ checksum sidecar), then the other native archives.
-    _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_asset_name()))
+    _download_ort_archive(os.path.join(RAGFLOW_DEPS_DIR, ort_zip), goos, goarch)
     archives = [
-        (pdfium_url(), "pdfium-linux-x64-static.tgz"),
-        (pdf_oxide_url(), "pdf_oxide-go-ffi-linux-amd64.tar.gz"),
-        (office_oxide_url(REPO_ROOT), "office_oxide-linux-x86_64.tar.gz"),
+        (pdfium_url(goos, goarch), PDFIUM_STATIC_ASSETS[(goos, goarch)]),
+        (pdf_oxide_url(goos, goarch), PDF_OXIDE_ASSETS[(goos, goarch)]),
+        (office_oxide_url(REPO_ROOT, goos, goarch), OFFICE_OXIDE_ASSETS[(goos, goarch)]),
     ]
     for url, filename in archives:
         print(f"Downloading {filename} from {url}...")
@@ -600,9 +711,9 @@ def main():
     # Ensures build.sh can find them without network access.
     office_version = go_module_version("github.com/yfedoseev/office_oxide/go", REPO_ROOT)
     extractions = [
-        ("pdfium-linux-x64-static.tgz", "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
-        ("pdf_oxide-go-ffi-linux-amd64.tar.gz", "pdf_oxide", ["lib/linux_amd64/libpdf_oxide.a", "include/pdf_oxide.h"], None),
-        ("office_oxide-linux-x86_64.tar.gz", "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
+        (PDFIUM_STATIC_ASSETS[(goos, goarch)], "pdfium-static", ["lib/libpdfium.a", "lib/libc++.a", "lib/libc++abi.a", "include/fpdfview.h"], None),
+        (PDF_OXIDE_ASSETS[(goos, goarch)], "pdf_oxide", [f"lib/{goos}_{goarch}/libpdf_oxide.a", "include/pdf_oxide.h"], None),
+        (OFFICE_OXIDE_ASSETS[(goos, goarch)], "office_oxide", ["lib/liboffice_oxide.a", "include/office_oxide_c/office_oxide.h"], office_version),
     ]
 
     for archive, subdir, required_files, version in extractions:
@@ -619,15 +730,15 @@ def main():
 
     if not extract_onnxruntime(
         os.path.join(NATIVE_LIBS_DIR, "onnxruntime", "static_lib"),
-        os.path.join(RAGFLOW_DEPS_DIR, ort_asset_name()),
-        ORT_VERSION,
+        os.path.join(RAGFLOW_DEPS_DIR, ort_zip),
+        ort_dir,
     ):
         # The archive was not downloaded or failed to extract, so no .a landed.
         # Fail loud instead of exiting 0: build.sh's ORT guard would otherwise
         # reject the build later with a less actionable message, and a missing
         # .a left here is exactly the "silent green" this split must prevent.
         print(
-            f"  ERROR: ONNX Runtime static archives for {ORT_VERSION} were not "
+            f"  ERROR: ONNX Runtime static archives for {ort_dir} were not "
             f"extracted to {os.path.join(NATIVE_LIBS_DIR, 'onnxruntime', 'static_lib')}. "
             f"Check the download above; build.sh will refuse to link without them.",
             file=sys.stderr,

@@ -263,7 +263,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 		skip    bool
 	}{
 		{"", false}, {"v0.27.2", false}, {"v1.0.0-rc1", false},
-		{"v1.0.0-rc2.dev2", true},
+		{"v1.0.0-rc2.dev2", false},
 		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
@@ -411,9 +411,12 @@ func TestMigrateExtractorConfig(t *testing.T) {
 
 func ptrString(value string) *string { return &value }
 
-func TestMigrateIngestionParserConfigsSharesDev1Cleanup(t *testing.T) {
-	if ingestionParserConfigTargetVersion != "v1.0.0-rc2.dev1" {
-		t.Fatalf("migration version = %s", ingestionParserConfigTargetVersion)
+// The cleanup step runs only after the component conversion succeeds, and both
+// record the same version marker.
+func TestMigrateIngestionParserConfigsSharesCleanupVersion(t *testing.T) {
+	if ingestionParserConfigTargetVersion != knowledgebaseParserConfigTargetVersion {
+		t.Fatalf("ingestion version %s does not match cleanup version %s",
+			ingestionParserConfigTargetVersion, knowledgebaseParserConfigTargetVersion)
 	}
 	db := openIngestionMigrationDB(t)
 	insertIngestionConfig(t, db, "knowledgebase", "kb", "general", `{"raptor":{},"auto_keywords":8}`)

@@ -347,11 +347,29 @@ func Run(ctx context.Context, in Input) (string, error) {
 	tools := toolsFor(ctx, tmpl, in.TenantID, in.DatasetIDs, in.Tools)
 	// The compiled-knowledge tools are injected, never declared: they only make
 	// sense when the bound datasets have produced knowledge-compilation products
-	// (navigation tree / compiled structure / knowledge graph), so an uncompiled
-	// corpus never offers - or pays for - them. A caller that passes explicit
-	// tools owns its own set and is left untouched.
-	if len(in.Tools) == 0 && datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
-		tools = append(tools, compiledKnowledgeTools(in.TenantID, in.DatasetIDs)...)
+	// (navigation tree / compiled structure / knowledge graph / per-document
+	// panorama), so an uncompiled corpus never offers - or pays for - them. A
+	// caller that passes explicit tools owns its own set and is left untouched.
+	//
+	// The decision is logged on every run. The injection is otherwise silent, so
+	// "the tool was never offered" would be indistinguishable from "the tool was
+	// offered and the model ignored it" in the server log - which is exactly the
+	// question a tool-usage review asks.
+	if len(in.Tools) != 0 {
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "caller supplied an explicit tool list"))
+	} else if datasetsHaveCompiledKnowledge(ctx, in.TenantID, in.DatasetIDs) {
+		compiled := compiledKnowledgeTools(in.TenantID, in.DatasetIDs)
+		tools = append(tools, compiled...)
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools injected",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "compile_kwd rows present in the bound datasets"),
+			zap.Int("tools", len(compiled)))
+	} else {
+		common.InfoCtx(ctx, "agentic_rag: compiled-knowledge tools skipped",
+			zap.Strings("datasets", in.DatasetIDs),
+			zap.String("reason", "no compile_kwd row in the bound datasets"))
 	}
 	agentModel, err := modelForTools(ctx, in.Model, tools, in.DatasetIDs)
 	if err != nil {
