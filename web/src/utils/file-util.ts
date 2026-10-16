@@ -250,12 +250,11 @@ const sortKeysDeep = (value: any): any => {
     if (Object.getPrototypeOf(value) !== Object.prototype) {
       return value;
     }
-    return Object.keys(value)
-      .sort()
-      .reduce<Record<string, any>>((acc, key) => {
-        acc[key] = sortKeysDeep(value[key]);
-        return acc;
-      }, {});
+    return Object.fromEntries(
+      Object.keys(value)
+        .sort()
+        .map((key) => [key, sortKeysDeep(value[key])]),
+    );
   }
   return value;
 };
