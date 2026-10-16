@@ -140,8 +140,14 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 
 	pageSize := req.PageSize
 	rerankCandidatesCount := *req.RerankCandidatesCount
-	if rerankCandidatesCount <= 0 || req.Page > rerankCandidatesCount/pageSize {
-		return nil, fmt.Errorf("rerank_candidates_count(%d) must be greater than or equal to page(%d) * page_size(%d)", rerankCandidatesCount, req.Page, pageSize)
+	// The page is valid while its start offset still falls inside the candidate
+	// pool, i.e. (page-1)*pageSize < rerankCandidatesCount. The previous form
+	// `page > rerankCandidatesCount/pageSize` used Go floor division, which
+	// rejected the last partial page whenever rerankCandidatesCount was not a
+	// multiple of pageSize (e.g. 64 candidates, pageSize 10: page 7 starts at
+	// offset 60 and holds 4 results, but 64/10 floored to 6 rejected it).
+	if rerankCandidatesCount <= 0 || (req.Page-1)*pageSize >= rerankCandidatesCount {
+		return nil, fmt.Errorf("page(%d) * page_size(%d) exceeds rerank_candidates_count(%d); the requested page starts at or beyond the candidate pool", req.Page, pageSize, rerankCandidatesCount)
 	}
 	if req.RerankModel != nil && req.Page != 1 {
 		return nil, fmt.Errorf("Pagination is not supported when rerank_mdl is specified. Please set page=1 to retrieve the top %d results.", pageSize)
