@@ -337,11 +337,15 @@ func agenticFailoverModelIDs(chat *entity.Chat) []string {
 
 // convertMessagesToEino converts pre-filtered user/assistant messages into
 // eino schema messages, resolving uploaded attachments throughout the history.
+// Message text goes through historyMessageContent: a previous answer's [ID:n]
+// markers refer to that turn's chunks, and the agentic run numbers its own
+// evidence from scratch.
 func (s *ChatPipelineService) convertMessagesToEino(ctx context.Context, userID, modelType string, messages []map[string]interface{}) []*schema.Message {
 	out := make([]*schema.Message, 0, len(messages))
 	for _, m := range messages {
 		role, _ := m["role"].(string)
 		content, _ := m["content"].(string)
+		content = historyMessageContent(role, content)
 		switch role {
 		case "user":
 			text, images := s.splitChatAttachments(ctx, userID, m["files"])

@@ -462,3 +462,32 @@ func TestFullQuestionStripsCitationMarkersFromHistory(t *testing.T) {
 		t.Errorf("refinement prompt lost the answer text:\n%s", driver.system)
 	}
 }
+
+// TestConvertMessagesToEinoStripsCitationMarkers pins that the agentic path
+// receives prior answers without their [ID:n] markers, which would otherwise
+// resolve against the new run's evidence numbering, and user turns without
+// ##n$$ markers.
+func TestConvertMessagesToEinoStripsCitationMarkers(t *testing.T) {
+	s := &ChatPipelineService{}
+	out := s.convertMessagesToEino(t.Context(), "user-1", "chat", []map[string]interface{}{
+		{"role": "user", "content": "Which acts were approved? ##2$$"},
+		{"role": "assistant", "content": "Act 12 [ID:0] and act 14 [ID:3] were approved."},
+		{"role": "user", "content": "And who signed them?"},
+	})
+	if len(out) != 3 {
+		t.Fatalf("converted %d messages, want 3", len(out))
+	}
+	for i, msg := range out {
+		for _, marker := range []string{"[ID:0]", "[ID:3]", "##2$$"} {
+			if strings.Contains(msg.Content, marker) {
+				t.Errorf("message %d (%s) still contains %q: %q", i, msg.Role, marker, msg.Content)
+			}
+		}
+	}
+	if !strings.Contains(out[1].Content, "Act 12") || !strings.Contains(out[1].Content, "act 14") {
+		t.Errorf("assistant message lost its text: %q", out[1].Content)
+	}
+	if !strings.Contains(out[0].Content, "Which acts were approved?") {
+		t.Errorf("user message lost its text: %q", out[0].Content)
+	}
+}
