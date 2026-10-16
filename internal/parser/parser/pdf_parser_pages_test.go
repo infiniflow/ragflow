@@ -101,7 +101,7 @@ func TestPDFParser_PlainTextHonorsPages(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var pageNumbers []any
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		pageNumbers = append(pageNumbers, item["page_number"])
 	}
 	if want := []any{2, 3}; !reflect.DeepEqual(pageNumbers, want) {

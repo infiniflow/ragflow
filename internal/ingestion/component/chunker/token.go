@@ -85,6 +85,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
@@ -247,7 +248,22 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
-	data, err := json.Marshal(stripChunkerRuntimeTimestamps(inputs))
+	// Fast path: the parser emits typed []parser.DocItem. Convert it to
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
+	// item's typed fields and never calls DocItem.ToMap), then let the JSON
+	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// chunker free of the historical map intermediate for the in-memory
+	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
+	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
+	inputs = stripChunkerRuntimeTimestamps(inputs)
+	if docs, ok := inputs["json"].([]parser.DocItem); ok && len(docs) > 0 {
+		conv, _, err := schema.ChunkDocsFromDocItem(docs)
+		if err != nil {
+			return out, err
+		}
+		inputs["json"] = conv
+	}
+	data, err := json.Marshal(inputs)
 	if err != nil {
 		return out, err
 	}

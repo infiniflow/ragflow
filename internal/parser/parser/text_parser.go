@@ -53,7 +53,7 @@ func (p *TextParser) ParseWithResult(ctx context.Context, filename string, data 
 			"size":     len(data),
 			"encoding": encName,
 		},
-		JSON: []map[string]any{NewTextJSONItem(normalizeTextNewlines(string(decoded)))},
+		JSON: []DocItem{NewTextJSONItem(normalizeTextNewlines(string(decoded)))},
 	}
 }
 

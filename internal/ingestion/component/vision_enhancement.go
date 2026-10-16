@@ -153,14 +153,15 @@ func maybeDispatchVisionEnhancement(
 	// Collect visual resources, including Markdown images whose type is text
 	// because flatten_media_to_text is enabled.
 	var items []int
-	for i, item := range dispatched.JSON {
-		if img, _ := item["image"].(string); img != "" {
+	for i, rawItem := range dispatched.JSON {
+		m := rawItem.ToMap()
+		if img, _ := m["image"].(string); img != "" {
 			items = append(items, i)
 			continue
 		}
-		kd, _ := item["doc_type_kwd"].(string)
+		kd, _ := m["doc_type_kwd"].(string)
 		if kd == "image" || kd == "table" {
-			if _, ok := parser.ExtractPDFPositions(item); ok {
+			if _, ok := parser.ExtractPDFPositions(m); ok {
 				items = append(items, i)
 			}
 		}
@@ -246,7 +247,7 @@ func maybeDispatchVisionEnhancement(
 		}
 		var resource *visionImage
 		func() {
-			item := dispatched.JSON[itemIdx]
+			item := dispatched.JSON[itemIdx].ToMap()
 			if err := cropper.Prepare(ctx, item); err != nil {
 				if ctx.Err() == nil {
 					if payload, _ := item["image"].(string); isUsableVisionImage(payload) {
@@ -380,7 +381,9 @@ func maybeDispatchVisionEnhancement(
 		if desc == "" {
 			continue
 		}
-		appendItemText(dispatched.JSON[itemIdx], desc)
+		m := dispatched.JSON[itemIdx].ToMap()
+		appendItemText(m, desc)
+		dispatched.JSON[itemIdx] = parser.DocItemFromMap(m)
 		modified = true
 	}
 

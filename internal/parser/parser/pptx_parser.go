@@ -158,7 +158,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{
 			OutputFormat: "json",
 			File:         map[string]any{"name": filename, "format": effFormat},
-			JSON:         itemsFromPlainText(plainText),
+			JSON:         MapsToItems(itemsFromPlainText(plainText)),
 		}
 	}
 	budget := newEmbeddedMediaBudget()
@@ -184,7 +184,7 @@ func (p *PPTXParser) ParseWithResult(ctx context.Context, filename string, data 
 	return ParseResult{
 		OutputFormat: "json",
 		File:         map[string]any{"name": filename, "format": effFormat},
-		JSON:         items,
+		JSON:         MapsToItems(items),
 		Warnings:     budget.warnings(),
 	}
 }

@@ -47,6 +47,7 @@ import {
 } from '@/hooks/logic-hooks/navigate-hooks';
 import { useClearSelectionOnPageChange } from '@/hooks/logic-hooks/use-clear-selection-on-page-change';
 import { getExtension } from '@/utils/document-util';
+import { useMemoizedFn } from 'ahooks';
 import { LucideArrowBigLeft } from 'lucide-react';
 
 function Chunk() {
@@ -131,15 +132,11 @@ function Chunk() {
     [],
   );
 
-  const handleChunkIdsChange = useCallback(
-    (chunkIds: string[]) => {
-      setFilterChunkIds(chunkIds);
-      if (chunkIds.length === 0) {
-        pagination.onChange?.(1, pagination.pageSize);
-      }
-    },
-    [pagination],
-  );
+  const handleChunkIdsChange = useMemoizedFn((chunkIds: string[]) => {
+    setFilterChunkIds(chunkIds);
+    clearSelectedChunkIds();
+    pagination.onChange?.(1, pagination.pageSize);
+  });
 
   const showSelectedChunkWarning = useCallback(() => {
     message.warning(t('message.pleaseSelectChunk'));

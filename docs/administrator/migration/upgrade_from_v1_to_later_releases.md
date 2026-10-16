@@ -53,7 +53,15 @@ docker compose -p docker -f docker/docker-compose.yml logs -f ragflow-cpu
 
 Keep the log view open until the migration finishes and the application starts. Press `Ctrl+C` to leave the log view; the containers continue running. Review warnings as well as errors before allowing users, ingestion workers, or synchronization jobs to write data.
 
-If the logs report a migration failure, stop the deployment, preserve the logs, and follow [Roll back after a failed migration](#roll-back-after-a-failed-migration).
+If the logs report a migration failure, stop the deployment and preserve the logs. For a parser-config conversion error, follow the instructions below. For other failures, follow [Roll back after a failed migration](#roll-back-after-a-failed-migration).
+
+#### Parser-config conversion failures
+
+The `v1.0.0-rc2.dev1` step converts saved Python v0.27.2 ingestion settings for Parser, Chunker, Tokenizer, and Extractor together before the existing dataset `raptor` and `graphrag` cleanup records the shared version. Invalid JSON, metadata schemas that Go cannot represent, and unsupported PDF engine or OCR model-reference choices stop `--migrate` and block application startup. The error identifies the table, row ID, and rejected setting.
+
+Keep all writers stopped. Back up the affected row's original `parser_config`, then correct the reported value in that row. For an unsupported engine or OCR model reference, explicitly choose and configure an engine that Go can run; deleting the setting would select the template's default engine instead. Start the target deployment again to rerun `--migrate`, and review its logs before resuming writes.
+
+Each failed batch rolls back and its migration version does not advance. Earlier batches may already be committed; rerunning the conversion after correcting the data is safe. Do not change the migration version manually. To return to the previous release instead, restore the complete pre-upgrade recovery point as described below.
 
 ### 4. Check the deployment status
 

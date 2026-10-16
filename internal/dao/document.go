@@ -434,12 +434,6 @@ func (dao *DocumentDAO) GetChunkingConfig(ctx context.Context, db *gorm.DB, docI
 	return config, nil
 }
 
-// DeleteByTenantID deletes all documents by tenant ID (hard delete)
-func (dao *DocumentDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.Document{})
-	return result.RowsAffected, result.Error
-}
-
 // GetAllDocIDsByKBIDs gets all document IDs by knowledge base IDs
 func (dao *DocumentDAO) GetAllDocIDsByKBIDs(ctx context.Context, db *gorm.DB, kbIDs []string) ([]map[string]string, error) {
 	var docs []struct {
