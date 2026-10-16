@@ -34,12 +34,11 @@ func IsASCIIPrintable(r rune) bool {
 // DefaultSampleChars returns up to n character texts, concatenated.
 // The page is split into that many equal spans, in page order, and one
 // character is taken from each span. The offset inside a span cycles so a
-// periodic mix is not stuck on one phase. That cycle still aliases some
-// longer periods (A你你A lands on A), so a non-ASCII character skipped
-// between two ASCII samples replaces the later one. An ASCII run in the
-// sample is then a run on the page. The same page always yields the same
-// sample. Python's random.choices is still unseeded and jitters; do
-// not chase that difference in the parity harness.
+// periodic mix is not stuck on one phase. When those points are still ASCII
+// across a stretch that is not mostly ASCII, non-ASCII characters from that
+// stretch are kept so a skipped mix is not read as an English run. A mostly
+// ASCII stretch keeps its sampled letters, including an English page with a
+// few curly quotes or dashes. The same page always yields the same sample.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
@@ -51,20 +50,43 @@ func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 		width := (i+1)*len(chars)/m - start
 		idx[i] = start + i%width
 	}
-	for k := 1; k < m; k++ {
-		left, right := idx[k-1], idx[k]
-		if right <= left+1 {
+	// A run of ASCII sample points is trusted when the page stretch it covers
+	// has at most one non-ASCII character per 20 (an English page with
+	// typographic marks stays under that). A denser mix was skipped by the
+	// stride; keep characters from it so the run stays under 30.
+	for a := 0; a < m; {
+		if breaksASCIIRun(chars[idx[a]].Text) {
+			a++
 			continue
 		}
-		if breaksASCIIRun(chars[left].Text) || breaksASCIIRun(chars[right].Text) {
-			continue
+		b := a
+		for b+1 < m && !breaksASCIIRun(chars[idx[b+1]].Text) {
+			b++
 		}
-		for j := left + 1; j < right; j++ {
-			if breaksASCIIRun(chars[j].Text) {
-				idx[k] = j
-				break
+		if b-a+1 >= 30 {
+			lo, hi := idx[a], idx[b]
+			span := hi - lo + 1
+			non := 0
+			for j := lo; j <= hi; j++ {
+				if breaksASCIIRun(chars[j].Text) {
+					non++
+				}
+			}
+			if non*20 > span {
+				next := lo
+				for off := 29; off < b-a+1; off += 29 {
+					for next <= hi && !breaksASCIIRun(chars[next].Text) {
+						next++
+					}
+					if next > hi {
+						break
+					}
+					idx[a+off] = next
+					next++
+				}
 			}
 		}
+		a = b + 1
 	}
 	var buf strings.Builder
 	for _, i := range idx {

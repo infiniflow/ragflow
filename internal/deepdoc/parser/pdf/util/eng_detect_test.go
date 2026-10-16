@@ -137,6 +137,32 @@ func TestDetectEnglishPageAlternatingDoesNotAlias(t *testing.T) {
 	}
 }
 
+func TestDetectEnglishPageLongEnglish(t *testing.T) {
+	// Longer than the 100-character sample, so detection takes the span path.
+	// A letter, with a curly quote or em dash every 67th character (about 30
+	// per 1000). Those marks are not ASCII-printable, and the page is still
+	// English: the sample has to keep a 30-character letter run.
+	const pageLen = 4000
+	chars := make([]pdf.TextChar, pageLen)
+	for i := range chars {
+		switch (i + 1) % 67 {
+		case 0:
+			chars[i] = pdf.TextChar{Text: "—"}
+		case 34:
+			chars[i] = pdf.TextChar{Text: "“"}
+		default:
+			chars[i] = pdf.TextChar{Text: "e"}
+		}
+	}
+	if !DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage = false, want true")
+	}
+	again := DetectEnglishPage(chars, nil)
+	if !again {
+		t.Fatal("DetectEnglishPage flipped to false")
+	}
+}
+
 func TestFullTextFromChars(t *testing.T) {
 	chars := map[int][]pdf.TextChar{
 		0: {{Text: "Hello"}, {Text: " "}, {Text: "World"}},
