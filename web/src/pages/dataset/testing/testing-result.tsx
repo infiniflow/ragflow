@@ -5,12 +5,18 @@ import { FilterPopover } from '@/components/list-filter-bar/filter-popover';
 import { FilterCollection } from '@/components/list-filter-bar/interface';
 import { Card } from '@/components/ui/card';
 import { useTranslate } from '@/hooks/common-hooks';
-import { useTestRetrieval } from '@/hooks/use-knowledge-request';
+import { buildChunkParsedResultPath } from '@/hooks/logic-hooks/navigate-hooks';
+import {
+  useKnowledgeBaseId,
+  useTestRetrieval,
+} from '@/hooks/use-knowledge-request';
 import { ITestingChunk } from '@/interfaces/database/dataset';
 import { sanitizeHtmlWithImagesAsText } from '@/utils/dom-util';
 import { t } from 'i18next';
 import camelCase from 'lodash/camelCase';
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Link } from 'react-router';
 
 const similarityList: Array<{ field: keyof ITestingChunk; label: string }> = [
   { field: 'similarity', label: 'Hybrid Similarity' },
@@ -32,6 +38,49 @@ const ChunkTitle = ({ item }: { item: ITestingChunk }) => {
   );
 };
 
+type ChunkResultCardProps = {
+  item: ITestingChunk;
+  knowledgeBaseId: string;
+};
+
+function ChunkResultCard({ item, knowledgeBaseId }: ChunkResultCardProps) {
+  const { t } = useTranslation();
+
+  return (
+    <article>
+      <Card className="px-5 py-2.5 bg-transparent shadow-none">
+        <ChunkTitle item={item}></ChunkTitle>
+        <div
+          className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
+          dangerouslySetInnerHTML={{
+            __html: sanitizeHtmlWithImagesAsText(
+              item.highlight || item.content,
+            ),
+          }}
+        />
+        <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
+          {/* A real link so the hit can be middle-clicked or opened in the
+              background; it targets a new tab because the retrieval results
+              only live in memory and are lost on a back navigation. */}
+          <Link
+            to={buildChunkParsedResultPath(
+              item.document_id,
+              item.dataset_id || knowledgeBaseId,
+              item.id,
+            )}
+            target="_blank"
+            rel="noreferrer"
+            title={t('knowledgeDetails.openChunkInDocument')}
+            className="rounded-sm underline underline-offset-2 hover:text-accent-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-primary"
+          >
+            {item.document_keyword}
+          </Link>
+        </div>
+      </Card>
+    </article>
+  );
+}
+
 type TestingResultProps = Pick<
   ReturnType<typeof useTestRetrieval>,
   'data' | 'filterValue' | 'handleFilterSubmit' | 'loading'
@@ -43,6 +92,8 @@ export function TestingResult({
   loading,
   data,
 }: TestingResultProps) {
+  const knowledgeBaseId = useKnowledgeBaseId();
+
   const filters: FilterCollection[] = useMemo(() => {
     return [
       {
@@ -82,22 +133,11 @@ export function TestingResult({
           <>
             <section className="px-5 pb-5 flex flex-col gap-5 overflow-auto scrollbar-thin min-h-0">
               {data.chunks?.map((x) => (
-                <article key={x.id}>
-                  <Card className="px-5 py-2.5 bg-transparent shadow-none">
-                    <ChunkTitle item={x}></ChunkTitle>
-                    <div
-                      className="!mt-2.5 whitespace-pre-wrap [&_em]:text-accent-primary [&_em]:not-italic"
-                      dangerouslySetInnerHTML={{
-                        __html: sanitizeHtmlWithImagesAsText(
-                          x.highlight || x.content,
-                        ),
-                      }}
-                    />
-                    <div className="mt-2.5 text-right text-xs text-text-sub-title-invert">
-                      {x.document_keyword}
-                    </div>
-                  </Card>
-                </article>
+                <ChunkResultCard
+                  key={x.id}
+                  item={x}
+                  knowledgeBaseId={knowledgeBaseId}
+                ></ChunkResultCard>
               ))}
             </section>
           </>
