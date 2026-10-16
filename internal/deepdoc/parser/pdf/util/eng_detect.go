@@ -34,14 +34,13 @@ func IsASCIIPrintable(r rune) bool {
 // DefaultSampleChars returns up to n character texts, concatenated.
 // The page is split into that many equal spans, in page order, and one
 // character is taken from each span. The offset inside a span cycles so a
-// periodic mix is not stuck on one phase. Sparse punctuation that lands on
-// a sample point is moved to an ASCII character in that span when the
-// covered stretch has a real run of 30 ASCII characters, so a quote that
-// shares the sampling phase does not hide an English page. When the points
-// are still ASCII across a stretch that is not mostly ASCII, and that
-// stretch has no such run, non-ASCII characters from it are kept so a
-// skipped mix is not read as an English run. The same page always yields
-// the same sample.
+// periodic mix is not stuck on one phase. Punctuation that lands on a
+// sample point is moved to an ASCII character in that span when the covered
+// stretch has a real run of 30 ASCII characters, so a quote that shares the
+// sampling phase does not hide an English page. When the points are still
+// ASCII across a stretch that is not mostly ASCII, and that stretch has no
+// such run, non-ASCII characters from it are kept so a skipped mix is not
+// read as an English run. The same page always yields the same sample.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
@@ -54,31 +53,22 @@ func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 		idx[i] = start + i%width
 	}
 	// A quote on the sampling phase breaks every sample run before a 30-long
-	// ASCII run can form. When the sampled stretch is mostly ASCII and really
-	// contains 30 printable characters, take a letter from the same span.
-	{
-		lo, hi := idx[0], idx[m-1]
-		span := hi - lo + 1
-		non := 0
-		for j := lo; j <= hi; j++ {
-			if breaksASCIIRun(chars[j].Text) {
-				non++
+	// ASCII run can form. When the stretch really contains 30 printable
+	// characters, take a letter from the same span. A page with no such run
+	// keeps the later repair.
+	if asciiRunAtLeast(chars, idx[0], idx[m-1], 30) {
+		for i := range m {
+			if !breaksASCIIRun(chars[idx[i]].Text) {
+				continue
 			}
-		}
-		if non*20 <= span && asciiRunAtLeast(chars, lo, hi, 30) {
-			for i := range m {
-				if !breaksASCIIRun(chars[idx[i]].Text) {
+			start := i * len(chars) / m
+			end := (i + 1) * len(chars) / m
+			for j := start; j < end; j++ {
+				if breaksASCIIRun(chars[j].Text) {
 					continue
 				}
-				start := i * len(chars) / m
-				end := (i + 1) * len(chars) / m
-				for j := start; j < end; j++ {
-					if breaksASCIIRun(chars[j].Text) {
-						continue
-					}
-					idx[i] = j
-					break
-				}
+				idx[i] = j
+				break
 			}
 		}
 	}
