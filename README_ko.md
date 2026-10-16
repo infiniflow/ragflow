@@ -160,7 +160,26 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
 #### 🚀 서버 시작
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+1. Elasticsearch를 사용하는 경우 Docker 호스트의 `vm.max_map_count`를 262144 이상으로 설정하세요. Infinity를 사용하는 경우에는 일반적으로 이 단계가 필요하지 않습니다:
+
+   > `vm.max_map_count`의 값을 아래 명령어를 통해 확인하세요:
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > Elasticsearch를 사용하면서 값이 262144 미만이라면 값을 재설정하세요:
+   >
+   > ```bash
+   > # 이 경우에 262144로 설정했습니다.:
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > 이 변경 사항은 시스템 재부팅 후에 초기화됩니다. 변경 사항을 영구적으로 적용하려면 /etc/sysctl.conf 파일에 vm.max_map_count 값을 추가하거나 업데이트하세요:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
 
 2. `git clone https://github.com/infiniflow/ragflow.git`
 
@@ -168,7 +187,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -200,13 +219,14 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
    cd ragflow
    ```
 
-2. 의존성을 준비합니다:
+2. Go 빌드가 링크하는 네이티브 정적 라이브러리(`download_dev_deps.py`)와 백엔드가 런타임에 로드하는 모델/토크나이저 리소스(`download_deps.py`)를 의존성 다운로드 스크립트로 준비합니다:
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py`는 pdfium, pdf_oxide, office_oxide, onnxruntime을 `~/ragflow-native-libs`에 내려받아 압축 해제합니다. `download_deps.py`는 cl100k 어휘집, DeepDoc 모델, 임베딩 토크나이저 리소스를 `ragflow_deps/`에 내려받습니다. 두 스크립트 모두 Python 스크립트이며, `uv run`이 선언된 종속성(`requests`, 모델 및 토크나이저 다운로드에는 `huggingface-hub` 추가)을 자동으로 설치합니다. 같은 리소스를 다른 방법으로 준비했다면 이 단계를 건너뛰세요. 저장소 루트에서 시작하면 Go 서비스가 `internal/rag/res/deepdoc`을 자동으로 찾습니다. 다른 디렉터리에서 시작하려면 `DEEPDOC_MODEL_DIR`을 해당 디렉터리의 절대 경로로 설정하세요.
 
 3. 서비스를 빌드합니다:
 
@@ -262,7 +282,7 @@ Docker는 빠른 평가, 통합 테스트 및 프로덕션에 적합하고 소�
 자세한 내용은 [소스에서 서비스 시작](./docs/develop/launch_ragflow_from_source.md)을 참조하세요.
 
 
-> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 기본 MySQL 구성에서는 Docker 엔트리포인트가 마이그레이션 후 Admin, Syncer, Ingestor, API를 시작합니다. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. `download_deps.py`는 네이티브 라이브러리와 모델을 준비하며 `requests`와 `huggingface-hub`를 사용합니다. `--migrate`는 마이그레이션 후 종료하고, `--admin`은 관리 서비스, `--ingestor`는 수집 서비스, `--syncer`는 외부 데이터 소스 동기화 서비스, `--api`는 Web UI와 SDK용 API 서비스를 시작합니다. HTTP 200은 API 준비 완료를 뜻합니다.
+> **운영 참고:** Elasticsearch 설정을 영구 적용하려면 `/etc/sysctl.conf`에 `vm.max_map_count=262144`를 추가하세요. 기본 MySQL 구성에서는 Docker 엔트리포인트가 마이그레이션 후 Admin, Syncer, Ingestor, API를 시작합니다. 오픈 소스 1.0의 DeepDoc은 레이아웃, OCR, 표 인식에 CPU 추론을 사용합니다. Docker 설정 변경 후 재시작과 데이터 유지·삭제는 [Docker 가이드](./docker/README.md)를 따르세요. `download_dev_deps.py`는 네이티브 라이브러리를, `download_deps.py`는 모델과 토크나이저 리소스를 준비합니다. 둘 다 `uv run`으로 실행합니다. `--migrate`는 마이그레이션 후 종료하고, `--admin`은 관리 서비스, `--ingestor`는 수집 서비스, `--syncer`는 외부 데이터 소스 동기화 서비스, `--api`는 Web UI와 SDK용 API 서비스를 시작합니다. HTTP 200은 API 준비 완료를 뜻합니다.
 
 ## 📚 문서
 

@@ -28,12 +28,12 @@ func TestPictureParserKeepsImageWithoutOCR(t *testing.T) {
 	if res.Err != nil {
 		t.Fatal(res.Err)
 	}
-	if len(res.JSON) != 1 || res.JSON[0]["text"] != "" {
+	if len(res.JSON) != 1 || res.JSON[0].ToMap()["text"] != "" {
 		t.Fatalf("picture text = %+v, want empty text", res.JSON)
 	}
 	wantImage := "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
-	if res.JSON[0]["image"] != wantImage {
-		t.Fatalf("picture image = %v, want %q", res.JSON[0]["image"], wantImage)
+	if res.JSON[0].ToMap()["image"] != wantImage {
+		t.Fatalf("picture image = %v, want %q", res.JSON[0].ToMap()["image"], wantImage)
 	}
 	if len(res.Warnings) != 0 {
 		t.Fatalf("picture warnings = %v, want none", res.Warnings)

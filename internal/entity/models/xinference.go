@@ -27,7 +27,6 @@ import (
 	"path/filepath"
 	"ragflow/internal/common"
 	"strconv"
-	"strings"
 )
 
 // XinferenceModel implements ModelDriver for Xinference chat models.
@@ -59,17 +58,6 @@ func (x *XinferenceModel) Name() string {
 	return "Xinference"
 }
 
-func normalizeXinferenceBaseURL(base string) string {
-	trimmed := strings.TrimRight(strings.TrimSpace(base), "/")
-	if trimmed == "" {
-		return trimmed
-	}
-	if strings.HasSuffix(trimmed, "/v1") {
-		return strings.TrimSuffix(trimmed, "/v1")
-	}
-	return trimmed
-}
-
 // ChatWithMessages sends multiple messages with roles and returns the response.
 func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string, messages []Message, apiConfig *APIConfig, chatModelConfig *ChatConfig, modelUsage *common.ModelUsage) (*ChatResponse, error) {
 	if err := x.baseModel.APIConfigCheck(apiConfig); err != nil {
@@ -80,12 +68,10 @@ func (x *XinferenceModel) ChatWithMessages(ctx context.Context, modelName string
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = normalizeXinferenceBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -113,12 +99,10 @@ func (x *XinferenceModel) ChatStreamlyWithSender(ctx context.Context, modelName 
 		return fmt.Errorf("stream must be true in ChatStreamlyWithSender")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = normalizeXinferenceBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{
@@ -151,15 +135,13 @@ func (x *XinferenceModel) Embed(ctx context.Context, modelName *string, request 
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	baseURL = normalizeXinferenceBaseURL(baseURL)
 	if x.baseModel.URLSuffix.Embedding == "" {
 		return nil, fmt.Errorf("xinference: no embedding URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Embedding)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Embedding)
+	if err != nil {
+		return nil, err
+	}
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -261,15 +243,13 @@ func (x *XinferenceModel) Rerank(ctx context.Context, modelName *string, request
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-	baseURL = normalizeXinferenceBaseURL(baseURL)
 	if x.baseModel.URLSuffix.Rerank == "" {
 		return nil, fmt.Errorf("xinference: no rerank URL suffix configured")
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Rerank)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Rerank)
+	if err != nil {
+		return nil, err
+	}
 
 	topN := len(documents)
 	if rerankConfig != nil && rerankConfig.TopN > 0 && rerankConfig.TopN < topN {
@@ -349,11 +329,10 @@ func (x *XinferenceModel) TranscribeAudio(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.ASR)
 
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
@@ -462,11 +441,10 @@ func (x *XinferenceModel) AudioSpeech(ctx context.Context, modelName *string, au
 		return nil, fmt.Errorf("text content is missing")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -534,12 +512,10 @@ func (x *XinferenceModel) ListModels(ctx context.Context, apiConfig *APIConfig) 
 		return nil, err
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = normalizeXinferenceBaseURL(baseURL)
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -590,5 +566,9 @@ func (x *XinferenceModel) ListTasks(ctx context.Context, apiConfig *APIConfig) (
 }
 
 func (x *XinferenceModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
+}
+
+func (x *XinferenceModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

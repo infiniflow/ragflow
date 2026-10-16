@@ -158,7 +158,28 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
 #### 🚀 Sunucuyu Başlatma
 
-1. Elasticsearch: `vm.max_map_count` ≥ 262144.
+1. Elasticsearch kullanıyorsanız Docker ana makinesinde `vm.max_map_count` değerini en az 262144 olarak ayarlayın. Infinity kullanılırken bu adım genellikle gerekli değildir:
+
+   > `vm.max_map_count` değerini kontrol etmek için:
+   >
+   > ```bash
+   > sysctl vm.max_map_count
+   > ```
+   >
+   > Elasticsearch kullanıyorsanız ve değer 262144'in altındaysa sıfırlayın:
+   >
+   > ```bash
+   > # Bu örnekte 262144 olarak ayarlıyoruz:
+   > sudo sysctl -w vm.max_map_count=262144
+   > ```
+   >
+   > Bu değişiklik sistem yeniden başlatıldığında sıfırlanacaktır. Değişikliğin kalıcı olmasını sağlamak için
+   > **/etc/sysctl.conf** dosyasındaki `vm.max_map_count` değerini buna göre ekleyin veya güncelleyin:
+   >
+   > ```bash
+   > vm.max_map_count=262144
+   > ```
+   >
 
 2. `git clone https://github.com/infiniflow/ragflow.git`
 
@@ -166,7 +187,7 @@ Docker hızlı değerlendirme, entegrasyon testi ve üretim; kaynak kod ise geli
 
    ```bash
    cd ragflow/docker
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    docker compose -f docker-compose.yml up -d
    ```
 
@@ -198,13 +219,14 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
    cd ragflow
    ```
 
-2. Bağımlılıkları hazırlayın:
+2. Go derlemesinin bağladığı yerel statik kitaplıkları (`download_dev_deps.py`) ve backend'in çalışma zamanında yüklediği model / tokenizer kaynaklarını (`download_deps.py`) hazırlamak için bağımlılık indirme betiklerini çalıştırın:
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
+
+   `download_dev_deps.py`, pdfium, pdf_oxide, office_oxide ve onnxruntime'ı `~/ragflow-native-libs` altına indirir ve açar; `download_deps.py`, cl100k sözlüğünü, DeepDoc modellerini ve gömme tokenizer varlıklarını `ragflow_deps/` altına indirir. İkisi de Python betiğidir; `uv run`, bildirilen bağımlılıkları (`requests` ve model ile tokenizer indirmeleri için `huggingface-hub`) otomatik olarak kurar. Aynı kaynakları başka şekilde hazırladıysanız bu adımı atlayın. Depo kökünden başlatıldığında Go hizmetleri `internal/rag/res/deepdoc` dizinini otomatik bulur; başka bir dizinden başlatmak için `DEEPDOC_MODEL_DIR` değişkenini o dizinin mutlak yoluna ayarlayın.
 
 3. Hizmetleri derleyin:
 
@@ -259,7 +281,7 @@ Ayrıntılar için [hızlı başlangıç kılavuzuna](./docs/quickstart.mdx) bak
 
 Ayrıntılar için [Kaynaktan Başlatma](./docs/develop/launch_ragflow_from_source.md) belgesine bakın.
 
-> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_deps.py` yerel kitaplıkları ve modelleri hazırlar; `requests` ve `huggingface-hub` gerektirir. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
+> **İşletim notları:** Elasticsearch ayarını kalıcı yapmak için `/etc/sysctl.conf` dosyasına `vm.max_map_count=262144` ekleyin. Varsayılan MySQL yapılandırmasında Docker giriş noktası Admin, Syncer, Ingestor ve API'den önce geçişi çalıştırır. Açık kaynak 1.0'da DeepDoc düzen, OCR ve tablo tanıma için CPU kullanır. Docker değişikliklerinden sonra hizmetleri yeniden başlatın ve verileri korumak veya kaldırmak için [Docker kılavuzunu](./docker/README.md) izleyin. `download_dev_deps.py` yerel kitaplıkları, `download_deps.py` modelleri ve tokenizer kaynaklarını hazırlar; ikisi de `uv run` ile çalıştırılır. `--migrate` geçişi çalıştırıp çıkar; `--admin` yönetim hizmetini, `--ingestor` veri alma hizmetini, `--syncer` harici veri kaynağı eşitleme hizmetini ve `--api` Web UI ile SDK'lara yönelik API hizmetini başlatır. HTTP 200 API'nin hazır olduğunu gösterir.
 
 ## 📚 Dokümantasyon
 

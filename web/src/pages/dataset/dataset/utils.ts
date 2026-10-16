@@ -167,6 +167,175 @@ export function pickByGapKind<T>(
     : options.missingModel;
 }
 
+// --- Upload-time built-in parser switch ------------------------------------
+// Mirrors the backend's document parser resolution
+// (internal/service/document/document_parser_selection.go): a file whose
+// family the dataset's selection declares runs on that selection; an undeclared
+// family is reseeded with the built-in pipeline owning it — visual (images and
+// video) -> picture, aural -> audio, .ppt/.pptx/.pages -> presentation,
+// .msg/.eml -> email — and failing that with the catch-all general pipeline.
+// A dataset selection whose support cannot be determined (a canvas without a
+// Parser node) produces no gap and never switches. The upload modal annotates
+// each unsupported file with this fate so it never promises a switch that will
+// not happen.
+
+export type BuiltinSwitchTarget =
+  | 'picture'
+  | 'audio'
+  | 'presentation'
+  | 'email'
+  | 'general';
+
+// Display labels match the dataset table's parse column, which renders the
+// parser id capitalized.
+export const BuiltinSwitchTargetLabels: Record<BuiltinSwitchTarget, string> = {
+  picture: 'Picture',
+  audio: 'Audio',
+  presentation: 'Presentation',
+  email: 'Email',
+  general: 'General',
+};
+
+// FileType members the catch-all general pipeline declares. A file no dedicated
+// pipeline owns and whose family the dataset selection does not declare runs
+// under general after upload.
+const GeneralFamilyFileTypes = new Set<FileType>([
+  FileType.PDF,
+  FileType.Spreadsheet,
+  FileType.TextMarkdown,
+  FileType.Code,
+  FileType.Html,
+  FileType.Doc,
+  FileType.Docx,
+]);
+
+// Extension sets mirror utility.FilenameType (internal/utility/file.go); the
+// visual bucket intentionally includes the video extensions.
+const VisualSwitchSuffixes = new Set([
+  'jpg',
+  'jpeg',
+  'png',
+  'tif',
+  'gif',
+  'bmp',
+  'pcx',
+  'tga',
+  'exif',
+  'fpx',
+  'svg',
+  'psd',
+  'cdr',
+  'pcd',
+  'dxf',
+  'ufo',
+  'eps',
+  'ai',
+  'raw',
+  'wmf',
+  'webp',
+  'avif',
+  'apng',
+  'icon',
+  'ico',
+  'mpg',
+  'mpeg',
+  'avi',
+  'rm',
+  'rmvb',
+  'mov',
+  'wmv',
+  'asf',
+  'dat',
+  'asx',
+  'wvx',
+  'mpe',
+  'mpa',
+  'mp4',
+  'mkv',
+]);
+
+const AuralSwitchSuffixes = new Set([
+  'wav',
+  'flac',
+  'ape',
+  'alac',
+  'wv',
+  'mp3',
+  'aac',
+  'ogg',
+  'vorbis',
+  'opus',
+]);
+
+/**
+ * The built-in pipeline the backend switches an uploaded file to, or null when
+ * the file keeps the dataset selection. Callers only consult this for files the
+ * selection does not declare (an unsupported-type gap), so the remaining
+ * general-family types resolve to the catch-all general pipeline. `fileType` is
+ * the uploaded file's family; a type the backend rejects at upload (or an
+ * unmapped one) keeps the dataset selection.
+ */
+export function builtinParserSwitchTarget(
+  name: string,
+  fileType: FileType | undefined,
+): BuiltinSwitchTarget | null {
+  const suffix = getExtension(name);
+  if (VisualSwitchSuffixes.has(suffix)) {
+    return 'picture';
+  }
+  if (AuralSwitchSuffixes.has(suffix)) {
+    return 'audio';
+  }
+  if (suffix === 'ppt' || suffix === 'pptx' || suffix === 'pages') {
+    return 'presentation';
+  }
+  if (suffix === 'msg' || suffix === 'eml') {
+    return 'email';
+  }
+  return fileType && GeneralFamilyFileTypes.has(fileType) ? 'general' : null;
+}
+
+/** An upload-time gap annotated with the file's parser-switch fate. */
+export type UploadFileParserGap = FileParserGap & {
+  /** Built-in pipeline the file switches to, or null when it keeps the dataset parser. */
+  autoSwitchTarget: BuiltinSwitchTarget | null;
+};
+
+export function attachAutoSwitchTargets(
+  gaps: FileParserGap[],
+): UploadFileParserGap[] {
+  return gaps.map((gap) => ({
+    ...gap,
+    autoSwitchTarget:
+      gap.reason === ParserGapReason.UnsupportedType
+        ? builtinParserSwitchTarget(gap.name, gap.fileType)
+        : null,
+  }));
+}
+
+// Upload modal copy keyed by switch fate: only when every unsupported file
+// will switch can the modal promise an automatic switch; when none will,
+// the files keep a parser that cannot parse them and the user must reselect
+// one after upload.
+export function pickBySwitchFate<T>(
+  gaps: UploadFileParserGap[],
+  options: { missingModel: T; autoSwitch: T; manualSwitch: T; mixedSwitch: T },
+): T {
+  const unsupported = gaps.filter(
+    (gap) => gap.reason === ParserGapReason.UnsupportedType,
+  );
+  if (unsupported.length === 0) {
+    return options.missingModel;
+  }
+  const switchable = unsupported.filter((gap) => gap.autoSwitchTarget !== null);
+  if (switchable.length === 0) {
+    return options.manualSwitch;
+  }
+  return switchable.length === unsupported.length
+    ? options.autoSwitch
+    : options.mixedSwitch;
+}
+
 type ParserSetup = Record<string, any> & { fileFormat?: string };
 
 /**

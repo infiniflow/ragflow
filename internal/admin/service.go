@@ -1218,13 +1218,12 @@ func (s *Service) GetSandboxProviderSchema(providerID string) (map[string]interf
 }
 
 // GetSandboxConfig get sandbox config
-func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{}, error) {
+func (s *Service) GetSandboxConfig(ctx context.Context, providerType string) (map[string]interface{}, error) {
 	settings, err := s.systemSettingsDAO.GetByNamePrefix(ctx, dao.DB, "sandbox.")
 	if err != nil {
 		return nil, err
 	}
 
-	providerType := "self_managed"
 	values := make(map[string]string, len(settings))
 	for _, setting := range settings {
 		if _, exists := values[setting.Name]; exists {
@@ -1232,8 +1231,11 @@ func (s *Service) GetSandboxConfig(ctx context.Context) (map[string]interface{},
 		}
 		values[setting.Name] = setting.Value
 	}
-	if value, exists := values["sandbox.provider_type"]; exists {
-		providerType = value
+	if providerType == "" {
+		providerType = "self_managed"
+		if value, exists := values["sandbox.provider_type"]; exists {
+			providerType = value
+		}
 	}
 	schema, err := sandbox.ConfigSchema(providerType)
 	if err != nil {

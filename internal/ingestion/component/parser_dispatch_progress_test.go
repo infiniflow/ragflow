@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"ragflow/internal/agent/runtime"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -34,7 +35,7 @@ func TestAttachPDFPageProgress_ReportsFraction(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser, fractionWindow{base: 0, span: 1})
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0, Span: 1})
 	if pdfParser.OnPageDone == nil {
 		t.Fatal("expected OnPageDone to be wired")
 	}
@@ -58,7 +59,7 @@ func TestAttachPDFPageProgress_IgnoresUnknownTotal(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser, fractionWindow{base: 0, span: 1})
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0, Span: 1})
 	pdfParser.OnPageDone(1, 0)
 
 	if len(seen) != 0 {
@@ -70,7 +71,7 @@ func TestAttachPDFPageProgress_LeavesOtherParsersAlone(t *testing.T) {
 	var seen []fractionObservation
 	ctx := boundFractionContext(t, "Parser:txt", &seen)
 
-	attachPDFPageProgress(ctx, parser.NewTextParser(), fractionWindow{base: 0, span: 1})
+	attachPDFPageProgress(ctx, parser.NewTextParser(), progress.Window{Base: 0, Span: 1})
 
 	if len(seen) != 0 {
 		t.Errorf("expected no fraction from a non-PDF parser, got %v", seen)
@@ -82,7 +83,7 @@ func TestAttachPDFPageProgress_ZeroWindowSilent(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser, fractionWindow{})
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{})
 	if pdfParser.OnPageDone != nil {
 		t.Fatal("expected OnPageDone to remain nil for zero window")
 	}
@@ -96,7 +97,7 @@ func TestAttachPDFPageProgress_ReportsFractionInWindow(t *testing.T) {
 	ctx := boundFractionContext(t, "Parser:pdf", &seen)
 
 	pdfParser := parser.NewPDFParser()
-	attachPDFPageProgress(ctx, pdfParser, fractionWindow{base: 0.1, span: 0.4})
+	attachPDFPageProgress(ctx, pdfParser, progress.Window{Base: 0.1, Span: 0.4})
 	if pdfParser.OnPageDone == nil {
 		t.Fatal("expected OnPageDone to be wired")
 	}

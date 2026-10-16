@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// maxUploadFilenameBytes is the longest name checkUploadInfoHealth accepts.
+const maxUploadFilenameBytes = 255
+
 // UploadFromURL fetches a remote URL, saves the content to the tenant's root
 // folder, and returns the file metadata map — mirroring Python
 // FileService.upload_info(tenant_id, None, url).
@@ -61,7 +64,9 @@ func normalizeRemoteUploadFilename(rawURL, contentType string, data []byte) stri
 			filename += ".pdf"
 		}
 	}
-	return filename
+	// The appended ".pdf" can push a name that sanitizeFilename already
+	// shortened back over the limit.
+	return utility.TruncateFilename(filename, maxUploadFilenameBytes)
 }
 
 func sanitizeFilename(name string) string {
@@ -87,8 +92,5 @@ func sanitizeFilename(name string) string {
 	if stem := strings.SplitN(strings.ToUpper(name), ".", 2)[0]; reservedDeviceNames[stem] {
 		return "download"
 	}
-	if len(name) > 255 {
-		name = name[:255]
-	}
-	return name
+	return utility.TruncateFilename(name, maxUploadFilenameBytes)
 }

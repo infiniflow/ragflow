@@ -29,6 +29,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
 
@@ -154,17 +155,18 @@ func TestMaybeDispatchImageSVG(t *testing.T) {
 			}
 			t.Cleanup(func() { resolveTenantModelByType, resolveModelConfig = originalTenant, originalConfig })
 			params["image"].(map[string]any)["ocr_enabled"] = tc.ocr
+			params["enable_vision_enhancement"] = tc.enabled
 			component, err := NewParserComponent(params)
 			if err != nil {
 				t.Fatal(err)
 			}
 			pc := component.(*ParserComponent)
-			pc.enableVisionEnhancement = tc.enabled
 			result, err := pc.Invoke(t.Context(), nil, map[string]any{"name": "diagram.svg", "file_type": "image", "binary": pictureSVGFixture, "tenant_id": "t1"})
 			if err != nil {
 				t.Fatal(err)
 			}
-			items, _ := result["json"].([]map[string]any)
+			jsonDocs, _ := result["json"].([]parser.DocItem)
+			items := parser.ItemsToMaps(jsonDocs)
 			if len(items) != 1 || items[0]["text"] != pictureSVGFixtureText {
 				t.Fatalf("items = %+v, want text %q", items, pictureSVGFixtureText)
 			}
@@ -191,7 +193,7 @@ func TestMaybeDispatchImageSVGWarnings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !handled || len(result.JSON) != 1 || result.JSON[0]["text"] != "" || result.JSON[0]["image"] == "" {
+	if !handled || len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != "" || result.JSON[0].ToMap()["image"] == "" {
 		t.Fatalf("result = %+v, handled = %v", result, handled)
 	}
 	if len(driver.captured) != 0 {
@@ -214,7 +216,7 @@ func TestMaybeDispatchImageSVGNeedsNoTextSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.JSON) != 1 || result.JSON[0]["text"] != pictureSVGFixtureText || len(result.Warnings) != 0 {
+	if len(result.JSON) != 1 || result.JSON[0].ToMap()["text"] != pictureSVGFixtureText || len(result.Warnings) != 0 {
 		t.Fatalf("result = %+v, warnings = %v", result.JSON, result.Warnings)
 	}
 }

@@ -53,11 +53,6 @@ func (dao *UserTenantDAO) Update(ctx context.Context, db *gorm.DB, userTenant *e
 	return db.WithContext(ctx).Save(userTenant).Error
 }
 
-// Delete delete user tenant relationship (soft delete by setting status to "0")
-func (dao *UserTenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", id).Update("status", "0").Error
-}
-
 // GetByUserID gets active user tenant relationships by user ID with context.
 func (dao *UserTenantDAO) GetByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
@@ -168,12 +163,6 @@ func (dao *UserTenantDAO) DeleteByUserID(ctx context.Context, db *gorm.DB, userI
 	return result.RowsAffected, result.Error
 }
 
-// DeleteByTenantID delete user tenant relationships by tenant ID (hard delete)
-func (dao *UserTenantDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.UserTenant{})
-	return result.RowsAffected, result.Error
-}
-
 // GetByUserIDAll get all user tenant relationships by user ID (including deleted)
 func (dao *UserTenantDAO) GetByUserIDAll(ctx context.Context, db *gorm.DB, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
@@ -186,6 +175,18 @@ func (dao *UserTenantDAO) DeleteByUserAndTenant(ctx context.Context, db *gorm.DB
 	return db.WithContext(ctx).Unscoped().
 		Where("user_id = ? AND tenant_id = ?", userID, tenantID).
 		Delete(&entity.UserTenant{}).Error
+}
+
+// DeleteByUserAndTenantAndRole deletes an active membership only when its role
+// matches, and reports whether a row was removed.
+func (dao *UserTenantDAO) DeleteByUserAndTenantAndRole(ctx context.Context, db *gorm.DB, userID, tenantID, role string) (bool, error) {
+	result := db.WithContext(ctx).Unscoped().
+		Where("user_id = ? AND tenant_id = ? AND role = ? AND status = ?", userID, tenantID, role, "1").
+		Delete(&entity.UserTenant{})
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
 }
 
 // UpdateRoleByUserAndTenant updates the role for a specific user+tenant pair.

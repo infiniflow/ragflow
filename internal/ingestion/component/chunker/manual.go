@@ -105,8 +105,14 @@ func (c *ManualChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs
 	return c.invoke(ctx, db, withName(inputs, name))
 }
 
+// invoke decodes the upstream payload once, extracts the records, and runs
+// the shared group pipeline after a physical-position resort.
 func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
-	records := extractLineRecords(inputs)
+	upstream, err := decodeChunkerFromUpstream(inputs)
+	if err != nil {
+		return inputErrorOutput(err), nil
+	}
+	records := extractLineRecords(upstream)
 	if len(records) == 0 {
 		return emptyOutputs(), nil
 	}
@@ -117,7 +123,7 @@ func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs
 	}
 	// ManualChunker is exempt from the title-family token cap (#18455): it
 	// does not inherit BaseTitleChunker, so it always passes tokenCap=0.
-	return chunkFromRecords(ctx, db, inputs, &c.param, records, 0)
+	return chunkFromRecords(ctx, db, upstream, &c.param, records, 0)
 }
 
 // hasPdfPositions reports whether any record carries a PDF coordinate matrix

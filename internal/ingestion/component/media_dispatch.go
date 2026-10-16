@@ -35,6 +35,7 @@ import (
 	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -97,11 +98,12 @@ func maybeDispatchImage(
 		return parser.ParseResult{}, false, nil
 	}
 	method := getStringOr(setup, "parse_method", "")
-	ocrEnabled, hasOCRFlag := setup["ocr_enabled"].(bool)
+	_, hasOCRFlag := setup["ocr_enabled"].(bool)
 	// ocr_enabled is the OCR switch. Legacy setups omit it and encode the same
 	// choice in parse_method: "ocr"/empty selects local OCR, any other value is
-	// a VLM model reference that also implies OCR is off.
-	useOCR := (hasOCRFlag && ocrEnabled) || (!hasOCRFlag && (method == "" || strings.EqualFold(method, "ocr")))
+	// a VLM model reference that also implies OCR is off. The selection itself
+	// lives in imageSetupRunsOCR (parser.go), shared with Check().
+	useOCR := imageSetupRunsOCR(setup)
 	release, err := parser.AcquireImageMedia(ctx)
 	if err != nil {
 		return parser.ParseResult{}, true, err
@@ -130,7 +132,7 @@ func maybeDispatchImage(
 		}
 	}
 	release()
-	parsed := dispatchParse(ctx, fileType, filename, binary, setups, fractionWindow{})
+	parsed := dispatchParse(ctx, fileType, filename, binary, setups, progress.Window{})
 	if parsed.Err != nil {
 		return parsed, true, parsed.Err
 	}
@@ -138,8 +140,10 @@ func maybeDispatchImage(
 		return parsed, true, fmt.Errorf("parser: image parser returned no image item")
 	}
 	parsed.OutputFormat = "json"
-	imageData, _ := parsed.JSON[0]["image"].(string)
-	parsed.JSON[0]["text"] = text
+	imageData, _ := parsed.JSON[0].ToMap()["image"].(string)
+	m := parsed.JSON[0].ToMap()
+	m["text"] = text
+	parsed.JSON[0] = parser.DocItemFromMap(m)
 	if ocrErr != nil {
 		parsed.Warnings = append(parsed.Warnings, fmt.Sprintf("image OCR unavailable: %v", ocrErr))
 	} else if isSVG && text == "" {
@@ -173,7 +177,9 @@ func maybeDispatchImage(
 		description, warnings := describeImage(ctx, db, imageData, getStringOr(inputs, "tenant_id", ""), setup, inputs, imageVision)
 		parsed.Warnings = append(parsed.Warnings, warnings...)
 		if description != "" {
-			appendItemText(parsed.JSON[0], description)
+			m := parsed.JSON[0].ToMap()
+			appendItemText(m, description)
+			parsed.JSON[0] = parser.DocItemFromMap(m)
 		} else if strings.TrimSpace(text) == "" {
 			// Enhancement was permitted and the model produced nothing usable,
 			// so the item still has no text at all. Without this the chunk is
@@ -376,10 +382,7 @@ func maybeDispatchAudio(
 
 	return parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{{
-			"text":         transcription,
-			"doc_type_kwd": "text",
-		}},
+		JSON:         []parser.DocItem{parser.NewTextJSONItem(transcription)},
 	}, true, nil
 }
 

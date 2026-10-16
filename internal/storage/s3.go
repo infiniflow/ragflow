@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	"github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	s3Config "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -83,16 +84,16 @@ func (s *S3Storage) connect(ctx context.Context) error {
 		return fmt.Errorf("failed to load AWS config: %w", err)
 	}
 
-	// Create S3 client with custom endpoint if provided
-	var clientOpts []func(*s3.Options)
-	if s.config.EndpointURL != "" {
-		clientOpts = append(clientOpts, func(o *s3.Options) {
+	s.client = s3.NewFromConfig(cfg, func(o *s3.Options) {
+		if s.config.EndpointURL != "" {
 			o.BaseEndpoint = aws.String(s.config.EndpointURL)
-			o.UsePathStyle = s.config.AddressingStyle == "path"
-		})
-	}
-
-	s.client = s3.NewFromConfig(cfg, clientOpts...)
+		}
+		o.UsePathStyle = s.config.AddressingStyle == "path"
+		if s.config.SignatureVersion == "s3" {
+			o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+			o.APIOptions = append(o.APIOptions, v4.SwapComputePayloadSHA256ForUnsignedPayloadMiddleware)
+		}
+	})
 	return nil
 }
 

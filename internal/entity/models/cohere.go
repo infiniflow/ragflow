@@ -141,11 +141,10 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -181,8 +180,8 @@ func (c *CoHereModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("content-Type", "application/json")
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
@@ -238,11 +237,10 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
 
@@ -277,8 +275,8 @@ func (c *CoHereModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("content-type", "application/json")
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
@@ -366,13 +364,10 @@ func (c *CoHereModel) Embed(ctx context.Context, modelName *string, request Embe
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Embedding, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	inputType := "search_document"
 	if request.Query {
@@ -464,13 +459,10 @@ func (c *CoHereModel) Rerank(ctx context.Context, modelName *string, request Rer
 		return &RerankResponse{}, nil
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	suffix := strings.TrimPrefix(c.baseModel.URLSuffix.Rerank, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, suffix)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -557,11 +549,10 @@ func (c *CoHereModel) TranscribeAudio(ctx context.Context, modelName *string, fi
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 
@@ -691,11 +682,10 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	url, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -705,7 +695,7 @@ func (c *CoHereModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	req.Header.Set("accept", "application/json")
+	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", fmt.Sprintf("bearer %s", strings.TrimSpace(*apiConfig.ApiKey)))
 
 	resp, err := c.baseModel.httpClient.Do(req)
@@ -760,5 +750,9 @@ func (c *CoHereModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 }
 
 func (c *CoHereModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", c.Name())
+}
+
+func (c *CoHereModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", c.Name())
 }

@@ -23,9 +23,11 @@ import type { CompletionChunk } from '@/services/chat-completion-stream';
 import { omit } from 'lodash';
 import { v4 as uuid } from 'uuid';
 import {
+  buildCitationDisplayMap,
   citationMarkerReg,
   normalizeCitationDigits,
   parseCitationIndex,
+  resolveCitationChunk,
 } from './citation-utils';
 
 export const isConversationIdExist = (conversationId: string) => {
@@ -219,6 +221,17 @@ export function unescapeAngleBrackets(content: string): string {
     .replace(new RegExp(GT_MARKER, 'g'), '&gt;');
 }
 
+/**
+ * Decode the &lt;/&gt; entities restored by unescapeAngleBrackets.
+ * react-markdown decodes character references in prose, but code blocks and
+ * inline code are literal, so the entities would render as-is there. Code
+ * renderers call this to show the original < and > the model emitted.
+ */
+export function decodeAngleBracketEntities(content: string): string {
+  if (!content) return content;
+  return content.replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+}
+
 export function setInitialChatVariableEnabledFieldValue(
   field: ChatVariableEnabledField,
 ) {
@@ -244,7 +257,13 @@ export function setChatVariableEnabledFieldValuePage() {
 
 const oldReg = /(#{2}[0-9\u0660-\u0669\u06F0-\u06F9]+\${2})/g;
 export const currentReg = citationMarkerReg;
-export { normalizeCitationDigits, parseCitationIndex };
+export {
+  buildCitationDisplayMap,
+  normalizeCitationDigits,
+  parseCitationIndex,
+  resolveCitationChunk,
+};
+export type { CitationKey } from './citation-utils';
 
 // To be compatible with the old index matching mode
 export const replaceTextByOldReg = (text: string) => {

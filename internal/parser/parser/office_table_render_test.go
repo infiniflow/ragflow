@@ -29,7 +29,7 @@ func TestXLSXParserEmitsSegmentedHTMLTable(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one segmented HTML table item", len(res.JSON))
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	if item["ck_type"] != "table" || item["doc_type_kwd"] != "table" {
 		t.Fatalf("item types = ck_type:%v doc_type:%v", item["ck_type"], item["doc_type_kwd"])
 	}
@@ -81,7 +81,7 @@ func TestXLSXParserHTML4ExcelIsIgnored(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one atomic table item", len(res.JSON))
 	}
-	if res.JSON[0]["ck_type"] != "table" || res.JSON[0]["table"] == nil {
+	if res.JSON[0].ToMap()["ck_type"] != "table" || res.JSON[0].ToMap()["table"] == nil {
 		t.Fatalf("html4excel item = %#v", res.JSON[0])
 	}
 	if !reflect.DeepEqual(res.JSON, plainRes.JSON) {
@@ -105,7 +105,7 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one HTML table item (parser must not pre-split rows)", len(res.JSON))
 	}
-	positions := res.JSON[0]["positions"].([][]float64)
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
 	if len(positions) != dataRows+1 {
 		t.Fatalf("len(positions) = %d, want one tuple per <tr> (header plus %d rows)", len(positions), dataRows)
 	}
@@ -113,7 +113,7 @@ func TestXLSXParserDoesNotPrechunkRows(t *testing.T) {
 	if last[1] != float64(dataRows+1) || last[2] != float64(dataRows+1) {
 		t.Fatalf("last tuple = %v, want source row %d", last, dataRows+1)
 	}
-	text := tableItemHTML(t, res.JSON[0])
+	text := tableItemHTML(t, res.JSON[0].ToMap())
 	if !strings.Contains(text, "<td>258</td>") {
 		t.Fatalf("last data row missing from markup:\n%s", text)
 	}
@@ -138,7 +138,7 @@ func TestXLSXParserPreservesSheetOrderAndIdentity(t *testing.T) {
 	if len(res.JSON) != 2 {
 		t.Fatalf("items = %d, want one HTML table per sheet", len(res.JSON))
 	}
-	first, second := res.JSON[0], res.JSON[1]
+	first, second := res.JSON[0].ToMap(), res.JSON[1].ToMap()
 	if first["sheet"] != "Sheet1" || first["sheet_index"] != 1 {
 		t.Fatalf("first sheet identity = %#v", first)
 	}
@@ -168,7 +168,7 @@ func TestXLSXParserEmitsHeaderOnlySegment(t *testing.T) {
 	if len(res.JSON) != 1 {
 		t.Fatalf("items = %d, want one header-only segment", len(res.JSON))
 	}
-	item := res.JSON[0]
+	item := res.JSON[0].ToMap()
 	wantText := "<table><caption>Sheet1</caption>\n" +
 		"<tr><th>Name</th><th>Amount</th></tr>\n" +
 		"</table>\n"
@@ -233,7 +233,7 @@ func TestXLSXParserImageAnchorsSplitSegments(t *testing.T) {
 		if res.Err != nil {
 			t.Fatalf("ParseWithResult: %v", res.Err)
 		}
-		return res.JSON
+		return ItemsToMaps(res.JSON)
 	}
 
 	assertSegments := func(t *testing.T, items []map[string]any, wantFirst, wantSecond []string) {
@@ -332,7 +332,7 @@ func renderedText(item map[string]any) string {
 
 func spreadsheetText(res ParseResult) string {
 	var out strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if td, ok := item["table"].(*entity.TableData); ok {
 			out.WriteString(tableutil.RenderTableHTML(td))
 		}
@@ -344,7 +344,7 @@ func spreadsheetText(res ParseResult) string {
 // joined by "; " — the rendered <th> cells of its first <tr> — or "" when no
 // table item exists.
 func spreadsheetHeaderText(res ParseResult) string {
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		td, ok := item["table"].(*entity.TableData)
 		if !ok {
 			continue
@@ -510,6 +510,206 @@ func TestXLSXParser_MergedHeaderInheritance(t *testing.T) {
 	text := spreadsheetText(res)
 	if !strings.Contains(text, "<th>Sales Report</th><th>Sales Report</th><th>Sales Report</th>") {
 		t.Fatalf("merged master text not inherited into header cells, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_MergedDataCellInheritance asserts a vertically merged data
+// cell's slave rows inherit the master text, so every row chunk keeps its
+// group label instead of rendering an empty first cell.
+func TestXLSXParser_MergedDataCellInheritance(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+		mustSetCell(t, f, "Sheet1", "B3", "y")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><td>G1</td><td>y</td></tr>") {
+		t.Fatalf("slave row did not inherit merged master text, got:\n%s", text)
+	}
+	positions := res.JSON[0].ToMap()["positions"].([][]float64)
+	if len(positions) != 3 {
+		t.Fatalf("len(positions) = %d, want one tuple per <tr>", len(positions))
+	}
+	if got := positions[2]; !reflect.DeepEqual(got, []float64{1, 3, 3, 1, 2}) {
+		t.Fatalf("row 3 tuple = %v, want [1 3 3 1 2]", got)
+	}
+}
+
+// TestXLSXParser_MergedDataCellHorizontalUntouched asserts a horizontally
+// merged data cell is NOT duplicated: the slave column stays empty because
+// the master column already shows the value.
+func TestXLSXParser_MergedDataCellHorizontalUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "C1", "Note")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "B2", "wide")
+		mustMergeCell(t, f, "Sheet1", "B2", "C2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "<td>wide</td><td>wide</td>") {
+		t.Fatalf("horizontal merge master duplicated into slave cell, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_MergedDataCellBeyondTruncation asserts a merged slave cell
+// past its row's truncation point (excelize drops trailing empties) is still
+// filled: the row grows exactly up to the slave column to host the value.
+func TestXLSXParser_MergedDataCellBeyondTruncation(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "name")
+		mustSetCell(t, f, "Sheet1", "B1", "age")
+		mustSetCell(t, f, "Sheet1", "C1", "department")
+		mustSetCell(t, f, "Sheet1", "D1", "notes")
+		mustSetCell(t, f, "Sheet1", "A2", "Mike")
+		mustSetCell(t, f, "Sheet1", "B2", 28)
+		mustSetCell(t, f, "Sheet1", "C2", "Sales")
+		mustSetCell(t, f, "Sheet1", "D2", "Important customer")
+		mustMergeCell(t, f, "Sheet1", "A2", "A3")
+		mustMergeCell(t, f, "Sheet1", "B2", "B3")
+		mustMergeCell(t, f, "Sheet1", "D2", "D3")
+		// Row 3's own value sits before the merged columns, so GetRows
+		// truncates the row short of the D3 slave.
+		mustSetCell(t, f, "Sheet1", "C3", "IT")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	want := "<tr><td>Mike</td><td>28</td><td>IT</td><td>Important customer</td></tr>"
+	if !strings.Contains(text, want) {
+		t.Fatalf("truncated slave cells not filled, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_MergedHeaderDownIntoDataUntouched asserts a vertical merge
+// mastered on the header row does not leak the header label into data rows.
+func TestXLSXParser_MergedHeaderDownIntoDataUntouched(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "H")
+		mustMergeCell(t, f, "Sheet1", "A1", "A2")
+		mustSetCell(t, f, "Sheet1", "B1", "Name")
+		mustSetCell(t, f, "Sheet1", "B2", "Alice")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><th>H</th><th>Name</th></tr>") {
+		t.Fatalf("want header row untouched, got:\n%s", text)
+	}
+	if strings.Contains(text, "<td>H</td>") {
+		t.Fatalf("header merge master leaked into data row, got:\n%s", text)
+	}
+}
+
+// TestXLSXParser_StripsInvisibleFormatChars asserts zero-width format
+// characters around cell text are removed, so labels wrapped in U+200C match
+// their clean form in search text.
+func TestXLSXParser_StripsInvisibleFormatChars(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Item")
+		mustSetCell(t, f, "Sheet1", "A2", "\u200cG1\u200c")
+		mustSetCell(t, f, "Sheet1", "B2", "x")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if strings.Contains(text, "\u200c") {
+		t.Fatalf("invisible format char survived cleaning, got:\n%q", text)
+	}
+	if !strings.Contains(text, "<tr><td>G1</td><td>x</td></tr>") {
+		t.Fatalf("want cleaned cell text, got:\n%s", text)
+	}
+}
+
+// TestCleanIllegalControlChars_StripsInvisibleFormatChars pins the shared
+// cleaner directly, covering the xls/csv paths that reuse it.
+// TestCleanIllegalControlChars_PreservesInternalJoiners asserts format
+// characters that are meaningful inside a word survive cleaning: U+200D in
+// an emoji ZWJ sequence and U+200C as the Persian half-space.
+func TestCleanIllegalControlChars_PreservesInternalJoiners(t *testing.T) {
+	emoji := "\U0001F469\u200d\U0001F4BB" // woman technologist
+	persian := "\u0645\u06cc\u200c\u0631\u0648\u0645"
+	in := [][]string{{emoji, persian}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, in) {
+		t.Fatalf("cleanIllegalControlChars = %q, want internal joiners kept %q", got, in)
+	}
+}
+
+func TestCleanIllegalControlChars_StripsInvisibleFormatChars(t *testing.T) {
+	in := [][]string{{"\u200cA\u200c", "B\u200bC D", "D\ufeff"}}
+	want := [][]string{{"A", "B\u200bC D", "D"}}
+	got := cleanIllegalControlChars(in)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("cleanIllegalControlChars = %q, want %q", got, want)
+	}
+}
+
+// TestXLSXParser_KeepsTrailingDatalessColumn asserts a trailing column with
+// a header label but no data in any row is kept as real schema: the header
+// renders and its cells stay empty.
+func TestXLSXParser_KeepsTrailingDatalessColumn(t *testing.T) {
+	data := newTestXLSX(t, func(f *excelize.File) {
+		mustSetCell(t, f, "Sheet1", "A1", "Group")
+		mustSetCell(t, f, "Sheet1", "B1", "Score")
+		mustSetCell(t, f, "Sheet1", "A2", "G1")
+		mustSetCell(t, f, "Sheet1", "A3", "G2")
+	})
+	p, _ := NewXLSXParser("")
+	res := p.ParseWithResult(t.Context(), "t.xlsx", data)
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	text := spreadsheetText(res)
+	if !strings.Contains(text, "<tr><th>Group</th><th>Score</th></tr>") {
+		t.Fatalf("trailing labeled column was dropped, got:\n%s", text)
+	}
+	if !strings.Contains(text, "<tr><td>G1</td><td></td></tr>") {
+		t.Fatalf("dataless cell must render empty, got:\n%s", text)
+	}
+}
+
+// TestTrimTrailingEmptyColumns_DropsFullyBlankColumn pins the helper
+// directly: a trailing column blank in every row, header included (e.g. a
+// CSV with trailing commas), is truncated.
+func TestTrimTrailingEmptyColumns_DropsFullyBlankColumn(t *testing.T) {
+	in := [][]string{
+		{"Group", "Score", ""},
+		{"G1", "", ""},
+		{"G2", "", ""},
+	}
+	got := trimTrailingEmptyColumns(in)
+	want := [][]string{
+		{"Group", "Score"},
+		{"G1", ""},
+		{"G2", ""},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("trimTrailingEmptyColumns = %q, want %q", got, want)
 	}
 }
 

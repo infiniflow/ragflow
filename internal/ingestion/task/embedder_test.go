@@ -139,6 +139,9 @@ func (d *stubDriver) ListTasks(ctx context.Context, apiConfig *models.APIConfig)
 func (d *stubDriver) ShowTask(ctx context.Context, taskID string, apiConfig *models.APIConfig) (*models.TaskResponse, error) {
 	return nil, nil
 }
+func (d *stubDriver) Decide(ctx context.Context, modelName *string, request *models.DecideRequest, apiConfig *models.APIConfig, modelUsage *common.ModelUsage) (*models.DecideResponse, error) {
+	return nil, nil
+}
 func (d *stubDriver) ToolCall(ctx context.Context, name string, arguments map[string]interface{}) (string, error) {
 	return "", nil
 }

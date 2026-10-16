@@ -95,11 +95,10 @@ func (v *VolcEngine) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -166,11 +165,10 @@ func (v *VolcEngine) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -273,11 +271,10 @@ func (v *VolcEngine) Embed(ctx context.Context, modelName *string, request Embed
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Embedding)
 
 	var embeddings []EmbeddingData
 	var totalUsage TokenUsage
@@ -473,17 +470,14 @@ func (v *VolcEngine) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, err
 	}
 
-	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
-
 	modelsSuffix := strings.Trim(strings.TrimSpace(v.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("volcengine: models URL suffix is not configured")
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), modelsSuffix)
+	url, err := v.baseModel.EndpointURL(apiConfig, modelsSuffix)
+	if err != nil {
+		return nil, err
+	}
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -559,11 +553,10 @@ func (v *VolcEngine) CheckConnection(ctx context.Context, apiConfig *APIConfig) 
 		return err
 	}
 
-	resolvedBaseURL, err := v.baseModel.GetBaseURL(apiConfig)
+	url, err := v.baseModel.EndpointURL(apiConfig, v.baseModel.URLSuffix.Files)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, v.baseModel.URLSuffix.Files)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -599,5 +592,9 @@ func (v *VolcEngine) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Lis
 }
 
 func (v *VolcEngine) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", v.Name())
+}
+
+func (v *VolcEngine) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
 	return nil, fmt.Errorf("%s, no such method", v.Name())
 }

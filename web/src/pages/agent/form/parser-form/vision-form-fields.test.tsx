@@ -1,9 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/react';
 import { FormProvider, useForm } from 'react-hook-form';
+import message from '@/components/ui/message';
+import { FileType } from '@/constants/file';
 import { VisionEnhancementFormFields } from './vision-form-fields';
 
 jest.mock('@/hooks/use-llm-request', () => ({
   useFetchDefaultModelDictionary: () => ({ img2txt_id: 'model-A' }),
+}));
+
+jest.mock('@/components/ui/message', () => ({
+  __esModule: true,
+  default: { warning: jest.fn() },
 }));
 
 jest.mock('../../context', () => ({ useOwnerTenantId: () => 'tenant-1' }));
@@ -104,5 +111,53 @@ describe('global vision model selection', () => {
     render(<ParserVisionForm model="model-B" />);
     fireEvent.click(screen.getByRole('switch'));
     expect(screen.getByLabelText('Vision model')).toHaveValue('model-B');
+  });
+});
+
+const visionWarningMock = message.warning as jest.Mock;
+
+function ParserVisionFormWithImage({
+  ocrEnabled = false,
+}: {
+  ocrEnabled?: boolean;
+}) {
+  const form = useForm({
+    defaultValues: {
+      enable_vision_enhancement: true,
+      vlm: { llm_id: 'model-B', system_prompt: '' },
+      setups: [{ fileFormat: FileType.Image, ocr_enabled: ocrEnabled }],
+    },
+  });
+  return (
+    <FormProvider {...form}>
+      <VisionEnhancementFormFields />
+    </FormProvider>
+  );
+}
+
+describe('vision enhancement switch guard', () => {
+  beforeEach(() => {
+    visionWarningMock.mockClear();
+  });
+
+  it('blocks turning enhancement off while image OCR is off', () => {
+    render(<ParserVisionFormWithImage ocrEnabled={false} />);
+
+    fireEvent.click(screen.getByRole('switch'));
+
+    expect(visionWarningMock).toHaveBeenCalledWith(
+      'flow.imageTextSourceRequired',
+    );
+    // Still on: the model and prompt fields stay visible.
+    expect(screen.getByLabelText('Vision model')).toBeInTheDocument();
+  });
+
+  it('allows turning enhancement off while image OCR is on', () => {
+    render(<ParserVisionFormWithImage ocrEnabled={true} />);
+
+    fireEvent.click(screen.getByRole('switch'));
+
+    expect(visionWarningMock).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Vision model')).not.toBeInTheDocument();
   });
 });

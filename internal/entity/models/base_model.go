@@ -136,7 +136,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
-	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+	driver := clickhouse.GetDriver()
+	if driver == nil {
+		return nil
+	}
+	return driver.CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
@@ -344,6 +348,64 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	return baseURL, nil
 }
 
+// EndpointURL resolves the request URL for an API path suffix, joining it onto
+// the base URL configured for this request. Drivers use it instead of
+// fmt.Sprintf("%s/%s", baseURL, suffix) so a version segment pasted into the
+// user-supplied base URL is not duplicated onto the suffix.
+func (b *BaseModel) EndpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	baseURL, err := b.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return joinURL(baseURL, suffix), nil
+}
+
+// joinURL concatenates a resolved base URL with an API path suffix.
+// Some providers keep the API version in url_suffix (MiniMax's
+// "v1/text/chatcompletion_v2", Anthropic's "v1/messages", Xinference's
+// "v1/chat/completions") and expect a versionless base URL, while
+// OpenAI-compatible ones expect "/v1" to sit in the base URL. Users paste
+// whichever habit they learned, so drop the duplicated segment rather than
+// emitting "/v1/v1/text/chatcompletion_v2", which the provider answers 404.
+func joinURL(baseURL, suffix string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	path := strings.TrimLeft(strings.TrimSpace(suffix), "/")
+	if base == "" {
+		return path
+	}
+	if path == "" {
+		return base
+	}
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		if version := apiVersionSegment(base[idx+1:]); version != "" && version == firstPathSegment(path) {
+			base = base[:idx]
+		}
+	}
+	return base + "/" + path
+}
+
+// apiVersionSegment reports whether the path segment is an API version marker
+// such as "v1" or "v2". Only version segments are deduplicated — they are what
+// users habitually paste into the base URL.
+func apiVersionSegment(segment string) string {
+	if len(segment) < 2 || (segment[0] != 'v' && segment[0] != 'V') {
+		return ""
+	}
+	for _, c := range []byte(segment[1:]) {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return segment
+}
+
+func firstPathSegment(path string) string {
+	if idx := strings.Index(path, "/"); idx >= 0 {
+		return path[:idx]
+	}
+	return path
+}
+
 // ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
 // response and calls onEvent for each successfully-parsed JSON payload.
 // A malformed JSON payload after "data:" returns an error wrapped as
@@ -496,6 +558,8 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
+		}
+		if cfg.Tools != nil || cfg.ToolChoice != nil || cfg.ToolChoiceValue != nil {
 			switch {
 			case cfg.ToolChoiceValue != nil:
 				reqBody["tool_choice"] = cfg.ToolChoiceValue
