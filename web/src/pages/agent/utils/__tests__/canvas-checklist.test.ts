@@ -653,6 +653,94 @@ describe('collectCanvasIssues: missing required fields', () => {
       }),
     );
   });
+
+  describe('variable assigner rows', () => {
+    const fileNode = () => makeNode('File', 'File', {});
+    const assignerNode = (variables: Record<string, any>[]) =>
+      makeNode('VariableAssigner:v1', 'VariableAssigner', { variables });
+    const wire = () => [makeEdge('File', 'VariableAssigner:v1')];
+    const edited = ['VariableAssigner:v1'];
+
+    const collectRowIssues = (variables: Record<string, any>[]) =>
+      collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+        editedNodeFormIds: edited,
+      }).filter(
+        (x) =>
+          x.nodeId === 'VariableAssigner:v1' &&
+          x.messageKey === 'flow.nodeFormInvalid',
+      );
+
+    it('flags an incomplete row only after the node was edited', () => {
+      const variables = [
+        { variable: '', operator: 'overwrite', parameter: '' },
+      ];
+
+      const untouched = collect({
+        nodes: [fileNode(), assignerNode(variables)],
+        edges: wire(),
+      });
+
+      expect(
+        untouched.some((x) => x.messageKey === 'flow.nodeFormInvalid'),
+      ).toBe(false);
+      expect(collectRowIssues(variables)).toHaveLength(1);
+    });
+
+    it('flags a row with an empty variable or operator', () => {
+      expect(
+        collectRowIssues([{ operator: 'set', parameter: 'x' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([{ variable: 'begin@a', parameter: 'x' }]),
+      ).toHaveLength(1);
+    });
+
+    it('flags a missing, empty-string or empty-array parameter', () => {
+      expect(
+        collectRowIssues([{ variable: 'begin@a', operator: 'overwrite' }]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'overwrite', parameter: '' },
+        ]),
+      ).toHaveLength(1);
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'append', parameter: [] },
+        ]),
+      ).toHaveLength(1);
+    });
+
+    it.each([['clear'], ['remove_first'], ['remove_last']])(
+      'skips the parameter check for the parameterless %s operator',
+      (operator) => {
+        expect(
+          collectRowIssues([{ variable: 'begin@a', operator }]),
+        ).toHaveLength(0);
+      },
+    );
+
+    it('treats 0, yes and {} as filled parameters', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: '+=', parameter: 0 },
+          { variable: 'begin@b', operator: 'set', parameter: 'yes' },
+          { variable: 'begin@c', operator: 'set', parameter: '{}' },
+        ]),
+      ).toHaveLength(0);
+    });
+
+    it('accepts a complete row and an empty variables list', () => {
+      expect(
+        collectRowIssues([
+          { variable: 'begin@a', operator: 'set', parameter: 'x' },
+        ]),
+      ).toHaveLength(0);
+      expect(collectRowIssues([])).toHaveLength(0);
+    });
+  });
 });
 
 describe('collectCanvasIssues: stale resources', () => {
@@ -726,6 +814,112 @@ describe('collectCanvasIssues: stale resources', () => {
         messageKey: 'chat.datasetUnavailable',
       }),
     );
+  });
+});
+
+describe('collectCanvasIssues: required tool API key', () => {
+  it.each([
+    ['SofyaSearch', 'SofyaSearch:s1'],
+    ['Search1APISearch', 'Search1API:s2'],
+  ])('flags a standalone %s node without an API key', (label, id) => {
+    const issues = collect({
+      nodes: [makeNode(id, label, { api_key: '' })],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: id,
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it.each([['SofyaSearch'], ['Search1APISearch']])(
+    'passes a standalone %s node with an API key',
+    (label) => {
+      const issues = collect({
+        nodes: [makeNode(`${label}:s1`, label, { api_key: 'secret' })],
+      });
+
+      expect(
+        issues.some(
+          (x) =>
+            x.type === CanvasIssueType.MissingRequired &&
+            x.messageKey === 'flow.apiKeyMissing',
+        ),
+      ).toBe(false);
+    },
+  );
+
+  it('flags an agent-embedded tool without an API key on the Tool node', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: '' },
+        },
+      ],
+    });
+
+    const issues = collect({
+      nodes: [agent, makeNode('Tool:t1', 'Tool')],
+      edges: [makeEdge('Agent:a1', 'Tool:t1', 'tool')],
+    });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Tool:t1',
+        toolId: 'tool-1',
+        nodeName: 'Agent:a1 / Sofya',
+        operatorLabel: 'SofyaSearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('flags an agent-embedded tool with no params object at all', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [{ component_name: 'Search1APISearch', id: 'tool-2' }],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(issues).toContainEqual(
+      expect.objectContaining({
+        nodeId: 'Agent:a1',
+        toolId: undefined,
+        nodeName: 'Agent:a1 / Search1APISearch',
+        type: CanvasIssueType.MissingRequired,
+        messageKey: 'flow.apiKeyMissing',
+      }),
+    );
+  });
+
+  it('passes an agent-embedded tool with an API key and skips other tools', () => {
+    const agent = makeNode('Agent:a1', 'Agent', {
+      llm_id: 'model-1',
+      tools: [
+        {
+          component_name: 'SofyaSearch',
+          id: 'tool-1',
+          name: 'Sofya',
+          params: { api_key: 'secret' },
+        },
+        { component_name: 'ExeSQL', id: 'tool-2', params: {} },
+      ],
+    });
+
+    const issues = collect({ nodes: [agent] });
+
+    expect(
+      issues.filter((x) => x.messageKey === 'flow.apiKeyMissing'),
+    ).toHaveLength(0);
   });
 });
 

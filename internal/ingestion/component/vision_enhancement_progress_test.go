@@ -9,6 +9,7 @@ import (
 
 	"ragflow/internal/dao"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
 )
@@ -23,15 +24,15 @@ func TestVisionEnhancement_ReportsPerFigureFractions(t *testing.T) {
 	png := visionTestPNGBase64(t)
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": png, "doc_type_kwd": "image"},
 			{"text": "2", "image": png, "doc_type_kwd": "image"},
 			{"text": "3", "image": png, "doc_type_kwd": "image"},
 			{"text": "4", "image": png, "doc_type_kwd": "image"},
-		},
+		}),
 	}
 
-	win := fractionWindow{base: 0.5, span: 0.5}
+	win := progress.Window{Base: 0.5, Span: 0.5}
 	_, handled, err := maybeDispatchVisionEnhancement(
 		ctx, dao.DB, utility.FileTypeXLSX, dispatched,
 		map[string]any{"tenant_id": "t1"},
@@ -78,13 +79,13 @@ func TestVisionEnhancement_SettledFractionsCountFailedFigures(t *testing.T) {
 
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "valid", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"},
 			{"text": "invalid", "image": "not-valid-base64", "doc_type_kwd": "image"},
-		},
+		}),
 	}
 
-	win := fractionWindow{base: 0.2, span: 0.8}
+	win := progress.Window{Base: 0.2, Span: 0.8}
 	_, _, err := maybeDispatchVisionEnhancement(
 		ctx, dao.DB, utility.FileTypeXLSX, dispatched,
 		map[string]any{"tenant_id": "t1"},
@@ -125,9 +126,9 @@ func TestVisionEnhancement_ZeroWindowReportsNothing(t *testing.T) {
 
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": visionTestPNGBase64(t), "doc_type_kwd": "image"},
-		},
+		}),
 	}
 
 	// Zero window (default when unpassed or inactive)
@@ -135,7 +136,7 @@ func TestVisionEnhancement_ZeroWindowReportsNothing(t *testing.T) {
 		ctx, dao.DB, utility.FileTypeXLSX, dispatched,
 		map[string]any{"tenant_id": "t1"},
 		visionSettings{},
-		fractionWindow{},
+		progress.Window{},
 	)
 	if err != nil {
 		t.Fatalf("maybeDispatchVisionEnhancement: %v", err)
@@ -160,13 +161,13 @@ func TestVisionEnhancement_CancelledContextReportsNothing(t *testing.T) {
 	png := visionTestPNGBase64(t)
 	dispatched := parser.ParseResult{
 		OutputFormat: "json",
-		JSON: []map[string]any{
+		JSON: parser.MapsToItems([]map[string]any{
 			{"text": "1", "image": png, "doc_type_kwd": "image"},
 			{"text": "2", "image": png, "doc_type_kwd": "image"},
-		},
+		}),
 	}
 
-	win := fractionWindow{base: 0.5, span: 0.5}
+	win := progress.Window{Base: 0.5, Span: 0.5}
 	_, _, _ = maybeDispatchVisionEnhancement(
 		ctx, dao.DB, utility.FileTypeXLSX, dispatched,
 		map[string]any{"tenant_id": "t1"},

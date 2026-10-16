@@ -21,14 +21,14 @@ func TestHTMLParser_EmitsInlineImagesInDocumentOrder(t *testing.T) {
 	if len(result.JSON) != 3 {
 		t.Fatalf("items = %+v, want text/image/text", result.JSON)
 	}
-	if result.JSON[0]["text"] != "before" || result.JSON[0]["doc_type_kwd"] != "text" {
+	if result.JSON[0].ToMap()["text"] != "before" || result.JSON[0].ToMap()["doc_type_kwd"] != "text" {
 		t.Errorf("before item = %+v", result.JSON[0])
 	}
-	imageItem := result.JSON[1]
+	imageItem := result.JSON[1].ToMap()
 	if imageItem["doc_type_kwd"] != "image" || imageItem["image"] != htmlMediaDataURI || imageItem["text"] != "figure alt" || imageItem["media_order"] != 1 {
 		t.Errorf("image item = %+v", imageItem)
 	}
-	if result.JSON[2]["text"] != "after" || result.JSON[2]["doc_type_kwd"] != "text" {
+	if result.JSON[2].ToMap()["text"] != "after" || result.JSON[2].ToMap()["doc_type_kwd"] != "text" {
 		t.Errorf("after item = %+v", result.JSON[2])
 	}
 }
@@ -42,20 +42,20 @@ func TestHTMLParser_EmitsTableCellImagesWithParentAndCellOrder(t *testing.T) {
 	if len(result.JSON) != 2 {
 		t.Fatalf("items = %+v, want table and one inline image item", result.JSON)
 	}
-	if result.JSON[0]["doc_type_kwd"] != "table" || result.JSON[0]["source_table_id"] != "html-table-1" {
+	if result.JSON[0].ToMap()["doc_type_kwd"] != "table" || result.JSON[0].ToMap()["source_table_id"] != "html-table-1" {
 		t.Errorf("table item = %+v", result.JSON[0])
 	}
-	tableText := renderedText(result.JSON[0])
+	tableText := renderedText(result.JSON[0].ToMap())
 	if strings.Contains(tableText, "data:image/") {
 		t.Error("table text duplicates the separately emitted inline image payload")
 	}
 	if !strings.Contains(tableText, "A") {
 		t.Errorf("table text lost the cell text: %q", tableText)
 	}
-	if result.JSON[1]["image"] != htmlMediaDataURI {
-		t.Errorf("inline image payload = %v, want data URI", result.JSON[1]["image"])
+	if result.JSON[1].ToMap()["image"] != htmlMediaDataURI {
+		t.Errorf("inline image payload = %v, want data URI", result.JSON[1].ToMap()["image"])
 	}
-	item := result.JSON[1]
+	item := result.JSON[1].ToMap()
 	if item["doc_type_kwd"] != "image" || item["parent_table_id"] != "html-table-1" {
 		t.Errorf("inline image item = %+v", item)
 	}
@@ -71,7 +71,7 @@ func TestHTMLParser_RejectsOversizedInlineImagePayload(t *testing.T) {
 	if result.Err != nil {
 		t.Fatalf("ParseWithResult: %v", result.Err)
 	}
-	for _, item := range result.JSON {
+	for _, item := range ItemsToMaps(result.JSON) {
 		if item["doc_type_kwd"] == "image" {
 			t.Fatal("oversized data URI emitted as an image item")
 		}

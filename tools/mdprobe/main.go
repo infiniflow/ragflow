@@ -47,10 +47,11 @@ func main() {
 	fmt.Printf("file=%s bytes=%d output_format=%s items=%d\n", filepath.Base(path), len(data), res.OutputFormat, len(res.JSON))
 	var total int
 	for i, item := range res.JSON {
-		text, _ := item["text"].(string)
+		m := item.ToMap()
+		text, _ := m["text"].(string)
 		total += len(text)
-		ck := fmt.Sprint(item["ck_type"])
-		docType := fmt.Sprint(item["doc_type_kwd"])
+		ck := fmt.Sprint(m["ck_type"])
+		docType := fmt.Sprint(m["doc_type_kwd"])
 		fmt.Printf("  [%3d] %-7s %-6s %6d chars  %q\n", i, ck, docType, len(text), truncate(text, 90))
 	}
 	fmt.Printf("parser emitted %d chars total (file %d)\n", total, len(data))
@@ -59,7 +60,7 @@ func main() {
 		lower := strings.ToLower(needle)
 		found := -1
 		for i, item := range res.JSON {
-			if text, _ := item["text"].(string); strings.Contains(strings.ToLower(text), lower) {
+			if text, _ := item.ToMap()["text"].(string); strings.Contains(strings.ToLower(text), lower) {
 				found = i
 				break
 			}
