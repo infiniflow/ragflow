@@ -310,6 +310,7 @@ jobs:
     runs-on: ubuntu-24.04-arm
     env:
       RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
     steps:
       - name: Check out code
         uses: actions/checkout@v6
@@ -353,7 +354,14 @@ jobs:
           docker buildx imagetools create --tag infiniflow/ragflow:${RELEASE_TAG} \
             infiniflow/ragflow:${RELEASE_TAG}-amd64 \
             infiniflow/ragflow:${RELEASE_TAG}-arm64
-          docker buildx imagetools create --tag infiniflow/ragflow:latest \
-            infiniflow/ragflow:amd64 \
-            infiniflow/ragflow:arm64
+          # Only stable (non-prerelease) v* tags should move the mutable :latest
+          # tag. Nightly and prerelease builds keep their own version tag but must
+          # not overwrite the stable :latest.
+          if [ "${PRERELEASE}" != "true" ]; then
+            docker buildx imagetools create --tag infiniflow/ragflow:latest \
+              infiniflow/ragflow:amd64 \
+              infiniflow/ragflow:arm64
+          else
+            echo "RELEASE_TAG=${RELEASE_TAG} is a prerelease/nightly build; skipping :latest update."
+          fi
 
