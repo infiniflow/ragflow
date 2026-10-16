@@ -278,11 +278,71 @@ jobs:
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
           sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
           sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:${RELEASE_TAG}-amd64
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:amd64
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
           sudo docker push infiniflow/ragflow:latest
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}-amd64
+          sudo docker push infiniflow/ragflow:amd64
 
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+
+  # Build the linux/arm64 image on a GitHub-hosted ARM64 runner and merge it
+  # with the amd64 image (pushed by the `release` job above) into a single
+  # multi-arch manifest list for infiniflow/ragflow:${RELEASE_TAG} and :latest,
+  # so `docker pull infiniflow/ragflow:${RELEASE_TAG}` resolves per-arch on both
+  # platforms. Runs after `release` so the amd64 (-amd64/:amd64) tags exist.
+  build-arm64:
+    needs:
+      - release
+      - prepare
+    runs-on: ubuntu-24.04-arm
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: infiniflow
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push arm64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          # Use a Go proxy that is reliable from GitHub-hosted runners; the
+          # Dockerfile default (goproxy.cn) is flaky here (HTTP/2 GOAWAY).
+          build-args: |
+            GOPROXY=https://proxy.golang.org,direct
+          tags: |
+            infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-arm64
+            infiniflow/ragflow:arm64
+
+      # Merge the freshly pushed arm64 image with the amd64 image the `release`
+      # job already pushed into a single multi-arch manifest list. The amd64 bare
+      # tags stay intact (just wrapped into the index), so a failure here degrades
+      # to amd64-only rather than breaking the existing image.
+      - name: Create multi-arch manifest
+        run: |
+          docker buildx imagetools create --tag infiniflow/ragflow:${RELEASE_TAG} \
+            infiniflow/ragflow:${RELEASE_TAG}-amd64 \
+            infiniflow/ragflow:${RELEASE_TAG}-arm64
+          docker buildx imagetools create --tag infiniflow/ragflow:latest \
+            infiniflow/ragflow:amd64 \
+            infiniflow/ragflow:arm64
 
