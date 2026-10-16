@@ -58,8 +58,14 @@ func GetSSRFHTTPClient() *http.Client {
 		t.ResponseHeaderTimeout = 20 * time.Minute
 		t.TLSHandshakeTimeout = 30 * time.Second
 
+		// Pin the validated IP so the transport's DialContext does not
+		// re-resolve the hostname and let DNS rebinding switch the
+		// destination between AssertURLSafe and the TCP connect.
+		pinTable := NewPinTable()
+		t.DialContext = pinTable.WrapDialContext(t.DialContext)
+
 		var rt http.RoundTripper = t
-		rt = &strictSSRFTransport{base: rt}
+		rt = &strictSSRFTransport{base: rt, pins: pinTable}
 		rt = newProviderLoggingTransport(rt)
 		ssrfHttpClient = &http.Client{Transport: rt}
 	}
@@ -398,11 +404,24 @@ func (t *schemeSafeTransport) RoundTrip(req *http.Request) (*http.Response, erro
 // This is the default for cloud-hosted model drivers and closes the
 // go/request-forgery data flow: the user-controllable BaseURL cannot be made to
 // point at private hosts, loopback, link-local, or cloud metadata endpoints.
-type strictSSRFTransport struct{ base http.RoundTripper }
+//
+// The validated (hostname, resolvedIP) pair from AssertURLSafe is recorded
+// in pins; the wrapped Transport's DialContext (rewritten by
+// PinTable.WrapDialContext) dials that IP instead of letting the OS
+// resolve the hostname a second time, which a rebinding attacker could
+// otherwise use to swap the destination between validation and connect.
+type strictSSRFTransport struct {
+	base http.RoundTripper
+	pins *PinTable
+}
 
 func (t *strictSSRFTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	if _, _, err := AssertURLSafe(req.URL.String()); err != nil {
+	hostname, resolvedIP, err := AssertURLSafe(req.URL.String())
+	if err != nil {
 		return nil, err
+	}
+	if t.pins != nil {
+		t.pins.Pin(hostname, resolvedIP)
 	}
 	return t.base.RoundTrip(req)
 }
