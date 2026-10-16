@@ -20,7 +20,9 @@ import (
 	stdctx "context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"ragflow/internal/cli/utils"
+	"strconv"
 	"strings"
 )
 
@@ -322,52 +324,35 @@ func (p *FileProvider) listRootFolder(ctx stdctx.Context, opts *ListOptions) (*R
 
 // listFilesByParentID lists files/folders by parent ID
 func (p *FileProvider) listFilesByParentID(ctx stdctx.Context, parentID string, parentPath string, opts *ListOptions) (*Result, error) {
-	// Build query parameters
-	queryParams := make([]string, 0)
-	if parentID != "" {
-		queryParams = append(queryParams, fmt.Sprintf("parent_id=%s", parentID))
-	}
-	// Always set page=1 and page_size to ensure we get results
 	pageSize := 100
-	if opts != nil && opts.Limit > 0 {
-		pageSize = opts.Limit
+	start, limit := 0, 0
+	if opts != nil {
+		start = max(opts.Offset, 0)
+		limit = max(opts.Limit, 0)
 	}
-	queryParams = append(queryParams, fmt.Sprintf("page_size=%d", pageSize))
-	queryParams = append(queryParams, "page=1")
-
-	// Build URL with query string
-	path := "/files"
-	if len(queryParams) > 0 {
-		path = path + "?" + strings.Join(queryParams, "&")
-	}
-
-	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	var apiResp struct {
-		Code    int                    `json:"code"`
-		Data    map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
-		return nil, err
-	}
-
-	if apiResp.Code != 0 {
-		return nil, fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	// Extract files list from data - API returns {"total": N, "files": [...], "parent_folder": {...}}
+	page := start/pageSize + 1
+	skip := start % pageSize
 	var files []map[string]interface{}
-	if fileList, ok := apiResp.Data["files"].([]interface{}); ok {
-		for _, f := range fileList {
-			if fileMap, ok := f.(map[string]interface{}); ok {
-				files = append(files, fileMap)
-			}
+	total := 0
+	for {
+		entries, apiTotal, err := p.requestFilesPage(ctx, parentID, pageSize, page)
+		if err != nil {
+			return nil, err
 		}
+		total = apiTotal
+		files = append(files, entries...)
+		if len(entries) == 0 || page*pageSize >= total || (limit > 0 && len(files) >= skip+limit) {
+			break
+		}
+		page++
+	}
+	if skip >= len(files) {
+		files = nil
+	} else {
+		files = files[skip:]
+	}
+	if limit > 0 && len(files) > limit {
+		files = files[:limit]
 	}
 
 	nodes := make([]*Node, 0, len(files))
@@ -395,8 +380,35 @@ func (p *FileProvider) listFilesByParentID(ctx stdctx.Context, parentID string, 
 
 	return &Result{
 		Nodes: nodes,
-		Total: len(nodes),
+		Total: total,
 	}, nil
+}
+
+// requestFilesPage fetches one page of entries for a parent folder.
+func (p *FileProvider) requestFilesPage(ctx stdctx.Context, parentID string, pageSize, page int) ([]map[string]interface{}, int, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, 0, err
+	}
+	query := url.Values{"parent_id": {parentID}, "page_size": {strconv.Itoa(pageSize)}, "page": {strconv.Itoa(page)}}
+	resp, err := p.httpClient.Request("GET", "/files?"+query.Encode(), "auto", nil, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	var apiResp struct {
+		Code int `json:"code"`
+		Data struct {
+			Total int                      `json:"total"`
+			Files []map[string]interface{} `json:"files"`
+		} `json:"data"`
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+		return nil, 0, err
+	}
+	if apiResp.Code != 0 {
+		return nil, 0, fmt.Errorf("API error: %s", apiResp.Message)
+	}
+	return apiResp.Data.Files, apiResp.Data.Total, nil
 }
 
 // listFolderByName lists contents of a folder by its name
@@ -417,62 +429,20 @@ func (p *FileProvider) getFolderIDByName(ctx stdctx.Context, folderName string) 
 		return id, nil
 	}
 
-	// List root folder to find the folder
-	rootID, _ := p.getRootID(ctx)
-	queryParams := make([]string, 0)
-	if rootID != "" {
-		queryParams = append(queryParams, fmt.Sprintf("parent_id=%s", rootID))
-	}
-	queryParams = append(queryParams, "page_size=100", "page=1")
-
-	path := "/files"
-	if len(queryParams) > 0 {
-		path = path + "?" + strings.Join(queryParams, "&")
-	}
-
-	resp, err := p.httpClient.Request("GET", path, "auto", nil, nil)
+	rootID, err := p.getRootID(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	var apiResp struct {
-		Code    int                    `json:"code"`
-		Data    map[string]interface{} `json:"data"`
-		Message string                 `json:"message"`
-	}
-
-	if err := json.Unmarshal(resp.Body, &apiResp); err != nil {
+	result, err := p.listFilesByParentID(ctx, rootID, "", nil)
+	if err != nil {
 		return "", err
 	}
-
-	if apiResp.Code != 0 {
-		return "", fmt.Errorf("API error: %s", apiResp.Message)
-	}
-
-	// Search for folder by name
-	var files []map[string]interface{}
-	if fileList, ok := apiResp.Data["files"].([]interface{}); ok {
-		for _, f := range fileList {
-			if fileMap, ok := f.(map[string]interface{}); ok {
-				files = append(files, fileMap)
+	for _, node := range result.Nodes {
+		if node.Name == folderName && node.Type == NodeTypeDirectory {
+			if id := getString(node.Metadata["id"]); id != "" {
+				p.folderCache[folderName] = id
+				return id, nil
 			}
-		}
-	} else if fileList, ok := apiResp.Data["docs"].([]interface{}); ok {
-		for _, f := range fileList {
-			if fileMap, ok := f.(map[string]interface{}); ok {
-				files = append(files, fileMap)
-			}
-		}
-	}
-
-	for _, f := range files {
-		name := getString(f["name"])
-		fileType := getString(f["type"])
-		id := getString(f["id"])
-		// Match by name and ensure it's a folder
-		if name == folderName && fileType == "folder" && id != "" {
-			p.folderCache[folderName] = id
-			return id, nil
 		}
 	}
 
