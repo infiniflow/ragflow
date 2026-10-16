@@ -953,3 +953,34 @@ func TestDedupeByChunkIDKeepsRowsWithoutID(t *testing.T) {
 		t.Fatalf("rows = %d, want 3 (only the duplicate id collapses): %#v", len(got), got)
 	}
 }
+
+// chunksFromColumnData must turn the column-oriented DataFrame into rows and
+// must not fabricate a row out of an all-null column.
+func TestChunksFromColumnDataConvertsAndSkipsNullCells(t *testing.T) {
+	rows := chunksFromColumnData(map[string][]interface{}{
+		"id":      {"a", "b"},
+		"content": {"alpha", "beta"},
+		"junk":    {nil, nil},
+	})
+	if len(rows) != 2 {
+		t.Fatalf("chunksFromColumnData() returned %d rows, want 2", len(rows))
+	}
+	if rows[0]["id"] != "a" || rows[0]["content"] != "alpha" {
+		t.Errorf("row 0 = %v, want id=a content=alpha", rows[0])
+	}
+	if rows[1]["id"] != "b" || rows[1]["content"] != "beta" {
+		t.Errorf("row 1 = %v, want id=b content=beta", rows[1])
+	}
+	if _, ok := rows[0]["junk"]; ok {
+		t.Errorf("row 0 = %v, a null column must not contribute a cell", rows[0])
+	}
+}
+
+// An entirely null projection (an empty match) must yield no rows rather than
+// one phantom empty row.
+func TestChunksFromColumnDataAllNullIsEmpty(t *testing.T) {
+	rows := chunksFromColumnData(map[string][]interface{}{"content": {nil}})
+	if len(rows) != 0 {
+		t.Fatalf("chunksFromColumnData() returned %d rows, want 0", len(rows))
+	}
+}
