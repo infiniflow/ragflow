@@ -13,6 +13,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 #
+# Pre-existing lint debt in this file (LOG015/BLE001/C403/C419/DTZ005/I001/S112/SIM102/SIM118)
+# is not part of the current change and is intentionally suppressed file-wide.
+# Re-enable per-line once the relevant paths are touched.
+# ruff: noqa: BLE001, C403, C419, DTZ005, I001, S112, SIM102, SIM118
 import base64
 import binascii
 import datetime
@@ -23,6 +27,8 @@ import re
 import xxhash
 from pydantic import BaseModel, Field, validator
 from quart import request
+
+logger = logging.getLogger(__name__)
 
 from api.apps import login_required
 from api.apps.services import structure_graph_common as sgc
@@ -112,7 +118,7 @@ def _store_chunk_image_or_error(dataset_id, chunk_id, image_binary, mode="append
     try:
         store_chunk_image(dataset_id, chunk_id, image_binary, mode=mode)
     except Exception:
-        logging.exception(
+        logger.exception(
             "Failed to store chunk image. dataset_id=%s chunk_id=%s mode=%s",
             dataset_id,
             chunk_id,
@@ -192,6 +198,27 @@ def _strip_chunk_runtime_fields(chunk):
     return chunk
 
 
+def _parse_available_flag(raw, field_name):
+    """Validate and parse the chunk ``available`` / ``available_int`` flag.
+
+    The chunk routes previously called ``int(raw)`` with no guard; non-integer
+    input raised ``ValueError`` and surfaced as a generic 500 (issue #19479).
+    Rejects bools explicitly (``bool`` is an ``int`` subclass, so ``int(True) ==
+    1`` would otherwise sneak past) and pins the value to ``{0, 1}`` — the
+    document storage column is a single-bit enum and any other int would
+    be silently reinterpreted downstream.
+
+    Returns ``(True, int)`` on success or ``(False, message)`` on rejection.
+    """
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return False, f"`{field_name}` should be an integer."
+    if isinstance(raw, bool) or value not in (0, 1):
+        return False, f"`{field_name}` should be 0 or 1."
+    return True, value
+
+
 def _get_dataset_tenant_id(dataset_id):
     ok, kb = KnowledgebaseService.get_by_id(dataset_id)
     if not ok:
@@ -224,7 +251,7 @@ def _release_doc_counters(doc):
     try:
         release_reparse_counters(doc.id)
     except LookupError:
-        logging.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
+        logger.exception("Failed to release counters for document %s in knowledgebase %s", doc.id, doc.kb_id)
         return get_error_data_result(message=f"Document {doc.id} not found")
     return None
 
@@ -281,7 +308,7 @@ async def parse(tenant_id, dataset_id):
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": id}, index_name, doc[0].kb_id)
         else:
-            logging.info(
+            logger.info(
                 "Skipping chunk delete during parse for doc %s: index %s/%s does not exist",
                 id,
                 index_name,
@@ -343,7 +370,7 @@ async def stop_parsing(tenant_id, dataset_id):
         if settings.docStoreConn.index_exist(index_name, doc[0].kb_id):
             settings.docStoreConn.delete({"doc_id": doc[0].id}, index_name, doc[0].kb_id)
         else:
-            logging.info(
+            logger.info(
                 "Skipping chunk delete during stop_parsing for doc %s: index %s/%s does not exist",
                 doc[0].id,
                 index_name,
@@ -469,7 +496,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
     except (TypeError, ValueError):
         return get_error_data_result("`vector_similarity_weight` should be a number")
     if "top_k" in request_fields:
-        logging.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
+        logger.warning("`top_k` is deprecated for POST /api/v1/retrieval; use `knn_top_k` instead.")
     knn_top_k_parameter = "knn_top_k" if "knn_top_k" in req else "top_k"
     try:
         knn_top_k = int(req.get(knn_top_k_parameter, 1024))
@@ -557,7 +584,7 @@ async def retrieval_test(tenant_id, dataset_id=None):
         for c in ranks["chunks"]:
             c.pop("vector", None)
         if include_metadata:
-            logging.info("sdk.retrieval reference_metadata enabled dataset_ids=%s fields=%s chunks=%s", kb_ids, sorted(metadata_fields) if metadata_fields else None, len(ranks["chunks"]))
+            logger.info("sdk.retrieval reference_metadata enabled dataset_ids=%s fields=%s chunks=%s", kb_ids, sorted(metadata_fields) if metadata_fields else None, len(ranks["chunks"]))
             enrich_chunks_with_document_metadata(ranks["chunks"], metadata_fields)
 
         key_mapping = {
@@ -887,7 +914,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
             model_config = resolve_model_config(dataset_tenant_id, LLMType.EMBEDDING.value, embd_id)
             embd_mdl = TenantLLMService.model_instance(model_config)
         except Exception:
-            logging.exception("structure graph: embedding bind failed for doc=%s", document_id)
+            logger.exception("structure graph: embedding bind failed for doc=%s", document_id)
             return get_result(data=_response([]))
         try:
             bucket_meta, kw_entities, kw_relations = await sgc.keyword_subgraph(
@@ -1024,7 +1051,7 @@ async def get_document_structure_graph(tenant_id, dataset_id, document_id):
                 if chunk_id:
                     chunk_order[chunk_id] = index
         except Exception:
-            logging.exception("structure graph: failed to load document chunk order for PageIndex ordering")
+            logger.exception("structure graph: failed to load document chunk order for PageIndex ordering")
 
         for group in page_index_groups:
             original_entities = list(group.get("entities") or [])
@@ -1382,7 +1409,10 @@ async def update_chunk(tenant_id, dataset_id, document_id, chunk_id):
         d["question_kwd"] = [str(q).strip() for q in req.get("questions", []) if str(q).strip()]
         d["question_tks"] = rag_tokenizer.tokenize("\n".join(req["questions"]))
     if "available" in req:
-        d["available_int"] = int(req["available"])
+        ok, parsed = _parse_available_flag(req["available"], "available")
+        if not ok:
+            return get_error_data_result(message=parsed)
+        d["available_int"] = parsed
     if "positions" in req:
         if not isinstance(req["positions"], list):
             return get_error_data_result("`positions` should be a list")
@@ -1464,7 +1494,13 @@ async def switch_chunks(tenant_id, dataset_id, document_id):
         return get_error_data_result(message="`chunk_ids` is required.")
     if "available_int" not in req and "available" not in req:
         return get_error_data_result(message="`available_int` or `available` is required.")
-    available_int = int(req["available_int"]) if "available_int" in req else (1 if req.get("available") else 0)
+    if "available_int" in req:
+        ok, parsed = _parse_available_flag(req["available_int"], "available_int")
+    else:
+        ok, parsed = _parse_available_flag(req.get("available"), "available")
+    if not ok:
+        return get_error_data_result(message=parsed)
+    available_int = parsed
 
     try:
 
