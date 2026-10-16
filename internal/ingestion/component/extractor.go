@@ -58,6 +58,7 @@ import (
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/chunkcache"
+	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/tokenizer"
@@ -233,6 +234,7 @@ type ExtractorComponent struct {
 //	  "tags":           map[string]any,   — optional auto tags extraction config
 //	  "summary":        map[string]any,   — optional auto summary extraction config
 //	  "metadata":       map[string]any,   — optional auto metadata extraction config
+//	  "toc":            map[string]any,   - optional table-of-contents extraction config
 //	}
 //
 // The keywords/questions/tags groups accept an "enabled" switch. A group
@@ -321,6 +323,15 @@ func NewExtractorComponent(params map[string]any) (runtime.Component, error) {
 				p.Metadata.BuiltInMetadata = parseMetadataFieldDefs(v)
 			}
 		}
+
+		// 6. TOC
+		if tocRaw, ok := params["toc"].(map[string]any); ok {
+			if v, ok := tocRaw["enabled"].(bool); ok {
+				p.TOC.Enabled = v
+			} else if v, ok := tocRaw["enabled"]; ok {
+				p.TOC.Enabled = mapInt(v) == 1
+			}
+		}
 	}
 	if err := p.Validate(); err != nil {
 		return nil, fmt.Errorf("extractor: param check: %w", err)
@@ -384,7 +395,7 @@ func (c *ExtractorComponent) Outputs() map[string]string {
 	return map[string]string{
 		"chunks":        "Extraction results — input chunks, each enriched with modular extraction fields (important_kwd, question_kwd, tag_feas, summary, metadata).",
 		"output_format": "Always \"chunks\". Parity marker for downstream consumers.",
-		"_ERROR":        "Optional short-circuit error message (reserved for the future TOC branch and other error paths).",
+		"_ERROR":        "Optional short-circuit error message.",
 	}
 }
 
@@ -696,7 +707,8 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	keywordsOn := c.Param.Keywords.Enabled
 	tagsOn := c.Param.Tags.Enabled
 	remainingOn := c.Param.Questions.Enabled || c.Param.Summary.Enabled || c.Param.Metadata.Enabled
-	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn)
+	tocOn := c.Param.TOC.Enabled
+	phaseWindows := progress.NewSplit(keywordsOn, tagsOn, remainingOn, tocOn)
 
 	// No node-level wall-clock budget (see the package doc): each LLM call
 	// carries its own budget, and an expired call skips its chunk instead
@@ -717,6 +729,18 @@ func (c *ExtractorComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	// Phase 3: Remaining extractions (Questions, Summary, Metadata) via extractorPool.
 	if err := c.runRemainingExtractions(ctx, db, in, phaseWindows.Take(remainingOn)); err != nil {
 		return nil, fmt.Errorf("extractor: %w", err)
+	}
+
+	// Phase 4: one TOC for the whole document, appended as an extra chunk.
+	if tocOn {
+		docID := globals.GlobalOrInput(ctx, inputs, "doc_id", "")
+		tocChunk, err := c.buildTOCChunk(ctx, db, in, docID, phaseWindows.Take(tocOn))
+		if err != nil {
+			return nil, fmt.Errorf("extractor: toc: %w", err)
+		}
+		if tocChunk != nil {
+			in.chunks = append(in.chunks, tocChunk)
+		}
 	}
 	// The tag phase swallows per-chunk failures, so a task stopped mid-run
 	// could otherwise report success. This mirrors the old node-level
