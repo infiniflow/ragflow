@@ -93,7 +93,7 @@ func parseTestEPUB(t *testing.T, chapters []epubTestChapter) ParseResult {
 
 func epubTestText(res ParseResult) string {
 	var parts []string
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		parts = append(parts, text)
 	}

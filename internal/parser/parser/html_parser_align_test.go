@@ -33,7 +33,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 
 	var tableText string
 	tableIdx, headingIdx, trailingIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
-	for i, it := range res.JSON {
+	for i, it := range ItemsToMaps(res.JSON) {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
@@ -61,7 +61,7 @@ func TestHTMLParser_TableProducesStructuredItems(t *testing.T) {
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
-	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
+	if got, want := res.JSON[tableIdx].ToMap()["ck_type"], "table"; got != want {
 		t.Errorf("structured table item ck_type = %v, want %v", got, want)
 	}
 	if !strings.Contains(tableText, "<table") ||
@@ -116,7 +116,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 
 	var tableText string
 	tableIdx, headingIdx, trailingIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
-	for i, it := range res.JSON {
+	for i, it := range ItemsToMaps(res.JSON) {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
@@ -144,7 +144,7 @@ func TestHTMLParser_NestedTableProducesStructuredItems(t *testing.T) {
 	if tableCount != 1 {
 		t.Fatalf("structured doc_type_kwd:\"table\" item count = %d, want exactly 1", tableCount)
 	}
-	if got, want := res.JSON[tableIdx]["ck_type"], "table"; got != want {
+	if got, want := res.JSON[tableIdx].ToMap()["ck_type"], "table"; got != want {
 		t.Errorf("structured nested table item ck_type = %v, want %v", got, want)
 	}
 	if !strings.Contains(tableText, "<table") ||
@@ -202,7 +202,7 @@ func TestHTMLParser_NestedTableWithSurroundingText(t *testing.T) {
 
 	var tableText string
 	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
-	for i, it := range res.JSON {
+	for i, it := range ItemsToMaps(res.JSON) {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
@@ -282,7 +282,7 @@ func TestHTMLParser_MultipleTablesOrdering(t *testing.T) {
 
 	var tableItemIdx []int
 	titleIdx, middleIdx, endIdx := -1, -1, -1
-	for i, it := range res.JSON {
+	for i, it := range ItemsToMaps(res.JSON) {
 		text, _ := it["text"].(string)
 		switch it["doc_type_kwd"] {
 		case "text":
@@ -312,8 +312,8 @@ func TestHTMLParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1 := renderedText(res.JSON[tableItemIdx[0]])
-	t2 := renderedText(res.JSON[tableItemIdx[1]])
+	t1 := renderedText(res.JSON[tableItemIdx[0]].ToMap())
+	t2 := renderedText(res.JSON[tableItemIdx[1]].ToMap())
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Errorf("first table item missing x/y cells: %q", t1)
 	}
@@ -356,7 +356,7 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 
 	// Join every item's text in order to check content + order + fusion.
 	var all string
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		if txt, _ := it["text"].(string); txt != "" {
 			all += txt + "\n"
 		}
@@ -390,7 +390,7 @@ func TestHTMLParser_NestedListItemsPreserved(t *testing.T) {
 	// therefore loses ck_type:"list" (becomes "text") — a fidelity nuance,
 	// not a collapse, since downstream chunking reads doc_type_kwd not ck_type.
 	var listText string
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		if it["ck_type"] == "list" {
 			listText, _ = it["text"].(string)
 			break
@@ -440,7 +440,7 @@ SELECT * FROM t
 	}
 
 	var preItem, textareaItem map[string]any
-	for _, it := range res.JSON {
+	for _, it := range ItemsToMaps(res.JSON) {
 		txt, _ := it["text"].(string)
 		switch {
 		case strings.Contains(txt, "def foo()"):
@@ -525,14 +525,14 @@ func TestHTMLParser_AlignmentGolden(t *testing.T) {
 			// the <table> markup inlined as a "text" item. filterTableDivergence drops
 			// the table content from both sides so the comparison stays on non-table prose.
 			drop := AcceptedDivergences(doc.Meta)
-			goText := filterTableDivergence(res.JSON, drop)
+			goText := filterTableDivergence(ItemsToMaps(res.JSON), drop)
 			pyText := filterTableDivergence(doc.Items, drop)
 
 			// filterTableDivergence drops the table from the prose comparison;
 			// the table-equivalence guard below (assertTablesEquivalent) checks
 			// the table cell content still matches Python, so a collapse or
 			// dropped column on either side is caught independently.
-			assertTablesEquivalent(t, res.JSON, doc.Items)
+			assertTablesEquivalent(t, ItemsToMaps(res.JSON), doc.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, HTMLAlignOptions()); !ok {
 				t.Fatalf("html parser not aligned with Python golden:%s", diff)

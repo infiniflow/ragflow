@@ -571,18 +571,18 @@ export default {
         'Model LLM obrolan default yang akan digunakan semua basis pengetahuan baru yang dibuat.',
       embeddingModel: 'Model Embedding',
       embeddingModelTip:
-        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa apakah Anda menggunakan RAGFlow slim edition (yang tidak menyertakan model embedding) atau periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model embedding default untuk setiap basis pengetahuan baru yang dibuat. Jika Anda tidak dapat menemukan model embedding dari dropdown, periksa apakah Anda menggunakan RAGFlow slim edition (yang tidak menyertakan model embedding) atau periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       img2txtModel: 'Model Img2txt',
       img2txtModelTip:
-        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model img2txt default untuk setiap basis pengetahuan yang baru dibuat. Model ini menggambarkan gambar atau video. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       sequence2txtModel: 'Model Speech2txt',
       sequence2txtModelTip:
-        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model ASR default yang akan digunakan semua basis pengetahuan baru yang dibuat. Gunakan model ini untuk menerjemahkan suara ke teks yang sesuai. Jika Anda tidak dapat menemukan model dari menu dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       rerankModel: 'Model Rerank',
-      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.`,
+      rerankModelTip: `Model rerank default untuk reranking potongan teks. Jika Anda tidak dapat menemukan model dari dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.`,
       ttsModel: 'Model TTS',
       ttsModelTip:
-        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa https://ragflow.io/docs/dev/supported_models untuk melihat apakah penyedia model Anda mendukung model ini.',
+        'Model text-to-speech default. Jika Anda tidak dapat menemukan model dari dropdown, periksa halaman Penyedia model untuk melihat apakah penyedia model Anda mendukung model ini.',
       workspace: 'Ruang Kerja',
       upgrade: 'Tingkatkan',
       addLlmTitle: 'Tambahkan LLM',

@@ -1200,11 +1200,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
-      showChunkMetadata: '显示块元数据',
-      showChunkMetadataTip:
-        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
-      metadataFields: '元数据字段',
-      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',
@@ -1804,18 +1799,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
       ttsModel: 'TTS',
       ttsModelTip:
-        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       rerankModel: 'Rerank',
-      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
+      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
@@ -2976,6 +2971,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       systemPrompt: '系统提示词',
       userPrompt: '用户提示词',
       tagFile: '标签文件',
+      tagFileTip:
+        '根据所选标签文件，为每个文本块自动提取最多 N 个相关标签，以提高检索准确性。标签提取可能调用模型并产生额外的 Token 消耗。如果提取失败，原始文本块仍会保留。详情请见 https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration。',
       prompt: '提示词',
       promptMessage: '提示词是必填项',
       promptTip:
@@ -3087,6 +3084,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
+      apiKeyRequired: '请输入 API Key',
+      apiKeyMissing: '未配置 API Key，请先填写',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
       extractorKeywordsTopNMissing:

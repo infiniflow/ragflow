@@ -192,24 +192,6 @@ func TestRenderTableHTMLRoundTrip(t *testing.T) {
 	}
 }
 
-func TestRenderTableTextHasNoTags(t *testing.T) {
-	td := &entity.TableData{
-		Grid: [][]entity.TableCell{
-			{{Text: "Name"}, {Text: "Age"}},
-			{{Text: "Alice"}, {Text: "30"}},
-		},
-		HeaderRows: 1,
-		Caption:    "People",
-	}
-	got := RenderTableText(td)
-	if strings.ContainsAny(got, "<>") {
-		t.Fatalf("RenderTableText contains tags: %q", got)
-	}
-	if !strings.Contains(got, "Name") || !strings.Contains(got, "Alice") {
-		t.Fatalf("RenderTableText lost cell text: %q", got)
-	}
-}
-
 func assertRowsEqual(t *testing.T, got, want [][]string) {
 	t.Helper()
 	if len(got) != len(want) {

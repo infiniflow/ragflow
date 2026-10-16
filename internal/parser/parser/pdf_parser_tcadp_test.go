@@ -3,10 +3,12 @@ package parser
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestPDFParser_ParseWithResult_TCADPJSONIntegration(t *testing.T) {
@@ -78,7 +80,56 @@ func TestPDFParser_ParseWithResult_TCADPMarkdownIntegration(t *testing.T) {
 	}
 }
 
+func TestPDFParser_ParseWithResult_TCADPCancellationAbortsDownload(t *testing.T) {
+	withSSRFBypass(t)
+
+	const downloadDelay = 500 * time.Millisecond
+	var slow *httptest.Server
+	submit := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/reconstruct_document" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"DocumentRecognizeResultUrl":"` + slow.URL + `/download"}`))
+	}))
+	defer submit.Close()
+	slow = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(downloadDelay):
+			_, _ = w.Write([]byte("not-a-zip"))
+		case <-r.Context().Done():
+		}
+	}))
+	defer slow.Close()
+
+	pdf := NewPDFParser()
+	pdf.ConfigureFromSetup(map[string]any{
+		"parse_method":    "TCADP parser",
+		"output_format":   "json",
+		"tcadp_apiserver": submit.URL,
+		"tcadp_api_key":   "tcadp-secret",
+	})
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	res := pdf.ParseWithResult(ctx, "sample.pdf", []byte("%PDF-1.4\nmock"))
+	elapsed := time.Since(start)
+	if res.Err == nil {
+		t.Fatalf("expected cancellation error, got nil (elapsed=%v)", elapsed)
+	}
+	if !strings.Contains(res.Err.Error(), "context") {
+		t.Fatalf("error %q does not mention context cancellation", res.Err)
+	}
+	if elapsed > downloadDelay/2 {
+		t.Errorf("TCADP download did not abort on ctx cancellation; elapsed=%v", elapsed)
+	}
+}
+
 func TestPDFParser_ParseWithResult_TCADPRequiresAPIServer(t *testing.T) {
+	t.Setenv("TCADP_APISERVER_URL", "")
+	t.Setenv("TCADP_APISERVER", "")
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{"parse_method": "TCADP parser"})
 	ctx := t.Context()

@@ -309,6 +309,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
 	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
 	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {

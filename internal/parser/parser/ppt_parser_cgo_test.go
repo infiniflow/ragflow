@@ -85,7 +85,7 @@ func TestPPTXParser_ParseWithResult_MultiSlide_CGO(t *testing.T) {
 		{"Slide One Title\nFirst slide body about the Alpha topic.", 1},
 		{"Slide Two Title\nSecond slide body about the Beta topic.", 2},
 	} {
-		it := res.JSON[i]
+		it := res.JSON[i].ToMap()
 		if got := it["text"]; got != want.text {
 			t.Errorf("item %d text = %q, want %q", i, got, want.text)
 		}
@@ -124,10 +124,10 @@ func TestPPTXParser_ParseWithResult_EmptySlide_CGO(t *testing.T) {
 	if len(res.JSON) != 3 {
 		t.Fatalf("JSON items = %d, want 3 (one per slide): %#v", len(res.JSON), res.JSON)
 	}
-	if got := res.JSON[1]["text"]; got != "" {
+	if got := res.JSON[1].ToMap()["text"]; got != "" {
 		t.Errorf("empty slide text = %q, want empty", got)
 	}
-	if got := res.JSON[1]["slide_number"]; got != 2 {
+	if got := res.JSON[1].ToMap()["slide_number"]; got != 2 {
 		t.Errorf("empty slide slide_number = %v, want 2", got)
 	}
 }

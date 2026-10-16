@@ -53,11 +53,6 @@ func (dao *UserTenantDAO) Update(ctx context.Context, db *gorm.DB, userTenant *e
 	return db.WithContext(ctx).Save(userTenant).Error
 }
 
-// Delete delete user tenant relationship (soft delete by setting status to "0")
-func (dao *UserTenantDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.UserTenant{}).Where("id = ?", id).Update("status", "0").Error
-}
-
 // GetByUserID gets active user tenant relationships by user ID with context.
 func (dao *UserTenantDAO) GetByUserID(ctx context.Context, db *gorm.DB, userID string) ([]*entity.UserTenant, error) {
 	var relations []*entity.UserTenant
@@ -165,12 +160,6 @@ func (dao *UserTenantDAO) GetTenantsByUserID(ctx context.Context, db *gorm.DB, u
 // DeleteByUserID delete user tenant relationships by user ID (hard delete)
 func (dao *UserTenantDAO) DeleteByUserID(ctx context.Context, db *gorm.DB, userID string) (int64, error) {
 	result := db.WithContext(ctx).Unscoped().Where("user_id = ?", userID).Delete(&entity.UserTenant{})
-	return result.RowsAffected, result.Error
-}
-
-// DeleteByTenantID delete user tenant relationships by tenant ID (hard delete)
-func (dao *UserTenantDAO) DeleteByTenantID(ctx context.Context, db *gorm.DB, tenantID string) (int64, error) {
-	result := db.WithContext(ctx).Unscoped().Where("tenant_id = ?", tenantID).Delete(&entity.UserTenant{})
 	return result.RowsAffected, result.Error
 }
 
