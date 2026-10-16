@@ -111,7 +111,7 @@ func TestApplyMetaFilter_NotIn(t *testing.T) {
 	}
 }
 
-func TestApplyMetaFilterArrayValues(t *testing.T) {
+func TestApplyMetaFilterSetValues(t *testing.T) {
 	metas := common.MetaData{
 		"category": {"A": {"doc1"}, "B": {"doc2"}, "C": {"doc3"}, "A,B": {"doc4"}},
 	}
@@ -123,9 +123,10 @@ func TestApplyMetaFilterArrayValues(t *testing.T) {
 	}{
 		{"json_in", "in", []any{"A", "B"}, []string{"doc1", "doc2"}},
 		{"json_not_in", "not in", []any{"A", "B"}, []string{"doc3", "doc4"}},
-		{"strings_in", "in", []string{"A", "B"}, []string{"doc1", "doc2"}},
-		{"strings_not_in", "not in", []string{"A", "B"}, []string{"doc3", "doc4"}},
 		{"literal_comma", "in", []any{"A,B"}, []string{"doc4"}},
+		{"invalid_not_in", "not in", float64(123), nil},
+		{"null_not_in", "not in", []any{"A", nil}, nil},
+		{"object_not_in", "not in", []any{"A", map[string]any{"value": "B"}}, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -243,8 +243,9 @@ func ApplyMetaFilter(metaData common.MetaData, filters []MetaFilterCondition, lo
 //     (see common.metadata_utils.operatorMapping for the full list)
 //
 // Value conversion:
-//   - "in" / "not in": comma-separated strings and []string become []interface{};
-//     existing []interface{} values are preserved.
+//   - "in" / "not in": comma-separated strings become []interface{};
+//     arrays are preserved only when every member is a string. Arrays with
+//     non-string members become nil so the condition matches no documents.
 //   - all other operators: passed through as-is.
 func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	mc := common.MetaCondition{
@@ -254,23 +255,27 @@ func convertToMetaCondition(f MetaFilterCondition) common.MetaCondition {
 	}
 	switch f.Op {
 	case "in", "not in":
-		switch value := f.Value.(type) {
-		case string:
-			parts := strings.Split(value, ",")
-			arr := make([]interface{}, 0, len(parts))
-			for _, p := range parts {
-				if trimmed := strings.TrimSpace(p); trimmed != "" {
-					arr = append(arr, trimmed)
+		if values, ok := f.Value.([]interface{}); ok {
+			for _, value := range values {
+				if _, ok := value.(string); !ok {
+					mc.Value = nil
+					return mc
 				}
 			}
-			mc.Value = arr
-		case []string:
-			arr := make([]interface{}, len(value))
-			for i, item := range value {
-				arr[i] = item
-			}
-			mc.Value = arr
+			return mc
 		}
+		strVal, ok := f.Value.(string)
+		if !ok {
+			return mc
+		}
+		parts := strings.Split(strVal, ",")
+		arr := make([]interface{}, 0, len(parts))
+		for _, p := range parts {
+			if trimmed := strings.TrimSpace(p); trimmed != "" {
+				arr = append(arr, trimmed)
+			}
+		}
+		mc.Value = arr
 	}
 	return mc
 }
