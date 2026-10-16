@@ -146,6 +146,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			inputKey:  "query",
 		},
 		{
+			name:      "YouComSearch",
+			toolName:  "YouComSearch",
+			params:    map[string]any{"api_key": "stored-key", "freshness": "week", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
 			name:      "SofyaSearch",
 			toolName:  "SofyaSearch",
 			params:    map[string]any{"api_key": "stored-key", "search_depth": "snippets", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
