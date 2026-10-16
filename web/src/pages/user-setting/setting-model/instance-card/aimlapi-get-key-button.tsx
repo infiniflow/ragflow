@@ -14,74 +14,38 @@
  *  limitations under the License.
  */
 
-import { Button } from '@/components/ui/button';
-import { useTranslation } from 'react-i18next';
-import {
-  AimlapiAuthorizeStatus,
-  useAimlapiAuthorize,
-} from '@/hooks/use-aimlapi-authorize';
-import { cn } from '@/lib/utils';
-import { KeyRound, Loader2 } from 'lucide-react';
+import { buttonVariants } from '@/components/ui/button';
+import { KeyRound } from 'lucide-react';
 import { FC } from 'react';
+import { useTranslation } from 'react-i18next';
 
-const AimlapiStatusTextKey: Partial<Record<AimlapiAuthorizeStatus, string>> = {
-  awaiting_consent: 'aimlapiAwaitingConsent',
-  success: 'aimlapiKeyAdded',
-  denied: 'aimlapiAuthDenied',
-  expired: 'aimlapiAuthExpired',
-  error: 'aimlapiAuthFailed',
-};
+/** Where an AI/ML API account creates and copies its API keys. */
+export const AIMLAPI_KEYS_URL = 'https://aimlapi.com/app';
 
 /**
- * "Get API key" control for the AIMLAPI provider dialog. Runs the AIMLAPI
- * agent-authorization (OAuth device grant) flow and, on success, hands the
- * issued key back to the modal via `onKey` so it can be filled into the form.
+ * "Get API key" control for the AIMLAPI provider dialog. Opens the AI/ML API
+ * dashboard in a new tab, where the user creates a key and pastes it into the
+ * API Key field above.
  */
-export const AimlapiGetKeyButton: FC<{ onKey: (apiKey: string) => void }> = ({
-  onKey,
-}) => {
+export const AimlapiGetKeyButton: FC = () => {
   const { t } = useTranslation('translation', { keyPrefix: 'setting' });
-  const { status, error, start, checkNow } = useAimlapiAuthorize({ onKey });
-
-  const busy = status === 'starting' || status === 'awaiting_consent';
-  const statusKey = AimlapiStatusTextKey[status];
 
   return (
     <div className="flex flex-col gap-1.5 mb-4">
       <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={start}
-          disabled={busy}
+        {/* A link styled as a button. Not <Button asChild>: Button wraps its
+            children in a fragment, so Slot would receive the fragment rather
+            than the <a> and the styles would be lost. */}
+        <a
+          href={AIMLAPI_KEYS_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={buttonVariants({ variant: 'secondary', size: 'sm' })}
         >
-          {busy ? (
-            <Loader2 className="animate-spin" size={14} />
-          ) : (
-            <KeyRound size={14} />
-          )}
+          <KeyRound size={14} />
           {t('aimlapiGetKey')}
-        </Button>
-        {status === 'awaiting_consent' && (
-          <Button type="button" variant="ghost" size="sm" onClick={checkNow}>
-            {t('aimlapiCheckStatus')}
-          </Button>
-        )}
+        </a>
       </div>
-      {statusKey && (
-        <span
-          className={cn('text-xs', {
-            'text-state-success': status === 'success',
-            'text-text-secondary': status === 'awaiting_consent',
-            'text-state-error':
-              status === 'denied' || status === 'expired' || status === 'error',
-          })}
-        >
-          {t(statusKey)}
-          {status === 'error' && error ? `: ${error}` : ''}
-        </span>
-      )}
     </div>
   );
 };
