@@ -1,6 +1,7 @@
 package infinity
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"testing"
@@ -152,5 +153,25 @@ func TestBuildRegexpFilterEscapesSingleQuotes(t *testing.T) {
 func TestBuildRegexpFilterWithoutScope(t *testing.T) {
 	if got, want := buildRegexpFilter(nil, `.*`), `regex(content, '(?i).*')`; got != want {
 		t.Errorf("buildRegexpFilter() = %q, want %q", got, want)
+	}
+}
+
+// An unscoped regexp search must fail rather than scan the bare ragflow_<tenant> table:
+// chunk tables are per dataset, so an empty KbIDs would come back as an error-free empty
+// result. The check runs before the client is touched, so a zero Engine pins it.
+func TestSearchByRegexpRejectsEmptyScope(t *testing.T) {
+	eng := &Engine{}
+	for _, kbIDs := range [][]string{nil, {}, {""}, {"", "  "}} {
+		_, err := eng.SearchByRegexp(context.Background(), &types.RegexpSearchRequest{
+			TenantID: "tenant1",
+			KbIDs:    kbIDs,
+			Pattern:  "foo.*bar",
+		})
+		if err == nil {
+			t.Fatalf("SearchByRegexp(KbIDs=%v) must reject an empty dataset scope", kbIDs)
+		}
+		if !strings.Contains(err.Error(), "at least one dataset id") {
+			t.Errorf("SearchByRegexp(KbIDs=%v) error = %v, want it to name the missing dataset scope", kbIDs, err)
+		}
 	}
 }

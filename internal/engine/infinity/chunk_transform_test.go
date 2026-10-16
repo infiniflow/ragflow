@@ -23,6 +23,7 @@ import (
 	"strings"
 	"testing"
 
+	"ragflow/internal/engine/types"
 	"ragflow/internal/utility"
 
 	infinitysdk "github.com/infiniflow/infinity-go-sdk"
@@ -982,5 +983,62 @@ func TestChunksFromColumnDataAllNullIsEmpty(t *testing.T) {
 	rows := chunksFromColumnData(map[string][]interface{}{"content": {nil}})
 	if len(rows) != 0 {
 		t.Fatalf("chunksFromColumnData() returned %d rows, want 0", len(rows))
+	}
+}
+
+// TestSortChunksByFieldsRestoresReadingOrder covers the cross-table merge: a table's
+// rows arrive in that table's order, so the requested order has to be re-applied across
+// the merged set, with page_num_int compared numerically (it arrives as a hex-decoded
+// int slice).
+func TestSortChunksByFieldsRestoresReadingOrder(t *testing.T) {
+	rows := []map[string]interface{}{
+		{"id": "b1", "doc_id": "doc-b", "page_num_int": []int{10}, "chunk_order_int": 0},
+		{"id": "b2", "doc_id": "doc-b", "page_num_int": []int{3}, "chunk_order_int": 5},
+		{"id": "a1", "doc_id": "doc-a", "page_num_int": []int{2}, "chunk_order_int": 9},
+		{"id": "a2", "doc_id": "doc-a", "page_num_int": []int{2}, "chunk_order_int": 1},
+	}
+	sortChunksByFields(rows, &types.OrderByExpr{Fields: []types.OrderByField{
+		{Field: "doc_id"},
+		{Field: "page_num_int"},
+		{Field: "chunk_order_int"},
+	}})
+
+	got := make([]string, 0, len(rows))
+	for _, row := range rows {
+		got = append(got, row["id"].(string))
+	}
+	// Document first, then the page within it (numerically), then the chunk order
+	// within that page.
+	want := []string{"a2", "a1", "b2", "b1"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("merged reading order = %v, want %v", got, want)
+	}
+}
+
+// TestSortChunksByFieldsRanksUnsetKeyFirst pins the mixed-key case: a chunk with no page
+// number arrives as the empty column default, a chunk that has one as a hex-decoded int
+// slice. An unset key ranks first, and both argument orders must agree on that.
+func TestSortChunksByFieldsRanksUnsetKeyFirst(t *testing.T) {
+	order := &types.OrderByExpr{Fields: []types.OrderByField{
+		{Field: "doc_id"},
+		{Field: "page_num_int"},
+	}}
+	sorted := func(rows []map[string]interface{}) []string {
+		sortChunksByFields(rows, order)
+		ids := make([]string, 0, len(rows))
+		for _, row := range rows {
+			ids = append(ids, row["id"].(string))
+		}
+		return ids
+	}
+	withPage := map[string]interface{}{"id": "page-5", "doc_id": "doc-1", "page_num_int": []int{5}}
+	unset := map[string]interface{}{"id": "page-unset", "doc_id": "doc-1", "page_num_int": ""}
+
+	want := []string{"page-unset", "page-5"}
+	if got := sorted([]map[string]interface{}{withPage, unset}); !reflect.DeepEqual(got, want) {
+		t.Errorf("sort(page-first input) = %v, want %v", got, want)
+	}
+	if got := sorted([]map[string]interface{}{unset, withPage}); !reflect.DeepEqual(got, want) {
+		t.Errorf("sort(unset-first input) = %v, want %v", got, want)
 	}
 }

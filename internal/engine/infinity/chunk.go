@@ -1520,13 +1520,10 @@ const (
 )
 
 // SearchByRegexp is a regex-match-only search over chunk content for the agent's
-// grep_chunks/list_chunks tools, mirroring the Elasticsearch engine.
-//
-// The pattern is pushed down as regex(content, ...): a sparse gram index on
-// content ("sparsegram-3-12-fold") narrows the scan by the pattern's mandatory
-// literals, otherwise it is a plain scan with the same result. Infinity runs RE2
-// over the analyzed column, so the pattern is used verbatim (no ".*(...).*"
-// wrapper) and "(?i)" carries case folding.
+// grep_chunks/list_chunks tools, mirroring the Elasticsearch engine. The pattern goes
+// down as regex(content, ...), which the content column's sparse gram index narrows by
+// the pattern's mandatory literals; Infinity evaluates it with RE2, so the pattern is
+// used verbatim (no ".*(...).*" wrapper) and "(?i)" carries case folding.
 func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequest) (*types.SearchResult, error) {
 	if req == nil {
 		return nil, fmt.Errorf("regexp search request cannot be nil")
@@ -1542,6 +1539,18 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	if strings.Contains(tenantID, ",") {
 		return nil, fmt.Errorf("regexp search supports exactly one tenant")
 	}
+	// Chunk tables are per dataset: an unscoped request would read the bare
+	// ragflow_<tenant>, which holds no chunks, and report an empty result.
+	scoped := false
+	for _, kbID := range req.KbIDs {
+		if strings.TrimSpace(kbID) != "" {
+			scoped = true
+			break
+		}
+	}
+	if !scoped {
+		return nil, fmt.Errorf("regexp search requires at least one dataset id")
+	}
 
 	maxResults := regexpSearchDefaultLimit
 	if req.ReturnAll {
@@ -1556,16 +1565,12 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 
 	// Chunk tables are per dataset: ragflow_<tenant>_<datasetID>.
 	baseName := fmt.Sprintf("ragflow_%s", tenantID)
-	var tableNames []string
-	if len(req.KbIDs) == 0 {
-		tableNames = []string{baseName}
-	} else {
-		for _, kbID := range req.KbIDs {
-			if kbID == "" {
-				tableNames = append(tableNames, baseName)
-			} else {
-				tableNames = append(tableNames, fmt.Sprintf("%s_%s", baseName, kbID))
-			}
+	tableNames := make([]string, 0, len(req.KbIDs))
+	for _, kbID := range req.KbIDs {
+		if kbID == "" {
+			tableNames = append(tableNames, baseName)
+		} else {
+			tableNames = append(tableNames, fmt.Sprintf("%s_%s", baseName, kbID))
 		}
 	}
 
@@ -1577,8 +1582,11 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		"doc_type_kwd", "mom_id", "tag_kwd", "pagerank_fea", "tag_feas",
 	}
 	if len(req.SelectFields) > 0 {
-		outputColumns = req.SelectFields
+		outputColumns = append([]string(nil), req.SelectFields...)
 	}
+	// The merge at the end restores the order Go-side, so the sort keys must be
+	// projected even when the caller did not ask for them.
+	outputColumns = unionSortColumns(outputColumns, req.Sort)
 	// No MATCH is applied, so Infinity accepts no score column to project.
 	outputColumns = stripScorePseudoColumns(outputColumns)
 	outputColumns = convertSelectFields(outputColumns, false, false)
@@ -1595,11 +1603,15 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 	for _, tableName := range tableNames {
 		tbl, err := db.GetTable(tableName)
 		if err != nil {
+			// A dataset table that does not exist yet is normal (tables are created on
+			// first write); any other open failure is real and must reach the caller.
+			errMsg := strings.ToLower(err.Error())
+			tableMissing := strings.Contains(errMsg, "not found") || strings.Contains(errMsg, "doesn't exist")
 			if isConnectionLevelError(err) {
 				e.client.dropConnectionFor(db, "SearchByRegexp")
-				if queryErr == nil {
-					queryErr = fmt.Errorf("open table %s: %w", tableName, err)
-				}
+			}
+			if !tableMissing && queryErr == nil {
+				queryErr = fmt.Errorf("open table %s: %w", tableName, err)
 			}
 			continue
 		}
@@ -1660,6 +1672,14 @@ func (e *Engine) SearchByRegexp(ctx context.Context, req *types.RegexpSearchRequ
 		totalHits += tableTotal
 	}
 
+	// limit() applies per table, so merge the tables' pages into the requested order
+	// and cap once, as the Elasticsearch engine does after its single-index query.
+	// The cap must follow the sort, and Total stays the pre-cap count.
+	sortChunksByFields(allResults, req.Sort)
+	if len(allResults) > maxResults {
+		allResults = allResults[:maxResults]
+	}
+
 	// All tables failed: surface the error rather than an empty result.
 	if len(allResults) == 0 && totalHits == 0 && queryErr != nil {
 		return nil, fmt.Errorf("infinity regexp search failed on all tables: %w", queryErr)
@@ -1690,6 +1710,108 @@ func buildRegexpFilter(filter map[string]interface{}, pattern string) string {
 	}
 	parts = append(parts, infinity.RegexFilter("content", "(?i)"+pattern))
 	return strings.Join(parts, " AND ")
+}
+
+// unionSortColumns appends the requested sort keys to a projection, preserving the
+// caller's column order: the engine orders the merged rows itself.
+func unionSortColumns(columns []string, sort *types.OrderByExpr) []string {
+	if sort == nil || len(sort.Fields) == 0 {
+		return columns
+	}
+	seen := make(map[string]struct{}, len(columns)+len(sort.Fields))
+	for _, column := range columns {
+		seen[column] = struct{}{}
+	}
+	for _, field := range sort.Fields {
+		if field.Field == "" {
+			continue
+		}
+		if _, ok := seen[field.Field]; ok {
+			continue
+		}
+		seen[field.Field] = struct{}{}
+		columns = append(columns, field.Field)
+	}
+	return columns
+}
+
+// sortChunksByFields orders merged rows by the requested fields, ascending unless a
+// field asks for descending, mirroring the Elasticsearch engine's sortByFields: a
+// missing field sorts first, numbers numerically, strings lexicographically.
+// page_num_int arrives hex-decoded as an int slice, compared on its leading element.
+func sortChunksByFields(chunks []map[string]interface{}, expr *types.OrderByExpr) {
+	if expr == nil || len(expr.Fields) == 0 {
+		return
+	}
+	sort.SliceStable(chunks, func(i, j int) bool {
+		for _, field := range expr.Fields {
+			vi, oki := chunks[i][field.Field]
+			vj, okj := chunks[j][field.Field]
+			if !oki || !okj {
+				if !oki && !okj {
+					continue
+				}
+				// Missing field sorts before a present one.
+				return !oki
+			}
+			less, equal := compareOrderValues(vi, vj)
+			if equal {
+				continue
+			}
+			if field.Type == types.SortDesc {
+				return !less
+			}
+			return less
+		}
+		return false
+	})
+}
+
+// compareOrderValues compares two raw field values: numbers numerically, strings
+// lexicographically, anything else by text. An unset key (the empty column default, as
+// a page number that was never set) ranks before a set one in either argument order, so
+// the pair cannot order differently by comparison direction; equality is reported
+// separately, so only a real tie falls through to the next sort field.
+func compareOrderValues(a, b interface{}) (less, equal bool) {
+	fa, okA := numericOrderValue(a)
+	fb, okB := numericOrderValue(b)
+	if okA != okB {
+		return !okA, false
+	}
+	if okA {
+		return fa < fb, fa == fb
+	}
+	sa, okSA := a.(string)
+	sb, okSB := b.(string)
+	if okSA && okSB {
+		return sa < sb, sa == sb
+	}
+	ta, tb := fmt.Sprintf("%v", a), fmt.Sprintf("%v", b)
+	return ta < tb, ta == tb
+}
+
+// numericOrderValue reads a scalar order key, unwrapping the int slice
+// applyFieldMappings leaves behind for hex-encoded columns.
+func numericOrderValue(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case []int:
+		if len(n) > 0 {
+			return float64(n[0]), true
+		}
+	case []interface{}:
+		if len(n) > 0 {
+			return numericOrderValue(n[0])
+		}
+	}
+	return 0, false
 }
 
 // GetChunk gets a chunk by ID
