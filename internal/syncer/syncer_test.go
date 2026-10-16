@@ -723,8 +723,9 @@ func TestNATSTaskWorkerClaimsAndAcksOnSuccess(t *testing.T) {
 	}
 }
 
-// TestNATSTaskWorkerAcksUnclaimableMessage verifies duplicate/stale messages do not redeliver forever.
-func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
+// TestNATSTaskWorkerNacksRunningUnclaimableMessage keeps a delivery pending
+// until the active owner completes or restores the task to schedule state.
+func TestNATSTaskWorkerNacksRunningUnclaimableMessage(t *testing.T) {
 	db := setupSyncerDB(t)
 	insertTaskContext(t, db, "conn-1", "kb-1", "task-1", dao.TaskTypeSync)
 	if err := db.Model(&entity.SyncLogs{}).Where("id = ?", "task-1").Update("status", dao.SyncStatusRunning).Error; err != nil {
@@ -735,6 +736,20 @@ func TestNATSTaskWorkerAcksUnclaimableMessage(t *testing.T) {
 	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "task-1", TaskType: common.TaskTypeSyncer}}
 	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, newCoordinator(taskDAO, taskService, newTestRegistry(nil), &fakeSink{}, nil, fakeStore{}), NewConnectorLock())
 	worker.handle(t.Context(), TaskEnvelope{TaskID: "task-1", Handle: handle})
+	if handle.acks != 0 || handle.nacks != 1 {
+		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
+	}
+}
+
+func TestNATSTaskWorkerAcksMissingTaskMessage(t *testing.T) {
+	db := setupSyncerDB(t)
+	taskDAO := dao.NewSyncTaskDAO(db)
+	taskService := service.NewSyncTaskService(taskDAO)
+	handle := &fakeTaskHandle{msg: common.TaskMessage{TaskID: "missing-task", TaskType: common.TaskTypeSyncer}}
+	worker := NewTaskWorker(make(chan TaskEnvelope, 1), taskDAO, taskService, nil, nil)
+
+	worker.handle(t.Context(), TaskEnvelope{TaskID: "missing-task", Handle: handle})
+
 	if handle.acks != 1 || handle.nacks != 0 {
 		t.Fatalf("settlement acks=%d nacks=%d", handle.acks, handle.nacks)
 	}

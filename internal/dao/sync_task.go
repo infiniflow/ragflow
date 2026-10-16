@@ -278,6 +278,20 @@ func (d *SyncTaskDAO) IsTaskCanceled(ctx context.Context, taskID string) (bool, 
 	return task.Status == SyncStatusCancel, nil
 }
 
+// GetTaskStatus returns the current status of a sync task. found is false when
+// the task no longer exists, allowing consumers to acknowledge stale messages.
+func (d *SyncTaskDAO) GetTaskStatus(ctx context.Context, taskID string) (status string, found bool, err error) {
+	var task entity.SyncLogs
+	err = d.db.WithContext(ctx).Select("status").Where("id = ?", taskID).Take(&task).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return task.Status, true, nil
+}
+
 // MarkConnectorRunning marks a connector running.
 func (d *SyncTaskDAO) MarkConnectorRunning(ctx context.Context, connectorID string) error {
 	return d.db.WithContext(ctx).Model(&entity.Connector{}).Where("id = ?", connectorID).Update("status", SyncStatusRunning).Error

@@ -96,8 +96,20 @@ func (w *TaskWorker) handle(ctx context.Context, envelope TaskEnvelope) {
 			return
 		}
 		if !claimed {
-			_ = envelope.Handle.Ack() // this task has been claimed by other worker
-			w.scheduleRetryIfTaskScheduled(ctx, envelope.TaskID, 3*time.Second)
+			status, found, statusErr := w.taskDAO.GetTaskStatus(ctx, envelope.TaskID)
+			if statusErr != nil {
+				common.Warn("syncer unclaimed task status lookup failed", zap.String("task_id", envelope.TaskID), zap.Error(statusErr))
+				_ = envelope.Handle.Nack()
+				return
+			}
+			if status == dao.SyncStatusRunning {
+				_ = envelope.Handle.Nack()
+				return
+			}
+			_ = envelope.Handle.Ack()
+			if found && status == dao.SyncStatusSchedule {
+				w.scheduleRetry(ctx, envelope.TaskID, 3*time.Second)
+			}
 			return
 		}
 	}
@@ -218,21 +230,6 @@ func (w *TaskWorker) scheduleRetry(ctx context.Context, taskID string, delay tim
 	if err := w.scheduler.ScheduleTaskAfter(ctx, taskID, delay); err != nil {
 		common.Warn("syncer retry task publish failed", zap.String("task_id", taskID), zap.Duration("delay", delay), zap.Error(err))
 	}
-}
-
-func (w *TaskWorker) scheduleRetryIfTaskScheduled(ctx context.Context, taskID string, delay time.Duration) {
-	if w.scheduler == nil || taskID == "" {
-		return
-	}
-	taskContext, err := w.taskDAO.GetTaskContext(ctx, taskID)
-	if err != nil {
-		common.Warn("syncer retry task lookup failed", zap.String("task_id", taskID), zap.Error(err))
-		return
-	}
-	if taskContext.Task.Status != dao.SyncStatusSchedule {
-		return
-	}
-	w.scheduleRetry(ctx, taskID, delay)
 }
 
 func (w *TaskWorker) rescheduleClaimed(ctx context.Context, taskID string, startedAt *time.Time) (bool, error) {
