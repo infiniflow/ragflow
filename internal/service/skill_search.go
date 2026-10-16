@@ -28,7 +28,7 @@ import (
 	"ragflow/internal/engine/types"
 	"ragflow/internal/entity"
 	"ragflow/internal/entity/models"
-	"ragflow/internal/utility"
+	"ragflow/internal/permission"
 	"strings"
 
 	"go.uber.org/zap"
@@ -55,10 +55,14 @@ type GetConfigRequest struct {
 }
 
 // GetConfig retrieves the search configuration for a tenant
-func (s *SkillSearchService) GetConfig(ctx context.Context, tenantID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) GetConfig(ctx context.Context, userID, spaceID, embdID string) (map[string]interface{}, common.ErrorCode, error) {
 	spaceID = normalizeSpaceID(spaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationRead)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
 	var config *entity.SkillSearchConfig
-	var err error
 
 	if embdID == "" {
 		// If embd_id is not provided, get the latest config for the tenant
@@ -84,6 +88,11 @@ func (s *SkillSearchService) GetConfig(ctx context.Context, tenantID, spaceID, e
 	} else {
 		config, err = s.configDAO.GetByTenantAndEmbdID(ctx, dao.DB, tenantID, spaceID, embdID)
 		if err != nil {
+			tenantID, err = resolveSkillSpaceTenantID(ctx, userID, spaceID, permission.OperationUpdate)
+			if err != nil {
+				code, normalized := normalizeSkillSpacePermissionError(err)
+				return nil, code, normalized
+			}
 			// Config not found, create default one
 			config, err = s.configDAO.GetOrCreate(ctx, dao.DB, tenantID, spaceID, embdID)
 			if err != nil {
@@ -108,8 +117,14 @@ type UpdateConfigRequest struct {
 }
 
 // UpdateConfig updates the search configuration for a tenant
-func (s *SkillSearchService) UpdateConfig(ctx context.Context, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
+func (s *SkillSearchService) UpdateConfig(ctx context.Context, userID string, req *UpdateConfigRequest) (map[string]interface{}, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUpdate)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	req.TenantID = tenantID
 	// Validate vector_similarity_weight
 	if req.VectorSimilarityWeight < 0 || req.VectorSimilarityWeight > 1 {
 		return nil, common.CodeDataError, errors.New("vector_similarity_weight must be between 0 and 1")
@@ -207,8 +222,14 @@ type SearchResponse struct {
 }
 
 // Search performs skill search with the configured strategy
-func (s *SkillSearchService) Search(ctx context.Context, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
+func (s *SkillSearchService) Search(ctx context.Context, userID string, req *SearchRequest, docEngine engine.DocEngine) (*SearchResponse, common.ErrorCode, error) {
 	req.SpaceID = normalizeSpaceID(req.SpaceID)
+	tenantID, err := resolveSkillSpaceTenantID(ctx, userID, req.SpaceID, permission.OperationUse)
+	if err != nil {
+		code, normalized := normalizeSkillSpacePermissionError(err)
+		return nil, code, normalized
+	}
+	req.TenantID = tenantID
 	if req.Page <= 0 {
 		req.Page = 1
 	}
@@ -561,13 +582,13 @@ func (s *SkillSearchService) convertChunksToResults(chunks []map[string]interfac
 		// Note: SCORE/SIMILARITY may be float32 or float64 depending on Infinity version
 		bm25Score := 0.0
 		if scoreVal, ok := chunk["SCORE"]; ok {
-			if f, ok := utility.ToFloat64(scoreVal); ok {
+			if f, ok := common.ToFloat(scoreVal); ok {
 				bm25Score = f
 			}
 		}
 		vectorScore := 0.0
 		if simVal, ok := chunk["SIMILARITY"]; ok {
-			if f, ok := utility.ToFloat64(simVal); ok {
+			if f, ok := common.ToFloat(simVal); ok {
 				vectorScore = f
 			}
 		}
@@ -707,10 +728,12 @@ func SkillIndexName(tenantID, spaceID string) string {
 	return fmt.Sprintf("skill_%s_%s", uniqueTenant, uniqueSpace)
 }
 
+const defaultSkillSpaceID = "default"
+
 func normalizeSpaceID(spaceID string) string {
 	spaceID = strings.TrimSpace(spaceID)
 	if spaceID == "" {
-		return "default"
+		return defaultSkillSpaceID
 	}
 	return spaceID
 }

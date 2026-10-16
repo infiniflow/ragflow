@@ -50,7 +50,7 @@ func TestPDFParser_ParseWithResult_CGOFixture(t *testing.T) {
 	if got := res.File["page_count"]; got == nil {
 		t.Fatal("File.page_count missing")
 	}
-	if positions, ok := res.JSON[0]["_pdf_positions"].([][]any); ok && len(positions) == 0 {
+	if positions, ok := res.JSON[0].ToMap()["_pdf_positions"].([][]any); ok && len(positions) == 0 {
 		t.Fatal("JSON[0]._pdf_positions is empty; want normalized positions for fixture text")
 	}
 }
@@ -103,7 +103,7 @@ func TestPDFParser_ParseWithResult_CGOFixturePlainText(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want page text items")
 	}
-	if got, _ := res.JSON[0]["text"].(string); strings.TrimSpace(got) == "" {
+	if got, _ := res.JSON[0].ToMap()["text"].(string); strings.TrimSpace(got) == "" {
 		t.Fatal("plain_text first page is empty")
 	}
 }

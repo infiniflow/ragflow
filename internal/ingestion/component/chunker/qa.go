@@ -88,17 +88,14 @@ func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	return c.invoke(ctx, inputs)
 }
 
+// invoke extracts question-answer pairs from the decoded upstream payload.
 func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
 	}
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {
-		return map[string]any{
-			"output_format": "chunks",
-			"chunks":        []map[string]any{},
-			"_ERROR":        fmt.Sprintf("Input error: %v", err),
-		}, nil
+		return inputErrorOutput(err), nil
 	}
 
 	qPrefix, aPrefix := "问题：", "回答："
@@ -432,7 +429,7 @@ func extractQAJSON(items []schema.ChunkDoc, fileType string) []qaPair {
 		// wire must be re-parsed rather than re-chunked.
 		var rows [][]string
 		if td != nil {
-			rows = td.Rows
+			rows = td.CellTexts()
 		}
 		if len(rows) > 0 {
 			tmp = qaPairsFromRows(rows, strictCSV, item.Positions, item.SheetIndex != nil || item.Sheet != "")
@@ -468,7 +465,7 @@ func extractQATable(htmlStr string, strictPairs bool) []qaPair {
 	if err != nil || td == nil {
 		return nil
 	}
-	return qaPairsFromRows(td.Rows, strictPairs, nil, false)
+	return qaPairsFromRows(td.CellTexts(), strictPairs, nil, false)
 }
 
 // qaPairsFromRows builds the pairs of one table: the first two non-empty

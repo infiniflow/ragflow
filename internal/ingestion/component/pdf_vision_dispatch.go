@@ -17,7 +17,6 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"ragflow/internal/common"
@@ -25,6 +24,7 @@ import (
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
+	"ragflow/internal/rag/prompts"
 	"ragflow/internal/utility"
 
 	"go.uber.org/zap"
@@ -54,16 +54,10 @@ const (
 var monkeyOCRv2ImagePattern = regexp.MustCompile(`!\[([^]]*)\]\(([^)]+)\)`)
 
 var (
-	pdfVisionPromptLoader  = loadPDFVisionPrompt
+	pdfVisionPromptLoader  = (prompts.EmbeddedPromptLoader{}).Load
 	pdfVisionPageRenderer  = defaultRenderPDFVisionPages
 	pdfVisionModelResolver = defaultPDFVisionModelResolver
 	pdfVisionChatInvoker   = defaultPDFVisionChatInvoker
-)
-
-var (
-	pdfVisionPromptCache   = make(map[string]string)
-	pdfVisionPromptCacheMu sync.RWMutex
-	pdfVisionPrompts       promptDirState
 )
 
 func maybeDispatchPDFVision(
@@ -252,11 +246,11 @@ func dispatchMonkeyOCRv2PDF(ctx context.Context, db *gorm.DB, filename string, b
 	return buildMarkdownOCRDispatchResult(md), nil
 }
 
-func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []map[string]any {
+func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []parser.DocItem {
 	mp, err := parser.NewMarkdownParser(parser.GoMarkdown)
 	if err != nil {
 		warnParserNormalizationFallback(filename, "markdown", err)
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	// OCR Markdown is an untrusted backend response. Keep normalization
 	// deterministic and local: embedded data URIs remain available, while
@@ -265,11 +259,11 @@ func parseMarkdownToJSONItems(ctx context.Context, filename, mdText string) []ma
 	res := mp.ParseWithResult(ctx, filename, []byte(mdText))
 	if res.Err != nil {
 		warnParserNormalizationFallback(filename, "markdown", res.Err)
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	if len(res.JSON) == 0 {
 		warnParserNormalizationFallback(filename, "markdown", fmt.Errorf("parser returned no JSON items"))
-		return []map[string]any{parser.NewTextJSONItem(mdText)}
+		return []parser.DocItem{parser.NewTextJSONItem(mdText)}
 	}
 	return res.JSON
 }
@@ -1056,7 +1050,7 @@ func mineruJSONParseResult(filename string, items []map[string]any) parser.Parse
 			"outline":      []map[string]any{},
 			"parse_method": "mineru",
 		},
-		JSON: items,
+		JSON: parser.MapsToItems(items),
 	}
 }
 
@@ -1154,7 +1148,7 @@ func dispatchPDFVision(
 	return parser.ParseResult{
 		OutputFormat: "json",
 		File:         fileMeta,
-		JSON:         items,
+		JSON:         parser.MapsToItems(items),
 	}, nil
 }
 
@@ -1192,34 +1186,6 @@ func defaultPDFVisionChatInvoker(
 	vision := true
 	chatModel := modelModule.NewChatModel(driver, &modelName, apiConfig)
 	return chatModel.ChatWithMessages(ctx, messages, &modelModule.ChatConfig{Vision: &vision}, nil)
-}
-
-func loadPDFVisionPrompt(name string) (string, error) {
-	pdfVisionPromptCacheMu.RLock()
-	if cached, ok := pdfVisionPromptCache[name]; ok {
-		pdfVisionPromptCacheMu.RUnlock()
-		return cached, nil
-	}
-	pdfVisionPromptCacheMu.RUnlock()
-
-	baseDir, err := pdfVisionPromptsBaseDir()
-	if err != nil {
-		return "", err
-	}
-	promptPath := filepath.Join(baseDir, "rag", "prompts", fmt.Sprintf("%s.md", name))
-	content, err := os.ReadFile(promptPath)
-	if err != nil {
-		return "", fmt.Errorf("prompt file %q not found: %w", name, err)
-	}
-	cached := strings.TrimSpace(string(content))
-	pdfVisionPromptCacheMu.Lock()
-	pdfVisionPromptCache[name] = cached
-	pdfVisionPromptCacheMu.Unlock()
-	return cached, nil
-}
-
-func pdfVisionPromptsBaseDir() (string, error) {
-	return pdfVisionPrompts.resolve(utility.GetProjectRoot())
 }
 
 // renderPDFVisionPrompt only renders page metadata. The full-page PDF vision

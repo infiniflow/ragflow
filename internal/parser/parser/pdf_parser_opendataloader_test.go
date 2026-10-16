@@ -143,8 +143,9 @@ func TestOpenDataLoaderItems_TableCellsFallback(t *testing.T) {
 	if items[0]["text"] != nil {
 		t.Fatalf("table item must not carry legacy HTML text: %#v", items[0])
 	}
-	if len(td.Rows) != 1 || len(td.Rows[0]) != 2 || td.Rows[0][0] != "a" || td.Rows[0][1] != "b" {
-		t.Fatalf("table rows = %#v, want [[a b]]", td.Rows)
+	rows := td.CellTexts()
+	if len(rows) != 1 || len(rows[0]) != 2 || rows[0][0] != "a" || rows[0][1] != "b" {
+		t.Fatalf("table rows = %#v, want [[a b]]", rows)
 	}
 	if td.HeaderRows != 1 {
 		t.Fatalf("HeaderRows = %d, want 1", td.HeaderRows)

@@ -81,12 +81,6 @@ func (m *MinioStorage) connect() error {
 	return nil
 }
 
-func (m *MinioStorage) reconnect() {
-	if err := m.connect(); err != nil {
-		common.Fatal(fmt.Sprintf("Failed to reconnect to MinIO, %s", err.Error()))
-	}
-}
-
 func (m *MinioStorage) resolveBucketAndPath(bucket, fnm string) (string, string) {
 	actualBucket := bucket
 	if m.bucket != "" {
@@ -140,7 +134,6 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 					return ctxErr
 				}
 				common.Warn("Failed to check bucket existence", zap.String("bucket", bucket), zap.Error(err))
-				m.reconnect()
 				if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
 					return sleepErr
 				}
@@ -153,7 +146,6 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 						return ctxErr
 					}
 					common.Warn("Failed to create bucket", zap.String("bucket", bucket), zap.Error(err))
-					m.reconnect()
 					if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
 						return sleepErr
 					}
@@ -171,7 +163,6 @@ func (m *MinioStorage) Put(ctx context.Context, bucket, fnm string, binary []byt
 				return ctxErr
 			}
 			common.Warn(warnMessage, zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			m.reconnect()
 			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
 				return sleepErr
 			}
@@ -197,7 +188,6 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 				return nil, ctxErr
 			}
 			common.Warn("failed to get object", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			m.reconnect()
 			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
 				return nil, sleepErr
 			}
@@ -216,7 +206,6 @@ func (m *MinioStorage) Get(ctx context.Context, bucket, fnm string, tenantID ...
 				return nil, ctxErr
 			}
 			common.Error("failed to read object data", err, zap.String("bucket", bucket), zap.String("key", fnm))
-			m.reconnect()
 			if sleepErr := sleepOrAbort(ctx, time.Second); sleepErr != nil {
 				return nil, sleepErr
 			}
@@ -291,7 +280,6 @@ func (m *MinioStorage) GetPresignedURL(ctx context.Context, bucket, fnm string, 
 				return "", ctxErr
 			}
 			common.Warn("Failed to get presigned URL", zap.String("bucket", bucket), zap.String("key", fnm), zap.Error(err))
-			m.reconnect()
 			if err = sleepOrAbort(ctx, time.Second); err != nil {
 				return "", err
 			}

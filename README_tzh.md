@@ -198,10 +198,10 @@
    cd ragflow/docker
    ```
 
-   切換到 `v1.0.0-rc1` 發佈標籤。
+   切換到 `v1.0.0-rc2` 發佈標籤。
 
    ```bash
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    ```
 
    在啓動 RAGFlow 服務及其依賴服務。
@@ -210,10 +210,10 @@
    docker compose -f docker-compose.yml up -d
    ```
 
-   > 💡 **鏡像下載提示：** 如果無法從默認倉庫拉取鏡像，請先在 `docker/.env` 中將 `RAGFLOW_IMAGE` 設置為以下鏡像源之一，並保留 `v1.0.0-rc1` 標籤：
+   > 💡 **鏡像下載提示：** 如果無法從默認倉庫拉取鏡像，請先在 `docker/.env` 中將 `RAGFLOW_IMAGE` 設置為以下鏡像源之一，並保留 `v1.0.0-rc2` 標籤：
    >
-   > - 華為雲：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc1`
-   > - 阿里雲：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc1`
+   > - 華為雲：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc2`
+   > - 阿里雲：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc2`
 
    默認 MySQL 配置下，鏡像入口會先執行數據庫遷移，再啓動 Admin、Syncer、Ingestor 和 API 等服務。
 
@@ -263,15 +263,14 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。鏡像、端
    cd ragflow
    ```
 
-2. 運行 [依賴下載腳本](./ragflow_deps/download_deps.py) 下載靜態庫和模型文件：
+2. 執行依賴下載腳本，準備 Go 建置所需連結的原生靜態庫（`download_dev_deps.py`）與後端執行時載入的模型/分詞器資源（`download_deps.py`）：
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
 
-   下載腳本準備構建所需的靜態庫和模型資源，並需要 `requests` 和 `huggingface-hub`。如果已通過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
+   `download_dev_deps.py` 拉取並解壓 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 詞表、DeepDoc 模型與 embedding 分詞器資源到 `ragflow_deps/`。兩個腳本均為 Python 腳本，`uv run` 會自動安裝其聲明的依賴（`requests`，模型與分詞器下載另需 `huggingface-hub`）。如果已透過其他方式準備好相同資源，可跳過這一步。Go 服務從倉庫根目錄啓動時會自動查找 `internal/rag/res/deepdoc`；如需從其他目錄啓動，請將 `DEEPDOC_MODEL_DIR` 設為該目錄的絕對路徑。
 
 3. 編譯：
 

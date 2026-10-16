@@ -286,8 +286,8 @@ function transformGeneralChunkerConfigToForm(
 
 /**
  * Converts TitleChunker config from API/DSL format to form format.
- * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], include_heading_content, root_chunk_as_heading }
- * Form: { method, hierarchyHierarchy, hierarchyGroup, include_heading_content, root_chunk_as_heading, hierarchyRules, groupRules }
+ * DSL:  { method: "hierarchy", hierarchy: "3", levels: [...], chunk_token_cap, include_heading_content, root_chunk_as_heading }
+ * Form: { method, hierarchyHierarchy, hierarchyGroup, hierarchyChunkTokenCap, groupChunkTokenCap, include_heading_content, root_chunk_as_heading, hierarchyRules, groupRules }
  */
 function transformTitleChunkerConfigToForm(
   config: Record<string, any> | undefined,
@@ -319,10 +319,22 @@ function transformTitleChunkerConfigToForm(
     result.groupRules = transformLevelsToRules(config.levels);
   }
 
+  // Split the backend-facing shared `chunk_token_cap` into the per-method
+  // fields the form edits (mirroring the rules/hierarchy split above).
+  if (config.chunk_token_cap !== undefined) {
+    if (result.hierarchyChunkTokenCap === undefined) {
+      result.hierarchyChunkTokenCap = config.chunk_token_cap;
+    }
+    if (result.groupChunkTokenCap === undefined) {
+      result.groupChunkTokenCap = config.chunk_token_cap;
+    }
+  }
+
   // Clean up DSL-only fields
   delete result.hierarchy;
   delete result.levels;
   delete result.rules;
+  delete result.chunk_token_cap;
 
   return result;
 }
@@ -439,7 +451,12 @@ export function transformFormConfigToApi(
       // the backend ManualChunker component (manual.go pins method=group,
       // ignores the token cap).
       return transformTitleChunkerParams(
-        omit(config, ['include_heading_content', 'chunk_token_cap']) as any,
+        omit(config, [
+          'include_heading_content',
+          'chunk_token_cap',
+          'hierarchyChunkTokenCap',
+          'groupChunkTokenCap',
+        ]) as any,
       );
     default:
       return config;

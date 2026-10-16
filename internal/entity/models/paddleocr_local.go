@@ -109,11 +109,10 @@ func (p *PaddleOCRLocalModel) OCRFile(ctx context.Context, modelName *string, co
 	algorithm := paddleOCRAlgorithm(ocrConfig, apiConfig)
 	apiConfig = paddleOCRResolvedAPIConfig(apiConfig)
 
-	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	base64Str := base64.StdEncoding.EncodeToString(content)
 
@@ -269,4 +268,8 @@ func (p *PaddleOCRLocalModel) ListTasks(ctx context.Context, apiConfig *APIConfi
 
 func (p *PaddleOCRLocalModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", p.Name())
+}
+
+func (p *PaddleOCRLocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

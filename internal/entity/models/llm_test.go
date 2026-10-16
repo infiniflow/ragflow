@@ -593,6 +593,9 @@ func (d *captureToolDriver) ListTasks(ctx context.Context, _ *APIConfig) ([]List
 func (d *captureToolDriver) ShowTask(ctx context.Context, _ string, _ *APIConfig) (*TaskResponse, error) {
 	return nil, nil
 }
+func (u *captureToolDriver) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, nil
+}
 
 // TestToInternalMessagesConvertsMultiModalContent guards the eino→driver
 // boundary: UserInputMultiContent must become OpenAI-style content blocks

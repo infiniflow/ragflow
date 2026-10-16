@@ -145,7 +145,7 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	if present["name"] && req.Name != nil && (doc.Name == nil || *req.Name != *doc.Name) {
-		if err = s.updateDocumentNameOnly(ctx, doc, kb.TenantID, *req.Name); err != nil {
+		if err = s.updateDocumentNameOnly(ctx, doc, kb, *req.Name); err != nil {
 			return nil, common.CodeDataError, err
 		}
 	}
@@ -179,11 +179,6 @@ func (s *DocumentService) UpdateDatasetDocument(ctx context.Context, userID, dat
 	}
 
 	if present["parser_config"] && req.ParserConfig != nil {
-		// Normalize "pages" ranges before persistence. Invalid ranges are
-		// rejected (fail-fast) — the request is aborted with a clear error.
-		if err = pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
-			return nil, common.CodeDataError, err
-		}
 		var dslJSON []byte
 		dslJSON, err = service.LoadPipelineDSL(ctx, isPipeline, effParserID, effPipelineID)
 		if err != nil {
@@ -379,6 +374,12 @@ func (s *DocumentService) validateDatasetDocumentUpdate(ctx context.Context, dat
 			return common.CodeDataError, err
 		}
 	}
+	if present["parser_config"] && req.ParserConfig != nil {
+		// Reject invalid page ranges before any names or metadata are persisted.
+		if err := pipelinepkg.NormalizeParserConfigPages(req.ParserConfig); err != nil {
+			return common.CodeDataError, err
+		}
+	}
 
 	return common.CodeSuccess, nil
 }
@@ -453,7 +454,9 @@ func validateMetaFields(meta map[string]any) error {
 	return nil
 }
 
-func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, tenantID, newName string) error {
+// updateDocumentNameOnly renames a document and re-tokenizes its chunks' title
+// fields with the dataset language, the way ingestion tokenized them.
+func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entity.Document, kb *entity.Knowledgebase, newName string) error {
 	if err := s.documentDAO.UpdateByID(ctx, dao.DB, doc.ID, map[string]interface{}{"name": newName}); err != nil {
 		return errors.New("database error (Document rename)")
 	}
@@ -470,9 +473,14 @@ func (s *DocumentService) updateDocumentNameOnly(ctx context.Context, doc *entit
 		return nil
 	}
 
-	titleTks, _ := tokenizer.Tokenize(newName)
-	titleSmTks, _ := tokenizer.FineGrainedTokenize(titleTks)
-	indexName := fmt.Sprintf("ragflow_%s", tenantID)
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+	tok := tokenizer.New(language)
+	titleTks, _ := tok.Tokenize(newName)
+	titleSmTks, _ := tok.FineGrainedTokenize(titleTks)
+	indexName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 	return s.docEngine.UpdateChunks(
 		ctx,
 		map[string]interface{}{"doc_id": doc.ID},

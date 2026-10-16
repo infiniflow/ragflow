@@ -151,10 +151,10 @@ func (f *fakeUploadStorage) Close() error { return nil }
 
 type fakeChatDocEngine struct{}
 
-func (fakeChatDocEngine) CreateChunkStore(context.Context, string, string, int, string) error {
+func (fakeChatDocEngine) CreateChunkStore(context.Context, string, string, int, string, string) error {
 	return nil
 }
-func (fakeChatDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string) ([]string, error) {
+func (fakeChatDocEngine) InsertChunks(context.Context, []map[string]interface{}, string, string, string) ([]string, error) {
 	return nil, nil
 }
 func (fakeChatDocEngine) UpdateChunks(context.Context, map[string]interface{}, map[string]interface{}, string, string) error {
@@ -2471,6 +2471,44 @@ func TestUpdateDatasetDocumentRejectsUnsupportedParserIDForVisualDoc(t *testing.
 	}
 }
 
+func TestUpdateDatasetDocumentRejectedParserConfigPreservesNames(t *testing.T) {
+	db := setupServiceTestDB(t)
+	pushServiceDB(t, db)
+	insertTestKB(t, "kb-1", "tenant-1", 1, 0, 0)
+	insertNamedTestDoc(t, "doc-1", "kb-1", "old.pdf", 0, 0)
+	insertTestFile(t, "file-1", "folder-1", "old.pdf", new("old.pdf"))
+	insertTestFile2Document(t, "f2d-1", "file-1", "doc-1")
+
+	_, code, err := testDocumentService(t).UpdateDatasetDocument(t.Context(), "user-1", "kb-1", "doc-1", &UpdateDatasetDocumentRequest{
+		Name: new("must_not_persist.pdf"),
+		ParserConfig: map[string]any{
+			"Parser:HipSignsRhyme": map[string]any{
+				"pdf": map[string]any{"pages": []any{[]any{3, 1}}},
+			},
+		},
+	}, map[string]bool{"name": true, "parser_config": true})
+	if code != common.CodeDataError || err == nil || !strings.Contains(err.Error(), "from must be <= to") {
+		t.Fatalf("expected invalid page range rejection, got code=%v err=%v", code, err)
+	}
+
+	doc, err := dao.NewDocumentDAO().GetByID(t.Context(), db, "doc-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if doc.Name == nil {
+		t.Error("rejected parser config removed document name")
+	} else if *doc.Name != "old.pdf" {
+		t.Errorf("rejected parser config changed document name: %q", *doc.Name)
+	}
+	file, err := dao.NewFileDAO().GetByID(t.Context(), db, "file-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if file.Name != "old.pdf" {
+		t.Errorf("rejected parser config changed file name: %q", file.Name)
+	}
+}
+
 func TestUpdateDatasetDocumentRenameUpdatesDocumentAndFile(t *testing.T) {
 	db := setupServiceTestDB(t)
 	pushServiceDB(t, db)
@@ -4496,14 +4534,10 @@ func TestFileDeleteRemovesLinkedDocument(t *testing.T) {
 	t.Cleanup(func() { factory.SetStorage(originalStorage) })
 
 	docSvc := testDocumentService(t)
-	fileSvc := file.NewFileService(
-		func(_ context.Context, _ *dao.FileDAO, _ *entity.File, _ string) bool { return true },
-		docSvc,
-	)
+	fileSvc := file.NewFileService(docSvc)
 
-	success, msg := fileSvc.DeleteFiles(ctx, "tenant-1", []string{"file-1"})
-	if !success {
-		t.Fatalf("DeleteFiles failed: %s", msg)
+	if err := fileSvc.DeleteFiles(ctx, "user-1", []string{"file-1"}); err != nil {
+		t.Fatalf("DeleteFiles failed: %v", err)
 	}
 
 	_, err := dao.NewDocumentDAO().GetByID(ctx, db, "doc-1")

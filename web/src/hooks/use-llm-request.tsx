@@ -139,7 +139,7 @@ export const useFetchAllAddedModels = (
         params.type = modelType;
       }
       if (ownerTenantId) {
-        params.owner_tenant_id = ownerTenantId;
+        params.tenant_id = ownerTenantId;
       }
       const { data } = await llmService.listAllAddedModels({ params }, true);
 

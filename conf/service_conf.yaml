@@ -1,6 +1,6 @@
 general:
   heartbeat_interval: 3s
-ragflow:
+api:
   host: 0.0.0.0
   http_port: 9380
   # Proxies whose X-Forwarded-For / X-Real-IP headers the Go API server trusts

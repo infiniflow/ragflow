@@ -247,6 +247,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -356,6 +366,15 @@ jobs:
             fi
           else
             echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
+          fi
+
+          # Keep Go module/build caches OFF the runner container's writable layer
+          # (defaults /home/alice/{go/pkg/mod,.cache/go-build} ballooned the runner
+          # image to ~15G). RUNNER_WORKSPACE_PREFIX is a host bind mount, so caches
+          # land on the host and are shared/reused across the runners on this host.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
           fi
 
           PKGS=$(go list ./... 2>/dev/null \
@@ -668,8 +687,9 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Infinity
+      - name: Run search API tests against Infinity
         run: |
+          set -euo pipefail
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
@@ -685,7 +705,20 @@ jobs:
             sudo docker logs ${RAGFLOW_CONTAINER}
             exit 1
           fi
-          source .venv/bin/activate && set -o pipefail; DOC_ENGINE=infinity pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee infinity_restful_api_test.log
+          source .venv/bin/activate
+          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee infinity_search_api_test.log
+
+      - name: Run Go API tests against Infinity
+        # Search fixtures above configure the default models used by the Go suite.
+        # Go API tests have no priority filtering; run the full suite every time.
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee infinity_go_api_test.log
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v5
@@ -779,6 +812,16 @@ jobs:
       - name: Build ragflow go server
         run: |
           set -euo pipefail
+          # Keep Go module/build caches OFF the runner container's writable layer.
+          # ./build.sh --go runs on the runner itself (not inside the builder
+          # container), so it would otherwise use /home/alice/{go/pkg/mod,.cache/go-build}
+          # and balloon the layer. Redirect to the host bind mount, matching the
+          # unit/integration/native steps and the cleanup job's find paths.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           BUILDER_CONTAINER=ragflow_build_${GITHUB_RUN_ID}_${DOC_ENGINE}_$(od -An -N4 -tx4 /dev/urandom | tr -d ' ')
           cleanup_builder() {
             if [[ -n "${BUILDER_CONTAINER:-}" ]]; then
@@ -890,6 +933,15 @@ jobs:
             echo "tokenizer: infiniflow/ragflow_deps not cached on this runner — non-cl100k counters will skip"
           fi
 
+          # Keep Go module/build caches OFF the runner container's writable layer
+          # (defaults /home/alice/{go/pkg/mod,.cache/go-build} ballooned the runner
+          # image to ~15G). RUNNER_WORKSPACE_PREFIX is a host bind mount, so caches
+          # land on the host and are shared/reused across the runners on this host.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           PKGS=$(go list ./... 2>/dev/null \
             | grep -v '/internal/storage$' \
             | grep -v '/internal/handler$' || true)
@@ -900,18 +952,18 @@ jobs:
           fi
 
       - name: Run ragflow_deps regression guards
-        # Pure-Python, local, needs no API keys or model downloads; guards (a) the
-        # ONNX Runtime extraction logic the in-process (Go) DeepDoc backend build
-        # depends on (notably the version-bump path C2 hardened) and (b) the
-        # tokenizer-asset chain: the downloader's asset list, the three runtime
+        # Local, needs no API keys or model downloads; guards (a) the native
+        # archive / ONNX Runtime extraction logic the in-process (Go) DeepDoc
+        # backend build depends on (notably the version-bump path), and (b) the
+        # tokenizer-asset chain: the downloader's manifest, the three runtime
         # Dockerfiles' copy loops and the loaders' SHA-1 pins have to agree, or the
-        # Go counters silently degrade to the calibrated cl100k estimate. Run them
-        # in isolation so the test/testcases conftest (which requires
+        # Go counters silently degrade to the calibrated cl100k estimate. Run the
+        # pytest in isolation so the test/testcases conftest (which requires
         # SILICONFLOW_API_KEY) cannot fail the collection.
         run: |
           set -euo pipefail
           uv sync --python 3.13 --group test --frozen
-          uv run pytest ragflow_deps/test_download_deps.py ragflow_deps/test_tokenizer_assets.py -q --durations=100
+          uv run pytest tools/scripts/test_download_dev_deps.py -q --durations=100
 
       - name: Build ragflow:nightly
         run: |
@@ -1213,8 +1265,9 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           sudo docker compose -f "${COMPOSE_FILE}" -p ${COMPOSE_PROJECT_NAME} up -d
 
-      - name: Run New RESTFUL api tests against Elasticsearch
+      - name: Run search API tests against Elasticsearch
         run: |
+          set -euo pipefail
           export http_proxy=""; export https_proxy=""; export no_proxy=""; export HTTP_PROXY=""; export HTTPS_PROXY=""; export NO_PROXY=""
           svc_ready=0
           for i in $(seq 1 60); do
@@ -1230,7 +1283,20 @@ jobs:
             sudo docker logs ${RAGFLOW_CONTAINER}
             exit 1
           fi
-          source .venv/bin/activate && set -o pipefail; pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api 2>&1 | tee es_restful_api_test.log
+          source .venv/bin/activate
+          pytest -s --tb=short --level=${HTTP_API_TEST_LEVEL} --durations=100 test/testcases/restful_api/test_searches.py 2>&1 | tee es_search_api_test.log
+
+      - name: Run Go API tests against Elasticsearch
+        # Search fixtures above configure the default models used by the Go suite.
+        # Go API tests have no priority filtering; run the full suite every time.
+        run: |
+          set -euo pipefail
+          export http_proxy="" https_proxy="" no_proxy="" HTTP_PROXY="" HTTPS_PROXY="" NO_PROXY=""
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+          ./build.sh --test-integration-go -timeout 60m ./test/api 2>&1 | tee es_go_api_test.log
 
       - name: Collect ragflow log Elasticsearch
         if: ${{ !cancelled() }}
@@ -1287,7 +1353,7 @@ jobs:
   ragflow_native_backend:
     name: ragflow_native_backend
     # Runs AFTER both per-engine go jobs (which contain the doc-engine-specific
-    # server build + Python RESTFUL correctness runs). The DeepDoc native
+    # server build + Go API and Python search correctness runs). The DeepDoc native
     # backend is doc-engine-independent, so running it ONCE here — instead of
     # duplicated (and memory-competing) inside each go job — removes the
     # redundant second -race pass and the concurrent -race OOM risk. Running it
@@ -1381,6 +1447,12 @@ jobs:
           XDG_CACHE_HOME: ${{ github.workspace }}/.cache
         run: |
           set -euo pipefail
+          # Keep Go build cache off the runner container layer (same as the other
+          # go steps): redirect to the host bind mount when available.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
           ./build.sh --test-native
 
 
@@ -1841,6 +1913,13 @@ jobs:
           # a fully-ready MinIO that this CI stack does not reliably provide
           # (the compose /live probe passes while the S3 API still 502s), so they
           # are exercised elsewhere, not here.
+          # Keep Go module/build caches off the runner container layer (same reason
+          # as the unit-test step): redirect to the host bind mount.
+          if [ -n "${RUNNER_WORKSPACE_PREFIX:-}" ]; then
+            export GOMODCACHE="${RUNNER_WORKSPACE_PREFIX}/gomodcache"
+            export GOCACHE="${RUNNER_WORKSPACE_PREFIX}/gobuild"
+          fi
+
           PKGS=$(go list ./... \
             | grep -v '/test/api' \
             | grep -v '^ragflow/internal/deepdoc' \
@@ -1864,3 +1943,5 @@ jobs:
           sudo docker ps -a --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME}" -q | xargs -r sudo docker rm -f
           # Release the per-port docker-network guards reserved by the prepare step.
           for g in ${PORT_RESERVATION}; do sudo docker network rm "$g" >/dev/null 2>&1 || true; done
+
+

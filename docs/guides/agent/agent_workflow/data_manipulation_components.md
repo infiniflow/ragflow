@@ -12,7 +12,7 @@ sidebar_custom_props: {
 ## Code Component
 The Code component executes Python or JavaScript code for complex data processing, format conversion, calculation, file generation and custom logic.
 
-Prerequisite: Configure a Sandbox provider in Admin > Sandbox Settings. For Self-Managed, deploy the external service following [Standalone Sandbox](https://github.com/infiniflow/sandbox), then configure its endpoint and token in RAGFlow. Isolation prerequisites belong to the sandbox service host, which may be separate from RAGFlow. See [Sandbox quickstart](../../../administrator/configurations/sandbox_quickstart.md).
+Prerequisite: An administrator must configure a provider in **Admin > Sandbox Settings**. See [Code Execution Sandbox](../../../administrator/sandbox/overview.md). For a private deployment, follow [Quickstart with Self-Managed](../../../administrator/sandbox/quickstart_with_self_managed.md).
 
 Configuration:
 1. **Input**: Define parameters passed into code; variables can be directly referenced inside scripts.

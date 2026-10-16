@@ -10,6 +10,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
+	"ragflow/internal/parser/parser"
 )
 
 func TestParserGlobalVisionModel(t *testing.T) {
@@ -69,7 +70,8 @@ func TestParserGlobalVisionModel(t *testing.T) {
 					t.Fatalf("resolved %v, want [%s]", resolved, tc.want)
 				}
 				if fileType == "image" {
-					items := result["json"].([]map[string]any)
+					jsonDocs := result["json"].([]parser.DocItem)
+					items := parser.ItemsToMaps(jsonDocs)
 					if !strings.Contains(items[0]["text"].(string), "OCR text") {
 						t.Fatalf("OCR text lost: %v", items)
 					}
@@ -124,7 +126,8 @@ func TestParserGlobalVisionDoesNotOverrideASR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	items := result["json"].([]map[string]any)
+	jsonDocs := result["json"].([]parser.DocItem)
+	items := parser.ItemsToMaps(jsonDocs)
 	if calls != 1 || len(items) != 1 || items[0]["text"] != "transcribed" {
 		t.Fatalf("ASR calls = %d, items = %v", calls, items)
 	}

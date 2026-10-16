@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"ragflow/internal/dao"
+	"slices"
 
 	"go.uber.org/zap"
 
@@ -29,6 +30,9 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 	if len(req.DatasetIDs) == 0 {
 		return nil, fmt.Errorf("dataset_ids is required")
+	}
+	if err := service.ValidateKnowledgeCompilationScope(req.KnowledgeCompilationScope); err != nil {
+		return nil, err
 	}
 	common.Info("SearchDatasets started", zap.String("userID", userID), zap.Any("datasets", req.DatasetIDs), zap.String("question", req.Question))
 
@@ -144,10 +148,13 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Search service is not initialized for search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchDetail, err := d.searchService.GetDetail(ctx, searchID)
+		searchDetail, err := d.searchService.GetDetail(ctx, userID, searchID)
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
+			}
+			if permissionresponse.IsPermissionError(err) {
+				return nil, err
 			}
 			common.Warn("Invalid search_id", zap.String("searchID", searchID), zap.Error(err))
 			return nil, fmt.Errorf("invalid search_id")
@@ -156,12 +163,6 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 			common.Warn("Invalid search_id", zap.String("searchID", searchID))
 			return nil, fmt.Errorf("invalid search_id")
 		}
-		searchTenantID, ok := searchDetail["tenant_id"].(string)
-		if !ok || searchTenantID != userID {
-			common.Warn("Invalid search_id", zap.String("searchID", searchID))
-			return nil, fmt.Errorf("invalid search_id")
-		}
-
 		if searchConfig, ok := searchDetail["search_config"].(map[string]interface{}); ok && searchConfig != nil {
 			rerankCandidatesCount = 100
 			if scMetadataFilter, ok := searchConfig["meta_data_filter"].(map[string]interface{}); ok {
@@ -308,9 +309,12 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		RankFeature:            &labels,
 		EmbeddingModel:         embeddingModel,
 		Highlight:              req.Highlight,
+		Language:               entity.KnowledgebasesLanguage(kbRecords),
 	}
-	if req.IncludeCompiledChunks != nil && !*req.IncludeCompiledChunks {
-		retrievalReq.Filter = map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	retrievalReq.Filter = knowledgeCompilationFilter(req.IncludeCompiledChunks, req.KnowledgeCompilationScope)
+	if len(docIDs) > 0 && (req.IncludeCompiledChunks == nil || *req.IncludeCompiledChunks) && req.KnowledgeCompilationScope != "document" {
+		// Dataset artifacts use dataset IDs instead of source document IDs.
+		retrievalReq.DocIDs = append(slices.Clone(docIDs), datasetIDs...)
 	}
 
 	retrievalResult, err := nlp.NewRetrievalService(d.docEngine, d.documentDAO).Retrieval(ctx, retrievalReq)
@@ -325,25 +329,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
-
-	keyMapping := map[string]string{
-		"chunk_id":            "id",
-		"content_with_weight": "content",
-		"doc_id":              "document_id",
-		"important_kwd":       "important_keywords",
-		"question_kwd":        "questions",
-		"docnm_kwd":           "document_keyword",
-		"kb_id":               "dataset_id",
-	}
-	for i := range filteredChunks {
-		delete(filteredChunks[i], "vector")
-		for oldKey, newKey := range keyMapping {
-			if value, ok := filteredChunks[i][oldKey]; ok {
-				filteredChunks[i][newKey] = value
-				delete(filteredChunks[i], oldKey)
-			}
-		}
-	}
+	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
 
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
@@ -355,6 +341,47 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// formatDatasetSearchChunks applies API field names and compilation visibility after parent promotion.
+func formatDatasetSearchChunks(filteredChunks []map[string]interface{}, includeCompiledChunks *bool) {
+	keyMapping := map[string]string{
+		"chunk_id":            "id",
+		"content_with_weight": "content",
+		"doc_id":              "document_id",
+		"important_kwd":       "important_keywords",
+		"question_kwd":        "questions",
+		"docnm_kwd":           "document_keyword",
+		"kb_id":               "dataset_id",
+	}
+	for i := range filteredChunks {
+		if includeCompiledChunks != nil && !*includeCompiledChunks {
+			delete(filteredChunks[i], "compile_kwd")
+		}
+		delete(filteredChunks[i], "vector")
+		for oldKey, newKey := range keyMapping {
+			if value, ok := filteredChunks[i][oldKey]; ok {
+				filteredChunks[i][newKey] = value
+				delete(filteredChunks[i], oldKey)
+			}
+		}
+	}
+}
+
+func knowledgeCompilationFilter(include *bool, scope string) map[string]interface{} {
+	ordinary := map[string]interface{}{"must_not": map[string]interface{}{"exists": "compile_kwd"}}
+	if include != nil && !*include {
+		return ordinary
+	}
+	switch scope {
+	case "all":
+		return nil
+	case "document":
+		scope = "doc"
+	default:
+		scope = "dataset"
+	}
+	return map[string]interface{}{"or": []map[string]interface{}{ordinary, {"scope_kwd": scope}}}
 }
 
 func selectMetadataFilteredDocIDs(currentDocIDs, filteredDocIDs []string, hasMetadataCondition, filterReturnedEmpty bool) []string {

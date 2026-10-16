@@ -83,11 +83,10 @@ func (f *FunASR) TranscribeAudio(ctx context.Context, modelName *string, file *s
 	}
 	model := strings.TrimSpace(*modelName)
 
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -217,11 +216,10 @@ func (f *FunASR) ListModels(ctx context.Context, apiConfig *APIConfig) ([]ListMo
 	if err := f.baseModel.APIConfigCheck(apiConfig); err != nil {
 		return nil, err
 	}
-	resolvedBaseURL, err := f.baseModel.GetBaseURL(apiConfig)
+	url, err := f.baseModel.EndpointURL(apiConfig, f.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, f.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -280,4 +278,8 @@ func (f *FunASR) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]ListTas
 
 func (f *FunASR) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("%s no such method", f.Name())
+}
+
+func (f *FunASR) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", f.Name())
 }
