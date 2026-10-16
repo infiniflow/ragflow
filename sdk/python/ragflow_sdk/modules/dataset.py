@@ -76,7 +76,11 @@ class DataSet(Base):
         desc: bool = True,
         create_time_from: int = 0,
         create_time_to: int = 0,
+        *,
+        run: list[str] | None = None,
+        suffix: list[str] | None = None,
     ):
+        """List documents using server-side filters, including status and suffix."""
         # Validate that id and ids are not used together
         if id and ids:
             raise ValueError("Cannot use both 'id' and 'ids' parameters at the same time.")
@@ -95,6 +99,10 @@ class DataSet(Base):
         # Handle ids parameter - requests expands list values into multiple query params
         if ids:
             params["ids"] = ids
+        if run:
+            params["run"] = run
+        if suffix:
+            params["suffix"] = suffix
         res = self.get(f"/datasets/{self.id}/documents", params=params)
         res = res.json()
         documents = []
