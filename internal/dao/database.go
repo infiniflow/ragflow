@@ -241,8 +241,8 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
-		// Run ingestion conversion after the conversation split. It invokes the
-		// dataset cleanup last because both use the same version marker.
+		// Run ingestion conversion after the conversation split. Dataset cleanup
+		// runs last, before the conversion marker is recorded.
 		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
 		}

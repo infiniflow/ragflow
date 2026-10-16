@@ -263,7 +263,7 @@ func TestMigrateIngestionParserConfigsVersionAndEmptyRows(t *testing.T) {
 		skip    bool
 	}{
 		{"", false}, {"v0.27.2", false}, {"v1.0.0-rc1", false},
-		{"v1.0.0-rc2.dev2", true},
+		{knowledgebaseParserConfigTargetVersion, false},
 		{ingestionParserConfigTargetVersion, true}, {"v1.0.0", true},
 	} {
 		t.Run(tc.version, func(t *testing.T) {
@@ -411,8 +411,8 @@ func TestMigrateExtractorConfig(t *testing.T) {
 
 func ptrString(value string) *string { return &value }
 
-func TestMigrateIngestionParserConfigsSharesDev1Cleanup(t *testing.T) {
-	if ingestionParserConfigTargetVersion != "v1.0.0-rc2.dev1" {
+func TestMigrateIngestionParserConfigsRunsDatasetCleanup(t *testing.T) {
+	if ingestionParserConfigTargetVersion != "v1.0.0-rc2.dev2" {
 		t.Fatalf("migration version = %s", ingestionParserConfigTargetVersion)
 	}
 	db := openIngestionMigrationDB(t)
@@ -468,5 +468,34 @@ func TestMigrateIngestionParserConfigsUpdateError(t *testing.T) {
 				t.Fatalf("failed migration advanced version to %q", got)
 			}
 		})
+	}
+}
+
+func TestMigrateIngestionAfterKnowledgebaseCleanup(t *testing.T) {
+	db := openIngestionMigrationDB(t)
+	for _, table := range []string{"knowledgebase", "document"} {
+		insertIngestionConfig(t, db, table, table, "general", `{"raptor":{},"chunk_token_num":256,"auto_keywords":8}`)
+	}
+	if err := migrateKnowledgebaseParserConfig(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	if got := databaseVersion(t, db); got != knowledgebaseParserConfigTargetVersion {
+		t.Fatalf("cleanup version = %s", got)
+	}
+	if err := migrateIngestionParserConfigs(t.Context(), db); err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range []string{"knowledgebase", "document"} {
+		var row ingestionConfigMigrationRow
+		if err := db.Table(table).Where("id = ?", table).Take(&row).Error; err != nil {
+			t.Fatal(err)
+		}
+		config := decodeIngestionConfig(t, *row.ParserConfig)
+		if _, ok := config[ingestionTargets["general"].chunkerNode]; !ok {
+			t.Errorf("%s: chunk settings not converted: %s", table, *row.ParserConfig)
+		}
+		if _, ok := config[ingestionTargets["general"].extractorNode]; !ok {
+			t.Errorf("%s: extractor settings not converted: %s", table, *row.ParserConfig)
+		}
 	}
 }
