@@ -378,7 +378,7 @@ func (p *PDFParser) ParseWithResult(ctx context.Context, filename string, data [
 	case "opendataloader":
 		return parsePDFWithOpenDataLoader(ctx, filename, data, p)
 	case "somark":
-		return parsePDFWithSoMark(filename, data, p)
+		return parsePDFWithSoMark(ctx, filename, data, p)
 	case "tcadp":
 		return parsePDFWithTCADP(ctx, filename, data, p)
 	}
