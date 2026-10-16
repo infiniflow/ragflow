@@ -9,6 +9,18 @@ sidebar_custom_props: {
 
 Key features, improvements and bug fixes in the latest releases.
 
+## v1.0.0-rc2
+
+RAGFlow v1.0.0-rc2 is the second release candidate for v1.0.0. This release fixes several issues in rc1, including team sharing not working, and introduces new features and expanded support.
+
+### Highlights
+1. Introduced Agentic chat mode, replacing the Low, Medium, High, and Ultra thinking levels.
+2. Preserved compatibility with existing v1.0.0-rc1 data, allowing direct upgrades.
+3. Added support for model providers DemonRoute and Opper, web search tools Firecrawl and Search1API, and the MinerU 4 model.
+4. Added retrieval support for Czech and Slovak.
+5. Unified the 12 built-in document parsers with the Pipeline parsers.
+6. Added Docker images for the ARM64 architecture.
+
 ## v1.0.0-rc1
 
 RAGFlow v1.0.0-rc1 is a preview release of v1.0.0. This release marks a comprehensive rewrite of RAGFlow in Go, delivering a substantial reduction in system resource consumption and replacing the previous heavyweight deployment model with a lightweight architecture.
