@@ -149,7 +149,7 @@ func (s *ChatPipelineService) buildAgenticReference(ctx context.Context, tenantI
 
 // fetchChunksByIDs loads the cited chunks from the tenant's index, keeping the
 // engine row shape (chunk_id / content_with_weight / docnm_kwd / doc_id /
-// kb_id / img_id / positions) so chunksFormat can normalize it. The index is
+// kb_id / img_id / position_int) so chunksFormat can normalize it. The index is
 // the chat's OWNING tenant's - the same scoping the agent's retrieval tools
 // use.
 func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []string) []map[string]interface{} {
@@ -161,7 +161,7 @@ func fetchChunksByIDs(ctx context.Context, tenantID string, datasetIDs, ids []st
 		IndexNames:   []string{fmt.Sprintf("ragflow_%s", tenantID)},
 		KbIDs:        datasetIDs,
 		Filter:       map[string]interface{}{"id": ids},
-		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "positions"},
+		SelectFields: []string{"content_with_weight", "docnm_kwd", "doc_id", "kb_id", "img_id", "position_int"},
 		Limit:        len(ids),
 	}
 	res, err := de.Search(ctx, req)
