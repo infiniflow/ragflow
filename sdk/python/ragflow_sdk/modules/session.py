@@ -104,6 +104,10 @@ class Session(Base):
             raise Exception(f"Unknown session type: {self.__session_type}")
 
         if stream:
+            # SSE is UTF-8 by spec (HTML5 §9.2.1); force the response encoding so
+            # iter_lines does not fall back to ISO-8859-1 on responses whose
+            # Content-Type omits a charset parameter.
+            res.encoding = "utf-8"
             for line in res.iter_lines(decode_unicode=True):
                 if not line:
                     continue  # Skip empty lines
