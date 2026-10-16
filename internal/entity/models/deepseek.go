@@ -25,7 +25,6 @@ import (
 	"net/http"
 	"ragflow/internal/common"
 	"strconv"
-	"strings"
 )
 
 // DeepSeekModel implements ModelDriver for DeepSeek
@@ -94,11 +93,10 @@ func (d *DeepSeekModel) ChatWithMessages(ctx context.Context, modelName string, 
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
@@ -151,11 +149,10 @@ func (d *DeepSeekModel) ChatStreamlyWithSender(ctx context.Context, modelName st
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	if chatModelConfig != nil && chatModelConfig.Thinking != nil && *chatModelConfig.Thinking {
@@ -211,11 +208,10 @@ func (d *DeepSeekModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([
 		return nil, err
 	}
 
-	resolvedBaseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, d.baseModel.URLSuffix.Models)
 
 	// Build request body
 	reqBody := map[string]interface{}{}
@@ -282,12 +278,10 @@ func (d *DeepSeekModel) Balance(ctx context.Context, apiConfig *APIConfig) (map[
 		return nil, err
 	}
 
-	baseURL, err := d.baseModel.GetBaseURL(apiConfig)
+	url, err := d.baseModel.EndpointURL(apiConfig, d.baseModel.URLSuffix.Balance)
 	if err != nil {
 		return nil, err
 	}
-
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), d.baseModel.URLSuffix.Balance)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

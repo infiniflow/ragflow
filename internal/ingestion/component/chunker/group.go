@@ -173,13 +173,13 @@ func chunkFromRecords(parentCtx context.Context, db *gorm.DB, inputs map[string]
 		zap.String("variant", "group"),
 		zap.Int("groups", len(groups)),
 	)
-	chunks := buildChunksFromRecordGroups(groups, p, isPlainTextFormat(inputs))
+	chunks, _ := buildChunksFromRecordGroups(groups, nil, p, isPlainTextFormat(inputs))
 	// Enforce the title-family token ceiling (chunk_token_cap) right after
 	// build_chunks and BEFORE the on-demand crop, mirroring Python's
 	// invoke() order (build -> cap -> set_chunks). ManualChunker passes
 	// tokenCap=0, so this is a no-op there.
 	if tokenCap > 0 {
-		chunks = enforceTitleTokenCap(chunks, tokenCap)
+		chunks = enforceTitleTokenCap(chunks, nil, tokenCap)
 	}
 	common.Debug("chunker stage",
 		zap.String("component", "Chunker"),
@@ -294,9 +294,20 @@ func isPlainTextFormat(inputs map[string]any) bool {
 // root_chunk_as_heading is applied here, exactly as python does (post
 // materialisation): the root chunk's text is prepended to every
 // following chunk and the root chunk is dropped.
-func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, plain bool) []map[string]any {
+//
+// prefixes is optional and, when non-nil, is aligned 1:1 with groups:
+// prefixes[i] is the ancestor heading chain group i starts with (the
+// hierarchy strategy sets it; group/manual pass nil). The returned prefixes
+// stay aligned with the returned chunks after empty groups are dropped and
+// root_chunk_as_heading is applied, so the token-cap pass can re-prepend a
+// chunk's chain to every piece it splits off.
+func buildChunksFromRecordGroups(groups [][]lineRecord, prefixes []string, p *titleChunkerParam, plain bool) ([]map[string]any, []string) {
 	chunks := make([]map[string]any, 0, len(groups))
-	for _, g := range groups {
+	var outPrefixes []string
+	if prefixes != nil {
+		outPrefixes = make([]string, 0, len(groups))
+	}
+	for i, g := range groups {
 		if len(g) == 0 {
 			continue
 		}
@@ -332,15 +343,24 @@ func buildChunksFromRecordGroups(groups [][]lineRecord, p *titleChunkerParam, pl
 			chunk["positions"] = m
 		}
 		chunks = append(chunks, chunk)
+		if prefixes != nil {
+			outPrefixes = append(outPrefixes, prefixes[i])
+		}
 	}
 	if p.RootChunkAsHeading && len(chunks) > 1 {
 		rootText := toString(chunks[0]["text"])
 		for i := 1; i < len(chunks); i++ {
 			chunks[i]["text"] = rootText + "\n" + toString(chunks[i]["text"])
+			if prefixes != nil {
+				outPrefixes[i] = rootText + "\n" + outPrefixes[i]
+			}
 		}
 		chunks = chunks[1:]
+		if prefixes != nil {
+			outPrefixes = outPrefixes[1:]
+		}
 	}
-	return chunks
+	return chunks, outPrefixes
 }
 
 // posTagRemove matches parser-emitted position tags of the form

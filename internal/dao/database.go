@@ -241,12 +241,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateConversationHistory(ctx, DB); err != nil {
 			return fmt.Errorf("failed to migrate conversation history: %w", err)
 		}
-		// Drop the retired raptor and graphrag sections from the dataset parser
-		// configs. It runs after the conversation split because the two steps
-		// share one version marker: this step's version sorts above the split's
-		// v1.0.0-rc1, so marking it earlier would skip a split that has not run.
-		if err = migrateKnowledgebaseParserConfig(ctx, DB); err != nil {
-			return fmt.Errorf("failed to migrate knowledgebase parser config: %w", err)
+		// Run ingestion conversion after the conversation split. It invokes the
+		// dataset cleanup last because both use the same version marker.
+		if err = migrateIngestionParserConfigs(ctx, DB); err != nil {
+			return fmt.Errorf("failed to migrate ingestion parser configs: %w", err)
 		}
 
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {

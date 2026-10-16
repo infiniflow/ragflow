@@ -29,17 +29,14 @@ import (
 	enginetypes "ragflow/internal/engine/types"
 )
 
-// Knowledge-graph walk backing the graph_explore tool. It is the agentic-RAG
-// port of the harness walk (internal/rag/agentic-rag/runtime/tool_exploration.go):
-// seed entity rows for the query, hop out over relation rows, and hand the
-// subgraph plus the source passages behind it back to the model.
+// Knowledge-graph walk backing the graph_explore tool: seed entity rows for
+// the query, hop out over relation rows, and hand the subgraph plus the
+// source passages behind it back to the model.
 //
-// Deliberate deviation from the harness original: there the walk asks the chat
-// model whether the subgraph answers the question and short-circuits with a
-// bare answer when it does. This port never calls a model. In this ReAct loop
-// the model is already the judge of its own evidence, a tool holds no chat
-// model, and an answer-only result would strip the passages the answer has to
-// cite. The walk therefore always returns the subgraph and its passages.
+// The walk never calls a chat model. In this ReAct loop the model is already
+// the judge of its own evidence, a tool holds no chat model, and an
+// answer-only result would strip the passages the answer has to cite. The
+// walk therefore always returns the subgraph and its passages.
 
 // Error returned when no KgService was installed at boot.
 var ErrKgServiceMissing = errors.New(

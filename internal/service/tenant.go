@@ -256,9 +256,16 @@ func (s *TenantService) CreateChunkStore(ctx context.Context, req *CreateDataset
 	// Build table name prefix: ragflow_<tenant_id>
 	tableName := fmt.Sprintf("ragflow_%s", kb.TenantID)
 
+	// The dataset language picks the fulltext analyzer on engines that fix it at
+	// index creation, so it has to travel with the table, not the query.
+	language := ""
+	if kb.Language != nil {
+		language = *kb.Language
+	}
+
 	// Call document engine to create table
 	// Full table name will be built as "{tableName}_{kb_id}"
-	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID)
+	err = s.docEngine.CreateChunkStore(ctx, tableName, req.KBID, vecSize, req.ParserID, language)
 	if err != nil {
 		return nil, common.CodeServerError, fmt.Errorf("failed to create dataset: %w", err)
 	}
@@ -831,8 +838,22 @@ func (s *TenantService) AddMember(ctx context.Context, userID, tenantID string, 
 }
 
 // RemoveMember removes a user from the tenant. The owner may remove members,
-// and a member may remove themselves. The tenant owner cannot be removed.
+// and a member may remove themselves. An invitee may decline their own pending
+// invitation. The tenant owner cannot be removed.
 func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targetUserID string) (common.ErrorCode, error) {
+	if s.userTenantDAO == nil {
+		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
+	}
+	if userID != "" && userID == targetUserID {
+		removed, err := s.userTenantDAO.DeleteByUserAndTenantAndRole(ctx, dao.DB, userID, tenantID, TenantRoleInvite)
+		if err != nil {
+			return common.CodeServerError, fmt.Errorf("failed to decline tenant invitation: %w", err)
+		}
+		if removed {
+			return common.CodeSuccess, nil
+		}
+	}
+
 	requirement := permission.TenantOwner
 	if userID == targetUserID {
 		requirement = permission.TenantMember
@@ -840,9 +861,6 @@ func (s *TenantService) RemoveMember(ctx context.Context, userID, tenantID, targ
 	if err := permission.NewDatabaseChecker(dao.DB).CheckTenant(ctx, permission.Subject{UserID: userID}, tenantID, requirement); err != nil {
 		code, permissionErr := permissionresponse.Normalize(err)
 		return code, permissionErr
-	}
-	if s.userTenantDAO == nil {
-		return common.CodeServerError, fmt.Errorf("userTenantDAO not initialized")
 	}
 	targetMembership, err := s.userTenantDAO.FilterByUserIDAndTenantID(ctx, dao.DB, targetUserID, tenantID)
 	if err != nil {

@@ -1197,14 +1197,6 @@ Bu avtomatik etiketləmə funksiyası mövcud verilənlər dəstinə sahəyə ai
       thinkingEnabled: 'Aktivdir',
       thinkingDisabled: 'Deaktiv',
       thinkingLevelNone: 'Sadə',
-      thinkingLevelLow: 'Aşağı',
-      thinkingLevelLowDescription: 'Sürətli cavablar',
-      thinkingLevelMedium: 'Orta',
-      thinkingLevelMediumDescription: 'Sürət və dərinlik arasında tarazlıq',
-      thinkingLevelHigh: 'Yüksək',
-      thinkingLevelHighDescription: 'Dərin mühakimə',
-      thinkingLevelUltra: 'Ən yüksək',
-      thinkingLevelUltraDescription: 'Maksimum idrak səyi',
       thinkingTip:
         'Yalnız rəsmi Qwen, Kimi və GLM model provayderləri üçün düşünmə rejimini idarə edir. Sistemin standart dəyəri uzun çəkən tapşırıqların qarşısını almaq üçün Qwen modelinin düşünmə rejimini söndürür.',
       quote: 'İstinadları göstər',
@@ -2206,19 +2198,19 @@ Nümunə: Virtual host üslubu`,
       chatModelTip: 'Hər yeni yaradılan verilənlər dəsti üçün standart LLM.',
       embeddingModel: 'Vektorlaşdırma',
       embeddingModelTip:
-        'Hər yeni yaradılan verilənlər dəsti üçün standart vektorlaşdırma modeli. Açılan siyahıda vektorlaşdırma modeli tapa bilmirsinizsə, RAGFlow slim versiyasından istifadə edib-etmədiyinizi yoxlayın (bu versiyaya vektorlaşdırma modelləri daxil deyil) və ya model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün https://ragflow.io/docs/dev/supported_models səhifəsinə baxın.',
+        'Hər yeni yaradılan verilənlər dəsti üçün standart vektorlaşdırma modeli. Açılan siyahıda vektorlaşdırma modeli tapa bilmirsinizsə, RAGFlow slim versiyasından istifadə edib-etmədiyinizi yoxlayın (bu versiyaya vektorlaşdırma modelləri daxil deyil) və ya model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün “Model provayderləri” səhifəsinə baxın.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'Hər yeni yaradılan verilənlər dəsti üçün standart VLM. Şəkli və ya videonu təsvir edir. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün https://ragflow.io/docs/dev/supported_models səhifəsinə baxın.',
+        'Hər yeni yaradılan verilənlər dəsti üçün standart VLM. Şəkli və ya videonu təsvir edir. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün “Model provayderləri” səhifəsinə baxın.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'Hər yeni yaradılan verilənlər dəsti üçün standart ASR modeli. Səsi müvafiq mətnə çevirmək üçün bu modeldən istifadə edin.',
       rerankModel: 'Yenidən sıralama',
       rerankModelTip:
-        'Mətn parçalarını yenidən sıralamaq üçün standart yenidən sıralama modeli. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün https://ragflow.io/docs/dev/supported_models səhifəsinə baxın.',
+        'Mətn parçalarını yenidən sıralamaq üçün standart yenidən sıralama modeli. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün “Model provayderləri” səhifəsinə baxın.',
       ttsModel: 'TTS',
       ttsModelTip:
-        'Mətni nitqə çevirən standart model. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün https://ragflow.io/docs/dev/supported_models səhifəsinə baxın.',
+        'Mətni nitqə çevirən standart model. Açılan siyahıda model tapa bilmirsinizsə, model provayderinizin bu modeli dəstəkləyib-dəstəkləmədiyini öyrənmək üçün “Model provayderləri” səhifəsinə baxın.',
       workspace: 'İş sahəsi',
       upgrade: 'Təkmilləşdir',
       addLlmTitle: 'LLM əlavə et',

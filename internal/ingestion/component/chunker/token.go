@@ -75,6 +75,7 @@ import (
 	"regexp"
 	"strings"
 	"sync"
+	"unicode"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -84,6 +85,7 @@ import (
 	deepdoctype "ragflow/internal/deepdoc/parser/type"
 	"ragflow/internal/ingestion/component/globals"
 	"ragflow/internal/ingestion/component/schema"
+	"ragflow/internal/parser/parser"
 	"ragflow/internal/parser/tableutil"
 
 	"ragflow/internal/parser/chunk"
@@ -246,7 +248,22 @@ func (c *TokenChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs 
 
 func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstream, error) {
 	var out schema.ChunkerFromUpstream
-	data, err := json.Marshal(stripChunkerRuntimeTimestamps(inputs))
+	// Fast path: the parser emits typed []parser.DocItem. Convert it to
+	// []ChunkDoc directly via schema.ChunkDocsFromDocItem (which reads the
+	// item's typed fields and never calls DocItem.ToMap), then let the JSON
+	// marshal below serialize the already-typed ChunkDoc. This keeps the
+	// chunker free of the historical map intermediate for the in-memory
+	// Parser -> Chunker leg. When inputs["json"] is already []map[string]any
+	// (legacy fixtures, round-tripped JSON, or absent), the original path runs.
+	inputs = stripChunkerRuntimeTimestamps(inputs)
+	if docs, ok := inputs["json"].([]parser.DocItem); ok && len(docs) > 0 {
+		conv, _, err := schema.ChunkDocsFromDocItem(docs)
+		if err != nil {
+			return out, err
+		}
+		inputs["json"] = conv
+	}
+	data, err := json.Marshal(inputs)
 	if err != nil {
 		return out, err
 	}
@@ -256,18 +273,18 @@ func decodeChunkerFromUpstream(inputs map[string]any) (schema.ChunkerFromUpstrea
 	if err := out.Validate(); err != nil {
 		return out, err
 	}
-	// A structured table carries no markup text of its own. Derive a plain
-	// (tag-free) text from its cells so consumers that read Text — TokenChunker
-	// and the embed path — still receive a searchable body when the producer
-	// emitted only the TableData contract (decision 1-B: no HTML in Text).
+	// A structured table (e.g. the office/xlsx producer) carries no Text of its
+	// own. Derive its HTML <table> rendering on Text so every chunker that
+	// consumes it (token/group/hierarchy/one/page/qa) stores and displays a real
+	// table, and the chunk id (a hash of Text) matches the stored content.
 	for i := range out.JSONResult {
 		if out.JSONResult[i].TableData != nil && out.JSONResult[i].Text == "" {
-			out.JSONResult[i].Text = tableutil.RenderTableText(out.JSONResult[i].TableData)
+			out.JSONResult[i].Text = tableutil.RenderTableHTML(out.JSONResult[i].TableData)
 		}
 	}
 	for i := range out.Chunks {
 		if out.Chunks[i].TableData != nil && out.Chunks[i].Text == "" {
-			out.Chunks[i].Text = tableutil.RenderTableText(out.Chunks[i].TableData)
+			out.Chunks[i].Text = tableutil.RenderTableHTML(out.Chunks[i].TableData)
 		}
 	}
 	return out, nil
@@ -601,6 +618,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 			"_ERROR":        fmt.Sprintf("TokenChunker: %v", err),
 		}
 	}
+	if !customDelim {
+		separateItemBoundaries(perItem)
+	}
 
 	// Surrounding media context is attached on the flattened chunk list,
 	// mirroring Python's _attach_context_to_media_chunks (token_chunker.py:537,
@@ -625,12 +645,9 @@ func (c *TokenChunkerComponent) invokeJSONPayload(ctx context.Context, items []s
 		flat = attachMediaContext(flat, c.param.TableContextSize, c.param.ImageContextSize)
 		// Python _merge_text_chunks_by_token_size merges adjacent text
 		// chunks across JSON items into one global token budget. The join
-		// separator is "" because each unit already carries its own retained
-		// delimiter (splitByDelim keeps it), so concatenating reproduces the
-		// source exactly. A "\n" separator would have been needed when the
-		// delimiter was dropped, but would now double-insert it; the upstream
-		// JSON items themselves carry no inter-item separator, so "" is the
-		// faithful lossless join.
+		// separator stays empty because delimiters within each item are
+		// retained. separateItemBoundaries adds separators only between
+		// adjacent text items that have none at their edges.
 		flat = flatten(mergeByTokenSizeFromJSON([][]schema.ChunkDoc{flat}, c.param.ChunkTokenSize, c.param.OverlappedPercent))
 	}
 
@@ -721,6 +738,34 @@ func splitTextParserSentences(item schema.ChunkDoc) []schema.ChunkDoc {
 // ---------------------------------------------------------------------------
 // JSON-payload internals
 // ---------------------------------------------------------------------------
+
+func separateItemBoundaries(perItem [][]schema.ChunkDoc) {
+	var previous *schema.ChunkDoc
+	for i := range perItem {
+		units := perItem[i]
+		if len(units) == 0 {
+			continue
+		}
+		firstIndex, lastIndex := 0, len(units)-1
+		for firstIndex <= lastIndex && units[firstIndex].CKType == "text" && units[firstIndex].Text == "" {
+			firstIndex++
+		}
+		for lastIndex >= firstIndex && units[lastIndex].CKType == "text" && units[lastIndex].Text == "" {
+			lastIndex--
+		}
+		if firstIndex > lastIndex {
+			continue
+		}
+		first := &units[firstIndex]
+		if previous != nil && previous.CKType == "text" && first.CKType == "text" &&
+			strings.TrimRightFunc(previous.Text, unicode.IsSpace) == previous.Text &&
+			strings.TrimLeftFunc(first.Text, unicode.IsSpace) == first.Text {
+			first.Text = "\n" + first.Text
+			first.TKNums = intPtr(tokenizeStr(first.Text))
+		}
+		previous = &units[lastIndex]
+	}
+}
 
 // chunkFromItem mirrors _build_json_chunks for a single item. keepDelim
 // follows the same policy as the text path: a bare delimiter is retained so

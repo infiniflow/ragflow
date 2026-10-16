@@ -75,8 +75,7 @@ func (c *CometAPIModel) endpointURL(region, suffix string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	return fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(suffix, "/")), nil
+	return joinURL(baseURL, suffix), nil
 }
 
 func (c *CometAPIModel) balanceURL(apiKey string) string {
@@ -358,11 +357,10 @@ func (c *CometAPIModel) TranscribeAudio(ctx context.Context, modelName *string, 
 		return nil, fmt.Errorf("file is missing")
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -478,11 +476,10 @@ func (c *CometAPIModel) AudioSpeech(ctx context.Context, modelName *string, audi
 		return nil, fmt.Errorf("audio content is empty")
 	}
 
-	resolvedBaseURL, err := c.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := c.baseModel.EndpointURL(apiConfig, c.baseModel.URLSuffix.TTS)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, c.baseModel.URLSuffix.TTS)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,

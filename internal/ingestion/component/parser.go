@@ -88,6 +88,7 @@ import (
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/globals"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -544,13 +545,13 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	if !handledVision && !handledMedia && !handledImage && !handledAudio {
 		parsePagesOn := pdfPageProgressSupported(fileTypeExt, setups)
 		enhanceOn := c.enableVisionEnhancement
-		split := newFractionSplit(parsePagesOn, enhanceOn)
-		pageWin := split.take(parsePagesOn)
-		visionWin := split.take(enhanceOn)
+		split := progress.NewSplit(parsePagesOn, enhanceOn)
+		pageWin := split.Take(parsePagesOn)
+		visionWin := split.Take(enhanceOn)
 
 		dispatched = dispatchParse(ctx, fileTypeExt, filename, binary, setups, pageWin)
 		if dispatched.Err == nil && ctx.Err() == nil {
-			pageWin.report(ctx, 1.0)
+			pageWin.Report(ctx, 1.0)
 		}
 
 		if c.enableVisionEnhancement {
@@ -590,7 +591,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	// forwards only this explicit output to the next node, so shared
 	// fields must live in Globals.
 	globals.PublishGlobals(ctx, out)
-	items, _ := out["json"].([]map[string]any)
+	items, _ := out["json"].([]parser.DocItem)
 	logParserOutput(dispatched, items)
 	// Progress (_created_time / _elapsed_time stamping, start/done
 	// callbacks) is owned by the canvas framework (realComponentBody),
@@ -598,7 +599,7 @@ func (c *ParserComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	return out, nil
 }
 
-func logParserOutput(dispatched parser.ParseResult, items []map[string]any) {
+func logParserOutput(dispatched parser.ParseResult, items []parser.DocItem) {
 	common.Debug("parser stage output",
 		zap.String("component", "Parser"),
 		zap.String("normalized_from", resolveParserNormalizationSource(dispatched)),
@@ -612,9 +613,6 @@ func resolveParserNormalizationSource(dispatched parser.ParseResult) string {
 	}
 	if dispatched.Markdown != "" {
 		return "markdown"
-	}
-	if dispatched.HTML != "" {
-		return "html"
 	}
 	if dispatched.Text != "" {
 		return "text"

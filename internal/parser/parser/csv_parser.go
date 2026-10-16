@@ -137,7 +137,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	// Clean illegal control characters from all cells.
-	records = cleanIllegalControlChars(records)
+	records = trimTrailingEmptyColumns(cleanIllegalControlChars(records))
 
 	dataRows := make([]int, len(records)-1)
 	for i := range dataRows {
@@ -155,7 +155,7 @@ func (p *CSVParser) ParseWithResult(ctx context.Context, filename string, data [
 			"format":   "csv",
 			"sheets":   1,
 		},
-		JSON: items,
+		JSON: MapsToItems(items),
 	}
 }
 

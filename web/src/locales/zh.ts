@@ -368,8 +368,16 @@ export default {
       uploadUnsupportedTypesTitle: '部分文件类型不支持解析',
       fileTypeUnsupported:
         '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，将自动切换为内置 {{parser}} 配置',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}}（{{fileType}}）：当前解析配置不支持该文件类型，上传后可手动切换解析配置',
       reselectParserAfterUploadHint:
         '可继续上传，系统将自动切换至支持这些文件类型的内置解析配置。',
+      manualSwitchAfterUploadHint:
+        '可继续上传，上传后可手动切换这些文件的解析配置。',
+      mixedSwitchAfterUploadHint:
+        '可继续上传，部分文件将自动切换至内置解析配置，其余文件上传后可手动切换解析配置。',
       reselectParserToParseHint: '请重新选择对应文件的解析方法后再解析。',
       addModelAfterUploadHint: '可继续上传，上传后前往添加模型即可解析。',
       addModelToParseHint: '请前往添加模型后再解析。',
@@ -1192,11 +1200,6 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tocEnhanceTip: `解析文档时生成了目录信息（见General方法的'启用目录抽取'），让大模型返回和用户问题相关的目录项，从而利用目录项拿到相关 Chunk，对这些 Chunk 在排序中进行加权。这种方法来源于模仿人类查询书本中知识的行为逻辑`,
       batchDeleteSessions: '批量删除',
       deleteSelectedConfirm: '删除选中的 {{count}} 个会话？',
-      showChunkMetadata: '显示块元数据',
-      showChunkMetadataTip:
-        '在检索到的文本块旁边显示文档元数据（如标题、页码、上传日期）',
-      metadataFields: '元数据字段',
-      metadataFieldsTip: '选择每个块要显示的元数据字段',
     },
     setting: {
       Verify: '验证',
@@ -1796,18 +1799,18 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       chatModelTip: '所有新创建的知识库都会使用默认的聊天模型。',
       ttsModel: 'TTS',
       ttsModelTip:
-        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '默认的tts模型会被用于在对话过程中请求语音生成时使用。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库使用的默认 Embedding 模型。如未显示可选模型，请检查你是否在使用 RAGFlow slim 版(不含 Embedding 模型)；或前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 VLM 模型。 它可以描述图片或视频。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
-        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。',
+        '所有新创建的知识库都将使用默认的 ASR 模型。 使用此模型将语音翻译为相应的文本。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。',
       rerankModel: 'Rerank',
-      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请根据 https://ragflow.io/docs/dev/supported_models 确认你的模型供应商是否提供该模型。`,
+      rerankModelTip: `默认的 Rerank 模型。如未显示可选模型，请前往“模型供应商”页面，确认你的模型供应商是否提供该模型。`,
       workspace: '工作空间',
       upgrade: '升级',
       addLlmTitle: '添加 LLM',
@@ -2585,11 +2588,11 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
         'LLM 需要查看的对话历史窗口大小。越大越好。但要注意 LLM 的最大 Token 数。',
       wikipedia: '维基百科',
       emailTip:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       email: '邮箱',
       pubMed: 'PubMed',
       pubMedDescription:
-        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件是必填字段。',
+        '此组件用于从 https://pubmed.ncbi.nlm.nih.gov/ 获取搜索结果。通常，它作为知识库的补充。Top N 指定您需要调整的搜索结果数。电子邮件为选填项，留空时将使用默认邮箱地址。',
       bGPT: 'BGPT',
       bGPTDescription:
         '通过 BGPT 搜索科学论文，并返回全文提取的结构化证据：方法、样本量、局限性、利益冲突、数据可用性、研究盲点和可证伪性提示。免费额度后可选 API Key。',
@@ -3079,6 +3082,8 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       tokenizer: '索引器',
       tokenizerRequired: '请先添加索引器节点',
       nodeFormInvalid: '配置有误，请先修正',
+      apiKeyRequired: '请输入 API Key',
+      apiKeyMissing: '未配置 API Key，请先填写',
       agentModelMissing: '未选择模型，请先选择',
       extractorModelMissing: '未选择模型，请先选择',
       extractorKeywordsTopNMissing:
@@ -3260,6 +3265,9 @@ Tokenizer 会根据所选方式将内容存储为对应的数据结构。`,
         removeFirst: '移除第一个',
         removeLast: '移除最后一个',
       },
+      variableAssignerVariableMissing: '请选择变量',
+      variableAssignerOperatorMissing: '请选择运算符',
+      variableAssignerParameterMissing: '请填写参数',
       webhook: {
         name: '网络钩子',
         methods: '方法',

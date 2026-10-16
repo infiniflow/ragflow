@@ -37,7 +37,6 @@ const {
   documentIngest,
   listTagByKnowledgeIds,
   listPipelines,
-  setMeta,
   getMeta,
   getMetaKeys,
   retrievalTestShare,
@@ -63,10 +62,6 @@ const methods = {
   documentThumbnails: {
     url: documentThumbnails,
     method: 'get',
-  },
-  setMeta: {
-    url: setMeta,
-    method: 'post',
   },
   listTagByKnowledgeIds: {
     url: listTagByKnowledgeIds,
@@ -211,7 +206,6 @@ const chunkService = {
       use_kg: rest.use_kg,
       toc_enhance: rest.toc_enhance,
       include_knowledge_compilation: rest.include_knowledge_compilation,
-      reference_metadata: rest.reference_metadata,
     };
     const response = await request.post(api.retrievalTest, {
       data,
