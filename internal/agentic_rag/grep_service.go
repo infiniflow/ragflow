@@ -619,15 +619,22 @@ func regexpLiteralTokens(branch string) []string {
 // per-query timeout — the run-level smartReasoningTimeout in
 // internal/service/chat_pipeline.go caps the whole agent run. The only concern
 // here is a defensive one: eino's streaming ReAct can hand the tool an
-// already-canceled context right after the model emits tool_calls; deriving
-// from context.Background() in that case keeps the query alive instead of being
-// killed by that streaming artifact. Live parents are honored as-is so genuine
-// run-level cancellation still reaches the engine.
+// already-canceled context right after the model emits tool_calls; dropping
+// that parent's cancellation in that case keeps the query alive instead of
+// being killed by that streaming artifact. Live parents are honored as-is so
+// genuine run-level cancellation still reaches the engine.
+//
+// The dropped-cancellation fallback strips the DEADLINE, not the VALUES: the
+// retrieval tools authorize their datasets from the run's identity, which
+// travels in the context (state.Sys["user_id"], see
+// internal/agent/tool/retrieval_nlp.go). Rebuilding from context.Background()
+// here silently erased that identity — and with it every dataset permission
+// check — whenever the streaming artifact above fired.
 func engineCallContext(ctx context.Context) (context.Context, context.CancelFunc) {
 	if ctx.Err() == nil {
 		return context.WithCancel(ctx)
 	}
-	return context.WithCancel(context.Background())
+	return context.WithCancel(context.WithoutCancel(ctx))
 }
 
 // translateGrepChunks converts ES regexp-search result maps into RetrievalChunk.

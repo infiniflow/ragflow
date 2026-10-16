@@ -1133,13 +1133,29 @@ func (p *Parser) parseAdminCheck() (*Command, error) {
 // CHECK LICENSE;
 func (p *Parser) parseAdminCheckLicense() (*Command, error) {
 	p.nextToken() // consume LICENSE
-	cmd := NewCommand("admin_check_license")
 
-	// Semicolon is optional
-	if p.curToken.Type == TokenSemicolon {
+	switch p.curToken.Type {
+	case TokenSemicolon:
 		p.nextToken()
+		return NewCommand("admin_check_license"), nil
+	case TokenEOF:
+		return NewCommand("admin_check_license"), nil
+	case TokenQuotedString:
+		licenseStr, err := p.parseQuotedString()
+		if err != nil {
+			return nil, err
+		}
+		cmd := NewCommand("admin_verify_license")
+		cmd.Params["license"] = licenseStr
+		p.nextToken()
+		// Semicolon is optional
+		if p.curToken.Type == TokenSemicolon {
+			p.nextToken()
+		}
+		return cmd, nil
+	default:
+		return nil, fmt.Errorf("error check license command")
 	}
-	return cmd, nil
 }
 
 // CHECK PROVIDER 'provider_name' REGION 'region_name' KEY 'api_key' [URL 'base_url'];
