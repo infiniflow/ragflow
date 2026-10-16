@@ -364,7 +364,6 @@ export const listDatasetByIds = (ids: string[], ownerTenantId?: string) =>
   request.get(api.kbList, {
     params: {
       ids: ids.join(','),
-      page_size: ids.length,
       ...(ownerTenantId ? { tenant_id: ownerTenantId } : {}),
     },
   });
