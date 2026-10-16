@@ -339,7 +339,7 @@ def list_datasets(tenant_id):
         items:
           type: string
         collectionFormat: multi
-        description: Dataset IDs to filter.
+        description: Dataset IDs to filter, with no limit on the number of IDs. Returns all matching accessible datasets without pagination.
       - in: query
         name: name
         type: string
