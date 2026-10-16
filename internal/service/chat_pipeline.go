@@ -256,18 +256,29 @@ func (s *ChatPipelineService) AsyncChat(
 	// level, and the check stays ahead of the solo-chat short-circuit below so
 	// a level-selected turn is never diverted to a plain LLM answer.
 	//
-	// A dialog with no knowledge bases is NOT agentic-eligible. The agent
-	// resolves a citation with an explicit kb_id scope, and an empty scope
-	// drops that term from the ES query (buildBoolQueryFromCondition), which
-	// would let a cited chunk resolve out of any KB in the tenant. Falling
-	// through keeps an empty scope unreachable instead of trusting every
-	// citation path to defend itself; grep_chunks already refuses an empty
-	// scope, and this keeps fetchChunksByIDs from disagreeing with it.
+	// A dialog with neither knowledge bases nor a knowledge layer is NOT
+	// agentic-eligible. The agent resolves a citation with an explicit kb_id
+	// scope, and an empty scope drops that term from the ES query
+	// (buildBoolQueryFromCondition), which would let a cited chunk resolve out
+	// of any KB in the tenant. Falling through keeps an empty scope unreachable
+	// instead of trusting every citation path to defend itself; grep_chunks
+	// already refuses an empty scope, and this keeps fetchChunksByIDs from
+	// disagreeing with it.
+	//
+	// The bound knowledge layer is the second thing that makes a turn
+	// agentic-eligible, because a turn with a knowledge layer and no documents
+	// has exactly one way to be answered: the agent, answering from the
+	// compiled assertions. Its citations are scoped to the knowledge datasets,
+	// so the reference lookup still runs with a non-empty scope.
+	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, agenticTemplateIDFor(kwargs))
 	_, agenticSelected := kwargs["agent_mode"].(string)
 	if !agenticSelected {
 		agenticSelected = resolveReasoningLevel(kwargs, map[string]interface{}(chat.PromptConfig)) == reasoningLevelAgentic
 	}
-	if agenticSelected && hasKBs {
+	if ontology != nil && !hasKBs {
+		agenticSelected = true
+	}
+	if agenticSelected && (hasKBs || ontology != nil) {
 		if useWebSearch {
 			ctx = agentic_rag.WithWebSearch(ctx, s.webSearchFunc(chat.PromptConfig))
 		}

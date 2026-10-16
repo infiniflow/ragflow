@@ -73,6 +73,37 @@ type RetrievalRequest struct {
 	// bridge a wording gap the query's own words cannot cross; the scoring pass
 	// then uses the engine's kNN score directly instead of re-scoring tokens.
 	VectorOnly bool
+	// SelectFields adds columns to the engine's _source projection, on top of the
+	// defaults the search builds for itself. It EXTENDS rather than replaces: the
+	// default list carries what the rerank pass and the result projection read
+	// (content_with_weight, content_ltks, docnm_kwd, ...), so a replacement would
+	// blank the text a caller displays and re-score every candidate as if no term
+	// had matched. Callers use it for columns their own reader reads off the
+	// returned chunk maps — e.g. the ontology digest's compiled-row columns,
+	// which the default projection does not carry.
+	SelectFields []string
+}
+
+// appendSelectFields returns base plus the extra columns, keeping base's order
+// and dropping duplicates: the engine receives this list as its _source filter,
+// where a repeated column only inflates the request.
+func appendSelectFields(base, extra []string) []string {
+	if len(extra) == 0 {
+		return base
+	}
+	seen := make(map[string]struct{}, len(base)+len(extra))
+	out := make([]string, 0, len(base)+len(extra))
+	for _, name := range append(append([]string{}, base...), extra...) {
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		out = append(out, name)
+	}
+	return out
 }
 
 // RetrievalResult result from retrieval search
@@ -178,6 +209,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		AllowDenseFallback:     req.AllowDenseFallback,
 		VectorOnly:             req.VectorOnly,
 		Filter:                 req.Filter,
+		SelectFields:           req.SelectFields,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -602,6 +634,9 @@ type RetrievalSearchRequest struct {
 	EmbeddingModel         *models.EmbeddingModel
 	VectorSimilarityWeight *float64
 	AllowDenseFallback     *bool
+	// SelectFields extends the engine's _source projection; see
+	// RetrievalRequest.SelectFields for the contract.
+	SelectFields []string
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -713,6 +748,9 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
 		"_score",
 	}
+	// Caller-requested columns ride along with the defaults; see
+	// RetrievalRequest.SelectFields for why this extends rather than replaces.
+	src = appendSelectFields(src, req.SelectFields)
 
 	kwds := make(map[string]struct{})
 

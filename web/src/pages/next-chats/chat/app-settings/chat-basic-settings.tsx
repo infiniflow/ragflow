@@ -15,6 +15,7 @@ import { useTranslate } from '@/hooks/common-hooks';
 import { prefixName } from '@/utils/form';
 import { getDirAttribute } from '@/utils/text-direction';
 import { useFormContext, useWatch } from 'react-hook-form';
+import { KnowledgeLayer } from './knowledge-layer';
 
 interface ChatBasicSettingProps {
   prefix?: string;
@@ -78,6 +79,7 @@ export default function ChatBasicSetting({
       <KnowledgeBaseFormField
         name={prefixName(prefix, 'dataset_ids')}
       ></KnowledgeBaseFormField>
+      <KnowledgeLayer prefix={prefix} />
     </div>
   );
 }

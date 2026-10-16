@@ -80,10 +80,18 @@ func (s *ChatPipelineService) agenticRag(
 	//
 	// AsyncChat only dispatches here with a non-empty KB scope, so the
 	// citation lookup below is always kb_id-bounded.
-	mode, _ := kwargs["agent_mode"].(string)
-	if mode == "" {
-		mode = defaultAgenticTemplateID
-	}
+	mode := agenticTemplateIDFor(kwargs)
+	// The knowledge layer's binding for this turn, resolved once from the three
+	// layers that may declare it (request → template → assistant). Nil means the
+	// turn runs exactly as it would without the feature.
+	ontology := OntologyBindingFor(kwargs, chat.PromptConfig, mode)
+	// The datasets this answer's citations are looked up in. The knowledge scope
+	// is deliberately NOT added: it is a different dataset set and references
+	// resolve by chunk, so an assertion compiled from this conversation's own
+	// documents resolves through the documents' dataset, while one from a
+	// knowledge library that brought its own documents is reported unresolvable
+	// instead of being resolved behind the conversation's back.
+	referenceDatasets := chatDatasetIDs(chat)
 
 	go func() {
 		defer close(out)
@@ -169,12 +177,16 @@ func (s *ChatPipelineService) agenticRag(
 		// agent's final answer arrives.
 		thinking := false
 		var reasoning strings.Builder
-		final, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
-			Model:           model,
-			SynthModel:      synth,
-			Messages:        agentMessages,
-			TemplateID:      mode,
-			TenantID:        chat.TenantID,
+		turn, runErr := agentic_rag.Run(runCtx, agentic_rag.Input{
+			Model:      model,
+			SynthModel: synth,
+			Messages:   agentMessages,
+			TemplateID: mode,
+			TenantID:   chat.TenantID,
+			UserID:     userID,
+			// An empty document scope is what puts the turn in the direct-answer
+			// mode: the knowledge layer is then the only thing there is to read.
+			Ontology:        ontology,
 			DatasetIDs:      chatDatasetIDs(chat),
 			DocIDs:          docIDs,
 			ConversationKey: chat.ID,
@@ -212,6 +224,12 @@ func (s *ChatPipelineService) agenticRag(
 				}
 			},
 		})
+		// The turn's two deliverables: the answer the stream ships, and the
+		// knowledge layer it read. The digest is rendered into the receipt below
+		// so a caller can see which model version and which assertions steered
+		// this answer — nil when the turn ran without the knowledge layer.
+		final := turn.Answer
+		digest := turn.Digest
 		if thinking {
 			emitResult(AsyncChatResult{Final: false, EndToThink: true})
 		}
@@ -235,9 +253,18 @@ func (s *ChatPipelineService) agenticRag(
 		}
 		reference := map[string]interface{}{}
 		if quote {
-			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, chatDatasetIDs(chat), answer, registry)
+			reference, answer = s.buildAgenticReference(ctx, chat.TenantID, referenceDatasets, answer, registry)
 		} else if len(agentic_rag.CitedIDsFromMarkers(answer, registry)) > 0 || len(agentic_rag.ExtractCitedChunkIDs(answer)) > 0 {
 			common.InfoCtx(ctx, "agentic citations suppressed by quote=false")
+		}
+		// The retrieval receipt travels with the answer it explains. It is
+		// attached here rather than stored on the message because the same
+		// answer can be rendered from a stored message that never had one, and
+		// a receipt that appeared only sometimes would be read as "nothing to
+		// report" the rest of the time.
+		if receipt := OntologyDigestReceipt(digest); receipt != nil {
+			receipt["assertions"] = OntologyAssertionsReceipt(digest)
+			reference["ontology"] = receipt
 		}
 		// Persist the same thinking and final answer the stream renders, with
 		// the final answer's citation handles compacted against its reference.
@@ -250,6 +277,24 @@ func (s *ChatPipelineService) agenticRag(
 	}()
 
 	return out, nil
+}
+
+// agenticTemplateIDFor resolves which agent template a turn runs.
+//
+// An explicit agent_mode wins and is validated later by the agent itself, so a
+// bad id still fails loudly. A turn selected by reasoning level names no
+// template — the level is a retrieval strategy, not a config id — so it lands
+// on the one agent this build ships.
+//
+// Both the dispatch decision and the run resolve the template through this
+// function: two copies of the rule would let a turn be dispatched as agentic and
+// then run a template whose defaults were never consulted.
+func agenticTemplateIDFor(kwargs map[string]interface{}) string {
+	mode, _ := kwargs["agent_mode"].(string)
+	if mode == "" {
+		return defaultAgenticTemplateID
+	}
+	return mode
 }
 
 // agenticModelChain resolves only the model explicitly selected by the dialog

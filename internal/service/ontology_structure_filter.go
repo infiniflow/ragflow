@@ -10,30 +10,60 @@ import (
 	kccommon "ragflow/internal/ingestion/component/knowledge_compiler/common"
 )
 
-// StructureFilterForTemplate reads the named ontology template and returns the
-// ES filter its constraints map to, with every class expanded along the
-// declared hierarchy.
+// StructureFilterForTemplate reads the named ontology model and returns the
+// filter its constraints map to, with every class expanded along the declared
+// hierarchy.
 //
 // It fails rather than degrading: a caller who asked for structure-aware
-// retrieval and gets an unreadable template would otherwise receive a search
-// that silently ignores the narrowing — the filter would match nothing (or
+// retrieval and gets an unreadable model would otherwise receive a search that
+// silently ignores the narrowing — the filter would match nothing (or
 // everything) and nothing on screen would say which.
+//
+// version pins the snapshot to read. Zero means the model's current published
+// version, or the working config when it has never been published.
 func StructureFilterForTemplate(
 	ctx context.Context,
 	tenantID, templateID string,
+	version int,
 	c OntologyStructureConstraints,
 ) (map[string]interface{}, error) {
 	if c.IsZero() {
 		return nil, nil
 	}
 	if strings.TrimSpace(templateID) == "" {
-		return nil, fmt.Errorf("ontology_template_id is required when the search carries structure constraints")
+		return nil, fmt.Errorf("ontology_model_id is required when the search carries structure constraints")
 	}
-	cfg := loadOntologyTemplateConfig(ctx, tenantID, templateID)
-	if cfg == nil {
-		return nil, fmt.Errorf("ontology template %q could not be read as an ontology template, so its structure cannot narrow this search", strings.TrimSpace(templateID))
+	declared, _, err := loadOntologyTemplate(ctx, tenantID, templateID, version)
+	if err != nil {
+		return nil, err
 	}
-	return OntologyStructureFilter(parseDeclaredOntology(cfg), c), nil
+	return OntologyStructureFilter(declared, c), nil
+}
+
+// OntologyModelRef names the model a declared structure was read from, so a
+// result can always say which version of the model produced it. A question
+// asked either side of a publish may legitimately get different answers, and
+// nothing else can explain that.
+type OntologyModelRef struct {
+	ID            string
+	Name          string
+	Version       int
+	PublishStatus string
+}
+
+// OntologyAssertionKindFilter pins retrieval to compiled assertions.
+//
+// It is a filter in its own right because the knowledge layer's default
+// request carries no type constraint: asking the knowledge scope what it says
+// about a question is a complete request, and the row-kind pin is what keeps
+// navigation clusters, wiki pages and build markers out of the answer.
+//
+// The column is knowledge_graph_kwd rather than type_kwd on purpose: the
+// engines translate that key into `type_kwd IN (...) OR knowledge_graph_kwd IN
+// (...)`, which is the only form that also matches rows written before the
+// column was renamed.
+func OntologyAssertionKindFilter() map[string]interface{} {
+	return map[string]interface{}{"knowledge_graph_kwd": []string{"entity", "relation"}}
 }
 
 // OntologyStructureConstraints is the structural narrowing a caller asks of a
@@ -62,23 +92,59 @@ func (c OntologyStructureConstraints) IsZero() bool {
 		len(c.ToTypes) == 0
 }
 
-// loadOntologyTemplateConfig reads one ontology template's config so the
-// constraints can be expanded along the declared hierarchy. It returns nil for a
-// missing template, a foreign tenant's template, or a template that is not an
-// ontology: in each case the caller asked for a structure that cannot be read,
-// and the caller has to say so rather than quietly searching without it.
-func loadOntologyTemplateConfig(ctx context.Context, tenantID, templateID string) map[string]interface{} {
+// loadOntologyTemplate reads one ontology model's declared structure together
+// with the identity of the version it was read from.
+//
+// The config a published model is read through is the IMMUTABLE SNAPSHOT, never
+// the working config, exactly as compilation reads it: the rows being searched
+// were produced under the snapshot, so narrowing by a draft edited since would
+// filter on classes the rows do not carry and the mismatch would surface only
+// as a silently emptier result set. A model that has never been published has
+// no snapshot, and its working config is the only structure there is.
+//
+// A missing model, a foreign tenant's model, a kind that is not an ontology and
+// an unreadable snapshot are all errors rather than nils: the caller asked for
+// a structure, and the caller has to say that it could not be had instead of
+// quietly searching without it.
+func loadOntologyTemplate(ctx context.Context, tenantID, templateID string, version int) (declaredOntology, OntologyModelRef, error) {
+	var declared declaredOntology
+	ref := OntologyModelRef{}
 	if strings.TrimSpace(tenantID) == "" || strings.TrimSpace(templateID) == "" {
-		return nil
+		return declared, ref, fmt.Errorf("ontology model %q could not be read: a tenant and a model id are both required", strings.TrimSpace(templateID))
 	}
 	tpl, err := dao.NewCompilationTemplateDAO().GetTemplate(ctx, dao.DB, tenantID, templateID)
 	if err != nil || tpl == nil {
-		return nil
+		return declared, ref, fmt.Errorf("ontology model %q not found", strings.TrimSpace(templateID))
 	}
 	if !kccommon.IsOntologyKind(tpl.Kind) {
-		return nil
+		return declared, ref, fmt.Errorf("template %q is not an ontology model (kind %q)", strings.TrimSpace(templateID), tpl.Kind)
 	}
-	return map[string]interface{}(tpl.Config)
+	ref = OntologyModelRef{
+		ID:            tpl.ID,
+		Name:          tpl.Name,
+		Version:       tpl.Version,
+		PublishStatus: tpl.PublishStatus,
+	}
+	cfg := map[string]interface{}(tpl.Config)
+	effective := tpl.Version
+	if version > 0 {
+		effective = version
+	}
+	if effective > 0 {
+		snapshot, snapErr := dao.NewCompilationTemplateVersionDAO().GetByVersion(ctx, dao.DB, tenantID, templateID, effective)
+		if snapErr != nil || snapshot == nil {
+			return declared, ref, fmt.Errorf("ontology model %q version %d could not be read; the rows compiled under it cannot be narrowed reliably", strings.TrimSpace(templateID), effective)
+		}
+		if !kccommon.IsOntologyKind(snapshot.Kind) {
+			return declared, ref, fmt.Errorf("ontology model %q version %d is not an ontology model (kind %q)", strings.TrimSpace(templateID), effective, snapshot.Kind)
+		}
+		cfg = map[string]interface{}(snapshot.Config)
+		ref.Version = effective
+		if strings.TrimSpace(snapshot.Name) != "" {
+			ref.Name = snapshot.Name
+		}
+	}
+	return parseDeclaredOntology(cfg), ref, nil
 }
 
 // declaredChildren inverts the declared parent links into a child list per

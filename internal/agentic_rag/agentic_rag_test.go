@@ -186,7 +186,7 @@ func TestRunDispatchesModelSelectedRetrievalTools(t *testing.T) {
 						{ID: "old-corpus", Type: "function", Function: schema.FunctionCall{Name: "search_chunks", Arguments: `{"queries":["old"]}`}},
 						{ID: "old-web", Type: "function", Function: schema.FunctionCall{Name: webSearchToolName, Arguments: `{"queries":["old"]}`}},
 					}
-					answer, err := Run(ctx, Input{
+					out, err := Run(ctx, Input{
 						Model:      models.NewEinoChatModel(models.NewChatModel(driver, &name, &models.APIConfig{}), nil),
 						TemplateID: "smart-reasoning", TenantID: "tenant", DatasetIDs: datasetIDs, Tools: tools,
 						Messages: []*schema.Message{
@@ -199,8 +199,8 @@ func TestRunDispatchesModelSelectedRetrievalTools(t *testing.T) {
 						},
 						Stream: stream, MaxIterations: 4, ToolCallCounts: counts, OnDelta: func(string, string) {},
 					})
-					if err != nil || answer != "Answer based on the available evidence." || modelCalls != len(required)+1 {
-						t.Fatalf("Run: answer=%q err=%v model calls=%d", answer, err, modelCalls)
+					if err != nil || out.Answer != "Answer based on the available evidence." || modelCalls != len(required)+1 {
+						t.Fatalf("Run: answer=%q err=%v model calls=%d", out.Answer, err, modelCalls)
 					}
 					wantCorpus, wantWeb := 0, 0
 					if datasets {

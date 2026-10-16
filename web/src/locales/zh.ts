@@ -996,6 +996,65 @@ NER：使用 spaCy NER 和基于规则的关键词提取来抽取 Entities 和 R
       datasetUnavailable: '所选知识库不可用（已删除或无 chunk），请重新选择',
       knowledgeBasesTip:
         '选择关联的知识库。新建或空知识库不会在下拉菜单中显示。',
+      knowledgeLayer: '知识层',
+      knowledgeLayerTip:
+        '读取知识库中按本体模型编译好的断言（实体与关系），并带上原文引文。上面的知识库回答“文档里怎么写的”，知识层回答“模型声明了什么”，两者可以同时生效。',
+      knowledgeLayerMode: '生效方式',
+      knowledgeLayerModeInherit: '跟随模板',
+      knowledgeLayerModeOn: '开启',
+      knowledgeLayerModeOff: '关闭',
+      knowledgeLayerModeHint:
+        '跟随模板：由智能模板声明的默认值决定；开启：本助手的设置覆盖模板；关闭：即使模板声明了也不生效。',
+      knowledgeLayerModel: '本体模型',
+      knowledgeLayerModelPlaceholder: '选择本体模型',
+      knowledgeLayerModelEmpty:
+        '还没有本体模型，请先在编译模板里创建并发布一个',
+      knowledgeLayerModelPublishedVersion: '已发布版本 v{{version}}',
+      knowledgeLayerModelNeverPublished: '尚未发布：没有可读的声明快照',
+      knowledgeLayerVersion: '模型版本',
+      knowledgeLayerVersionTip:
+        '固定某个已发布版本，可以让这个助手不再被后续发布改变；跟随已发布版本则始终使用当前版本。',
+      knowledgeLayerVersionFollowPublished: '跟随已发布版本',
+      knowledgeLayerVersionCurrent: 'v{{version}}（当前已发布）',
+      knowledgeLayerKnowledgeScope: '知识库',
+      knowledgeLayerKnowledgeScopeTip:
+        '选择承载编译结果的数据集。它通常不同于上面的会话数据集：编译行写在这里，检索也只读这里。',
+      ontologyModelRequired: '请选择本体模型：缺少模型时知识层不会生效',
+      ontologyKnowledgeScopeRequired:
+        '请选择至少一个知识库：缺少知识库时知识层不会生效',
+      knowledgeLayerPreview: '试检索',
+      knowledgeLayerPreviewTip:
+        '用一条问题直接查一次知识层，看看模型是否真的收窄了检索、引文是否落在可读文档上。用的是当前表单里的设置，不必先保存。',
+      knowledgeLayerPreviewQuestion: '输入一条问题',
+      knowledgeLayerPreviewRun: '检索',
+      knowledgeLayerPreviewRunning: '检索中…',
+      knowledgeLayerPreviewNeedsBinding: '先选择本体模型和知识库，才能试检索',
+      ontologyPreviewFailed: '检索失败',
+      ontologyPreviewMatched: '命中 {{total}} 行',
+      ontologyPreviewModel: '模型：{{name}} v{{version}}',
+      ontologyPreviewDegrade: '降级（{{code}}）：{{reason}}',
+      ontologyPreviewCitations:
+        '引文：可读 {{resolvable}} 条 / 不可读 {{unresolvable}} 条',
+      ontologyPreviewUnreviewed: '{{rows}} 行尚未审核',
+      ontologyReceiptRows: '携带 {{carried}} / 共 {{total}} 行',
+      ontologyReceiptUncitable: '{{rows}} 条引文不可读',
+      ontologyPreviewMissingClasses: '声明了但没有实例：{{classes}}',
+      ontologyPreviewCoverageTruncated:
+        '覆盖扫描已截断（读了 {{sampled}} 行，上限 {{limit}} 行）',
+      ontologyPreviewSuggested: '由问题推导出的约束：{{constraints}}',
+      ontologyPreviewNoAssertion:
+        '知识库里没有匹配的断言。这是覆盖缺口，而不是“不存在”。',
+      ontologyEvidenceStructured: '结构性证据',
+      ontologyEvidenceSchemaFree: '无结构约束',
+      ontologyEvidenceNone: '无证据',
+      ontologyEvidenceStructuredHint:
+        '这些行是按声明结构收窄后命中的，可以作为模型对本问题的声明来引用。',
+      ontologyEvidenceSchemaFreeHint:
+        '这些行没有按声明结构收窄（原因见上），可以当作线索，但不能算作模型对本问题的声明。',
+      ontologyEvidenceNoneHint:
+        '知识库没有给出任何断言，本轮不要用知识层来回答。',
+      ontologyAssertionUnreviewed: '未审核',
+      ontologyAssertionUncitable: '无可用引文',
       system: '系统提示词',
       systemPlaceholder: `你是一个智能助手，主要功能是基于提供的知识库严格回答问题。
 

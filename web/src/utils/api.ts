@@ -449,6 +449,9 @@ export default {
   // One confirmed edit from the compile-quality ledger (ontology.md §2.7).
   compilationTemplateOntologyFix: (id: string) =>
     `${restAPIv1}/compilation-templates/${id}/ontology-fix`,
+  // The knowledge layer read on its own: the compiled assertions that fit a
+  // declared structure, which is what the agent loop's prefetch calls too.
+  ontologyRetrieval: `${restAPIv1}/retrieval/ontology`,
 
   // mcp server
   listMcpServer: `${restAPIv1}/mcp/servers`,

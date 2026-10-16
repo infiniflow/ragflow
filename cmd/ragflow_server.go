@@ -1158,8 +1158,13 @@ func startServer(ctx context.Context, serverName string, arguments *serverArgs) 
 	tenantHandler := handler.NewTenantHandler(tenantService, userService, datasetsService)
 	documentHandler := handler.NewDocumentHandler(documentService, datasetsService, fileService)
 	datasetsHandler := handler.NewDatasetsHandler(datasetsService, metadataService)
-	ontologyABoxRetrievalHandler := handler.NewOntologyABoxRetrievalHandler(
-		service.NewOntologyABoxRetrievalService(docEngine, dao.NewDocumentDAO()))
+	// One compiled-rows (ABox) retrieval service serves both entry points: its
+	// REST endpoint and the agent loop's knowledge-layer prefetch. Sharing the
+	// instance is what keeps the preview a person reads and the rows a turn
+	// searches narrowed by the same structure under the same model version.
+	ontologyABoxRetrieval := service.NewOntologyABoxRetrievalService(docEngine, dao.NewDocumentDAO())
+	smartagentic.SetOntologyService(service.NewOntologyAdapter(ontologyABoxRetrieval))
+	ontologyABoxRetrievalHandler := handler.NewOntologyABoxRetrievalHandler(ontologyABoxRetrieval)
 	systemHandler := handler.NewSystemHandler(systemService)
 	statsHandler := handler.NewStatsHandler(statsService)
 	chunkHandler := handler.NewChunkHandler(chunkService, userService)

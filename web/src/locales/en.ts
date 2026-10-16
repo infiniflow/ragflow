@@ -1099,6 +1099,70 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
         'The selected dataset is unavailable (deleted or has no chunks), please re-select',
       knowledgeBasesTip:
         'Select the datasets to associate with this chat assistant. An empty dataset will not appear in the dropdown list.',
+      knowledgeLayer: 'Knowledge layer',
+      knowledgeLayerTip:
+        'Reads the assertions compiled in a knowledge dataset (entities and relations) with their verbatim quotations. The datasets above answer "how is this worded in the documents"; this layer answers "what does the model declare". Both can be in force at once.',
+      knowledgeLayerMode: 'How it applies',
+      knowledgeLayerModeInherit: 'Follow the template',
+      knowledgeLayerModeOn: 'On',
+      knowledgeLayerModeOff: 'Off',
+      knowledgeLayerModeHint:
+        'Follow the template: the default declared on the agentic template decides. On: this assistant overrides it. Off: it does not apply even when the template declares one.',
+      knowledgeLayerModel: 'Ontology model',
+      knowledgeLayerModelPlaceholder: 'Select a model',
+      knowledgeLayerModelEmpty:
+        'No ontology model yet — create and publish one in the compilation templates first',
+      knowledgeLayerModelPublishedVersion: 'Published version v{{version}}',
+      knowledgeLayerModelNeverPublished:
+        'Never published: no readable declaration snapshot',
+      knowledgeLayerVersion: 'Model version',
+      knowledgeLayerVersionTip:
+        'Pinning a published version keeps later publishes from changing this assistant; following the published version always uses the current one.',
+      knowledgeLayerVersionFollowPublished: 'Follow the published version',
+      knowledgeLayerVersionCurrent: 'v{{version}} (current)',
+      knowledgeLayerKnowledgeScope: 'Knowledge datasets',
+      knowledgeLayerKnowledgeScopeTip:
+        'The datasets that hold the compiled rows. They are usually not the conversation datasets above: the rows are written there and read only from there.',
+      ontologyModelRequired:
+        'Select an ontology model: without one this layer does not apply',
+      ontologyKnowledgeScopeRequired:
+        'Select at least one knowledge dataset: without one this layer does not apply',
+      knowledgeLayerPreview: 'Try a lookup',
+      knowledgeLayerPreviewTip:
+        'Ask one question of the knowledge layer to see whether the model actually narrows the search and whether its quotations resolve to documents you can read. It uses the settings in this form, so you can check before saving.',
+      knowledgeLayerPreviewQuestion: 'Type a question',
+      knowledgeLayerPreviewRun: 'Search',
+      knowledgeLayerPreviewRunning: 'Searching…',
+      knowledgeLayerPreviewNeedsBinding:
+        'Select a model and a knowledge dataset to try a lookup',
+      ontologyPreviewFailed: 'The lookup failed',
+      ontologyPreviewMatched: 'Matched {{total}} row(s)',
+      ontologyPreviewModel: 'Model: {{name}} v{{version}}',
+      ontologyPreviewDegrade: 'Degraded ({{code}}): {{reason}}',
+      ontologyPreviewCitations:
+        'Citations: {{resolvable}} readable, {{unresolvable}} not',
+      ontologyPreviewUnreviewed: '{{rows}} row(s) not reviewed yet',
+      ontologyReceiptRows: 'Carried {{carried}} of {{total}} row(s)',
+      ontologyReceiptUncitable: '{{rows}} quotation(s) not readable',
+      ontologyPreviewMissingClasses:
+        'Declared without an instance: {{classes}}',
+      ontologyPreviewCoverageTruncated:
+        'The coverage scan was truncated ({{sampled}} rows read, limit {{limit}})',
+      ontologyPreviewSuggested:
+        'Constraints derived from the question: {{constraints}}',
+      ontologyPreviewNoAssertion:
+        'No assertion in the knowledge scope matched. That is a coverage gap, not a statement that nothing exists.',
+      ontologyEvidenceStructured: 'Structured',
+      ontologyEvidenceSchemaFree: 'Schema-free',
+      ontologyEvidenceNone: 'No evidence',
+      ontologyEvidenceStructuredHint:
+        'These rows were narrowed by the declared structure and matched: they may be cited as what the model says about the question.',
+      ontologyEvidenceSchemaFreeHint:
+        'These rows were not narrowed by the declared structure (the reason is above). Read them as leads, not as the model\u2019s statement about the question.',
+      ontologyEvidenceNoneHint:
+        'The knowledge scope returned no assertion; do not answer from this layer in this turn.',
+      ontologyAssertionUnreviewed: 'not reviewed',
+      ontologyAssertionUncitable: 'no citable quotation',
       system: 'System prompt',
       systemPlaceholder: `You are an intelligent assistant. Your primary function is to answer questions based strictly on the provided dataset.
 
