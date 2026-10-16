@@ -158,11 +158,6 @@ func (dao *KnowledgebaseDAO) UpdateByID(ctx context.Context, db *gorm.DB, id str
 	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Updates(updates).Error
 }
 
-// Delete soft deletes a knowledge base by setting status to invalid
-func (dao *KnowledgebaseDAO) Delete(ctx context.Context, db *gorm.DB, id string) error {
-	return db.WithContext(ctx).Model(&entity.Knowledgebase{}).Where("id = ?", id).Update("status", string(entity.StatusInvalid)).Error
-}
-
 // GetByID retrieves a knowledge base by ID
 func (dao *KnowledgebaseDAO) GetByID(ctx context.Context, db *gorm.DB, id string) (*entity.Knowledgebase, error) {
 	var kb entity.Knowledgebase
