@@ -443,6 +443,11 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 		return nil, err
 	}
 
+	// Chunk ids are content-addressed, so one batch can repeat an id. Elasticsearch
+	// keeps a single row per _id; Infinity has no id uniqueness, so collapse to one row
+	// per id, last wins. Repeats across batches need nothing: the delete below covers them.
+	insertChunks = dedupeByChunkID(insertChunks)
+
 	// Delete existing rows with matching IDs
 	if len(insertChunks) > 0 {
 		idList := make([]string, len(insertChunks))
@@ -485,6 +490,37 @@ func (e *Engine) InsertChunks(ctx context.Context, chunks []map[string]interface
 // vectorColumnPattern matches the q_<dim>_vec columns the engine adds per
 // embedding size; no mapping file declares them.
 var vectorColumnPattern = regexp.MustCompile(`^q_\d+_vec$`)
+
+// dedupeByChunkID keeps the last row of each chunk id, mirroring Elasticsearch, where
+// a repeated _id overwrites the earlier document. Rows without an id are all kept.
+func dedupeByChunkID(rows []map[string]interface{}) []map[string]interface{} {
+	if len(rows) < 2 {
+		return rows
+	}
+	lastAt := make(map[string]int, len(rows))
+	dupes := 0
+	for i, row := range rows {
+		id, ok := row["id"].(string)
+		if !ok || id == "" {
+			continue
+		}
+		if _, seen := lastAt[id]; seen {
+			dupes++
+		}
+		lastAt[id] = i
+	}
+	if dupes == 0 {
+		return rows
+	}
+	out := make([]map[string]interface{}, 0, len(rows)-dupes)
+	for i, row := range rows {
+		if id, ok := row["id"].(string); ok && id != "" && lastAt[id] != i {
+			continue
+		}
+		out = append(out, row)
+	}
+	return out
+}
 
 // dropUndeclaredFields removes each row key that is not a column of the table
 // and that no mapping file declares, such as parser bookkeeping keys
