@@ -315,6 +315,53 @@ func TestDetectEnglishPagePhaseAlignedPunctuation(t *testing.T) {
 	}
 }
 
+func TestDetectEnglishPageShortEnglishBlockOnCJK(t *testing.T) {
+	// A 30-letter heading, then one letter every 10 characters and CJK
+	// everywhere else: 127 ASCII out of 1000, about 87% CJK. The heading is
+	// a real 30-character run. Moving each later CJK sample to that span's
+	// lone letter would make the sample all ASCII and vote English.
+	chars := make([]pdf.TextChar, 1000)
+	for i := range chars {
+		chars[i].Text = "你"
+		if i < 30 || i%10 == 5 {
+			chars[i].Text = "e"
+		}
+	}
+	ascii := 0
+	for i := range chars {
+		if !breaksASCIIRun(chars[i].Text) {
+			ascii++
+		}
+	}
+	if ascii != 127 {
+		t.Fatalf("ASCII characters = %d, want 127", ascii)
+	}
+	if !asciiRunAtLeast(chars, 0, len(chars)-1, 30) {
+		t.Fatal("fixture has no 30-character ASCII run")
+	}
+	sample := DefaultSampleChars(chars, 100)
+	run := 0
+	for _, r := range sample {
+		if IsASCIIPrintable(r) {
+			run++
+			if run >= 30 {
+				break
+			}
+			continue
+		}
+		run = 0
+	}
+	if run >= 30 {
+		t.Fatalf("DefaultSampleChars = %q, want no 30-character ASCII run", sample)
+	}
+	if DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage = true, want false")
+	}
+	if DetectEnglishPage(chars, nil) {
+		t.Fatal("DetectEnglishPage flipped to true")
+	}
+}
+
 func TestFullTextFromChars(t *testing.T) {
 	chars := map[int][]pdf.TextChar{
 		0: {{Text: "Hello"}, {Text: " "}, {Text: "World"}},
