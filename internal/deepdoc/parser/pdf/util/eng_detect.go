@@ -35,22 +35,22 @@ func IsASCIIPrintable(r rune) bool {
 // is split into that many equal spans in page order, and each span gives one
 // character. A span is English when the page has a run of 30 consecutive
 // ASCII characters and more than half of the span is English text: ASCII
-// characters, or a gap shorter than one span between two such runs. An
-// English span gives its first ASCII character; any other span gives its
-// first non-ASCII character when it has one.
+// characters, or a gap between two such runs that is shorter than each of
+// them. An English span gives its first ASCII character; any other span
+// gives its first non-ASCII character when it has one.
 //
 // A page with no real 30-character run therefore never samples one, and a
-// short English block cannot make a mostly CJK page English. Punctuation
-// shorter than a span inside English text never breaks the sample, wherever
-// it falls against the spans. The same page always yields the same sample.
+// short English block cannot make a mostly CJK page English. Whether
+// punctuation inside English text is bridged depends only on the text
+// around it, not on page length or where it falls against the spans. The
+// same page always yields the same sample.
 func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 	if n <= 0 || len(chars) == 0 {
 		return ""
 	}
-	m := min(n, len(chars))
 	text := make([]bool, len(chars))
-	pageHasRun := false
-	run, runStart, lastRunEnd := 0, 0, -1
+	var runs [][2]int
+	run, runStart := 0, 0
 	for i, c := range chars {
 		text[i] = !breaksASCIIRun(c.Text)
 		for _, r := range c.Text {
@@ -62,27 +62,30 @@ func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 				runStart = i
 			}
 			run++
-			if run < 30 {
-				continue
+			if run == 30 {
+				runs = append(runs, [2]int{runStart, i})
+			} else if run > 30 {
+				runs[len(runs)-1][1] = i
 			}
-			// The bound rounds down so a bridged gap never covers a whole
-			// span, and every English span still has an ASCII character.
-			if run == 30 && lastRunEnd >= 0 && runStart-lastRunEnd-1 < len(chars)/m {
-				for j := lastRunEnd + 1; j < runStart; j++ {
-					text[j] = true
-				}
+		}
+	}
+	for k := 1; k < len(runs); k++ {
+		prev, next := runs[k-1], runs[k]
+		gap := next[0] - prev[1] - 1
+		if gap < prev[1]-prev[0]+1 && gap < next[1]-next[0]+1 {
+			for j := prev[1] + 1; j < next[0]; j++ {
+				text[j] = true
 			}
-			pageHasRun = true
-			lastRunEnd = i
 		}
 	}
 
+	m := min(n, len(chars))
 	var buf strings.Builder
 	for i := range m {
 		start := i * len(chars) / m
 		end := (i + 1) * len(chars) / m
 		english := false
-		if pageHasRun {
+		if len(runs) > 0 {
 			k := 0
 			for j := start; j < end; j++ {
 				if text[j] {
@@ -91,8 +94,14 @@ func DefaultSampleChars(chars []pdf.TextChar, n int) string {
 			}
 			english = k*2 > end-start
 		}
+		// An English span that lies inside a bridged gap has no ASCII
+		// character of its own; it gives the first one of the next run.
+		limit := end
+		if english {
+			limit = len(chars)
+		}
 		pick := start
-		for j := start; j < end; j++ {
+		for j := start; j < limit; j++ {
 			if breaksASCIIRun(chars[j].Text) != english {
 				pick = j
 				break

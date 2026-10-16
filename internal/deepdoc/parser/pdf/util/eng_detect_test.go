@@ -269,7 +269,7 @@ func TestDetectEnglishPagePhaseAlignedPunctuation(t *testing.T) {
 			name: "quote clusters fill half a span",
 			// 90% ASCII: five curly quotes, then 45 letters. Each affected
 			// span of ten is exactly half quotes. The quotes sit between two
-			// real runs and are shorter than a span, so they read as text.
+			// real runs and are shorter than each, so they read as text.
 			fill: func(chars []pdf.TextChar) {
 				for i := range chars {
 					chars[i].Text = "e"
@@ -334,30 +334,27 @@ func TestDetectEnglishPagePhaseAlignedPunctuation(t *testing.T) {
 	}
 }
 
-func TestDetectEnglishPageQuoteClustersIgnorePhase(t *testing.T) {
-	// k curly quotes every 50 characters, shifted through every phase
-	// against the spans of ten. Where the clusters fall must not change
-	// the vote, and clusters of up to five keep the page English.
-	for k := 1; k <= 12; k++ {
-		var first bool
-		for phase := range 50 {
-			chars := make([]pdf.TextChar, 1000)
-			for i := range chars {
-				chars[i].Text = "e"
-				if (i+phase)%50 < k {
-					chars[i].Text = "“"
+func TestDetectEnglishPageQuoteClustersIgnorePhaseAndLength(t *testing.T) {
+	// k curly quotes every 50 characters, shifted through every phase, on
+	// pages of at least three periods. Span width changes with page length,
+	// so neither where the clusters fall nor how long the page is may change
+	// the vote. Up to 20 quotes leave real runs of 30 that outlast each
+	// cluster, so the page is English; beyond that no real run is left.
+	for _, pageLen := range []int{150, 200, 333, 500, 777, 1000, 1500, 2000, 4000} {
+		for k := 1; k <= 25; k++ {
+			want := k <= 20
+			for phase := range 50 {
+				chars := make([]pdf.TextChar, pageLen)
+				for i := range chars {
+					chars[i].Text = "e"
+					if (i+phase)%50 < k {
+						chars[i].Text = "“"
+					}
+				}
+				if got := DetectEnglishPage(chars, nil); got != want {
+					t.Fatalf("length %d, %d quotes, phase %d: DetectEnglishPage = %v, want %v", pageLen, k, phase, got, want)
 				}
 			}
-			got := DetectEnglishPage(chars, nil)
-			if phase == 0 {
-				first = got
-			}
-			if got != first {
-				t.Fatalf("%d quotes: phase %d votes %v, phase 0 votes %v", k, phase, got, first)
-			}
-		}
-		if k <= 5 && !first {
-			t.Fatalf("%d quotes per 50: DetectEnglishPage = false, want true", k)
 		}
 	}
 }
