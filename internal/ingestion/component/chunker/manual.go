@@ -105,6 +105,8 @@ func (c *ManualChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs
 	return c.invoke(ctx, db, withName(inputs, name))
 }
 
+// invoke decodes the upstream payload once, extracts the records, and runs
+// the shared group pipeline after a physical-position resort.
 func (c *ManualChunkerComponent) invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	upstream, err := decodeChunkerFromUpstream(inputs)
 	if err != nil {

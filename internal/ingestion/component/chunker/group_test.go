@@ -96,6 +96,22 @@ func TestExtractLineRecords_MarkdownKey(t *testing.T) {
 	}
 }
 
+// TestExtractLineRecords_DeclaredFormatBeatsStrayEmptyText pins the
+// output_format-driven payload selection (python parity): a declared
+// "markdown" payload is read even when a stray empty "text" key is present,
+// so an empty alias key cannot silently swallow the whole document.
+func TestExtractLineRecords_DeclaredFormatBeatsStrayEmptyText(t *testing.T) {
+	records := decodedRecords(t, map[string]any{
+		"name":          "t.md",
+		"output_format": "markdown",
+		"markdown":      "line1\nline2",
+		"text":          "",
+	})
+	if len(records) != 2 {
+		t.Fatalf("got %d records, want 2 from the declared markdown payload", len(records))
+	}
+}
+
 // TestExtractLineRecords_HTMLKey verifies extractLineRecords reads the
 // "html" payload key, same safety-net rationale as TestMarkdownKey.
 func TestExtractLineRecords_HTMLKey(t *testing.T) {

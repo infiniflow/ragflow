@@ -450,38 +450,59 @@ func mergePositionMatrix(sources ...json.RawMessage) [][]float64 {
 }
 
 // extractLineRecords converts the decoded upstream payload into records in the
-// same order the python BaseTitleChunker.extract_line_records uses:
-//
-//  1. If upstream emitted chunks (output_format == "chunks") OR
-//     upstream emitted JSON, normalize from the list payload.
-//  2. Otherwise, treat text/markdown/html as a "one record per line"
-//     stream (preserving indentation for non-text formats, strip-only
-//     for the text format). The first present payload wins, so an empty
-//     "text" masks a populated "markdown", matching the legacy key scan.
+// same order the python BaseTitleChunker.extract_line_records uses: the field
+// named by output_format selects the payload (chunks / json / markdown / text
+// / html), mirroring python's branch on output_format rather than key
+// presence alone — a declared "markdown" payload is read even when a stray
+// empty "text" key is also present. When output_format is unset the first
+// present payload wins (chunks, json, then text/markdown/html), preserving
+// the legacy key scan.
 //
 // The payload is consumed from the decoded upstream — never from the raw
 // inputs — so every chunker variant shares the one normalization entry
 // (decodeChunkerFromUpstream).
 func extractLineRecords(upstream schema.ChunkerFromUpstream) []lineRecord {
+	switch upstream.OutputFormat {
+	case schema.PayloadFormatChunks:
+		return recordsFromStructured(upstream.Chunks)
+	case schema.PayloadFormatJSON:
+		return recordsFromStructured(upstream.JSONResult)
+	case schema.PayloadFormatMarkdown:
+		return lineRecordsFromPayload(upstream.MarkdownResult)
+	case schema.PayloadFormatText:
+		return lineRecordsFromPayload(upstream.TextResult)
+	case schema.PayloadFormatHTML:
+		return lineRecordsFromPayload(upstream.HTMLResult)
+	}
+	// output_format unset: first present payload wins.
 	if upstream.Chunks != nil {
 		return recordsFromStructured(upstream.Chunks)
 	}
 	if upstream.JSONResult != nil {
 		return recordsFromStructured(upstream.JSONResult)
 	}
-	text := ""
 	for _, candidate := range []*string{upstream.TextResult, upstream.MarkdownResult, upstream.HTMLResult} {
 		if candidate != nil {
-			text = *candidate
-			break
+			return lineRecordsFromPayload(candidate)
 		}
 	}
-	if text == "" {
-		return nil
-	}
-	return lineRecordsFromText(text)
+	return nil
 }
 
+// lineRecordsFromPayload splits a plain-text payload into one record per line.
+// An absent or empty payload yields no records.
+func lineRecordsFromPayload(payload *string) []lineRecord {
+	if payload == nil || *payload == "" {
+		return nil
+	}
+	return lineRecordsFromText(*payload)
+}
+
+// recordsFromStructured converts parser-shaped items into records: text items
+// keep their text, and media items — tables whose TableData has already been
+// rendered to HTML by materializeTableText, images carrying an image payload
+// or reference — pass through as single records. Only an item with none of
+// text, image and img_id is dropped.
 func recordsFromStructured(items []schema.ChunkDoc) []lineRecord {
 	out := make([]lineRecord, 0, len(items))
 	for _, it := range items {

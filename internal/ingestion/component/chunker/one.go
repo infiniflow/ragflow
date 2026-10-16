@@ -71,6 +71,7 @@ func (c *OneChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs ma
 	return c.invoke(ctx, inputs)
 }
 
+// invoke collapses the decoded upstream payload into a single chunk.
 func (c *OneChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil

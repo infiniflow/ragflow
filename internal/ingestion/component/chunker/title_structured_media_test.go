@@ -31,6 +31,10 @@ import (
 
 const titleTestTableHTML = "<table><tr><th>name</th><th>age</th></tr><tr><td>Alice</td><td>30</td></tr></table>"
 
+// pngBase64Red is a second valid 1x1 PNG (red), distinct from pngBase64, used
+// to pin that captionless images keep distinct chunk ids.
+const pngBase64Red = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+
 // titleFamilyCase pairs a title-family entry point with its display name.
 type titleFamilyCase struct {
 	name string
@@ -188,12 +192,13 @@ func TestTitleFamilyEmptyTextImageUploadsThroughDecorator(t *testing.T) {
 	}
 	decorated := &imageUploadDecorator{inner: comp}
 
+	payload := "data:image/png;base64," + pngBase64
 	out, err := decorated.Invoke(t.Context(), nil, map[string]any{
 		"name":          "doc.docx",
 		"kb_id":         testKBID,
 		"output_format": "json",
 		"json": []map[string]any{
-			{"text": "", "image": "data:image/png;base64," + pngBase64, "doc_type_kwd": "image"},
+			{"text": "", "image": payload, "doc_type_kwd": "image"},
 		},
 	})
 	if err != nil {
@@ -205,8 +210,9 @@ func TestTitleFamilyEmptyTextImageUploadsThroughDecorator(t *testing.T) {
 	}
 	ck := chunks[0]
 	// No doc_id in the payload (it would trigger the on-demand PDF crop path,
-	// which needs a database), so the chunk id hashes the empty document id.
-	wantChunkID := common.ChunkID("", "")
+	// which needs a database), so the id hashes the empty document id plus the
+	// captionless image's own identity (mediaChunkIdentity).
+	wantChunkID := common.ChunkID("", mediaChunkIdentity(payload, ""))
 	if ck["id"] != wantChunkID {
 		t.Errorf("id = %v, want %q", ck["id"], wantChunkID)
 	}
@@ -215,6 +221,54 @@ func TestTitleFamilyEmptyTextImageUploadsThroughDecorator(t *testing.T) {
 	}
 	if _, ok := ck["image"]; ok {
 		t.Errorf("image not dropped after upload: %v", ck["image"])
+	}
+}
+
+// TestTitleFamilyCaptionlessImagesGetDistinctIDs: two different captionless
+// images in one document must not collapse onto the same chunk id — a shared
+// id would make the second upload overwrite the first image in MinIO and merge
+// the two index entries.
+func TestTitleFamilyCaptionlessImagesGetDistinctIDs(t *testing.T) {
+	uploaded := map[string]int{}
+	prev := ChunkImageUploader
+	ChunkImageUploader = func(_ context.Context, kbID, chunkID string, _ []byte) (string, error) {
+		uploaded[chunkID]++
+		return kbID + "-" + chunkID, nil
+	}
+	t.Cleanup(func() { ChunkImageUploader = prev })
+
+	comp, err := NewGroupTitleChunker(map[string]any{"levels": [][]string{{`^# `}}})
+	if err != nil {
+		t.Fatalf("NewGroupTitleChunker: %v", err)
+	}
+	decorated := &imageUploadDecorator{inner: comp}
+
+	out, err := decorated.Invoke(t.Context(), nil, map[string]any{
+		"name":          "doc.docx",
+		"kb_id":         testKBID,
+		"output_format": "json",
+		"json": []map[string]any{
+			{"text": "", "image": "data:image/png;base64," + pngBase64, "doc_type_kwd": "image"},
+			{"text": "", "image": "data:image/png;base64," + pngBase64Red, "doc_type_kwd": "image"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("decorated Invoke: %v", err)
+	}
+	chunks, _ := out["chunks"].([]map[string]any)
+	if len(chunks) != 2 {
+		t.Fatalf("chunks = %d, want 2", len(chunks))
+	}
+	idA, _ := chunks[0]["id"].(string)
+	idB, _ := chunks[1]["id"].(string)
+	if idA == "" || idB == "" || idA == idB {
+		t.Fatalf("captionless image ids must be distinct, got %q and %q", idA, idB)
+	}
+	if idA == common.ChunkID("", "") || idB == common.ChunkID("", "") {
+		t.Fatalf("id still hashes the empty text alone: %q / %q", idA, idB)
+	}
+	if len(uploaded) != 2 || uploaded[idA]+uploaded[idB] != 2 {
+		t.Fatalf("uploads must land on two distinct keys, got %v", uploaded)
 	}
 }
 

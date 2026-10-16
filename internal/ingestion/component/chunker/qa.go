@@ -88,6 +88,7 @@ func (c *QAChunkerComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 	return c.invoke(ctx, inputs)
 }
 
+// invoke extracts question-answer pairs from the decoded upstream payload.
 func (c *QAChunkerComponent) invoke(_ context.Context, inputs map[string]any) (map[string]any, error) {
 	if inputs == nil {
 		return emptyOutputs(), nil
