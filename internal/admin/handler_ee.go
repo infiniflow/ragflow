@@ -820,7 +820,18 @@ func (h *Handler) ShowSystemLicense(c *gin.Context) {
 			return
 		}
 	} else {
-		result, err = h.service.ShowSystemLicense(ctx)
+		var license string
+		license, ok = c.GetQuery("license")
+		if !ok {
+			// Show license
+			result, err = h.service.ShowSystemLicense(ctx)
+			if err != nil {
+				common.ErrorWithCode(c, common.CodeServerError, err.Error())
+				return
+			}
+		}
+		// Verify license
+		result, err = h.service.VerifyLicense(ctx, license)
 		if err != nil {
 			common.ErrorWithCode(c, common.CodeServerError, err.Error())
 			return

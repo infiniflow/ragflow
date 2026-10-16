@@ -392,6 +392,16 @@ func (s *Service) ShowSystemLicense(ctx context.Context) (map[string]interface{}
 	return result, nil
 }
 
+func (s *Service) VerifyLicense(ctx context.Context, licenseStr string) (map[string]interface{}, error) {
+	var result map[string]interface{}
+	result = map[string]interface{}{
+		"command": "verify_license",
+		"error":   "'verify license' is not supported",
+	}
+
+	return result, nil
+}
+
 func (s *Service) CheckSystemLicense(ctx context.Context) (map[string]interface{}, error) {
 	var result map[string]interface{}
 	result = map[string]interface{}{
