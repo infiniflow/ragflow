@@ -28,6 +28,7 @@ import aiohttp
 import json_repair
 from json.decoder import JSONDecodeError
 import litellm
+from litellm.llms.bedrock.common_utils import BedrockModelInfo
 from openai import AsyncOpenAI, OpenAI
 from enum import StrEnum
 
@@ -175,6 +176,26 @@ def _apply_claude_sampling_policy(model_name_lower: str, *targets: dict) -> None
         logging.warning("Claude sampling policy: dropped top_p for model %s (temperature and top_p cannot both be specified)", model_name_lower)
 
 
+def _is_bedrock_openai_gpt(model_name_lower: str) -> bool:
+    """OpenAI GPT-5.x / GPT-6 on Bedrock (``us.openai.gpt-6-sol``); gpt-oss is a different family."""
+    return "openai.gpt-" in model_name_lower and "gpt-oss" not in model_name_lower
+
+
+def _bedrock_litellm_model(model_name: str) -> str:
+    """Return the LiteLLM model string for a Bedrock model.
+
+    LiteLLM sends a Bedrock model it does not find in its bundled model map to InvokeModel, and its
+    InvokeModel parser cannot read the chat-completions reply of OpenAI GPT-5.x / GPT-6, so every call
+    errors out and streams come back empty. Those models are sent through Converse instead, and only
+    while LiteLLM would pick InvokeModel, so a LiteLLM version that knows the model keeps its own route.
+    """
+    model = f"bedrock/{model_name}"
+    if "/" not in model_name and _is_bedrock_openai_gpt(model_name.lower()) and BedrockModelInfo.get_bedrock_route(model) == "invoke":
+        logger.debug("Bedrock model %s is not in LiteLLM's model map, routing it through Converse", model_name)
+        return f"bedrock/converse/{model_name}"
+    return model
+
+
 def _apply_model_family_policies(
     model_name: str,
     *,
@@ -266,6 +287,12 @@ def _apply_model_family_policies(
             for key in ("temperature", "top_p", "logprobs", "top_logprobs"):
                 sanitized_gen_conf.pop(key, None)
                 sanitized_kwargs.pop(key, None)
+        elif provider == SupportedLiteLLMProvider.Bedrock and _is_bedrock_openai_gpt(model_name_lower):
+            # Converse rejects these fields at any value (HTTP 400 "This model doesn't support the
+            # temperature field. Remove temperature and try again."; same for topP and stopSequences).
+            removed = [key for key in ("temperature", "top_p", "stop") for target in (sanitized_gen_conf, sanitized_kwargs) if target.pop(key, None) is not None]
+            if removed:
+                logger.warning("Bedrock OpenAI GPT policy: dropped %s for model %s (not accepted by the model)", "/".join(sorted(set(removed))), model_name_lower)
         elif provider in {SupportedLiteLLMProvider.Anthropic, SupportedLiteLLMProvider.Bedrock}:
             _apply_claude_sampling_policy(model_name_lower, sanitized_gen_conf, sanitized_kwargs)
 
@@ -2193,7 +2220,7 @@ class LiteLLMBase(ABC):
             self.prefix = ""
         else:
             self.prefix = LITELLM_PROVIDER_PREFIX.get(self.provider, "")
-        self.model_name = f"{self.prefix}{model_name}"
+        self.model_name = _bedrock_litellm_model(model_name) if self.provider == SupportedLiteLLMProvider.Bedrock else f"{self.prefix}{model_name}"
         self.api_key = key
         # Configure retry parameters
         self.max_retries = kwargs.get("max_retries", int(os.environ.get("LLM_MAX_RETRIES", 5)))
@@ -2377,10 +2404,10 @@ class LiteLLMBase(ABC):
         # Reset so a stale split from a previous call can't leak into this one.
         self.last_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
-        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         stop = kwargs.get("stop")
         if stop:
-            completion_args["stop"] = stop
+            gen_conf["stop"] = stop
+        completion_args = self._construct_completion_args(history=history, stream=True, tools=False, **gen_conf)
         # Ask the provider to include authoritative usage in the final streaming chunk.
         # drop_params=True ensures this is silently ignored by providers that don't support it.
         completion_args.setdefault("stream_options", {})["include_usage"] = True
