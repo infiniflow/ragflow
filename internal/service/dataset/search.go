@@ -329,25 +329,7 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 	}
 
 	filteredChunks = nlp.RetrievalByChildren(filteredChunks, tenantIDs, d.docEngine, ctx)
-
-	keyMapping := map[string]string{
-		"chunk_id":            "id",
-		"content_with_weight": "content",
-		"doc_id":              "document_id",
-		"important_kwd":       "important_keywords",
-		"question_kwd":        "questions",
-		"docnm_kwd":           "document_keyword",
-		"kb_id":               "dataset_id",
-	}
-	for i := range filteredChunks {
-		delete(filteredChunks[i], "vector")
-		for oldKey, newKey := range keyMapping {
-			if value, ok := filteredChunks[i][oldKey]; ok {
-				filteredChunks[i][newKey] = value
-				delete(filteredChunks[i], oldKey)
-			}
-		}
-	}
+	formatDatasetSearchChunks(filteredChunks, req.IncludeCompiledChunks)
 
 	common.Info("SearchDatasets completed", zap.String("userID", userID), zap.Any("kbID", datasetIDs), zap.String("question", question), zap.Int64("chunkCount", int64(len(filteredChunks))))
 
@@ -359,6 +341,31 @@ func (d *DatasetService) SearchDatasets(ctx context.Context, req *service.Search
 		Labels:  &labels,
 		Total:   retrievalResult.Total,
 	}, nil
+}
+
+// formatDatasetSearchChunks applies API field names and compilation visibility after parent promotion.
+func formatDatasetSearchChunks(filteredChunks []map[string]interface{}, includeCompiledChunks *bool) {
+	keyMapping := map[string]string{
+		"chunk_id":            "id",
+		"content_with_weight": "content",
+		"doc_id":              "document_id",
+		"important_kwd":       "important_keywords",
+		"question_kwd":        "questions",
+		"docnm_kwd":           "document_keyword",
+		"kb_id":               "dataset_id",
+	}
+	for i := range filteredChunks {
+		if includeCompiledChunks != nil && !*includeCompiledChunks {
+			delete(filteredChunks[i], "compile_kwd")
+		}
+		delete(filteredChunks[i], "vector")
+		for oldKey, newKey := range keyMapping {
+			if value, ok := filteredChunks[i][oldKey]; ok {
+				filteredChunks[i][newKey] = value
+				delete(filteredChunks[i], oldKey)
+			}
+		}
+	}
 }
 
 func knowledgeCompilationFilter(include *bool, scope string) map[string]interface{} {
