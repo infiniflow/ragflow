@@ -1,0 +1,206 @@
+{
+  "name": "aimlapi.com",
+  "rank": 995,
+  "url": {
+    "default": "https://api.aimlapi.com"
+  },
+  "url_suffix": {
+    "chat": "v1/chat/completions",
+    "embedding": "v1/embeddings",
+    "models": "v1/models",
+    "balance": "v1/key"
+  },
+  "class": "aimlapi.com",
+  "models": [
+    {
+      "name": "openai/gpt-6.1-sol",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-luna",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/gpt-6-astra",
+      "context_length": 1050000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-opus-5.5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-sonnet-5.5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-haiku-5.5",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "anthropic/claude-fable-5.1",
+      "context_length": 1000000,
+      "max_output": 128000,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "google/gemini-3.8-flash",
+      "context_length": 1048576,
+      "max_output": 65536,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "x-ai/grok-4-7",
+      "context_length": 500000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "deepseek/deepseek-v4-pro",
+      "context_length": 1000000,
+      "max_output": 384000,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "zhipu/glm-5.2",
+      "context_length": 1000000,
+      "max_output": 131072,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "alibaba/qwen3.7-max",
+      "context_length": 1000000,
+      "max_output": 65536,
+      "model_types": [
+        "chat"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "moonshot/kimi-k3",
+      "context_length": 1048576,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "minimax/minimax-m3",
+      "context_length": 524288,
+      "max_output": 524288,
+      "model_types": [
+        "chat",
+        "vision"
+      ],
+      "tools": {
+        "support": true
+      }
+    },
+    {
+      "name": "openai/text-embedding-3-small",
+      "context_length": 8000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "openai/text-embedding-3-large",
+      "context_length": 8000,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "alibaba/qwen-text-embedding-v4",
+      "context_length": 8192,
+      "model_types": [
+        "embedding"
+      ]
+    },
+    {
+      "name": "anthropic/voyage-multilingual-2",
+      "context_length": 32000,
+      "model_types": [
+        "embedding"
+      ]
+    }
+  ]
+}
