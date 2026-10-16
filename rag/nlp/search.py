@@ -33,6 +33,8 @@ from common import settings
 
 from common.misc_utils import thread_pool_exec
 
+logger = logging.getLogger(__name__)
+
 
 def build_fusion_expr(topn: int, vector_similarity_weight: float = 0.3) -> FusionExpr:
     """Build the Infinity weighted-sum expression from the vector weight."""
@@ -74,6 +76,23 @@ def is_kb_scoped_chunk(chunk: dict | None) -> bool:
     if doc_id:
         return False
     return bool(_chunk_scalar(chunk.get("compile_kwd")))
+
+
+def _scope_values(value) -> frozenset:
+    if isinstance(value, (list, tuple, set)):
+        return frozenset(item for item in value if item is not None)
+    if value is None:
+        return frozenset()
+    return frozenset((value,))
+
+
+def _parent_matches_children(parent: dict, children: list[dict]) -> bool:
+    child_scopes = {(_scope_values(child.get("doc_id")), _scope_values(child.get("kb_id"))) for child in children}
+    if len(child_scopes) != 1:
+        return False
+
+    ((child_doc_ids, child_kb_ids),) = child_scopes
+    return bool(child_doc_ids and child_kb_ids) and (_scope_values(parent.get("doc_id")) == child_doc_ids and _scope_values(parent.get("kb_id")) == child_kb_ids)
 
 
 class Dealer:
@@ -1108,6 +1127,14 @@ class Dealer:
             if chunk is None:
                 logging.warning(
                     "Parent chunk '%s' not found in the index; falling back to %d child chunk(s).",
+                    id,
+                    len(cks),
+                )
+                chunks.extend(cks)
+                continue
+            if not _parent_matches_children(chunk, cks):
+                logger.warning(
+                    "Parent chunk '%s' metadata does not match its child scope; falling back to %d child chunk(s).",
                     id,
                     len(cks),
                 )
