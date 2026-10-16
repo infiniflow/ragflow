@@ -3,14 +3,9 @@
 package api
 
 import (
-	"bytes"
-	"encoding/json/v2"
-	"io"
-	"mime/multipart"
 	"net/http"
 	"strings"
 	"testing"
-	"time"
 )
 
 func stringField(t *testing.T, m map[string]any, key string) string {
@@ -47,46 +42,10 @@ func createFileFolder(t *testing.T, parentID, name string) map[string]any {
 
 func uploadFileToRoot(t *testing.T, filename, content string) map[string]any {
 	t.Helper()
-
-	var body bytes.Buffer
-	writer := multipart.NewWriter(&body)
-	part, err := writer.CreateFormFile("file", filename)
-	if err != nil {
-		t.Fatalf("create multipart file field: %v", err)
-	}
-	if _, err := io.WriteString(part, content); err != nil {
-		t.Fatalf("write multipart file: %v", err)
-	}
-	if err := writer.Close(); err != nil {
-		t.Fatalf("close multipart writer: %v", err)
-	}
-
-	requestURL := TestConfig.apiBase() + "/files"
-	request, err := http.NewRequest(http.MethodPost, requestURL, &body)
-	if err != nil {
-		t.Fatalf("create file upload request: %v", err)
-	}
-	request.Header = TestConfig.buildHeaders(nil)
-	request.Header.Set("Content-Type", writer.FormDataContentType())
-	t.Logf("%s %s payload=multipart file=%q bytes=%d", http.MethodPost, diagnosticURL(requestURL), filename, len(content))
-
-	response, err := (&http.Client{Timeout: 90 * time.Second}).Do(request)
-	if err != nil {
-		t.Fatalf("upload file: %v", err)
-	}
-	defer response.Body.Close()
-
-	raw, err := io.ReadAll(io.LimitReader(response.Body, 4<<20+1))
-	if err != nil {
-		t.Fatalf("read file upload response: %v", err)
-	}
-	result := restResult{Status: response.StatusCode, Header: response.Header, Body: raw}
-	_ = json.Unmarshal(raw, &result.JSON)
-	t.Logf("%s %s HTTP=%d code=%v response=%s", http.MethodPost, diagnosticURL(requestURL), result.Status, result.JSON["code"], diagnosticBody(raw, TestConfig.APIKey, TestConfig.Password))
-
-	items := array(t, restOK(t, result)["data"])
+	r := restUpload(t, TestConfig, http.MethodPost, "/files", "file", filename, []byte(content), nil)
+	items := array(t, restOK(t, r)["data"])
 	if len(items) == 0 {
-		t.Fatalf("file upload returned no items: %v", result.JSON)
+		t.Fatalf("file upload returned no items: %v", r.JSON)
 	}
 	uploaded := object(t, items[0])
 	deleteFileOnCleanup(t, stringField(t, uploaded, "id"))
