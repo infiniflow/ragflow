@@ -43,6 +43,10 @@ beforeAll(() => {
   Element.prototype.scrollIntoView = () => {};
 });
 
+/**
+ * Creates an isolated i18n instance for the requested locale so tests do not
+ * share language state, using English as the fallback for untranslated labels.
+ */
 async function createWrapper(language: string) {
   const i18n = createInstance();
   await i18n.init({
@@ -51,15 +55,21 @@ async function createWrapper(language: string) {
     resources: { en: English, 'pt-BR': Portuguese },
     interpolation: { escapeValue: false },
   });
-  return function Wrapper({ children }: PropsWithChildren) {
+  /** Supplies the translation and tooltip contexts required by the field. */
+  function Wrapper({ children }: PropsWithChildren) {
     return (
       <I18nextProvider i18n={i18n}>
         <TooltipProvider>{children}</TooltipProvider>
       </I18nextProvider>
     );
-  };
+  }
+  return Wrapper;
 }
 
+/**
+ * Exposes live form values for either the nested prompt field or an explicit
+ * top-level field, starting with English selected to check selection retention.
+ */
 function Harness({ name }: { name?: string }) {
   const form = useForm({
     defaultValues: {
