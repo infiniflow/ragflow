@@ -547,6 +547,14 @@ func mergeStructureNode(into, extra map[string]interface{}) {
 	if evidence := mergeEvidence(into["evidence"], extra["evidence"]); len(evidence) > 0 {
 		into["evidence"] = evidence
 	}
+	// The datatype attributes fold too: the document rows and the dataset row of
+	// one instance are the same instance seen twice, and the dataset row is the
+	// only one that holds the attributes of the documents compiled earlier — so
+	// dropping the second projection's keys would hide values the instance
+	// carries (the class panel would list an attribute with no value behind it).
+	if attrs := mergeNodeAttributes(into["attributes"], extra["attributes"]); len(attrs) > 0 {
+		into["attributes"] = attrs
+	}
 	if graphStr(into["description"]) == "" {
 		if desc := graphStr(extra["description"]); desc != "" {
 			into["description"] = desc
@@ -568,6 +576,75 @@ func mergeStructureNode(into, extra map[string]interface{}) {
 	scopes = appendUniqueSorted(scopes)
 	if len(scopes) > 1 {
 		into["scopes"] = scopes
+	}
+}
+
+// mergeNodeAttributes unions the attribute maps of two projections of one
+// instance. A key the first map does not carry is taken as is; a list-valued
+// attribute accumulates its items (each item is its own value, and the two rows
+// may well have been compiled from different documents); anything else keeps the
+// first value, the rule the other folded fields follow.
+func mergeNodeAttributes(into, extra interface{}) map[string]interface{} {
+	extraMap, ok := extra.(map[string]interface{})
+	if !ok || len(extraMap) == 0 {
+		if intoMap, ok := into.(map[string]interface{}); ok {
+			return intoMap
+		}
+		return nil
+	}
+	intoMap, _ := into.(map[string]interface{})
+	if intoMap == nil {
+		intoMap = make(map[string]interface{}, len(extraMap))
+	}
+	for key, value := range extraMap {
+		if value == nil {
+			continue
+		}
+		existing, taken := intoMap[key]
+		if !taken {
+			intoMap[key] = value
+			continue
+		}
+		first, firstIsList := structureAttrList(existing)
+		second, secondIsList := structureAttrList(value)
+		if !firstIsList || !secondIsList {
+			continue
+		}
+		seen := make(map[string]bool, len(first)+len(second))
+		out := make([]interface{}, 0, len(first)+len(second))
+		for _, list := range [][]interface{}{first, second} {
+			for _, item := range list {
+				text := fmt.Sprint(item)
+				if seen[text] {
+					continue
+				}
+				seen[text] = true
+				out = append(out, item)
+			}
+		}
+		intoMap[key] = out
+	}
+	if len(intoMap) == 0 {
+		return nil
+	}
+	return intoMap
+}
+
+// structureAttrList reports an attribute value as a list of items, accepting
+// both the []interface{} a JSON payload decodes to and the []string a Go caller
+// may hold.
+func structureAttrList(value interface{}) ([]interface{}, bool) {
+	switch v := value.(type) {
+	case []interface{}:
+		return v, true
+	case []string:
+		out := make([]interface{}, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }
 

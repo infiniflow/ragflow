@@ -414,6 +414,21 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 				resultChunk["highlight"] = highlightText
 			}
 		}
+		// A caller that projected extra columns asked the engine for them and must
+		// get them back. The field-by-field view above mirrors the Python response
+		// shape, so it would otherwise silently drop columns the engine did return:
+		// the ABox digest reads type_kwd, name_kwd, prop_kwd, attr and
+		// source_chunk_ids out of these rows, and losing them there empties the
+		// digest's assertions and its citation counts. Only columns the caller
+		// projected are passed through, so the default view is unchanged.
+		for _, field := range req.SelectFields {
+			if _, present := resultChunk[field]; present {
+				continue
+			}
+			if v, ok := chunk[field]; ok {
+				resultChunk[field] = v
+			}
+		}
 		filteredChunks = append(filteredChunks, resultChunk)
 	}
 

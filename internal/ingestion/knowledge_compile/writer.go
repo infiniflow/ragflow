@@ -101,9 +101,16 @@ type StructureBucket struct {
 	SourceDocIDs   []string // union of source doc ids
 	SourceChunkIDs []string // union of source chunk ids
 	Vector         []float32
-	VecCount       int    // number of vectors folded into Vector (for true mean)
-	FromEntity     string // relation only
-	ToEntity       string // relation only
+	VecCount       int // number of vectors folded into Vector (for true mean)
+	// Attr is the union of the rows' declared datatype attributes, keyed by
+	// attribute name, written to the row's `attr` json column (entity buckets
+	// only). A dataset row IS the folded instance, so a reader asking at dataset
+	// scope — the default scope of the instance views — must still see the
+	// values the doc rows hold; without the fold the dataset row carries no
+	// attributes at all and the class panel shows an empty attribute set.
+	Attr       map[string]any
+	FromEntity string // relation only
+	ToEntity   string // relation only
 	// FromType / ToType are the endpoint classes of a relation (from_type_kwd /
 	// to_type_kwd). They are what the class-level ontology graph is drawn and
 	// counted from, so a relation row without them cannot be placed on it.
@@ -622,6 +629,11 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			if b.MentionCount > 0 {
 				row["mention_count_int"] = b.MentionCount
 			}
+			// The folded datatype attributes: the same json column the doc
+			// rows carry, so both scopes decode through one reader.
+			if len(b.Attr) > 0 {
+				row["attr"] = b.Attr
+			}
 		}
 		if len(b.Vector) > 0 {
 			row["q_"+fmt.Sprintf("%d", len(b.Vector))+"_vec"] = f32ToF64Slice(b.Vector)
@@ -719,6 +731,10 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 				"type_kwd", "knowledge_graph_kwd", "name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 				"prop_kwd", "from_type_kwd", "to_type_kwd",
 				"content_with_weight", "kc_payload", "source_doc_ids", "source_chunk_ids",
+				// The stored attributes are folded in below: a batch that
+				// recompiles one document still has to keep the attribute values
+				// the other documents contributed to the same instance.
+				"attr",
 			},
 			Filter: map[string]interface{}{
 				"kb_id":               kb,
@@ -749,6 +765,7 @@ func mergeExistingStructureBuckets(ctx context.Context, eng engine.DocEngine, ba
 			}
 			bucket.SourceDocIDs = appendUnique(bucket.SourceDocIDs, firstStringSlice(row["source_doc_ids"]))
 			bucket.SourceChunkIDs = appendUnique(bucket.SourceChunkIDs, firstStringSlice(row["source_chunk_ids"]))
+			bucket.Attr = mergeBucketAttrs(bucket.Attr, chunkJSONObject(row["attr"]))
 			payload := structureRowPayload(row)
 			if bucket.FromEntity == "" && bucket.ToEntity == "" {
 				existingType := structureString(row["entity_type_kwd"])

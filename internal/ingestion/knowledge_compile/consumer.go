@@ -1774,6 +1774,16 @@ func (c *Consumer) mergeStructureDataset(ctx context.Context, tenant, kb string,
 	for _, b := range relByKey {
 		buckets = append(buckets, *b)
 	}
+	// A bucket whose rows stated no description still needs searchable text, and
+	// the entity name — or a relation's endpoints and property — is what a reader
+	// would search for. It is filled ONCE per bucket: folding it per row is what
+	// used to repeat the same name as many times as the bucket had rows, so a
+	// dataset row read "korean war\nkorean war\nkorean war\n…".
+	for i := range buckets {
+		if strings.TrimSpace(buckets[i].Description) == "" {
+			buckets[i].Description = structureBucketFallbackDescription(buckets[i])
+		}
+	}
 	common.Info("knowledge_compile: mergeStructureDataset buckets",
 		zap.String("kb_id", kb),
 		zap.Int("entities", len(entByKey)),
@@ -1842,9 +1852,10 @@ func structureTemplateIdentity(templateID, templateKind string) string {
 }
 
 // appendBucket folds a structure product into a bucket: concatenates its
-// description, unions its source doc/chunk ids, and folds its vector into a true
-// element-wise running mean (review issue 13). VecCount tracks how many vectors
-// have been folded so the mean is order-independent.
+// description, unions its declared attributes, unions its source doc/chunk ids,
+// and folds its vector into a true element-wise running mean (review issue 13).
+// VecCount tracks how many vectors have been folded so the mean is
+// order-independent.
 func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// The product's Content is the doc row's full content_with_weight JSON
 	// (e.g. {"category":"Person","description":"…","name":"…","type":"entity"}),
@@ -1853,32 +1864,17 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 	// _struct_merge_graph_entities, which folds the entity description, not the
 	// whole payload). Fall back to Content only when it is not a JSON object.
 	desc := structureProductDescription(p.Content)
-	if desc == "" {
-		// Match Python's dataset merger fallback: mindmap entities only carry
-		// name/type, while their dataset row still needs searchable text.
-		// Relations likewise use the endpoint names and relation type when the
-		// source payload has no description.
-		from := metaString(p.Meta, "from")
-		to := metaString(p.Meta, "to")
-		if kind := metaString(p.Meta, "kind"); kind == "relation" || (from != "" && to != "") {
-			relType := metaString(p.Meta, "relation_type")
-			if relType == "" {
-				relType = metaString(p.Meta, "type")
-			}
-			if relType == "" {
-				relType = "related"
-			}
-			desc = strings.TrimSpace(strings.Join([]string{from, relType, to}, " "))
-		} else {
-			desc = strings.TrimSpace(metaString(p.Meta, "name"))
-		}
-	}
 	if desc != "" {
 		if b.Description != "" {
 			b.Description += "\n"
 		}
 		b.Description += desc
 	}
+	// The declared datatype attributes fold like the descriptions do: the
+	// dataset row is the instance, so it has to carry the values its documents
+	// stated. Only the DECLARED attributes reach `attr` (the projection filters
+	// them), so this cannot smuggle model-invented keys into a filterable column.
+	b.Attr = mergeBucketAttrs(b.Attr, chunkJSONObject(p.Meta["attr"]))
 	b.SourceDocIDs = appendUnique(b.SourceDocIDs, []string{p.DocID})
 	b.SourceChunkIDs = appendUnique(b.SourceChunkIDs, metaStringSlice(p.Meta, "source_chunk_ids"))
 	// A bucket can fold rows compiled by different model versions (a publish
@@ -1910,6 +1906,90 @@ func appendBucket(b *StructureBucket, p kccommon.Product) {
 				b.Vector[i] += (p.Vector[i] - b.Vector[i]) / float32(b.VecCount)
 			}
 		}
+	}
+}
+
+// structureBucketFallbackDescription is the text a bucket gets when none of its
+// rows stated a description: mindmap entities carry only name/type, and their
+// dataset row still has to be searchable. A relation uses its endpoints and
+// property, an entity its name.
+func structureBucketFallbackDescription(b StructureBucket) string {
+	if b.FromEntity != "" || b.ToEntity != "" {
+		relType := strings.TrimSpace(b.RelationType)
+		if relType == "" {
+			relType = "related"
+		}
+		return strings.TrimSpace(strings.Join([]string{b.FromEntity, relType, b.ToEntity}, " "))
+	}
+	return strings.TrimSpace(b.Name)
+}
+
+// mergeBucketAttrs folds one source of declared datatype attributes into a
+// bucket's set, keyed by attribute name.
+func mergeBucketAttrs(into, extra map[string]any) map[string]any {
+	if len(extra) == 0 {
+		return into
+	}
+	if into == nil {
+		into = make(map[string]any, len(extra))
+	}
+	for key, value := range extra {
+		if value == nil {
+			continue
+		}
+		existing, taken := into[key]
+		if !taken {
+			into[key] = value
+			continue
+		}
+		into[key] = foldBucketAttrValue(existing, value)
+	}
+	return into
+}
+
+// foldBucketAttrValue combines the values two rows state for one attribute.
+//
+// Two lists union their items, order-preserving and without duplicates: each
+// item is its own assertion, and the corpus states them all for the one
+// instance, so keeping only the first row's list would drop the rest. Anything
+// else keeps the value already held — first source wins, the rule every other
+// folded field follows, and the only honest choice for a scalar the documents
+// disagree about (the class panel flags the disagreement rather than picking).
+func foldBucketAttrValue(existing, incoming any) any {
+	first, firstIsList := bucketAttrList(existing)
+	second, secondIsList := bucketAttrList(incoming)
+	if !firstIsList || !secondIsList {
+		return existing
+	}
+	seen := make(map[string]bool, len(first)+len(second))
+	out := make([]any, 0, len(first)+len(second))
+	for _, list := range [][]any{first, second} {
+		for _, item := range list {
+			key := fmt.Sprint(item)
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// bucketAttrList reports an attribute value as a list of items, accepting both
+// the []any a JSON payload decodes to and the []string a Go caller may hold.
+func bucketAttrList(value any) ([]any, bool) {
+	switch v := value.(type) {
+	case []any:
+		return v, true
+	case []string:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }
 

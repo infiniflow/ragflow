@@ -202,6 +202,38 @@ func TestMergeEntities_FoldsByNameAndClass(t *testing.T) {
 	}
 }
 
+// TestMergeEntities_FoldsAttributes covers the attribute fold: a document row
+// and the dataset row of one instance are the same instance seen twice, and the
+// dataset row is the one that holds the attributes of the documents compiled
+// earlier — so the fold has to keep both sides' values, not just the first's.
+func TestMergeEntities_FoldsAttributes(t *testing.T) {
+	in := []StructureGraphNode{
+		{
+			"name": "Virginia Woolf", "type": "person",
+			"attributes": map[string]interface{}{"occupation": []interface{}{"writer"}},
+		},
+		{
+			"name": "virginia woolf", "type": "person",
+			"attributes": map[string]interface{}{
+				"occupation": []interface{}{"writer", "publisher"},
+				"birth_date": "1882-01-25",
+			},
+		},
+	}
+	out := mergeEntities(in)
+	if len(out) != 1 {
+		t.Fatalf("mergeEntities = %v, want one instance", out)
+	}
+	attrs, _ := out[0]["attributes"].(map[string]interface{})
+	occupations, _ := structureAttrList(attrs["occupation"])
+	if len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %v, want [writer publisher] without duplicates", attrs["occupation"])
+	}
+	if attrs["birth_date"] != "1882-01-25" {
+		t.Errorf("birth_date was dropped in the fold: %v", attrs)
+	}
+}
+
 // TestNormalizeRelationEndpoints aligns relation endpoints to entity ids/names.
 func TestNormalizeRelationEndpoints(t *testing.T) {
 	entities := []StructureGraphNode{{"name": "NVIDIA", "type": "x"}}

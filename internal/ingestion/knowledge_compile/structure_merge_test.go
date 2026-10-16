@@ -356,6 +356,100 @@ func TestMergeStructureDataset_DescriptionFallbacks(t *testing.T) {
 	}
 }
 
+// TestMergeStructureDataset_DescriptionFallbackAppliedOnce covers the repeated
+// -name bug: the searchable fallback text is a BUCKET-level value, so a bucket
+// whose rows state no description must carry the name once — folding it per row
+// repeated the same name as many times as the bucket had rows ("korean war\n
+// korean war\nkorean war…"), which is what the instance view then rendered.
+func TestMergeStructureDataset_DescriptionFallbackAppliedOnce(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, attrs map[string]any) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID,
+			Content: `{"name":"Korean War","type":"event"}`,
+			Meta: map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event",
+				"source_chunk_ids": []string{"c-" + docID}, "attr": attrs},
+		}
+	}
+	products := []kccommon.Product{entity("d1", nil), entity("d2", nil), entity("d3", nil)}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if got := fw.buckets[0].Description; got != "Korean War" {
+		t.Errorf("fallback description = %q, want exactly the name once", got)
+	}
+}
+
+// TestMergeStructureDataset_DescriptionKeepsRealTextOnly covers the mixed case:
+// the name fallback must not be folded in next to a description a document
+// actually stated, so the folded description stays the plain text of the rows
+// that had one.
+func TestMergeStructureDataset_DescriptionKeepsRealTextOnly(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	withDesc := kccommon.Product{
+		Variant: kccommon.VariantStructure, DocID: "d1",
+		Content: `{"description":"Eisenhower ended the fighting in 1953.","name":"Korean War","type":"event"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event"},
+	}
+	withoutDesc := kccommon.Product{
+		Variant: kccommon.VariantStructure, DocID: "d2",
+		Content: `{"name":"Korean War","type":"event"}`,
+		Meta:    map[string]any{"kind": "entity", "name": "Korean War", "entity_type": "event"},
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1",
+		[]kccommon.Product{withoutDesc, withDesc, withoutDesc}); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	if got, want := fw.buckets[0].Description, "Eisenhower ended the fighting in 1953."; got != want {
+		t.Errorf("description = %q, want %q", got, want)
+	}
+}
+
+// TestMergeStructureDataset_FoldsAttributes covers the dataset row carrying the
+// declared datatype attributes: without the fold the merged row has no `attr` at
+// all, so the instance views (which read dataset scope by default) showed every
+// class with no attribute values.
+func TestMergeStructureDataset_FoldsAttributes(t *testing.T) {
+	c := &Consumer{writer: &fakeWriter{}}
+	entity := func(docID string, attrs map[string]any) kccommon.Product {
+		return kccommon.Product{
+			Variant: kccommon.VariantStructure, DocID: docID,
+			Content: `{"description":"desc","name":"Virginia Woolf","type":"person"}`,
+			Meta: map[string]any{"kind": "entity", "name": "Virginia Woolf", "entity_type": "person",
+				"source_chunk_ids": []string{"c-" + docID}, "attr": attrs},
+		}
+	}
+	products := []kccommon.Product{
+		entity("d1", map[string]any{"occupation": []any{"writer"}, "birth_date": "1882-01-25"}),
+		// A list unions its items; a scalar keeps the first value the corpus
+		// stated, so a second document cannot overwrite it.
+		entity("d2", map[string]any{"occupation": []any{"writer", "publisher"}, "birth_date": "1900-01-01"}),
+	}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	fw := c.writer.(*fakeWriter)
+	if len(fw.buckets) != 1 {
+		t.Fatalf("want 1 bucket, got %d", len(fw.buckets))
+	}
+	attrs := fw.buckets[0].Attr
+	occupations, _ := bucketAttrList(attrs["occupation"])
+	if len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %v, want [writer publisher]", attrs["occupation"])
+	}
+	if got := attrs["birth_date"]; got != "1882-01-25" {
+		t.Errorf("birth_date = %v, want the first stated value", got)
+	}
+}
+
 // TestMergeStructureDataset_CompileKwdIsAutotypeNotTemplateKind covers the
 // Dataset rows retain the producing compilation kind, independent of extraction shape.
 func TestMergeStructureDataset_CompileKwdIsCanonicalKind(t *testing.T) {
@@ -516,6 +610,39 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 	}
 	if kind, _ := tp.Meta["kind"].(string); kind != "root" {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
+	}
+}
+
+// TestProductFromChunkMap_RestoresAttributes covers the doc→dataset round-trip
+// of the `attr` json column: the dataset-level fold reads attributes off the
+// reconstructed product, so a reader that drops the column leaves every merged
+// row without attribute values.
+func TestProductFromChunkMap_RestoresAttributes(t *testing.T) {
+	row := map[string]interface{}{
+		"id": "entity-acme", "doc_id": "d1", "compile_kwd": "ontology",
+		"content_with_weight": `{"name":"Acme","type":"organization"}`,
+		"type_kwd":            "entity",
+		"name_kwd":            "acme",
+		"attr":                map[string]interface{}{"industry": []interface{}{"aerospace"}},
+	}
+	p, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row should reconstruct")
+	}
+	attrs := chunkJSONObject(p.Meta["attr"])
+	if got, _ := bucketAttrList(attrs["industry"]); len(got) != 1 || got[0] != "aerospace" {
+		t.Errorf("Meta.attr = %v, want industry [aerospace]", p.Meta["attr"])
+	}
+
+	// Infinity hands a json column back as its JSON text on some paths; both
+	// shapes must round-trip.
+	row["attr"] = `{"industry":["aerospace"]}`
+	p, ok = productFromChunkMap(row, "t1", kccommon.VariantStructure)
+	if !ok {
+		t.Fatal("row with a string attr should reconstruct")
+	}
+	if attrs := chunkJSONObject(p.Meta["attr"]); attrs["industry"] == nil {
+		t.Errorf("Meta.attr = %v, want the decoded industry list", p.Meta["attr"])
 	}
 }
 

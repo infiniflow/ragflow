@@ -315,6 +315,62 @@ func TestWriteMergedStructureStampsTheModelVersion(t *testing.T) {
 	}
 }
 
+// TestWriteMergedStructureKeepsStoredAttributes covers the attribute fold against
+// the stored row: a batch that recompiles one document still has to carry the
+// values the documents compiled earlier contributed to the same instance, so the
+// stored `attr` is folded into the written row instead of being replaced by this
+// batch's own. A scalar only the stored row states survives, and a list both sides
+// state accumulates rather than dropping either side's items.
+func TestWriteMergedStructureKeepsStoredAttributes(t *testing.T) {
+	eng := &fakeEngine{searchChunks: []map[string]interface{}{
+		{
+			"id":                            "dataset_structure_stored_attr",
+			"compile_kwd":                   "hypergraph",
+			"compilation_template_ids":      []string{"tpl1"},
+			"compilation_template_kind_kwd": "knowledge_graph",
+			"knowledge_graph_kwd":           "entity",
+			"name_kwd":                      "virginia woolf",
+			"entity_type_kwd":               "person",
+			"content_with_weight":           `{"name":"Virginia Woolf","type":"person"}`,
+			"source_doc_ids":                []string{"d1"},
+			"attr": map[string]interface{}{
+				"birth_date": "1882-01-25",
+				"occupation": []interface{}{"writer"},
+			},
+		},
+	}}
+	w := engineWriter{eng: eng}
+	if err := w.WriteMergedStructure(context.Background(), "t1", "kb1", []StructureBucket{{
+		Name: "Virginia Woolf", Type: "person", Description: "English writer",
+		CompileKwd: "hypergraph", TemplateID: "tpl1", TemplateKind: "knowledge_graph",
+		SourceDocIDs: []string{"d2"},
+		Attr:         map[string]any{"occupation": []any{"writer", "publisher"}},
+	}}); err != nil {
+		t.Fatalf("WriteMergedStructure: %v", err)
+	}
+	var entity map[string]interface{}
+	for _, row := range eng.insertedChunks {
+		if row["type_kwd"] == "entity" {
+			entity = row
+			break
+		}
+	}
+	if entity == nil {
+		t.Fatalf("inserted rows contain no entity: %+v", eng.insertedChunks)
+	}
+	if got := firstStringSlice(entity["source_doc_ids"]); len(got) != 2 {
+		t.Fatalf("the stored row was not folded at all: %v", got)
+	}
+	attrs, _ := entity["attr"].(map[string]any)
+	if attrs["birth_date"] != "1882-01-25" {
+		t.Errorf("stored-only attribute was dropped: %#v", entity["attr"])
+	}
+	occupations, ok := bucketAttrList(attrs["occupation"])
+	if !ok || len(occupations) != 2 || occupations[0] != "writer" || occupations[1] != "publisher" {
+		t.Errorf("occupation = %#v, want [writer publisher]", attrs["occupation"])
+	}
+}
+
 func TestWriteMergedStructureKeepsEntityKeywordLowercase(t *testing.T) {
 	eng := &fakeEngine{}
 	w := engineWriter{eng: eng}
@@ -588,6 +644,45 @@ func TestDeleteStructureForDocs_NoGhostsNoDelete(t *testing.T) {
 // compile_kwd via KwdToVariant and reject any row whose kwd does not map to the
 // expected variant, including unknown / malformed kinds (e.g. "artifact_page",
 // "garbage", empty). It must not silently fall back to a raw-string comparison.
+// TestProductFromChunkMapRestoresAttributes covers the reader side of the dataset
+// fold: the folded row's `attr` has to come back as Meta["attr"] so the bucket
+// fold can carry the values onto the next dataset row. Both shapes an engine may
+// hand a json column back in — the decoded object and its JSON text — must decode,
+// because the fold cannot depend on which one a deployment produces.
+func TestProductFromChunkMapRestoresAttributes(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		attr interface{}
+	}{
+		{"decoded object", map[string]interface{}{"occupation": []interface{}{"writer"}}},
+		{"json text", `{"occupation":["writer"]}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p, ok := productFromChunkMap(map[string]interface{}{
+				"id":                  "dataset_structure_1",
+				"doc_id":              "kb1",
+				"compile_kwd":         "hypergraph",
+				"scope_kwd":           "dataset",
+				"knowledge_graph_kwd": "entity",
+				"name_kwd":            "virginia woolf",
+				"entity_type_kwd":     "person",
+				"content_with_weight": `{"name":"Virginia Woolf","type":"person"}`,
+				"attr":                tc.attr,
+			}, "t1", kccommon.VariantStructure)
+			if !ok {
+				t.Fatalf("productFromChunkMap returned not-ok")
+			}
+			attrs, _ := p.Meta["attr"].(map[string]any)
+			if len(attrs) != 1 {
+				t.Fatalf("meta[attr] = %#v, want the decoded object", p.Meta["attr"])
+			}
+			if list, ok := bucketAttrList(attrs["occupation"]); !ok || len(list) != 1 || list[0] != "writer" {
+				t.Errorf("occupation = %#v, want [writer]", attrs["occupation"])
+			}
+		})
+	}
+}
+
 func TestProductFromChunkMapRejectsDirtyKwd(t *testing.T) {
 	base := map[string]interface{}{
 		"id":                  "wiki/1",

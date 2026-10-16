@@ -119,6 +119,12 @@ var compiledSelectFields = []string{
 	"source_chunk_ids", "source_doc_ids",
 	"name_kwd", "entity_type_kwd", "from_entity_kwd", "to_entity_kwd",
 	"slug_kwd",
+	// attr round-trips an entity's declared datatype attributes (the ontology
+	// template's `kind: datatype` properties) so the dataset-level fold can
+	// carry them onto the merged row. Without the column the fold sees no
+	// attributes at all — the doc rows keep them and the dataset rows, which is
+	// what the instance views read by default, lose every value.
+	"attr",
 	"create_timestamp_flt", "create_time",
 	"compilation_template_kind_kwd", "compilation_template_ids",
 	// The product kind discriminator for structure/tree: the component stores it
@@ -412,6 +418,9 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		}
 		meta["entity_type"] = v
 	}
+	if attrs := chunkJSONObject(c["attr"]); len(attrs) > 0 {
+		meta["attr"] = attrs
+	}
 	if v, ok := c["from_entity_kwd"].(string); ok && v != "" {
 		meta["from"] = v
 		meta["kind"] = "relation"
@@ -539,6 +548,28 @@ func productFromChunkMap(c map[string]interface{}, tenant string, expect kccommo
 		Meta:       meta,
 		Merged:     merged,
 	}, true
+}
+
+// chunkJSONObject reads an object-valued json column off a row. Both engines
+// hand `attr` back as a decoded map, but a string is accepted too (an older row,
+// or an engine that returns the column's JSON text), so the round-trip cannot
+// depend on which shape a deployment produces.
+func chunkJSONObject(value interface{}) map[string]any {
+	switch v := value.(type) {
+	case map[string]any:
+		return v
+	case string:
+		if strings.TrimSpace(v) == "" {
+			return nil
+		}
+		var m map[string]any
+		if err := json.Unmarshal([]byte(v), &m); err != nil {
+			return nil
+		}
+		return m
+	default:
+		return nil
+	}
 }
 
 // SearchSimilar runs a dense KNN over the existing merged rows (available_int=1,
