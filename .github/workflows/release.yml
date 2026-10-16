@@ -273,16 +273,95 @@ jobs:
           fetch-tags: true
 
 
+      # Hybrid publishing strategy:
+      #  - Push the version-specific tag :${RELEASE_TAG} (amd64-only) here, so the
+      #    new release is always pullable on amd64 even if the ARM64 job fails.
+      #    Each release uses a unique version tag, so this never clobbers a
+      #    different version's image.
+      #  - Do NOT push :latest here; the existing (possibly multi-arch) :latest
+      #    must not be overwritten with an amd64-only image before ARM64 is ready.
+      #    :latest is created as a multi-arch tag by the `build-arm64` job's
+      #    manifest step once both arches are pushed.
+      #  - Arch-specific tags (-amd64/:amd64) are also pushed for direct pulls.
       - name: Build and push image
         run: |
           sudo docker login --username infiniflow --password-stdin <<< ${{ secrets.DOCKERHUB_TOKEN }}
-          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG} -f Dockerfile .
-          sudo docker tag infiniflow/ragflow:${RELEASE_TAG} infiniflow/ragflow:latest
+          sudo docker build -t infiniflow/ragflow:${RELEASE_TAG}-amd64 -f Dockerfile .
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:${RELEASE_TAG}
+          sudo docker tag infiniflow/ragflow:${RELEASE_TAG}-amd64 infiniflow/ragflow:amd64
+          sudo docker push infiniflow/ragflow:${RELEASE_TAG}-amd64
           sudo docker push infiniflow/ragflow:${RELEASE_TAG}
-          sudo docker push infiniflow/ragflow:latest
+          sudo docker push infiniflow/ragflow:amd64
 
       - name: Build and push ragflow-sdk
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           cd sdk/python && uv build && uv publish --token ${{ secrets.PYPI_API_TOKEN }}
+
+  # Build the linux/arm64 image on a GitHub-hosted ARM64 runner and merge it
+  # with the amd64 image (pushed by the `release` job above) into a single
+  # multi-arch manifest list for infiniflow/ragflow:${RELEASE_TAG} and :latest,
+  # so `docker pull infiniflow/ragflow:${RELEASE_TAG}` resolves per-arch on both
+  # platforms. Runs after `release` so the amd64 (-amd64/:amd64) tags exist.
+  build-arm64:
+    needs:
+      - release
+      - prepare
+    runs-on: ubuntu-24.04-arm
+    env:
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: infiniflow
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push arm64 image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: true
+          # Use a Go proxy that is reliable from GitHub-hosted runners; the
+          # Dockerfile default (goproxy.cn) is flaky here (HTTP/2 GOAWAY).
+          build-args: |
+            GOPROXY=https://proxy.golang.org,direct
+          tags: |
+            infiniflow/ragflow:${{ needs.prepare.outputs.release_tag }}-arm64
+            infiniflow/ragflow:arm64
+
+      # Create/upgrade the public multi-arch tags now that both arch-specific
+      # images (-amd64/:amd64 from the `release` job, -arm64/:arm64 from this
+      # job) are pushed. :${RELEASE_TAG} was already pushed amd64-only by the
+      # release job (so amd64 pulls always work); this upgrades it to multi-arch.
+      # :latest is created here for the first time this release (it is NOT pushed
+      # by the release job), so the previous, possibly multi-arch, :latest is
+      # never overwritten with an amd64-only image before ARM64 is ready.
+      - name: Create multi-arch manifest
+        run: |
+          docker buildx imagetools create --tag infiniflow/ragflow:${RELEASE_TAG} \
+            infiniflow/ragflow:${RELEASE_TAG}-amd64 \
+            infiniflow/ragflow:${RELEASE_TAG}-arm64
+          # Only stable (non-prerelease) v* tags should move the mutable :latest
+          # tag. Nightly and prerelease builds keep their own version tag but must
+          # not overwrite the stable :latest.
+          if [ "${PRERELEASE}" != "true" ]; then
+            docker buildx imagetools create --tag infiniflow/ragflow:latest \
+              infiniflow/ragflow:amd64 \
+              infiniflow/ragflow:arm64
+          else
+            echo "RELEASE_TAG=${RELEASE_TAG} is a prerelease/nightly build; skipping :latest update."
+          fi
 
