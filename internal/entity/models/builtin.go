@@ -168,6 +168,10 @@ func (b *BuiltinModel) ShowTask(ctx context.Context, taskID string, apiConfig *A
 	return nil, fmt.Errorf("builtin model does not support tasks")
 }
 
+func (b *BuiltinModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("builtin model does not support decide")
+}
+
 // GetBuiltinEmbeddingModel returns a Builtin model driver for the given model name
 func GetBuiltinEmbeddingModel(modelName string) ModelDriver {
 	return NewBuiltinModel("", modelName)

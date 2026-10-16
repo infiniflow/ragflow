@@ -363,3 +363,7 @@ func (m *MinerULocalModel) ShowTask(ctx context.Context, taskID string, apiConfi
 		},
 	}, nil
 }
+
+func (m *MinerULocalModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", m.Name())
+}
