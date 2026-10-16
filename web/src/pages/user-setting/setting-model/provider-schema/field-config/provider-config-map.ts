@@ -19,6 +19,11 @@ import { LLMFactory } from '@/constants/llm';
 import type { ProviderConfig } from '../types';
 import { parseApiKeyAsObject } from './utils';
 
+const buildAzureApiKey = (values: Record<string, any>) =>
+  values.api_version
+    ? { api_key: values.api_key ?? '', api_version: values.api_version }
+    : (values.api_key ?? '');
+
 const buildMineruApiKey = (values: Record<string, any>) => {
   const cfg: Record<string, any> = { ...values };
   delete cfg.instance_name;
@@ -80,14 +85,12 @@ export const ProviderConfigMap: Record<string, ProviderConfig> = {
       },
     ],
     verifyTransform: (values) => ({
-      apiKey: values.api_key,
+      apiKey: buildAzureApiKey(values),
       baseUrl: values.base_url,
       modelInfo: [],
     }),
     submitTransform: (values) => {
-      const apiKey = values.api_version
-        ? { api_key: values.api_key ?? '', api_version: values.api_version }
-        : (values.api_key ?? '');
+      const apiKey = buildAzureApiKey(values);
       return {
         instance_name: values.instance_name,
         llm_factory: LLMFactory.AzureOpenAI,
