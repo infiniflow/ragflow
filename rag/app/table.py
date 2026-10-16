@@ -106,6 +106,13 @@ class Excel(ExcelParser):
                             pending_cell_images.append(img)
                         else:
                             flow_images.append(img)
+                else:
+                    # No vision model configured (or a partial vision failure):
+                    # keep every image as an image chunk with its raw bytes and
+                    # an empty description instead of silently dropping them.
+                    # This matches the pdf/docx paths, which always preserve
+                    # figure items.
+                    flow_images.extend(images)
 
             try:
                 rows = Excel._get_rows_limited(ws)

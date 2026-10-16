@@ -159,6 +159,41 @@ def test_excel_image_description_string_stays_single_cell(table_module, monkeypa
     assert dfs[0].iat[0, 0] == "abcdef"
 
 
+def test_excel_images_kept_without_vision_model(table_module, monkeypatch):
+    """Without a vision model the wrapper returns []: images must survive as
+    image chunks instead of being silently dropped (regression: 图文表格.xlsx
+    lost its only image, leaving text-only chunks)."""
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["image", "note"])
+    ws.append([None, "keep"])
+    buf = BytesIO()
+    wb.save(buf)
+
+    fake_image = object()
+    monkeypatch.setattr(
+        table_module.Excel,
+        "_extract_images_from_worksheet",
+        staticmethod(
+            lambda ws, sheetname=None: [
+                {"sheet": sheetname or ws.title, "image": fake_image, "image_description": "", "row_from": 2, "col_from": 1, "row_to": 2, "col_to": 1, "span_type": "single_cell"}
+            ]
+        ),
+    )
+    monkeypatch.setattr(table_module, "vision_figure_parser_figure_xlsx_wrapper", lambda images, callback=None, **kwargs: [])
+
+    dfs, tbls = table_module.Excel()("test.xlsx", binary=buf.getvalue(), callback=_noop_callback)
+
+    assert len(tbls) == 1
+    (img, rows), _poss = tbls[0]
+    assert img is fake_image
+    assert rows == [""]
+    # The empty cell must not be polluted and the sheet still parses.
+    assert len(dfs) == 1
+
+
 def test_chunk_auto_mode_all_columns_in_text_and_stored(table_module, mock_update_kb: MagicMock):
     parser_config: dict = {}
     chunks = _run_chunk(table_module, parser_config, mock_update_kb)
