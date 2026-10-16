@@ -25,6 +25,9 @@ import (
 )
 
 func TestMain(m *testing.M) {
+	if TestConfig.APIKey != "" {
+		os.Exit(m.Run())
+	}
 	fmt.Fprintln(os.Stderr, "Login")
 
 	err := TestConfig.Login()

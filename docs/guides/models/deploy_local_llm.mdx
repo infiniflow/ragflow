@@ -7,384 +7,291 @@ sidebar_custom_props: {
   categoryIcon: LucideMonitorCog
 }
 ---
-# Deploy Local Models
-import Tabs from '@theme/Tabs';
-import TabItem from '@theme/TabItem';
 
-Deploy and run local models using Ollama, Xinference, vLLM ，SGLang , GPUStack or other frameworks.
+# Deploy Local Models
+
+Deploy and run local models using Ollama or vLLM, then connect them to RAGFlow.
 
 ---
 
-RAGFlow supports deploying models locally using Ollama, Xinference, IPEX-LLM, vLLM ，SGLang , GPUStack or jina. If you have locally deployed models to leverage or wish to enable GPU or CUDA for inference acceleration, you can bind Ollama or Xinference into RAGFlow and use either of them as a local "server" for interacting with your local models.
+RAGFlow supports lightweight local inference with Ollama and GPU-accelerated serving with vLLM. This guide uses [MiniCPM5-2B](https://huggingface.co/openbmb/MiniCPM5-2B), a compact Apache-2.0-licensed chat model with Chinese and English support, for both deployment methods.
 
-RAGFlow seamlessly integrates with Ollama and Xinference, without the need for further environment configurations. You can use them to deploy two types of local models in RAGFlow: chat models and embedding models.
+## Before You Begin
 
-:::tip NOTE
-This user guide does not intend to cover much of the installation or configuration details of Ollama or Xinference; its focus is on configurations inside RAGFlow. For the most current information, you may need to check out the official site of Ollama or Xinference.
-:::
+This guide provides simple Ollama and vLLM deployment examples for new RAGFlow users. It focuses on starting a local model and connecting it to RAGFlow rather than covering every installation or production deployment option. For complete setup, platform, and configuration instructions, see the [Ollama documentation](https://docs.ollama.com/) and the [vLLM documentation](https://docs.vllm.ai/).
 
-## Deploy Local Models Using Ollama
+| Purpose | Ollama model name | vLLM source model ID | vLLM served model name |
+| --- | --- | --- | --- |
+| Chat | `openbmb/minicpm5-2b` | `openbmb/MiniCPM5-2B` | `MiniCPM5-2B` |
 
-[Ollama](https://github.com/ollama/ollama) enables you to run open-source large language models that you deployed locally. It bundles model weights, configurations, and data into a single package, defined by a Modelfile, and optimizes setup and configurations, including GPU usage.
-
-:::note
-- For information about downloading Ollama, see [here](https://github.com/ollama/ollama?tab=readme-ov-file#ollama).
-- For a complete list of supported models and variants, see the [Ollama model library](https://ollama.com/library).
-:::
-
-### 1. Deploy Ollama Using Docker
-
-Ollama can be [installed from binaries](https://ollama.com/download) or [deployed with Docker](https://hub.docker.com/r/ollama/ollama). Here are the instructions to deploy with Docker:
-
-```bash
-$ sudo docker run --name ollama -p 11434:11434 ollama/ollama
-> time=2024-12-02T02:20:21.360Z level=INFO source=routes.go:1248 msg="Listening on [::]:11434 (version 0.4.6)"
-> time=2024-12-02T02:20:21.360Z level=INFO source=common.go:49 msg="Dynamic LLM libraries" runners="[cpu cpu_avx cpu_avx2 cuda_v11 cuda_v12]"
-```
-
-Ensure Ollama is listening on all IP address:
-```bash
-$ sudo ss -tunlp | grep 11434
-> tcp   LISTEN 0      4096                  0.0.0.0:11434      0.0.0.0:*    users:(("docker-proxy",pid=794507,fd=4))
-> tcp   LISTEN 0      4096                     [::]:11434         [::]:*    users:(("docker-proxy",pid=794513,fd=4))
-```
-
-Pull models as you need. We recommend that you start with `llama3.2` (a 3B chat model) and `bge-m3` (a 567M embedding model):
-```bash
-$ sudo docker exec ollama ollama pull llama3.2
-> pulling dde5aa3fc5ff... 100% ▕████████████████▏ 2.0 GB
-> success
-```
-
-```bash
-$ sudo docker exec ollama ollama pull bge-m3
-> pulling daec91ffb5dd... 100% ▕████████████████▏ 1.2 GB
-> success
-```
-
-### 2. Find Ollama URL and Ensure It Is Accessible
-
-- If RAGFlow runs in Docker, the localhost is mapped within the RAGFlow Docker container as `host.docker.internal`. If Ollama runs on the same host machine, the right URL to use for Ollama would be `http://host.docker.internal:11434/' and you should check that Ollama is accessible from inside the RAGFlow container with:
-```bash
-$ sudo docker exec -it docker-ragflow-cpu-1 bash
-$ curl http://host.docker.internal:11434/
-> Ollama is running
-```
-
-- If RAGFlow is launched from source code and Ollama runs on the same host machine as RAGFlow, check if Ollama is accessible from RAGFlow's host machine:
-```bash
-$ curl http://localhost:11434/
-> Ollama is running
-```
-
-- If RAGFlow and Ollama run on different machines, check if Ollama is accessible from RAGFlow's host machine:
-```bash
-$ curl http://${IP_OF_OLLAMA_MACHINE}:11434/
-> Ollama is running
-```
-
-### 3. Add Ollama
-
-In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Ollama to RAGFlow:
-
-
-
-### 4. Complete Basic Ollama Settings
-
-In the popup window, complete basic settings for Ollama:
-
-1. Ensure that your model name and type match those been pulled at step 1 (Deploy Ollama using Docker). For example, (`llama3.2` and `chat`) or (`bge-m3` and `embedding`).
-2. Put in the Ollama base URL, i.e. `http://host.docker.internal:11434`, `http://localhost:11434` or `http://${IP_OF_OLLAMA_MACHINE}:11434`.
-3. OPTIONAL: Switch on the toggle under **Does it support Vision?** if your model includes an image-to-text model.
-
-
-:::caution WARNING
-Improper base URL settings will trigger the following error:
-```bash
-Max retries exceeded with url: /api/chat (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0xffff98b81ff0>: Failed to establish a new connection: [Errno 111] Connection refused'))
-```
-:::
-
-### 5. Update System Model Settings
-
-Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model:
-
-- *You should now be able to find **llama3.2** from the dropdown list under **Chat model**, and **bge-m3** from the dropdown list under **Embedding model**.*
-
-### 6. Update Chat Configuration
-
-Update your model(s) accordingly in **Chat Configuration**.
-
-## Deploy a Local Model Using Xinference
-
-Xorbits Inference ([Xinference](https://github.com/xorbitsai/inference)) enables you to unleash the full potential of cutting-edge AI models.
+Ollama uses its registry name. vLLM downloads the model using its Hugging Face repository ID, while RAGFlow and other API clients use the name assigned by `--served-model-name`.
 
 :::note
-- For information about installing Xinference Ollama, see [here](https://inference.readthedocs.io/en/latest/getting_started/).
-- For a complete list of supported models, see the [Builtin Models](https://inference.readthedocs.io/en/latest/models/builtin/).
+MiniCPM5-2B is a chat model, not an embedding model. To create and parse a RAGFlow knowledge base, you must also configure an embedding model. The Ollama instructions below use `qwen3-embedding:0.6b` as a lightweight example.
 :::
 
-To deploy a local model, e.g., **Mistral**, using Xinference:
+## Deploy MiniCPM5-2B Using Ollama
 
-### 1. Check Firewall Settings
+[Ollama](https://github.com/ollama/ollama) packages model weights and configuration for straightforward local inference. See the [Ollama download page](https://ollama.com/download) for native installation options.
 
-Ensure that your host machine's firewall allows inbound connections on port 9997.
+### 1. Start Ollama Using Docker
 
-### 2. Start an Xinference Instance
+Run Ollama in the background and expose its default port:
 
-```bash
-$ xinference-local --host 0.0.0.0 --port 9997
-```
-
-### 3. Launch Your Local Model
-
-Launch your local model (**Mistral**), ensuring that you replace `${quantization}` with your chosen quantization method:
-
-```bash
-$ xinference launch -u mistral --model-name mistral-v0.1 --size-in-billions 7 --model-format pytorch --quantization ${quantization}
-```
-### 4. Add Xinference
-
-In RAGFlow, click on your logo on the top right of the page **>** **Model providers** and add Xinference to RAGFlow:
-
-
-### 5. Complete Basic Xinference Settings
-
-Enter an accessible base URL, such as `http://<your-xinference-endpoint-domain>:9997/v1`.
-> For rerank model, please use the `http://<your-xinference-endpoint-domain>:9997/v1/rerank` as the base URL.
-
-### 6. Update System Model Settings
-
-Click on your logo **>** **Model providers** **>** **System Model Settings** to update your model.
-
-*You should now be able to find **mistral** from the dropdown list under **Chat model**.*
-
-### 7. Update Chat Configuration
-
-Update your chat model accordingly in **Chat Configuration**:
-
-## Deploy a Local Model Using IPEX-LLM
-
-[IPEX-LLM](https://github.com/intel-analytics/ipex-llm) is a PyTorch library for running LLMs on local Intel CPUs or GPUs (including iGPU or discrete GPUs like Arc, Flex, and Max) with low latency. It supports Ollama on Linux and Windows systems.
-
-To deploy a local model, e.g., **Qwen2**, using IPEX-LLM-accelerated Ollama:
-
-### 1. Check Firewall Settings
-
-Ensure that your host machine's firewall allows inbound connections on port 11434. For example:
-
-```bash
-sudo ufw allow 11434/tcp
-```
-
-### 2. Launch Ollama Service Using IPEX-LLM
-
-#### 2.1 Install IPEX-LLM for Ollama
-
-:::tip NOTE
-IPEX-LLM's supports Ollama on Linux and Windows systems.
+:::caution
+Before publishing port `11434`, confirm that the host firewall does not allow public inbound access to this port. Allow access only from the host or trusted private networks.
 :::
 
-For detailed information about installing IPEX-LLM for Ollama, see [Run llama.cpp with IPEX-LLM on Intel GPU Guide](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md):
-- [Prerequisites](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md#0-prerequisites)
-- [Install IPEX-LLM cpp with Ollama binaries](https://github.com/intel-analytics/ipex-llm/blob/main/docs/mddocs/Quickstart/llama_cpp_quickstart.md#1-install-ipex-llm-for-llamacpp)
+```bash
+sudo docker run -d \
+  --name ollama \
+  --restart unless-stopped \
+  -p 11434:11434 \
+  -v ollama:/root/.ollama \
+  ollama/ollama
+```
 
-*After the installation, you should have created a Conda environment, e.g., `llm-cpp`, for running Ollama commands with IPEX-LLM.*
+The `ollama` volume keeps downloaded models available if the container is removed and recreated.
 
-#### 2.2 Initialize Ollama
+If the container already exists, start it with:
 
-1. Activate the `llm-cpp` Conda environment and initialize Ollama:
+```bash
+sudo docker start ollama
+```
 
-<Tabs
-  defaultValue="linux"
-  values={[
-    {label: 'Linux', value: 'linux'},
-    {label: 'Windows', value: 'windows'},
-  ]}>
-  <TabItem value="linux">
+This reuses the container's existing storage configuration. If the container was originally created without the `ollama:/root/.ollama` volume, recreate it with the command above to enable model persistence.
 
-  ```bash
-  conda activate llm-cpp
-  init-ollama
-  ```
-  </TabItem>
-  <TabItem value="windows">
-
-  Run these commands with *administrator privileges in Miniforge Prompt*:
-
-  ```cmd
-  conda activate llm-cpp
-  init-ollama.bat
-  ```
-  </TabItem>
-</Tabs>
-
-2. If the installed `ipex-llm[cpp]` requires an upgrade to the Ollama binary files, remove the old binary files and reinitialize Ollama using `init-ollama` (Linux) or `init-ollama.bat` (Windows).
-
-   *A symbolic link to Ollama appears in your current directory, and you can use this executable file following standard Ollama commands.*
-
-#### 2.3 Launch Ollama Service
-
-1. Set the environment variable `OLLAMA_NUM_GPU` to `999` to ensure that all layers of your model run on the Intel GPU; otherwise, some layers may default to CPU.
-2. For optimal performance on Intel Arc™ A-Series Graphics with Linux OS (Kernel 6.2), set the following environment variable before launching the Ollama service:
-
-   ```bash
-   export SYCL_PI_LEVEL_ZERO_USE_IMMEDIATE_COMMANDLISTS=1
-   ```
-3. Launch the Ollama service:
-
-<Tabs
-  defaultValue="linux"
-  values={[
-    {label: 'Linux', value: 'linux'},
-    {label: 'Windows', value: 'windows'},
-  ]}>
-  <TabItem value="linux">
-
-  ```bash
-  export OLLAMA_NUM_GPU=999
-  export no_proxy=localhost,127.0.0.1
-  export ZES_ENABLE_SYSMAN=1
-  source /opt/intel/oneapi/setvars.sh
-  export SYCL_CACHE_PERSISTENT=1
-
-  ./ollama serve
-  ```
-
-  </TabItem>
-  <TabItem value="windows">
-
-  Run the following command *in Miniforge Prompt*:
-
-  ```cmd
-  set OLLAMA_NUM_GPU=999
-  set no_proxy=localhost,127.0.0.1
-  set ZES_ENABLE_SYSMAN=1
-  set SYCL_CACHE_PERSISTENT=1
-
-  ollama serve
-  ```
-  </TabItem>
-</Tabs>
-
-
-:::tip NOTE
-To enable the Ollama service to accept connections from all IP addresses, use `OLLAMA_HOST=0.0.0.0 ./ollama serve` rather than simply `./ollama serve`.
+:::tip
+See the [Ollama Docker image documentation](https://hub.docker.com/r/ollama/ollama) to enable NVIDIA or AMD GPU acceleration.
 :::
 
-The console displays service startup messages.
+### 2. Pull MiniCPM5-2B
 
-
-### 3. Pull and Run Ollama Model
-
-#### 3.1 Pull Ollama Model
-
-With the Ollama service running, open a new terminal and run `./ollama pull <model_name>` (Linux) or `ollama.exe pull <model_name>` (Windows) to pull the desired model. e.g., `qwen2:latest`:
-
-
-#### 3.2 Run Ollama Model
-
-<Tabs
-  defaultValue="linux"
-  values={[
-    {label: 'Linux', value: 'linux'},
-    {label: 'Windows', value: 'windows'},
-  ]}>
-  <TabItem value="linux">
-
-  ```bash
-  ./ollama run qwen2:latest
-  ```
-  </TabItem>
-  <TabItem value="windows">
-
-  ```cmd
-  ollama run qwen2:latest
-  ```
-
-  </TabItem>
-</Tabs>
-
-### 4. Configure RAGFlow
-
-To enable IPEX-LLM accelerated Ollama in RAGFlow, you must also complete the configurations in RAGFlow. The steps are identical to those outlined in the *Deploy a local model using Ollama* section:
-
-1. [Add Ollama](#3-add-ollama)
-2. [Complete basic Ollama settings](#4-complete-basic-ollama-settings)
-3. [Update System Model Settings](#6-update-system-model-settings)
-4. [Update Chat Configuration](#7-update-chat-configuration)
-
-### 5. Deploy vLLM
-
-ubuntu 22.04/24.04
+Pull the chat model:
 
 ```bash
-pip install vllm
+sudo docker exec ollama ollama pull openbmb/minicpm5-2b
 ```
-### 5.1 Run vLLM with Best Practise
+
+If you intend to create a knowledge base, also pull a lightweight embedding model:
 
 ```bash
-nohup vllm serve /data/Qwen3-8B --served-model-name Qwen3-8B-FP8 --dtype auto --port 1025 --gpu-memory-utilization 0.90 --tool-call-parser hermes --enable-auto-tool-choice  > /var/log/vllm_startup1.log 2>&1 &
+sudo docker exec ollama ollama pull qwen3-embedding:0.6b
 ```
-you can get log info
-```bash
-tail -f -n 100 /var/log/vllm_startup1.log
-```
-when see the follow ,it means vllm engine is ready for access
-```bash
-Starting vLLM API server 0 on http://0.0.0.0:1025
-Started server process [19177]
-Application startup complete.
-```
-### 5.2 Integrating RAGFlow with vLLM Chat/Em/Rerank LLM with WebUI
 
-Go to **Settings** → **Model Providers** → **Search** → **vLLM** → **Add**; configure as follows:
-
-![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm.png)
-
-Select the vLLM chat model as the default LLM model:
-
-![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm1.png)
-
-### 5.3 Chat with vLLM Chat Model
-
-Create a chat and start a conversation as follows:
-
-![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow_vllm2.png)
-
-### 6. Deploy GPUStack
-
-ubuntu 22.04/24.04
-
-### 6.1 Run GPUStack with Best Practise
+List the downloaded models:
 
 ```bash
-sudo docker run -d --name gpustack \
-    --restart unless-stopped \
-    -p 80:80 \
-    -p 10161:10161 \
-    --volume gpustack-data:/var/lib/gpustack \
-    gpustack/gpustack
+curl http://localhost:11434/api/tags
 ```
-you can get docker info
+
+The response should list `openbmb/minicpm5-2b` and, if you pulled it, `qwen3-embedding:0.6b`.
+
+### 3. Test the Ollama Chat Model
+
+Send a test request directly to Ollama:
+
 ```bash
-docker ps
+curl http://localhost:11434/api/chat \
+  -d '{
+    "model": "openbmb/minicpm5-2b",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Briefly explain how retrieval-augmented generation reduces hallucinations."
+      }
+    ],
+    "stream": false
+  }'
 ```
-when see the follow ,it means vllm engine is ready for access
+
+A successful response contains an assistant message with generated content.
+
+### 4. Make Ollama Accessible to RAGFlow
+
+Use the URL that matches your deployment:
+
+| Deployment | Ollama base URL |
+| --- | --- |
+| RAGFlow runs in Docker and Ollama runs on the same host | `http://host.docker.internal:11434` |
+| RAGFlow and Ollama run directly on the same host | `http://localhost:11434` |
+| Ollama runs on another machine | `http://<OLLAMA_HOST_IP>:11434` |
+
+When RAGFlow runs in Docker, first find the actual RAGFlow container name:
+
 ```bash
-root@gpustack-prod:~# docker ps
-CONTAINER ID   IMAGE               COMMAND                  CREATED       STATUS       PORTS                                                                                  NAMES
-abf59be84b1a   gpustack/gpustack   "/usr/bin/entrypoint…"   6 hours ago   Up 6 hours   0.0.0.0:80->80/tcp, [::]:80->80/tcp, 0.0.0.0:10161->10161/tcp, [::]:10161->10161/tcp   gpustack
+sudo docker ps \
+  --filter "label=com.docker.compose.service=ragflow-cpu" \
+  --format '{{.Names}}'
 ```
-### 6.2 Integrating RAGFlow with GPUStack Chat/Em/Rerank LLM with WebUI
 
-setting->model providers->search->gpustack->add ,configure as follow:
+Then replace `<RAGFLOW_CONTAINER>` below with the returned name and verify connectivity from that container:
 
-![add vllm](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack11.png)
+```bash
+sudo docker exec -it <RAGFLOW_CONTAINER> \
+  curl http://host.docker.internal:11434/api/tags
+```
 
-Select the GPUStack chat model as the default LLM:
+:::caution
+Do not expose port `11434` directly to the public internet. Restrict access with a firewall or private network.
+:::
 
-![chat](https://raw.githubusercontent.com/infiniflow/ragflow-docs/main/images/ragflow-gpustack22.png)
+### 5. Add Ollama to RAGFlow
 
+1. In RAGFlow, click your avatar in the upper-right corner and select **Model providers**.
+2. Find **Ollama** and add a provider instance.
+3. Enter the accessible Ollama base URL from the previous step.
+4. Leave **API Key** empty.
+5. Add `openbmb/minicpm5-2b` as a **Chat** model.
+6. If you pulled the embedding model, add `qwen3-embedding:0.6b` as an **Embedding** model.
+7. Verify models individually, or click **Verify all models** to verify every model currently shown by the active search and type filters.
+8. Save the provider instance.
 
+The model names must exactly match the names returned by Ollama.
 
+Successful verification indicates that RAGFlow can reach Ollama and call the selected models.
+
+### 6. Use the Models in RAGFlow
+
+- Select `openbmb/minicpm5-2b` as the chat model in **Set default models** or your chat configuration.
+- Select `qwen3-embedding:0.6b` as the embedding model when creating a knowledge base.
+
+## Deploy MiniCPM5-2B Using vLLM
+
+[vLLM](https://docs.vllm.ai/) provides a high-throughput OpenAI-compatible server for GPU inference. This example serves MiniCPM5-2B as a chat model.
+
+### 1. Install vLLM
+
+Create and activate a dedicated Python environment, then install vLLM:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip vllm
+```
+
+For supported GPUs and platform-specific instructions, see the [official vLLM installation guide](https://docs.vllm.ai/en/latest/getting_started/installation/).
+
+### 2. Start MiniCPM5-2B
+
+Start the OpenAI-compatible API server:
+
+:::caution
+The following command listens on all network interfaces. Before starting it, confirm that the host firewall does not allow public inbound access to port `8000`. Allow access only from trusted hosts or private networks.
+:::
+
+```bash
+vllm serve openbmb/MiniCPM5-2B \
+  --served-model-name MiniCPM5-2B \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --dtype auto \
+  --max-model-len 8192
+```
+
+`--served-model-name` defines the model name that clients, including RAGFlow, must use. The example limits the context length to 8192 tokens to reduce GPU memory consumption.
+
+Keep this terminal running while vLLM serves the model, and open another terminal for the verification commands below.
+
+The example starts vLLM without authentication. To require an API key, add `--api-key <API_KEY>` to the `vllm serve` command. For example, an authenticated request to list the available models is:
+
+```bash
+curl http://localhost:8000/v1/models \
+  -H "Authorization: Bearer <API_KEY>"
+```
+
+When authentication is enabled, add this `Authorization` header to every vLLM verification request in this guide, including the chat request and the request run inside the RAGFlow container. Enter the same value in the RAGFlow **API Key** field when you configure the VLLM provider instance.
+
+### 3. Verify the vLLM Server
+
+Check that the model is available:
+
+```bash
+curl http://localhost:8000/v1/models
+```
+
+The response should contain a model whose ID is `MiniCPM5-2B`.
+
+Then send a chat request:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniCPM5-2B",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Briefly explain how retrieval-augmented generation reduces hallucinations."
+      }
+    ]
+  }'
+```
+
+A successful response contains generated text in the assistant message under `choices`.
+
+If you enabled vLLM API key authentication, use the following authenticated chat request instead:
+
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer <API_KEY>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "MiniCPM5-2B",
+    "messages": [
+      {
+        "role": "user",
+        "content": "Briefly explain how retrieval-augmented generation reduces hallucinations."
+      }
+    ]
+  }'
+```
+
+### 4. Make vLLM Accessible to RAGFlow
+
+Use the URL that matches your deployment:
+
+| Deployment | vLLM base URL |
+| --- | --- |
+| RAGFlow runs in Docker and vLLM runs on the same host | `http://host.docker.internal:8000/v1` |
+| RAGFlow and vLLM run directly on the same host | `http://localhost:8000/v1` |
+| vLLM runs on another machine | `http://<VLLM_HOST_IP>:8000/v1` |
+
+When RAGFlow runs in Docker, find the actual container name as described in the Ollama section above. Then replace `<RAGFLOW_CONTAINER>` with that name and verify connectivity from the container:
+
+```bash
+sudo docker exec -it <RAGFLOW_CONTAINER> \
+  curl http://host.docker.internal:8000/v1/models
+```
+
+For a vLLM server without authentication, the response should contain a model whose ID is `MiniCPM5-2B`.
+
+For an authenticated vLLM server, use this complete container connectivity check:
+
+```bash
+sudo docker exec -it <RAGFLOW_CONTAINER> \
+  curl http://host.docker.internal:8000/v1/models \
+  -H "Authorization: Bearer <API_KEY>"
+```
+
+:::caution
+Do not expose port `8000` directly to the public internet unless you have configured authentication and network access controls.
+:::
+
+### 5. Add vLLM to RAGFlow
+
+1. In RAGFlow, click your avatar in the upper-right corner and select **Model providers**.
+2. Find **VLLM** and add a provider instance.
+3. Enter the accessible base URL from the previous step.
+4. Leave **API Key** empty unless you explicitly configured API key authentication for your vLLM server. If authentication is enabled, enter the actual API key.
+5. Add `MiniCPM5-2B` as a **Chat** model. This name must match the value passed to `--served-model-name`.
+6. Verify the added model.
+7. Save the provider instance.
+
+Select `MiniCPM5-2B` in **Set default models** or your chat configuration to start using it.
+
+Successful verification indicates that RAGFlow can reach the vLLM server and call `MiniCPM5-2B`.
+
+:::note
+You can use the vLLM chat model with an embedding model from another provider. For example, use `MiniCPM5-2B` from vLLM for chat and `qwen3-embedding:0.6b` from Ollama for knowledge-base embeddings.
+:::

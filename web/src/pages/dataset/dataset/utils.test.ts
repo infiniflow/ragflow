@@ -1,4 +1,5 @@
 import { FileType } from '@/constants/file';
+import { getExtension } from '@/utils/document-util';
 import {
   IngestionTaskStatus,
   ParserModelKind,
@@ -23,6 +24,11 @@ import {
   type SavedParserConfig,
   type UploadFileParserGap,
 } from './utils';
+
+// Mirrors how findFilesParserGaps feeds the switch decision: the family comes
+// from the extension map, the suffix sets from the backend's accepted owners.
+const switchTarget = (name: string) =>
+  builtinParserSwitchTarget(name, getFileTypeByExtension(getExtension(name)));
 
 describe('isDocumentStopping', () => {
   it('is true only for the STOPPING status', () => {
@@ -270,79 +276,63 @@ describe('hasUnsupportedTypeGap', () => {
 });
 
 describe('builtinParserSwitchTarget', () => {
-  it('never switches for a dataset on a custom pipeline', () => {
-    expect(builtinParserSwitchTarget('photo.jpg', 'canvas-1')).toBeNull();
-    expect(builtinParserSwitchTarget('song.mp3', 'canvas-1')).toBeNull();
-    expect(builtinParserSwitchTarget('mail.msg', 'canvas-1')).toBeNull();
-  });
-
   it('maps owned file types to their built-in pipelines', () => {
     // The visual bucket includes the video extensions, mirroring the backend.
-    expect(builtinParserSwitchTarget('photo.JPG')).toBe('picture');
-    expect(builtinParserSwitchTarget('movie.mp4')).toBe('picture');
-    expect(builtinParserSwitchTarget('clip.mov')).toBe('picture');
-    expect(builtinParserSwitchTarget('song.mp3')).toBe('audio');
-    expect(builtinParserSwitchTarget('song.opus')).toBe('audio');
-    expect(builtinParserSwitchTarget('deck.ppt')).toBe('presentation');
-    expect(builtinParserSwitchTarget('deck.pptx')).toBe('presentation');
-    expect(builtinParserSwitchTarget('deck.pages')).toBe('presentation');
-    expect(builtinParserSwitchTarget('mail.msg')).toBe('email');
-    expect(builtinParserSwitchTarget('mail.eml')).toBe('email');
+    expect(switchTarget('photo.JPG')).toBe('picture');
+    expect(switchTarget('movie.mp4')).toBe('picture');
+    expect(switchTarget('clip.mov')).toBe('picture');
+    expect(switchTarget('song.mp3')).toBe('audio');
+    expect(switchTarget('song.opus')).toBe('audio');
+    expect(switchTarget('deck.ppt')).toBe('presentation');
+    expect(switchTarget('deck.pptx')).toBe('presentation');
+    expect(switchTarget('deck.pages')).toBe('presentation');
+    expect(switchTarget('mail.msg')).toBe('email');
+    expect(switchTarget('mail.eml')).toBe('email');
   });
 
-  it('keeps the dataset parser for every other type', () => {
-    expect(builtinParserSwitchTarget('laws.txt')).toBeNull();
-    expect(builtinParserSwitchTarget('laws.pdf')).toBeNull();
-    expect(builtinParserSwitchTarget('book.docx')).toBeNull();
-    expect(builtinParserSwitchTarget('sheet.xlsx')).toBeNull();
+  it('falls back to the general pipeline for the families it declares', () => {
+    // The backend reseeds these with the catch-all general pipeline when the
+    // dataset selection does not declare the family (the upload-gap case).
+    expect(switchTarget('laws.txt')).toBe('general');
+    expect(switchTarget('laws.pdf')).toBe('general');
+    expect(switchTarget('book.docx')).toBe('general');
+    expect(switchTarget('sheet.xlsx')).toBe('general');
+    expect(switchTarget('notes.md')).toBe('general');
+    expect(switchTarget('page.html')).toBe('general');
+  });
+
+  it('keeps the dataset selection for types no pipeline owns', () => {
     // Frontend-known audio suffixes the backend rejects at upload keep the
-    // dataset parser too — the switch map mirrors the backend exactly.
-    expect(builtinParserSwitchTarget('song.wma')).toBeNull();
+    // dataset selection too — the switch map mirrors the backend exactly.
+    expect(switchTarget('song.wma')).toBeNull();
   });
 });
 
 describe('attachAutoSwitchTargets', () => {
   it('annotates unsupported gaps with the target and other gaps with null', () => {
-    const gaps = attachAutoSwitchTargets(
-      [
-        {
-          name: 'photo.jpg',
-          reason: ParserGapReason.UnsupportedType,
-          fileType: FileType.Image,
-        },
-        {
-          name: 'song.mp3',
-          reason: ParserGapReason.MissingModel,
-          fileType: FileType.Audio,
-          modelKind: ParserModelKind.Asr,
-        },
-        {
-          name: 'notes.txt',
-          reason: ParserGapReason.UnsupportedType,
-          fileType: FileType.Code,
-        },
-      ],
-      null,
-    );
+    const gaps = attachAutoSwitchTargets([
+      {
+        name: 'photo.jpg',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.Image,
+      },
+      {
+        name: 'song.mp3',
+        reason: ParserGapReason.MissingModel,
+        fileType: FileType.Audio,
+        modelKind: ParserModelKind.Asr,
+      },
+      {
+        name: 'notes.txt',
+        reason: ParserGapReason.UnsupportedType,
+        fileType: FileType.Code,
+      },
+    ]);
     expect(gaps.map((x) => x.autoSwitchTarget)).toEqual([
       'picture',
       null,
-      null,
+      'general',
     ]);
-  });
-
-  it('annotates nothing switchable on a custom pipeline', () => {
-    const gaps = attachAutoSwitchTargets(
-      [
-        {
-          name: 'photo.jpg',
-          reason: ParserGapReason.UnsupportedType,
-          fileType: FileType.Image,
-        },
-      ],
-      'canvas-1',
-    );
-    expect(gaps[0].autoSwitchTarget).toBeNull();
   });
 });
 

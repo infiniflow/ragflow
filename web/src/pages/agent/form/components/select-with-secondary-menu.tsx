@@ -47,7 +47,10 @@ type Group = {
   options: Option[];
 };
 
-interface GroupedSelectWithSecondaryMenuProps {
+interface GroupedSelectWithSecondaryMenuProps extends Omit<
+  React.ComponentPropsWithoutRef<'button'>,
+  'value' | 'onChange'
+> {
   options: Group[];
   value?: string;
   onChange?: (value: string) => void;
@@ -55,28 +58,35 @@ interface GroupedSelectWithSecondaryMenuProps {
   types?: JsonSchemaDataType[];
 }
 
-export function GroupedSelectWithSecondaryMenu({
-  options,
-  value,
-  onChange,
-  placeholder,
-  types,
-}: GroupedSelectWithSecondaryMenuProps) {
+export const GroupedSelectWithSecondaryMenu = React.forwardRef<
+  HTMLButtonElement,
+  GroupedSelectWithSecondaryMenuProps
+>(function GroupedSelectWithSecondaryMenu(
+  { options, value, onChange, placeholder, types, ...props },
+  ref,
+) {
   const { t } = useTranslation();
   const [open, setOpen] = React.useState(false);
 
   const showSecondaryMenu = useShowSecondaryMenu();
   const findAgentStructuredOutputLabel = useFindAgentStructuredOutputLabel();
 
+  // cmdk calls .trim() on Command's controlled value, so a non-string value
+  // from a stale persisted form (e.g. an array) would crash the whole page.
+  const stringValue = typeof value === 'string' ? value : '';
+
   // Find the label of the selected item
   const flattenedOptions = options.flatMap((g) => g.options);
 
   let selectedItem = flattenedOptions
     .flatMap((o) => [o, ...(o.children || [])])
-    .find((o) => o.value === value);
+    .find((o) => o.value === stringValue);
 
-  if (!selectedItem && value) {
-    selectedItem = findAgentStructuredOutputLabel(value, flattenedOptions);
+  if (!selectedItem && stringValue) {
+    selectedItem = findAgentStructuredOutputLabel(
+      stringValue,
+      flattenedOptions,
+    );
   }
 
   // Handle clear click
@@ -98,15 +108,17 @@ export function GroupedSelectWithSecondaryMenu({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <Button
+          ref={ref}
           variant="outline"
           role="combobox"
           aria-expanded={open}
           className={cn(
             '!bg-bg-input hover:bg-background border-input w-full  justify-between px-3 font-normal outline-offset-0 outline-none focus-visible:outline-[3px] [&_svg]:pointer-events-auto',
-            !value && 'text-muted-foreground',
+            !stringValue && 'text-muted-foreground',
           )}
+          {...props}
         >
-          {value ? (
+          {stringValue ? (
             <div className="truncate flex items-center gap-1">
               <span>{get(selectedItem, 'parentLabel')}</span>
               <span className="text-text-disabled">/</span>
@@ -118,7 +130,7 @@ export function GroupedSelectWithSecondaryMenu({
             </span>
           )}
           <div className="flex items-center justify-between">
-            {value && (
+            {stringValue && (
               <>
                 <XIcon
                   className="h-4 mx-2 cursor-pointer text-muted-foreground"
@@ -140,7 +152,7 @@ export function GroupedSelectWithSecondaryMenu({
       </PopoverTrigger>
 
       <PopoverContent className="p-0" align="start">
-        <Command value={value}>
+        <Command value={stringValue}>
           <CommandInput placeholder="Search..." />
           <CommandList className="overflow-auto">
             {options.map((group, idx) => (
@@ -191,7 +203,7 @@ export function GroupedSelectWithSecondaryMenu({
                             key={child.value}
                             className={cn(
                               'cursor-pointer rounded-sm px-2 py-1.5 text-sm hover:bg-bg-card hover:text-accent-foreground',
-                              value === child.value &&
+                              stringValue === child.value &&
                                 'bg-accent text-accent-foreground',
                             )}
                             onClick={() => {
@@ -229,4 +241,4 @@ export function GroupedSelectWithSecondaryMenu({
       </PopoverContent>
     </Popover>
   );
-}
+});

@@ -77,12 +77,6 @@ export function useChatSettingSchema() {
       .nullable()
       .optional(),
     cross_languages: z.array(z.string()).optional(),
-    reference_metadata: z
-      .object({
-        include: z.boolean().optional(),
-        fields: z.array(z.string()).optional(),
-      })
-      .optional(),
   });
 
   const formSchema = z

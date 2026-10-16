@@ -18,6 +18,7 @@ package kvrocks
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -142,5 +143,130 @@ func TestEvalTokenBucketStrict_NilClient(t *testing.T) {
 	}
 	if ok {
 		t.Fatalf("expected allowed=false on nil client (fail-closed)")
+	}
+}
+
+// TestSetNXErr_AllowedWhenNew pins the happy path: SetNXErr reports
+// (true, nil) on a brand-new key. Regression guard for issue #20660.
+func TestSetNXErr_AllowedWhenNew(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+
+	ok, err := r.SetNXErr(ctx, "lock:test:new", "v", time.Minute)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !ok {
+		t.Fatalf("expected ok=true on a fresh key")
+	}
+}
+
+// TestSetNXErr_FalseOnContention confirms the second concurrent caller
+// sees (false, nil), not (false, err). Only the transport-failure case
+// should return an error - keep the two outcomes distinguishable so the
+// DistributedLock wait-for-lock loop can retry on the former and fail
+// fast on the latter.
+func TestSetNXErr_FalseOnContention(t *testing.T) {
+	r, _ := newStrictTestClient(t)
+	ctx := t.Context()
+
+	if ok, err := r.SetNXErr(ctx, "lock:test:contended", "first", time.Minute); err != nil || !ok {
+		t.Fatalf("seed call: ok=%v err=%v", ok, err)
+	}
+	ok, err := r.SetNXErr(ctx, "lock:test:contended", "second", time.Minute)
+	if err != nil {
+		t.Fatalf("contention should NOT surface a transport error, got %v", err)
+	}
+	if ok {
+		t.Fatalf("expected ok=false on a held key")
+	}
+}
+
+// TestSetNXErr_TransportErrorFailsFast is the core regression for
+// #20660. With miniredis closed, the underlying SETNX cannot reach the
+// server; SetNXErr must surface that as a non-nil error instead of
+// returning false and forcing every distributed-lock caller to spin for
+// its full timeout budget. Mirrors the EvalTokenBucketStrict
+// fail-closed contract in the same package.
+func TestSetNXErr_TransportErrorFailsFast(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	ok, err := r.SetNXErr(ctx, "lock:test:down", "v", time.Minute)
+	if err == nil {
+		t.Fatalf("expected transport error, got nil (ok=%v)", ok)
+	}
+	if ok {
+		t.Fatalf("expected ok=false on transport failure (fail-closed)")
+	}
+}
+
+// TestDistributedLock_AcquireTransportError mirrors the issue body:
+// DistributedLock.Acquire must surface the underlying transport error
+// rather than collapsing it into (false, nil), otherwise every polling
+// caller (the two withDDLLock waitForLock loops and any future spin
+// caller) will treat "Redis is down" as "lock held by someone else".
+func TestDistributedLock_AcquireTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+	// Bypass NewDistributedLock's globalClient guard so we can drive
+	// Acquire against a known-down client.
+	lock := &DistributedLock{
+		client:          r,
+		lockKey:         "lock:test:down",
+		lockValue:       "v",
+		timeout:         time.Minute,
+		blockingTimeout: 0,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer cancel()
+
+	acquired, err := lock.Acquire(ctx)
+	if err == nil {
+		t.Fatalf("expected transport error from Acquire, got nil (acquired=%v)", acquired)
+	}
+	if acquired {
+		t.Fatalf("expected acquired=false on transport failure (fail-closed)")
+	}
+}
+
+// TestDistributedLock_SpinAcquireSurfacesTransportError confirms the
+// second regression the issue called out: SpinAcquire used to swallow
+// the underlying SetNX error and only return ctx.Err() at the next
+// select-tick. With Redis down, SpinAcquire must return the transport
+// error directly so the metadata-write path can fail fast (target:
+// ~3s on a real outage, the go-redis connection-pool exhaustion time,
+// rather than the 10s internal sleep plus caller budget).
+//
+// The 5s ctx is sized to give go-redis's 5-attempt connection pool
+// exhaustion time to surface the connection-refused error before the
+// test deadline cancels the call - otherwise the assertion would
+// conflate "transport failure" with "ctx timed out first" (because
+// go-redis's .Result() returns ctx.Err() when the parent context
+// deadline beats the dial to the failed endpoint).
+func TestDistributedLock_SpinAcquireSurfacesTransportError(t *testing.T) {
+	r, mr := newStrictTestClient(t)
+	mr.Close()
+	lock := &DistributedLock{
+		client:          r,
+		lockKey:         "lock:test:down",
+		lockValue:       "v",
+		timeout:         time.Minute,
+		blockingTimeout: 0,
+	}
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	err := lock.SpinAcquire(ctx)
+	if err == nil {
+		t.Fatalf("expected transport error from SpinAcquire, got nil")
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("SpinAcquire returned ctx.Err() (deadline) instead of the transport error: %v", err)
 	}
 }

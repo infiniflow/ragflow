@@ -18,9 +18,15 @@ import (
 	"ragflow/internal/ingestion/component/knowledge_compiler/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/ingestion/task/indexdoc"
+	"ragflow/internal/tokenizer"
 
 	"gorm.io/gorm"
 )
+
+// variantTokenizer is the tokenizer applyVariantColumns expects: the language
+// travels with the call because compiled rows share the dataset's chunk table
+// and tokenize like the parsed chunks. English is the dataset default.
+func variantTokenizer() tokenizer.Tokenizer { return tokenizer.New("English") }
 
 func TestWikiActiveStateValuesAreCheckpointSafe(t *testing.T) {
 	values := wikiActiveStateValues([]common.WikiMapActiveState{{
@@ -339,6 +345,9 @@ func runVariant(t *testing.T, variant string, extra map[string]any) []map[string
 		}
 		if ck, _ := cm["compile_kwd"].(string); ck != "" {
 			seenCompiled = true
+			if cm["scope_kwd"] != "doc" {
+				t.Fatalf("Invoke(%s): scope_kwd = %v, want doc", variant, cm["scope_kwd"])
+			}
 			if _, ok := cm["q_8_vec"]; !ok {
 				t.Fatalf("Invoke(%s): compiled chunk missing vector: %v", variant, cm)
 			}
@@ -1555,7 +1564,7 @@ func TestProductsToChunkDocs_WikiPageAndSectionRoles(t *testing.T) {
 		Content: "Section body", ParentID: "page-id",
 		Meta: map[string]any{"kind": "section", "slug": "overview", "page_slug": "entity/alpha", "section_level": 1, "source_chunk_ids": []string{"c1"}},
 	}
-	docs, err := productsToChunkDocs([]common.Product{page, section})
+	docs, err := productsToChunkDocs([]common.Product{page, section}, "")
 	if err != nil {
 		t.Fatalf("productsToChunkDocs: %v", err)
 	}
@@ -1670,7 +1679,7 @@ func TestApplyStructureGraphColumnsWritesHypergraphRows(t *testing.T) {
 		if err := applyVariantColumns(doc, common.Product{
 			Variant: common.VariantStructure,
 			Meta:    tc.meta,
-		}); err != nil {
+		}, variantTokenizer()); err != nil {
 			t.Fatalf("%s: %v", tc.name, err)
 		}
 		out := doc.ToMap()
@@ -1700,7 +1709,7 @@ func TestHyperedgeIDsAreWrittenAsAList(t *testing.T) {
 			"kind": "hypernode", "node_role": "value",
 			"hyperedge_ids": []string{"e1", "e2", "e3"},
 		},
-	}); err != nil {
+	}, variantTokenizer()); err != nil {
 		t.Fatal(err)
 	}
 	ids, ok := doc.ToMap()["hyperedge_ids"].([]string)
@@ -1722,7 +1731,7 @@ func TestEntityRowsDoNotCarryHypergraphColumns(t *testing.T) {
 			"kind": "entity", "name": "Ada Lovelace", "entity_type": "person",
 			"node_role": "key", "hyperedge_ids": []string{"e1"},
 		},
-	}); err != nil {
+	}, variantTokenizer()); err != nil {
 		t.Fatal(err)
 	}
 	out := doc.ToMap()

@@ -58,11 +58,10 @@ func (b *BaiduModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -128,11 +127,10 @@ func (b *BaiduModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -216,11 +214,10 @@ func (b *BaiduModel) Embed(ctx context.Context, modelName *string, request Embed
 		return []EmbeddingData{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": *modelName,
@@ -312,11 +309,10 @@ func (b *BaiduModel) Rerank(ctx context.Context, modelName *string, request Rera
 		return &RerankResponse{}, nil
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), b.baseModel.URLSuffix.Rerank)
 
 	var topN = rerankConfig.TopN
 	if rerankConfig.TopN == 0 {
@@ -426,11 +422,10 @@ func (b *BaiduModel) OCRFile(ctx context.Context, modelName *string, content []b
 		return nil, fmt.Errorf("model name is required")
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.OCR)
 
 	reqData := map[string]interface{}{
 		"model": *modelName,
@@ -509,11 +504,10 @@ func (b *BaiduModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, err
 	}
 
-	resolvedBaseURL, err := b.baseModel.GetBaseURL(apiConfig)
+	url, err := b.baseModel.EndpointURL(apiConfig, b.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, b.baseModel.URLSuffix.Models)
 
 	reqBody := map[string]string{}
 

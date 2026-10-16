@@ -82,6 +82,9 @@ type RetrievalRequest struct {
 	// returned chunk maps — e.g. the ontology digest's compiled-row columns,
 	// which the default projection does not carry.
 	SelectFields []string
+	// Language is the dataset language ("" = English); diacritic-folding
+	// languages (Slovak, Czech) fold the query so its tokens match index tokens.
+	Language string
 }
 
 // appendSelectFields returns base plus the extra columns, keeping base's order
@@ -210,6 +213,7 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 		VectorOnly:             req.VectorOnly,
 		Filter:                 req.Filter,
 		SelectFields:           req.SelectFields,
+		Language:               req.Language,
 	}
 	searchResult, err := s.Search(ctx, searchReq)
 	if err != nil {
@@ -435,6 +439,9 @@ func (s *RetrievalService) Retrieval(ctx context.Context, req *RetrievalRequest)
 			if v, ok := chunk["doc_id"].(string); ok {
 				docID = v
 			}
+			if kbID, _ := chunk["kb_id"].(string); docID != "" && docID == kbID {
+				continue
+			}
 			if entry, exists := docAggsMap[docName]; exists {
 				entry.count++
 				docAggsMap[docName] = entry
@@ -506,6 +513,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 	}
 
@@ -536,6 +544,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 		return sim, tsim, vsim, nil
 	}
@@ -592,6 +601,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 			"content_ltks",
 			qb,
 			*req.RankFeature,
+			req.Language,
 		)
 		return sim, tsim, vsim, nil
 	}
@@ -608,6 +618,7 @@ func (s *RetrievalService) scoreSearchResult(ctx context.Context, req *Retrieval
 		"content_ltks",
 		qb,
 		*req.RankFeature,
+		req.Language,
 	)
 	return sim, tsim, vsim, nil
 }
@@ -637,6 +648,8 @@ type RetrievalSearchRequest struct {
 	// SelectFields extends the engine's _source projection; see
 	// RetrievalRequest.SelectFields for the contract.
 	SelectFields []string
+	// Language is the dataset language ("" = English).
+	Language string
 }
 
 func buildInfinityFusionExpr(topn int, vectorSimilarityWeight *float64) *types.FusionExpr {
@@ -746,6 +759,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// displays, doc_type_kwd marks image/table chunks, mom_id is what promotes
 		// child fragments to their parent, row_id() the table row identity.
 		"content_with_weight", "doc_type_kwd", "mom_id", "row_id()",
+		"compile_kwd", "scope_kwd",
 		"_score",
 	}
 	// Caller-requested columns ride along with the defaults; see
@@ -784,7 +798,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		// Non-empty question
 
 		// Compute keywords via QueryBuilder
-		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3))
+		matchText, keywords := GetQueryBuilder().Question(req.Question, "", minMatch(req.VectorSimilarityWeight, 0.3), req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
 		}
@@ -887,7 +901,7 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 					// and lower vector similarity threshold (0.17 vs default 0.1-0.2).
 					// This provides a second chance for queries that were too strict
 					// on the first attempt.
-					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1))
+					matchText, _ := GetQueryBuilder().Question(req.Question, "qa", minMatch(req.VectorSimilarityWeight, 0.1), req.Language)
 					matchDense = cloneDenseExpr(denseTemplate)
 					matchDense.ExtraOptions["similarity"] = 0.17
 					if req.VectorOnly || matchText == nil {
@@ -919,9 +933,10 @@ func (s *RetrievalService) Search(ctx context.Context, req *RetrievalSearchReque
 		}
 
 		// Build kwds from keywords with fine-grained tokenization
+		tok := tokenizer.New(req.Language)
 		for _, k := range keywords {
 			kwds[k] = struct{}{}
-			fgToken, _ := tokenizer.FineGrainedTokenize(k)
+			fgToken, _ := tok.FineGrainedTokenize(k)
 			for kk := range strings.FieldsSeq(fgToken) {
 				if len(kk) < 2 {
 					continue
@@ -1235,6 +1250,9 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 	// Collect all doc_ids from chunks
 	chunkDocIDs := make([]string, 0, len(result.Field))
 	for _, chunk := range result.Field {
+		if isDatasetCompilationChunk(chunk) {
+			continue
+		}
 		if docID, ok := chunk["doc_id"].(string); ok && docID != "" {
 			chunkDocIDs = append(chunkDocIDs, docID)
 		}
@@ -1283,8 +1301,8 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 			continue
 		}
 		docID, ok := chunk["doc_id"].(string)
-		if !ok || docID == "" {
-			// Keep chunks without doc_id
+		if !ok || docID == "" || isDatasetCompilationChunk(chunk) {
+			// Dataset artifacts use the dataset ID instead of a source document ID.
 			filteredIDs = append(filteredIDs, chunkID)
 			filteredChunks = append(filteredChunks, chunk)
 			filteredField[chunkID] = chunk
@@ -1324,6 +1342,13 @@ func (s *RetrievalService) PruneDeletedChunks(ctx context.Context, result *Retri
 		Aggregation: result.Aggregation,
 		Options:     result.Options,
 	}, nil
+}
+
+func isDatasetCompilationChunk(chunk map[string]interface{}) bool {
+	docID, _ := chunk["doc_id"].(string)
+	kbID, _ := chunk["kb_id"].(string)
+	compileKind, _ := chunk["compile_kwd"].(string)
+	return chunk["scope_kwd"] == "dataset" && compileKind != "" && docID != "" && docID == kbID
 }
 
 // buildIndexNames creates one index name per distinct tenant ID.

@@ -146,11 +146,10 @@ func (q *QiniuModel) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("no messages")
 	}
 
-	resolvedBaseURL, err := q.baseModel.GetBaseURL(apiConfig)
+	url, err := q.baseModel.EndpointURL(apiConfig, q.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, q.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
@@ -179,7 +178,7 @@ func (q *QiniuModel) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return err
 	}
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Chat)
+	url := joinURL(baseURL, q.baseModel.URLSuffix.Chat)
 
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]interface{}{"include_usage": true}
@@ -236,7 +235,7 @@ func (q *QiniuModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 		return nil, err
 	}
 	baseURL := strings.TrimSuffix(resolvedBaseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, q.baseModel.URLSuffix.Models)
+	url := joinURL(baseURL, q.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

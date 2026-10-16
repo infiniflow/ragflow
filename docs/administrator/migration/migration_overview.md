@@ -16,6 +16,8 @@ Use this page to identify the correct path, prepare a recoverable backup, and th
 Every `v0.x` deployment must successfully start and pass verification on `v0.27.2`, and must then be upgraded to `v1.0.0-rc1`. Do not skip either version or upgrade directly from `v0.x` to a later `v1.x` release.
 
 The `v0.27.2` to `v1.0.0-rc1` migration is irreversible. Before starting it, stop all data-writing tasks and create a complete, verified `v0.27.2` recovery point. If migration fails, do not retry against the partially migrated data; restore the complete recovery point before trying again.
+
+The Go backend no longer binds tag files to dedicated datasets. Tag datasets created by the Python backend are not valid after this migration; plan to reconfigure their tag files after the upgrade. See [Upgrade from v0.x to v1.x](./upgrade_from_v0_to_v1.md#3-upgrade-from-v0272-to-v100-rc1) for details.
 :::
 
 :::note Command assumptions

@@ -554,7 +554,9 @@ func TestImpactListsAffectedDatasetsAndFollowsConfigEdits(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("re-attach group: %v", err)
 	}
-	if err := dao.NewKnowledgebaseDAO().Delete(ctx, db, kb.ID); err != nil {
+	if err := dao.NewKnowledgebaseDAO().UpdateByID(ctx, db, kb.ID, map[string]interface{}{
+		"status": string(entity.StatusInvalid),
+	}); err != nil {
 		t.Fatalf("delete dataset: %v", err)
 	}
 	impact, err = svc.Impact(ctx, db, governanceTenant, template.ID)
