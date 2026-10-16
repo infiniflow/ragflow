@@ -808,6 +808,31 @@ func (a *KgAdapter) DocOutline(ctx context.Context, req KgDocOutlineRequest) (Kg
 		}
 	}
 
+	// `absent` so far only says that THESE documents yielded nothing, which is a
+	// document-scoped miss - not the dataset-level fact GraphAbsent carries (see
+	// the KgExploreResult contract). The distinction decides whether the tool
+	// disables itself for the conversation, so a scoped miss must not claim it:
+	// one unprocessed document, or a transient engine failure (kgSearchRaw
+	// reports a failed read as no rows), would otherwise turn graph_doc_outline
+	// off until the TTL expires - and the renderKgDocOutline branch that
+	// explains "these documents carry no compiled graph row" could never be
+	// reached. Probe the datasets exactly as Explore does: propagate a probe
+	// failure instead of reading an infrastructure error as "no graph", let any
+	// dataset that does carry compiled rows turn this into a scoped miss, and
+	// report the absence only when every probe succeeded and found nothing.
+	if absent {
+		for _, kbID := range datasetIDs {
+			has, probeErr := a.graphRowsExist(ctx, req.TenantID, kbID, nil, "")
+			if probeErr != nil {
+				return empty, probeErr
+			}
+			if has {
+				absent = false
+				break
+			}
+		}
+	}
+
 	// Mention count is the only centrality signal the panorama carries, and the
 	// caller reads a bounded payload: sort so the hubs survive the cap.
 	sort.SliceStable(entities, func(i, j int) bool {
