@@ -25,6 +25,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -233,6 +234,20 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 	return ""
 }
 
+// materializeTableText fills Text with the HTML rendering of a structured
+// TableData when the item carries no text of its own — the shape every parser
+// emits for tables. Every consumer then works on a real table it can store and
+// display, and the chunk id (a hash of Text) matches the stored content.
+// RenderTableHTML marks the leading HeaderRows rows as <th>. Idempotent: an
+// item that already carries text is left untouched.
+func materializeTableText(docs []schema.ChunkDoc) {
+	for i := range docs {
+		if docs[i].TableData != nil && docs[i].Text == "" {
+			docs[i].Text = tableutil.RenderTableHTML(docs[i].TableData)
+		}
+	}
+}
+
 // tokenizeStr is the shared NumTokensFromString wrapper used by
 // Table/Image context attachment. Lives here so we can centrally
 // swizzle the count strategy in one place if needed.
@@ -265,6 +280,16 @@ func emptyOutputs() map[string]any {
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
+	}
+}
+
+// inputErrorOutput is the canonical short-circuit for an undecodable upstream
+// payload, shared by every chunker variant's decode step.
+func inputErrorOutput(err error) map[string]any {
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
+		"_ERROR":        fmt.Sprintf("Input error: %v", err),
 	}
 }
 

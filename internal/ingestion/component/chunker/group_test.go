@@ -65,12 +65,24 @@ func TestGroupTitleChunker_NewRejectsHierarchyWithoutHierarchyParam(t *testing.T
 	}
 }
 
+// decodedRecords decodes a raw chunker payload the way every component does
+// (decodeChunkerFromUpstream) and extracts the line records from the result.
+func decodedRecords(t *testing.T, payload map[string]any) []lineRecord {
+	t.Helper()
+	upstream, err := decodeChunkerFromUpstream(payload)
+	if err != nil {
+		t.Fatalf("decodeChunkerFromUpstream: %v", err)
+	}
+	return extractLineRecords(upstream)
+}
+
 // TestExtractLineRecords_MarkdownKey verifies extractLineRecords reads
 // the "markdown" payload key. Before this fix extractLineRecords only
-// looked at "text"/"content" and silently returned nil for parser
+// looked at "text" and silently returned nil for parser
 // output that carried output_format="markdown".
 func TestExtractLineRecords_MarkdownKey(t *testing.T) {
-	records := extractLineRecords(map[string]any{
+	records := decodedRecords(t, map[string]any{
+		"name":          "t.md",
 		"output_format": "markdown",
 		"markdown":      "line1\nline2\nline3",
 	})
@@ -87,7 +99,8 @@ func TestExtractLineRecords_MarkdownKey(t *testing.T) {
 // TestExtractLineRecords_HTMLKey verifies extractLineRecords reads the
 // "html" payload key, same safety-net rationale as TestMarkdownKey.
 func TestExtractLineRecords_HTMLKey(t *testing.T) {
-	records := extractLineRecords(map[string]any{
+	records := decodedRecords(t, map[string]any{
+		"name":          "t.html",
 		"output_format": "html",
 		"html":          "<p>first</p>\n<p>second</p>",
 	})
@@ -99,7 +112,8 @@ func TestExtractLineRecords_HTMLKey(t *testing.T) {
 // TestExtractLineRecords_TextKeyStillWorks ensures the existing "text"
 // key path is not broken by the addition of "markdown"/"html".
 func TestExtractLineRecords_TextKeyStillWorks(t *testing.T) {
-	records := extractLineRecords(map[string]any{
+	records := decodedRecords(t, map[string]any{
+		"name": "t.txt",
 		"text": "hello\nworld",
 	})
 	if len(records) != 2 {
@@ -113,7 +127,7 @@ func TestExtractLineRecords_ParserStructuredTextSplitsLines(t *testing.T) {
 		t.Fatalf("TextParser.ParseWithResult: %v", parsed.Err)
 	}
 
-	records := extractLineRecords(map[string]any{
+	records := decodedRecords(t, map[string]any{
 		"name":          "notes.txt",
 		"output_format": "json",
 		"json":          parsed.JSON,
