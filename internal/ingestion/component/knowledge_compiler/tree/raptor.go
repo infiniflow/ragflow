@@ -56,12 +56,14 @@ func Run(ctx context.Context, deps common.Deps, param common.Param, inputs commo
 		return common.Outputs{}, err
 	}
 
+	deps.Progress.Sub(2, 5).Report(ctx, 1)
 	// Rename duplicate summary titles whose descriptions differ (Python
 	// rewrite_duplicate_tree_names), BEFORE the graph projection: titles are
 	// the entity names and the relation endpoints, so two nodes sharing a
 	// title would render as one ambiguous node. Best-effort — a rewrite
 	// failure must not cost us the tree.
 	rewriteDuplicateTreeNames(ctx, deps, llmID, products)
+	deps.Progress.Sub(3, 5).Report(ctx, 1)
 
 	// Project the RAPTOR tree onto the {entities, relations} structure-graph
 	// shape (Python raptor_tree_to_graph) and persist it as entity/relation rows
@@ -100,27 +102,11 @@ func resolveTreeOrder(param common.Param) int {
 	if !ok {
 		return DefaultTreeOrder
 	}
-	v, ok := toInt(raw)
+	v, ok := rfcommon.ToInt(raw)
 	if !ok || v < MinTreeOrder || v > MaxTreeOrder {
 		return DefaultTreeOrder
 	}
 	return v
-}
-
-// toInt coerces the common param-extra value types to int.
-func toInt(v any) (int, bool) {
-	switch x := v.(type) {
-	case int:
-		return x, true
-	case int64:
-		return int(x), true
-	case float64:
-		return int(x), true
-	case float32:
-		return int(x), true
-	default:
-		return 0, false
-	}
 }
 
 const (
@@ -141,7 +127,7 @@ var raptorTruncationMarkerRE = regexp.MustCompile(
 // extra["max_token"] override with the same 512 floor.
 func resolveMaxToken(param common.Param) int {
 	if v, ok := param.Extra["max_token"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			if n < raptorDefaultMaxToken {
 				return raptorDefaultMaxToken
 			}
@@ -156,7 +142,7 @@ func resolveMaxToken(param common.Param) int {
 // that threshold (raptor.py:_summarize_texts).
 func resolveMaxErrors(param common.Param) int {
 	if v, ok := param.Extra["max_errors"]; ok {
-		if n, ok := toInt(v); ok && n > 0 {
+		if n, ok := rfcommon.ToInt(v); ok && n > 0 {
 			return n
 		}
 	}
@@ -198,6 +184,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 		}
 		embeddings = toFloat64Matrix(vectors)
 	}
+	deps.Progress.Sub(0, 5).Report(ctx, 1)
 	// Extract claims before clustering so each cluster can be summarised from
 	// its members' claims instead of their truncated raw text. Claims are far
 	// more compact than the source, so the per-chunk truncation in
@@ -216,6 +203,7 @@ func buildTree(ctx context.Context, deps common.Deps, llmID, tenantID, docID str
 			rfcommon.Info("tree: extracted claims", zap.Int("chunks_with_claims", len(claimsByChunk)), zap.Int("chunks", len(chunks)))
 		}
 	}
+	deps.Progress.Sub(1, 5).Report(ctx, 1)
 	if claimOut != nil {
 		*claimOut = claimsByChunk
 	}

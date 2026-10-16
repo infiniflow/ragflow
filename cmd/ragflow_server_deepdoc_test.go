@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"github.com/spf13/viper"
-	common "ragflow/internal/common"
 	native "ragflow/internal/deepdoc/native"
 	server "ragflow/internal/server/config"
 )
@@ -30,7 +29,7 @@ import (
 // TestParseArgsDeepDocInferenceConcurrency pins the contract that the CLI parser
 // rejects a non-positive or non-integer --deepdoc-inference-concurrency up front
 // (both the "--flag=value" and "--flag value" forms), and accepts a positive
-// value. Because the parser guarantees a positive value, ResolveDeepDocInference
+// value. Because the parser guarantees a positive value, GetDeepDocInference
 // Concurrency can trust the parsed pointer and needs no extra >0 guard.
 func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 	cases := []struct {
@@ -66,102 +65,6 @@ func TestParseArgsDeepDocInferenceConcurrency(t *testing.T) {
 			}
 			if got.deepdocInferenceConcurrency == nil || *got.deepdocInferenceConcurrency != tc.want {
 				t.Fatalf("deepdocInferenceConcurrency = %v, want %d for %v", got.deepdocInferenceConcurrency, tc.want, tc.args)
-			}
-		})
-	}
-}
-
-// TestResolveIngestorMaxConcurrentWorkers pins the precedence
-// CLI > environment > config file > default(1) and the inclusive [1, 256]
-// range guard. An out-of-range or non-integer value at any layer is a fatal
-// startup error.
-func TestResolveIngestorMaxConcurrentWorkers(t *testing.T) {
-	const envKey = common.EnvIngestorMaxConcurrentWorkers
-
-	cases := []struct {
-		name       string
-		configured int
-		env        string // "" means leave unset
-		cli        *int
-		want       int
-		wantErr    bool
-	}{
-		{"default", 0, "", nil, 1, false},
-		{"config only", 5, "", nil, 5, false},
-		{"env overrides config", 5, "8", nil, 8, false},
-		{"cli overrides env and config", 5, "8", intPtr(12), 12, false},
-		{"env invalid errors", 5, "notanint", nil, 0, true},
-		{"env only", 0, "9", nil, 9, false},
-		{"config above range errors", 300, "", nil, 300, true},
-		{"cli below range errors", 0, "", intPtr(0), 0, true},
-		{"cli above range errors", 0, "", intPtr(1000), 0, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			// t.Setenv restores the previous value after the subtest.
-			t.Setenv(envKey, tc.env)
-			args := &serverArgs{ingestorMaxConcurrentWorkers: tc.cli}
-			got, err := resolveIngestorMaxConcurrentWorkers(args, tc.configured)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
-						tc.configured, tc.env, tc.cli)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error %v", err)
-			}
-			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
-			}
-		})
-	}
-}
-
-// TestResolveIngestorPageConcurrency pins the precedence
-// CLI > environment > config file > default(2) and the inclusive [1, 16]
-// range guard. An out-of-range or non-integer value at any layer is a fatal
-// startup error.
-func TestResolveIngestorPageConcurrency(t *testing.T) {
-	const envKey = common.EnvIngestorPageConcurrency
-
-	cases := []struct {
-		name       string
-		configured int
-		env        string // "" means leave unset
-		cli        *int
-		want       int
-		wantErr    bool
-	}{
-		{"default", 0, "", nil, 2, false},
-		{"config only", 6, "", nil, 6, false},
-		{"env overrides config", 6, "8", nil, 8, false},
-		{"cli overrides env and config", 6, "8", intPtr(12), 12, false},
-		{"env invalid errors", 6, "notanint", nil, 0, true},
-		{"env only", 0, "9", nil, 9, false},
-		{"config above range errors", 20, "", nil, 20, true},
-		{"cli below range errors", 0, "", intPtr(0), 0, true},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(envKey, tc.env)
-			args := &serverArgs{ingestorPageConcurrency: tc.cli}
-			got, err := resolveIngestorPageConcurrency(args, tc.configured)
-			if tc.wantErr {
-				if err == nil {
-					t.Fatalf("got nil error, want rejection (configured=%d env=%q cli=%v)",
-						tc.configured, tc.env, tc.cli)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error %v", err)
-			}
-			if got != tc.want {
-				t.Fatalf("got %d, want %d (configured=%d env=%q cli=%v)",
-					got, tc.want, tc.configured, tc.env, tc.cli)
 			}
 		})
 	}
@@ -321,13 +224,13 @@ func TestRegisterNativeDeepDocDefaultBootsOnSmallMachine(t *testing.T) {
 		t.Fatalf("ParseIngestorConfig: %v", err)
 	}
 	// No CLI override; both config keys unset.
-	K, explicitK, errK := cfg.ResolveDeepDocInferenceConcurrency(nil)
+	K, explicitK, errK := cfg.GetDeepDocInferenceConcurrency(nil)
 	if errK != nil {
-		t.Fatalf("ResolveDeepDocInferenceConcurrency: %v", errK)
+		t.Fatalf("GetDeepDocInferenceConcurrency: %v", errK)
 	}
-	rawN, explicitN, errN := cfg.ResolveDeepDocInferenceCPUCores(nil)
+	rawN, explicitN, errN := cfg.GetDeepDocInferenceCPUCores(nil)
 	if errN != nil {
-		t.Fatalf("ResolveDeepDocInferenceCPUCores: %v", errN)
+		t.Fatalf("GetDeepDocInferenceCPUCores: %v", errN)
 	}
 	if explicitK || explicitN {
 		t.Fatal("default config must report both K and N as not-explicit")
@@ -366,7 +269,3 @@ func TestInferenceTotalCoresIsCgroupAware(t *testing.T) {
 		t.Fatalf("inferenceTotalCores() = %d, want >= 1", got)
 	}
 }
-
-// intPtr returns a pointer to n, used to build optional CLI override values in
-// the resolver precedence tests.
-func intPtr(n int) *int { return &n }

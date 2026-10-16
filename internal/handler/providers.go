@@ -419,22 +419,6 @@ type CreateProviderInstanceRequest struct {
 	ModelInfo    []service.CreateInstanceModelInfo `json:"model_info"`
 }
 
-// instanceNamePattern restricts an instance name to digits, underscores,
-// hyphens, and ASCII letters in both cases.
-var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
-
-// validateInstanceName rejects an empty instance name or one carrying any
-// character outside digits, underscores, hyphens, and ASCII letters.
-func validateInstanceName(instanceName string) error {
-	if instanceName == "" {
-		return errors.New("instance name is required")
-	}
-	if !instanceNamePattern.MatchString(instanceName) {
-		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
-	}
-	return nil
-}
-
 // normalizeAPIKey accepts api_key as either a JSON string or a JSON object
 // (credential bundles such as XunFei Spark's
 // {"spark_api_password": ..., "spark_app_id": ..., ...}) and normalizes it to
@@ -453,6 +437,22 @@ func normalizeAPIKey(raw json.RawMessage) string {
 		return trimmed
 	}
 	return buf.String()
+}
+
+// instanceNamePattern restricts an instance name to digits, underscores,
+// hyphens, and ASCII letters in both cases.
+var instanceNamePattern = regexp.MustCompile(`^[0-9A-Za-z_-]+$`)
+
+// validateInstanceName rejects an empty instance name or one carrying any
+// character outside digits, underscores, hyphens, and ASCII letters.
+func validateInstanceName(instanceName string) error {
+	if instanceName == "" {
+		return errors.New("instance name is required")
+	}
+	if !instanceNamePattern.MatchString(instanceName) {
+		return errors.New("instance name may only contain digits, underscores, hyphens, and letters")
+	}
+	return nil
 }
 
 func (h *ProviderHandler) CreateProviderInstance(c *gin.Context) {
@@ -1660,10 +1660,10 @@ func (h *ProviderHandler) ListTenantAddedModels(c *gin.Context) {
 	}
 
 	modelType := c.Query("type")
-	ownerTenantID := c.Query("owner_tenant_id")
+	tenantID := c.Query("tenant_id")
 	ctx := c.Request.Context()
 
-	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, ownerTenantID, modelType)
+	addedModels, code, err := h.modelProviderService.ListTenantAddedModels(ctx, user.ID, tenantID, modelType)
 	if err != nil {
 		common.ErrorWithCode(c, code, err.Error())
 		return

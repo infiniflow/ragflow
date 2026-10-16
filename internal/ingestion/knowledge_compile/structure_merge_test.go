@@ -403,3 +403,65 @@ func TestProductFromChunkMap_RestoresStructureTreeKind(t *testing.T) {
 		t.Errorf("tree Meta.kind = %q, want root (so nav dispatch can pick it)", kind)
 	}
 }
+
+func TestProductFromChunkMap_PreservesStructurePayloadFieldsThroughMerge(t *testing.T) {
+	rows := []map[string]interface{}{
+		{
+			"id": "entity-acme", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"name":" Acme Corp ","type":"organization","description":"Supplier"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "acme corp",
+		},
+		{
+			"id": "entity-beta", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"text":"Beta Ltd","type":"organization","description":"Vendor"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "entity", "name_kwd": "beta ltd",
+		},
+		{
+			"id": "relation-supplies", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"supplies","description":"supply"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+		{
+			"id": "relation-owns", "doc_id": "d1", "compile_kwd": "knowledge_graph",
+			"content_with_weight": `{"from":"Acme Corp","to":"Beta Ltd","type":"owns","description":"ownership"}`,
+			"knowledge_graph_kwd": "graph", "type_kwd": "relation",
+			"from_entity_kwd": " ACME CORP ", "to_entity_kwd": "BETA LTD ",
+		},
+	}
+	products := make([]kccommon.Product, 0, len(rows))
+	for _, row := range rows {
+		product, ok := productFromChunkMap(row, "t1", kccommon.VariantStructure)
+		if !ok {
+			t.Fatalf("row %q should reconstruct", row["id"])
+		}
+		products = append(products, product)
+	}
+
+	c := &Consumer{writer: &fakeWriter{}}
+	if err := c.mergeStructureDataset(context.Background(), "t1", "kb1", products); err != nil {
+		t.Fatalf("mergeStructureDataset: %v", err)
+	}
+	buckets := c.writer.(*fakeWriter).buckets
+	if len(buckets) != 4 {
+		t.Fatalf("want 2 entities and 2 typed relations, got %d: %+v", len(buckets), buckets)
+	}
+	entities := map[string]bool{}
+	relations := map[string]bool{}
+	for _, bucket := range buckets {
+		if bucket.Type == "relation" {
+			relations[bucket.RelationType] = true
+			if bucket.FromEntity != "Acme Corp" || bucket.ToEntity != "Beta Ltd" {
+				t.Errorf("relation endpoints = %q -> %q, want trimmed entity spellings", bucket.FromEntity, bucket.ToEntity)
+			}
+			continue
+		}
+		entities[bucket.Name] = true
+	}
+	if !entities["Acme Corp"] || !entities["Beta Ltd"] {
+		t.Errorf("entity display names = %v, want extracted spelling", entities)
+	}
+	if !relations["supplies"] || !relations["owns"] {
+		t.Errorf("relation types = %v, want supplies and owns", relations)
+	}
+}

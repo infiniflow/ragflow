@@ -400,11 +400,12 @@ func (s *AgentService) DeleteAgentSessionItem(ctx context.Context, userID, agent
 	if sessionID == "" {
 		return false, common.CodeArgumentError, errors.New("session_id is required")
 	}
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, permission.OperationDelete); err != nil {
+	subject := permission.Subject{UserID: userID}
+	if err := CheckCanvasPermission(ctx, subject, agentID, permission.OperationUse); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return false, common.CodeOperatingError, errors.New("agent not found or no permission")
 		}
-		return false, common.CodeServerError, fmt.Errorf("failed to check agent deletion permission: %w", err)
+		return false, common.CodeServerError, fmt.Errorf("failed to check agent access: %w", err)
 	}
 
 	conv, cerr := s.api4ConversationDAO.GetBySessionID(ctx, dao.DB, sessionID, agentID)
@@ -432,7 +433,7 @@ func (s *AgentService) DeleteAgentSessions(ctx context.Context, userID, agentID 
 		return nil, common.CodeArgumentError, errors.New("agent_id is required")
 	}
 
-	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, permission.OperationDelete); err != nil {
+	if err := CheckCanvasPermission(ctx, permission.Subject{UserID: userID}, agentID, permission.OperationUse); err != nil {
 		if errors.Is(err, permission.ErrResourceNotFound) || errors.Is(err, permission.ErrPermissionDenied) {
 			return nil, common.CodeDataError, fmt.Errorf("you don't have permission to delete sessions for agent %s", agentID)
 		}
@@ -673,6 +674,13 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		}
 		return nil, common.CodeServerError, fmt.Errorf("check canvas access: %w", err)
 	}
+	canvas, err := s.canvasDAO.GetByID(ctx, dao.DB, req.AgentID)
+	if err != nil {
+		if errors.Is(err, dao.ErrUserCanvasNotFound) {
+			return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
+		}
+		return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", err)
+	}
 	messages := req.Messages
 	if len(messages) == 0 {
 		messages = json.RawMessage(`[]`)
@@ -684,16 +692,9 @@ func (s *AgentService) CreateAgentSession(ctx context.Context, req *CreateAgentS
 		_ = json.Unmarshal(req.DSL, &dsl)
 	}
 	if len(dsl) == 0 {
-		canvas, gErr := s.canvasDAO.GetByID(ctx, dao.DB, req.AgentID)
-		if gErr != nil {
-			if errors.Is(gErr, dao.ErrUserCanvasNotFound) {
-				return nil, common.CodeOperatingError, errors.New("agent not found or no permission")
-			}
-			return nil, common.CodeServerError, fmt.Errorf("load canvas dsl: %w", gErr)
-		}
 		dsl = canvas.DSL
 	}
-	if err := validateAgentChatModels(ctx, req.UserID, dsl); err != nil {
+	if err := validateAgentChatModels(ctx, req.UserID, canvas.UserID, dsl); err != nil {
 		if errors.Is(err, ErrAgentStorageError) {
 			return nil, common.CodeServerError, errors.New("Internal storage error while accessing the agent.")
 		}

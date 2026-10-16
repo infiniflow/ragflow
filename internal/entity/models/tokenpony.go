@@ -23,7 +23,6 @@ import (
 	"io"
 	"net/http"
 	"ragflow/internal/common"
-	"strings"
 )
 
 // TokenPonyModel implements ModelDriver for TokenPony. TokenPony is a
@@ -59,12 +58,10 @@ func (t *TokenPonyModel) ChatWithMessages(ctx context.Context, modelName string,
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
 
 	body, err := t.baseModel.doRequest(ctx, url, apiConfig, reqBody, nonStreamCallTimeout)
@@ -91,12 +88,10 @@ func (t *TokenPonyModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 		return err
 	}
 
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Chat)
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, true)
 	reqBody["stream_options"] = map[string]any{"include_usage": true}
 
@@ -110,12 +105,10 @@ func (t *TokenPonyModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 		return nil, err
 	}
 
-	baseURL, err := t.baseModel.GetBaseURL(apiConfig)
+	url, err := t.baseModel.EndpointURL(apiConfig, t.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSuffix(baseURL, "/")
-	url := fmt.Sprintf("%s/%s", baseURL, t.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()

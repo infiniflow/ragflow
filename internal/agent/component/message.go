@@ -32,6 +32,7 @@ package component
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -123,8 +124,7 @@ func extractAudioConfig(params map[string]any) (audio.Engine, string, string) {
 
 // extractMessageText reads text / content from params in the v1 / v2
 // order documented on NewMessageComponent. Returns the empty string
-// when neither key is present or the value is not a string-shaped
-// scalar.
+// when neither key is present or content has no string entries.
 func extractMessageText(params map[string]any) string {
 	if v, ok := params["text"].(string); ok {
 		return v
@@ -134,15 +134,15 @@ func extractMessageText(params map[string]any) string {
 		case string:
 			return x
 		case []string:
-			if len(x) > 0 {
-				return x[0]
-			}
+			return strings.Join(x, "")
 		case []any:
-			if len(x) > 0 {
-				if s, ok := x[0].(string); ok {
-					return s
+			content := make([]string, 0, len(x))
+			for _, item := range x {
+				if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
+					content = append(content, s)
 				}
 			}
+			return strings.Join(content, "")
 		}
 	}
 	return ""
@@ -456,7 +456,12 @@ func (m *MessageComponent) resolveDeferredTemplate(ctx context.Context, text str
 			runtime.EmitCanvasMessageEvent(ctx, "", false, true)
 		}
 		if err != nil {
-			return "", true, &runtime.DeferredStreamError{Err: err}
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return "", true, &runtime.DeferredStreamError{Err: err}
+			}
+			// Eino reuses nested graph errors, discarding outer wrappers; keep
+			// ordinary stream failures as text so the deferred marker survives.
+			return "", true, &runtime.DeferredStreamError{Text: "**ERROR**: " + runtime.MarkdownSafeErrorText(err)}
 		}
 		if resultErr, _ := result["_ERROR"].(string); strings.TrimSpace(resultErr) != "" {
 			return "", true, &runtime.DeferredStreamError{Text: resultErr}

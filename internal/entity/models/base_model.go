@@ -31,11 +31,6 @@ import (
 	"time"
 )
 
-const (
-	redactedLogValue      = "[REDACTED]"
-	maxLoggedVectorFloats = 3
-)
-
 // APIStatusError is a provider HTTP failure with its status code preserved, so
 // callers can act on the status (failover cooldown, retry) instead of matching
 // the error text. The shared request helpers return it; the message is byte-for-
@@ -141,7 +136,11 @@ func collectModelUsage(modelUsage *common.ModelUsage, usage *TokenUsage) error {
 	if !modelUsage.StartAt.IsZero() {
 		modelUsage.ResponseTimeMS = time.Since(modelUsage.StartAt).Milliseconds()
 	}
-	return clickhouse.GetDriver().CollectModelUsage(modelUsage)
+	driver := clickhouse.GetDriver()
+	if driver == nil {
+		return nil
+	}
+	return driver.CollectModelUsage(modelUsage)
 }
 
 // applyStreamUsage exposes streamed token usage to the caller and records it
@@ -230,15 +229,16 @@ func (b *BaseModel) doRequest(ctx context.Context, url string, apiConfig *APICon
 	}
 	defer resp.Body.Close()
 
+	var body []byte
 	if resp.StatusCode != http.StatusOK {
-		body, err := readModelErrorBody(resp.Body)
+		body, err = readModelErrorBody(resp.Body)
 		if err != nil {
 			return nil, fmt.Errorf("API request failed with status %d; failed to read error response: %w", resp.StatusCode, err)
 		}
 		return nil, &APIStatusError{Status: resp.StatusCode, Body: string(body)}
 	}
 
-	body, err := readModelResponseBody(resp.Body)
+	body, err = readModelResponseBody(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response: %w", err)
 	}
@@ -346,6 +346,64 @@ func (b *BaseModel) GetBaseURL(apiConfig *APIConfig) (string, error) {
 	baseURL = strings.TrimSuffix(baseURL, "/")
 
 	return baseURL, nil
+}
+
+// EndpointURL resolves the request URL for an API path suffix, joining it onto
+// the base URL configured for this request. Drivers use it instead of
+// fmt.Sprintf("%s/%s", baseURL, suffix) so a version segment pasted into the
+// user-supplied base URL is not duplicated onto the suffix.
+func (b *BaseModel) EndpointURL(apiConfig *APIConfig, suffix string) (string, error) {
+	baseURL, err := b.GetBaseURL(apiConfig)
+	if err != nil {
+		return "", err
+	}
+	return joinURL(baseURL, suffix), nil
+}
+
+// joinURL concatenates a resolved base URL with an API path suffix.
+// Some providers keep the API version in url_suffix (MiniMax's
+// "v1/text/chatcompletion_v2", Anthropic's "v1/messages", Xinference's
+// "v1/chat/completions") and expect a versionless base URL, while
+// OpenAI-compatible ones expect "/v1" to sit in the base URL. Users paste
+// whichever habit they learned, so drop the duplicated segment rather than
+// emitting "/v1/v1/text/chatcompletion_v2", which the provider answers 404.
+func joinURL(baseURL, suffix string) string {
+	base := strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	path := strings.TrimLeft(strings.TrimSpace(suffix), "/")
+	if base == "" {
+		return path
+	}
+	if path == "" {
+		return base
+	}
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		if version := apiVersionSegment(base[idx+1:]); version != "" && version == firstPathSegment(path) {
+			base = base[:idx]
+		}
+	}
+	return base + "/" + path
+}
+
+// apiVersionSegment reports whether the path segment is an API version marker
+// such as "v1" or "v2". Only version segments are deduplicated — they are what
+// users habitually paste into the base URL.
+func apiVersionSegment(segment string) string {
+	if len(segment) < 2 || (segment[0] != 'v' && segment[0] != 'V') {
+		return ""
+	}
+	for _, c := range []byte(segment[1:]) {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	return segment
+}
+
+func firstPathSegment(path string) string {
+	if idx := strings.Index(path, "/"); idx >= 0 {
+		return path[:idx]
+	}
+	return path
 }
 
 // ParseSSEStream reads the body of an OpenAI-compatible Server-Sent Events
@@ -478,6 +536,12 @@ func PostJSONRequest(ctx context.Context, client *http.Client, url, auth string,
 	return client.Do(req)
 }
 
+func setOpt[T any](m map[string]any, key string, p *T) {
+	if p != nil {
+		m[key] = *p
+	}
+}
+
 func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, stream bool) map[string]any {
 	reqBody := map[string]any{
 		"model":    modelName,
@@ -486,36 +550,23 @@ func buildRequestBody(cfg *ChatConfig, modelName string, messages []Message, str
 	}
 
 	if cfg != nil {
-		if cfg.Temperature != nil {
-			reqBody["temperature"] = *cfg.Temperature
-		}
-
-		if cfg.DoSample != nil {
-			reqBody["do_sample"] = *cfg.DoSample
-		}
-
-		if cfg.TopP != nil {
-			reqBody["top_p"] = *cfg.TopP
-		}
-
-		if cfg.MaxTokens != nil {
-			reqBody["max_tokens"] = *cfg.MaxTokens
-		}
-
-		if cfg.Stop != nil {
-			reqBody["stop"] = *cfg.Stop
-		}
+		setOpt(reqBody, "temperature", cfg.Temperature)
+		setOpt(reqBody, "do_sample", cfg.DoSample)
+		setOpt(reqBody, "top_p", cfg.TopP)
+		setOpt(reqBody, "max_tokens", cfg.MaxTokens)
+		setOpt(reqBody, "stop", cfg.Stop)
 
 		if cfg.Tools != nil {
 			reqBody["tools"] = cfg.Tools
-			toolChoice := "auto"
-			if cfg.ToolChoice != nil {
-				toolChoice = *cfg.ToolChoice
-			}
-			if cfg.ToolChoiceValue != nil {
+		}
+		if cfg.Tools != nil || cfg.ToolChoice != nil || cfg.ToolChoiceValue != nil {
+			switch {
+			case cfg.ToolChoiceValue != nil:
 				reqBody["tool_choice"] = cfg.ToolChoiceValue
-			} else {
-				reqBody["tool_choice"] = toolChoice
+			case cfg.ToolChoice != nil:
+				reqBody["tool_choice"] = *cfg.ToolChoice
+			default:
+				reqBody["tool_choice"] = "auto"
 			}
 		}
 	}
@@ -574,21 +625,6 @@ func applyChatToolConfig(reqBody map[string]interface{}, chatConfig *ChatConfig)
 			reqBody["tool_choice"] = *chatConfig.ToolChoice
 		}
 	}
-}
-
-// extractToolCalls converts an OpenAI-compatible message's tool calls.
-func extractToolCalls(message map[string]interface{}) []map[string]interface{} {
-	rawToolCalls, ok := message["tool_calls"].([]interface{})
-	if !ok {
-		return nil
-	}
-	toolCalls := make([]map[string]interface{}, 0, len(rawToolCalls))
-	for _, rawToolCall := range rawToolCalls {
-		if toolCall, ok := rawToolCall.(map[string]interface{}); ok {
-			toolCalls = append(toolCalls, toolCall)
-		}
-	}
-	return toolCalls
 }
 
 // setSortedToolCallsResult stores accumulated tool calls in index order.

@@ -32,6 +32,7 @@ import (
 	"ragflow/internal/agent/canvas"
 	"ragflow/internal/common"
 	"ragflow/internal/entity"
+	"ragflow/internal/permission"
 	"ragflow/internal/service"
 )
 
@@ -193,7 +194,7 @@ func TestChatbotInfo_HasTavilyKey(t *testing.T) {
 func TestChatbotInfo_ForeignTenant(t *testing.T) {
 	stub := &stubBotService{
 		chatbotInfoFn: func(ctx context.Context, tenantID, dialogID string) (string, string, string, string, bool, common.ErrorCode, error) {
-			return "", "", "", "", false, common.CodeDataError, errors.New("authentication error: no access to this chatbot")
+			return "", "", "", "", false, common.CodeNotFound, permission.ErrPermissionDenied
 		},
 	}
 	r := botTestEngine(stub)
@@ -206,8 +207,11 @@ func TestChatbotInfo_ForeignTenant(t *testing.T) {
 		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != 102 {
-		t.Errorf("code = %d, want 102", resp.Code)
+	if resp.Code != int(common.CodeNotFound) {
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeNotFound)
+	}
+	if resp.Message != "Resource not found" {
+		t.Errorf("message = %q, want hidden resource message", resp.Message)
 	}
 }
 
@@ -237,7 +241,7 @@ func TestChatbotInfo_MissingPrologueField(t *testing.T) {
 func TestChatbotCompletion_AuthoriseFail(t *testing.T) {
 	stub := &stubBotService{
 		chatbotCompleteFn: func(ctx context.Context, tenantID, dialogID string, req service.ChatbotCompletionRequest) (<-chan service.ChatbotSSEFrame, common.ErrorCode, error) {
-			return nil, common.CodeDataError, errors.New("no access to this chatbot")
+			return nil, common.CodeNotFound, permission.ErrPermissionDenied
 		},
 	}
 	r := botTestEngine(stub)
@@ -250,11 +254,11 @@ func TestChatbotCompletion_AuthoriseFail(t *testing.T) {
 		Message string `json:"message"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &resp)
-	if resp.Code != 102 {
-		t.Errorf("code = %d, want 102", resp.Code)
+	if resp.Code != int(common.CodeNotFound) {
+		t.Errorf("code = %d, want %d", resp.Code, common.CodeNotFound)
 	}
-	if !strings.Contains(resp.Message, "no access") {
-		t.Errorf("message = %q, want contains 'no access'", resp.Message)
+	if resp.Message != "Resource not found" {
+		t.Errorf("message = %q, want hidden resource message", resp.Message)
 	}
 }
 

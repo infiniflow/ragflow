@@ -218,7 +218,7 @@ func (r *Client) Info(ctx context.Context) map[string]interface{} {
 		"redis_version":             info["redis_version"],
 		"server_mode":               getServerMode(info),
 		"used_memory":               info["used_memory_human"],
-		"total_system_memory":       info["total_system_memory_human"],
+		"total_system_memory":       totalSystemMemoryHuman(info),
 		"mem_fragmentation_ratio":   info["mem_fragmentation_ratio"],
 		"connected_clients":         parseInt(info["connected_clients"]),
 		"blocked_clients":           parseInt(info["blocked_clients"]),
@@ -233,6 +233,19 @@ func getServerMode(info map[string]string) string {
 		return mode
 	}
 	return info["redis_mode"]
+}
+
+// totalSystemMemoryHuman returns host RAM from INFO MEMORY when present.
+// Managed Redis-compatible services (e.g. Alibaba Cloud Tair) may omit
+// total_system_memory_human; fall back to maxmemory_human when configured.
+func totalSystemMemoryHuman(info map[string]string) string {
+	if v, ok := info["total_system_memory_human"]; ok && v != "" {
+		return v
+	}
+	if v, ok := info["maxmemory_human"]; ok && v != "" {
+		return v
+	}
+	return ""
 }
 
 func splitLines(s string) []string {
@@ -906,7 +919,10 @@ func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
 	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
 }
 
-// SpinAcquire keeps trying to acquire the lock
+// SpinAcquire keeps trying to acquire the lock. Returns the underlying
+// transport error instead of silently logging it via SetNX so an outage
+// surfaces immediately; ctx.Err() still wins when the context is
+// cancelled mid-poll.
 func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 	for {
 		select {

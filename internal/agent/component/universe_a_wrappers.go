@@ -117,10 +117,10 @@ func parseRetrievalParams(params map[string]any) retrievalParams {
 		out.UserID = v
 	}
 	if v, ok := params["top_n"]; ok {
-		out.TopN = toIntParam(v)
+		out.TopN, _ = common.ToInt(v)
 	}
 	if v, ok := params["top_k"]; ok {
-		out.TopK = toIntParam(v)
+		out.TopK, _ = common.ToInt(v)
 	}
 	if v, ok := params["similarity_threshold"]; ok {
 		value := toFloatParam(v)
@@ -246,35 +246,27 @@ func (c *retrievalComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map
 }
 
 func checkCanvasRetrievalDependencies(ctx context.Context, db *gorm.DB, inputs map[string]any) error {
-	state, err := runtime.GetStateFromContext(ctx)
-	if err != nil || state == nil {
-		return nil
-	}
-	canvasID, _ := state.Sys["canvas_id"].(string)
-	userID, _ := state.Sys["user_id"].(string)
-	if canvasID == "" && userID == "" {
-		return nil
-	}
-	if canvasID == "" {
-		return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
-	}
-	if userID == "" {
-		return permission.ErrUnauthenticated
-	}
-
-	checker := permission.NewDatabaseChecker(db)
-	entry := permission.ResourceRef{Kind: permission.ResourceKindCanvas, ID: canvasID}
-	for _, datasetID := range toStringSlice(inputs["dataset_ids"]) {
-		datasetID = strings.TrimSpace(datasetID)
-		if datasetID == "" {
-			continue
+	if state, err := runtime.GetStateFromContext(ctx); err == nil && state != nil {
+		canvasID, _ := state.Sys["canvas_id"].(string)
+		userID, _ := state.Sys["user_id"].(string)
+		if strings.TrimSpace(canvasID) == "" && strings.TrimSpace(userID) != "" {
+			return fmt.Errorf("%w: canvas id missing from runtime state", permission.ErrInvalidPermission)
 		}
-		dependency := permission.ResourceRef{Kind: permission.ResourceKindDataset, ID: datasetID}
-		if err := checker.CheckDependency(ctx, permission.Subject{UserID: userID}, entry, dependency, permission.OperationRun, permission.OperationUse); err != nil {
-			return fmt.Errorf("dataset %q: %w", datasetID, err)
+		if strings.TrimSpace(canvasID) != "" && strings.TrimSpace(userID) == "" {
+			return permission.ErrUnauthenticated
 		}
 	}
-	return nil
+	datasetIDs := toStringSlice(inputs["dataset_ids"])
+	memoryIDs := toStringSlice(inputs["memory_ids"])
+	retrievalFrom, _ := inputs["retrieval_from"].(string)
+	switch {
+	case strings.EqualFold(strings.TrimSpace(retrievalFrom), "memory"):
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	case strings.TrimSpace(retrievalFrom) == "" && len(datasetIDs) == 0 && len(memoryIDs) > 0:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindMemory, memoryIDs)
+	default:
+		return agenttool.CheckCanvasDependencies(ctx, db, permission.ResourceKindDataset, datasetIDs)
+	}
 }
 
 func (c *retrievalComponent) Stream(_ context.Context, _ *gorm.DB, _ map[string]any) (<-chan map[string]any, error) {
@@ -812,26 +804,6 @@ func lookupCodeExecArgumentRef(ref string, merged map[string]any, state *runtime
 	return nil, false
 }
 
-// toIntParam coerces a node-param int value to int. JSON-decoded
-// values come in as float64 when numeric, so we tolerate that
-// case explicitly. Strings that parse as int also work.
-// (Renamed from toInt to avoid colliding with
-// list_operations.go's same-name helper.)
-func toIntParam(v any) int {
-	switch x := v.(type) {
-	case int:
-		return x
-	case int64:
-		return int(x)
-	case float64:
-		return int(x)
-	case string:
-		n, _ := strconv.Atoi(x)
-		return n
-	}
-	return 0
-}
-
 // toFloatParam coerces a node-param float value to float64. Same
 // JSON-float64 / numeric-string tolerance as toIntParam.
 func toFloatParam(v any) float64 {
@@ -861,8 +833,11 @@ var (
 // attachCodeExecArtifacts uploads the `_ARTIFACTS` produced by the
 // CodeExec tool to object storage and populates the message-facing
 // `attachments` / `_ATTACHMENT_CONTENT` outputs plus a content
-// appendix. It is a no-op when the tool returned no artifacts.
+// appendix. The attachments output remains an empty list when no files exist.
 func attachCodeExecArtifacts(ctx context.Context, decoded map[string]any) {
+	if _, ok := decoded["attachments"]; !ok {
+		decoded["attachments"] = []string{}
+	}
 	raw, ok := decoded["_ARTIFACTS"].([]any)
 	if !ok || len(raw) == 0 {
 		return

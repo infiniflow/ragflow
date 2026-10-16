@@ -42,6 +42,45 @@ func GetTenantIDByKBID(ctx context.Context, db *gorm.DB, kbID string) (string, e
 	return kb.TenantID, nil
 }
 
+// TenantKBIDs groups knowledge bases stored in the same tenant index/table.
+type TenantKBIDs struct {
+	TenantID string
+	KBIDs    []string
+}
+
+// GroupKBIDsByTenant resolves every requested knowledge base and preserves
+// first-seen tenant order. Missing datasets must not yield a partial scope.
+func GroupKBIDsByTenant(ctx context.Context, db *gorm.DB, kbIDs []string) ([]TenantKBIDs, error) {
+	if len(kbIDs) == 0 {
+		return nil, nil
+	}
+	kbIDs = common.Deduplicate(kbIDs)
+	kbs, err := NewKnowledgebaseDAO().GetByIDs(ctx, db, kbIDs)
+	if err != nil {
+		return nil, err
+	}
+	tenants := make(map[string]string, len(kbs))
+	for _, kb := range kbs {
+		tenants[kb.ID] = kb.TenantID
+	}
+	groups := make([]TenantKBIDs, 0)
+	positions := make(map[string]int)
+	for _, kbID := range kbIDs {
+		tenantID, ok := tenants[kbID]
+		if !ok || tenantID == "" {
+			return nil, fmt.Errorf("dataset %s has no tenant: %w", kbID, gorm.ErrRecordNotFound)
+		}
+		pos, ok := positions[tenantID]
+		if !ok {
+			pos = len(groups)
+			positions[tenantID] = pos
+			groups = append(groups, TenantKBIDs{TenantID: tenantID})
+		}
+		groups[pos].KBIDs = append(groups[pos].KBIDs, kbID)
+	}
+	return groups, nil
+}
+
 // KnowledgebaseDAO knowledge base data access object
 type KnowledgebaseDAO struct{}
 
@@ -228,10 +267,25 @@ func (dao *KnowledgebaseDAO) Count(ctx context.Context, db *gorm.DB, filters map
 
 // ListByResourceIDs retrieves knowledge bases within a permission-filtered ID scope.
 func (dao *KnowledgebaseDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB, resourceIDs, ownerIDs []string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
+	if len(resourceIDs) == 0 {
+		return []*entity.KnowledgebaseListItem{}, 0, nil
+	}
+	query := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+		Where("knowledgebase.id IN ?", resourceIDs)
+	return dao.ListByQuery(ctx, query, ownerIDs, pageNumber, itemsPerPage, terms, keywords, parserID, name)
+}
+
+// ListByQuery lists knowledge bases using an already-scoped base query. The
+// caller can apply a permission.QueryScope before calling this method, keeping
+// authorization filtering in the same SQL query as count and pagination.
+func (dao *KnowledgebaseDAO) ListByQuery(ctx context.Context, query *gorm.DB, ownerIDs []string, pageNumber, itemsPerPage int, terms []OrderTerm, keywords, parserID, name string) ([]*entity.KnowledgebaseListItem, int64, error) {
+	if query == nil {
+		return nil, 0, errors.New("dataset list query is nil")
+	}
 	var kbs []*entity.KnowledgebaseListItem
 	var total int64
 
-	query := db.WithContext(ctx).Model(&entity.Knowledgebase{}).
+	query = query.WithContext(ctx).
 		Select(`knowledgebase.id, knowledgebase.avatar, knowledgebase.name,
 			knowledgebase.language, knowledgebase.description, knowledgebase.tenant_id,
 			knowledgebase.permission, knowledgebase.doc_num, knowledgebase.token_num,
@@ -241,7 +295,7 @@ func (dao *KnowledgebaseDAO) ListByResourceIDs(ctx context.Context, db *gorm.DB,
 			knowledgebase.tenant_embd_id,
 			user.nickname, user.avatar as tenant_avatar, knowledgebase.update_time`).
 		Joins("LEFT JOIN user ON knowledgebase.tenant_id = user.id").
-		Where("knowledgebase.id IN ? AND knowledgebase.status = ?", resourceIDs, string(entity.StatusValid))
+		Where("knowledgebase.status = ?", string(entity.StatusValid))
 
 	if len(ownerIDs) > 0 {
 		query = query.Where("knowledgebase.tenant_id IN ?", ownerIDs)

@@ -83,12 +83,10 @@ func (a *AnthropicModel) ChatWithMessages(ctx context.Context, modelName string,
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
 	baseURLConfig.BaseURL = apiConfig.BaseURL
 
-	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
+	url, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
 		"model":    modelName,
@@ -397,12 +395,10 @@ func (a *AnthropicModel) ListModels(ctx context.Context, apiConfig *APIConfig) (
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
 	baseURLConfig.BaseURL = apiConfig.BaseURL
 
-	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
+	url, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Models, "/"))
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -469,12 +465,10 @@ func (a *AnthropicModel) ChatStreamlyWithSender(ctx context.Context, modelName s
 	baseURLConfig := &APIConfig{Region: &baseURLRegion}
 	baseURLConfig.BaseURL = apiConfig.BaseURL
 
-	baseURL, err := a.baseModel.GetBaseURL(baseURLConfig)
+	url, err := a.baseModel.EndpointURL(baseURLConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL = strings.TrimSpace(strings.TrimSuffix(baseURL, "/"))
-	url := fmt.Sprintf("%s/%s", baseURL, strings.TrimLeft(a.baseModel.URLSuffix.Chat, "/"))
 
 	reqBody := map[string]interface{}{
 		"model":    modelName,
