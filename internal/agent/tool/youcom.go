@@ -90,7 +90,8 @@ func (y *YouComTool) Info(_ context.Context) (*schema.ToolInfo, error) {
 
 func (y *YouComTool) ComponentSpec() ComponentSpec {
 	return ComponentSpec{
-		Inputs: map[string]string{"query": "Search query.", "freshness": "Optional recency window."},
+		PreserveJSONNumbers: true,
+		Inputs:              map[string]string{"query": "Search query.", "freshness": "Optional recency window."},
 		Outputs: map[string]string{
 			"formalized_content": "Rendered You.com references for downstream prompts.",
 			"json":               "You.com result list.",
