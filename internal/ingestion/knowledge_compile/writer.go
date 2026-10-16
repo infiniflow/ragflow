@@ -126,6 +126,23 @@ type StructureBucket struct {
 type engineWriter struct {
 	eng           engine.DocEngine
 	commitService pageCommitter
+	// resolveLanguage returns the dataset language the dataset-level rows are
+	// tokenized with; nil tokenizes them as English.
+	resolveLanguage func(ctx context.Context, datasetID string) (string, error)
+}
+
+// datasetTokenizer returns a tokenizer in kb's language. Dataset-level rows
+// share the dataset's chunk table with the parsed chunks and are retrieved by
+// the same queries, so they tokenize like them.
+func (w engineWriter) datasetTokenizer(ctx context.Context, kb string) (tokenizer.Tokenizer, error) {
+	if w.resolveLanguage == nil {
+		return tokenizer.New(""), nil
+	}
+	language, err := w.resolveLanguage(ctx, kb)
+	if err != nil {
+		return tokenizer.Tokenizer{}, fmt.Errorf("resolve dataset language: %w", err)
+	}
+	return tokenizer.New(language), nil
 }
 
 type pageCommitter interface {
@@ -273,7 +290,7 @@ func (w engineWriter) WriteMerged(ctx context.Context, tenant, kb string, produc
 					zap.String("id", metaString(chunks[0], "id")),
 				)
 			}
-			_, err := eng.InsertChunks(ctx, chunks, baseName, kb)
+			_, err := eng.InsertChunks(ctx, chunks, baseName, kb, "")
 			return err
 		})
 	}
@@ -483,6 +500,10 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 	if err != nil {
 		return err
 	}
+	tok, err := w.datasetTokenizer(ctx, kb)
+	if err != nil {
+		return err
+	}
 	rows := make([]map[string]interface{}, 0, len(buckets))
 	for _, b := range buckets {
 		if !structureBucketWritable(b) {
@@ -529,7 +550,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 			return err
 		}
 		payload := string(payloadBytes)
-		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent("", kccommon.PayloadDescription(payloadMap, nil))
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(tok, "", kccommon.PayloadDescription(payloadMap, nil))
 		row := map[string]interface{}{
 			// Stable dataset-level id keyed on the template-scoped entity name or
 			// relation identity plus the raw compile kind.
@@ -617,7 +638,7 @@ func (w engineWriter) WriteMergedStructure(ctx context.Context, tenant, kb strin
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}
@@ -1359,17 +1380,17 @@ func wikiGraphBareKey(slug string) string {
 // tokenizeWikiGraphContent tokenizes Python's entity search text,
 // `slug + " " + description` (dataset_wiki_generator.py:750-773); the entity row
 // gets no title token column.
-func tokenizeWikiGraphContent(slug, description string) (string, string) {
+func tokenizeWikiGraphContent(tok tokenizer.Tokenizer, slug, description string) (string, string) {
 	content := strings.TrimSpace(strings.Join([]string{slug, description}, " "))
 	if content == "" {
 		return "", ""
 	}
 
-	contentLTKS, err := tokenizer.Tokenize(content)
+	contentLTKS, err := tok.Tokenize(content)
 	if err != nil || contentLTKS == "" {
 		contentLTKS = content
 	}
-	contentSMLTKS, err := tokenizer.FineGrainedTokenize(contentLTKS)
+	contentSMLTKS, err := tok.FineGrainedTokenize(contentLTKS)
 	if err != nil || contentSMLTKS == "" {
 		contentSMLTKS = contentLTKS
 	}
@@ -1726,7 +1747,11 @@ func (w engineWriter) loadMergedWikiPages(ctx context.Context, tenant, kb string
 // dangling edge, e.g. the target was pruned/deleted) is skipped, as is a
 // self-loop (src == tgt) — the graph is rebuilt from a consistent read each
 // time, so cross-batch dangling edges cannot accumulate.
-func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string, pages []wikiPageProjection) ([]map[string]interface{}, error) {
+func (w engineWriter) projectWikiGraphRows(ctx context.Context, tenant, kb string, pages []wikiPageProjection) ([]map[string]interface{}, error) {
+	tok, err := w.datasetTokenizer(ctx, kb)
+	if err != nil {
+		return nil, err
+	}
 	// Sort pages deterministically by full slug before building the indexes so
 	// the outcome is reproducible across reprojections. The engine's row order
 	// is otherwise scroll-order dependent, which made bare-slug first-match
@@ -1786,7 +1811,7 @@ func (w engineWriter) projectWikiGraphRows(_ context.Context, tenant, kb string,
 		if err != nil {
 			return nil, err
 		}
-		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(p.Slug, p.Summary)
+		contentLTKS, contentSMLTKS := tokenizeWikiGraphContent(tok, p.Slug, p.Summary)
 		rows = append(rows, map[string]interface{}{
 			"id":                  entityID,
 			"doc_id":              kb,
@@ -1898,7 +1923,7 @@ func (w engineWriter) insertWikiGraphChunks(ctx context.Context, tenant, kb stri
 		}
 		batch := rows[start:end]
 		jobs = append(jobs, func() error {
-			_, err := eng.InsertChunks(ctx, batch, baseName, kb)
+			_, err := eng.InsertChunks(ctx, batch, baseName, kb, "")
 			return err
 		})
 	}

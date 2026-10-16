@@ -235,6 +235,10 @@ type XsData = {
   scroll?: { x: number; y: number };
 };
 
+type XsScrollbar = {
+  move: (offset: { top?: number; left?: number }) => unknown;
+};
+
 type XsInstance = {
   datas: XsData[];
   reRender?: () => void;
@@ -243,6 +247,8 @@ type XsInstance = {
     data?: XsData & { row?: { height?: number } };
     reload?: () => void;
     table?: { render?: () => void };
+    verticalScrollbar?: XsScrollbar;
+    horizontalScrollbar?: XsScrollbar;
   };
   bottombar?: {
     items: HTMLElement[];
@@ -284,12 +290,14 @@ export function applyExcelSourceLocate(
     c2 = Math.min(c2, lastCol);
   }
 
-  const theme = getComputedStyle(document.documentElement);
+  // The spreadsheet canvas is always rendered on a light sheet background
+  // regardless of app theme, so the locate highlight must use fixed light
+  // colors rather than theme tokens (which resolve to near-white text in dark
+  // mode and become invisible). Matches the yellow used by the PDF highlighter.
   if (r2 >= r1 && c2 >= c1) {
     const styleIdx = data.addStyle({
-      bgcolor:
-        theme.getPropertyValue('--background-highlight').trim() || '#ffe58f',
-      color: theme.getPropertyValue('--text-title').trim() || '#1a1a1a',
+      bgcolor: '#ffe58f',
+      color: '#1a1a1a',
     });
     for (let r = r1; r <= r2; r++) {
       for (let c = c1; c <= c2; c++) {
@@ -314,6 +322,19 @@ export function applyExcelSourceLocate(
   for (let r = 0; r < r1; r++) {
     y += data.rows.getHeight?.(r) ?? rowHeight;
   }
+
+  // Drive the scroll through the library scrollbar: setting data.scroll and
+  // re-rendering directly moves the canvas but leaves the scrollbar thumb at
+  // the top, so the user has to scroll down before they can scroll back up.
+  // move() sets the native scroll element, whose scroll event updates
+  // data.scroll and re-renders the table, keeping both in sync.
+  const vScrollbar = xs.sheet.verticalScrollbar;
+  if (vScrollbar?.move) {
+    xs.sheet.horizontalScrollbar?.move?.({ left: 0 });
+    vScrollbar.move({ top: y > 0 ? y - 1 : 0 });
+    return;
+  }
+
   data.scroll = { ...(data.scroll || { x: 0, y: 0 }), x: 0, y };
   if (xs.sheet.data && xs.sheet.data !== data) {
     xs.sheet.data.scroll = {

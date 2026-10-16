@@ -342,6 +342,38 @@ func TestCanvasState_EnsureSysDate(t *testing.T) {
 	}
 }
 
+func TestCanvasState_SeedIdentity(t *testing.T) {
+	t.Parallel()
+
+	state := NewCanvasState("r", "t")
+	state.SeedIdentity("user-1", "tenant-1")
+	if got := state.Sys["user_id"]; got != "user-1" {
+		t.Fatalf("sys.user_id = %v, want user-1", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-1" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-1", got)
+	}
+
+	// Empty values must not materialize empty-string keys.
+	state = NewCanvasState("r", "t")
+	state.SeedIdentity("", "")
+	if _, ok := state.Sys["user_id"]; ok {
+		t.Fatal("empty user_id should not be written")
+	}
+	if _, ok := state.Sys["tenant_id"]; ok {
+		t.Fatal("empty tenant_id should not be written")
+	}
+
+	// A second call overwrites the previously seeded identity.
+	state.SeedIdentity("user-2", "tenant-2")
+	if got := state.Sys["user_id"]; got != "user-2" {
+		t.Fatalf("sys.user_id = %v, want user-2", got)
+	}
+	if got := state.Sys["tenant_id"]; got != "tenant-2" {
+		t.Fatalf("sys.tenant_id = %v, want tenant-2", got)
+	}
+}
+
 func TestCanvasState_SetRetrievalReferencesMergesCalls(t *testing.T) {
 	t.Parallel()
 

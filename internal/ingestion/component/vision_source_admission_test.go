@@ -76,7 +76,7 @@ func TestVisionSourceFetchDoesNotBlockImageAdmission(t *testing.T) {
 		}
 	}
 	run := func(inputs map[string]any) []string {
-		dispatched := parser.ParseResult{OutputFormat: "json", JSON: []map[string]any{newItem()}}
+		dispatched := parser.ParseResult{OutputFormat: "json", JSON: parser.MapsToItems([]map[string]any{newItem()})}
 		res, _, err := maybeDispatchVisionEnhancement(
 			context.Background(), dao.DB, utility.FileTypePDF, dispatched,
 			inputs, visionSettings{}, progress.Window{},

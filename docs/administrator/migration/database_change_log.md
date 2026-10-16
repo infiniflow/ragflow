@@ -16,7 +16,7 @@ A version-by-version record of the schema and data changes the Go backend applie
 
 - The marker is a row in `system_settings` with the key `mysql_migration.database.version`.
 - The marker prevents a migration step from running again after that step has completed successfully.
-- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), and `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go).
+- Go defines the versions as constants: `modelMigrationBaseVersion` and `modelMigrationTargetVersion` in [migration_version.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration_version.go), `conversationHistoryTargetVersion` in [conversation_history_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/conversation_history_migration.go), `knowledgebaseParserConfigTargetVersion` in [migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/migration.go), and `ingestionParserConfigTargetVersion` in [ingestion_parser_config_migration.go](https://github.com/infiniflow/ragflow/blob/main/internal/dao/ingestion_parser_config_migration.go). The two parser-config constants share `v1.0.0-rc2.dev1`.
 - A step runs when the stored version is lower than the step's version. Versions are compared with Python PEP 440 semantics, where a `dev` prerelease sorts *before* the release it precedes (`v1.0.0-rc1.dev1` < `v1.0.0-rc1`). A missing or unparsable marker never skips a step.
 - `checkDatabaseVersion` in [cmd/ragflow_server.go](https://github.com/infiniflow/ragflow/blob/main/cmd/ragflow_server.go) refuses to start when the code version is older than the stored database version, so a database migrated by a newer release cannot be opened by an older one.
 
@@ -26,7 +26,7 @@ Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/b
 2. `migrateIngestionLogRunIdentity` — ingestion log columns and indexes.
 3. `AutoMigrate` — converges every ORM model.
 4. `migrateConversationHistory` — runs *after* `AutoMigrate`, which creates the child tables it backfills.
-5. `migrateKnowledgebaseParserConfig` — runs last, so the marker does not move past the conversation split's version before that split has run.
+5. `migrateIngestionParserConfigs` — converts ingestion settings on datasets and documents, then invokes the existing `migrateKnowledgebaseParserConfig` cleanup. Both run after the conversation split so the shared marker cannot skip that split.
 
 ## Version overview
 
@@ -35,7 +35,7 @@ Startup order in `InitDB` ([database.go](https://github.com/infiniflow/ragflow/b
 | `v0.26.0`         | Rebuild the tenant model tables from `tenant_llm` and normalize stored model ids                             | `modelMigrationBaseVersion`        |
 | `v1.0.0-rc1`      | Seed factory-declared models, merge `model_type` into an integer bitmask, populate the `tenant_*_id` columns | `modelMigrationTargetVersion`      |
 | `v1.0.0-rc1.dev1` | Split conversation message and reference payloads into child tables                                          | `conversationHistoryTargetVersion` |
-| `v1.0.0-rc2.dev1` | Delete the retired `raptor` and `graphrag` sections from `knowledgebase.parser_config`                       | `knowledgebaseParserConfigTargetVersion` |
+| `v1.0.0-rc2.dev1` | Convert Python ingestion settings in dataset/document `parser_config` onto pipeline components, then remove retired dataset `raptor` / `graphrag` sections | `ingestionParserConfigTargetVersion` / `knowledgebaseParserConfigTargetVersion` |
 
 The two tenant model steps are cumulative: a database at `v0.26.0` still runs the `v1.0.0-rc1` step, and a database at or above `v1.0.0-rc1` runs neither.
 
@@ -126,22 +126,26 @@ On success the step writes `v1.0.0-rc1.dev1` into the version marker.
 
 ## v1.0.0-rc2.dev1
 
-Retires the `raptor` and `graphrag` sections of the dataset parser config. Both moved out of `knowledgebase.parser_config`, so the stored sections are dead data no code path reads any more.
+Converts saved Python v0.27.2 ingestion settings into the component-scoped configuration consumed by Go. After conversion, the existing dataset cleanup removes the retired `raptor` and `graphrag` sections.
 
 ### Data migration
 
-| Table           | Change                                                                                                                                                             |
-|-----------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| `knowledgebase` | `parser_config` is parsed as a JSON object; the top level `raptor` and `graphrag` keys are deleted and the remaining object is written back to the same column. |
+| Table | Change |
+|-------|--------|
+| `knowledgebase`, `document` | Move supported top-level Parser, Chunker, Tokenizer and Extractor settings onto the corresponding pipeline component nodes. |
+| `knowledgebase` | The existing cleanup deletes top-level `raptor` and `graphrag` sections, preserving other settings. |
+
+The conversion covers parser engines and model references, PDF pages, MinerU method/language, TCADP options, spreadsheet column configuration, supported chunk sizes and delimiters, overlap, media context, parent/child settings, filename embedding weight, keywords, questions and metadata. Fields are converted only where the selected component supports them. Settings without a Go consumer are dropped with table/row/field warnings; tags and early Go node formats are left untouched.
 
 Execution details:
 
-- Rows are read in id-ordered batches of 256, each batch in its own transaction, so an interrupted run resumes from the last committed batch.
-- Only rows whose config actually carries one of the keys are rewritten; a row without them is left byte-identical.
-- A `NULL`, empty or non-object payload is skipped rather than failing the step.
-- The step returns without touching the marker when the `knowledgebase` table does not exist.
+- Component conversion reads each table in id-ordered batches of 256, each batch in its own transaction. Changed rows are updated once by the conversion; unchanged rows retain their original bytes. The existing dataset cleanup performs its own subsequent scan.
+- Each row's `parser_id` determines the builtin component targets. Parser/Chunker/Tokenizer conversion leaves custom pipeline rows and unsupported parser IDs untouched. Extractor conversion can also target existing Extractor nodes in custom pipeline configs.
+- Existing component values win, except that dataset-level modular metadata transport remains authoritative under the current service contract.
+- SQL `NULL`, empty strings and JSON `null` are left untouched. Invalid JSON, unsupported metadata schemas and unsupported engine selections stop migration with table/row context. A failed batch rolls back; earlier committed batches can be rerun safely. See [Parser-config conversion failures](./upgrade_from_v1_to_later_releases.md#parser-config-conversion-failures) for recovery instructions.
+- The marker advances only after both table conversions and the existing dataset cleanup succeed. If neither table exists, the marker is left unchanged.
 
-On success the step writes `v1.0.0-rc2.dev1` into the version marker.
+On success the migration records `v1.0.0-rc2.dev1`. Databases already marked `v1.0.0-rc2.dev1` or later skip conversion. This includes databases marked by the earlier cleanup-only implementation: that marker does not prove their ingestion settings were converted.
 
 ---
 

@@ -134,8 +134,8 @@ func (s *DocumentService) insertSyncDocument(ctx context.Context, input service.
 	}
 
 	// create the 'doc'
-	parserID, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
-	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, parserID, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
+	selection, parserConfig := resolveDocumentParser(ctx, kb, filename, utility.FileType(filetype), kb.ParserConfig)
+	doc := s.newDatasetDocument(kb, tenantID, filename, "", filetype, selection, parserConfig, input.SourceType, int64(len(input.SourceDocument.Blob)), input.SourceDocument.Blob)
 	doc.ID = input.DocumentID
 	// A fingerprint is acknowledged only after all dependent work succeeds.
 	doc.ContentHash = nil

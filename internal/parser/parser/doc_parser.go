@@ -91,7 +91,7 @@ func (p *DOCParser) ParseWithResult(ctx context.Context, filename string, data [
 	}
 
 	res.OutputFormat = "json"
-	res.JSON = []map[string]any{NewTextJSONItem(text)}
+	res.JSON = []DocItem{NewTextJSONItem(text)}
 	return res
 }
 

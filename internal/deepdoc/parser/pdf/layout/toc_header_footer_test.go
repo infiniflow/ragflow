@@ -635,6 +635,38 @@ func TestRemoveTOCBoxes_BareCJKChapterTitles(t *testing.T) {
 	}
 }
 
+// TestRemoveTOCBoxes_ShortLineBodyPageIsNotTOC pins the 民法典 case: a page
+// that starts with the tail of the TOC and continues into body text whose
+// lines are all short (a legal code's articles wrap well below
+// tocMaxProseRunes) must not be read as a TOC page. Before the body-evidence
+// arm of the guard such a page had prose=0, passed isTOC(), and was dropped
+// whole — losing the body text it carried.
+func TestRemoveTOCBoxes_ShortLineBodyPageIsNotTOC(t *testing.T) {
+	boxes := []pdf.TextBox{
+		tb("第六章 医疗损害责任", 0, 72, 200, 100, 115),
+		tb("第七章 环境污染和生态破坏责任", 0, 72, 220, 130, 145),
+		tb("第八章 高度危险责任", 0, 72, 200, 160, 175),
+		tb("第九章 饲养动物损害责任", 0, 72, 200, 190, 205),
+		tb("第十章 建筑物和物件损害责任", 0, 72, 220, 220, 235),
+		tb("附则", 0, 72, 100, 250, 265),
+		tb("第一编　总则", 0, 72, 200, 280, 295),
+		tb("第一章　基本规定", 0, 72, 200, 310, 325),
+		tb("第一条　【立法目的】为了保护民事主体的合法权益，调整", 0, 72, 520, 340, 355),
+		tb("和经济秩序，适应中国特色社会主义发展要求，弘扬社会主", 0, 72, 520, 360, 375),
+		tb("宪法，制定本法。", 0, 72, 200, 380, 395),
+		tb("第二条　【调整范围】民法调整平等主体的自然人、法人和", 0, 72, 520, 400, 415),
+		tb("身关系和财产关系。", 0, 72, 200, 420, 435),
+		tb("第三条　【民事权益受法律保护】民事主体的人身权利、财", 0, 72, 520, 440, 455),
+	}
+	boxes = append(boxes, bodyPageBoxes(1)...)
+	boxes = append(boxes, bodyPageBoxes(2)...)
+
+	got := removeTOCWholeDoc(boxes, nil)
+	if n := countPage(got, 0); n != 14 {
+		t.Fatalf("a mixed TOC-tail + short-line body page must be kept, %d of 14 boxes survived", n)
+	}
+}
+
 func TestRemoveTOCText_Normalize(t *testing.T) {
 	cases := []struct{ in, want string }{
 		{"Hello   World", "hello world"},
