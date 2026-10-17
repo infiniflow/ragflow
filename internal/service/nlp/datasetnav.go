@@ -1813,19 +1813,49 @@ func firstStringValue(v interface{}) string {
 }
 
 // firstStringSlice returns v as a []string, unwrapping a []interface{} whose
-// elements are all strings; returns nil for any other type.
+// elements are all strings, or parsing JSON / comma-separated strings; returns nil for any other type.
 func firstStringSlice(v interface{}) []string {
 	switch s := v.(type) {
 	case []string:
-		return s
+		out := make([]string, 0, len(s))
+		for _, x := range s {
+			if str := strings.TrimSpace(x); str != "" {
+				out = append(out, str)
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
 	case []interface{}:
 		out := make([]string, 0, len(s))
 		for _, x := range s {
 			if str, ok := x.(string); ok {
+				if str = strings.TrimSpace(str); str != "" {
+					out = append(out, str)
+				}
+			}
+		}
+		if len(out) > 0 {
+			return out
+		}
+	case string:
+		trimmed := strings.TrimSpace(s)
+		if strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]") {
+			var decoded []interface{}
+			if json.Unmarshal([]byte(trimmed), &decoded) == nil {
+				return firstStringSlice(decoded)
+			}
+		}
+		parts := strings.Split(trimmed, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if str := strings.TrimSpace(p); str != "" {
 				out = append(out, str)
 			}
 		}
-		return out
+		if len(out) > 0 {
+			return out
+		}
 	}
 	return nil
 }
