@@ -14,6 +14,7 @@
  *  limitations under the License.
  */
 
+import anysearchLogo from '@/assets/anysearch.webp';
 import braveLogo from '@/assets/svg/brave.svg';
 import exaLogo from '@/assets/exa.png';
 import firecrawlLogo from '@/assets/firecrawl.png';
@@ -40,6 +41,11 @@ interface IProps {
 // One entry per provider. `name` is the BRAND, so it stays untranslated; it is what
 // the key field's label is interpolated into (chat.webSearchApiKeyLabel).
 const webSearchProviderCatalog = [
+  {
+    name: 'AnySearch',
+    logo: anysearchLogo,
+    value: WebSearchProvider.AnySearch,
+  },
   {
     name: 'Brave Search',
     logo: braveLogo,
@@ -118,6 +124,12 @@ const providerDisplayName = (provider?: WebSearchProvider) =>
   '';
 
 const providerKeyConfig = {
+  [WebSearchProvider.AnySearch]: {
+    name: 'prompt_config.anysearch_api_key',
+    tip: 'anysearchApiKeyTip',
+    placeholder: 'anysearchApiKeyMessage',
+    helpUrl: 'https://anysearch.com/console/api-keys',
+  },
   [WebSearchProvider.Brave]: {
     name: 'prompt_config.brave_api_key',
     tip: 'braveApiKeyTip',

@@ -229,7 +229,11 @@ func TestBuildCancelFunc_Twice(t *testing.T) {
 func TestBuildCancelFunc_TimeoutEscalation(t *testing.T) {
 	cc := newCancelContext()
 	h, _ := cc.buildCancelFunc()(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(30*time.Millisecond))
-	time.Sleep(100 * time.Millisecond)
+	select {
+	case <-cc.immediateChan:
+	case <-time.After(time.Second):
+		t.Fatal("timeout did not trigger immediate cancellation")
+	}
 	if !cc.isImmediate() {
 		t.Error("should escalate")
 	}
@@ -1261,11 +1265,24 @@ func TestAgentCancelFunc_MultiCall_TimeoutDeadlineJoinUsesAbsoluteTime(t *testin
 	if !ok1 {
 		t.Fatal("first should contribute")
 	}
+	firstDeadline := atomic.LoadInt64(&cc.deadlineUnixNano)
+	beforeSecondCall := time.Now()
 	_, ok2 := cf(WithCancelMode(CancelAfterChatModel), WithCancelTimeout(20*time.Millisecond))
+	afterSecondCall := time.Now()
 	if !ok2 {
 		t.Fatal("second should contribute")
 	}
-	time.Sleep(50 * time.Millisecond)
+	joinedDeadline := atomic.LoadInt64(&cc.deadlineUnixNano)
+	minDeadline := min(firstDeadline, beforeSecondCall.Add(20*time.Millisecond).UnixNano())
+	maxDeadline := min(firstDeadline, afterSecondCall.Add(20*time.Millisecond).UnixNano())
+	if joinedDeadline < minDeadline || joinedDeadline > maxDeadline {
+		t.Fatalf("joined deadline=%d, want earliest absolute deadline in [%d, %d]", joinedDeadline, minDeadline, maxDeadline)
+	}
+	select {
+	case <-cc.immediateChan:
+	case <-time.After(time.Second):
+		t.Fatal("short timeout did not trigger immediate cancellation")
+	}
 	if !cc.isImmediate() {
 		t.Error("should escalate to immediate after short timeout")
 	}
