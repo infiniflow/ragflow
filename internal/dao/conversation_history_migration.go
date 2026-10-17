@@ -201,7 +201,7 @@ func splitConversationHistory(ctx context.Context, db *gorm.DB, split conversati
 			return false, fmt.Errorf("split %s %s message payload: %w", split.parentTable, row.ID, err)
 		}
 		if len(rows) > 0 {
-			if err := db.WithContext(ctx).Table(split.messageTable).CreateInBatches(rows, 100).Error; err != nil {
+			if err := db.WithContext(ctx).Model(historyModel(split.messageTable)).CreateInBatches(rows, 100).Error; err != nil {
 				return false, err
 			}
 			written = true
@@ -213,7 +213,7 @@ func splitConversationHistory(ctx context.Context, db *gorm.DB, split conversati
 			return false, fmt.Errorf("split %s %s reference payload: %w", split.parentTable, row.ID, err)
 		}
 		if len(rows) > 0 {
-			if err := db.WithContext(ctx).Table(split.referenceTable).CreateInBatches(rows, 100).Error; err != nil {
+			if err := db.WithContext(ctx).Model(historyModel(split.referenceTable)).CreateInBatches(rows, 100).Error; err != nil {
 				return false, err
 			}
 			written = true

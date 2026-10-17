@@ -718,6 +718,9 @@ func (s *Service) ListServices(ctx context.Context) ([]ServiceStatus, error) {
 	case "mysql":
 		mysqlStatus := s.getMySQLStatus(ctx)
 		results = append(results, mysqlStatus)
+	case "vastbase":
+		vastbaseConfig := globalConfig.GetVastbaseMetaConfig()
+		results = append(results, s.pingDatabaseStatus(ctx, "vastbase", vastbaseConfig.Host, vastbaseConfig.Port))
 	default:
 		mysqlConfig := globalConfig.GetMySQLConfig()
 		results = append(results, newServiceStatus("database", databaseType, mysqlConfig.Host, mysqlConfig.Port, "not available", time.Now(), "not supported database type"))
@@ -859,6 +862,29 @@ func (s *Service) getMySQLStatus(ctx context.Context) ServiceStatus {
 
 	mysqlConfig := server.GetConfig().GetMySQLConfig()
 	return newServiceStatus(serviceType, name, mysqlConfig.Host, mysqlConfig.Port, "alive", startTime, "")
+}
+
+// pingDatabaseStatus reports the SQL metadata database status for the
+// non-MySQL backends. The connectivity probe is the same SELECT 1 ping the
+// MySQL path uses; only the reported endpoint differs.
+func (s *Service) pingDatabaseStatus(ctx context.Context, name, host string, port int) ServiceStatus {
+	serviceType := "database"
+	startTime := time.Now()
+
+	sqlDB, err := dao.DB.DB()
+	if err != nil {
+		return newServiceStatus(serviceType, name, host, port, "not connected", startTime, err.Error())
+	}
+
+	// The DSN allows a 30s connect_timeout, so an unreachable host would
+	// otherwise hold ListServices for the full dial timeout.
+	pingCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err = sqlDB.PingContext(pingCtx); err != nil {
+		return newServiceStatus(serviceType, name, host, port, "timeout", startTime, err.Error())
+	}
+
+	return newServiceStatus(serviceType, name, host, port, "alive", startTime, "")
 }
 
 // getKvrocksStatus gets the Kvrocks service status.
