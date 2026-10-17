@@ -36,7 +36,7 @@ func NhopEntityNames(nHopJSON string) []string {
 }
 
 // SearchEntities searches for KG entities matching a question.
-func SearchEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGEntity, error) {
+func SearchEntities(ctx context.Context, docEngine engine.Searcher, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGEntity, error) {
 	dense, err := buildDenseExpr(ctx, embModel, question, topN)
 	if err != nil {
 		return nil, err
@@ -50,7 +50,7 @@ func SearchEntities(ctx context.Context, docEngine engine.DocEngine, kbIDs []str
 }
 
 // SearchEntitiesByTypes searches for KG entities by type keywords.
-func SearchEntitiesByTypes(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, typeKeywords []string, topN int) ([]KGEntity, error) {
+func SearchEntitiesByTypes(ctx context.Context, docEngine engine.Searcher, kbIDs []string, typeKeywords []string, topN int) ([]KGEntity, error) {
 	searchReq := buildEntityTypeSearchRequest(kbIDs, typeKeywords, topN)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
@@ -60,7 +60,7 @@ func SearchEntitiesByTypes(ctx context.Context, docEngine engine.DocEngine, kbID
 }
 
 // SearchRelations searches for KG relations matching a question.
-func SearchRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGRelation, error) {
+func SearchRelations(ctx context.Context, docEngine engine.Searcher, kbIDs []string, question string, embModel *modelModule.EmbeddingModel, topN int) ([]KGRelation, error) {
 	dense, err := buildDenseExpr(ctx, embModel, question, topN)
 	if err != nil {
 		return nil, err
@@ -74,7 +74,7 @@ func SearchRelations(ctx context.Context, docEngine engine.DocEngine, kbIDs []st
 }
 
 // SearchCommunityReports searches for community reports related to given entities.
-func SearchCommunityReports(ctx context.Context, docEngine engine.DocEngine, kbIDs []string, entityNames []string, topN int) ([]KGCommunityReport, error) {
+func SearchCommunityReports(ctx context.Context, docEngine engine.Searcher, kbIDs []string, entityNames []string, topN int) ([]KGCommunityReport, error) {
 	searchReq := buildCommunitySearchRequest(kbIDs, entityNames, topN)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
@@ -84,7 +84,7 @@ func SearchCommunityReports(ctx context.Context, docEngine engine.DocEngine, kbI
 }
 
 // SearchTypeSamples retrieves the typeu2192entities mapping from ES.
-func SearchTypeSamples(ctx context.Context, docEngine engine.DocEngine, kbIDs []string) (map[string][]string, error) {
+func SearchTypeSamples(ctx context.Context, docEngine engine.Searcher, kbIDs []string) (map[string][]string, error) {
 	searchReq := buildTypeSamplesSearchRequest(kbIDs)
 	result, err := docEngine.Search(ctx, searchReq)
 	if err != nil {
