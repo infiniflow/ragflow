@@ -233,7 +233,6 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 				return fmt.Errorf("failed to migrate model %T: %w", m, err)
 			}
 		}
-		common.Info("Database schema migrated successfully")
 
 		// Split the conversation message and reference payloads out of their
 		// parent tables. It has to run after AutoMigrate, which unlike
@@ -250,6 +249,10 @@ func InitDB(ctx context.Context, migrateDB bool) error {
 		if err = migrateTenantModelMaxTokens(ctx, DB); err != nil {
 			return fmt.Errorf("failed to backfill tenant model max_tokens: %w", err)
 		}
+		if err = migratePermissions(ctx, DB); err != nil {
+			return err
+		}
+		common.Info("Database schema migrated successfully")
 	} else {
 		if err = migrateIngestionLogRunIdentity(ctx, DB); err != nil {
 			return err
