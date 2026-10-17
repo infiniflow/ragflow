@@ -1267,11 +1267,12 @@ func pieceVisibleCount(text string, isFirst bool, lead string) int {
 // source so all ChunkDoc fields survive the split.
 func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	text := ck.Text
-	// Preserve a leading "\n" glue (text-path units are built as "\n"+part).
+	// Keep the leading "\n" in the text while splitting. It is part of the
+	// token budget; stripping it and adding it back after hard-splitting can
+	// make the first piece exceed the target and leave a one-token remainder.
 	lead := ""
 	if strings.HasPrefix(text, "\n") {
 		lead = "\n"
-		text = strings.TrimPrefix(text, "\n")
 	}
 	// Split into sentences (delimiters attached). A whitespace-only fragment
 	// (a bare delimiter from a repeated run, e.g. "\n\n") is prepended to the
@@ -1318,17 +1319,6 @@ func splitOversizedText(ck schema.ChunkDoc, target int) []schema.ChunkDoc {
 	}
 	if len(pieces) == 0 {
 		return nil
-	}
-	if lead != "" {
-		pieces[0].Text = lead + pieces[0].Text
-		// The leading "\n" adds a token; recompute so the running sum stays
-		// faithful. Re-split if it pushes the piece over the target.
-		if n := tokenizeStr(pieces[0].Text); n > target {
-			replaced := hardSplitPiece(pieces[0].Text, ck.DocType, target)
-			pieces = append(replaced, pieces[1:]...)
-		} else {
-			pieces[0].TKNums = intPtr(n)
-		}
 	}
 	// Every sub-piece inherits the source unit's metadata (coarse positions +
 	// item attributes); each is built from a clone so every ChunkDoc field
