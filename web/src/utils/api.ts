@@ -289,7 +289,6 @@ export default {
   webCrawl: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=web`,
   documentInfoUpload: `${restAPIv1}/documents/upload`,
-  setMeta: `${webAPI}/document/set_meta`,
   getDatasetFilter: (datasetId: string) =>
     `${restAPIv1}/datasets/${datasetId}/documents?type=filter`,
 
@@ -334,9 +333,9 @@ export default {
 
   // system
   getSystemVersion: `${restAPIv1}/system/version`,
-  getSystemTokenList: `${restAPIv1}/system/tokens`,
-  createSystemToken: `${restAPIv1}/system/tokens`,
-  removeSystemToken: `${restAPIv1}/system/tokens`,
+  getSystemTokenList: `${restAPIv1}/system/keys`,
+  createSystemToken: `${restAPIv1}/system/keys`,
+  removeSystemToken: `${restAPIv1}/system/keys`,
   getSystemConfig: `${restAPIv1}/system/config`,
   setLangfuseConfig: `${restAPIv1}/langfuse/api-key`,
 

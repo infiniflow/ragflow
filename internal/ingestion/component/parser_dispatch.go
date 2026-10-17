@@ -28,8 +28,8 @@ import (
 	"fmt"
 	"strings"
 
-	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/progress"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/parser"
 	"ragflow/internal/utility"
@@ -77,7 +77,7 @@ func configureParserFromSetups(p any, fileType utility.FileType, setups map[stri
 // re-reading setups. lib_type is no longer threaded through: the
 // Python dispatcher picks a single backend per family and the Go
 // constructors mirror that.
-func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup) parser.ParseResult {
+func dispatchParse(ctx context.Context, fileType utility.FileType, filename string, data []byte, setups map[string]schema.ParserSetup, window progress.Window) parser.ParseResult {
 	if fileType == utility.FileTypeOTHER {
 		// Unknown / unset family. The component treats the bytes
 		// as text pages; splitIntoPages handles it. We return no
@@ -97,7 +97,7 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 		return parser.ParseResult{Err: fmt.Errorf("parser: resolve %q: %w", fileType, err)}
 	}
 	configureParserFromSetups(p, fileType, setups)
-	attachPDFPageProgress(ctx, p)
+	attachPDFPageProgress(ctx, p, window)
 
 	res := p.ParseWithResult(ctx, filename, data)
 	if res.Err != nil {
@@ -114,21 +114,42 @@ func dispatchParse(ctx context.Context, fileType utility.FileType, filename stri
 	return res
 }
 
+// pdfPageProgressSupported reports whether the configured parser setup produces
+// in-flight page progress events (via DeepDOC OnPageDone). Remote engines
+// (MinerU, PaddleOCR, Docling, etc.) and non-PDF families do not report page progress.
+func pdfPageProgressSupported(fileType utility.FileType, setups map[string]schema.ParserSetup) bool {
+	if fileType != utility.FileTypePDF {
+		return false
+	}
+	var method string
+	if setup, ok := setups[resolveParserFamily(fileType)]; ok {
+		if s, ok := setup["parse_method"].(string); ok {
+			method = strings.ToLower(strings.TrimSpace(s))
+		}
+	}
+	switch method {
+	case "", "deepdoc":
+		return true
+	default:
+		return false
+	}
+}
+
 // attachPDFPageProgress wires the DeepDOC page callback so a long PDF
 // parse reports in-flight completion instead of staying silent until
 // the component exits. Only the local DeepDOC backend fires it; remote
 // engines (MinerU, PaddleOCR, Docling, …) never call the callback and
 // the fraction stays at zero.
-func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer) {
+func attachPDFPageProgress(ctx context.Context, p parser.ParseResultProducer, window progress.Window) {
 	pdfParser, ok := p.(*parser.PDFParser)
-	if !ok {
+	if !ok || window.Span <= 0 {
 		return
 	}
 	pdfParser.OnPageDone = func(done, total int) {
 		if total <= 0 {
 			return
 		}
-		runtime.ReportComponentFraction(ctx, float64(done)/float64(total))
+		window.Report(ctx, float64(done)/float64(total))
 	}
 }
 
@@ -299,6 +320,10 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	}
 	if dispatched.Err == nil && dispatched.OutputFormat != "" {
 		out["output_format"] = "json"
+		// Emit the parser's typed []DocItem directly. The chunker consumes
+		// it via schema.ChunkDocsFromDocItem (no ToMap round-trip); other
+		// consumers that still need the map form convert at their own
+		// boundary via parser.ItemsToMaps.
 		out["json"] = normalizeParserJSON(ctx, name, dispatched)
 		if dispatched.File != nil {
 			out["file"] = dispatched.File
@@ -310,7 +335,7 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	if len(rawPages) == 0 {
 		rawPages = [][]byte{nil}
 	}
-	fallbackItems := make([]map[string]any, 0, len(rawPages))
+	fallbackItems := make([]parser.DocItem, 0, len(rawPages))
 	for _, pageBytes := range rawPages {
 		txt := string(pageBytes)
 		fallbackItems = append(fallbackItems, parser.NewTextJSONItem(txt))
@@ -320,29 +345,22 @@ func buildParserOutputs(ctx context.Context, dispatched parser.ParseResult, name
 	return out
 }
 
-func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []map[string]any {
+// normalizeParserJSON returns the parser output as the typed []DocItem. It no
+// longer round-trips through map[string]any (the historical ItemsToMaps call),
+// so the downstream chunker receives structured items and converts them via
+// schema.ChunkDocsFromDocItem, which projects each item through its canonical
+// DocItem.ToMap wire shape before decoding it into a ChunkDoc.
+func normalizeParserJSON(ctx context.Context, filename string, dispatched parser.ParseResult) []parser.DocItem {
 	if len(dispatched.JSON) > 0 {
 		return dispatched.JSON
 	}
 	if dispatched.Markdown != "" {
 		return parseMarkdownToJSONItems(ctx, filename, dispatched.Markdown)
 	}
-	if dispatched.HTML != "" {
-		res := parser.NewHTMLParser().ParseWithResult(ctx, filename, []byte(dispatched.HTML))
-		if res.Err == nil && len(res.JSON) > 0 {
-			return res.JSON
-		}
-		if res.Err != nil {
-			warnParserNormalizationFallback(filename, "html", res.Err)
-		} else {
-			warnParserNormalizationFallback(filename, "html", fmt.Errorf("parser returned no JSON items"))
-		}
-		return []map[string]any{parser.NewTextJSONItem(dispatched.HTML)}
-	}
 	if dispatched.Text != "" {
-		return []map[string]any{parser.NewTextJSONItem(dispatched.Text)}
+		return []parser.DocItem{parser.NewTextJSONItem(dispatched.Text)}
 	}
-	return []map[string]any{}
+	return []parser.DocItem{}
 }
 
 func warnParserNormalizationFallback(filename, source string, err error) {

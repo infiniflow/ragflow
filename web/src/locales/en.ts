@@ -46,6 +46,8 @@ export default {
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
       language: 'Language',
       languageMessage: 'Please input your language!',
       languagePlaceholder: 'select your language',
@@ -410,8 +412,16 @@ Example: A 1 KB message with 1024-dim embedding uses ~9 KB. The 5 MB default lim
       uploadUnsupportedTypesTitle: 'Some file types cannot be parsed',
       fileTypeUnsupported:
         '{{name}} ({{fileType}}): not supported by the current parser configuration',
+      fileTypeUnsupportedAutoSwitch:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration; it will automatically switch to the built-in {{parser}} configuration',
+      fileTypeUnsupportedManualSwitch:
+        '{{name}} ({{fileType}}): not supported by the current parser configuration; switch its parsing method manually after upload',
       reselectParserAfterUploadHint:
         'Continue uploading, then system will automatically switch these files to a supported built-in parsing configuration.',
+      manualSwitchAfterUploadHint:
+        'Continue uploading, then switch the parsing method for these files manually.',
+      mixedSwitchAfterUploadHint:
+        'Continue uploading. Some files will switch to a supported built-in parsing configuration automatically; switch the rest manually after upload.',
       reselectParserToParseHint:
         'Reselect a parse method for the affected files, then parse again.',
       addModelAfterUploadHint:
@@ -1164,14 +1174,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       thinkingEnabled: 'Enabled',
       thinkingDisabled: 'Disabled',
       thinkingLevelNone: 'Naive',
-      thinkingLevelLow: 'Low',
-      thinkingLevelLowDescription: 'Fast responses',
-      thinkingLevelMedium: 'Medium',
-      thinkingLevelMediumDescription: 'Balanced speed & depth',
-      thinkingLevelHigh: 'High',
-      thinkingLevelHighDescription: 'Deep reasoning',
-      thinkingLevelUltra: 'Ultra',
-      thinkingLevelUltraDescription: 'Maximum cognitive effort',
       thinkingLevelAgentic: 'Agentic',
       thinkingLevelAgenticDescription: 'Self-directed corpus exploration',
       thinkingTip:
@@ -1316,12 +1318,6 @@ This auto-tagging feature enhances retrieval by adding another layer of domain-s
       tocEnhanceTip: `During the parsing of the document, table of contents information was generated (see the 'Enable Table of Contents Extraction' option in the General method). This allows the large model to return table of contents items relevant to the user's query, thereby using these items to retrieve related chunks and apply weighting to these chunks during the sorting process. This approach mimics human information-searching behavior in books.`,
       batchDeleteSessions: 'Batch delete',
       deleteSelectedConfirm: 'Delete the selected {{count}} session(s)?',
-      showChunkMetadata: 'Show chunk metadata',
-      showChunkMetadataTip:
-        'Display document metadata (e.g., title, page number, upload date) alongside retrieved text chunks',
-      metadataFields: 'Metadata fields',
-      metadataFieldsTip:
-        'Select which metadata fields to display with each chunk',
     },
     setting: {
       Verify: 'Verify',
@@ -1689,7 +1685,7 @@ Example: Virtual Hosted Style`,
       zoteroWebdavPasswordRequired:
         'WebDAV password is required when attachment storage is WebDAV.',
       google_driveMyDriveEmailsTip:
-        'Comma-separated emails whose "My Drive" contents should be indexed (include the primary admin).',
+        'Optional. Comma-separated emails whose entire "My Drive" is indexed, in addition to the shared folders below. Leave empty to sync only those folders.',
       google_driveSharedFoldersTip:
         'Comma-separated Google Drive folder links to crawl.',
       gmailPrimaryAdminTip:
@@ -2182,18 +2178,18 @@ Example: Virtual Hosted Style`,
       chatModelTip: 'The default LLM for each newly created dataset.',
       embeddingModel: 'Embedding',
       embeddingModelTip:
-        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default embedding model for each newly created dataset. If you cannot find an embedding model from the dropdown, check if you are using RAGFlow slim edition (which does not include embedding models) or check the Model providers page to see if your model provider supports this model.',
       img2txtModel: 'VLM',
       img2txtModelTip:
-        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default VLM for each newly created dataset. It describes a picture or video. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       sequence2txtModel: 'ASR',
       sequence2txtModelTip:
         'The default ASR model for each newly created dataset. Use this model to translate voices to corresponding text.',
       rerankModel: 'Rerank',
-      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.`,
+      rerankModelTip: `The default rerank model for reranking chunks. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.`,
       ttsModel: 'TTS',
       ttsModelTip:
-        'The default text-to-speech model. If you cannot find a model from the dropdown, check https://ragflow.io/docs/dev/supported_models to see if your model provider supports this model.',
+        'The default text-to-speech model. If you cannot find a model from the dropdown, check the Model providers page to see if your model provider supports this model.',
       workspace: 'workspace',
       upgrade: 'Upgrade',
       addLlmTitle: 'Add LLM',
@@ -2776,6 +2772,13 @@ Best for: Documents with flowing, contextually connected content — such as boo
       enableVisionEnhancement: 'Enable vision enhancement',
       enableVisionEnhancementTip:
         'Use a vision model to parse image and table blocks; when off, they are treated as plain text.',
+      imageOcr: 'OCR',
+      imageOcrTip:
+        'Extract text from uploaded images locally. Vision enhancement adds descriptions independently of this switch.',
+      imageTextSourceRequired:
+        'Images need a text source: keep OCR or vision enhancement on.',
+      visionEnhancementPromptTip:
+        'Custom instruction for the vision model. Leave empty to use the built-in prompt.',
       enableChildrenDelimiters: 'Child chunk are used for retrieval',
       merge: 'Merge',
       split: 'Split',
@@ -3010,7 +3013,7 @@ Best for: Documents with flowing, contextually connected content — such as boo
       bgptDaysBackTip: 'Optional recency filter (e.g. 365 for the last year).',
       email: 'Email',
       emailTip:
-        'E-mail is a required field. You must input an E-mail address here.',
+        'E-mail is optional. If left empty, a default E-mail address is used for PubMed requests.',
       arXiv: 'ArXiv',
       arXivDescription:
         'A component that searches from https://arxiv.org/, allowing you to specify the number of search results using TopN. It supplements the existing datasets.',
@@ -3373,6 +3376,8 @@ This delimiter is used to split the input text into several text pieces echo of 
       systemPrompt: 'System prompt',
       userPrompt: 'User prompt',
       tagFile: 'Tag file',
+      tagFileTip:
+        'Automatically extracts up to N relevant tags for each chunk based on the selected tag file to improve retrieval accuracy. Tag extraction may invoke a model and consume additional tokens. If extraction fails, the original chunk will be preserved. For details, see https://ragflow.io/docs/dataset_configuration#content-enhancement-configuration.',
       addCategory: 'Add category',
       categoryName: 'Category name',
       nextStep: 'Next step',
@@ -3558,6 +3563,8 @@ This process aggregates variables from multiple branches into a single variable 
       tokenizer: 'Indexer',
       tokenizerRequired: 'Please add the Indexer node first',
       nodeFormInvalid: 'Invalid settings, please fix them first',
+      apiKeyRequired: 'Please enter the API Key',
+      apiKeyMissing: 'No API key configured, please enter one first',
       agentModelMissing: 'No model selected, please choose one first',
       extractorModelMissing: 'No model selected, please choose one first',
       extractorKeywordsTopNMissing:
@@ -3764,6 +3771,9 @@ Important structured information may include: names, dates, locations, events, k
         removeFirst: 'Remove first',
         removeLast: 'Remove last',
       },
+      variableAssignerVariableMissing: 'Variable is required',
+      variableAssignerOperatorMissing: 'Operator is required',
+      variableAssignerParameterMissing: 'Parameter is required',
       webhook: {
         name: 'Webhook',
         methods: 'Methods',
@@ -3897,6 +3907,8 @@ Important structured information may include: names, dates, locations, events, k
       arabic: 'Arabic',
       turkish: 'Turkish',
       dutch: 'Dutch',
+      slovak: 'Slovak',
+      czech: 'Czech',
     },
     pagination: {
       total: 'Total {{total}}',

@@ -120,6 +120,24 @@ describe('Sitemap data source', () => {
   });
 });
 
+describe('Google Drive data source', () => {
+  it('lets a folder-only connector leave My Drive emails empty', () => {
+    const fields = getDataSourceFieldsWithExtras(
+      translate,
+      DataSourceKey.GOOGLE_DRIVE,
+    ) as Array<{ name: string; required?: boolean }>;
+    const myDriveEmails = fields.find(
+      (field) => field.name === 'config.my_drive_emails',
+    );
+    const sharedFolderUrls = fields.find(
+      (field) => field.name === 'config.shared_folder_urls',
+    );
+
+    expect(myDriveEmails?.required).toBe(false);
+    expect(sharedFolderUrls?.required).toBe(true);
+  });
+});
+
 describe.each([
   ['MySQL', DataSourceKey.MYSQL],
   ['PostgreSQL', DataSourceKey.POSTGRESQL],

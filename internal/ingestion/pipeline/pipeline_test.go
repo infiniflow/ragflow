@@ -18,6 +18,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -295,6 +296,44 @@ func (r *recordingSink) OnComponentProgress(ctx context.Context, ev ProgressEven
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.events = append(r.events, ev)
+}
+
+func TestPipelineTimeoutFailureProgress(t *testing.T) {
+	const compilerTimeout = "Compiler: Document compilation timed out. Check that the configured model service is reachable and responsive, then retry."
+	for _, tc := range []struct {
+		name      string
+		component string
+		err       error
+		want      string
+	}{
+		{name: "compiler deadline", component: "Compiler", err: context.DeadlineExceeded, want: compilerTimeout},
+		{name: "compiler wrapped response deadline", component: "Compiler", err: fmt.Errorf("failed to read response: %w", context.DeadlineExceeded), want: compilerTimeout},
+		{name: "compiler serialized deadline", component: "Compiler", err: errors.New("failed to read response:context deadline exceeded"), want: compilerTimeout},
+		{name: "compiler ordinary failure", component: "Compiler", err: errors.New("failed to read response: unexpected EOF"), want: "Compiler: failed to read response: unexpected EOF"},
+		{name: "compiler canceled", component: "Compiler", err: context.Canceled, want: "Compiler: context canceled"},
+		{name: "extractor deadline", component: "Extractor", err: context.DeadlineExceeded, want: "Extractor: Document extraction timed out while waiting for the configured LLM. Check that the model service is reachable, then retry."},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sink := &recordingSink{}
+			const nodeID = "stage:one"
+			p := &Pipeline{
+				taskID: "task-timeout", documentID: "doc-timeout", sink: sink,
+				canvas: &canvas.Canvas{Components: map[string]canvas.CanvasComponent{
+					nodeID: {Obj: canvas.CanvasComponentObj{ComponentName: tc.component}},
+				}},
+			}
+			p.componentProgressCallback(t.Context())(runtime.ProgressEvent{
+				Component: nodeID, Phase: runtime.PhaseError, Err: tc.err,
+			})
+			if len(sink.events) != 1 {
+				t.Fatalf("progress events = %d, want 1", len(sink.events))
+			}
+			got := sink.events[0]
+			if got.Message != tc.want || got.Component != nodeID || got.Phase != int(runtime.PhaseError) {
+				t.Fatalf("failure progress = %+v, want component %q and message %q", got, nodeID, tc.want)
+			}
+		})
+	}
 }
 
 // TestPipelineRunForwardsProgressToSink verifies the pipeline reports the

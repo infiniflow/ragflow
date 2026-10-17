@@ -5,7 +5,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"ragflow/internal/service/file"
+	"ragflow/internal/common"
+	"ragflow/internal/permission"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,7 +18,7 @@ func TestRespondFileServiceError(t *testing.T) {
 		err  error
 		code int
 		msg  string
-	}{{"authorization", file.ErrNoAuthorization, 102, "no authorization"}} {
+	}{{"authorization", permission.ErrPermissionDenied, int(common.CodeNotFound), "Resource not found"}} {
 		t.Run(tc.name, func(t *testing.T) {
 			w := httptest.NewRecorder()
 			c, _ := gin.CreateTestContext(w)

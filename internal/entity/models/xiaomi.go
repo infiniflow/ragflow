@@ -69,11 +69,10 @@ func (x *XiaomiModel) ChatWithMessages(ctx context.Context, modelName string, me
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, x.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, modelName, messages, false)
@@ -116,11 +115,10 @@ func (x *XiaomiModel) ChatStreamlyWithSender(ctx context.Context, modelName stri
 		return fmt.Errorf("messages is empty")
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	url := fmt.Sprintf("%s/%s", baseURL, x.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, modelName, messages, true)
@@ -322,11 +320,10 @@ func (x *XiaomiModel) newXiaomiASRRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -516,11 +513,10 @@ func (x *XiaomiModel) newXiaomiTTSRequest(ctx context.Context, modelName *string
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
+	url, err := x.baseModel.EndpointURL(apiConfig, x.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), strings.TrimPrefix(x.baseModel.URLSuffix.Chat, "/"))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -612,15 +608,14 @@ func (x *XiaomiModel) ListModels(ctx context.Context, apiConfig *APIConfig) ([]L
 		return nil, err
 	}
 
-	baseURL, err := x.baseModel.GetBaseURL(apiConfig)
-	if err != nil {
-		return nil, err
-	}
 	modelsSuffix := strings.Trim(strings.TrimSpace(x.baseModel.URLSuffix.Models), "/")
 	if modelsSuffix == "" {
 		return nil, fmt.Errorf("xiaomi: models URL suffix is not configured")
 	}
-	url := fmt.Sprintf("%s/%s", strings.TrimSuffix(baseURL, "/"), modelsSuffix)
+	url, err := x.baseModel.EndpointURL(apiConfig, modelsSuffix)
+	if err != nil {
+		return nil, err
+	}
 
 	body, err := x.baseModel.doGetRequest(ctx, url, apiConfig, nonStreamCallTimeout)
 	if err != nil {
@@ -653,4 +648,8 @@ func (x *XiaomiModel) ListTasks(ctx context.Context, apiConfig *APIConfig) ([]Li
 
 func (x *XiaomiModel) ShowTask(ctx context.Context, taskID string, apiConfig *APIConfig) (*TaskResponse, error) {
 	return nil, fmt.Errorf("no such method %s", x.Name())
+}
+
+func (x *XiaomiModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", x.Name())
 }

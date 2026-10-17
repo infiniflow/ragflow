@@ -218,7 +218,7 @@ func (r *Client) Info(ctx context.Context) map[string]interface{} {
 		"redis_version":             info["redis_version"],
 		"server_mode":               getServerMode(info),
 		"used_memory":               info["used_memory_human"],
-		"total_system_memory":       info["total_system_memory_human"],
+		"total_system_memory":       totalSystemMemoryHuman(info),
 		"mem_fragmentation_ratio":   info["mem_fragmentation_ratio"],
 		"connected_clients":         parseInt(info["connected_clients"]),
 		"blocked_clients":           parseInt(info["blocked_clients"]),
@@ -233,6 +233,19 @@ func getServerMode(info map[string]string) string {
 		return mode
 	}
 	return info["redis_mode"]
+}
+
+// totalSystemMemoryHuman returns host RAM from INFO MEMORY when present.
+// Managed Redis-compatible services (e.g. Alibaba Cloud Tair) may omit
+// total_system_memory_human; fall back to maxmemory_human when configured.
+func totalSystemMemoryHuman(info map[string]string) string {
+	if v, ok := info["total_system_memory_human"]; ok && v != "" {
+		return v
+	}
+	if v, ok := info["maxmemory_human"]; ok && v != "" {
+		return v
+	}
+	return ""
 }
 
 func splitLines(s string) []string {
@@ -355,17 +368,24 @@ func (r *Client) Set(ctx context.Context, key string, value string, exp time.Dur
 	return true
 }
 
-// SetNX sets value only if key does not exist
-func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) bool {
-	if r.client == nil {
-		return false
+// SetNX sets value only if key does not exist.
+// It returns false with a nil error when the key already exists.
+func (r *Client) SetNX(ctx context.Context, key string, value string, exp time.Duration) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
 	}
-	ok, err := r.client.SetNX(ctx, key, value, exp).Result()
+	result, err := r.client.SetArgs(ctx, key, value, redis.SetArgs{
+		Mode: "NX",
+		TTL:  exp,
+	}).Result()
+	if errors.Is(err, redis.Nil) {
+		return false, nil
+	}
 	if err != nil {
 		common.Warn("Redis SetNX error", zap.String("key", key), zap.Error(err))
-		return false
+		return false, fmt.Errorf("set key %q if absent: %w", key, err)
 	}
-	return ok
+	return result == "OK", nil
 }
 
 // GetOrCreateKey atomically retrieves an existing key or creates a new one
@@ -807,17 +827,20 @@ func (r *Client) QueueInfo(ctx context.Context, queue, groupName string) (map[st
 	return nil, nil
 }
 
-// DeleteIfEqual deletes key if its value equals expected value (atomic)
-func (r *Client) DeleteIfEqual(ctx context.Context, key, expectedValue string) bool {
-	if r.client == nil {
-		return false
+// deleteIfEqual deletes key if its value equals expected value atomically.
+func (r *Client) deleteIfEqual(ctx context.Context, key, expectedValue string) (bool, error) {
+	if r == nil || r.client == nil {
+		return false, errors.New("kvrocks client is not initialized")
 	}
-	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Result()
+	if r.luaDeleteIfEqual == nil {
+		return false, errors.New("kvrocks delete-if-equal script is not initialized")
+	}
+	result, err := r.luaDeleteIfEqual.Run(ctx, r.client, []string{key}, expectedValue).Int64()
 	if err != nil {
-		common.Warn("Redis DeleteIfEqual error", zap.Error(err))
-		return false
+		common.Warn("Redis DeleteIfEqual error", zap.String("key", key), zap.Error(err))
+		return false, fmt.Errorf("delete key %q if value matches: %w", key, err)
 	}
-	return result.(int64) == 1
+	return result == 1, nil
 }
 
 // Delete deletes a key
@@ -883,25 +906,34 @@ func NewDistributedLock(lockKey string, lockValue string, timeout time.Duration,
 	}
 }
 
-// Acquire acquires the lock
-func (l *DistributedLock) Acquire(ctx context.Context) bool {
-	if l.client == nil {
-		return false
+// Acquire acquires the lock. It returns false with a nil error when another
+// owner holds the lock.
+func (l *DistributedLock) Acquire(ctx context.Context) (bool, error) {
+	if l == nil || l.client == nil {
+		return false, errors.New("distributed lock client is not initialized")
 	}
-	// Delete if stale
-	l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	// Remove a lock left by this owner before trying to acquire it again.
+	if _, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue); err != nil {
+		return false, err
+	}
 	return l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout)
 }
 
-// SpinAcquire keeps trying to acquire the lock
+// SpinAcquire keeps trying to acquire the lock. Returns the underlying
+// transport error instead of silently logging it via SetNX so an outage
+// surfaces immediately; ctx.Err() still wins when the context is
+// cancelled mid-poll.
 func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
-			if l.client.SetNX(ctx, l.lockKey, l.lockValue, l.timeout) {
+			acquired, err := l.Acquire(ctx)
+			if err != nil {
+				return err
+			}
+			if acquired {
 				return nil
 			}
 			time.Sleep(10 * time.Second)
@@ -911,10 +943,11 @@ func (l *DistributedLock) SpinAcquire(ctx context.Context) error {
 
 // Release releases the lock
 func (l *DistributedLock) Release(ctx context.Context) bool {
-	if l.client == nil {
+	if l == nil || l.client == nil {
 		return false
 	}
-	return l.client.DeleteIfEqual(ctx, l.lockKey, l.lockValue)
+	released, err := l.client.deleteIfEqual(ctx, l.lockKey, l.lockValue)
+	return err == nil && released
 }
 
 // TokenBucket token bucket rate limiter

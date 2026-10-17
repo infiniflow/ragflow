@@ -177,7 +177,7 @@ func xlsxParseResult(filename string, items []map[string]any, warnings []string,
 	return ParseResult{
 		OutputFormat: spreadsheetOutputFormat,
 		File:         map[string]any{"name": filename, "format": "xlsx", "sheets": sheets},
-		JSON:         items,
+		JSON:         MapsToItems(items),
 		Warnings:     warnings,
 	}
 }

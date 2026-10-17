@@ -135,7 +135,7 @@ func TestPDFParser_ParseWithResult_MinerUJSONIntegration(t *testing.T) {
 	if len(res.JSON) == 0 {
 		t.Fatal("JSON is empty; want markdown-normalized items")
 	}
-	if got := res.JSON[0]["text"]; got == nil {
+	if got := res.JSON[0].ToMap()["text"]; got == nil {
 		t.Fatal("JSON[0].text missing")
 	}
 }
@@ -283,10 +283,14 @@ func TestPDFParser_ParseWithResult_MinerUReadsBackendFromProviderJSONApiKey(t *t
 }
 
 func TestPDFParser_ParseWithResult_MinerURequiresServerURLForHTTPClientBackend(t *testing.T) {
+	withSSRFBypass(t)
+	server := httptest.NewServer(http.NotFoundHandler())
+	defer server.Close()
+
 	pdf := NewPDFParser()
 	pdf.ConfigureFromSetup(map[string]any{
 		"parse_method":     "MinerU",
-		"mineru_apiserver": "http://mineru-api:8888",
+		"mineru_apiserver": server.URL,
 		"mineru_backend":   "hybrid-http-client",
 	})
 

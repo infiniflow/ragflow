@@ -98,7 +98,7 @@ func (p *HTMLParser) ParseWithResult(ctx context.Context, filename string, data 
 			"name":     filename,
 			"encoding": encName,
 		},
-		JSON:     items,
+		JSON:     MapsToItems(items),
 		Warnings: state.warnings(),
 	}
 }

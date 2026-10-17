@@ -18,7 +18,7 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.Knowledgebase{}, &entity.UserTenant{}); err != nil {
+	if err := db.AutoMigrate(&entity.UserCanvas{}, &entity.Knowledgebase{}, &entity.Memory{}, &entity.UserTenant{}); err != nil {
 		t.Fatalf("migrate permission tables: %v", err)
 	}
 
@@ -32,7 +32,19 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 		ID: "private-dataset", TenantID: "other-owner", CreatedBy: "other-owner",
 		Permission: string(entity.TenantPermissionMe), Status: &valid,
 	}
-	for _, row := range []any{&canvas, &dataset, &privateDataset} {
+	sharedMemory := entity.Memory{
+		ID: "shared-memory", Name: "Shared", TenantID: "canvas-owner",
+		Permissions: string(entity.TenantPermissionTeam),
+	}
+	callerOnlyMemory := entity.Memory{
+		ID: "caller-only-memory", Name: "Caller only", TenantID: "caller",
+		Permissions: string(entity.TenantPermissionMe),
+	}
+	ownerOnlyMemory := entity.Memory{
+		ID: "owner-only-memory", Name: "Owner only", TenantID: "canvas-owner",
+		Permissions: string(entity.TenantPermissionMe),
+	}
+	for _, row := range []any{&canvas, &dataset, &privateDataset, &sharedMemory, &callerOnlyMemory, &ownerOnlyMemory} {
 		if err := db.Create(row).Error; err != nil {
 			t.Fatalf("create permission resource: %v", err)
 		}
@@ -58,6 +70,28 @@ func TestCheckCanvasRetrievalDependencies(t *testing.T) {
 	}
 	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"dataset_ids": []string{privateDataset.ID}}); !errors.Is(err, permission.ErrPermissionDenied) {
 		t.Fatalf("check private dataset dependency error = %v, want permission denied", err)
+	}
+	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"memory_ids": []string{sharedMemory.ID}}); err != nil {
+		t.Fatalf("check shared memory dependency: %v", err)
+	}
+	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{
+		"retrieval_from": "memory",
+		"dataset_ids":    []string{privateDataset.ID},
+		"memory_ids":     []string{sharedMemory.ID},
+	}); err != nil {
+		t.Fatalf("memory retrieval should ignore inactive dataset bindings: %v", err)
+	}
+	if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{
+		"retrieval_from": "dataset",
+		"dataset_ids":    []string{dataset.ID},
+		"memory_ids":     []string{ownerOnlyMemory.ID},
+	}); err != nil {
+		t.Fatalf("dataset retrieval should ignore inactive memory bindings: %v", err)
+	}
+	for _, memoryID := range []string{callerOnlyMemory.ID, ownerOnlyMemory.ID} {
+		if err := checkCanvasRetrievalDependencies(ctx, db, map[string]any{"memory_ids": []string{memoryID}}); !errors.Is(err, permission.ErrPermissionDenied) {
+			t.Fatalf("check non-intersection memory %q error = %v, want permission denied", memoryID, err)
+		}
 	}
 
 	missingCanvasState := runtime.NewCanvasState("run-2", "session-2")

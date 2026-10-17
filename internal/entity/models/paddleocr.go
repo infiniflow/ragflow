@@ -254,11 +254,10 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 		return nil, fmt.Errorf("content and fileURL cannot be both empty")
 	}
 
-	resolvedBaseURL, err := p.baseModel.GetBaseURL(apiConfig)
+	url, err := p.baseModel.EndpointURL(apiConfig, p.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	url := fmt.Sprintf("%s/%s", resolvedBaseURL, p.baseModel.URLSuffix.OCR)
 
 	optionalPayload := map[string]bool{
 		"useDocOrientationClassify": false,
@@ -644,4 +643,8 @@ func paddleOCRAlgorithm(ocrConfig *OCRConfig, apiConfig *APIConfig) string {
 		return algorithm
 	}
 	return "PaddleOCR-VL"
+}
+
+func (p *PaddleOCRModel) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s, no such method", p.Name())
 }

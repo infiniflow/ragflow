@@ -22,12 +22,12 @@ The `v0.27.2` to `v1.0.0-rc1` migration is irreversible. Create and verify a com
 
 ## Quick navigation
 
-- [Upgrade within v0.x releases](#1-upgrade-within-between-v0x-releases)
+- [Upgrade within v0.x releases](#1-upgrade-within-v0x-releases)
 - [Special instructions for each v0.x checkpoint](#2-handle-each-key-release)
 - [Upgrade from v0.27.2 to v1.0.0-rc1](#3-upgrade-from-v0272-to-v100-rc1)
 - [Upgrade from v1.0.0-rc1 to a later v1.x release](#4-upgrade-from-v100-rc1-to-a-later-v1x-release)
 
-For every v0.x checkpoint below, first follow the [v0.x-to-v0.x upgrade steps](#1-upgrade-between-v0x-releases), and then complete the linked version-specific instructions.
+For every v0.x checkpoint below, first follow the [v0.x-to-v0.x upgrade steps](#1-upgrade-within-v0x-releases), and then complete the linked version-specific instructions.
 
 **Upgrade route:**
 
@@ -105,7 +105,7 @@ Do not continue to the next checkpoint until failures at the current release hav
 
 ## 2. Handle each key release
 
-These sections contain only the additional checks for each release. Use them together with the [v0.x-to-v0.x upgrade steps](#1-upgrade-between-v0x-releases).
+These sections contain only the additional checks for each release. Use them together with the [v0.x-to-v0.x upgrade steps](#1-upgrade-within-v0x-releases).
 
 ### 2.1. v0.22.1
 
@@ -128,6 +128,10 @@ Do not continue until `v0.27.2` passes all checks. The older GraphRAG and RAPTOR
 ## 3. Upgrade from v0.27.2 to v1.0.0-rc1
 
 This mandatory step is different from the earlier checkpoints. It introduces the v1 runtime and performs an irreversible data migration.
+
+:::warning Tag datasets are not migrated
+In the Python backend, tag files are bound to a dedicated dataset. The Go backend does not bind tag files to datasets. After the migration, existing Tag datasets from the Python backend are no longer valid. Reconfigure the tag files in the Go backend after the upgrade.
+:::
 
 ### 3.1. Stop and back up v0.27.2
 
@@ -205,6 +209,8 @@ First verify that `v1.0.0-rc1` started successfully and that its migration compl
 ## 5. Verify the upgraded deployment
 
 Sign in to RAGFlow and confirm that existing data and configuration are present, then test document retrieval, a new document upload, one Chat, and one Agent run.
+
+If the Python deployment used Tag datasets, confirm that they are no longer treated as datasets, reconfigure their tag files in the Go backend, and verify tag extraction on a representative document.
 
 Keep the `v0.27.2` backup until the upgraded deployment has completed acceptance testing and operated successfully under normal workload.
 

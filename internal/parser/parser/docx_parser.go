@@ -151,7 +151,7 @@ func (p *DOCXParser) ParseWithResult(ctx context.Context, filename string, data 
 		return ParseResult{
 			OutputFormat: "json",
 			File:         fileMeta,
-			JSON:         sections,
+			JSON:         MapsToItems(sections),
 			Warnings:     budget.warnings(),
 		}
 	}

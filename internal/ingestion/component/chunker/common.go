@@ -17,6 +17,8 @@
 package chunker
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -25,6 +27,7 @@ import (
 	"ragflow/internal/common"
 	"ragflow/internal/ingestion/component/schema"
 	"ragflow/internal/parser/chunk"
+	"ragflow/internal/parser/tableutil"
 	"ragflow/internal/tokenizer"
 )
 
@@ -109,10 +112,8 @@ func compileDelimPattern(delims []string) *regexp.Regexp {
 // break, never a character to delete, so "。" must not vanish (or be swapped
 // for "\n") after chunking.
 //
-// When keepDelim is false the delimiter is DISCARDED (mirroring Python's
-// _split_text_by_pattern, which keeps only the even-index text parts); that
-// mode is used by the GeneralChunker legacy paths that still match Python's
-// drop behaviour, and by any caller that needs the historical contract.
+// When keepDelim is false the delimiter is discarded. Custom backtick
+// delimiters use this mode because they explicitly mark content to split away.
 func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string {
 	if pattern == nil {
 		return []string{text}
@@ -154,6 +155,28 @@ func splitByDelim(text string, pattern *regexp.Regexp, keepDelim bool) []string 
 		out = append(out, tail)
 	}
 	return out
+}
+
+// foldWhitespaceSegments attaches blank runs to neighboring text without
+// changing their position in the reconstructed source.
+func foldWhitespaceSegments(parts []string) []string {
+	var kept []string
+	var leading string
+	for _, part := range parts {
+		if strings.TrimSpace(part) == "" {
+			leading += part
+			continue
+		}
+		if leading != "" {
+			part = leading + part
+			leading = ""
+		}
+		kept = append(kept, part)
+	}
+	if leading != "" && len(kept) > 0 {
+		kept[len(kept)-1] += leading
+	}
+	return kept
 }
 
 // ---------------------------------------------------------------------------
@@ -213,6 +236,20 @@ func itemTextOrFallback(it schema.ChunkDoc) string {
 	return ""
 }
 
+// materializeTableText fills Text with the HTML rendering of a structured
+// TableData when the item carries no text of its own — the shape every parser
+// emits for tables. Every consumer then works on a real table it can store and
+// display, and the chunk id (a hash of Text) matches the stored content.
+// RenderTableHTML marks the leading HeaderRows rows as <th>. Idempotent: an
+// item that already carries text is left untouched.
+func materializeTableText(docs []schema.ChunkDoc) {
+	for i := range docs {
+		if docs[i].TableData != nil && docs[i].Text == "" {
+			docs[i].Text = tableutil.RenderTableHTML(docs[i].TableData)
+		}
+	}
+}
+
 // tokenizeStr is the shared NumTokensFromString wrapper used by
 // Table/Image context attachment. Lives here so we can centrally
 // swizzle the count strategy in one place if needed.
@@ -245,6 +282,16 @@ func emptyOutputs() map[string]any {
 	return map[string]any{
 		"output_format": "chunks",
 		"chunks":        []map[string]any{},
+	}
+}
+
+// inputErrorOutput is the canonical short-circuit for an undecodable upstream
+// payload, shared by every chunker variant's decode step.
+func inputErrorOutput(err error) map[string]any {
+	return map[string]any{
+		"output_format": "chunks",
+		"chunks":        []map[string]any{},
+		"_ERROR":        fmt.Sprintf("Input error: %v", err),
 	}
 }
 
@@ -283,17 +330,51 @@ func canonicalChunkText(ck schema.ChunkDoc) string {
 	return removeTag(materializeMediaContext(ck).Text)
 }
 
+// mediaChunkIDPrefix marks the identity source of a media chunk whose
+// canonical text is empty. The NUL byte keeps the source from colliding with
+// any real chunk text.
+const mediaChunkIDPrefix = "\x00media:"
+
 // canonicalChunkID returns the deterministic chunk id: the single identity
 // used both as the MinIO object key and as ck["id"]. The id formula (ChunkID
-// over canonicalChunkText) is centralized here, so the text normalization
-// that feeds the hash lives in exactly one place. The decorator in
-// register.go re-derives ck["id"] from the same already-finalized text as a
-// fallback for chunks that bypassed the streamed crop-upload path; the two
-// routes cannot disagree because a chunk is either stamped by crop-upload
-// (and the decorator reuses that id) or computed by the decorator fallback —
-// never both — and both hash the normalized chunk body.
+// over chunkIDSource) is centralized here, so the identity that feeds the
+// hash lives in exactly one place. The decorator in register.go re-derives
+// ck["id"] from the same already-finalized text as a fallback for chunks that
+// bypassed the streamed crop-upload path; the two routes cannot disagree
+// because a chunk is either stamped by crop-upload (and the decorator reuses
+// that id) or computed by the decorator fallback — never both — and both hash
+// the same identity.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
-	return common.ChunkID(docID, canonicalChunkText(ck))
+	return common.ChunkID(docID, chunkIDSource(ck))
+}
+
+// chunkIDSource returns the identity string hashed into a chunk id. For a
+// media chunk whose canonical text is empty — a captionless image — hashing
+// the text alone would give every such chunk in a document the same id
+// (ChunkID(docID, "")), silently overwriting images in MinIO and merging
+// index entries, so a stable per-image identity is folded in instead.
+// Non-empty text hashes unchanged.
+func chunkIDSource(ck schema.ChunkDoc) string {
+	if text := canonicalChunkText(ck); text != "" {
+		return text
+	}
+	return mediaChunkIdentity(ck.Image, ck.ImgID)
+}
+
+// mediaChunkIdentity returns the stable identity of a text-less media chunk:
+// a digest of the image payload when present (identical images collapse onto
+// one id, which is harmless — they carry identical bytes), else the image
+// reference. Empty when the chunk has neither, leaving the id the plain
+// empty-text hash.
+func mediaChunkIdentity(image, imgID string) string {
+	if image != "" {
+		sum := sha256.Sum256([]byte(image))
+		return mediaChunkIDPrefix + hex.EncodeToString(sum[:])
+	}
+	if imgID != "" {
+		return mediaChunkIDPrefix + imgID
+	}
+	return ""
 }
 
 // materializeMediaContext folds a media chunk's surrounding context into its

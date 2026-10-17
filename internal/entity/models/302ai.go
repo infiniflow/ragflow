@@ -82,11 +82,10 @@ func (a *AI302Model) ChatWithMessages(ctx context.Context, modelName string, mes
 		return nil, fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Chat)
 
 	// Build request body
 	reqBody := buildRequestBody(chatModelConfig, strings.TrimSpace(modelName), messages, false)
@@ -134,11 +133,10 @@ func (a *AI302Model) ChatStreamlyWithSender(ctx context.Context, modelName strin
 		return fmt.Errorf("messages is empty")
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Chat)
 	if err != nil {
 		return err
 	}
-	baseURL := fmt.Sprintf("%s/%s", strings.TrimSuffix(resolvedBaseURL, "/"), a.baseModel.URLSuffix.Chat)
 
 	// Build request body with streaming enabled
 	reqBody := buildRequestBody(modelConfig, strings.TrimSpace(modelName), messages, true)
@@ -184,11 +182,10 @@ func (a *AI302Model) Embed(ctx context.Context, modelName *string, request Embed
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Embedding)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Embedding)
 
 	reqBody := map[string]interface{}{
 		"model": model,
@@ -272,11 +269,10 @@ func (a *AI302Model) Rerank(ctx context.Context, modelName *string, request Rera
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Rerank)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Rerank)
 
 	var topN int
 	if rerankConfig != nil && rerankConfig.TopN != 0 {
@@ -358,11 +354,10 @@ func (a *AI302Model) TranscribeAudio(ctx context.Context, modelName *string, fil
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.ASR)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.ASR)
 
 	// multipart body
 	var body bytes.Buffer
@@ -499,11 +494,10 @@ func (a *AI302Model) OCRFile(ctx context.Context, modelName *string, content []b
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.OCR)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.OCR)
 
 	var docURL string
 	if urls != nil && strings.TrimSpace(*urls) != "" {
@@ -593,11 +587,10 @@ func (a *AI302Model) ParseFile(ctx context.Context, modelName *string, content [
 		return nil, err
 	}
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	apiURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.DocumentParse)
 	if err != nil {
 		return nil, err
 	}
-	apiURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse)
 
 	reqBody := map[string]interface{}{
 		"url": docURL,
@@ -658,11 +651,10 @@ func (a *AI302Model) ListModels(ctx context.Context, apiConfig *APIConfig) ([]Li
 	}
 	apiKey := strings.TrimSpace(*apiConfig.ApiKey)
 
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	baseURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.Models)
 	if err != nil {
 		return nil, err
 	}
-	baseURL := fmt.Sprintf("%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.Models)
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -727,11 +719,11 @@ func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *API
 	}
 
 	// URL: https://mineru.net/api/v4/extract/task/{task_id}
-	resolvedBaseURL, err := a.baseModel.GetBaseURL(apiConfig)
+	docURL, err := a.baseModel.EndpointURL(apiConfig, a.baseModel.URLSuffix.DocumentParse)
 	if err != nil {
 		return nil, err
 	}
-	apiURL := fmt.Sprintf("%s/%s/%s", resolvedBaseURL, a.baseModel.URLSuffix.DocumentParse, url.PathEscape(strings.TrimSpace(taskID)))
+	apiURL := docURL + "/" + url.PathEscape(strings.TrimSpace(taskID))
 
 	ctx, cancel := context.WithTimeout(ctx, nonStreamCallTimeout)
 	defer cancel()
@@ -792,4 +784,8 @@ func (a *AI302Model) ShowTask(ctx context.Context, taskID string, apiConfig *API
 			},
 		},
 	}, nil
+}
+
+func (a *AI302Model) Decide(ctx context.Context, modelName *string, request *DecideRequest, apiConfig *APIConfig, modelUsage *common.ModelUsage) (*DecideResponse, error) {
+	return nil, fmt.Errorf("%s no such method", a.Name())
 }

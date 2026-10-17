@@ -25,7 +25,7 @@ When `VERSION` is omitted, the installer resolves the latest GitHub Release and 
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.sh \
-  | VERSION=v1.0.0-rc1 sh
+  | VERSION=v1.0.0-rc2 sh
 ```
 
 Both forms are supported. Pin a version for production or reproducible installations so that a later Release does not change the installed version.
@@ -46,7 +46,7 @@ When no version is specified, the Windows installer also uses the latest GitHub 
 
 ```powershell
 irm https://raw.githubusercontent.com/infiniflow/ragflow/main/tools/scripts/install.ps1 -OutFile install.ps1
-./install.ps1 -Version v1.0.0-rc1
+./install.ps1 -Version v1.0.0-rc2
 ```
 
 The Windows installer installs `ragflow-cli.exe` under `%LOCALAPPDATA%\Programs\RAGFlow` by default and adds that directory to the user `PATH`. Restart the terminal if the installer reports that `PATH` was updated.
@@ -77,13 +77,15 @@ RAGFLOW_DEV_MODE=true ./bin/ragflow_server --admin --init-superuser
 
 If this creates the first superuser, its email is `admin@ragflow.io` and its initial password is `admin`. Change that password immediately after the first login. The option does not reset an existing superuser's password.
 
-Then start the CLI in Admin mode. It connects to `127.0.0.1:9381` by default:
+Then start the CLI in Admin mode. If `--host` is omitted, it connects to `127.0.0.1:9381` by default:
 
 ```bash
 ragflow-cli --admin
 ```
 
 When using a binary built from source, replace `ragflow-cli` with `./bin/ragflow-cli` in the following examples.
+
+Port `9381` is the default Admin Service port inside the RAGFlow container. When Docker publishes it on a different host port, replace `9381` with the actual published port. Check `ADMIN_SVR_HTTP_PORT` in **docker/.env** or the port mapping shown by `docker ps`. For example, a mapping of `0.0.0.0:49381->9381/tcp` means that the CLI must connect to port `49381`.
 
 To connect to another Admin Service, pass a `host:port` value:
 
@@ -104,11 +106,11 @@ Avoid passing a real password with `--password`: command-line arguments can be v
 | Option                        | Description                                                                                           |
 |-------------------------------|-------------------------------------------------------------------------------------------------------|
 | `--admin`, `-admin`           | Start in Admin mode.                                                                                  |
-| `-h`, `--host <host:port>`    | Admin Service address. The default is `127.0.0.1:9381`.                                               |
+| `-h`, `--host <host:port>`    | Admin Service address. The default is `127.0.0.1:9381`; use the actual published host port when it differs. |
 | `-u`, `--user <email>`        | Administrator email address.                                                                          |
 | `-p`, `--password <password>` | Administrator password. Prefer the interactive prompt to avoid exposing it in command-line arguments. |
-| `-k`, `--key <path>`          | Key file used by the client.                                                                          |
-| `-o`, `--output <format>`     | Output format: `table`, `plain`, or `json`.                                                           |
+| `-k`, `--key <path>`          | RSA public key file used to encrypt passwords sent to the Admin Service.                               |
+| `-o`, `--output <format>`     | Output format: `table` (default), `plain`, or `json`.                                                  |
 | `-v`, `--verbose`             | Enable verbose output.                                                                                |
 
 ## Commands
@@ -198,7 +200,7 @@ RAGFlow(admin)> SHOW VERSION;
 
 #### 1.5 SHOW CURRENT
 
-Shows the current CLI mode, server connection, authentication state, and output format.
+Shows the current CLI mode, configured server address, authentication state, and output format. This command displays locally stored connection information; it does not check whether the Admin Service is reachable. Use `PING;` to check the actual connection.
 
 **Syntax**
 
@@ -380,6 +382,8 @@ Deletes a user and associated data.
 
 An active user cannot be deleted. Run `ALTER USER ACTIVE '<email>' off;` before `DROP USER`. Otherwise, the Admin Service returns `user is active and can't be deleted. Please deactivate the user first`.
 
+Administrator accounts cannot be deleted with this command.
+
 **Syntax**
 
 ```sql
@@ -549,7 +553,7 @@ If the name does not exist in the local configuration, the command returns `api_
 
 ### 7. Message queue commands
 
-The MQ commands operate on the NATS JetStream task stream used by ingestors. When an ingestor is running, it can consume a published test message before a subsequent `MQ LIST` or `MQ PULL` command observes it.
+The MQ commands manage the NATS JetStream task stream used by ingestors.
 
 #### 7.1 MQ SHOW
 
@@ -569,13 +573,17 @@ RAGFlow(admin)> MQ SHOW;
 
 #### 7.2 MQ LIST
 
-Lists messages currently retained in the task stream. The optional `PENDING` keyword is accepted by the CLI.
+Lists messages currently retained in the task stream.
 
 **Syntax**
 
 ```sql
-MQ LIST;
+MQ LIST [PENDING];
 ```
+
+| Parameter | Required | Description |
+| --- | --- | --- |
+| `[PENDING]` | No | Requests the pending-message form of the command. |
 
 **Example**
 

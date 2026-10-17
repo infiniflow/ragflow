@@ -31,10 +31,10 @@ func TestMarkdownParser_ParseWithResult_Basic(t *testing.T) {
 		t.Fatal("JSON is empty; want at least one item")
 	}
 	// Verify heading
-	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
 		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
-	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
+	if got, _ := res.JSON[0].ToMap()["ck_type"].(string); got != "heading" {
 		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
 	}
 }
@@ -49,10 +49,10 @@ func TestMarkdownParser_ParseWithResult_UTF8BOM(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	if got, _ := res.JSON[0]["text"].(string); got != "# Hello" {
+	if got, _ := res.JSON[0].ToMap()["text"].(string); got != "# Hello" {
 		t.Fatalf("first item text = %q, want %q", got, "# Hello")
 	}
-	if got, _ := res.JSON[0]["ck_type"].(string); got != "heading" {
+	if got, _ := res.JSON[0].ToMap()["ck_type"].(string); got != "heading" {
 		t.Fatalf("first item ck_type = %q, want %q", got, "heading")
 	}
 }
@@ -78,7 +78,7 @@ func TestMarkdownParser_ListItemsKeepWordBoundaries(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var lists []string
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if ck, _ := item["ck_type"].(string); ck == "list" {
 			text, _ := item["text"].(string)
 			lists = append(lists, text)
@@ -140,7 +140,7 @@ func TestMarkdownParser_OrderedListKeepsNumbers(t *testing.T) {
 				t.Fatalf("ParseWithResult: %v", res.Err)
 			}
 			var lists []string
-			for _, item := range res.JSON {
+			for _, item := range ItemsToMaps(res.JSON) {
 				if ck, _ := item["ck_type"].(string); ck == "list" {
 					text, _ := item["text"].(string)
 					lists = append(lists, text)
@@ -181,7 +181,7 @@ func TestMarkdownParser_TableKeepsCellsBeyondTheHeader(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var joined strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		joined.WriteString(renderedText(item))
 		joined.WriteString("\n")
 	}
@@ -222,7 +222,7 @@ func TestMarkdownParser_ParseWithResult_ImageDataURI(t *testing.T) {
 	}
 	// Find the image item
 	found := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			found = true
 			if img, ok := item["image"].(string); !ok || img != pixelB64 {
@@ -244,7 +244,7 @@ func TestMarkdownParser_ParseWithResult_NoImage(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			t.Fatal("unexpected image item in text-only markdown")
 		}
@@ -267,7 +267,7 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 		t.Fatalf("len(JSON) = %d, want 3 (leading paragraph, table, note)", len(res.JSON))
 	}
 	tableCount, inlineTableCount := 0, 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		kd, _ := item["doc_type_kwd"].(string)
 		text, _ := item["text"].(string)
 		switch kd {
@@ -281,7 +281,7 @@ func TestMarkdownParser_ParseWithResult_RendersTableInline(t *testing.T) {
 				t.Fatalf("table item missing *entity.TableData: %#v", item)
 			}
 			if !tableRowsContain(td, "Check item") {
-				t.Errorf("table item rows missing header label: %+v", td.Rows)
+				t.Errorf("table item rows missing header label: %+v", td.CellTexts())
 			}
 		case "text":
 			if strings.Contains(text, "<table") {
@@ -320,7 +320,7 @@ func TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var sb strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		sb.WriteString(text)
 		sb.WriteString("\n")
@@ -344,7 +344,7 @@ func TestMarkdownParser_ParseWithResult_DollarIsCurrencyNotMath(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", resDisplay.Err)
 	}
 	var sbDisplay strings.Builder
-	for _, item := range resDisplay.JSON {
+	for _, item := range ItemsToMaps(resDisplay.JSON) {
 		text, _ := item["text"].(string)
 		sbDisplay.WriteString(text)
 	}
@@ -372,7 +372,7 @@ func TestMarkdownParser_ParseWithResult_InlineRawHTMLSurvives(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var sb strings.Builder
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		sb.WriteString(text)
 		sb.WriteString("\n")
@@ -451,7 +451,7 @@ func TestMarkdownParser_FlattenMediaToText(t *testing.T) {
 			if res.Err != nil {
 				t.Fatalf("ParseWithResult: %v", res.Err)
 			}
-			for _, item := range res.JSON {
+			for _, item := range ItemsToMaps(res.JSON) {
 				if kd, _ := item["doc_type_kwd"].(string); kd != tc.wantDocType {
 					t.Errorf("doc_type_kwd = %q, want %q (item text=%q)",
 						kd, tc.wantDocType, item["text"])
@@ -554,7 +554,7 @@ func TestFindBlockImage(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	var imgItems, textItems int
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "image":
 			imgItems++
@@ -574,7 +574,7 @@ func TestFindBlockImage(t *testing.T) {
 
 	// A document with no image must not produce any image item.
 	noImg := p.ParseWithResult(ctx, "b.md", []byte("# T\n\nNo images here.\n"))
-	for _, item := range noImg.JSON {
+	for _, item := range ItemsToMaps(noImg.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "image" {
 			t.Fatal("unexpected image item in text-only markdown")
 		}
@@ -623,7 +623,7 @@ func TestMarkdownParser_TableNotCollapsed(t *testing.T) {
 	var all strings.Builder
 	sawTitle, sawTrailing, sawTableItem, sawInlineTable := false, false, false, false
 	tableCount := 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		all.WriteString(text)
 		all.WriteString("\n")
@@ -687,7 +687,7 @@ func TestMarkdownParser_TableWithSurroundingText(t *testing.T) {
 
 	var tableText string
 	tableIdx, beforeIdx, afterIdx, inlineTableCount, tableCount := -1, -1, -1, 0, 0
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
@@ -751,7 +751,7 @@ func TestMarkdownParser_NonTableHTMLBlockNotTable(t *testing.T) {
 	if res.Err != nil {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "<div") || strings.Contains(text, "<style") {
 			if ck, ok := item["ck_type"].(string); ok && ck == "table" {
@@ -777,7 +777,7 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 		t.Fatalf("ParseWithResult: %v", res.Err)
 	}
 	// No table item may be emitted — the pipe rows live inside a code block.
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		if kd, _ := item["doc_type_kwd"].(string); kd == "table" {
 			t.Fatalf("code-fence pipe rows wrongly emitted as table item: %q", item["text"])
 		}
@@ -785,7 +785,7 @@ func TestMarkdownParser_TableInCodeFenceNotRendered(t *testing.T) {
 	// The code block item must retain the raw pipe text and must NOT contain
 	// any <table> markup.
 	sawCode := false
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		if strings.Contains(text, "| A | B |") {
 			sawCode = true
@@ -814,7 +814,7 @@ func TestMarkdownParser_RawHTMLTableHandled(t *testing.T) {
 	}
 	sawInlined, sawTableItem := false, false
 	tableCount := 0
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
@@ -859,7 +859,7 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 
 	var tableItemIdx []int
 	var titleIdx, middleIdx, endIdx = -1, -1, -1
-	for i, item := range res.JSON {
+	for i, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		switch kd, _ := item["doc_type_kwd"].(string); kd {
 		case "text":
@@ -887,8 +887,8 @@ func TestMarkdownParser_MultipleTablesOrdering(t *testing.T) {
 	if !(titleIdx < tableItemIdx[0] && tableItemIdx[0] < middleIdx && middleIdx < tableItemIdx[1] && tableItemIdx[1] < endIdx) {
 		t.Fatalf("table order wrong: tables=%v title=%d middle=%d end=%d", tableItemIdx, titleIdx, middleIdx, endIdx)
 	}
-	t1 := renderedText(res.JSON[tableItemIdx[0]])
-	t2 := renderedText(res.JSON[tableItemIdx[1]])
+	t1 := renderedText(res.JSON[tableItemIdx[0]].ToMap())
+	t2 := renderedText(res.JSON[tableItemIdx[1]].ToMap())
 	if !strings.Contains(t1, "x") || !strings.Contains(t1, "y") {
 		t.Fatalf("first table item missing x/y cells: %q", t1)
 	}
@@ -945,14 +945,14 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 			// filterTableDivergence additionally drops the inlined <table> markup that
 			// Python keeps as a "text" item, so only non-table prose is compared.
 			ignore := AcceptedDivergences(gd.Meta)
-			goText := filterTableDivergence(res.JSON, ignore)
+			goText := filterTableDivergence(ItemsToMaps(res.JSON), ignore)
 			pyText := filterTableDivergence(gd.Items, ignore)
 
 			// filterTableDivergence drops the table from the prose comparison;
 			// the table-equivalence guard below (assertTablesEquivalent) checks
 			// the table cell content still matches Python, so a collapse or
 			// dropped column on either side is caught independently.
-			assertTablesEquivalent(t, res.JSON, gd.Items)
+			assertTablesEquivalent(t, ItemsToMaps(res.JSON), gd.Items)
 
 			if ok, diff := CompareAlignment(goText, pyText, MarkdownAlignOptions(DefaultMarkdownDelimiter)); !ok {
 				t.Fatalf("markdown parser not aligned with Python golden:%s", diff)
@@ -965,7 +965,7 @@ func TestMarkdownParser_AlignmentGolden(t *testing.T) {
 // the substring want, so table-contract tests can assert cell content without
 // depending on the legacy HTML markup shape.
 func tableRowsContain(td *entity.TableData, want string) bool {
-	for _, row := range td.Rows {
+	for _, row := range td.CellTexts() {
 		for _, cell := range row {
 			if strings.Contains(cell, want) {
 				return true

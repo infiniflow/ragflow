@@ -56,15 +56,16 @@
 
 - 💡 [RAGFlow 是什么？](#-RAGFlow-是什么)
 - 🎮 [快速开始](#-快速开始)
-- 📌 [近期更新](#-近期更新)
+- 🔥 [近期更新](#-近期更新)
 - 🌟 [主要功能](#-主要功能)
 - 🔎 [系统架构](#-系统架构)
 - 🏠 [本地部署](#-本地部署)
 - 📚 [技术文档](#-技术文档)
 - 📜 [路线图](#-路线图)
-- 🏄 [贡献指南](#-贡献指南)
-- 🙌 [加入社区](#-加入社区)
+- 🏄 [开源社区](#-开源社区)
+- 🙌 [贡献指南](#-贡献指南)
 - 🤝 [商务合作](#-商务合作)
+- 👥 [加入社区](#-加入社区)
 
 </details>
 
@@ -197,10 +198,10 @@
    cd ragflow/docker
    ```
 
-   切换到 `v1.0.0-rc1` 发布标签。
+   切换到 `v1.0.0-rc2` 发布标签。
 
    ```bash
-   git checkout v1.0.0-rc1
+   git checkout v1.0.0-rc2
    ```
 
    在启动 RAGFlow 服务及其依赖服务。
@@ -209,10 +210,10 @@
    docker compose -f docker-compose.yml up -d
    ```
 
-   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc1` 标签：
+   > 💡 **镜像下载提示：** 如果无法从默认仓库拉取镜像，请先在 `docker/.env` 中将 `RAGFLOW_IMAGE` 设置为以下镜像源之一，并保留 `v1.0.0-rc2` 标签：
    >
-   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc1`
-   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc1`
+   > - 华为云：`swr.cn-north-4.myhuaweicloud.com/infiniflow/ragflow:v1.0.0-rc2`
+   > - 阿里云：`registry.cn-hangzhou.aliyuncs.com/infiniflow/ragflow:v1.0.0-rc2`
 
    默认 MySQL 配置下，镜像入口会先执行数据库迁移，再启动 Admin、Syncer、Ingestor 和 API 等服务。
 
@@ -262,16 +263,14 @@ Docker 部署使用 `docker/.env` 和 `docker/docker-compose.yml`。镜像、端
    cd ragflow
    ```
 
-2. 运行 [依赖下载脚本](./ragflow_deps/download_deps.py) 下载静态库和模型文件：
+2. 运行依赖下载脚本，准备 Go 构建所需链接的原生静态库（`download_dev_deps.py`）与后端运行时加载的模型/分词器资源（`download_deps.py`）：
 
    ```bash
-   python3 -m venv /tmp/ragflow-go-download-venv
-   /tmp/ragflow-go-download-venv/bin/python -m pip install requests huggingface-hub
-   /tmp/ragflow-go-download-venv/bin/python ragflow_deps/download_deps.py
-   ./build.sh --all
+   uv run tools/scripts/download_dev_deps.py
+   uv run ragflow_deps/download_deps.py
    ```
 
-   下载脚本准备构建所需的静态库和模型资源，并需要 `requests` 和 `huggingface-hub`。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
+   `download_dev_deps.py` 拉取并解压 pdfium、pdf_oxide、office_oxide、onnxruntime 等到 `~/ragflow-native-libs`；`download_deps.py` 拉取 cl100k 词表、DeepDoc 模型与 embedding 分词器资源到 `ragflow_deps/`。两个脚本均为 Python 脚本，`uv run` 会自动安装其声明的依赖（`requests`，模型与分词器下载还需 `huggingface-hub`）。如果已通过其他方式准备好相同资源，可跳过这一步。Go 服务从仓库根目录启动时会自动查找 `internal/rag/res/deepdoc`；如需从其他目录启动，请将 `DEEPDOC_MODEL_DIR` 设为该目录的绝对路径。
 
 3. 编译：
 

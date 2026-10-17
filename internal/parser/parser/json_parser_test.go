@@ -10,7 +10,7 @@ import (
 
 func jsonTexts(res ParseResult) []string {
 	texts := make([]string, 0, len(res.JSON))
-	for _, item := range res.JSON {
+	for _, item := range ItemsToMaps(res.JSON) {
 		text, _ := item["text"].(string)
 		texts = append(texts, text)
 	}
