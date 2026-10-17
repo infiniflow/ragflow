@@ -19,8 +19,14 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"go.uber.org/zap"
+	"go.uber.org/zap/zaptest/observer"
+	"gorm.io/gorm"
 
 	"ragflow/internal/common"
 	"ragflow/internal/dao"
@@ -518,5 +524,212 @@ func TestWorkerDispatcher_WaitAfterPullErrorCancelsCleanly(t *testing.T) {
 		// unblocked promptly
 	case <-time.After(200 * time.Millisecond):
 		t.Fatal("waitAfterPullError did not cancel promptly on dispatchCtx.Done")
+	}
+}
+
+// TestHandleAndExecute_LastDeliveryFailsTask guards the production incident
+// where a document that crashed the ingestor on every attempt used up its
+// broker deliveries and left its task RUNNING forever: on the last delivery
+// the task is failed with an explanation instead of run again.
+func TestHandleAndExecute_LastDeliveryFailsTask(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-last-delivery", 1, []string{"pdf"})
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		t.Fatal("pipeline ran on the last delivery")
+		return nil
+	}
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+	var run entity.PipelineOperationLog
+	if err := db.First(&run, "id = ?", "run-"+taskID).Error; err != nil {
+		t.Fatalf("reload pipeline log: %v", err)
+	}
+	if run.OperationStatus != string(entity.TaskStatusFail) {
+		t.Fatalf("pipeline log status = %q, want FAIL", run.OperationStatus)
+	}
+	if !ingestor.claimTask(taskID) {
+		t.Fatal("the claim was not released after failing the task")
+	}
+}
+
+// TestHandleAndExecute_EarlierRedeliveryStillRuns checks that a redelivery
+// below the limit still resumes the task.
+func TestHandleAndExecute_EarlierRedeliveryStillRuns(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+
+	ingestor := newUnitIngestor("test-redelivery-runs", 1, []string{"pdf"})
+	pipelineRan := false
+	ingestor.runDocumentTask = func(context.Context, *entity.IngestionTask) error {
+		pipelineRan = true
+		return nil
+	}
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver - 1,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if !pipelineRan {
+		t.Fatal("pipeline did not run on a redelivery below the limit")
+	}
+}
+
+// failTaskStatusWrites makes the first n writes of ingestion_task.status =
+// FAILED return an error, as a database outage would, and counts every attempt.
+func failTaskStatusWrites(t *testing.T, db *gorm.DB, n int32) *atomic.Int32 {
+	t.Helper()
+	var attempts atomic.Int32
+	const name = "fail_task_status_failed"
+	if err := db.Callback().Update().Before("gorm:update").Register(name, func(tx *gorm.DB) {
+		dest, ok := tx.Statement.Dest.(map[string]interface{})
+		if !ok || dest["status"] != common.FAILED {
+			return
+		}
+		if attempts.Add(1) <= n {
+			tx.AddError(errors.New("database unavailable"))
+		}
+	}); err != nil {
+		t.Fatalf("register update callback: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Callback().Update().Remove(name) })
+	return &attempts
+}
+
+func shortenLastDeliveryRetries(t *testing.T) {
+	t.Helper()
+	old := lastDeliveryRetryDelays
+	lastDeliveryRetryDelays = []time.Duration{20 * time.Millisecond, 20 * time.Millisecond, 20 * time.Millisecond}
+	t.Cleanup(func() { lastDeliveryRetryDelays = old })
+}
+
+// TestHandleAndExecute_LastDeliveryRetriesMarkFailed checks that a transient
+// failure of the FAILED write on the last delivery is retried while the
+// heartbeat keeps the lease, instead of being left to a redelivery that the
+// broker will never make.
+func TestHandleAndExecute_LastDeliveryRetriesMarkFailed(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	shortenLastDeliveryRetries(t)
+
+	_, _, _, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+	attempts := failTaskStatusWrites(t, db, 2)
+
+	ingestor := newUnitIngestor("test-last-delivery-retry", 1, []string{"pdf"})
+	ingestor.heartbeatInterval = 5 * time.Millisecond
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if got := attempts.Load(); got != 3 {
+		t.Fatalf("FAILED write attempts = %d, want 3", got)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	if handle.inProgress.Load() == 0 {
+		t.Fatal("no heartbeat while the FAILED write was retried")
+	}
+	var task entity.IngestionTask
+	if err := db.First(&task, "id = ?", taskID).Error; err != nil {
+		t.Fatalf("reload task: %v", err)
+	}
+	if task.Status != common.FAILED {
+		t.Fatalf("task status = %q, want FAILED", task.Status)
+	}
+}
+
+// TestHandleAndExecute_LastDeliveryAcksWhenMarkFailedKeepsFailing checks that
+// once the retries are exhausted the message is acked, since a Nack after the
+// last delivery is never redelivered, and the stranded task is logged.
+func TestHandleAndExecute_LastDeliveryAcksWhenMarkFailedKeepsFailing(t *testing.T) {
+	db := testutil.SetupTestDB(t)
+	cleanup := testutil.ReplaceDBForTest(t, db)
+	defer cleanup()
+	shortenLastDeliveryRetries(t)
+
+	_, _, docID, taskID := testutil.SeedTestData(t, db)
+	if err := db.Model(&entity.IngestionTask{}).Where("id = ?", taskID).
+		Update("status", common.RUNNING).Error; err != nil {
+		t.Fatalf("set status RUNNING: %v", err)
+	}
+	attempts := failTaskStatusWrites(t, db, 1<<30)
+
+	oldLogger, oldSugar := common.Logger, common.Sugar
+	t.Cleanup(func() { common.Logger, common.Sugar = oldLogger, oldSugar })
+	// InitLogger sets the shared level common.Error reads; the observer then
+	// replaces the logger it installed.
+	if err := common.InitLogger("error", common.FileOutput{}, ""); err != nil {
+		t.Fatalf("init logger: %v", err)
+	}
+	core, recorded := observer.New(zap.ErrorLevel)
+	common.Logger = zap.New(core)
+
+	ingestor := newUnitIngestor("test-last-delivery-give-up", 1, []string{"pdf"})
+	handle := &fakeTaskHandle{
+		msg:       common.TaskMessage{TaskID: taskID, TaskType: common.TaskTypeIngestionTask},
+		delivered: common.TaskMaxDeliver,
+	}
+
+	ingestor.handleAndExecute(handle)
+
+	if got, want := attempts.Load(), int32(len(lastDeliveryRetryDelays)+1); got != want {
+		t.Fatalf("FAILED write attempts = %d, want %d", got, want)
+	}
+	if handle.acks.Load() != 1 || handle.nacks.Load() != 0 {
+		t.Fatalf("expected 1 Ack/0 Nack, got acks=%d nacks=%d", handle.acks.Load(), handle.nacks.Load())
+	}
+	logged := false
+	for _, entry := range recorded.All() {
+		if strings.Contains(entry.Message, "left RUNNING") &&
+			strings.Contains(entry.Message, taskID) && strings.Contains(entry.Message, docID) {
+			logged = true
+		}
+	}
+	if !logged {
+		t.Fatalf("no error log naming task %s and document %s; got %v", taskID, docID, recorded.All())
+	}
+	if !ingestor.claimTask(taskID) {
+		t.Fatal("the claim was not released after giving up on the task")
 	}
 }

@@ -186,7 +186,7 @@ func (n *NatsEngine) ShowMessageQueue() (map[string]string, error) {
 	}
 	result["message_count"] = strconv.FormatUint(info.State.Msgs, 10)
 
-	consumer, err := n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
+	consumer, err := n.stream.Consumer(ctx, taskConsumerName)
 	if err == nil {
 		var consumerInfo *jetstream.ConsumerInfo
 		consumerInfo, err = consumer.Info(ctx)
@@ -251,14 +251,21 @@ func (n *NatsEngine) InitConsumer(subject string) error {
 	return n.ensureConsumer(ctx)
 }
 
+// taskConsumerName names the durable task consumer.
+const taskConsumerName = "RAGFLOW_CONSUMER"
+
 // ensureConsumer creates or updates RAGFLOW_CONSUMER and stores the handle.
 // It is idempotent, so it doubles as the repair path when a stored handle is
-// found to have outlived its consumer. The consumer name is a fixed, durable
-// name on purpose: a restart must reattach to the same consumer (and its
-// pending messages) instead of leaving an orphan behind.
+// found to have outlived its consumer. The consumer is durable on purpose: a
+// restart must reattach to the same consumer, with its pending messages and
+// delivery counts, instead of a fresh one that redelivers every poison
+// message up to MaxDeliver again.
 func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 	if n.stream == nil {
 		return fmt.Errorf("NATS stream is nil, engine not properly initialized")
+	}
+	if err := n.deleteEphemeralTaskConsumer(ctx); err != nil {
+		return err
 	}
 
 	// Explicit redelivery schedule: BackOff paces successive redeliveries
@@ -276,9 +283,10 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 	// it), the other three update in place. The fallback below handles the
 	// MaxWaiting mismatch by keeping the existing consumer.
 	consumer, err := n.stream.CreateOrUpdateConsumer(ctx, jetstream.ConsumerConfig{
-		Name:          "RAGFLOW_CONSUMER",
+		Name:          taskConsumerName,
+		Durable:       taskConsumerName,
 		AckPolicy:     jetstream.AckExplicitPolicy,
-		MaxDeliver:    16,
+		MaxDeliver:    common.TaskMaxDeliver,
 		MaxAckPending: 1024 * 128,
 		FilterSubject: "tasks.>",
 		AckWait:       60 * time.Second,
@@ -288,7 +296,7 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 		// MaxWaiting is immutable after consumer creation (AckWait/BackOff/MaxAckPending remain mutable when MaxWaiting matches; the update is atomic).
 		// If the consumer already exists, fall back to fetching it.
 		if strings.Contains(err.Error(), "max waiting can not be updated") {
-			consumer, err = n.stream.Consumer(ctx, "RAGFLOW_CONSUMER")
+			consumer, err = n.stream.Consumer(ctx, taskConsumerName)
 			if err != nil {
 				return fmt.Errorf("failed to get existing consumer: %w", err)
 			}
@@ -299,6 +307,32 @@ func (n *NatsEngine) ensureConsumer(ctx context.Context) error {
 	n.consumerMu.Lock()
 	n.consumer = consumer
 	n.consumerMu.Unlock()
+	return nil
+}
+
+// deleteEphemeralTaskConsumer deletes a RAGFLOW_CONSUMER that the server
+// treats as ephemeral (created without Durable). The server reaps such a
+// consumer after 5s without a pull, and an update cannot make it durable: the
+// update is accepted but the inactivity threshold stays. The WorkQueue stream
+// keeps every unacknowledged message, so the durable consumer created next
+// delivers them again.
+func (n *NatsEngine) deleteEphemeralTaskConsumer(ctx context.Context) error {
+	existing, err := n.stream.Consumer(ctx, taskConsumerName)
+	if errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to inspect consumer %s: %w", taskConsumerName, err)
+	}
+	cfg := existing.CachedInfo().Config
+	if cfg.Durable != "" && cfg.InactiveThreshold == 0 {
+		return nil
+	}
+	common.Warn(fmt.Sprintf("NATS consumer %s is ephemeral (inactive threshold %s); replacing it with a durable consumer",
+		taskConsumerName, cfg.InactiveThreshold))
+	if err := n.stream.DeleteConsumer(ctx, taskConsumerName); err != nil && !errors.Is(err, jetstream.ErrConsumerNotFound) {
+		return fmt.Errorf("failed to delete ephemeral consumer %s: %w", taskConsumerName, err)
+	}
 	return nil
 }
 
@@ -485,4 +519,12 @@ func (m *NatsMessageHandle) Nack() error {
 
 func (m *NatsMessageHandle) InProgress() error {
 	return m.message.InProgress()
+}
+
+func (m *NatsMessageHandle) NumDelivered() uint64 {
+	meta, err := m.message.Metadata()
+	if err != nil {
+		return 0
+	}
+	return meta.NumDelivered
 }

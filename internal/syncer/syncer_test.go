@@ -139,6 +139,7 @@ type fakeTaskHandle struct {
 }
 
 func (h *fakeTaskHandle) GetMessage() common.TaskMessage { return h.msg }
+func (h *fakeTaskHandle) NumDelivered() uint64           { return 1 }
 func (h *fakeTaskHandle) Ack() error {
 	h.mu.Lock()
 	defer h.mu.Unlock()

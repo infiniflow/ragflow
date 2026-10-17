@@ -538,6 +538,13 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 			e.renewDuplicateHandle(hb, handle, taskMessage.TaskID)
 			return
 		}
+		if delivered := handle.NumDelivered(); delivered >= common.TaskMaxDeliver {
+			// The broker will not deliver this message again, so a run that
+			// dies now (the previous ones evidently did: OOM kill, native
+			// crash) would leave the task RUNNING forever. Fail it instead.
+			e.failExhaustedTask(hb, handle, task, delivered)
+			return
+		}
 		// Claim the task before applying document/log side effects. A duplicate
 		// delivery must only renew its broker lease; resetting the document here
 		// would race the owning worker and erase its in-flight progress.
@@ -551,6 +558,56 @@ func (e *Ingestor) handleAndExecute(handle common.TaskHandle) {
 	taskCtx := taskpkg.NewTaskContextForScheduling(e.ctx, task)
 	taskCtx.Handle = handle
 	e.executeTaskWithHeartbeat(e.ctx, taskCtx, hb)
+}
+
+// failExhaustedTask fails a claimed task whose message reached its last
+// delivery without ever settling, then acks the message.
+func (e *Ingestor) failExhaustedTask(hb *Heartbeat, handle common.TaskHandle, task *entity.IngestionTask, delivered uint64) {
+	defer e.releaseTask(task.ID)
+	common.Error(fmt.Sprintf("task %s never settled, marking it FAILED (doc_id=%s kb_id=%s)",
+		task.ID, task.DocumentID, task.DatasetID),
+		fmt.Errorf("delivery %d of %d reached", delivered, common.TaskMaxDeliver))
+	e.markTerminalProgress(task)
+	if !e.markFailedWithRetry(task.ID) {
+		// A Nack is useless here: the broker does not redeliver past its
+		// last delivery, so settle the message and leave a trace instead.
+		common.Error(fmt.Sprintf("task %s left RUNNING: could not mark it FAILED on its last delivery, acking (doc_id=%s kb_id=%s)",
+			task.ID, task.DocumentID, task.DatasetID),
+			errors.New("retries exhausted"))
+		e.ackHandle(hb, handle, task.ID)
+		return
+	}
+	e.recordTerminalPipelineLog(e.ctx, task, string(entity.TaskStatusFail), fmt.Sprintf(
+		"Task failed: it was delivered %d times without finishing; the ingestor most likely crashed or ran out of memory while processing this document.",
+		delivered))
+	e.ackHandle(hb, handle, task.ID)
+}
+
+// lastDeliveryRetryDelays spaces the retries of the FAILED write on a task's
+// last delivery, where a transient database error cannot be left to a
+// redelivery.
+var lastDeliveryRetryDelays = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
+
+// markFailedWithRetry marks the task FAILED, retrying after each of
+// lastDeliveryRetryDelays until it succeeds or the ingestor stops. The
+// caller's heartbeat keeps renewing the message lease meanwhile.
+func (e *Ingestor) markFailedWithRetry(taskID string) bool {
+	if e.markFailed(e.ctx, taskID) {
+		return true
+	}
+	for _, delay := range lastDeliveryRetryDelays {
+		timer := time.NewTimer(delay)
+		select {
+		case <-e.ctx.Done():
+			timer.Stop()
+			return false
+		case <-timer.C:
+		}
+		if e.markFailed(e.ctx, taskID) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *Ingestor) ackHandle(hb *Heartbeat, handle common.TaskHandle, taskID string) {
