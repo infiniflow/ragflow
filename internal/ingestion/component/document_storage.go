@@ -49,25 +49,13 @@ func FetchBinary(ctx context.Context, bucket, path string) ([]byte, error) {
 	if storageImpl == nil {
 		return nil, fmt.Errorf("no storage backend registered")
 	}
-
-	type result struct {
-		data []byte
-		err  error
+	// The storage layer takes ctx and honors it, so a cancellation surfaces
+	// through Get itself; no extra goroutine is needed to abort early.
+	data, err := storageImpl.Get(ctx, bucket, path)
+	if err != nil {
+		return nil, fmt.Errorf("storage.Get(%q, %q): %w", bucket, path, err)
 	}
-	done := make(chan result, 1)
-	go func() {
-		data, err := storageImpl.Get(ctx, bucket, path)
-		done <- result{data: data, err: err}
-	}()
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case r := <-done:
-		if r.err != nil {
-			return nil, fmt.Errorf("storage.Get(%q, %q): %w", bucket, path, r.err)
-		}
-		return r.data, nil
-	}
+	return data, nil
 }
 
 func resolveStorage() storage.Storage {
