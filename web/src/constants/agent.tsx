@@ -1,3 +1,4 @@
+// Modified by FXMacroData to add the FXMacroData integration.
 /*
  *  Copyright 2026 The InfiniFlow Authors. All Rights Reserved.
  *
@@ -122,6 +123,7 @@ export enum Operator {
   SofyaSearch = 'SofyaSearch',
   Search1APISearch = 'Search1APISearch',
   Search1APICrawl = 'Search1APICrawl',
+  FXMacroData = 'FXMacroData',
   DocGenerator = 'DocGenerator',
   Browser = 'Browser',
   Placeholder = 'Placeholder',
