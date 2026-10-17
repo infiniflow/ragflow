@@ -286,11 +286,18 @@ func (i *InvokeComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[st
 	defer resp.Body.Close()
 
 	// Cap the response body to keep a hostile server from streaming
-	// infinite bytes into memory.
-	limited := io.LimitReader(resp.Body, maxInvokeResponseBody)
-	bodyBytes, err := io.ReadAll(limited)
+	// infinite bytes into memory. Reading one byte past the cap
+	// distinguishes "exactly at the limit" from "too large", so an
+	// oversized body is reported instead of silently cut: a truncated
+	// body is indistinguishable from a complete one to every
+	// downstream canvas step, which is the same reason the agent
+	// tools reject an oversized HTTP response rather than return it.
+	bodyBytes, err := io.ReadAll(io.LimitReader(resp.Body, maxInvokeResponseBody+1))
 	if err != nil {
 		return nil, fmt.Errorf("Invoke: read body: %w", err)
+	}
+	if len(bodyBytes) > maxInvokeResponseBody {
+		return nil, fmt.Errorf("Invoke: response too large (over %d bytes)", maxInvokeResponseBody)
 	}
 
 	bodyStr := string(bodyBytes)
