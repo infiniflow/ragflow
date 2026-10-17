@@ -206,7 +206,7 @@ func TestFormatDatasetSearchChunksCompilationVisibility(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			chunks := []map[string]interface{}{
-				{"chunk_id": "compiled-1", "content_with_weight": "compiled content", "compile_kwd": "page_index", "vector": []float64{1}},
+				{"chunk_id": "compiled-1", "content_with_weight": "compiled content", "compile_kwd": "page_index", "source_doc_ids": []string{"doc-1"}, "vector": []float64{1}},
 				{"chunk_id": "ordinary-1", "content_with_weight": "ordinary content"},
 			}
 			formatDatasetSearchChunks(chunks, tt.include)
@@ -217,8 +217,18 @@ func TestFormatDatasetSearchChunksCompilationVisibility(t *testing.T) {
 			if present != tt.present || (present && kind != "page_index") {
 				t.Fatalf("compile_kwd = %v, present = %v; want present = %v", kind, present, tt.present)
 			}
+			sourceDocs, hasSourceDocs := chunks[0]["source_doc_ids"]
+			if hasSourceDocs != tt.present {
+				t.Fatalf("source_doc_ids present = %v, want present = %v", hasSourceDocs, tt.present)
+			}
+			if tt.present && !reflect.DeepEqual(sourceDocs, []string{"doc-1"}) {
+				t.Fatalf("source_doc_ids = %v, want [doc-1]", sourceDocs)
+			}
 			if _, present := chunks[1]["compile_kwd"]; present {
 				t.Fatalf("ordinary chunk has compilation marker: %#v", chunks[1])
+			}
+			if _, present := chunks[1]["source_doc_ids"]; present {
+				t.Fatalf("ordinary chunk has source_doc_ids: %#v", chunks[1])
 			}
 			if _, present := chunks[0]["vector"]; present {
 				t.Fatalf("API chunk still has vector: %#v", chunks[0])
