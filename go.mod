@@ -64,6 +64,7 @@ require (
 	github.com/pkoukk/tiktoken-go v0.1.8
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/saintfish/chardet v0.0.0-20230101081208-5e3ef4b5456d
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/signintech/gopdf v0.36.1
 	github.com/siongui/gojianfan v0.0.0-20210926212422-2f175ac615de
@@ -138,7 +139,7 @@ require (
 	github.com/cloudwego/base64x v0.1.7 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
-	github.com/dlclark/regexp2 v1.10.0 // indirect
+	github.com/dlclark/regexp2 v1.11.0 // indirect
 	github.com/dlclark/regexp2/v2 v2.5.2 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/ebitengine/purego v0.10.1 // indirect

@@ -53,7 +53,7 @@ type LLMParam struct {
 	ChatTemplateKwargs       map[string]any // optional provider-specific kwargs (e.g. response_format, seed)
 	MaxTokens                *int
 	JSONOutput               bool
-	OutputStructure          map[string]any // when set, LLM is asked for JSON matching this schema (best-effort keys); outputs["structured"] populated
+	OutputStructure          any // JSON Schema; validated output is stored in structured.
 
 	// PresencePenalty mirrors Python's `presence_penalty` (range -2.0 to 2.0).
 	// Positive values penalize new tokens based on whether they appear in the
@@ -123,7 +123,7 @@ type LLMInput struct {
 	ChatTemplateKwargs       map[string]any
 	MaxTokens                *int
 	JSONOutput               bool
-	OutputStructure          map[string]any
+	OutputStructure          any
 	Driver                   string
 	APIKey                   string
 	Thinking                 string // "enabled" | "disabled" | ""
@@ -684,12 +684,21 @@ func (c *LLMComponent) Name() string { return "LLM" }
 // Invoke runs the LLM and returns the output map.
 func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[string]any) (map[string]any, error) {
 	p := mergeLLMParam(c.param, inputs)
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	structured, err := newStructuredOutput(p.OutputStructure)
+	if err != nil {
+		return nil, err
+	}
+	if structured != nil && p.MaxRetries < 0 {
+		return nil, &ParamError{Field: "max_retries", Reason: "must be non-negative for structured output"}
+	}
 
 	// Resolve tenant-scoped custom models (and fill missing driver/credentials)
 	// before invoking. Without this, a tenant_model.id or a composite model
 	// reference selected in the agent canvas is passed verbatim to the LLM
 	// driver, causing 400s for custom-added models.
-	var err error
 	originalModelID := p.ModelID
 	p.ModelID, p.Driver, p.APIKey, p.BaseURL, err = resolveChatModelRef(ctx, db, p.ModelID, p.Driver, p.APIKey, p.BaseURL)
 	if err != nil {
@@ -784,7 +793,10 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		sysFileTexts = nil
 	}
 
-	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite)
+	if structured != nil {
+		p.SystemPrompt += structured.prompt()
+	}
+	msgs := buildMessagesWithImages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite && structured == nil)
 	// Inject sys.files text content into the last user message.
 	if len(sysFileTexts) > 0 {
 		joined := strings.Join(sysFileTexts, "\n\n")
@@ -840,6 +852,9 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		// does not duplicate it.
 		fitted, fitErr := chat.FitMessages("", msgs, contentLength)
 		if fitErr != "" {
+			if structured != nil {
+				return nil, fmt.Errorf("component: LLM structured output: %s", fitErr)
+			}
 			return map[string]any{"content": fitErr}, nil
 		}
 		msgs = fitted
@@ -886,7 +901,7 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		// MaxRetries is an absolute count, not a stacked one.
 		inv = newRetryInvoker(unwrapChatInvoker(inv), maxRetries, delay)
 	}
-	resp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
+	req := ChatInvokeRequest{
 		Driver:           p.Driver,
 		ModelName:        p.ModelID,
 		APIKey:           p.APIKey,
@@ -898,18 +913,22 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		FrequencyPenalty: p.FrequencyPenalty,
 		MaxTokens:        p.MaxTokens,
 		Thinking:         p.Thinking,
-	})
+	}
+	resp, err := inv.Invoke(ctx, db, req)
 	if err != nil {
 		return nil, fmt.Errorf("component: LLM.Invoke: %w", err)
 	}
+	var parsedStructure map[string]any
+	if structured != nil {
+		resp, parsedStructure, err = structured.validateAndRepair(ctx, db, unwrapChatInvoker(inv), req, resp, p.MaxRetries)
+		if err != nil {
+			return nil, fmt.Errorf("component: LLM structured output: %w", err)
+		}
+	}
 
-	// Strip think blocks + JSON fences from the response.
-	// Mirrors Python's clean_formated_answer() exactly
-	// (re.sub(r"^.*</think>", "", ...) + ^.*```json + trailing ```).
-	// Python only cleans for structured output — keep raw content for
-	// regular responses (llm.py:483: self.set_output("content", ans)).
+	// Preserve validated JSON so cleanup rules cannot alter markers inside strings.
 	cleaned := resp.Content
-	if p.OutputStructure != nil || p.JSONOutput {
+	if structured == nil && p.JSONOutput {
 		cleaned = cleanFormattedAnswer(resp.Content)
 	}
 
@@ -920,50 +939,18 @@ func (c *LLMComponent) Invoke(ctx context.Context, db *gorm.DB, inputs map[strin
 		"stopped":  resp.Stopped,
 		"tokens":   resp.Tokens,
 	}
-	if p.JSONOutput {
+	if structured != nil {
+		out["structured"] = parsedStructure
+	}
+	if p.JSONOutput && structured != nil {
+		out["json"] = parsedStructure
+	} else if p.JSONOutput {
 		var parsed map[string]any
 		if err := json.Unmarshal([]byte(resp.Content), &parsed); err == nil {
 			out["json"] = parsed
 		} else {
 			// Surface a non-fatal warning — caller can still read "content".
 			common.Warn("component: LLM: json_output=true but content is not valid JSON", zap.Error(err))
-		}
-	}
-	if p.OutputStructure != nil {
-		// Best-effort parse: if the first response isn't valid JSON
-		// (or doesn't contain the expected top-level keys), retry once
-		// with a re-prompt. OutputStructure is treated as a key-set
-		// hint; deep schema validation (types, nested objects) is
-		// deferred to a future phase.
-		parsed, ok := matchOutputStructure(resp.Content, p.OutputStructure)
-		if !ok {
-			retryResp, err := inv.Invoke(ctx, db, ChatInvokeRequest{
-				Driver:           p.Driver,
-				ModelName:        p.ModelID,
-				APIKey:           p.APIKey,
-				BaseURL:          p.BaseURL,
-				Messages:         buildStructuredRetryMessages(p.SystemPrompt, p.UserPrompt, p.VisualFiles, p.Cite, p.OutputStructure, resp.Content),
-				Temperature:      p.Temperature,
-				TopP:             p.TopP,
-				PresencePenalty:  p.PresencePenalty,
-				FrequencyPenalty: p.FrequencyPenalty,
-				MaxTokens:        p.MaxTokens,
-				Thinking:         p.Thinking,
-			})
-			if err == nil {
-				parsed, ok = matchOutputStructure(retryResp.Content, p.OutputStructure)
-				if ok {
-					resp = retryResp
-				}
-			}
-		}
-		if ok {
-			out["structured"] = parsed
-			// Also update content to the validated response so
-			// downstream consumers reading "content" get the JSON text.
-			out["content"] = cleanFormattedAnswer(resp.Content)
-		} else {
-			common.Warn("component: LLM: output_structure set but no parseable JSON after retry")
 		}
 	}
 	out["thinking"] = resp.Thinking
@@ -1044,7 +1031,7 @@ func (c *LLMComponent) Inputs() map[string]string {
 		"frequency_penalty": "Frequency penalty (-2.0 to 2.0). Positive values discourage repetition. Optional.",
 		"visual_files":      "List of image URIs (data:image/... base64) attached to the user message as multi-modal content.",
 		"cite":              "When true (default), the citation-instruction prompt is appended to the system message.",
-		"output_structure":  "Optional map of expected top-level keys. LLM is asked to produce JSON containing these keys; one retry on failure. Populates outputs[\"structured\"].",
+		"output_structure":  "JSON Schema for an object result; outputs.structured is the canvas configuration. Invalid output fails after max_retries corrections.",
 		"max_tokens":        "Maximum tokens to generate. Optional.",
 		"json_output":       "If true, attempt to JSON-parse \"content\" into \"json\" output key.",
 		"driver":            "Provider driver name (openai, anthropic, …). Defaults to \"dummy\".",
@@ -1056,11 +1043,12 @@ func (c *LLMComponent) Inputs() map[string]string {
 // Outputs returns output metadata.
 func (c *LLMComponent) Outputs() map[string]string {
 	return map[string]string{
-		"content": "Assistant text response",
-		"model":   "Model identifier echoed back (sanity check)",
-		"stopped": "True if the model finished naturally",
-		"tokens":  "Reported token count (0 when not reported by the driver)",
-		"json":    "When json_output=true and content parses as a JSON object, the parsed map",
+		"content":    "Assistant text response",
+		"model":      "Model identifier echoed back (sanity check)",
+		"stopped":    "True if the model finished naturally",
+		"tokens":     "Reported token count (0 when not reported by the driver)",
+		"json":       "When json_output=true and content parses as a JSON object, the parsed map",
+		"structured": "JSON object validated against the configured schema",
 	}
 }
 
@@ -1081,49 +1069,6 @@ func buildMessages(system, user string) []schema.Message {
 // citation-instruction text appended. When system is empty, returns
 // the prompt as-is. Two newlines separate the user's system prompt
 // from the citation block so the LLM can parse them distinctly.
-// matchOutputStructure parses the LLM response and returns the
-// parsed map iff it is a JSON object that contains every top-level
-// key in expected. Inner-type validation is deferred — a future
-// phase will use a JSON-schema validator.
-func matchOutputStructure(content string, expected map[string]any) (map[string]any, bool) {
-	var parsed map[string]any
-	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
-		return nil, false
-	}
-	for k := range expected {
-		if _, ok := parsed[k]; !ok {
-			return nil, false
-		}
-	}
-	return parsed, true
-}
-
-// buildStructuredRetryMessages rebuilds the message list with a
-// follow-up user turn that surfaces the LLM's first response and
-// asks for valid JSON matching the expected top-level keys. The
-// retry uses the same chat invoker on the next call; the message
-// list returned here is what gets sent on the retry.
-func buildStructuredRetryMessages(system, user string, images []string, cite bool, expected map[string]any, prevContent string) []schema.Message {
-	msgs := buildMessagesWithImages(system, user, images, cite)
-	keys := make([]string, 0, len(expected))
-	for k := range expected {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	keysList := strings.Join(keys, ", ")
-	retryUser := "Your previous response was not valid JSON matching the requested schema.\n\n" +
-		"Previous response:\n" + prevContent + "\n\n" +
-		"Please re-generate the response as a single valid JSON object containing all of these top-level keys: " + keysList + ".\n" +
-		"Output ONLY the JSON object — no prose, no markdown code fences."
-	if len(msgs) > 0 {
-		msgs[len(msgs)-1] = schema.Message{
-			Role:    schema.User,
-			Content: retryUser,
-		}
-	}
-	return msgs
-}
-
 func injectCitationPrompt(system string) string {
 	prompt := prompts.CitationPrompt()
 	if system == "" {
@@ -1335,8 +1280,11 @@ func mergeLLMParam(base LLMParam, inputs map[string]any) LLMParam {
 	if v, ok := boolFrom(inputs, "json_output"); ok {
 		p.JSONOutput = v
 	}
-	if v, ok := mapFrom(inputs, "output_structure"); ok {
+	if v, ok := structuredOutputFrom(inputs); ok {
 		p.OutputStructure = v
+	}
+	if v, ok := intFrom(inputs, "max_retries"); ok {
+		p.MaxRetries = v
 	}
 	if v, ok := boolFrom(inputs, "cite"); ok {
 		p.Cite = v
@@ -1418,9 +1366,7 @@ func stringFrom(inputs map[string]any, name string) (string, bool) {
 
 // mapFrom extracts a map[string]any from inputs[name]. Accepts the
 // canonical map[string]any shape (the shape produced by
-// json.Unmarshal into a map). For OutputStructure we only need the
-// top-level shape — schema-validation against the inner types is
-// deferred to a future phase.
+// json.Unmarshal into a map).
 func mapFrom(inputs map[string]any, name string) (map[string]any, bool) {
 	v, ok := inputs[name]
 	if !ok {
@@ -1526,8 +1472,12 @@ func init() {
 		if v, ok := boolFrom(params, "json_output"); ok {
 			p.JSONOutput = v
 		}
-		if v, ok := mapFrom(params, "output_structure"); ok {
+		if v, ok := structuredOutputFrom(params); ok {
 			p.OutputStructure = v
+			p.MaxRetries = 3
+		}
+		if v, ok := intFrom(params, "max_retries"); ok {
+			p.MaxRetries = v
 		}
 		if v, ok := floatFrom(params, "presence_penalty"); ok {
 			f := v
