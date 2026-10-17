@@ -3,6 +3,7 @@ package models
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -527,5 +528,121 @@ func TestOpenAIAudioSpeechWithSenderStreamsSSEAudioDeltas(t *testing.T) {
 	}
 	if got := strings.Join(chunks, ""); got != "audio-bytes" {
 		t.Fatalf("streamed audio=%q, want audio-bytes", got)
+	}
+}
+
+func TestOpenAIReasoningModelsRejectLegacyParameters(t *testing.T) {
+	withSSRFBypass(t)
+	for _, model := range []string{"gpt-5", "gpt-5-mini", "gpt-5.6-luna", "gpt-6-luna", "o1", "o3-mini", "o4-mini"} {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/stream=%v", model, stream), func(t *testing.T) {
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var body map[string]interface{}
+					if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+						t.Error(err)
+						return
+					}
+					for _, key := range []string{"temperature", "top_p", "max_tokens"} {
+						if _, ok := body[key]; ok {
+							http.Error(w, "unsupported parameter: "+key, http.StatusBadRequest)
+							return
+						}
+					}
+					if body["max_completion_tokens"] != float64(512) {
+						t.Errorf("max_completion_tokens=%v", body["max_completion_tokens"])
+					}
+					if stream {
+						w.Header().Set("Content-Type", "text/event-stream")
+						_, _ = io.WriteString(w, "data: {\"choices\":[{\"delta\":{\"content\":\"ok\"},\"finish_reason\":\"stop\"}]}\n\ndata: [DONE]\n\n")
+					} else {
+						_, _ = io.WriteString(w, `{"choices":[{"message":{"content":"ok"},"finish_reason":"stop"}]}`)
+					}
+				}))
+				defer server.Close()
+				temperature, topP, tokens := 0.2, 0.8, 512
+				runThinkingPayloadRequest(t, newOpenAIForTest(server.URL), model, stream, &ChatConfig{Temperature: &temperature, TopP: &topP, MaxTokens: &tokens})
+			})
+		}
+	}
+}
+
+func TestOpenAIRequestParameterCompatibility(t *testing.T) {
+	withSSRFBypass(t)
+	cases := []struct {
+		model, effort              string
+		sampling, completionTokens bool
+	}{
+		{"gpt-4.1-mini", "", true, false},
+		{"gpt-4o-mini", "high", true, false},
+		{"gpt-5.1", "", true, true},
+		{"gpt-5.2", "", true, true},
+		{"gpt-5.2-pro", "", false, true},
+		{"gpt-5.4-mini", "", true, true},
+		{"gpt-5.4-nano", "high", false, true},
+		{"gpt-5.5", "", false, true},
+		{"gpt-5.6-luna", "none", true, true},
+		{"gpt-6-luna", "none", true, true},
+		{"gpt-5.2", "high", false, true},
+		{"gpt-5-chat-latest", "", true, true},
+		{"gpt-5.1-chat-latest", "", true, true},
+		{"gpt-5-mini-2025-08-07", "", false, true},
+		{"o3-mini-2025-01-31", "", false, true},
+		{"qwen3-8b", "", true, false},
+		{"gpt-50-custom", "", true, false},
+		{"o10-custom", "", true, false},
+	}
+	for _, tc := range cases {
+		for _, stream := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/%s/stream=%v", tc.model, tc.effort, stream), func(t *testing.T) {
+				bodies := make(chan map[string]interface{}, 1)
+				server := newThinkingPayloadServer(t, bodies)
+				defer server.Close()
+				temperature, topP, tokens := 0.2, 0.8, 512
+				cfg := &ChatConfig{Temperature: &temperature, TopP: &topP, MaxTokens: &tokens}
+				if tc.effort != "" {
+					cfg.Effort = &tc.effort
+				}
+				runThinkingPayloadRequest(t, newOpenAIForTest(server.URL), tc.model, stream, cfg)
+				body := <-bodies
+				for _, key := range []string{"temperature", "top_p"} {
+					if _, ok := body[key]; ok != tc.sampling {
+						t.Errorf("%s present=%v, want %v", key, ok, tc.sampling)
+					}
+				}
+				tokenKey, absentKey := "max_tokens", "max_completion_tokens"
+				if tc.completionTokens {
+					tokenKey, absentKey = absentKey, tokenKey
+				}
+				if body[tokenKey] != float64(tokens) {
+					t.Errorf("%s=%v, want %d", tokenKey, body[tokenKey], tokens)
+				}
+				if _, ok := body[absentKey]; ok {
+					t.Errorf("unexpected %s", absentKey)
+				}
+				effort, sent := body["reasoning_effort"]
+				if want := tc.effort != "" && tc.completionTokens; sent != want {
+					t.Errorf("reasoning_effort present=%v, want %v", sent, want)
+				}
+				if sent && effort != tc.effort {
+					t.Errorf("reasoning_effort=%v, want %s", effort, tc.effort)
+				}
+				if *cfg.Temperature != temperature || *cfg.TopP != topP || *cfg.MaxTokens != tokens {
+					t.Error("request changed caller config")
+				}
+			})
+		}
+	}
+}
+
+func TestOpenAIRequestWithoutConfigOmitsOptionalParameters(t *testing.T) {
+	for _, model := range []string{"gpt-5", "gpt-5.6-luna", "gpt-6-luna", "o4-mini", "gpt-4o-mini"} {
+		for _, cfg := range []*ChatConfig{nil, {}} {
+			body := buildOpenAIRequestBody(cfg, model, []Message{{Role: "user", Content: "hello"}}, false)
+			for _, key := range []string{"temperature", "top_p", "max_tokens", "max_completion_tokens", "reasoning_effort"} {
+				if _, ok := body[key]; ok {
+					t.Errorf("%s: unexpected %s", model, key)
+				}
+			}
+		}
 	}
 }
