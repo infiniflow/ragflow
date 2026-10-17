@@ -99,8 +99,8 @@ func TestDatasetsHandlerListIngestionLogsDatasourceLogType(t *testing.T) {
 	insertIngestionMessagesHandlerKB(t, db, "kb-1", "user-1")
 
 	connectors := []entity.Connector{
-		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
-		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.JSONMap{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-1", TenantID: "user-1", Name: "configured", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
+		{ID: "connector-2", TenantID: "user-1", Name: "unlinked", Source: "rss", InputType: "poll", Config: entity.ConnectorConfig{}, Status: string(entity.TaskStatusDone)},
 	}
 	if err := db.Create(&connectors).Error; err != nil {
 		t.Fatalf("insert connectors: %v", err)
