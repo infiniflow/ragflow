@@ -206,3 +206,20 @@ func TestEPUBParser_ResolvesManifestHrefsAsURLs(t *testing.T) {
 		}
 	}
 }
+
+// The head's <title> and block elements outside the old list ended without a
+// break, so their text ran into the next word: "Testchapter text" and
+// "TermDefinition".
+func TestEPUBParser_SeparatesBlockElements(t *testing.T) {
+	res := parseTestEPUB(t, []epubTestChapter{
+		{name: "ch1.xhtml", content: epubTestHTML(
+			"<section>chapter text</section><dl><dt>Term</dt><dd>Definition</dd></dl>" +
+				"<figure><figcaption>Figure 1</figcaption></figure>Afterword")},
+	})
+	if res.Err != nil {
+		t.Fatalf("ParseWithResult: %v", res.Err)
+	}
+	if got, want := epubTestText(res), "Test chapter text Term Definition Figure 1 Afterword"; got != want {
+		t.Errorf("text = %q, want %q", got, want)
+	}
+}
