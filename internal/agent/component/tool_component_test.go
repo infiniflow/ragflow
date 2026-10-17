@@ -47,6 +47,15 @@ type fakeToolAdapter struct {
 
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
+type stubYouComTool struct {
+	*agenttool.YouComTool
+	out string
+}
+
+func (s *stubYouComTool) InvokableRun(_ context.Context, _ string, _ ...einotool.Option) (string, error) {
+	return s.out, nil
+}
+
 func (f roundTripperFunc) RoundTrip(request *http.Request) (*http.Response, error) {
 	return f(request)
 }
@@ -142,6 +151,13 @@ func TestToolBackedComponentRegisteredFactories(t *testing.T) {
 			name:      "KeenableSearch",
 			toolName:  "KeenableSearch",
 			params:    map[string]any{"api_key": "stored-key", "mode": "realtime", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
+			outputKey: "json",
+			inputKey:  "query",
+		},
+		{
+			name:      "YouComSearch",
+			toolName:  "YouComSearch",
+			params:    map[string]any{"api_key": "stored-key", "freshness": "week", "top_n": float64(3), "outputs": map[string]any{"json": map[string]any{}}},
 			outputKey: "json",
 			inputKey:  "query",
 		},
@@ -560,6 +576,50 @@ func TestParseToolEnvelopeLosslessRejectsTrailingContent(t *testing.T) {
 	out := parseToolEnvelopeLossless(`{"results":{"result":[]}} trailing`)
 	if out["_raw"] == nil {
 		t.Fatalf("trailing content was accepted: %#v", out)
+	}
+}
+
+func TestToolBackedComponentYouComPreservesResultNumbers(t *testing.T) {
+	built, err := agenttool.BuildByName("youcom", map[string]any{"top_n": float64(1)})
+	if err != nil {
+		t.Fatalf("BuildByName(youcom): %v", err)
+	}
+	youcom, ok := built.(*agenttool.YouComTool)
+	if !ok {
+		t.Fatalf("BuildByName(youcom) returned %T", built)
+	}
+	stub := &stubYouComTool{
+		YouComTool: youcom,
+		out:        `{"results":[{"title":"Large result","url":"https://example.com/large","snippets":["body"],"id":9007199254740993,"timestamp":-9007199254740993,"score":0.125}]}`,
+	}
+	component := &ToolBackedComponent{name: "YouComSearch", tool: stub, spec: stub.ComponentSpec()}
+	out, err := component.Invoke(t.Context(), nil, map[string]any{"query": "large ids"})
+	if err != nil {
+		t.Fatalf("Invoke: %v", err)
+	}
+	results, ok := out["json"].([]any)
+	if !ok || len(results) != 1 {
+		t.Fatalf("json output = %#v", out["json"])
+	}
+	hit, ok := results[0].(map[string]any)
+	if !ok {
+		t.Fatalf("result = %#v", results[0])
+	}
+	for key, want := range map[string]json.Number{
+		"id":        "9007199254740993",
+		"timestamp": "-9007199254740993",
+		"score":     "0.125",
+	} {
+		if got, ok := hit[key].(json.Number); !ok || got != want {
+			t.Fatalf("numeric values changed in Canvas output: %#v", results[0])
+		}
+	}
+	encoded, err := json.Marshal(out["json"])
+	if err != nil || !strings.Contains(string(encoded), `"id":9007199254740993`) || !strings.Contains(string(encoded), `"timestamp":-9007199254740993`) {
+		t.Fatalf("re-encoded json = %s, %v", encoded, err)
+	}
+	if rendered, _ := out["formalized_content"].(string); !strings.Contains(rendered, "Large result") {
+		t.Fatalf("formalized_content = %#v", out["formalized_content"])
 	}
 }
 
