@@ -1045,6 +1045,7 @@ func (s *ChunkService) List(ctx context.Context, req *service.ListChunksRequest,
 	}, nil
 }
 
+// SwitchChunks checks dataset access before changing chunk availability in a document.
 func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, documentID string, availableInt int, chunkIDs []string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
@@ -1091,6 +1092,7 @@ func (s *ChunkService) SwitchChunks(ctx context.Context, userID, datasetID, docu
 	return nil
 }
 
+// UpdateChunk validates dataset access and chunk ownership before updating fields or images.
 func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunkRequest, userID string) error {
 	if s.docEngine == nil {
 		return fmt.Errorf("doc engine not initialized")
@@ -1267,6 +1269,8 @@ func (s *ChunkService) UpdateChunk(ctx context.Context, req *service.UpdateChunk
 
 	return nil
 }
+
+// RemoveChunks checks the document's dataset permissions before deleting selected or all chunks.
 func (s *ChunkService) RemoveChunks(ctx context.Context, req *service.RemoveChunksRequest, userID string) (int64, error) {
 	if s.docEngine == nil {
 		return 0, fmt.Errorf("doc engine not initialized")
