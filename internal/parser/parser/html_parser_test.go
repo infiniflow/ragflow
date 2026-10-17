@@ -28,6 +28,42 @@ func TestHTMLParser_ConfigureFromSetup_NilSafe(t *testing.T) {
 	}
 }
 
+// TestHTMLParser_BlockElementsStartANewLine checks that a block element's
+// text starts and ends a line of its own. Only p, li, headings, tr and
+// blockquote broke the line in front of them, and dl, figure, hr, nav and the
+// other block elements outside isBlockTag broke it on neither side, so the
+// text around them ran into theirs: "Name:Alice", "ATermDefinitionB".
+func TestHTMLParser_BlockElementsStartANewLine(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{"text before a nested div", `<div>Name:<div>Alice</div></div>`, "Name:\nAlice"},
+		{"inline before a nested div", `<div><span>Total</span><div>42</div></div>`, "Total\n42"},
+		{"definition list", `<div>A<dl><dt>Term</dt><dd>Definition</dd></dl>B</div>`, "A\nTerm\nDefinition\nB"},
+		{"figure caption", `<div>See<figure><figcaption>Fig 1</figcaption></figure>below</div>`, "See\nFig 1\nbelow"},
+		{"horizontal rule", `<div>above<hr>below</div>`, "above\nbelow"},
+		{"nav inside an article", `<article>left<nav>Menu</nav>right</article>`, "left\nMenu\nright"},
+		{"inline elements stay on the line", `<div>Hello <b>bold</b> and <a href="x">link</a> text</div>`, "Hello bold and link text"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			res := NewHTMLParser().ParseWithResult(context.Background(), "page.html", []byte("<html><body>"+tt.body+"</body></html>"))
+			if res.Err != nil {
+				t.Fatalf("ParseWithResult: %v", res.Err)
+			}
+			items := ItemsToMaps(res.JSON)
+			if len(items) != 1 {
+				t.Fatalf("items = %v, want one text item", items)
+			}
+			if got := items[0]["text"]; got != tt.want {
+				t.Errorf("text = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 // TestHTMLParser_RemoveHeaderFooter verifies that <header>/<footer>
 // tags and role="banner"/role="contentinfo" elements are stripped
 // before parsing (mirrors Python parser.py:1083-1084 pre-parse).
