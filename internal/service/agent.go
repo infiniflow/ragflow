@@ -2277,9 +2277,9 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 		// downstream Message was skipped by an exception/branch path.
 		runtime.CompleteAllDeferredNodes(ctx2)
 		runtime.FinalizeAgentMessage(ctx2)
-		messageEventsEmitted := runtime.AgentMessageEventsEmittedRun(ctx2)
+		messageContentEmitted := runtime.AgentMessageContentEmittedRun(ctx2)
 		messageEventsSuppressed := runtime.AgentMessageEventsSuppressedRun(ctx2)
-		shouldEmitMessage := messageEventsEmitted || !messageEventsSuppressed
+		shouldEmitMessage := messageContentEmitted || !messageEventsSuppressed
 
 		if err != nil {
 			common.Debug("RunAgent invoke err",
@@ -2303,7 +2303,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 					)
 				}
 				if answer != "" && shouldEmitMessage {
-					if !messageEventsEmitted {
+					if !messageContentEmitted {
 						emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 					}
 
@@ -2317,7 +2317,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 			}
 			if failureText := deferredAgentStreamFailureText(err); failureText != "" {
 				visibleAnswer := answer
-				if visibleAnswer == "" && !messageEventsEmitted && shouldEmitMessage {
+				if visibleAnswer == "" && !messageContentEmitted && shouldEmitMessage {
 					emitAgentMessageEvents(emit, failureText, thinking, referencePayload)
 					visibleAnswer = failureText
 				}
@@ -2375,7 +2375,7 @@ func (s *AgentService) buildRunFunc(canvasID string, versionRow *entity.UserCanv
 				fmt.Errorf("persist agent session: %w: %w", persistErr, ErrAgentStorageError),
 			)
 		}
-		if !messageEventsEmitted && shouldEmitMessage {
+		if !messageContentEmitted && shouldEmitMessage {
 			emitAgentMessageEvents(emit, answer, thinking, referencePayload)
 		}
 
