@@ -1,8 +1,10 @@
 import { documentFilter, listDocument } from '@/services/knowledge-service';
+import { useSelectDatasetFilters } from '@/pages/dataset/dataset/use-select-filters';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import React from 'react';
 import {
+  DocumentKeys,
   useFetchDocumentList,
   useGetDocumentFilter,
 } from '../use-document-request';
@@ -39,9 +41,6 @@ jest.mock('@/hooks/route-hook', () => ({
   }),
 }));
 jest.mock('react-router', () => ({ useParams: () => ({ id: mockDatasetId }) }));
-jest.mock('@/pages/dataset/dataset/use-select-filters', () => ({
-  EMPTY_METADATA_FIELD: 'empty_metadata',
-}));
 
 type FilterValue = import('@/components/list-filter-bar/interface').FilterValue;
 type PropsWithChildren = import('react').PropsWithChildren;
@@ -53,10 +52,11 @@ const AppliedFilter: FilterValue = {
   metadata: { author: ['Ada'] },
 };
 
-function createWrapper() {
-  const client = new QueryClient({
+function createWrapper(
+  client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
-  });
+  }),
+) {
   const wrapper = ({ children }: PropsWithChildren) =>
     React.createElement(QueryClientProvider, { client }, children);
   return wrapper;
@@ -174,39 +174,115 @@ it('keeps restored filters while the filter catalog is loading, then prunes miss
   const restored = mountList();
 
   act(() =>
-    restored.result.current.checkValue([
-      { field: 'type', label: 'Type', list: undefined! },
-      { field: 'run', label: 'Status', list: [] },
-    ]),
+    restored.result.current.checkValue(
+      [
+        { field: 'type', label: 'Type', list: undefined! },
+        { field: 'run', label: 'Status', list: [] },
+      ],
+      false,
+    ),
   );
   expect(restored.result.current.filterValue).toEqual(AppliedFilter);
 
   act(() =>
-    restored.result.current.checkValue([
-      { field: 'type', label: 'Type', list: [{ id: 'pdf', label: 'PDF' }] },
-      {
-        field: 'run',
-        label: 'Status',
-        list: [{ id: '3', label: 'Completed' }],
-      },
-      {
-        field: 'metadata',
-        label: 'Metadata',
-        list: [
-          {
-            id: 'author',
-            label: 'Author',
-            list: [{ id: 'Grace', label: 'Grace' }],
-          },
-        ],
-      },
-    ]),
+    restored.result.current.checkValue(
+      [
+        { field: 'type', label: 'Type', list: [{ id: 'pdf', label: 'PDF' }] },
+        {
+          field: 'run',
+          label: 'Status',
+          list: [{ id: '3', label: 'Completed' }],
+        },
+        {
+          field: 'metadata',
+          label: 'Metadata',
+          list: [
+            {
+              id: 'author',
+              label: 'Author',
+              list: [{ id: 'Grace', label: 'Grace' }],
+            },
+          ],
+        },
+      ],
+      true,
+    ),
   );
   expect(restored.result.current.filterValue).toEqual({
     ...AppliedFilter,
     metadata: { author: [] },
   });
 });
+
+it.each(['empty', 'error'])(
+  'handles an %s filter catalog without losing loading state',
+  async (outcome) => {
+    const first = mountList();
+    act(() => first.result.current.handleFilterSubmit(AppliedFilter));
+    first.unmount();
+    let complete!: () => void;
+    jest.mocked(documentFilter).mockReturnValue(
+      new Promise((resolve, reject) => {
+        complete = () =>
+          outcome === 'error'
+            ? reject(new Error('Catalog unavailable'))
+            : resolve({
+                data: {
+                  code: 0,
+                  data: {
+                    filter: { suffix: {}, ingestion_status: {}, metadata: {} },
+                  },
+                },
+              });
+      }) as never,
+    );
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
+    const restored = renderHook(
+      () => {
+        const list = useFetchDocumentList(false);
+        const { checkValue } = list;
+        const { filters, filterLoaded } = useSelectDatasetFilters();
+        React.useEffect(() => {
+          checkValue(filters, filterLoaded);
+        }, [checkValue, filterLoaded, filters]);
+        return { ...list, filterLoaded };
+      },
+      { wrapper: createWrapper(client) },
+    );
+
+    expect(restored.result.current.filterLoaded).toBe(false);
+    expect(restored.result.current.filterValue).toEqual(AppliedFilter);
+    await act(async () => complete());
+    if (outcome === 'empty') {
+      await waitFor(() =>
+        expect(restored.result.current.filterLoaded).toBe(true),
+      );
+      expect(restored.result.current.filterValue).toEqual({});
+      await waitFor(() =>
+        expect(listDocument).toHaveBeenLastCalledWith(expect.anything(), {
+          suffix: undefined,
+          run_status: undefined,
+          return_empty_metadata: false,
+          metadata: undefined,
+        }),
+      );
+      restored.unmount();
+      expect(mountList().result.current.filterValue).toEqual({});
+    } else {
+      await waitFor(() =>
+        expect(
+          client.getQueryState(DocumentKeys.filter('', mockDatasetId))?.status,
+        ).toBe('error'),
+      );
+      expect(restored.result.current.filterLoaded).toBe(false);
+      expect(restored.result.current.filterValue).toEqual(AppliedFilter);
+      restored.unmount();
+      expect(mountList().result.current.filterValue).toEqual(AppliedFilter);
+    }
+  },
+);
 
 it('restores the latest search on a rapid round trip before debounce completes', async () => {
   const list = mountList();

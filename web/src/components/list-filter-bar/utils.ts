@@ -39,20 +39,29 @@ const getFilterIds = (filter: FilterType | FilterCollection): string[] => {
 export function pruneFilterValue(
   filterValue: FilterValue,
   filters: FilterCollection[],
+  filtersLoaded = false,
 ): FilterValue {
   const ids = filters.flatMap(getFilterIds);
-  if (!ids.length) return filterValue;
+  if (!ids.length) {
+    return filtersLoaded && hasActiveFilter(filterValue) ? {} : filterValue;
+  }
 
   const value: FilterValue = {};
   for (const key in filterValue) {
     const fieldValue = filterValue[key];
+    const options = filters.find((filter) => filter.field === key)?.list ?? [];
     if (Array.isArray(fieldValue)) {
-      value[key] = ids.filter((id) => fieldValue.includes(id));
+      const allowedIds = options.flatMap(getFilterIds);
+      value[key] = fieldValue.filter((id) => allowedIds.includes(id));
     } else {
       const nestedValue: Record<string, string[]> = {};
       for (const nestedKey in fieldValue) {
-        nestedValue[nestedKey] = ids.filter((id) =>
-          fieldValue[nestedKey].includes(id),
+        const allowedIds =
+          options
+            .find((option) => option.id === nestedKey)
+            ?.list?.flatMap(getFilterIds) ?? [];
+        nestedValue[nestedKey] = fieldValue[nestedKey].filter((id) =>
+          allowedIds.includes(id),
         );
       }
       value[key] = nestedValue;

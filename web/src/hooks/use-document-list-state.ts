@@ -70,14 +70,22 @@ export function useDocumentListState(datasetId: string) {
     },
     [setPagination],
   );
-  const checkValue = useCallback((filters: FilterCollection[]) => {
-    setSaved((previous) => {
-      const filterValue = pruneFilterValue(previous.value.filterValue, filters);
-      return filterValue === previous.value.filterValue
-        ? previous
-        : { ...previous, value: { ...previous.value, filterValue } };
-    });
-  }, []);
+  const checkValue = useCallback(
+    (filters: FilterCollection[], filtersLoaded: boolean) => {
+      if (!filtersLoaded) return;
+      setSaved((previous) => {
+        const filterValue = pruneFilterValue(
+          previous.value.filterValue,
+          filters,
+          filtersLoaded,
+        );
+        return filterValue === previous.value.filterValue
+          ? previous
+          : { ...previous, value: { ...previous.value, filterValue } };
+      });
+    },
+    [],
+  );
 
   return {
     ...state,

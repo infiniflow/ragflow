@@ -381,6 +381,7 @@ export const useFetchDocumentsByIds = (
 // get document filter
 export const useGetDocumentFilter = (): {
   filter: IDocumentInfoFilter;
+  filterLoaded: boolean;
   onOpenChange: (open: boolean) => void;
 } => {
   const { knowledgeId } = useGetKnowledgeSearchParams();
@@ -389,7 +390,7 @@ export const useGetDocumentFilter = (): {
   const debouncedSearchString = useDebounce(searchString, { wait: 500 });
   const [open, setOpen] = useState<number>(0);
   const datasetId = knowledgeId || id;
-  const { data } = useQuery({
+  const { data, isSuccess } = useQuery({
     queryKey: DocumentKeys.filter(debouncedSearchString, datasetId),
     queryFn: async () => {
       if (!datasetId) {
@@ -408,6 +409,7 @@ export const useGetDocumentFilter = (): {
     }
   };
   return {
+    filterLoaded: isSuccess && Boolean(data?.filter),
     filter: data?.filter
       ? adaptDocumentFilter(data.filter)
       : {

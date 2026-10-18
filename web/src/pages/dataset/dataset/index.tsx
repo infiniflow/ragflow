@@ -58,7 +58,8 @@ export default function Dataset() {
 
   useGoToPreviousPageOnEmpty(documents?.length, loading);
 
-  const { filters, onOpenChange, filterGroup } = useSelectDatasetFilters();
+  const { filters, filterLoaded, onOpenChange, filterGroup } =
+    useSelectDatasetFilters();
 
   const {
     createLoading,
@@ -77,8 +78,8 @@ export default function Dataset() {
   } = useManageMetadata();
 
   useEffect(() => {
-    checkValue(filters);
-  }, [filters]);
+    checkValue(filters, filterLoaded);
+  }, [checkValue, filterLoaded, filters]);
 
   const {
     rowSelection,
