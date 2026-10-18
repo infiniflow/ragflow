@@ -31,6 +31,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"go.uber.org/zap"
@@ -407,8 +408,15 @@ func (c *GeneralChunkerComponent) chunkDOCX(ctx context.Context, upstream schema
 	if !customDelimiter {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 		units = separateGeneralTextBlocks(units)
+		units = splitGeneralUnits(units, primaryPattern, true)
+	} else if grouped := groupDOCXRecordUnits(units, recordBoundaryPrefixes(c.param.Delimiters), c.param.ChunkTokenSize); grouped != nil {
+		// Record grouping replaces delimiter splitting: a grouped record must
+		// never be re-split on the bare delimiters (the default "\n") that join
+		// its paragraphs, or the grouping is undone before anyone sees it.
+		units = grouped
+	} else {
+		units = splitGeneralUnits(units, primaryPattern, false)
 	}
-	units = splitGeneralUnits(units, primaryPattern, !customDelimiter)
 	if customDelimiter {
 		attachGeneralMediaContext(units, c.param.TableContextSize, c.param.ImageContextSize, primaryPattern)
 	} else {
@@ -468,6 +476,178 @@ func mergeDOCXUnits(units []schema.ChunkDoc, target int) []schema.ChunkDoc {
 		mergeGeneralChunk(&merged[previousText], unit, "")
 	}
 	return merged
+}
+
+// ---------------------------------------------------------------------------
+// DOCX record grouping (backtick record delimiters)
+// ---------------------------------------------------------------------------
+
+// recordBoundaryPrefixes extracts the inner content of every backtick-wrapped
+// delimiter, longest first so a longer prefix wins over a shorter one that
+// shares its start (the ordering CompileDelimiterPatternList applies). These
+// literals mark hard record boundaries: a paragraph that opens with one starts
+// a new record.
+func recordBoundaryPrefixes(delims []string) []string {
+	seen := make(map[string]struct{})
+	var out []string
+	for _, d := range delims {
+		if len(d) < 2 || !strings.HasPrefix(d, "`") || !strings.HasSuffix(d, "`") {
+			continue
+		}
+		inner := d[1 : len(d)-1]
+		if inner == "" {
+			continue
+		}
+		if _, ok := seen[inner]; ok {
+			continue
+		}
+		seen[inner] = struct{}{}
+		out = append(out, inner)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return utf8.RuneCountInString(out[i]) > utf8.RuneCountInString(out[j])
+	})
+	return out
+}
+
+// docxRecordPrefix returns the record prefix text opens with, or "" when it
+// opens none. Shares its whitespace rule with peelLeadingRecordPrefix, so the
+// boundary test and the prefix peel can never disagree.
+func docxRecordPrefix(text string, prefixes []string) string {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	for _, p := range prefixes {
+		if strings.HasPrefix(trimmed, p) {
+			return p
+		}
+	}
+	return ""
+}
+
+// peelLeadingRecordPrefix splits a leading record prefix (plus any whitespace
+// ahead of it) from text. The prefix is content: it marks and names the record
+// it opens, so it must survive chunking. Inline occurrences are NOT peeled —
+// they stay subject to the custom-delimiter drop contract.
+func peelLeadingRecordPrefix(text string, prefixes []string) (prefix, rest string) {
+	trimmed := strings.TrimLeftFunc(text, unicode.IsSpace)
+	leadingWS := text[:len(text)-len(trimmed)]
+	for _, p := range prefixes {
+		if strings.HasPrefix(trimmed, p) {
+			return leadingWS + p, trimmed[len(p):]
+		}
+	}
+	return "", text
+}
+
+// splitRecordParagraph splits one record paragraph on the custom (backtick)
+// delimiters, keeping a leading record prefix on the first fragment while
+// inline matches are dropped, the same contract splitByDelim's drop mode
+// applies to custom delimiters everywhere else.
+func splitRecordParagraph(text string, pattern *regexp.Regexp, prefixes []string) []string {
+	prefix, rest := peelLeadingRecordPrefix(text, prefixes)
+	raw := []string{rest}
+	if pattern != nil && pattern.MatchString(rest) {
+		raw = splitByDelim(rest, pattern, false)
+	}
+	parts := make([]string, 0, len(raw))
+	for i, part := range raw {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		if i == 0 {
+			part = prefix + part
+		}
+		parts = append(parts, strings.TrimRight(part, "\n"))
+	}
+	if len(parts) == 0 && strings.TrimSpace(prefix) != "" {
+		parts = append(parts, prefix)
+	}
+	return parts
+}
+
+// groupDOCXRecordUnits groups consecutive DOCX paragraphs into one chunk per
+// logical record when a backtick record delimiter is configured: a paragraph
+// whose text opens with the delimiter's inner content starts a new record, and
+// the paragraphs that follow it accumulate into the same chunk. A
+// record-oriented DOCX (a Q&A or FAQ export whose records span several
+// paragraphs) then yields one chunk per record instead of one chunk per
+// paragraph, whatever the record's length.
+//
+// A grouped record is never re-split on the configured bare delimiters: the
+// default delimiter list also carries "\n", and re-splitting the grouped text
+// on it would undo the grouping before anyone saw it. Inline custom-delimiter
+// matches inside a paragraph still split (and are dropped) exactly as before;
+// those fragments never merge back together, preserving the pinned
+// custom-delimiter merge bypass. Only paragraph boundaries merge, capped by
+// target tokens: once the open record chunk would exceed target it is flushed
+// and the record continues in a fresh chunk, so a long record splits at a
+// paragraph boundary but never merges into the next record. An oversized
+// single paragraph stays whole, mirroring mergeGeneralUnits' oversized-atom
+// rule. Media units stay atomic and close the open record.
+//
+// Returns nil when grouping must stay out of the way — no record delimiter
+// configured, a non-positive token target (the merge-bypass contract), or no
+// paragraph in the document matching the record delimiter — and the caller
+// keeps the previous split-per-paragraph path.
+func groupDOCXRecordUnits(units []schema.ChunkDoc, prefixes []string, target int) []schema.ChunkDoc {
+	if len(prefixes) == 0 || target <= 0 {
+		return nil
+	}
+	inlinePattern := chunk.CompileDelimiterPattern(prefixes)
+
+	grouped := make([]schema.ChunkDoc, 0, len(units))
+	var current *schema.ChunkDoc
+	sawBoundary := false
+
+	flush := func() {
+		if current == nil {
+			return
+		}
+		grouped = append(grouped, *current)
+		current = nil
+	}
+	appendPiece := func(piece schema.ChunkDoc, joinSep string, mayMerge bool) {
+		if current == nil {
+			current = &piece
+			return
+		}
+		if !mayMerge || intValue(current.TKNums)+intValue(piece.TKNums) > target {
+			flush()
+			current = &piece
+			return
+		}
+		mergeGeneralChunk(current, piece, joinSep)
+	}
+
+	for _, unit := range units {
+		if itemDocType(unit) != "text" {
+			flush()
+			grouped = append(grouped, cloneChunkDoc(unit))
+			continue
+		}
+		text := normalizeGeneralNewlines(itemTextOrFallback(unit))
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		if docxRecordPrefix(text, prefixes) != "" {
+			sawBoundary = true
+			flush()
+		}
+		for i, piece := range sliceGeneralSplitPieces(unit, splitRecordParagraph(text, inlinePattern, prefixes)) {
+			// A paragraph's first fragment may merge into the open record
+			// across the paragraph boundary; an inline fragment stands alone.
+			joinSep := ""
+			if i == 0 {
+				joinSep = "\n"
+			}
+			appendPiece(piece, joinSep, i == 0)
+		}
+	}
+	flush()
+
+	if !sawBoundary {
+		return nil
+	}
+	return grouped
 }
 
 // attachGeneralMediaContext selects complete configured delimiter units or
