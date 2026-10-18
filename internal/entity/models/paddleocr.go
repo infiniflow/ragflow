@@ -531,8 +531,8 @@ func (p *PaddleOCRModel) OCRFile(ctx context.Context, modelName *string, content
 	return &OCRFileResponse{Text: &extractedText}, nil
 }
 
-// The job API infers an uploaded file's format from its filename. Preserve PDF
-// uploads while identifying raster images from their bytes, not a user filename.
+// paddleOCRUploadFilename preserves the content-derived format expected by the
+// job API without trusting a user-supplied filename. Unknown data stays PDF.
 func paddleOCRUploadFilename(content []byte) string {
 	// net/http's sniffer does not recognize TIFF, which the image parser accepts.
 	if bytes.HasPrefix(content, []byte("II*\x00")) || bytes.HasPrefix(content, []byte("MM\x00*")) {

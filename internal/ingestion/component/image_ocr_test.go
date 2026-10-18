@@ -26,6 +26,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -33,6 +34,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	deepdocpdf "ragflow/internal/deepdoc/parser/pdf"
 	"ragflow/internal/entity"
 	modelModule "ragflow/internal/entity/models"
 	"ragflow/internal/parser/parser"
@@ -50,20 +52,22 @@ type imageOCRRequests struct {
 	items []imageOCRRequest
 }
 
+// append records a fixture request without racing the HTTP handler.
 func (r *imageOCRRequests) append(request imageOCRRequest) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.items = append(r.items, request)
 }
 
+// list returns a stable snapshot of requests received by the fixture.
 func (r *imageOCRRequests) list() []imageOCRRequest {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return append([]imageOCRRequest(nil), r.items...)
 }
 
-// Only the OCR HTTP service is a fixture. The tenant/provider/instance/model
-// records, model resolver, image dispatcher and driver are the production path.
+// imageOCRFixture replaces only the OCR HTTP service. Tenant model resolution,
+// instance configuration, image dispatch and driver calls use production code.
 func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *imageOCRRequests) {
 	t.Helper()
 	withSSRFBypass(t)
@@ -157,6 +161,8 @@ func imageOCRFixture(t *testing.T, provider string, fail bool) (*gorm.DB, *image
 	return db, requests
 }
 
+// TestImageOCRSelectedTenantModel checks the selected instance, credentials,
+// image bytes and upload protocol for both PaddleOCR providers.
 func TestImageOCRSelectedTenantModel(t *testing.T) {
 	for _, provider := range []string{"PaddleOCR.local", "PaddleOCR"} {
 		t.Run(provider, func(t *testing.T) {
@@ -196,6 +202,69 @@ func TestImageOCRSelectedTenantModel(t *testing.T) {
 	}
 }
 
+// TestImageOCRReleasesMediaAdmissionBeforeRequest verifies that selected OCR
+// never holds image materialization slots during remote I/O, including failures.
+func TestImageOCRReleasesMediaAdmissionBeforeRequest(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		t.Run(fmt.Sprint(fail), func(t *testing.T) {
+			db, _ := imageOCRFixture(t, "PaddleOCR.local", false)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ctx, cancel := context.WithTimeout(r.Context(), time.Second)
+				defer cancel()
+				for range deepdocpdf.DeepDocConcurrency() {
+					release, err := parser.AcquireImageMedia(ctx)
+					if err != nil {
+						t.Errorf("selected OCR retained an image-media slot during I/O: %v", err)
+						http.Error(w, "image-media admission blocked", http.StatusServiceUnavailable)
+						return
+					}
+					defer release()
+				}
+				if fail {
+					http.Error(w, "fixture OCR unavailable", http.StatusServiceUnavailable)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, `{"errorCode":0,"result":{"layoutParsingResults":[{"markdown":{"text":"Remote OCR text."}}]}}`)
+			}))
+			t.Cleanup(server.Close)
+			if err := db.Model(&entity.TenantModelInstance{}).Where("id = ?", "instance-b").
+				Update("extra", fmt.Sprintf(`{"base_url":%q}`, server.URL)).Error; err != nil {
+				t.Fatal(err)
+			}
+			setups := imageSwitchSetups(t, true)
+			setups["image"]["ocr_model_id"] = "model-b"
+			result, _, err := maybeDispatchImage(t.Context(), db, utility.FileTypeVISUAL,
+				"invoice.png", picturePNG(t), map[string]any{"tenant_id": "tenant-1"}, setups, false, visionSettings{})
+			if err != nil || len(result.JSON) != 1 {
+				t.Fatalf("err=%v result=%+v", err, result)
+			}
+			item := result.JSON[0].ToMap()
+			if fail {
+				if item["text"] != "" || !strings.Contains(strings.Join(result.Warnings, "\n"), "fixture OCR unavailable") {
+					t.Fatalf("failure result=%+v warnings=%v", item, result.Warnings)
+				}
+			} else if item["text"] != "Remote OCR text." || len(result.Warnings) != 0 {
+				t.Fatalf("success result=%+v warnings=%v", item, result.Warnings)
+			}
+			if item["image"] == "" || item["image"] == nil {
+				t.Fatal("remote OCR lost the image attachment")
+			}
+			ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+			defer cancel()
+			for range deepdocpdf.DeepDocConcurrency() {
+				release, err := parser.AcquireImageMedia(ctx)
+				if err != nil {
+					t.Fatalf("image-media admission leaked after dispatch: %v", err)
+				}
+				defer release()
+			}
+		})
+	}
+}
+
+// TestImageOCRFailureRetainsAttachment verifies that failures remain visible
+// without dropping the image or substituting local OCR.
 func TestImageOCRFailureRetainsAttachment(t *testing.T) {
 	for _, provider := range []string{"PaddleOCR.local", "PaddleOCR"} {
 		t.Run(provider, func(t *testing.T) {
@@ -218,6 +287,8 @@ func TestImageOCRFailureRetainsAttachment(t *testing.T) {
 	}
 }
 
+// TestImageOCRInvalidSelectionNeverFallsBack rejects inaccessible or invalid
+// model/instance records before making an OCR request.
 func TestImageOCRInvalidSelectionNeverFallsBack(t *testing.T) {
 	cases := []struct {
 		name, tenant, ref, table, field string
@@ -261,6 +332,8 @@ func TestImageOCRInvalidSelectionNeverFallsBack(t *testing.T) {
 	}
 }
 
+// TestImageOCRSelectionRespectsSwitchAndSVG keeps disabled OCR and native SVG
+// text extraction independent of a saved model selection.
 func TestImageOCRSelectionRespectsSwitchAndSVG(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR.local", false)
 	for _, tc := range []struct {
@@ -286,6 +359,7 @@ func TestImageOCRSelectionRespectsSwitchAndSVG(t *testing.T) {
 	}
 }
 
+// TestImageOCRModelConfigValidation rejects non-string model IDs at setup time.
 func TestImageOCRModelConfigValidation(t *testing.T) {
 	_, err := NewParserComponent(map[string]any{"image": map[string]any{"ocr_enabled": true, "ocr_model_id": 123}})
 	if err == nil || !strings.Contains(err.Error(), "ocr_model_id") {
@@ -293,6 +367,8 @@ func TestImageOCRModelConfigValidation(t *testing.T) {
 	}
 }
 
+// TestImageOCRDoesNotUseGlobalEndpoint prevents an incomplete selected instance
+// from silently borrowing a process-global server address.
 func TestImageOCRDoesNotUseGlobalEndpoint(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR.local", false)
 	t.Setenv("PADDLEOCR_BASE_URL", "http://global.invalid")
@@ -306,6 +382,8 @@ func TestImageOCRDoesNotUseGlobalEndpoint(t *testing.T) {
 	}
 }
 
+// TestImageOCRKeepsCloudSSRFGuard preserves public-address validation for cloud
+// OCR requests even when the model was explicitly selected.
 func TestImageOCRKeepsCloudSSRFGuard(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR", false)
 	common.AllowAnyHostForTest = false
@@ -315,6 +393,7 @@ func TestImageOCRKeepsCloudSSRFGuard(t *testing.T) {
 	}
 }
 
+// TestImageOCRRejectsOtherOCRDrivers restricts this selector to PaddleOCR.
 func TestImageOCRRejectsOtherOCRDrivers(t *testing.T) {
 	db, requests := imageOCRFixture(t, "MinerU", false)
 	_, err := extractSelectedImageOCR(t.Context(), db, "tenant-1", "model-b", picturePNG(t))
@@ -323,6 +402,8 @@ func TestImageOCRRejectsOtherOCRDrivers(t *testing.T) {
 	}
 }
 
+// TestImageOCRReadsInstanceJSONAndRotatedCredentials verifies that each request
+// reads the selected instance's current structured credentials.
 func TestImageOCRReadsInstanceJSONAndRotatedCredentials(t *testing.T) {
 	db, requests := imageOCRFixture(t, "PaddleOCR.local", false)
 	var instance entity.TenantModelInstance
@@ -346,6 +427,8 @@ func TestImageOCRReadsInstanceJSONAndRotatedCredentials(t *testing.T) {
 	}
 }
 
+// TestImageOCRAndVisionRemainIndependent checks combined Parser output with
+// selected OCR enabled and disabled while global vision stays enabled.
 func TestImageOCRAndVisionRemainIndependent(t *testing.T) {
 	original := resolveTenantModelByType
 	t.Cleanup(func() { resolveTenantModelByType = original })
@@ -383,6 +466,8 @@ func TestImageOCRAndVisionRemainIndependent(t *testing.T) {
 	}
 }
 
+// TestImageOCRFailureReachesProgressMessages checks the actual Parser progress
+// callback, not just the dispatch helper's returned warnings.
 func TestImageOCRFailureReachesProgressMessages(t *testing.T) {
 	db, _ := imageOCRFixture(t, "PaddleOCR.local", true)
 	c, err := NewParserComponent(map[string]any{

@@ -42,6 +42,7 @@ function ImageOcrSwitch({ checked, onCheckedChange }: ImageOcrSwitchProps) {
   return <Switch checked={checked} onCheckedChange={handleCheckedChange} />;
 }
 
+/** Lists enrolled PaddleOCR models using the canvas owner's tenant context. */
 function ImageOCRModelField({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const ownerTenantId = useOwnerTenantId();
@@ -95,8 +96,7 @@ function ImageOCRModelField({ prefix }: CommonProps) {
   );
 }
 
-// OCR engine selection never grants permission for VLM descriptions: that model
-// and prompt still belong exclusively to the global enhancement block.
+/** Keeps optional OCR selection separate from the global VLM enhancement. */
 export function ImageFormFields({ prefix }: CommonProps) {
   const { t } = useTranslation();
   const ocrEnabled = useWatch({

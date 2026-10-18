@@ -76,9 +76,8 @@ func maybeDispatchVideo(
 		fmt.Errorf("Parser: video parsing is not yet supported; underlying video analysis capability is pending")
 }
 
-// Image dispatch: OCR, or the document text of an SVG, followed by optional
-// IMAGE2TEXT enhancement.
-
+// maybeDispatchImage extracts local or selected-model OCR (native text for SVG),
+// preserves the original image and optionally appends global vision enhancement.
 func maybeDispatchImage(
 	ctx context.Context,
 	db *gorm.DB,
@@ -132,6 +131,9 @@ func maybeDispatchImage(
 			if ocrModelID == "" {
 				text, ocrErr = extractImageText(ctx, img)
 			} else {
+				// Selected OCR uses original bytes, so media admission need not
+				// cover database resolution or remote inference.
+				release()
 				text, ocrErr = extractSelectedImageOCR(ctx, db, getStringOr(inputs, "tenant_id", ""), ocrModelID, binary)
 			}
 		}
@@ -197,6 +199,8 @@ func maybeDispatchImage(
 	return parsed, true, nil
 }
 
+// decodeDispatchImage validates dimensions and raster limits for all image
+// sources, decoding pixels only when local DeepDoc OCR needs them.
 func decodeDispatchImage(data []byte, decodeRaster bool) (image.Image, error) {
 	config, _, err := image.DecodeConfig(bytes.NewReader(data))
 	if err != nil {

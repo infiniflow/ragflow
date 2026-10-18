@@ -40,8 +40,13 @@ import (
 
 type imageOCREmbedder struct{ texts []string }
 
+// MaxTokens gives the fixture enough room for the invoice's OCR text.
 func (*imageOCREmbedder) MaxTokens() int { return 2048 }
+
+// BatchSize bounds the embedding fixture's request size.
 func (*imageOCREmbedder) BatchSize() int { return 16 }
+
+// Encode captures the exact indexed text and supplies deterministic vectors.
 func (e *imageOCREmbedder) Encode(_ context.Context, texts []string) ([]component.EmbeddingResult, error) {
 	e.texts = append(e.texts, texts...)
 	out := make([]component.EmbeddingResult, len(texts))
@@ -51,9 +56,9 @@ func (e *imageOCREmbedder) Encode(_ context.Context, texts []string) ([]componen
 	return out, nil
 }
 
-// Uses the real builtin config cleaner, SQLite JSON persistence, model resolver,
-// OCR driver, Parser, decorated OneChunker and Tokenizer. Only OCR inference,
-// object storage and embedding inference are local test doubles.
+// TestImageOCRSavedConfigToSearchableChunk runs the real config cleaner, SQLite
+// persistence, resolver, OCR driver, Parser, decorated OneChunker and Tokenizer.
+// Only OCR inference, object storage and embedding inference are test doubles.
 func TestImageOCRSavedConfigToSearchableChunk(t *testing.T) {
 	var imageBytes bytes.Buffer
 	if err := png.Encode(&imageBytes, image.NewRGBA(image.Rect(0, 0, 12, 12))); err != nil {

@@ -10,6 +10,8 @@ import (
 	"testing"
 )
 
+// TestPaddleOCRUploadFilename checks content-derived image extensions and the
+// unchanged PDF default, including both TIFF byte orders.
 func TestPaddleOCRUploadFilename(t *testing.T) {
 	for _, tc := range []struct {
 		name string
