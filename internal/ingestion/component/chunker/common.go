@@ -345,6 +345,12 @@ const mediaChunkIDPrefix = "\x00media:"
 // that id) or computed by the decorator fallback — never both — and both hash
 // the same identity.
 func canonicalChunkID(docID string, ck schema.ChunkDoc) string {
+	// A title-family captionless image can already carry a source/payload/body
+	// identity. Reuse stamped IDs, exactly as the upload decorator does, so a
+	// streamed crop cannot replace that identity with a body-only collision.
+	if ck.ID != "" {
+		return ck.ID
+	}
 	return common.ChunkID(docID, chunkIDSource(ck))
 }
 

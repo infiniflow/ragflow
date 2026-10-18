@@ -25,6 +25,7 @@ import (
 
 	"ragflow/internal/agent/runtime"
 	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // mediaContextComponents exercises both Title dispatch modes and standalone variants.
@@ -274,5 +275,57 @@ func TestTitleMediaContextDecoratorID(t *testing.T) {
 	}
 	if strings.Contains(toString(chunks[1]["text"]), "@@") {
 		t.Fatal("position tags leaked into indexed text")
+	}
+}
+
+// TestTitleMediaContextCaptionlessIDs prevents different images with identical
+// surrounding text from overwriting each other's storage and index entries.
+func TestTitleMediaContextCaptionlessIDs(t *testing.T) {
+	prev := ChunkImageUploader
+	t.Cleanup(func() { ChunkImageUploader = prev })
+	for _, tc := range mediaContextComponents(t, map[string]any{"image_context_size": 1}) {
+		t.Run(tc.name, func(t *testing.T) {
+			uploaded := map[string]int{}
+			ChunkImageUploader = func(_ context.Context, kbID, chunkID string, _ []byte) (string, error) {
+				uploaded[chunkID]++
+				return kbID + "-" + chunkID, nil
+			}
+			ctx := runtime.WithState(t.Context(), &runtime.CanvasState{Globals: map[string]any{"doc_id": "source-doc"}})
+			out, err := (&imageUploadDecorator{inner: tc.comp}).Invoke(ctx, nil, map[string]any{
+				"name": "book.docx", "kb_id": testKBID, "output_format": "json",
+				"json": []map[string]any{
+					{"text": "Same before.", "doc_type_kwd": "text"},
+					{"text": "", "doc_type_kwd": "image", "image": "data:image/png;base64," + pngBase64},
+					{"text": "", "doc_type_kwd": "image", "image": "data:image/png;base64," + pngBase64Red},
+					{"text": "Same after.", "doc_type_kwd": "text"},
+				},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			chunks := out["chunks"].([]map[string]any)
+			if len(chunks) != 4 || chunks[1]["text"] != chunks[2]["text"] {
+				t.Fatalf("fixture must produce identical contextual bodies: %#v", chunks)
+			}
+			if chunks[1]["id"] == chunks[2]["id"] || len(uploaded) != 2 {
+				t.Fatalf("distinct images collided: %#v; uploads=%v", chunks, uploaded)
+			}
+			for i, payload := range []string{pngBase64, pngBase64Red} {
+				text := toString(chunks[i+1]["text"])
+				source := mediaChunkIdentity("data:image/png;base64,"+payload, "") + "\x00" + text
+				if want := common.ChunkID("source-doc", source); chunks[i+1]["id"] != want || uploaded[want] != 1 {
+					t.Fatalf("context/media/document identity lost: %#v", chunks[i+1])
+				}
+			}
+		})
+	}
+}
+
+// TestTitleMediaContextStampedCropID keeps the crop/upload identity already
+// derived from a contextual captionless image, matching decorator behavior.
+func TestTitleMediaContextStampedCropID(t *testing.T) {
+	ck := schema.ChunkDoc{ID: "source-scoped-media-id", Text: "Context-only body.", CKType: "image"}
+	if got := canonicalChunkID("doc", ck); got != ck.ID {
+		t.Fatalf("crop replaced stamped identity: %s", got)
 	}
 }

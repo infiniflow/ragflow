@@ -54,6 +54,9 @@ Selected text is separated from the table/image body with newlines and becomes
 part of that chunk's final text, token count and identifier before image
 cropping/upload. Original media payloads, references, positions and chunk order
 are preserved. Context text remains in its original text chunk as well.
+For a captionless image whose body consists only of context, the identifier also
+includes its original image payload/reference identity, so distinct images with
+the same neighbors cannot overwrite each other.
 
 For example, component-scoped configuration for a book pipeline can enable
 table context while leaving image context off:
