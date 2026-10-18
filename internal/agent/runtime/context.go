@@ -60,15 +60,16 @@ func IsDeferredStream(v any) bool {
 }
 
 type agentMessageEmitterState struct {
-	mu            sync.Mutex
-	emit          AgentMessageEmitter
-	finalize      func() bool
-	reset         func()
-	emitted       bool
-	suppressed    bool
-	runEmitted    bool
-	runSuppressed bool
-	agentContent  strings.Builder
+	mu                sync.Mutex
+	emit              AgentMessageEmitter
+	finalize          func() bool
+	reset             func()
+	emitted           bool
+	suppressed        bool
+	runEmitted        bool
+	runContentEmitted bool
+	runSuppressed     bool
+	agentContent      strings.Builder
 }
 
 type agentDeltaSinkCtxKey struct{}
@@ -281,6 +282,7 @@ func EmitAgentMessage(ctx context.Context, contentDelta, thinkingDelta string) b
 		state.runEmitted = true
 	}
 	if contentDelta != "" {
+		state.runContentEmitted = true
 		state.agentContent.WriteString(contentDelta)
 	}
 	state.mu.Unlock()
@@ -309,6 +311,18 @@ func AgentMessageEventsEmittedRun(ctx context.Context) bool {
 	return state.runEmitted
 }
 
+// AgentMessageContentEmittedRun reports whether any answer-content delta was
+// emitted during the entire canvas run. Thinking-only deltas do not count.
+func AgentMessageContentEmittedRun(ctx context.Context) bool {
+	state, ok := ctx.Value(agentMessageEmitterCtxKey{}).(*agentMessageEmitterState)
+	if !ok || state == nil {
+		return false
+	}
+	state.mu.Lock()
+	defer state.mu.Unlock()
+	return state.runContentEmitted
+}
+
 // AgentMessageEventsSuppressedRun reports whether any Agent invocation
 // suppressed terminal message emission during the entire canvas run.
 func AgentMessageEventsSuppressedRun(ctx context.Context) bool {
@@ -330,6 +344,9 @@ func EmitCanvasMessageEvent(ctx context.Context, content string, startToThink, e
 			state.mu.Lock()
 			state.emitted = true
 			state.runEmitted = true
+			if content != "" {
+				state.runContentEmitted = true
+			}
 			state.mu.Unlock()
 		}
 		return true
@@ -356,6 +373,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			state.mu.Lock()
 			state.emitted = true
 			state.runEmitted = true
+			state.runContentEmitted = true
 			state.mu.Unlock()
 			return true
 		}
@@ -365,6 +383,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.runContentEmitted = true
 			}
 			state.mu.Unlock()
 			return true
@@ -375,6 +394,7 @@ func EmitCanvasMessage(ctx context.Context, content string) bool {
 			if content != "" {
 				state.emitted = true
 				state.runEmitted = true
+				state.runContentEmitted = true
 			}
 			state.mu.Unlock()
 			return true
@@ -460,6 +480,7 @@ func FinalizeAgentMessage(ctx context.Context) {
 		state.mu.Lock()
 		state.emitted = true
 		state.runEmitted = true
+		state.runContentEmitted = true
 		state.mu.Unlock()
 	}
 }
