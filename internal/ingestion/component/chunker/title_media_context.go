@@ -16,6 +16,10 @@ package chunker
 
 import "ragflow/internal/ingestion/component/schema"
 
+// titleMediaContextIDKey is transient provenance added by the title crop bridge
+// and removed before returning chunks. It never enters saved pipeline output.
+const titleMediaContextIDKey = "_title_media_context_id"
+
 // attachTitleMediaContext adapts this invocation's source records to the shared
 // General collector. Call after Manual's physical sort and before heading
 // grouping: context must not include duplicated ancestor/root headings or

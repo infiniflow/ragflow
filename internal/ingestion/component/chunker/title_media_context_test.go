@@ -324,8 +324,33 @@ func TestTitleMediaContextCaptionlessIDs(t *testing.T) {
 // TestTitleMediaContextStampedCropID keeps the crop/upload identity already
 // derived from a contextual captionless image, matching decorator behavior.
 func TestTitleMediaContextStampedCropID(t *testing.T) {
-	ck := schema.ChunkDoc{ID: "source-scoped-media-id", Text: "Context-only body.", CKType: "image"}
+	ck := schema.ChunkDoc{
+		ID: "source-scoped-media-id", Text: "Context-only body.", CKType: "image",
+		Extra: map[string]json.RawMessage{titleMediaContextIDKey: json.RawMessage("true")},
+	}
 	if got := canonicalChunkID("doc", ck); got != ck.ID {
 		t.Fatalf("crop replaced stamped identity: %s", got)
+	}
+}
+
+// TestTitleMediaContextCropIDRejectsUpstreamID keeps unrelated upstream IDs
+// from surviving normalization of the text used by the shared crop helper.
+func TestTitleMediaContextCropIDRejectsUpstreamID(t *testing.T) {
+	for _, kind := range []string{"image", "table", "text"} {
+		for _, marker := range []string{"", "false", "null", "1", `"true"`} {
+			t.Run(kind+"/"+marker, func(t *testing.T) {
+				ck := schema.ChunkDoc{
+					ID: "stale-upstream-id", Text: "Caption.@@1\t2##", CKType: kind,
+					ContextAbove: "Source explanation.\n",
+				}
+				if marker != "" {
+					ck.Extra = map[string]json.RawMessage{titleMediaContextIDKey: json.RawMessage(marker)}
+				}
+				want := common.ChunkID("doc", chunkIDSource(ck))
+				if got := canonicalChunkID("doc", ck); got != want {
+					t.Fatalf("crop retained upstream ID: got %s, want %s", got, want)
+				}
+			})
+		}
 	}
 }

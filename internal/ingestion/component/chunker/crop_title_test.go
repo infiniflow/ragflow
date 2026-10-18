@@ -19,6 +19,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+
+	"ragflow/internal/common"
+	"ragflow/internal/ingestion/component/schema"
 )
 
 // TestCropTitleChunks_CropsPositionedChunk pins residual A: chunks
@@ -61,5 +64,39 @@ func TestCropTitleChunks_NilEnginePassthrough(t *testing.T) {
 	got := cropTitleChunks(context.Background(), nil, in)
 	if len(got) != 1 || got[0]["text"] != "hello" {
 		t.Fatalf("nil engine should pass through unchanged: %v", got)
+	}
+}
+
+// TestTitleMediaContextCropIDProvenance exercises the real crop/upload bridge:
+// only Title's finalized media IDs survive; unrelated upstream IDs are rebuilt.
+func TestTitleMediaContextCropIDProvenance(t *testing.T) {
+	ctx := withIngestionGlobals(t, "kb1", "doc1")
+	rec := &recordingUploader{}
+	orig := ChunkImageUploader
+	ChunkImageUploader = rec.upload
+	t.Cleanup(func() { ChunkImageUploader = orig })
+	pos := jsonPositions(t, []float64{1, 10, 100, 10, 100})
+	titleID := "source-scoped-media-id"
+	title := cropTitleChunks(ctx, mockCropEngine{}, []map[string]any{
+		{"text": "Context-only body.", "doc_type_kwd": "image", "id": titleID, "positions": pos},
+	})
+	if len(title) != 1 || title[0]["id"] != titleID || title[0]["img_id"] != "kb1-"+titleID {
+		t.Fatalf("title crop lost its finalized identity: %#v", title)
+	}
+	if _, leaked := title[0]["_title_media_context_id"]; leaked {
+		t.Fatal("internal crop provenance leaked into the output")
+	}
+
+	upstream := schema.ChunkDoc{
+		ID: "stale-upstream-id", CKType: "image", Text: "Caption.@@1\t2##",
+		ContextAbove: "Source explanation.\n", PDFPositions: pos,
+	}
+	want := common.ChunkID("doc1", chunkIDSource(upstream))
+	other := cropImageChunks(ctx, mockCropEngine{}, []schema.ChunkDoc{upstream})
+	if len(other) != 1 || other[0].ID != want || other[0].ImgID != "kb1-"+want {
+		t.Fatalf("non-title crop reused upstream identity: %#v", other)
+	}
+	if len(rec.calls) != 2 || rec.calls[0].chunkID != titleID || rec.calls[1].chunkID != want {
+		t.Fatalf("crop upload keys differ from output IDs: %#v", rec.calls)
 	}
 }
